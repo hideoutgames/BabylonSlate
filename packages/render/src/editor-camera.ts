@@ -69,8 +69,15 @@ export interface EditorCameraController {
   /** Zoom factor relative to the pixel-perfect 1:1 framing (continuous). */
   pixelZoom: () => number;
   /**
-   * Rotate look direction in place (camera position stays put). No-op in 2D.
-   * `orbit` is an alias kept for existing call sites.
+   * When true in 3D, `look` orbits around `camera.target` instead of looking
+   * in place. No-op in 2D. Session-only; not stored on the scene document.
+   */
+  readonly pivotAroundCenter: boolean;
+  setPivotAroundCenter: (enabled: boolean) => void;
+  /**
+   * Rotate look direction in place (camera position stays put) unless
+   * `pivotAroundCenter` is on, in which case the eye orbits a fixed target.
+   * No-op in 2D. `orbit` is an alias kept for existing call sites.
    */
   look: (deltaYaw: number, deltaPitch: number) => void;
   /** Same as `look`; kept so existing orbit call sites keep working. */
@@ -107,6 +114,7 @@ export function createEditorCamera(
   scene.activeCamera = camera;
 
   let mode: ViewportMode = options.mode ?? "3d";
+  let pivotAroundCenter = false;
   let orthoHalfHeight = options.orthoHalfHeight ?? DEFAULT_CAMERA_RADIUS / 2;
   let aspect = 1;
   let pixelPerfect: PixelPerfectSettings | null = null;
@@ -210,7 +218,9 @@ export function createEditorCamera(
       Math.max(0.01, camera.beta + deltaPitch),
     );
     camera.getViewMatrix();
-    camera.target.addInPlace(position.subtract(camera.position));
+    if (!pivotAroundCenter) {
+      camera.target.addInPlace(position.subtract(camera.position));
+    }
     invalidate();
   };
 
@@ -234,6 +244,12 @@ export function createEditorCamera(
     camera,
     get mode() {
       return mode;
+    },
+    get pivotAroundCenter() {
+      return pivotAroundCenter;
+    },
+    setPivotAroundCenter: (enabled: boolean) => {
+      pivotAroundCenter = enabled;
     },
     setMode: (next: ViewportMode) => {
       if (next === mode) return;
@@ -300,7 +316,16 @@ export function createEditorCamera(
       invalidate();
     },
     frame: (target: Vector3, radius?: number) => {
-      camera.target.copyFrom(target);
+      if (mode === "3d") {
+        camera.getViewMatrix();
+        camera.setTarget(target);
+        camera.radius = Math.min(
+          MAX_CAMERA_RADIUS,
+          Math.max(MIN_CAMERA_RADIUS, camera.radius),
+        );
+      } else {
+        camera.target.copyFrom(target);
+      }
       if (typeof radius === "number") {
         if (mode === "2d") {
           orthoHalfHeight = Math.max(0.01, radius);

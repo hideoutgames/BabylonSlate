@@ -48,6 +48,9 @@ export interface SceneEditingContextValue {
   /** Session-only Game Camera preview of the named Default Camera. */
   previewGameCamera: boolean;
   setPreviewGameCamera: (enabled: boolean) => void;
+  /** Session-only 3D orbit around the current look-at point. */
+  pivotAroundCenter: boolean;
+  setPivotAroundCenter: (enabled: boolean) => void;
   frameActor: (actorId: string) => void;
   setFrameActorHandler: (handler: ((actorId: string) => void) | null) => void;
   /** Scene viewport hit-test and screen-to-world for Outliner drop / Place Actors. */
@@ -128,6 +131,7 @@ export function SceneEditingProvider({
     resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
   );
   const [previewGameCamera, setPreviewGameCamera] = useState(false);
+  const [pivotAroundCenter, setPivotAroundCenter] = useState(false);
   const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
     null,
   );
@@ -226,6 +230,8 @@ export function SceneEditingProvider({
       setViewportMode,
       previewGameCamera,
       setPreviewGameCamera,
+      pivotAroundCenter,
+      setPivotAroundCenter,
       frameActor,
       setFrameActorHandler,
       viewportDropApi,
@@ -249,6 +255,7 @@ export function SceneEditingProvider({
       viewportDropApi,
       viewportMode,
       previewGameCamera,
+      pivotAroundCenter,
     ],
   );
 

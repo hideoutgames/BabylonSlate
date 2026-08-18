@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createEditorCamera } from "./editor-camera";
 import { RenderScheduler } from "./render-scheduler";
 import {
+  applyViewportJoystickSteer,
   attachViewportFlyKeys,
   DEFAULT_FLY_SPEED,
+  DEFAULT_ORBIT_SPEED,
+  lookDeltaFromFlyDelta,
 } from "./viewport-fly-keys";
 
 type Listener = (event: Event) => void;
@@ -184,5 +187,94 @@ describe("attachViewportFlyKeys", () => {
     handle.dispose();
     expect(target.listenerCount()).toBe(0);
     expect(frames).toHaveLength(0);
+  });
+
+  it("still flies with WASD when pivotAroundCenter is on", () => {
+    const { controller } = attach();
+    controller.setPivotAroundCenter(true);
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    const forward = controller.camera.getDirection(Vector3.Forward()).normalize();
+
+    target.emit("keydown", key("KeyW"));
+    pump(0);
+    pump(16);
+    controller.camera.getViewMatrix();
+
+    const moved = controller.camera.position.subtract(positionBefore);
+    expect(moved.length()).toBeCloseTo(DEFAULT_FLY_SPEED * 0.016, 3);
+    expect(moved.normalize().dot(forward)).toBeCloseTo(1, 4);
+  });
+});
+
+describe("lookDeltaFromFlyDelta", () => {
+  it("maps full-stick fly units to orbit radians at DEFAULT_ORBIT_SPEED", () => {
+    const { deltaYaw, deltaPitch } = lookDeltaFromFlyDelta(DEFAULT_FLY_SPEED, 0);
+    expect(deltaYaw).toBeCloseTo(0, 10);
+    expect(deltaPitch).toBeCloseTo(DEFAULT_ORBIT_SPEED, 10);
+  });
+
+  it("yaws opposite stick-right the way one-finger look yaws opposite drag-right", () => {
+    const { deltaYaw, deltaPitch } = lookDeltaFromFlyDelta(0, DEFAULT_FLY_SPEED);
+    expect(deltaYaw).toBeCloseTo(-DEFAULT_ORBIT_SPEED, 10);
+    expect(deltaPitch).toBeCloseTo(0, 10);
+  });
+});
+
+describe("applyViewportJoystickSteer", () => {
+  let engine: NullEngine;
+  let scene: Scene;
+
+  beforeEach(() => {
+    engine = new NullEngine();
+    scene = new Scene(engine);
+  });
+
+  afterEach(() => {
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("flies when pivotAroundCenter is off", () => {
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    const forward = controller.camera.getDirection(Vector3.Forward()).normalize();
+
+    applyViewportJoystickSteer(controller, 2, 0);
+    controller.camera.getViewMatrix();
+
+    const moved = controller.camera.position.subtract(positionBefore);
+    expect(moved.length()).toBeCloseTo(2, 4);
+    expect(moved.normalize().dot(forward)).toBeCloseTo(1, 4);
+  });
+
+  it("orbits around the target in 3D when pivotAroundCenter is on", () => {
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.setPivotAroundCenter(true);
+    controller.camera.getViewMatrix();
+    const targetBefore = controller.camera.target.clone();
+    const positionBefore = controller.camera.position.clone();
+    const alphaBefore = controller.camera.alpha;
+
+    applyViewportJoystickSteer(controller, 0, DEFAULT_FLY_SPEED);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.alpha).toBeCloseTo(alphaBefore - DEFAULT_ORBIT_SPEED, 5);
+    expect(controller.camera.target.x).toBeCloseTo(targetBefore.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(targetBefore.y, 5);
+    expect(controller.camera.target.z).toBeCloseTo(targetBefore.z, 5);
+    expect(controller.camera.position.x).not.toBeCloseTo(positionBefore.x, 5);
+  });
+
+  it("still flies in 2D when pivotAroundCenter is on", () => {
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.setPivotAroundCenter(true);
+    const before = controller.camera.target.clone();
+
+    applyViewportJoystickSteer(controller, 3, 2);
+
+    expect(controller.camera.target.x).toBeCloseTo(before.x + 2, 5);
+    expect(controller.camera.target.y).toBeCloseTo(before.y + 3, 5);
   });
 });

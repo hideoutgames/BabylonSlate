@@ -3,6 +3,44 @@ import type { RenderScheduler } from "./render-scheduler";
 
 /** World units per second at full WASD deflection. */
 export const DEFAULT_FLY_SPEED = 8;
+/** Radians per second at full joystick deflection in Pivot Around Center. */
+export const DEFAULT_ORBIT_SPEED = 1.5;
+
+/**
+ * Convert dt-scaled fly units from `ViewportJoystick` into look deltas.
+ * Stick-right matches one-finger drag-right (negative yaw); stick-up pitches
+ * the same way as dragging up.
+ */
+export function lookDeltaFromFlyDelta(
+  forward: number,
+  right: number,
+): { deltaYaw: number; deltaPitch: number } {
+  const scale = DEFAULT_ORBIT_SPEED / DEFAULT_FLY_SPEED;
+  return {
+    deltaYaw: -right * scale,
+    deltaPitch: forward * scale,
+  };
+}
+
+/**
+ * Joystick analog: fly, or orbit around the target when Pivot Around Center
+ * is on in 3D. WASD keeps calling `fly` so the center can still be translated.
+ */
+export function applyViewportJoystickSteer(
+  controller: Pick<
+    EditorCameraController,
+    "mode" | "pivotAroundCenter" | "look" | "fly"
+  >,
+  forward: number,
+  right: number,
+): void {
+  if (controller.pivotAroundCenter && controller.mode === "3d") {
+    const { deltaYaw, deltaPitch } = lookDeltaFromFlyDelta(forward, right);
+    controller.look(deltaYaw, deltaPitch);
+    return;
+  }
+  controller.fly(forward, right);
+}
 
 const FLY_CODES = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
 
