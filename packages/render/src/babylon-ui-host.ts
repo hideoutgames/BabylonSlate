@@ -138,6 +138,7 @@ export class BabylonUiApplyHost implements UiApplyHost {
 
   private bindInteractive(handle: GuiControlHandle, descriptor: UiControlDescriptor): void {
     if (!this.options.interactive || !handle.control || !descriptor.visible) return;
+    if (!descriptor.hitTestable) return;
     if (this.options.onTouchAxis) {
       bindDescriptorTouchInput(handle.control, descriptor, this.options.onTouchAxis);
     }
@@ -303,7 +304,7 @@ function bindWidgetEvents(
   descriptor: UiControlDescriptor,
   onWidgetEvent: (event: UiWidgetEvent) => void,
 ): void {
-  if (descriptor.kind !== "Canvas") {
+  if (descriptor.kind !== "Canvas" && descriptor.hitTestable) {
     control.onPointerEnterObservable.add(() => {
       onWidgetEvent({ kind: "pointerEnter", widgetId: descriptor.id });
     });

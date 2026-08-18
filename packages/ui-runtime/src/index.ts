@@ -35,6 +35,7 @@ export {
   createDefaultPlayHud,
   createDefaultUserInterface,
   createWidget,
+  defaultHitTestableFor,
   defaultPropsFor,
   defaultStyleFor,
   defaultWidgetLayout,

@@ -1,5 +1,6 @@
 import type { UiControlDescriptor } from "./controls";
 import type { HorizontalAlignment, VerticalAlignment, WidgetKind } from "./types";
+import { defaultHitTestableFor } from "./types";
 import type { EdgeInsets, SizeUnit, Vec2 } from "./types";
 
 export type GuiControlType =
@@ -121,6 +122,8 @@ export function guiSpecFromDescriptor(
   options: { interactive: boolean },
 ): GuiControlSpec {
   const interactive = options.interactive && control.visible;
+  const hitTestable =
+    control.hitTestable ?? defaultHitTestableFor(control.kind);
   const imageGuid =
     typeof control.props.imageGuid === "string"
       ? control.props.imageGuid
@@ -163,8 +166,8 @@ export function guiSpecFromDescriptor(
     spacing: numberProp(control.props, "gap", 0),
     gridColumns: numberProp(control.props, "columns", 2),
     gridRows: numberProp(control.props, "rows", 2),
-    hitTestVisible: interactive,
-    isPointerBlocker: interactive,
+    hitTestVisible: interactive && hitTestable,
+    isPointerBlocker: interactive && hitTestable,
     imageGuid,
     sliderValue: numberProp(control.props, "value", 0),
     sliderMin: numberProp(control.props, "min", 0),

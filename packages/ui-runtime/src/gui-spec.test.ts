@@ -86,6 +86,85 @@ describe("guiSpecFromDescriptor", () => {
     expect(spec.isPointerBlocker).toBe(true);
   });
 
+  it("does not hit-test Canvas, Image, or Text in interactive Play by default", () => {
+    const doc = createDefaultUserInterface();
+    const art = createWidget(
+      "art",
+      "Image",
+      "Logo",
+      pinLayout("left", "top", 64, 64),
+    );
+    const label = createWidget(
+      "label",
+      "Text",
+      "Score",
+      pinLayout("left", "top", 80, 24, 80, 0),
+    );
+    doc.widgets.canvas!.children = ["art", "label"];
+    doc.widgets.art = art;
+    doc.widgets.label = label;
+    const layout = layoutUserInterface(doc, { width: 1920, height: 1080 });
+    const controls = describeUiControls(doc, layout);
+    const canvas = guiSpecFromDescriptor(
+      controls.find((row) => row.id === "canvas")!,
+      { interactive: true },
+    );
+    const image = guiSpecFromDescriptor(
+      controls.find((row) => row.id === "art")!,
+      { interactive: true },
+    );
+    const text = guiSpecFromDescriptor(
+      controls.find((row) => row.id === "label")!,
+      { interactive: true },
+    );
+    expect(canvas.hitTestVisible).toBe(false);
+    expect(canvas.isPointerBlocker).toBe(false);
+    expect(image.hitTestVisible).toBe(false);
+    expect(image.isPointerBlocker).toBe(false);
+    expect(text.hitTestVisible).toBe(false);
+    expect(text.isPointerBlocker).toBe(false);
+  });
+
+  it("lets an Image block hits when Hit Testable is Enabled", () => {
+    const doc = createDefaultUserInterface();
+    const art = createWidget(
+      "art",
+      "Image",
+      "Logo",
+      pinLayout("left", "top", 64, 64),
+    );
+    art.hitTestable = true;
+    doc.widgets.canvas!.children = ["art"];
+    doc.widgets.art = art;
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    const spec = guiSpecFromDescriptor(
+      describeUiControls(doc, layout).find((row) => row.id === "art")!,
+      { interactive: true },
+    );
+    expect(spec.hitTestVisible).toBe(true);
+    expect(spec.isPointerBlocker).toBe(true);
+  });
+
+  it("does not hit-test a Button when Hit Testable is Disabled", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("center", "center", 160, 40),
+    );
+    button.hitTestable = false;
+    doc.widgets.canvas!.children = ["btn"];
+    doc.widgets.btn = button;
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    const spec = guiSpecFromDescriptor(
+      describeUiControls(doc, layout).find((row) => row.id === "btn")!,
+      { interactive: true },
+    );
+    expect(spec.hitTestVisible).toBe(false);
+    expect(spec.isPointerBlocker).toBe(false);
+  });
+
   it("keeps percent size on Grid children instead of flattening to px", () => {
     const doc = createDefaultUserInterface();
     const grid = createWidget("grid", "Grid", "Grid");

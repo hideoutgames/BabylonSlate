@@ -66,6 +66,18 @@ export function UiDesignDetails({
       value: selected.visible,
       onChange: (value) => onPatchWidget(selected.id, { visible: value }),
     },
+    {
+      id: "hitTestable",
+      kind: "enum",
+      label: "Hit Testable",
+      value: selected.hitTestable ? "enabled" : "disabled",
+      options: [
+        { value: "enabled", label: "Enabled" },
+        { value: "disabled", label: "Disabled" },
+      ],
+      onChange: (value) =>
+        onPatchWidget(selected.id, { hitTestable: value === "enabled" }),
+    },
     ...kindRows(selected, actionNames, assetLabels, onPatchWidget, onPickAsset),
   ];
 
