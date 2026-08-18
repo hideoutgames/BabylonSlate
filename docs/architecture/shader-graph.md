@@ -53,7 +53,9 @@ exact-kind default.
 type, cardinality, cycle, domain, stage, capability, missing-asset and function
 errors. Codes are `material.*`, each anchored to a node, pin or edge so the
 Compiler Results panel can focus the offender. `material.postProcessCost` is a
-warning, not a blocker.
+warning, not a blocker. `material.stageMismatch` is raised when a fragment-only
+node (derivatives, `texture.sampleLod`, Normal Map, …) reaches **World Position
+Offset**, including through a Material Function (`call/inner` node ids).
 
 ## Lowering and compilation
 
@@ -70,9 +72,18 @@ not author:
 
 - **Surface**: position/normal/uv attributes, world and clip-space transforms,
   view direction, and a `PBRMetallicRoughnessBlock` unless the material is unlit.
+  **World Position Offset** (`vec3`, default `[0, 0, 0]`) is added in world
+  space after the world transform. A constant-zero channel is skipped. The
+  compiler realizes that subgraph first so **World Position** nodes that feed
+  WPO read the undisplaced vertex; fragment-only World Position nodes compile
+  afterwards and see the displaced position. One World Position node wired into
+  both keeps the pre-offset value — duplicate the node if you need both. Clip
+  and PBR lighting use the displaced position. Displacement does not inflate
+  the mesh AABB, so large waves can cull early; authors recompute normals on
+  the **Normal** channel when they need them.
 - **Post process**: the `position2d` fullscreen quad, its vertex output, and the
   screen UV remapped from clip space. Babylon still requires a vertex output in
-  post-process mode.
+  post-process mode. There is no World Position Offset channel.
 
 Babylon reports build failures through `onBuildErrorObservable` rather than
 throwing, so the compiler subscribes and turns them into diagnostics. Blocks
@@ -153,7 +164,8 @@ the Class graph (`PinDefaultPreviewWidget`). Catalog `defaultValue` (and
 `colorHint` swatches) hydrate onto `__pins`; authored overrides persist as
 `default:<pinId>` number arrays on the node. Widgets hide when that pin is
 wired. Lowering prefers the authored override, then the catalog default;
-unwired pins with neither stay unset (Normal, Alpha Clip).
+unwired pins with neither stay unset (Normal, Alpha Clip). World Position Offset
+defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
 
@@ -244,6 +256,5 @@ authored stack runs.
 
 ## Not implemented
 
-- Vertex-stage authoring (world position offset) has no output channel yet.
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.
