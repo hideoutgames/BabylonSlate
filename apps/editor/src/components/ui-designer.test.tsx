@@ -457,9 +457,12 @@ describe("UiDesigner", () => {
         editorUtilityInterface
       />,
     );
-    fireEvent.click(screen.getByTestId("ui-dock-kind-class"));
+    fireEvent.click(screen.getByTestId("ui-dock-kind"));
+    const classItem = screen.getByTestId("ui-dock-kind-graph");
+    fireEvent.pointerDown(classItem);
+    fireEvent.click(classItem);
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ dockKind: "class" }),
+      expect.objectContaining({ dockKind: "graph" }),
     );
   });
 });

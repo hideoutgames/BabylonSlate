@@ -146,6 +146,7 @@ import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
   editorUtilityLiveTarget,
+  editorUtilityProjectPathsByKind,
   findDockOrUtilityWindow,
 } from "../shell/editor-utility-windows";
 import {
@@ -3245,17 +3246,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const openLiveEditorUtility = useCallback(
     async (guid: string) => {
-      const project = projectDocumentRef.current;
-      if (!project) return;
+      const listed = projectService.registry?.list() ?? [];
       const assets = editorUtilityAssetsFromIndexed(
-        projectService.registry?.list() ?? [],
+        listed,
         documentService.getOpenDocumentsOrdered(),
       );
       const target = editorUtilityLiveTarget({
         guid,
         assets,
-        scenes: project.scenes,
-        graphs: project.graphs,
+        openDocuments: documentService.getOpenDocumentsOrdered().map((doc) => ({
+          kind: doc.ref.kind,
+          path: doc.ref.path,
+        })),
+        projectPathsByKind: editorUtilityProjectPathsByKind(listed),
       });
       if (!target) return;
       const hostId = documentId({

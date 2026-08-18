@@ -167,25 +167,17 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
     await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
     await expect(page.getByTestId("ui-settings-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-dock-kind-scene")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await page.getByTestId("ui-dock-kind-class").click();
-    await expect(page.getByTestId("ui-dock-kind-class")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByTestId("ui-dock-kind")).toContainText("Scene");
+    await page.getByTestId("ui-dock-kind").click();
+    await page.getByTestId("ui-dock-kind-graph").click();
+    await expect(page.getByTestId("ui-dock-kind")).toContainText("Class");
     await page
       .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
       .click();
     await page
       .locator('[data-asset-path="assets/SceneTools.eui.babasset"]')
       .dblclick();
-    await expect(page.getByTestId("ui-dock-kind-class")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByTestId("ui-dock-kind")).toContainText("Class");
   });
 
   test("Designer is the default mode and Logic switches Windows to Class docks", async ({

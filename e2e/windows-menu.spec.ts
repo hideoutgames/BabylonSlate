@@ -341,11 +341,9 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
     await openAssetFromBrowser(page, "assets/ClassTools.eui.babasset");
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
     await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
-    await page.getByTestId("ui-dock-kind-class").click();
-    await expect(page.getByTestId("ui-dock-kind-class")).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await page.getByTestId("ui-dock-kind").click();
+    await page.getByTestId("ui-dock-kind-graph").click();
+    await expect(page.getByTestId("ui-dock-kind")).toContainText("Class");
 
     await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();

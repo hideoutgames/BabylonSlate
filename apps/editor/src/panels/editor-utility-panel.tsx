@@ -27,6 +27,7 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
+import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
 import { asUiDocument } from "../lib/play-content";
 import {
@@ -46,8 +47,12 @@ import { editorUtilityGuidFromWindowId } from "../shell/editor-utility-windows";
 
 export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const guid = editorUtilityGuidFromWindowId(props.api.id);
-  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk } =
+  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk, activeDocumentId } =
     useDocuments();
+  const workspace = useOptionalDocumentWorkspace();
+  const documentActive = workspace
+    ? activeDocumentId === workspace.documentId
+    : true;
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
@@ -197,8 +202,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     setPreviewError(null);
     freezeLiveUiSurface(surface, {
       panelVisible,
-      documentActive: true,
-      requireDocumentActive: false,
+      documentActive,
     });
     const paintScheduler = paintSchedulerRef.current;
     return () => {
@@ -213,17 +217,16 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, {
       panelVisible,
-      documentActive: true,
-      requireDocumentActive: false,
+      documentActive,
     });
-  }, [panelVisible]);
+  }, [documentActive, panelVisible]);
 
   useEffect(() => {
     const surface = surfaceRef.current;
     const canvas = canvasRef.current;
     if (!surface || !ui || !canvas) return;
     const paint = () => {
-      const frozen = !panelVisible;
+      const frozen = !panelVisible || !documentActive;
       const width = Math.max(1, canvas.clientWidth || ui.designResolution.width);
       const height = Math.max(
         1,
@@ -234,8 +237,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       surface.resizeDesign(width, height, ui.scaleRule, ui.designResolution);
       presentLiveUiIfVisible({
         panelVisible,
-        documentActive: true,
-        requireDocumentActive: false,
+        documentActive,
         present: () => {
           try {
             surface.present();
@@ -263,7 +265,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       paintScheduler.cancel();
       observer.disconnect();
     };
-  }, [imageUrls, panelVisible, ui]);
+  }, [documentActive, imageUrls, panelVisible, ui]);
 
   useEffect(() => {
     if (!asset?.path || !payload) return;
