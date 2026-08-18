@@ -214,6 +214,51 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("toggles project Audio occlusion", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
+    fireEvent.click(screen.getByTestId("settings-audio-occlusion"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ occlusionEnabled: false }),
+      }),
+    );
+  });
+
+  it("edits Audio reverb wet, decay, and damping scales", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
+    expect(screen.getByTestId("settings-audio-reverb-wet-scale-slider")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("settings-audio-reverb-wet-scale"), {
+      target: { value: "1.5" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ reverbWetScale: 1.5 }),
+      }),
+    );
+    fireEvent.change(screen.getByTestId("settings-audio-reverb-decay-scale"), {
+      target: { value: "0.25" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ reverbDecayScale: 0.25 }),
+      }),
+    );
+    fireEvent.change(screen.getByTestId("settings-audio-reverb-damping-scale"), {
+      target: { value: "2" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ reverbDampingScale: 2 }),
+      }),
+    );
+  });
+
   it("edits sorting layers as a named list", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

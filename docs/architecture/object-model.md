@@ -18,7 +18,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_WIDGET_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids (including `UserInterface`, `Widget`, and every `*Widget`) cannot be reparented |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
-| `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components). Not a harness golden |
+| `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
@@ -45,7 +45,7 @@ Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the cur
 
 ## Inspect snapshot (Play debugger)
 
-`createDebugInspectSnapshot(world)` is a separate, lossy JSON tree for the overlay inspector: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is `name` else `classId`. Values are JSON-safe (`BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`). See [debugger.md](debugger.md).
+`createDebugInspectSnapshot(world)` is a separate, lossy JSON tree for the overlay inspector: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is `name` else `classId`. Values are JSON-safe (`BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`). Optional `variableTypes` stamps ClassRegistry `inheritedVariables` types onto keys that exist in `variables`; untyped keys are omitted so the editor infers. See [debugger.md](debugger.md).
 
 ## RNG
 

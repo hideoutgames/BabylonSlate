@@ -4,11 +4,12 @@ import {
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
   AUDIO_REVERB_VERSION,
   AUDIO_SPEED_OF_SOUND,
+  audioClipCacheKey,
   createDefaultAudioPayload,
   encodeAudioReverbChunk,
+  normalizeAudioPayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
-  type AudioPayload,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
 import { AudioBufferCache } from "./audio-buffer-cache";
@@ -19,7 +20,7 @@ function library(options?: {
   mixer?: AudioMixerPayload | null;
   mixerGuid?: string | null;
   channels?: Record<string, AudioChannelPayload>;
-  audio?: Record<string, AudioPayload>;
+  audio?: Record<string, unknown>;
   attenuations?: Record<string, SoundAttenuationPayload>;
 }) {
   return {
@@ -28,7 +29,12 @@ function library(options?: {
       options?.mixer ? [["mixer-1", options.mixer] as const] : [],
     ),
     channels: new Map(Object.entries(options?.channels ?? {})),
-    audio: new Map(Object.entries(options?.audio ?? {})),
+    audio: new Map(
+      Object.entries(options?.audio ?? {}).map(([guid, payload]) => [
+        guid,
+        normalizeAudioPayload(payload),
+      ]),
+    ),
     attenuations: new Map(Object.entries(options?.attenuations ?? {})),
   };
 }
@@ -539,6 +545,101 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("plays a weighted clip from guid:chunk bytes at authored pitch", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({
+      backend,
+      random: () => 0.25,
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            ...createDefaultAudioPayload(),
+            pitch: 2,
+            clips: [
+              { chunkId: "source", name: "a", weight: 1 },
+              { chunkId: "source:2", name: "b", weight: 3 },
+            ],
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setSourceBytes(
+      audioClipCacheKey("jump", "source"),
+      new Uint8Array([1]),
+    );
+    service.setSourceBytes(
+      audioClipCacheKey("jump", "source:2"),
+      new Uint8Array([9, 8, 7]),
+    );
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+    });
+    await service.flush();
+    expect(backend.plays[0]?.source).toEqual(new Uint8Array([9, 8, 7]));
+    expect(backend.plays[0]?.clipChunkId).toBe("source:2");
+    expect(backend.playbackRates.get("v1")).toBe(2);
+    service.dispose();
+  });
+
+  it("composes authored pitch with Doppler playbackRate", async () => {
+    let now = 0;
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, now: () => now });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            ...createDefaultAudioPayload(),
+            pitch: 2,
+            soundAttenuationGuid: "near",
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: { enabled: true, factor: 1 },
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    now = 0;
+    service.syncSnapshot([{ slotId: 1, position: { x: 10, y: 0, z: 0 } }]);
+    now = 100;
+    service.syncSnapshot([{ slotId: 1, position: { x: 5, y: 0, z: 0 } }]);
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(
+      2 * (1 + 50 / AUDIO_SPEED_OF_SOUND),
+      5,
+    );
+    service.dispose();
+  });
+
   it("keeps channel-less playback dry even when a reverb field is loaded", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });
@@ -656,6 +757,69 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("scales interpolated reverb wet, decay, and damping from project settings", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "environmentReverb", enabled: true }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setReverbField(
+      encodeAudioReverbChunk({
+        version: AUDIO_REVERB_VERSION,
+        dryFallback: false,
+        geometryHash: "h",
+        probes: [
+          {
+            x: 0,
+            y: 0,
+            z: 0,
+            volume: 1,
+            openness: 0,
+            decay: 0.4,
+            damping: 0.5,
+            wet: 0.4,
+          },
+        ],
+      }),
+    );
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    expect(backend.wet).toBeCloseTo(0.4);
+    expect(backend.decay).toBeCloseTo(0.4);
+    expect(backend.damping).toBeCloseTo(0.5);
+    service.setProjectAudioSettings({
+      reverbWetScale: 2,
+      reverbDecayScale: 0.5,
+      reverbDampingScale: 0,
+    });
+    expect(backend.wet).toBeCloseTo(0.8);
+    expect(backend.decay).toBeCloseTo(0.2);
+    expect(backend.damping).toBe(0);
+    service.dispose();
+  });
+
   it("stays dry when the baked field is a marked fallback", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });
@@ -696,6 +860,163 @@ describe("AudioService", () => {
     service.syncListener({ x: 0, y: 0, z: 0 });
     expect(backend.plays[0]?.reverbSend).toBe(true);
     expect(service.stats().wet).toBe(0);
+    service.dispose();
+  });
+
+  it("muffles spatial voices from occupancy walls and respects the project switch", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [
+              { kind: "environmentReverb", enabled: false },
+              { kind: "muffleThroughWalls", enabled: true },
+            ],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: "near",
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: null,
+          },
+        },
+      }),
+    );
+    const bits = new Uint8Array(1);
+    bits[0] = 0b0000_0110;
+    service.setReverbField(
+      encodeAudioReverbChunk({
+        version: AUDIO_REVERB_VERSION,
+        dryFallback: false,
+        geometryHash: "occ",
+        probes: [],
+        occupancy: {
+          originX: 0,
+          originY: 0,
+          originZ: 0,
+          voxelX: 2,
+          voxelY: 2,
+          voxelZ: 2,
+          sizeX: 4,
+          sizeY: 1,
+          sizeZ: 1,
+          bits,
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    service.syncSnapshot([{ slotId: 1, position: { x: 1, y: 1, z: 1 } }]);
+    service.syncListener({ x: 5, y: 1, z: 1 });
+    expect(backend.muffles.get("v1")).toBe(1);
+    service.syncListener({ x: 3, y: 1, z: 1 });
+    expect(backend.muffles.get("v1")).toBe(0.5);
+    service.setProjectAudioSettings({ occlusionEnabled: false });
+    service.syncListener({ x: 5, y: 1, z: 1 });
+    expect(backend.muffles.get("v1")).toBe(0);
+    service.dispose();
+  });
+
+  it("leaves channel-less and non-spatial voices unmuffled", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "muffleThroughWalls", enabled: true }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+          dry: createDefaultAudioPayload(),
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: null,
+          },
+        },
+      }),
+    );
+    const bits = new Uint8Array(1);
+    bits[0] = 0b0000_0110;
+    service.setReverbField(
+      encodeAudioReverbChunk({
+        version: AUDIO_REVERB_VERSION,
+        dryFallback: false,
+        geometryHash: "occ",
+        probes: [],
+        occupancy: {
+          originX: 0,
+          originY: 0,
+          originZ: 0,
+          voxelX: 2,
+          voxelY: 2,
+          voxelZ: 2,
+          sizeX: 4,
+          sizeY: 1,
+          sizeZ: 1,
+          bits,
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setSourceBytes("dry", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "channel-nonspatial",
+    });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "dry",
+      volume: 1,
+      frameId: 1,
+      voiceId: "channel-less",
+    });
+    await service.flush();
+    service.syncListener({ x: 5, y: 1, z: 1 });
+    expect(backend.muffles.get("channel-nonspatial")).toBe(0);
+    expect(backend.muffles.get("channel-less")).toBe(0);
     service.dispose();
   });
 });

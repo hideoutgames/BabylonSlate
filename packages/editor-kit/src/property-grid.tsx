@@ -2,6 +2,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
   Field,
+  FieldContent,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
@@ -27,6 +28,8 @@ interface PropertyRowBase {
   id: string;
   label: string;
   disabled?: boolean;
+  /** Overrides the Field `data-testid` (`property-row-${id}` by default). */
+  testId?: string;
 }
 
 export type PropertyRow =
@@ -113,6 +116,8 @@ export interface PropertyGridProps {
   rows: PropertyRow[];
   /** Section heading rendered above the rows. */
   title?: string;
+  /** Vertical stacks the label above the control (Details). Horizontal is name left, value right. */
+  orientation?: "vertical" | "horizontal";
   "data-testid"?: string;
 }
 
@@ -236,11 +241,13 @@ function RowControl({ row }: { row: PropertyRow }) {
       return (
         <Select
           value={row.value}
+          disabled={row.disabled}
           onValueChange={(value) => row.onChange(String(value))}
         >
           <SelectTrigger
             id={`property-${row.id}`}
             className="min-h-[var(--chrome-row,28px)] w-full"
+            disabled={row.disabled}
             data-testid={`property-${row.id}`}
           >
             {/* Base UI renders the raw value unless the label is formatted. */}
@@ -340,10 +347,28 @@ function RowControl({ row }: { row: PropertyRow }) {
   }
 }
 
+function rowResetButton(row: PropertyRow) {
+  if (!hasDefault(row) || row.disabled) return null;
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="text-muted-foreground"
+      disabled={isAtDefault(row)}
+      aria-label={`Reset ${humanizePropertyLabel(row.label)}`}
+      onClick={() => resetRow(row)}
+      data-testid={`property-${row.id}-reset`}
+    >
+      <span aria-hidden="true">↺</span>
+    </Button>
+  );
+}
+
 /** Typed property rows with per-property reset-to-default (engineplan §7.4). */
 export function PropertyGrid({
   rows,
   title,
+  orientation = "vertical",
   "data-testid": testId,
 }: PropertyGridProps) {
   return (
@@ -354,43 +379,48 @@ export function PropertyGrid({
         </h3>
       ) : null}
       <FieldGroup className="gap-0">
-        {rows.map((row) => (
-          <Field
-            key={row.id}
-            data-testid={`property-row-${row.id}`}
-            data-disabled={row.disabled || undefined}
-            className="gap-0.5 border-b border-border/60 px-2 py-1"
-          >
-            <div className="flex min-w-0 items-center gap-1">
-              <FieldLabel
-                htmlFor={
-                  row.kind === "vector3" || row.kind === "flags"
-                    ? undefined
-                    : `property-${row.id}`
-                }
-                className="w-auto min-w-0 flex-1 truncate"
-              >
-                {humanizePropertyLabel(row.label)}
-              </FieldLabel>
-              {hasDefault(row) ? (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground"
-                  disabled={isAtDefault(row)}
-                  aria-label={`Reset ${humanizePropertyLabel(row.label)}`}
-                  onClick={() => resetRow(row)}
-                  data-testid={`property-${row.id}-reset`}
-                >
-                  <span aria-hidden="true">↺</span>
-                </Button>
-              ) : null}
-            </div>
-            <div className="min-w-0">
-              <RowControl row={row} />
-            </div>
-          </Field>
-        ))}
+        {rows.map((row) => {
+          const label = (
+            <FieldLabel
+              htmlFor={
+                row.kind === "vector3" || row.kind === "flags"
+                  ? undefined
+                  : `property-${row.id}`
+              }
+              className="w-auto min-w-0 flex-1 truncate"
+            >
+              {humanizePropertyLabel(row.label)}
+            </FieldLabel>
+          );
+          return (
+            <Field
+              key={row.id}
+              orientation={orientation}
+              data-testid={row.testId ?? `property-row-${row.id}`}
+              data-disabled={row.disabled || undefined}
+              className="gap-0.5 border-b border-border/60 px-2 py-1"
+            >
+              {orientation === "horizontal" ? (
+                <>
+                  {label}
+                  <FieldContent className="min-w-0">
+                    <RowControl row={row} />
+                  </FieldContent>
+                </>
+              ) : (
+                <>
+                  <div className="flex min-w-0 items-center gap-1">
+                    {label}
+                    {rowResetButton(row)}
+                  </div>
+                  <div className="min-w-0">
+                    <RowControl row={row} />
+                  </div>
+                </>
+              )}
+            </Field>
+          );
+        })}
       </FieldGroup>
     </div>
   );

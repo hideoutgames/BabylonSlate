@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -412,6 +412,15 @@ export function startPlaySession(options: {
   particleLibrary?: ParticleLibrary;
   /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
   audioReverbBytes?: Uint8Array | null;
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
+  >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -458,6 +467,7 @@ export function startPlaySession(options: {
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,
     audioReverbBytes: options.audioReverbBytes,
+    audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
     postProcessStack: options.scene?.settings.postProcessStack,
@@ -633,12 +643,7 @@ export function startPlaySession(options: {
     scenes: options.scenes,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
-    audioAssetGuids: [
-      ...new Set([
-        ...(options.audioLibrary?.audio.keys() ?? []),
-        ...(options.audioBytes?.keys() ?? []),
-      ]),
-    ],
+    audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
   });
 
   try {

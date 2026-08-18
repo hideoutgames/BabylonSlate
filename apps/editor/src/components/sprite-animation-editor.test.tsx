@@ -6,6 +6,19 @@ import {
   SpriteAnimationPreview,
 } from "./sprite-animation-editor";
 
+if (typeof window !== "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    writable: true,
+    value: PointerEventPolyfill,
+  });
+}
+
 function pngIhdr(width: number, height: number): Uint8Array {
   const bytes = new Uint8Array(24);
   bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
@@ -196,5 +209,106 @@ describe("SpriteAnimation editor", () => {
     const preview = screen.getByTestId("sprite-animation-preview");
     expect(preview.getAttribute("data-playing")).toBe("false");
     expect(preview.getAttribute("data-frame-index")).toBe("1");
+  });
+
+  it("edits Frame Duration MS on the animation payload", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    const onChange = vi.fn();
+    render(
+      <SpriteAnimationDetails
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-frame-duration"), {
+      target: { value: "40" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ frameDurationMs: 40 }),
+    );
+  });
+
+  it("hides per-frame duration until Frame Duration MS Override is on and seeds the global value", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    payload.frameDurationMs = 40;
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <SpriteAnimationDetails
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("property-frame-duration-override")).toBeTruthy();
+    expect(screen.queryByTestId("property-override-frame-duration")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-frame-duration-override"));
+    const next = onChange.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(next).toEqual(
+      expect.objectContaining({
+        frameDurationMs: 40,
+        frames: [
+          expect.objectContaining({
+            durationMsOverride: true,
+            durationMs: 40,
+          }),
+        ],
+      }),
+    );
+    rerender(
+      <SpriteAnimationDetails payload={next} onChange={onChange} />,
+    );
+    expect(screen.getByTestId("property-override-frame-duration")).toBeTruthy();
+  });
+
+  it("does not rewrite an overridden frame duration when the global duration changes", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    payload.frameDurationMs = 40;
+    payload.frames[0] = {
+      ...payload.frames[0]!,
+      durationMsOverride: true,
+      durationMs: 120,
+    };
+    const onChange = vi.fn();
+    render(
+      <SpriteAnimationDetails
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-frame-duration"), {
+      target: { value: "80" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        frameDurationMs: 80,
+        frames: [
+          expect.objectContaining({
+            durationMsOverride: true,
+            durationMs: 120,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("adds a frame using the global duration without an override", () => {
+    const payload = createDefaultSpriteAnimationPayload();
+    payload.frameDurationMs = 40;
+    payload.frames[0]!.durationMs = 40;
+    const onChange = vi.fn();
+    render(
+      <SpriteAnimationDetails
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("sprite-animation-add-frame"));
+    const next = onChange.mock.calls.at(-1)?.[0] as {
+      frameDurationMs: number;
+      frames: Array<{ durationMs: number; durationMsOverride?: boolean }>;
+    };
+    expect(next.frameDurationMs).toBe(40);
+    expect(next.frames).toHaveLength(2);
+    expect(next.frames[1]).toMatchObject({ durationMs: 40 });
+    expect(next.frames[1]?.durationMsOverride).toBeUndefined();
   });
 });

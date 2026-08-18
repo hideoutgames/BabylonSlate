@@ -34,9 +34,12 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Idle-unmount inactive chrome-tab workspaces after 2 minutes (`p18-inactive-documents`); cap 3 warm non-CB DockViews. P4 freeze is not a substitute for unmount. Remount restores layout / camera / graph viewport.
 - Content Browser **grid** is window-virtualised (`p18-content-browser-virtualize`); TreeView already is. Revoke off-screen thumbnail blob URLs.
 - Add Node catalog **body** is window-virtualised (`p18-add-node-virtualize`); category sidebar stays unwindowed. Distinct from canvas `p18-graph-virtualize`.
+- Output Log and Compiler Results window-virtualise to viewport plus overscan (`p20-log-virtualize`; TreeView arithmetic). Ring buffer cap 500 stays. Same helper may window `SearchDialog` (AssetPicker / ClassPicker). Place Actors catalogs stay unwindowed. Global Search **result** body is not virtualised.
 - One `Engine` for editor viewport, Play overlay, Material Preview, UI designer, **and Prefab Preview** (`p18-shared-prefab-engine`).
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
-- Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags).
+- Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags). **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material / UI reuse the viewport cache even when `sharedEngine` is set; eviction stays unreferenced-LRU only.
+- Editor idle `freezeActiveMeshes()` / static `freezeWorldMatrix()` / `material.freeze()` / unique-id maps / scene-load `forceCompilationAsync` are **P20** (`p20-editor-scene-freeze`). Visible editor stays at `viewportFrameCap` — do not dirty-skip an on-screen scene.
+- Global Search rebuilds when the dialog is initiated (`p20-search-on-demand`), not on project open. Async/chunked; include open-document JSON. No on-disk search cache.
 - No per-actor per-frame allocation in snapshot apply (reuse scratch math objects).
 
 

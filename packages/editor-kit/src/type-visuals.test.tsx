@@ -72,20 +72,21 @@ describe("resolveTypeVisual", () => {
     const scene = resolveTypeVisual({ assetType: "Scene" });
     const structure = resolveTypeVisual({ assetType: "Structure" });
     const klass = resolveTypeVisual({ assetType: "Class" });
-    expect(audio.family).toBe("audio");
-    expect(audio.colorVar).toBe("var(--asset-audio)");
+    expect(audio.family).toBe("class");
+    expect(audio.colorVar).toBe("var(--asset-animation)");
+    expect(audio.colorVar).toBe(atten.colorVar);
     expect(mixer.family).toBe("scene");
     expect(channel.family).toBe("struct");
     expect(atten.family).toBe("class");
     expect(mixer.icon).toBe(Volume2Icon);
     expect(channel.icon).toBe(Volume2Icon);
     expect(atten.icon).toBe(Volume2Icon);
+    expect(audio.icon).toBe(Volume2Icon);
     expect(mixer.colorVar).toBe(scene.colorVar);
     expect(channel.colorVar).toBe(structure.colorVar);
     expect(atten.colorVar).toBe(klass.colorVar);
     expect(mixer.colorVar).not.toBe(audio.colorVar);
     expect(channel.colorVar).not.toBe(audio.colorVar);
-    expect(atten.colorVar).not.toBe(audio.colorVar);
   });
 
   it("uses Sparkles and Wind glyphs for Particle System and Particle Emitter", () => {
