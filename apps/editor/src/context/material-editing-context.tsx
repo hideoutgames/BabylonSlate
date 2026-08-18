@@ -9,9 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Engine } from "@babylonjs/core";
+import type { Engine, Texture } from "@babylonjs/core";
 import {
   MaterialLibrary,
+  ResourceCache,
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
@@ -108,6 +109,10 @@ export function MaterialEditingProvider({
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const libraryRef = useRef<MaterialLibrary | null>(null);
+  const resourceCacheRef = useRef<ResourceCache | null>(null);
+  const functionsRef = useRef<Record<string, MaterialFunctionDocument>>({});
+  const textureBytesRef = useRef(new Map<string, Uint8Array>());
+  const engineRef = useRef<Engine | null>(null);
   const generationRef = useRef(0);
   const manualRenderPendingRef = useRef(false);
   const renderCooldownTimerRef = useRef<number | null>(null);
@@ -143,6 +148,8 @@ export function MaterialEditingProvider({
     }
     return map;
   }, [assetRegistry, openDocuments]);
+  functionsRef.current = functions;
+  engineRef.current = sharedEngine;
 
   // Keyed on `content`, not on the open-document entry: the store can replace
   // a document's content while keeping the entry identity, and memoizing on
@@ -158,10 +165,21 @@ export function MaterialEditingProvider({
   }, [play]);
 
   useEffect(() => {
-    if (!libraryRef.current) {
-      libraryRef.current = new MaterialLibrary({ functions: () => functions });
-    }
-  }, [functions]);
+    if (libraryRef.current) return;
+    resourceCacheRef.current = new ResourceCache();
+    libraryRef.current = new MaterialLibrary({
+      functions: () => functionsRef.current,
+      resolveTexture: (guid) => {
+        const bytes = textureBytesRef.current.get(guid);
+        const engine = engineRef.current;
+        const cache = resourceCacheRef.current;
+        if (!bytes || !engine || !cache) return null;
+        const texture = cache.getTexture(guid, engine, bytes);
+        if ((texture as { isCube?: boolean }).isCube) return null;
+        return texture as Texture;
+      },
+    });
+  }, []);
 
   // One preview Scene per tab, presented to a 2D canvas via RTT.
   useEffect(() => {
@@ -263,6 +281,46 @@ export function MaterialEditingProvider({
     return materialCompileKey(document, { functions });
   }, [document, functions]);
 
+  const textureGuidsKey = useMemo(() => {
+    if (!document) return "";
+    const lowered = lowerMaterialDocument(document, { functions });
+    if (!lowered.ok) return "";
+    return lowered.plan.dependencies.textures.join(",");
+  }, [document, functions]);
+  const [loadedTextureGuidsKey, setLoadedTextureGuidsKey] = useState("");
+  const texturesReady =
+    textureGuidsKey === "" || textureGuidsKey === loadedTextureGuidsKey;
+
+  useEffect(() => {
+    const guids = textureGuidsKey === "" ? [] : textureGuidsKey.split(",");
+    if (guids.length === 0) {
+      textureBytesRef.current = new Map();
+      setLoadedTextureGuidsKey("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next = new Map<string, Uint8Array>();
+      for (const guid of guids) {
+        const asset = assetRegistry?.getByGuid(guid);
+        if (!asset || !readAssetChunk) continue;
+        const pixels = await readAssetChunk(asset.path, "pixels");
+        if (pixels && pixels.byteLength > 0) {
+          next.set(guid, pixels);
+          continue;
+        }
+        const source = await readAssetChunk(asset.path, "source");
+        if (source && source.byteLength > 0) next.set(guid, source);
+      }
+      if (cancelled) return;
+      textureBytesRef.current = next;
+      setLoadedTextureGuidsKey(textureGuidsKey);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, readAssetChunk, textureGuidsKey]);
+
   // Keyed on the lowered plan hash (positions excluded), not document identity.
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
@@ -317,14 +375,21 @@ export function MaterialEditingProvider({
     [document, documentId, finishManualRender],
   );
 
-  // Compile whatever the state machine queued.
+  // Compile whatever the state machine queued, after Texture bytes are ready.
   useEffect(() => {
     if (previewState.status !== "queued") return;
+    if (!texturesReady) return;
     const generation = previewState.queuedGeneration ?? previewState.generation;
     // Yield so the pointer/keyboard event that queued this can finish first.
     const handle = window.setTimeout(() => compile(generation), 0);
     return () => window.clearTimeout(handle);
-  }, [compile, previewState.generation, previewState.queuedGeneration, previewState.status]);
+  }, [
+    compile,
+    previewState.generation,
+    previewState.queuedGeneration,
+    previewState.status,
+    texturesReady,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -333,6 +398,8 @@ export function MaterialEditingProvider({
       }
       libraryRef.current?.dispose();
       libraryRef.current = null;
+      resourceCacheRef.current?.dispose();
+      resourceCacheRef.current = null;
     };
   }, []);
 
