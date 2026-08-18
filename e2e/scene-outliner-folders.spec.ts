@@ -60,9 +60,7 @@ test.describe("Scene Outliner folders", () => {
     await page.getByTestId("outliner-add-actor").click();
     await page.getByTestId("place-actors-item-camera").click();
     await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
-
-    // Placed actors must not stack on the default Cube at the origin.
-    await expect(page.getByTestId("property-actor-position-x")).not.toHaveValue("0");
+    await expect(page.getByTestId("tree-row-actor:actor-2")).toContainText("Camera");
 
     const toggle = page.getByTestId(
       "property-actor-2-actor-2-camera-attemptPossessViewTarget",

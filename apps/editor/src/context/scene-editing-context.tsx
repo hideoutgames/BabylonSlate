@@ -14,6 +14,17 @@ import type {
   GizmoTool,
 } from "@babylonslate/render";
 
+export type ViewportDropApi = {
+  containsClientPoint(clientX: number, clientY: number): boolean;
+  worldPositionAtClient(
+    clientX: number,
+    clientY: number,
+  ): [number, number, number] | null;
+  worldPositionAtViewCenter(): [number, number, number];
+};
+
+export const FALLBACK_PLACE_POSITION: [number, number, number] = [0, 0, 0];
+
 export interface SceneEditingContextValue {
   /** Actor ids selected in the viewport, outliner and details panel. */
   selectedActorIds: string[];
@@ -39,6 +50,9 @@ export interface SceneEditingContextValue {
   setPreviewGameCamera: (enabled: boolean) => void;
   frameActor: (actorId: string) => void;
   setFrameActorHandler: (handler: ((actorId: string) => void) | null) => void;
+  /** Scene viewport hit-test and screen-to-world for Outliner drop / Place Actors. */
+  viewportDropApi: ViewportDropApi;
+  setViewportDropApi: (api: ViewportDropApi | null) => void;
   /** Persist editor camera pose across viewport remounts (Focus, layout restore). */
   saveEditorCameraPose: (state: EditorCameraSessionState) => void;
   loadEditorCameraPose: () => EditorCameraSessionState | null;
@@ -117,6 +131,7 @@ export function SceneEditingProvider({
   const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
     null,
   );
+  const viewportDropApiRef = useRef<ViewportDropApi | null>(null);
   const cameraPoseStoreRef = useRef(createEditorCameraPoseStore());
 
   useEffect(() => {
@@ -163,6 +178,25 @@ export function SceneEditingProvider({
     frameActorHandlerRef.current?.(actorId);
   }, []);
 
+  const setViewportDropApi = useCallback((api: ViewportDropApi | null) => {
+    viewportDropApiRef.current = api;
+  }, []);
+
+  const viewportDropApi = useMemo<ViewportDropApi>(
+    () => ({
+      containsClientPoint: (clientX, clientY) =>
+        viewportDropApiRef.current?.containsClientPoint(clientX, clientY) ??
+        false,
+      worldPositionAtClient: (clientX, clientY) =>
+        viewportDropApiRef.current?.worldPositionAtClient(clientX, clientY) ??
+        null,
+      worldPositionAtViewCenter: () =>
+        viewportDropApiRef.current?.worldPositionAtViewCenter() ??
+        FALLBACK_PLACE_POSITION,
+    }),
+    [],
+  );
+
   const saveEditorCameraPose = useCallback((state: EditorCameraSessionState) => {
     cameraPoseStoreRef.current.save(state);
   }, []);
@@ -194,6 +228,8 @@ export function SceneEditingProvider({
       setPreviewGameCamera,
       frameActor,
       setFrameActorHandler,
+      viewportDropApi,
+      setViewportDropApi,
       saveEditorCameraPose,
       loadEditorCameraPose,
     }),
@@ -208,7 +244,9 @@ export function SceneEditingProvider({
       selectActor,
       selectedActorIds,
       setFrameActorHandler,
+      setViewportDropApi,
       snapEnabled,
+      viewportDropApi,
       viewportMode,
       previewGameCamera,
     ],

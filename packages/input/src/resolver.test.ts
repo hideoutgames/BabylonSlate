@@ -36,6 +36,73 @@ describe("normalizeInputMappings", () => {
       { name: "Jump", bindings: [{ device: "key", code: "Space" }] },
     ]);
   });
+
+  it("drops empty-code drafts by default", () => {
+    const mappings = normalizeInputMappings({
+      actions: [
+        {
+          name: "Jump",
+          bindings: [
+            { device: "key", code: "Space" },
+            { device: "key", code: "" },
+          ],
+        },
+      ],
+      axes: [
+        {
+          name: "Look",
+          kind: "1d",
+          bindings: [{ device: "gamepadAxis", code: "" }],
+        },
+      ],
+    });
+    expect(mappings.actions).toEqual([
+      { name: "Jump", bindings: [{ device: "key", code: "Space" }] },
+    ]);
+    expect(mappings.axes).toEqual([
+      { name: "Look", kind: "1d", bindings: [] },
+    ]);
+  });
+
+  it("keeps empty-code drafts when allowIncomplete is set", () => {
+    const mappings = normalizeInputMappings(
+      {
+        actions: [
+          {
+            name: "Jump",
+            bindings: [
+              { device: "key", code: "Space" },
+              { device: "key", code: "" },
+            ],
+          },
+        ],
+        axes: [
+          {
+            name: "Look",
+            kind: "1d",
+            bindings: [{ device: "gamepadAxis", code: "" }],
+          },
+        ],
+      },
+      { allowIncomplete: true },
+    );
+    expect(mappings.actions).toEqual([
+      {
+        name: "Jump",
+        bindings: [
+          { device: "key", code: "Space" },
+          { device: "key", code: "" },
+        ],
+      },
+    ]);
+    expect(mappings.axes).toEqual([
+      {
+        name: "Look",
+        kind: "1d",
+        bindings: [{ device: "gamepadAxis", code: "" }],
+      },
+    ]);
+  });
 });
 
 describe("InputResolver", () => {
@@ -219,5 +286,22 @@ describe("InputResolver", () => {
     ]);
     expect(up.actions.Jump?.held).toBe(false);
     expect(up.actions.Jump?.released).toBe(true);
+  });
+
+  it("does not treat an empty mouseButton code as left click", () => {
+    const resolver = new InputResolver({
+      actions: [
+        { name: "Fire", bindings: [{ device: "mouseButton", code: "" }] },
+      ],
+      axes: [],
+    });
+    const tick = resolver.resolve([
+      { kind: "mouse", tick: 1, phase: "down", x: 0, y: 0, button: 0 },
+    ]);
+    expect(tick.actions.Fire).toEqual({
+      pressed: false,
+      held: false,
+      released: false,
+    });
   });
 });

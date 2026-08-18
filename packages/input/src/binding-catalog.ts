@@ -14,18 +14,18 @@ export interface BindingCatalogEntry {
 const GAMEPAD_PAD_COUNT = 4;
 
 const GAMEPAD_BUTTON_NAMES = [
-  "A",
-  "B",
-  "X",
-  "Y",
-  "LB",
-  "RB",
-  "LT",
-  "RT",
+  "Face Button Down",
+  "Face Button Right",
+  "Face Button Left",
+  "Face Button Up",
+  "Left Bumper",
+  "Right Bumper",
+  "Left Trigger",
+  "Right Trigger",
   "Back",
   "Start",
-  "Left Stick",
-  "Right Stick",
+  "Left Stick Click",
+  "Right Stick Click",
   "D-Pad Up",
   "D-Pad Down",
   "D-Pad Left",
@@ -151,7 +151,7 @@ function gamepadButtonCatalog(): BindingCatalogEntry[] {
     GAMEPAD_BUTTON_NAMES.forEach((name, button) => {
       entries.push({
         code: `${pad}:${button}`,
-        label: padLabel(pad, name),
+        label: name,
         group: padGroup(pad),
       });
     });
@@ -165,7 +165,7 @@ function gamepadAxisCatalog(): BindingCatalogEntry[] {
     GAMEPAD_AXIS_NAMES.forEach((name, axis) => {
       entries.push({
         code: `${pad}:${axis}`,
-        label: padLabel(pad, name),
+        label: name,
         group: padGroup(pad),
       });
     });
@@ -228,7 +228,13 @@ export function bindingCodesForDevice(
 /** Human label for a stored device code, with fallbacks for unknown codes. */
 export function bindingCodeLabel(device: InputDevice, code: string): string {
   const known = CATALOG_LOOKUP.get(`${device}:${code}`);
-  if (known) return known.label;
+  if (
+    known &&
+    device !== "gamepadButton" &&
+    device !== "gamepadAxis"
+  ) {
+    return known.label;
+  }
   switch (device) {
     case "key":
       return fallbackKeyLabel(code);
@@ -238,12 +244,13 @@ export function bindingCodeLabel(device: InputDevice, code: string): string {
       return code;
     case "gamepadButton": {
       const [pad, button] = parsePadCode(code);
-      const name = GAMEPAD_BUTTON_NAMES[button] ?? `Button ${button}`;
+      const name =
+        GAMEPAD_BUTTON_NAMES[button] ?? known?.label ?? `Button ${button}`;
       return padLabel(pad, name);
     }
     case "gamepadAxis": {
       const [pad, axis] = parsePadCode(code);
-      const name = GAMEPAD_AXIS_NAMES[axis] ?? `Axis ${axis}`;
+      const name = GAMEPAD_AXIS_NAMES[axis] ?? known?.label ?? `Axis ${axis}`;
       return padLabel(pad, name);
     }
     case "touch":

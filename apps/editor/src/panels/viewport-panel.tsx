@@ -22,7 +22,10 @@ import {
 } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useSceneEditing } from "../context/scene-editing-context";
+import {
+  FALLBACK_PLACE_POSITION,
+  useSceneEditing,
+} from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
@@ -66,6 +69,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     dragSelectActive,
     setDragSelectActive,
     setFrameActorHandler,
+    setViewportDropApi,
     previewGameCamera,
     saveEditorCameraPose,
     loadEditorCameraPose,
@@ -294,6 +298,28 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
     return () => setFrameActorHandler(null);
   }, [setFrameActorHandler]);
+
+  useEffect(() => {
+    setViewportDropApi({
+      containsClientPoint: (clientX, clientY) => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        );
+      },
+      worldPositionAtClient: (clientX, clientY) =>
+        engineRef.current?.editor?.worldPositionAtClient(clientX, clientY) ??
+        null,
+      worldPositionAtViewCenter: () =>
+        engineRef.current?.editor?.worldPositionAtViewCenter() ??
+        FALLBACK_PLACE_POSITION,
+    });
+    return () => setViewportDropApi(null);
+  }, [setViewportDropApi]);
 
   useEffect(() => {
     if (engineRef.current) {

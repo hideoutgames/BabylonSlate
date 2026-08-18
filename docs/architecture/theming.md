@@ -132,6 +132,8 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 
 Default Blueprint shells use Tailwind `min-w-80` (320px); compact BT nodes use `min-w-56`. Title bars are `text-base`. Pin rows stay `--touch-target` (44px).
 
+Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
+
 Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 
 ## Axis colors
