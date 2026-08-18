@@ -62,7 +62,11 @@ Material Preview (third Scene on the shared Engine) presents RTT-only: `scene.au
 
 LRU with byte ceiling (~512 MB accounted) plus refcounts. Stable blob URL per asset guid for app lifetime; textures resolve only via `ResourceCache.getTexture()` with one canonical sampling-option set so engine-level `InternalTexture` dedupe hits across editor and Play scenes.
 
-Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`, `isCube`. `getTexture(..., { isCube: true })` returns a `CubeTexture` (IBL, single DDS/ENV URL). `getCubeTextureFromImages(guid, scene, files)` builds a six-face skybox cube (`files` in `px, py, pz, nx, ny, nz` order). Constructing `Texture` outside the cache is lint-banned. Skybox empty faces use engine default PNG buffers (`packages/render/src/default-skybox/`); override Texture guids are collected into Play `textureBytes` (`skyboxFaceGuidsFromScene`). The skybox never sets `scene.environmentTexture`.
+Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`, `isCube`. `getTexture(..., { isCube: true })` returns a `CubeTexture` (IBL, single DDS/ENV URL). `getCubeTextureFromImages(guid, scene, files)` builds a six-face skybox cube (`files` in `px, py, pz, nx, ny, nz` order) **on the Engine** (`new CubeTexture(files, engine)`), not the Scene, so Play `scene.dispose()` cannot drop a cache-owned cube. Constructing `Texture` outside the cache is lint-banned. Skybox empty faces use engine default PNG buffers (`packages/render/src/default-skybox/`); override Texture guids are collected into Play `textureBytes` (`skyboxFaceGuidsFromScene`). The skybox never sets `scene.environmentTexture`.
+
+Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Context-loss restore drops one quality tier and flushes the LRU.
+
+Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle). Playwright repeats three real Play sessions and checks texture counts stay equal while asynchronous mesh counts remain bounded.
 
 ## Skybox mesh
 
@@ -74,10 +78,7 @@ Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`
 - Missing authored faces fall back to the matching engine default cubemap face
 - Shadows, nav bake, and `frameActor` skip skyboxes (`infiniteDistance` tracks the camera, so framing the mesh origin is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
-
-Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Context-loss restore drops one quality tier and flushes the LRU.
-
-Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle). Playwright repeats three real Play sessions and checks texture counts stay equal while asynchronous mesh counts remain bounded.
+- Six-face cubes are Engine-owned so Play overlay `scene.dispose()` does not race pending face loads
 
 ## AudioService (P16)
 

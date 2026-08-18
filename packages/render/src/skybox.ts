@@ -4,6 +4,7 @@ import {
   MeshBuilder,
   PBRMaterial,
   Texture,
+  type AbstractEngine,
   type AbstractMesh,
   type Scene,
 } from "@babylonjs/core";
@@ -23,11 +24,14 @@ import {
 } from "./default-skybox/faces";
 import { encodePngRgba } from "./default-skybox/png";
 import type { MeshAssetContext } from "./mesh-assets";
-import type { ResourceCache } from "./resource-cache";
+import {
+  createEngineCubeTextureFromImages,
+  type ResourceCache,
+} from "./resource-cache";
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
 
-const defaultCubeByScene = new WeakMap<Scene, CubeTexture>();
+const defaultCubeByEngine = new WeakMap<AbstractEngine, CubeTexture>();
 
 export function isSkyboxMesh(mesh: AbstractMesh): boolean {
   return Boolean((mesh.metadata as { skybox?: boolean } | null)?.skybox);
@@ -47,7 +51,7 @@ export function createGeometricDaylightCubeTexture(
   if (cache) {
     return cache.getCubeTextureFromImages(ENGINE_DEFAULT_SKYBOX_GUID, scene, files);
   }
-  return CubeTexture.CreateFromImages(files, scene);
+  return createEngineCubeTextureFromImages(scene.getEngine(), files);
 }
 
 function defaultFacePng(face: SkyboxFaceKey): Uint8Array {
@@ -78,10 +82,11 @@ function defaultSkyboxCubeTexture(
   if (cache) {
     return createGeometricDaylightCubeTexture(scene, cache);
   }
-  const existing = defaultCubeByScene.get(scene);
-  if (existing && existing.getScene() === scene) return existing;
+  const engine = scene.getEngine();
+  const existing = defaultCubeByEngine.get(engine);
+  if (existing?.getInternalTexture()) return existing;
   const texture = createGeometricDaylightCubeTexture(scene);
-  defaultCubeByScene.set(scene, texture);
+  defaultCubeByEngine.set(engine, texture);
   return texture;
 }
 
@@ -111,7 +116,7 @@ export function resolveSkyboxCubeTexture(
   if (cache) {
     return cache.getCubeTextureFromImages(cacheKey, scene, files);
   }
-  return CubeTexture.CreateFromImages(files, scene);
+  return createEngineCubeTextureFromImages(scene.getEngine(), files);
 }
 
 export function createSkyboxMesh(

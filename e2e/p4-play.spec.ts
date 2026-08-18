@@ -113,19 +113,14 @@ test.describe("P4 Play overlay and session report", () => {
             page.evaluate(() => {
               const host = globalThis as unknown as {
                 __babylonslatePlayTest?: {
-                  liveObjectCounts: () => {
-                    meshes: number;
-                    textures: number;
-                  } | null;
+                  visuals: () => { slotId: number }[];
                 };
               };
-              return (
-                host.__babylonslatePlayTest?.liveObjectCounts()?.meshes ?? 0
-              );
+              return host.__babylonslatePlayTest?.visuals().length ?? 0;
             }),
           { timeout: 15_000 },
         )
-        .toBeGreaterThan(0);
+        .toBeGreaterThanOrEqual(4);
       samples.push(
         (await page.evaluate(() => {
           const host = globalThis as unknown as {

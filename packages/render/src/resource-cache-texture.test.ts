@@ -68,6 +68,28 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
+  it("keeps a six-face cube off the scene so Play scene dispose cannot leak it", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const files = [
+      "blob:px",
+      "blob:py",
+      "blob:pz",
+      "blob:nx",
+      "blob:ny",
+      "blob:nz",
+    ];
+    const cube = cache.getCubeTextureFromImages("sky-faces", scene, files);
+    expect(scene.textures.includes(cube)).toBe(false);
+    expect(cube.getInternalTexture()).not.toBeNull();
+    scene.dispose();
+    expect(cube.getInternalTexture()).not.toBeNull();
+    cache.dispose();
+    expect(cube.getInternalTexture()).toBeNull();
+    engine.dispose();
+  });
+
   it("logs eviction reason when flushing unreferenced", () => {
     const reasons: Array<{ id: string; reason: string }> = [];
     const cache = new ResourceCache({

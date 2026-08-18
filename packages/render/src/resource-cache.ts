@@ -30,6 +30,18 @@ interface CacheEntry {
   texture?: BaseTexture;
 }
 
+/**
+ * Six-face cubemap bound to the Engine, not a Scene. Scene.dispose must not
+ * drop a ResourceCache-owned cube (Play overlay shares the editor Engine).
+ */
+export function createEngineCubeTextureFromImages(
+  engine: AbstractEngine,
+  files: string[],
+  noMipmap = false,
+): CubeTexture {
+  return new CubeTexture(files.join(""), engine, { files, noMipmap });
+}
+
 function samplingKey(options: TextureSamplingOptions = {}): string {
   return [
     options.noMipmap ? "1" : "0",
@@ -156,7 +168,11 @@ export class ResourceCache {
       existing.texture.dispose();
       existing.texture = undefined;
     }
-    const texture = CubeTexture.CreateFromImages(files, scene, noMipmap);
+    const texture = createEngineCubeTextureFromImages(
+      scene.getEngine(),
+      files,
+      noMipmap,
+    );
     if (existing) {
       existing.texture = texture;
       existing.samplingKey = key;
