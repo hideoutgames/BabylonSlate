@@ -363,6 +363,70 @@ describe("componentPropertyRows", () => {
       kind: "boolean",
       value: false,
     });
+
+    const skybox = rowsFor(
+      {
+        id: "sky",
+        classId: "SkyboxComponent",
+        properties: {
+          size: 1000,
+          faces: {
+            px: "tex-right",
+            py: null,
+            pz: null,
+            nx: null,
+            ny: null,
+            nz: null,
+          },
+        },
+      },
+      {
+        assetLabel: (guid) => (guid === "tex-right" ? "Right" : undefined),
+        assetType: (guid) => (guid === "tex-right" ? "Texture" : undefined),
+      },
+    );
+    expect(skybox.rows.find((row) => row.id.endsWith("-size"))).toMatchObject({
+      kind: "slider",
+      label: "Size",
+      value: 1000,
+    });
+    const px = skybox.rows.find((row) => row.id.endsWith("-faces.px"));
+    expect(px).toMatchObject({
+      kind: "asset",
+      label: "Positive X",
+      value: "tex-right",
+      displayLabel: "Right",
+      displayType: "Texture",
+    });
+    expect(skybox.rows.find((row) => row.id.endsWith("-faces.py"))).toMatchObject({
+      kind: "asset",
+      label: "Positive Y",
+      value: null,
+    });
+    expect(skybox.rows.find((row) => row.id.endsWith("-faces.pz"))).toMatchObject({
+      kind: "asset",
+      label: "Positive Z",
+    });
+    expect(skybox.rows.find((row) => row.id.endsWith("-faces.nx"))).toMatchObject({
+      kind: "asset",
+      label: "Negative X",
+    });
+    expect(skybox.rows.find((row) => row.id.endsWith("-faces.ny"))).toMatchObject({
+      kind: "asset",
+      label: "Negative Y",
+    });
+    expect(skybox.rows.find((row) => row.id.endsWith("-faces.nz"))).toMatchObject({
+      kind: "asset",
+      label: "Negative Z",
+    });
+    expect(skybox.rows.find((row) => row.id.endsWith("-faces"))).toBeUndefined();
+    if (px?.kind === "asset") px.onPick();
+    expect(skybox.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property: "faces.px",
+        allowedTypes: ["Texture"],
+      }),
+    );
     const gravity = body.rows.find((row) => row.id.endsWith("-gravityScale"));
     expect(gravity).toMatchObject({ kind: "slider", value: 1, min: 0, max: 10 });
   });

@@ -31,6 +31,8 @@ import {
   eulerDegreesToQuaternion,
   isUserInterfaceClassId,
   normalizeUserInterfaceClassRef,
+  parseSkyboxFaces,
+  parseSkyboxSize,
   parseInputMode,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
@@ -97,6 +99,10 @@ import {
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { shouldSpawnScriptedActor } from "./play-load";
 import { PhysicsWorldSync } from "./physics-sync";
+import {
+  formatDumpActors,
+  formatInspectActor,
+} from "./console-inspect";
 import { actorWorldTransforms } from "./actor-world-transform";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
@@ -288,6 +294,13 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
+  private renderQuality = "high";
+  private shadowQuality = "1024";
+  private resolutionScale = 1;
+  private frameCap = 60;
+  private volume = 1;
+  private timeDilation = 1;
+  private showCollision = false;
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
@@ -1241,7 +1254,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickCrowd(): void {
     if (!this.nav) return;
-    this.nav.stepCrowd(this.dt);
+    this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
       if (!actor || actor.destroyed) continue;
@@ -1385,13 +1398,13 @@ class InProcessRuntime implements RuntimeDriver {
         objectClassId,
         "onUpdateAnimation",
         actor,
-        this.dt,
+        this.simulationDt(),
         extras,
       );
       const next = evaluateAnimGraph(
         document,
         this.animEvalBySlot.get(slotId) ?? null,
-        this.dt,
+        this.simulationDt(),
         {
           variables: this.animVariablesFromComponent(component, document),
           ...this.animInputsFromComponent(component),
@@ -1568,7 +1581,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
       this.stopNavAgent(actor.guid);
     }
-    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.dt, {
+    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.simulationDt(), {
       btFinish: () => undefined,
       btEvaluate: () => undefined,
       getBlackboard: (key) => blackboard[key],
@@ -1585,7 +1598,7 @@ class InProcessRuntime implements RuntimeDriver {
   ): boolean {
     if (!this.scriptHost.hasClass(classId)) return true;
     let result = true;
-    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.dt, {
+    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.simulationDt(), {
       btFinish: () => undefined,
       btEvaluate: (value) => {
         result = Boolean(value);
@@ -1644,7 +1657,7 @@ class InProcessRuntime implements RuntimeDriver {
       const blackboard: BlackboardValues = previous
         ? { ...previous.blackboard }
         : this.blackboardDefaults(blackboardGuid);
-      const next = evaluateBehaviourTree(document, previous, this.dt, {
+      const next = evaluateBehaviourTree(document, previous, this.simulationDt(), {
         seed: this.seed,
         blackboard,
         host: {
@@ -1691,6 +1704,18 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+  private simulationDt(): number {
+    return this.dt * this.timeDilation;
+  }
+
+  private emitDebugColliders(): void {
+    if (!this.showCollision) return;
+    this.emit({
+      type: "debugColliders",
+      colliders: [...this.physicsSync.getBackend().listDebugColliders()],
+    });
+  }
+
   private consoleHost(): ConsoleCommandHost {
     const emitSetting = (key: string, value: string | number | boolean) => {
       this.emit({
@@ -1705,29 +1730,84 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
-      setRenderQuality: (level) => emitSetting("renderquality", level),
-      setShadowQuality: (level) => {
-        emitSetting("shadowquality", level);
-        this.emit({ type: "setShadowQuality", level: String(level) });
+      setRenderQuality: (level) => {
+        this.renderQuality = String(level);
+        this.emit({ type: "setRenderQuality", level: this.renderQuality });
       },
-      setResolutionScale: (scale) => emitSetting("resolutionscale", scale),
-      setFrameCap: (fps) => emitSetting("framecap", fps),
-      setVolume: (volume) => emitSetting("volume", volume),
+      getRenderQuality: () => this.renderQuality,
+      setShadowQuality: (level) => {
+        this.shadowQuality = String(level);
+        emitSetting("shadowquality", this.shadowQuality);
+        this.emit({ type: "setShadowQuality", level: this.shadowQuality });
+      },
+      getShadowQuality: () => this.shadowQuality,
+      setResolutionScale: (scale) => {
+        this.resolutionScale = Number(scale);
+        this.emit({ type: "setResolutionScale", scale: this.resolutionScale });
+      },
+      getResolutionScale: () => this.resolutionScale,
+      setFrameCap: (fps) => {
+        this.frameCap = Number(fps);
+        this.emit({ type: "setFrameCap", fps: this.frameCap });
+      },
+      getFrameCap: () => this.frameCap,
+      setVolume: (volume) => {
+        this.volume = Number(volume);
+        this.emit({ type: "setGlobalVolume", volume: this.volume });
+      },
+      getVolume: () => this.volume,
       quit: () => {
         this.stop();
       },
-      setShowFps: (enabled) => emitSetting("showfps", enabled),
-      setStat: (name, enabled) => emitSetting(`stat.${name}`, enabled),
-      setShowCollision: (enabled) => emitSetting("showcollision", enabled),
-      setShowBounds: (enabled) => emitSetting("showbounds", enabled),
-      setWireframe: (enabled) => emitSetting("wireframe", enabled),
+      setShowFps: (enabled) => {
+        this.emit({ type: "setShowFps", enabled: Boolean(enabled) });
+      },
+      setStat: (name, enabled) => {
+        this.emit({ type: "setShowFps", enabled: true });
+        this.emit({ type: "setStat", name, enabled: Boolean(enabled) });
+      },
+      setShowCollision: (enabled) => {
+        this.showCollision = Boolean(enabled);
+        this.emit({
+          type: "setShowCollision",
+          enabled: this.showCollision,
+        });
+        if (this.showCollision) this.emitDebugColliders();
+        else this.emit({ type: "debugColliders", colliders: [] });
+      },
+      setShowBounds: (enabled) => {
+        this.emit({ type: "setShowBounds", enabled: Boolean(enabled) });
+      },
+      setWireframe: (enabled) => {
+        this.emit({ type: "setWireframe", enabled: Boolean(enabled) });
+      },
+      setShowNav: (enabled) => {
+        this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
+      },
+      dumpActors: () => formatDumpActors(this.inspectWorld()),
+      inspectActor: (query) =>
+        formatInspectActor(this.inspectWorld(), query, null),
+      setFreeCam: (enabled) => {
+        this.emit({ type: "setFreeCam", enabled: Boolean(enabled) });
+      },
       pause: () => {
         this.pause();
+        this.emit({ type: "sessionPaused", paused: true });
+      },
+      resume: () => {
+        this.resume();
+        this.emit({ type: "sessionPaused", paused: false });
       },
       step: () => {
+        const wasPaused = this.paused;
+        this.resume();
         this.tick();
+        if (wasPaused) this.pause();
       },
-      setTimeDilation: (rate) => emitSetting("slomo", rate),
+      setTimeDilation: (rate) => {
+        this.timeDilation = Math.min(8, Math.max(0, Number(rate)));
+      },
+      getTimeDilation: () => this.timeDilation,
       dumpLog: () =>
         this.logs
           .entries()
@@ -1755,7 +1835,8 @@ class InProcessRuntime implements RuntimeDriver {
         !component.destroyed &&
         (component.classId === "MeshComponent" ||
           component.classId === "SpriteComponent" ||
-          component.classId === "TilemapComponent"),
+          component.classId === "TilemapComponent" ||
+          component.classId === "SkyboxComponent"),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
@@ -1777,11 +1858,22 @@ class InProcessRuntime implements RuntimeDriver {
             ),
           )
         : undefined;
+      const skyboxComp = renderables.find(
+        (component) => component.classId === "SkyboxComponent",
+      );
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
+        ...(skyboxComp
+          ? {
+              skybox: {
+                size: parseSkyboxSize(skyboxComp.getVariable("size")),
+                faces: parseSkyboxFaces(skyboxComp.getVariable("faces")),
+              },
+            }
+          : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
@@ -2134,6 +2226,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   tick(): void {
     if (!this.running || this.paused) return;
+    const simDt = this.simulationDt();
+    this.world.clock.dt = simDt;
     // Consume every event queued since the last tick. Gating on event.tick
     // dropped Play worker input: the host stamped with a wall-clock index
     // (performance.now()/16.67) while World.clock.tickIndex stayed small,
@@ -2178,6 +2272,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.frameId += 1;
     this.publishSnapshot();
+    this.emitDebugColliders();
     this.emit({
       type: "stats",
       frameId: this.frameId,
@@ -2316,7 +2411,7 @@ class InProcessRuntime implements RuntimeDriver {
     const remaining: Array<{ remaining: number; resolve: () => void }> = [];
     const due: Array<() => void> = [];
     for (const waiter of this.delayWaiters) {
-      waiter.remaining -= this.dt;
+      waiter.remaining -= this.simulationDt();
       if (waiter.remaining <= 0) due.push(waiter.resolve);
       else remaining.push(waiter);
     }
@@ -2538,7 +2633,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickMountedUserInterfaces(): void {
     const ctx: TickContext = {
-      dt: this.dt,
+      dt: this.simulationDt(),
       tickIndex: this.world.clock.tickIndex,
       world: this.world,
       isActionHeld: (action) => this.resolvedInput.actions[action]?.held ?? false,
@@ -2575,6 +2670,7 @@ function uiWidgetEventName(
 function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
+  if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "LightComponent") {
     const kind = component.getVariable("lightKind");
     return `light:${typeof kind === "string" ? kind : "point"}`;

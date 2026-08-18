@@ -287,7 +287,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera`) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear. Spec: [engineplan §2.5](../engineplan.md). |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera` + default skybox) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear; **SkyboxComponent** mesh (not IBL) + 3D default locked Skybox and daylight directional light. Spec: [engineplan §2.5](../engineplan.md). |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (searchable code picker); no JSON textarea |
@@ -321,17 +321,17 @@ Design notes: [physics.md](../architecture/physics.md).
 
 Design notes: [debugger.md](../architecture/debugger.md).
 
-### P8 follow-ups / open deferrals
+### P8 follow-ups
 
 P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`). Do **not** rebuild P8; residual HUD/trace/settings polish is later work.
 
 | Gap vs engineplan §9 | Reality | Owner |
 | --- | --- | --- |
-| Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | `p8-console-apply` |
-| No `resume`; console `step` no-ops while paused; overlay Pause/Resume unsynced | `RuntimeDriver.resume()` exists; overlay Step uses resume→tick→pause; console `step` calls `tick()` | `p8-console-session` |
-| No free cam / spectate without pausing | Possess Camera is a graph node; Play cameras are detached `UniversalCamera` | `p8-console-freecam` |
-| `showcollision` / `showbounds` / `wireframe` / `slomo` | Log only | `p8-console-slomo`, `p8-console-viz` |
-| User `BDebugCommand` can overwrite engine names | `registry.register` is last-write-wins | `p8-console-session` |
+| Core quality commands “mutate real engine settings” | Play applies `setGlobalVolume` / `setFrameCap` / `setRenderQuality` / `setResolutionScale` | `p8-console-apply` (done) |
+| No `resume`; console `step` no-ops while paused; overlay Pause/Resume unsynced | `resume` / `unpause`; console `step` matches overlay; `sessionPaused` updates chrome | `p8-console-session` (done) |
+| No free cam / spectate without pausing | `freecam` detached fly/pan; simulation keeps ticking | `p8-console-freecam` (done) |
+| `showcollision` / `showbounds` / `wireframe` / `slomo` | `slomo` scales tick `dt`; viz overlays + Stats HUD + `dumpactors` / `inspect` | `p8-console-slomo`, `p8-console-viz` (done) |
+| User `BDebugCommand` can overwrite engine names | `register` refuses builtins; edit-time `console.reserved_name` | `p8-console-session` (done) |
 | §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
 | Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
 | `PinListEditor` on Class / ScriptInterface | Done (Class Inspector function pins + ScriptInterface method Details; ExecuteJavaScript / OnCommandRun keep the `ParameterListEditor` wrapper) | — |

@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   identitySerializedTransform,
+  patchComponentProperties,
   type SerializedComponent,
   type SerializedGraph,
   type SerializedTransform,
@@ -227,7 +228,11 @@ export function PrefabEditingProvider({
           component.id === componentId
             ? {
                 ...component,
-                properties: { ...component.properties, [property]: value },
+                properties: patchComponentProperties(
+                  component.properties,
+                  property,
+                  value,
+                ),
               }
             : component,
         ),

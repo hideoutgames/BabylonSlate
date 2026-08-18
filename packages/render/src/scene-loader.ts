@@ -1,6 +1,11 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
-import { identitySerializedTransform } from "@babylonslate/core";
+import {
+  identitySerializedTransform,
+  parseSkyboxFaces,
+  parseSkyboxSize,
+  SKYBOX_FACE_KEYS,
+} from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
 import { syncAuthoredIllumination } from "./scene-illumination";
@@ -13,6 +18,7 @@ import {
 import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
+import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -134,6 +140,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "LightComponent",
   "CameraComponent",
   "AudioComponent",
+  "SkyboxComponent",
   "ParticleComponent",
 ]);
 
@@ -193,6 +200,11 @@ function componentVisualKind(component: SerializedComponent): string {
   if (component.classId === "LightComponent") return editorBillboardKind("light");
   if (component.classId === "CameraComponent") return editorBillboardKind("camera");
   if (component.classId === "AudioComponent") return editorBillboardKind("audio");
+  if (component.classId === "SkyboxComponent") {
+    const size = parseSkyboxSize(component.properties.size);
+    const faces = parseSkyboxFaces(component.properties.faces);
+    return `skybox:${size}:${SKYBOX_FACE_KEYS.map((key) => faces[key] ?? "").join(",")}`;
+  }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
   }
@@ -282,6 +294,10 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
     return editorBillboardKind("audio");
   }
+  const skyboxComponent = actor.components.find(
+    (component) => component.classId === "SkyboxComponent",
+  );
+  if (skyboxComponent) return componentVisualKind(skyboxComponent);
   if (
     actor.components.some((component) => component.classId === "ParticleComponent")
   ) {
@@ -314,6 +330,15 @@ export function createMeshForComponent(
   }
   if (component.classId === "AudioComponent") {
     return createEditorBillboard(scene, name, "audio");
+  }
+  if (component.classId === "SkyboxComponent") {
+    return createSkyboxMeshForFaces(
+      scene,
+      name,
+      component.properties.faces,
+      component.properties.size,
+      assets,
+    );
   }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
@@ -379,7 +404,7 @@ function createActorOriginHierarchy(
       component.transform ?? identitySerializedTransform(),
     );
     mesh.isVisible = actor.visible;
-    mesh.isPickable = !actor.locked;
+    mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
     meshes.set(component.id, mesh);
   }
   for (const component of visuals) {
@@ -410,11 +435,17 @@ export function createActorMesh(
   const tilemapComponent = actor.components.find(
     (component) => component.classId === "TilemapComponent",
   );
+  const skyboxComponent = actor.components.find(
+    (component) => component.classId === "SkyboxComponent",
+  );
   if (!meshComponent && spriteComponent) {
     return createSpriteComponentMesh(scene, name, spriteComponent, assets);
   }
   if (!meshComponent && !spriteComponent && tilemapComponent) {
     return createTilemapComponentMesh(scene, name, tilemapComponent, assets);
+  }
+  if (!meshComponent && !spriteComponent && !tilemapComponent && skyboxComponent) {
+    return createMeshForComponent(scene, name, actor, skyboxComponent, assets);
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
   if (assetGuid && assets?.modelBytes?.has(assetGuid)) {
@@ -468,7 +499,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   applySerializedTransform(mesh, actor.transform);
   const origin = isEditorActorOrigin(mesh);
   mesh.isVisible = origin ? false : actor.visible;
-  mesh.isPickable = !actor.locked;
+  mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
   if (!origin) return;
   for (const child of childMeshesOf(mesh)) {
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) continue;
@@ -477,7 +508,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     );
     if (afterPipe.includes(":")) continue;
     child.isVisible = actor.visible;
-    child.isPickable = !actor.locked;
+    child.isPickable = isSkyboxMesh(child) ? false : !actor.locked;
   }
 }
 

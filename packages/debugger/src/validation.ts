@@ -1,9 +1,9 @@
-import { DEBUG_COMMAND_NAMES } from "./commands";
+import { DEBUG_COMMAND_NAMES, isReservedConsoleCommandName } from "./commands";
 import { matchCommandName, tokenize } from "./parser";
 
 export type ConsoleCommandDiagnostic = {
-  severity: "warning";
-  code: "console.debug_tier";
+  severity: "warning" | "error";
+  code: "console.debug_tier" | "console.reserved_name";
   message: string;
   assetGuid: string;
   graphId: string;
@@ -37,6 +37,31 @@ export function warnDebugTierConsoleCommands(
         severity: "warning",
         code: "console.debug_tier",
         message: `ExecuteConsoleCommand references debug-tier command '${name}', which is stripped from non-debug exports`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: node.id,
+      });
+    }
+  }
+  return out;
+}
+
+/** Error when On Command Run uses a reserved engine command name. */
+export function warnReservedConsoleCommandNames(
+  graphs: readonly ConsoleCommandGraph[],
+  ctx: { assetGuid: string },
+): ConsoleCommandDiagnostic[] {
+  const out: ConsoleCommandDiagnostic[] = [];
+  for (const graph of graphs) {
+    for (const node of graph.nodes) {
+      if (node.typeId !== "flow.event.commandRun") continue;
+      const raw = node.properties.commandName;
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      if (!isReservedConsoleCommandName(raw)) continue;
+      out.push({
+        severity: "error",
+        code: "console.reserved_name",
+        message: `Command Name '${raw.trim()}' is reserved by the engine`,
         assetGuid: ctx.assetGuid,
         graphId: graph.id,
         nodeId: node.id,

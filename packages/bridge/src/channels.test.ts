@@ -120,6 +120,28 @@ describe("UserInterface command and control contracts", () => {
     expect(release.kind).toBe("pointerUp");
   });
 
+  it("assignMesh can carry a skybox payload", () => {
+    const command = {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "skybox",
+      skybox: {
+        size: 1000,
+        faces: {
+          px: "tex-right",
+          py: null,
+          pz: null,
+          nx: null,
+          ny: null,
+          nz: null,
+        },
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("assignMesh");
+    expect(command.skybox?.faces.px).toBe("tex-right");
+  });
+
   it("setInputMode is a session-scoped Play command", () => {
     const command = {
       type: "setInputMode",
@@ -153,6 +175,65 @@ describe("Play inspect contract", () => {
     } satisfies CommandMessage;
     expect(commandType(command)).toBe("inspectSnapshot");
     expect(command.snapshot.nodes[0]?.label).toBe("Hero");
+  });
+});
+
+describe("Play session commands", () => {
+  it("sessionPaused reports overlay pause chrome", () => {
+    const command = {
+      type: "sessionPaused",
+      paused: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("sessionPaused");
+    expect(command.paused).toBe(true);
+  });
+
+  it("setRenderQuality, setResolutionScale, and setFrameCap are CommandMessage variants", () => {
+    const quality = {
+      type: "setRenderQuality",
+      level: "low",
+    } satisfies CommandMessage;
+    const scale = {
+      type: "setResolutionScale",
+      scale: 1.5,
+    } satisfies CommandMessage;
+    const cap = { type: "setFrameCap", fps: 30 } satisfies CommandMessage;
+    expect(commandType(quality)).toBe("setRenderQuality");
+    expect(commandType(scale)).toBe("setResolutionScale");
+    expect(commandType(cap)).toBe("setFrameCap");
+  });
+
+  it("setFreeCam is a CommandMessage variant", () => {
+    const command = {
+      type: "setFreeCam",
+      enabled: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setFreeCam");
+    expect(command.enabled).toBe(true);
+  });
+
+  it("visualization console commands are CommandMessage variants", () => {
+    const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
+    const stat = {
+      type: "setStat",
+      name: "unit",
+      enabled: true,
+    } satisfies CommandMessage;
+    const colliders = {
+      type: "debugColliders",
+      colliders: [
+        {
+          id: "c1",
+          shape: "box",
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          halfExtents: { x: 1, y: 1, z: 1 },
+        },
+      ],
+    } satisfies CommandMessage;
+    expect(commandType(fps)).toBe("setShowFps");
+    expect(commandType(stat)).toBe("setStat");
+    expect(commandType(colliders)).toBe("debugColliders");
   });
 });
 

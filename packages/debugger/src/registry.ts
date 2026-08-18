@@ -1,4 +1,9 @@
-import { builtinCommands, DEBUG_COMMAND_NAMES } from "./commands";
+import {
+  builtinCommands,
+  createHelpCommand,
+  DEBUG_COMMAND_NAMES,
+  isReservedConsoleCommandName,
+} from "./commands";
 import { fail, matchCommandName, parseCommandArgs, tokenize } from "./parser";
 import type {
   CommandRegistry,
@@ -29,6 +34,12 @@ export function createCommandRegistry(
   const registry: CommandRegistry = {
     register(command) {
       const name = command.name.toLowerCase();
+      if (
+        isReservedConsoleCommandName(name) &&
+        (byName.has(name) || stripped.has(name))
+      ) {
+        return;
+      }
       byName.set(name, command);
       stripped.delete(name);
     },
@@ -71,6 +82,10 @@ export function createCommandRegistry(
       stripped.add(name);
     }
   }
+
+  registry.register(
+    createHelpCommand(() => [...byName.values()], stripped),
+  );
 
   return registry;
 };

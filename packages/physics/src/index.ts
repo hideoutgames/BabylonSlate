@@ -18,6 +18,14 @@ export type {
   CharacterControllerDesc,
   PhysicsBackendOptions,
 } from "./types";
+export type {
+  DebugColliderPrimitive,
+  DebugColliderShape,
+} from "./debug-colliders";
+export {
+  debugColliderFromDesc,
+  listDebugCollidersFromRecords,
+} from "./debug-colliders";
 export { SoftwarePhysicsBackend, createNullPhysicsBackend } from "./software-backend";
 export {
   createPhysicsBackend,
