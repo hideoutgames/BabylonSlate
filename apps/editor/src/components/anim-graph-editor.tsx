@@ -563,7 +563,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           diagnostics={graphDiagnostics}
           selectedNodeId={selectedId ?? undefined}
           focusedNodeId={focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
-          connectEndMode="disabled"
+          connectEndMode="zone-add-node"
           connectionMode="loose"
           normalizeConnection={(connection) => {
             const next = normalizeAnimConnection(connection);

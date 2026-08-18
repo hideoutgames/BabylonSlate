@@ -178,7 +178,11 @@ export function connectEventPointerId(event: Event | {
   return 1;
 }
 
-export type ConnectEndMode = "default" | "add-node" | "disabled";
+export type ConnectEndMode =
+  | "default"
+  | "add-node"
+  | "disabled"
+  | "zone-add-node";
 
 export type SecondaryCancelPointer = {
   connectionActive: boolean;
@@ -239,6 +243,11 @@ export function connectEndAction(
   if (mode === "add-node") {
     if (decision.pointerOverNode) return "none";
     return "add-node";
+  }
+  if (mode === "zone-add-node") {
+    if (decision.pointerOverNode) return "none";
+    if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
+    return "none";
   }
   if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
   if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";

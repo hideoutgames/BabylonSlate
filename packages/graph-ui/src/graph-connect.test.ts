@@ -634,6 +634,17 @@ describe("connectEndAction", () => {
     expect(connectEndAction(far, "disabled")).toBe("none");
     expect(connectEndAction(near, "disabled")).toBe("none");
   });
+
+  it("opens Add Node from a far drop in zone-add-node mode and never breaks wires", () => {
+    expect(connectEndAction(far, "zone-add-node")).toBe("add-node");
+    expect(connectEndAction(near, "zone-add-node")).toBe("none");
+    expect(
+      connectEndAction({ ...far, pointerOverNode: true }, "zone-add-node"),
+    ).toBe("none");
+    expect(
+      connectEndAction({ ...far, hasTargetHandle: true }, "zone-add-node"),
+    ).toBe("none");
+  });
 });
 
 describe("connectEventPointerId", () => {

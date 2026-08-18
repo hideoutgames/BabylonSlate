@@ -165,7 +165,8 @@ export interface GraphEditorProps {
    * Connect-end policy. Default opens Add Node on a far empty-canvas drop
    * and keeps the 96px near-pin wire-break. Behaviour trees use `add-node`
    * so a short drag off a handle opens Add Node and never breaks structural
-   * edges.
+   * edges. Animation Graph State Machine uses `zone-add-node` (far release
+   * opens Add State; near tap/release cancels without breaking transitions).
    */
   connectEndMode?: ConnectEndMode;
   /** Double-tap empty pane opens Add Node. Default true. */
@@ -1407,6 +1408,7 @@ function GraphEditorCanvas({
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
         data-testid="graph-editor"
+        data-connect-end-mode={connectEndMode}
         data-focused-node-id={focusedNodeId || undefined}
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
