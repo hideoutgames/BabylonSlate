@@ -589,7 +589,8 @@ describe("variableDefaultPropertyRows", () => {
     ]);
   });
 
-  it("omits a Default row for object variables", () => {
+  it("omits a Default row for object and class variables", () => {
     expect(variableDefaultPropertyRows("object", null, vi.fn())).toEqual([]);
+    expect(variableDefaultPropertyRows("class", "Actor", vi.fn())).toEqual([]);
   });
 });

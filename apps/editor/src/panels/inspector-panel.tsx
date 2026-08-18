@@ -138,9 +138,7 @@ function ClassMemberDetails({
   onChange: (next: SerializedGraph) => void;
 }) {
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
-  const [classPickKind, setClassPickKind] = useState<"type" | "default" | null>(
-    null,
-  );
+  const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
@@ -152,11 +150,8 @@ function ClassMemberDetails({
     const isClass = typeId === "class";
     const isStruct = typeId === "struct";
     const isEnum = typeId === "enum";
-    const typeClassId = member.typeClassId?.trim() || (isObject || isClass ? "BObject" : "");
-    const defaultClassId =
-      typeof member.defaultValue === "string" && member.defaultValue.trim()
-        ? member.defaultValue.trim()
-        : typeClassId;
+    const typeClassId =
+      member.typeClassId?.trim() || (isObject || isClass ? "BObject" : "");
     const typeAsset = typeAssets.find((asset) => asset.guid === typeClassId);
     const typeAssetIdentity = assetRowIdentity(
       typeAsset
@@ -165,7 +160,6 @@ function ClassMemberDetails({
           ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
           : undefined,
     );
-    const needsTypeParam = isObject || isClass || isStruct || isEnum;
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -224,7 +218,7 @@ function ClassMemberDetails({
               variant="outline"
               className="h-auto w-full justify-start"
               data-testid="inspector-member-class-type"
-              onClick={() => setClassPickKind("type")}
+              onClick={() => setClassPickerOpen(true)}
             >
               {selectedPickerIdentity(
                 classRowIdentity(
@@ -243,7 +237,7 @@ function ClassMemberDetails({
               type="button"
               variant="outline"
               className="h-auto w-full justify-start"
-              disabled={!needsTypeParam || isObject || isClass}
+              disabled={!isStruct && !isEnum}
               data-testid="inspector-member-type-asset"
               onClick={() => {
                 if (isStruct || isEnum) setTypeAssetPickerOpen(true);
@@ -256,43 +250,18 @@ function ClassMemberDetails({
             </Button>
           </div>
         )}
-        {isClass ? (
-          <div className="flex flex-col gap-1">
-            <div className="text-sm font-medium">Default</div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto w-full justify-start"
-              data-testid="inspector-member-class-default"
-              onClick={() => setClassPickKind("default")}
-            >
-              {selectedPickerIdentity(
-                classRowIdentity(
-                  classEntries.find((entry) => entry.id === defaultClassId),
-                  defaultClassId,
-                ),
-              )}
-            </Button>
-          </div>
-        ) : null}
         <ClassPicker
-          open={classPickKind !== null}
-          onOpenChange={(open) => {
-            if (!open) setClassPickKind(null);
-          }}
+          open={classPickerOpen}
+          onOpenChange={setClassPickerOpen}
           classes={classEntries}
           allowNone={false}
-          title={classPickKind === "default" ? "Pick Default Class" : "Pick Class Type"}
+          title="Pick Class Type"
           onPick={(classId) => {
             if (!classId) return;
-            if (classPickKind === "type") {
-              const patch: Partial<GraphClassMember> = { typeClassId: classId };
-              if (isClass) patch.defaultValue = classId;
-              commit(patch);
-            } else if (classPickKind === "default") {
-              commit({ defaultValue: classId });
-            }
-            setClassPickKind(null);
+            const patch: Partial<GraphClassMember> = { typeClassId: classId };
+            if (isClass) patch.defaultValue = classId;
+            commit(patch);
+            setClassPickerOpen(false);
           }}
           data-testid="inspector-member-class-picker"
         />

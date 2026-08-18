@@ -62,4 +62,35 @@ describe("useInspectWorldPoll", () => {
     await vi.advanceTimersByTimeAsync(400);
     expect(inspectWorld.mock.calls.length).toBe(callsAfterClose);
   });
+
+  it("does not start another inspectWorld until the previous pull finishes", async () => {
+    vi.useFakeTimers();
+    let resolvePull: ((snapshot: DebugInspectSnapshot) => void) | undefined;
+    const inspectWorld = vi.fn(
+      () =>
+        new Promise<DebugInspectSnapshot>((resolve) => {
+          resolvePull = resolve;
+        }),
+    );
+
+    render(<Probe open inspectWorld={inspectWorld} />);
+    expect(inspectWorld).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(800);
+    expect(inspectWorld).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePull?.({ tickIndex: 1, nodes: [] });
+      await Promise.resolve();
+    });
+    expect(Number(screen.getByTestId("inspect-tick").getAttribute("data-tick"))).toBe(
+      1,
+    );
+
+    await vi.advanceTimersByTimeAsync(200);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(inspectWorld).toHaveBeenCalledTimes(2);
+  });
 });

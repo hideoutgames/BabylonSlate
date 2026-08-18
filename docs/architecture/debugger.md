@@ -88,8 +88,8 @@ Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **C
 
 | Group | Item | Default | Notes |
 | --- | --- | --- | --- |
-| Play Overlay | Stats, Console, Inspector | on | Hides that overlay control when off. Enabled while playing so chrome can be hidden mid-session |
-| Session | Pause On Play | off | Calls `setPaused(true)` when the overlay session starts |
+| Play Overlay | Stats, Console, Inspector | on | Hides that overlay control when off. Checkboxes stay enabled while playing, but the Play overlay is `z-50` full-screen so the toolbar Debug menu is not reachable mid-session — toggle before Play, or hide via overlay chrome. Unchecking Inspector also closes the dialog (it does not reopen when checked again). |
+| Session | Pause On Play | off | After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
 | Session | Preview Build | off | Disabled while playing or preparing |
 
 `showcollision` / `showbounds` / `wireframe` still only log settings — they are not Debug-menu items until a real overlay exists.
@@ -106,7 +106,7 @@ Output Log, keyed Print, and the Preview session report are unchanged.
 
 Headless snapshot `createDebugInspectSnapshot(world)` in `@babylonslate/object-model` (separate type from harness `createWorldSnapshot` goldens). Nodes: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is the `name` variable, else `classId`. Values are JSON-safe: primitives stay; `BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`.
 
-Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }` command (same waiter pattern as `console` / `consoleResult`). Overlay Play polls **only while the inspector dialog is open**, ~5 Hz. In-process Play calls `runtime.inspectWorld()` directly. The inspector is read-only this pass (no `setVariable` from the UI).
+Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }` command (same waiter pattern as `console` / `consoleResult`; worker `applyInspectControl`). Overlay Play polls **only while the inspector dialog is open**, ~5 Hz, and skips a tick when a previous inspect RPC is still in flight. In-process Play calls `runtime.inspectWorld()` directly. The inspector is read-only this pass (no `setVariable` from the UI). Identity labels use Title Case acronyms (**GUID**).
 
 ## Trace recorder
 
