@@ -107,40 +107,46 @@ test.describe("P4 Play overlay and session report", () => {
     const samples: Array<{ meshes: number; textures: number }> = [];
     for (let cycle = 0; cycle < 3; cycle += 1) {
       await clickPlayAndWaitForOverlay(page);
+      let previous = { meshes: -2, textures: -2 };
       await expect
         .poll(
-          () =>
-            page.evaluate(() => {
+          async () => {
+            const current = await page.evaluate(() => {
               const host = globalThis as unknown as {
                 __babylonslatePlayTest?: {
                   visuals: () => { slotId: number }[];
+                  liveObjectCounts: () => {
+                    meshes: number;
+                    textures: number;
+                  } | null;
                 };
               };
-              return host.__babylonslatePlayTest?.visuals().length ?? 0;
-            }),
-          { timeout: 15_000 },
+              const visuals = host.__babylonslatePlayTest?.visuals().length ?? 0;
+              const counts = host.__babylonslatePlayTest?.liveObjectCounts() ?? {
+                meshes: -1,
+                textures: -1,
+              };
+              return { visuals, ...counts };
+            });
+            const stable =
+              current.visuals >= 4 &&
+              current.meshes === previous.meshes &&
+              current.textures === previous.textures &&
+              current.meshes > 0;
+            previous = { meshes: current.meshes, textures: current.textures };
+            return stable;
+          },
+          { timeout: 15_000, intervals: [200, 200, 250] },
         )
-        .toBeGreaterThanOrEqual(4);
-      samples.push(
-        (await page.evaluate(() => {
-          const host = globalThis as unknown as {
-            __babylonslatePlayTest?: {
-              liveObjectCounts: () => {
-                meshes: number;
-                textures: number;
-              } | null;
-            };
-          };
-          return host.__babylonslatePlayTest?.liveObjectCounts() ?? {
-            meshes: -1,
-            textures: -1,
-          };
-        }))!,
-      );
+        .toBe(true);
+      samples.push({ ...previous });
       await page.getByTestId("play-overlay-close").click();
       await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     }
-    expect(new Set(samples.map((sample) => sample.textures)).size).toBe(1);
+    expect(
+      new Set(samples.map((sample) => sample.textures)).size,
+      `texture samples ${JSON.stringify(samples)}`,
+    ).toBe(1);
     const meshCounts = samples.map((sample) => sample.meshes);
     expect(Math.max(...meshCounts) - Math.min(...meshCounts)).toBeLessThanOrEqual(
       1,
