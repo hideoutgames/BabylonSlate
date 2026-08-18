@@ -449,10 +449,10 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("anim-state-node-state-1")).toBeVisible();
     const idleOut = page
       .getByTestId("anim-state-node-idle")
-      .locator(".react-flow__handle.source");
+      .locator('[data-handleid="right-out"]');
     const nextIn = page
       .getByTestId("anim-state-node-state-1")
-      .locator(".react-flow__handle.target");
+      .locator('[data-handleid="left-in"]');
     await idleOut.dragTo(nextIn);
     const badge = page.locator('[data-testid^="anim-transition-badge-"]');
     await expect(badge).toBeVisible();
