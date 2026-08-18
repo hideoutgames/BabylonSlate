@@ -94,6 +94,7 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     modelBytes: game.modelBytes,
+    modelClipAnimationGuids: content.modelClipAnimationGuids,
     audioBytes: game.audioBytes,
     audioLibrary: content.audioLibrary,
     particleLibrary: content.particleLibrary,

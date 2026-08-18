@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   animationAssetGuids,
+  modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   remapAnimationPayloadGuids,
 } from "./animation-payload";
@@ -62,5 +63,29 @@ describe("normalizeAnimationPayload", () => {
   it("leaves non-Animation payloads alone", () => {
     const payload = { clipNames: ["Idle"] };
     expect(remapAnimationPayloadGuids("Model", payload, new Map())).toBe(payload);
+  });
+});
+
+describe("modelClipAnimationGuidsFromAnimations", () => {
+  it("maps native clip names to Animation guids and skips retargeted rows", () => {
+    expect(
+      modelClipAnimationGuidsFromAnimations([
+        {
+          guid: "idle",
+          payload: normalizeAnimationPayload({
+            clipName: "Idle",
+            modelGuid: "hero-model",
+          }),
+        },
+        {
+          guid: "retargeted",
+          payload: normalizeAnimationPayload({
+            clipName: "Idle",
+            modelGuid: "hero-model",
+            sourceAnimationGuid: "mixamo-idle",
+          }),
+        },
+      ]),
+    ).toEqual(new Map([["hero-model", new Map([["Idle", "idle"]])]]));
   });
 });

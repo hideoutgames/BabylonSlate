@@ -68,3 +68,23 @@ export function animationAssetGuids(payload: unknown): string[] {
   if (animation.sourceAnimationGuid) guids.add(animation.sourceAnimationGuid);
   return [...guids].sort();
 }
+
+/** Native (non-retargeted) clipName → Animation guid, keyed by owning Model. */
+export function modelClipAnimationGuidsFromAnimations(
+  animations: ReadonlyArray<{ guid: string; payload: AnimationPayload }>,
+): Map<string, Map<string, string>> {
+  const byModel = new Map<string, Map<string, string>>();
+  for (const animation of animations) {
+    if (animation.payload.sourceAnimationGuid) continue;
+    const modelGuid = animation.payload.modelGuid.trim();
+    const clipName = animation.payload.clipName.trim();
+    if (!modelGuid || !clipName) continue;
+    let clips = byModel.get(modelGuid);
+    if (!clips) {
+      clips = new Map();
+      byModel.set(modelGuid, clips);
+    }
+    clips.set(clipName, animation.guid);
+  }
+  return byModel;
+}

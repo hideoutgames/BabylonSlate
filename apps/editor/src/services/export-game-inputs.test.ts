@@ -322,4 +322,41 @@ describe("loadExportDocuments", () => {
       new Uint8Array([9, 8]),
     ]);
   });
+
+  it("serializes Animation payloads as JSON for packed Play", async () => {
+    const payload = {
+      clipName: "Idle",
+      modelGuid: "hero-model",
+      skeletonGuid: "hero-skel",
+      durationMs: 1800,
+    };
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Hero_Idle.animation.babasset",
+          header: {
+            guid: "hero-idle-anim",
+            type: "Animation",
+            name: "Hero_Idle",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: ["hero-model", "hero-skel"],
+            payload,
+            chunks: [],
+          },
+        },
+      ],
+      loadDocument: async (kind) => {
+        expect(kind).toBe("animation");
+        return payload;
+      },
+      readAssetChunk: async () => null,
+    });
+    expect(loaded.payloadByGuid("hero-idle-anim")).toEqual(payload);
+    expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("hero-idle-anim")!))).toEqual(
+      payload,
+    );
+  });
 });

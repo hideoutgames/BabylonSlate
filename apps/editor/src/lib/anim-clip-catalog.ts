@@ -1,5 +1,7 @@
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import {
+  modelClipAnimationGuidsFromAnimations,
+  normalizeAnimationPayload,
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
 } from "@babylonslate/assets";
@@ -86,20 +88,12 @@ export function animClipCatalogFromAssets(
 export function modelClipAnimationGuidsFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): Map<string, Map<string, string>> {
-  const byModel = new Map<string, Map<string, string>>();
-  for (const asset of assets) {
-    if (asset.header.type !== "Animation") continue;
-    const payload = asRecord(asset.header.payload);
-    if (nullableGuid(payload.sourceAnimationGuid)) continue;
-    const modelGuid = trimmed(payload.modelGuid);
-    const clipName = trimmed(payload.clipName);
-    if (!modelGuid || !clipName) continue;
-    let clips = byModel.get(modelGuid);
-    if (!clips) {
-      clips = new Map();
-      byModel.set(modelGuid, clips);
-    }
-    clips.set(clipName, asset.header.guid);
-  }
-  return byModel;
+  return modelClipAnimationGuidsFromAnimations(
+    assets
+      .filter((asset) => asset.header.type === "Animation")
+      .map((asset) => ({
+        guid: asset.header.guid,
+        payload: normalizeAnimationPayload(asset.header.payload),
+      })),
+  );
 }

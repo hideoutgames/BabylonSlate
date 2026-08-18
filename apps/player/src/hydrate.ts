@@ -1,5 +1,12 @@
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
+  parseAnimGraphDocument,
+  resolveAnimGraphClips,
+  type AnimClipCatalogEntry,
+} from "@babylonslate/anim-graph";
+import {
+  hydrateSpriteAnimationPixelSizes,
+  modelClipAnimationGuidsFromAnimations,
+  normalizeAnimationPayload,
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
@@ -9,7 +16,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
-  hydrateSpriteAnimationPixelSizes,
+  type AnimationPayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
@@ -72,6 +79,7 @@ export type PackedGameContent = {
   audioLibrary: PackedAudioLibrary;
   particleLibrary: PackedParticleLibrary;
   userInterfaces: Map<string, UserInterfaceDocument>;
+  modelClipAnimationGuids: Map<string, Map<string, string>>;
 };
 
 function jsonFromBytes(bytes: Uint8Array): unknown | null {
@@ -122,6 +130,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const attenuations = new Map<string, SoundAttenuationPayload>();
   const emitters = new Map<string, ParticleEmitterPayload>();
   const systems = new Map<string, ParticleSystemPayload>();
+  const animationPayloads = new Map<string, AnimationPayload>();
+  const animationNames = new Map<string, string>();
 
   for (const entry of game.manifest.assets ?? []) {
     const bytes = game.payloads.get(entry.guid);
@@ -199,6 +209,11 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     }
     if (entry.type === "ParticleSystem" && parsed) {
       systems.set(entry.guid, normalizeParticleSystemPayload(parsed));
+      continue;
+    }
+    if (entry.type === "Animation" && parsed) {
+      animationPayloads.set(entry.guid, normalizeAnimationPayload(parsed));
+      if (entry.name?.trim()) animationNames.set(entry.guid, entry.name.trim());
     }
   }
 
@@ -218,12 +233,32 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     game.textureBytes,
   );
 
+  const clipCatalog: AnimClipCatalogEntry[] = [...animationPayloads.entries()].map(
+    ([guid, payload]) => ({
+      guid,
+      type: "Animation",
+      name: animationNames.get(guid) ?? payload.clipName,
+      clipName: payload.clipName,
+      ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
+      ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
+      ...(payload.modelGuid ? { modelGuid: payload.modelGuid } : {}),
+    }),
+  );
+  const resolvedAnimGraphs = animGraphs.map((entry) => {
+    const document = parseAnimGraphDocument(entry.document);
+    if (!document) return entry;
+    return {
+      guid: entry.guid,
+      document: resolveAnimGraphClips(document, clipCatalog),
+    };
+  });
+
   return {
     spritePayloads,
     spriteAnimationPayloads: sizedSpriteAnimations,
     tilemapPayloads,
     tilesetPayloads,
-    animGraphs,
+    animGraphs: resolvedAnimGraphs,
     behaviourTrees,
     blackboards,
     navmeshBytes,
@@ -247,6 +282,9 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       systems,
     },
     userInterfaces: new Map(game.userInterfaces ?? []),
+    modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(
+      [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
+    ),
   };
 }
 

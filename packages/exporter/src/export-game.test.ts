@@ -644,6 +644,49 @@ describe("exportGame", () => {
     ).some((script) => script.classId === "UserInterface:hud-1")).toBe(true);
   });
 
+  it("records Animation catalog payloads as JSON", async () => {
+    const payload = {
+      clipName: "Idle",
+      modelGuid: "hero-model",
+      skeletonGuid: "hero-skel",
+      durationMs: 1800,
+    };
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode('{"name":"Main"}'),
+        },
+        {
+          guid: "hero-idle-anim",
+          type: "Animation",
+          sceneGuid: "scene-1",
+          name: "Hero_Idle",
+          bytes: new TextEncoder().encode(JSON.stringify(payload)),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.value.manifest.assets.find((entry) => entry.guid === "hero-idle-anim"),
+    ).toEqual(
+      expect.objectContaining({
+        guid: "hero-idle-anim",
+        type: "Animation",
+        encoding: "json",
+        name: "Hero_Idle",
+      }),
+    );
+  });
+
   it("records Font names on loose-mode index entries", async () => {
     const result = await exportGame({
       mode: "loose",
