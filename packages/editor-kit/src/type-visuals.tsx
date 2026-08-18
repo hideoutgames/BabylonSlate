@@ -216,7 +216,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   MaterialFunction: "material",
   Model: "model",
   Mesh: "model",
-  Audio: "audio",
+  Audio: "class",
   AudioMixer: "scene",
   AudioChannel: "struct",
   SoundAttenuation: "class",
