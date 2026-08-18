@@ -64,11 +64,54 @@ describe("parseGlbForBrowse", () => {
     const texture = results.find((r) => r.type === "Texture")!;
     expect(texture.chunks.some((c) => c.kind === "pixels")).toBe(true);
     const model = results.find((r) => r.type === "Model")!;
-    expect(model.payload.textureCount).toBe(1);
-    expect(model.payload.materialCount).toBe(1);
+    expect(model.payload.textureCount).toBeUndefined();
+    expect(model.payload.materialCount).toBeUndefined();
+    expect(model.payload.animationCount).toBeUndefined();
     expect(model.payload.clipNames).toEqual(["FixtureClip"]);
+    const material = results.find((r) => r.type === "Material")!;
+    expect(model.payload.materialSlots).toEqual([
+      {
+        index: 0,
+        name: "FixtureMat",
+        materialGuid: material.guid,
+      },
+    ]);
+    expect(material.dependencies).toEqual([texture.guid]);
+    const sample = (material.payload.nodes as Array<{ type?: string }>).find(
+      (node) => node.type === "texture.sample",
+    );
+    expect(sample).toBeDefined();
     const animation = results.find((r) => r.type === "Animation")!;
     expect(animation.payload).toEqual({ clipName: "FixtureClip" });
+  });
+
+  it("does not invent an Animation dependent when the glTF has no clips", async () => {
+    const dataUri =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const results = await importModel(
+      new TextEncoder().encode(
+        JSON.stringify({
+          asset: { version: "2.0" },
+          images: [{ name: "Embedded", uri: dataUri }],
+          textures: [{ source: 0 }],
+          materials: [
+            {
+              name: "Mat",
+              pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+            },
+          ],
+          animations: [],
+        }),
+      ),
+      { fileName: "statue.gltf", existingGuids: new Set() },
+    );
+    expect(results.map((r) => r.type).sort()).toEqual([
+      "Material",
+      "Model",
+      "Texture",
+    ]);
+    const model = results.find((r) => r.type === "Model")!;
+    expect(model.payload.clipNames).toEqual([]);
   });
 
   it("falls back to stub dependents for OBJ", async () => {
@@ -77,10 +120,15 @@ describe("parseGlbForBrowse", () => {
       existingGuids: new Set(),
     });
     expect(results.map((r) => r.type).sort()).toEqual([
-      "Animation",
       "Material",
       "Model",
       "Texture",
+    ]);
+    const model = results.find((r) => r.type === "Model")!;
+    expect(model.payload.clipNames).toEqual([]);
+    const material = results.find((r) => r.type === "Material")!;
+    expect(model.payload.materialSlots).toEqual([
+      { index: 0, name: "Material", materialGuid: material.guid },
     ]);
   });
 });

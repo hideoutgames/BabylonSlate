@@ -37,11 +37,10 @@ describe("importers", () => {
     expect(types).toContain("Model");
     expect(types).toContain("Material");
     expect(types).toContain("Texture");
-    expect(types).toContain("Animation");
+    expect(types).not.toContain("Animation");
     const model = results.find((result) => result.type === "Model")!;
     expect(model.dependencies.length).toBeGreaterThan(0);
-    const animation = results.find((result) => result.type === "Animation")!;
-    expect(animation.payload).toEqual({ clipName: "Animation" });
+    expect(model.payload.clipNames).toEqual([]);
   });
 
   it("imports audio", async () => {

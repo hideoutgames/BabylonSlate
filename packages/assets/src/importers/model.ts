@@ -1,6 +1,7 @@
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { newAssetGuid } from "../guid";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
+import { normalizeModelPayload } from "../model-payload";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import {
@@ -157,10 +158,7 @@ function importFromBrowse(
   }
 
   const animationGuids: string[] = [];
-  const animations =
-    browse.animations.length > 0
-      ? browse.animations
-      : [{ name: "Animation" }];
+  const animations = browse.animations;
   for (const animation of animations) {
     const guid = newAssetGuid();
     animationGuids.push(guid);
@@ -176,6 +174,11 @@ function importFromBrowse(
     });
   }
 
+  const slotNames =
+    browse.materials.length > 0
+      ? browse.materials.map((material) => material.name)
+      : materialGuids.map(() => "Material");
+
   const modelGuid = newAssetGuid();
   results.unshift({
     type: "Model",
@@ -184,17 +187,14 @@ function importFromBrowse(
     version: 1,
     dependencies: [...materialGuids, ...animationGuids],
     parentClass: null,
-    payload: {
-      materialCount: materialGuids.length,
-      textureCount: imageGuids.length,
-      animationCount: animationGuids.length,
+    payload: normalizeModelPayload({
       clipNames: animations.map((animation) => animation.name),
-      // Ordered slots so a MeshComponent can override one material per slot.
       materialSlots: materialGuids.map((guid, index) => ({
         index,
+        name: slotNames[index],
         materialGuid: guid,
       })),
-    },
+    }),
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
   });
 
@@ -208,7 +208,6 @@ function importStubDependents(
 ): ImportResult[] {
   const textureGuid = newAssetGuid();
   const materialGuid = newAssetGuid();
-  const animationGuid = newAssetGuid();
   const modelGuid = newAssetGuid();
 
   return [
@@ -217,9 +216,14 @@ function importStubDependents(
       name,
       guid: modelGuid,
       version: 1,
-      dependencies: [materialGuid, animationGuid],
+      dependencies: [materialGuid],
       parentClass: null,
-      payload: { clipNames: ["Animation"] },
+      payload: normalizeModelPayload({
+        clipNames: [],
+        materialSlots: [
+          { index: 0, name: "Material", materialGuid },
+        ],
+      }),
       chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
     },
     {
@@ -240,16 +244,6 @@ function importStubDependents(
       dependencies: [],
       parentClass: null,
       payload: { compressionState: "pending", usage: "albedo" },
-      chunks: [],
-    },
-    {
-      type: "Animation",
-      name: `${name}_Animation`,
-      guid: animationGuid,
-      version: 1,
-      dependencies: [],
-      parentClass: null,
-      payload: { clipName: "Animation" },
       chunks: [],
     },
   ];
