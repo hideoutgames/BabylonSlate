@@ -223,6 +223,14 @@ function useMaterialFunctionDocument(): {
   return { documentId, document, commit };
 }
 
+function useTextureExists(): (guid: string) => boolean {
+  const { assetRegistry } = useDocuments();
+  return useCallback(
+    (guid: string) => assetRegistry?.getByGuid(guid)?.header.type === "Texture",
+    [assetRegistry],
+  );
+}
+
 export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   void _props;
   const { document, documentId, commit } = useMaterialDocument();
@@ -230,18 +238,20 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   const functions = editing.functions;
   const { sessionViewport, onSessionViewportChange } =
     useGraphSessionViewport(documentId);
+  const textureExists = useTextureExists();
 
   const diagnostics = useMemo(
     () =>
       validateMaterialDocument(document, {
         functions,
+        textureExists,
         warnPostProcessCost: true,
       }).map((row) => ({
         nodeId: row.nodeId,
         severity: row.severity,
         message: row.message,
       })),
-    [document, functions],
+    [document, functions, textureExists],
   );
 
   const initialGraph = useMemo(
@@ -957,6 +967,7 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments } = useDocuments();
   const editing = useMaterialEditing();
+  const textureExists = useTextureExists();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const isFunction = doc?.ref.kind === "material-function";
 
@@ -965,14 +976,15 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
     if (isFunction) {
       return validateMaterialFunctionDocument(
         normalizeMaterialFunctionDocument(payload),
-        { functions: editing.functions },
+        { functions: editing.functions, textureExists },
       );
     }
     return validateMaterialDocument(normalizeMaterialDocument(payload), {
       functions: editing.functions,
+      textureExists,
       warnPostProcessCost: true,
     });
-  }, [doc?.content, editing.functions, isFunction]);
+  }, [doc?.content, editing.functions, isFunction, textureExists]);
 
   const rows = [...diagnostics, ...editing.compileDiagnostics];
 

@@ -17,7 +17,16 @@ describe("ENGINE_PLACE_ACTORS", () => {
   it("groups shapes, lights, camera, empty, and navigation", () => {
     const categories = new Set(ENGINE_PLACE_ACTORS.map((item) => item.category));
     expect(categories).toEqual(
-      new Set(["Shapes", "Lights", "Camera", "Empty", "Navigation", "Audio", "Particles"]),
+      new Set([
+        "Shapes",
+        "Lights",
+        "Camera",
+        "Environment",
+        "Empty",
+        "Navigation",
+        "Audio",
+        "Particles",
+      ]),
     );
     expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
       true,
@@ -94,6 +103,17 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.classId).toBe("LightComponent");
     expect(actor.components[0]?.properties.lightKind).toBe("point");
     expect(actor.components[0]?.properties.range).toBe(10);
+  });
+
+  it("spawns a locked Skybox actor with a SkyboxComponent", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "skybox")!;
+    expect(item.category).toBe("Environment");
+    expect(visualForPlaceActor(item).iconKey).toBe("SkyboxComponent");
+    const actor = spawnPlacedActor(createDefaultScene(), item, "actor-sky", ORIGIN);
+    expect(actor.name).toBe("Skybox");
+    expect(actor.locked).toBe(true);
+    expect(actor.components[0]?.classId).toBe("SkyboxComponent");
+    expect(actor.components[0]?.properties.size).toBe(1000);
   });
 
   it("spawns a NavMesh actor with Recast settings", () => {

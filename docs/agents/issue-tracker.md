@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Context-sensitive Add Node filtered compatible nodes but did not prefer matching Make/Break/Switch/Equal rows | Resolved |
+| 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Make/Break and Switch hydrate kept stale edges after a field or member rename (`ref.missing_pin`) | Resolved |
+| 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Standards | Structure field and engine Transform/Rotator/Color pin displays were camelCase; enum Select options used raw member names | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Inspector identity labeled `Guid` instead of Title Case `GUID` | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Console `DialogHeader` used `space-y-0`; repo spacing is `flex` + `gap-*` | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Package API docs omitted `createDebugInspectSnapshot`; bridge Channels omitted `inspect` / `inspectSnapshot` (and `console` / `consoleResult`) | Resolved |
@@ -287,7 +290,7 @@ Design notes: [scene-editing.md](../architecture/scene-editing.md), [input.md](.
 | --- | --- | --- |
 | Actor Prefab tab → class document persistence | Done | `SerializedGraph.components` + `graph.setComponents`; Place Actors copies prefabs from the open tab or the disk class graph |
 | Non-mesh component visualization (sprite quads, light/camera gizmos) | Done (foundation wave) | Sprite/tilemap quads bind `ResourceCache` textures; `LightComponent` / `CameraComponent` create authored lights/cameras (editor keeps the orbit camera); light/camera/audio actors use editor billboard icons; selected camera frustum + 1 Hz RTT preview; selected light dashed range/cone/arrow |
-| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera`) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear. Spec: [engineplan §2.5](../engineplan.md). |
+| Lighting and cameras (direction, Play color/intensity, `shadowquality` → one ShadowGenerator, game camera) | Done (`p-lighting-camera` + default skybox) | Incremental `authoredLight`/`authoredCamera`; direction from actor rotation × `(0,0,1)`; Play color/intensity/range/cone; detached `UniversalCamera`; named Default Camera (`SceneComponentPicker`); Possess Camera; one `ShadowGenerator` from `shadowquality` (`off`/`512`/`1024`/`2048`); fog/IBL; `environmentColor` clear; **SkyboxComponent** mesh (not IBL) + 3D default locked Skybox and daylight directional light. Spec: [engineplan §2.5](../engineplan.md). |
 | Place Actors drag-to-viewport / raycast drop | later polish | Outliner **+** click-to-spawn shipped; drag from catalog is out of scope |
 | Gamepad rumble (`setGamepadRumble`) | P9 / input polish | Runtime logs only; no `vibrationActuator` yet |
 | Structured Input mappings editor (vs raw JSON) | Done | Project Settings Input is `InputMappingEditor` (searchable code picker); no JSON textarea |

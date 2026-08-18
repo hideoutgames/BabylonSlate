@@ -24,6 +24,8 @@ import type {
 } from "@babylonslate/bridge";
 import {
   isEditorOnlyAsset,
+  parseSkyboxFaces,
+  skyboxFaceGuids,
   userInterfaceClassId,
   userInterfaceClassMetadata,
   type SerializedGraph,
@@ -715,6 +717,27 @@ export function modelAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   return componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]);
+}
+
+/** Texture guids on SkyboxComponent faces. Engine default faces are not assets. */
+export function skyboxFaceGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const actor of scene?.actors ?? []) {
+    for (const component of actor.components) {
+      if (component.classId !== "SkyboxComponent") continue;
+      for (const guid of skyboxFaceGuids(
+        parseSkyboxFaces(component.properties.faces),
+      )) {
+        if (seen.has(guid)) continue;
+        seen.add(guid);
+        found.push(guid);
+      }
+    }
+  }
+  return found;
 }
 
 /** Scene `navmesh` extra chunk for Play import. Never generates. */

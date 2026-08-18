@@ -24,6 +24,7 @@ import {
 } from "../lib/prefab-preview";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
+import { skyboxFaceGuidsFromScene } from "../lib/play-content";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -163,7 +164,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
-          materials.textureGuids,
+          [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
         const modelBytes = await collectPlayModelBytes(scene);
         if (cancelled || engineRef.current !== handle) return;

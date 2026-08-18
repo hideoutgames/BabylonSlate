@@ -50,6 +50,7 @@ import {
   removePlayHudInstance,
   resolvePlayHudDocuments,
   spriteAssetGuidsFromScene,
+  skyboxFaceGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
@@ -684,6 +685,22 @@ describe("scene-referenced Play content", () => {
       }),
     );
     expect(modelAssetGuidsFromScene(scene)).toEqual(["tree-glb"]);
+  });
+
+  it("collects override skybox face texture guids and skips engine defaults", () => {
+    const scene = createDefaultScene();
+    expect(skyboxFaceGuidsFromScene(scene)).toEqual([]);
+    const skybox = scene.actors.find((actor) => actor.id === "actor-skybox");
+    expect(skybox).toBeDefined();
+    skybox!.components[0]!.properties.faces = {
+      px: "tex-right",
+      py: null,
+      pz: "tex-front",
+      nx: null,
+      ny: null,
+      nz: null,
+    };
+    expect(skyboxFaceGuidsFromScene(scene)).toEqual(["tex-right", "tex-front"]);
   });
 
   it("collects MeshComponent materialGuid values as surface materials", () => {
