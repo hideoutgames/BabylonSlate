@@ -1,7 +1,7 @@
 import type { GameManifest } from "@babylonslate/exporter";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
 import { startPlayer } from "./boot";
-import { mountPlayerHud } from "./hud";
+import { mountPlayerHud, mountPlayerDebuggerOverlays } from "./hud";
 import { applyPlayerLayout } from "./layout";
 import { registerPackedFonts } from "./fonts";
 import {
@@ -64,6 +64,9 @@ async function launchLoaded(
     document.getElementById("player-hud") ?? document.createElement("div"),
     { bundleDebugger: game.manifest.bundleDebugger },
   );
+  const stopAudioOverlays = mountPlayerDebuggerOverlays(rootEl(), {
+    bundleDebugger: game.manifest.bundleDebugger,
+  });
   setRootState({
     booted: false,
     ticks: 0,
@@ -132,6 +135,7 @@ async function launchLoaded(
     ) {
       const result = session.stop();
       layoutObserver?.disconnect();
+      stopAudioOverlays();
       if (window.parent !== window && result.diagnostics.length > 0) {
         window.parent.postMessage(
           { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },
