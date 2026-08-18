@@ -21,6 +21,8 @@ export type ConnectEndDecision = {
   pointerOverNode: boolean;
   pointer: { x: number; y: number };
   safePins: Array<{ x: number; y: number }>;
+  /** Compatible non-source pin centers; zone-add-node snap-connects when near one. */
+  snapPins?: Array<{ x: number; y: number }>;
   thresholdPx?: number;
 };
 
@@ -49,14 +51,48 @@ export function pinAllowsMultipleIncoming(
   return pin.kind === "exec";
 }
 
+function sameDirectedPair(left: PinEdgeRef, right: PinEdgeRef): boolean {
+  return left.source === right.source && left.target === right.target;
+}
+
+function sameTopology(left: PinEdgeRef, right: PinEdgeRef): boolean {
+  return (
+    sameDirectedPair(left, right) &&
+    (left.sourceHandle ?? "") === (right.sourceHandle ?? "") &&
+    (left.targetHandle ?? "") === (right.targetHandle ?? "")
+  );
+}
+
 export function edgesAfterConnect<T extends PinEdgeRef>(
   edges: readonly T[],
   next: T,
   pinFor: ConnectPinLookup,
-  options?: { replaceIncoming?: boolean },
+  options?: { replaceIncoming?: boolean; uniqueDirectedPair?: boolean },
 ): T[] {
   if (next.id && edges.some((edge) => edge.id === next.id)) {
     return [...edges];
+  }
+  if (edges.some((edge) => sameTopology(edge, next))) {
+    return [...edges];
+  }
+  if (options?.uniqueDirectedPair === true) {
+    const pairIndex = edges.findIndex((edge) => sameDirectedPair(edge, next));
+    if (pairIndex >= 0) {
+      const current = edges[pairIndex]!;
+      const updated = [
+        ...edges.slice(0, pairIndex),
+        {
+          ...current,
+          source: next.source,
+          target: next.target,
+          sourceHandle: next.sourceHandle,
+          targetHandle: next.targetHandle,
+          id: current.id ?? next.id,
+        },
+        ...edges.slice(pairIndex + 1),
+      ];
+      return updated;
+    }
   }
   const targetPin = pinFor(next.target, next.targetHandle ?? "");
   const exclusive =
@@ -169,6 +205,31 @@ export function isNearSourcePin(
   return Math.hypot(to.x - from.x, to.y - from.y) < thresholdPx;
 }
 
+export type SnapConnectPin = {
+  nodeId: string;
+  pinId: string;
+  x: number;
+  y: number;
+};
+
+export function nearestSnapConnectPin(
+  pointer: { x: number; y: number },
+  source: { nodeId: string; pinId: string },
+  pins: readonly SnapConnectPin[],
+  thresholdPx = CONNECT_END_CANCEL_PX,
+): { nodeId: string; pinId: string } | undefined {
+  let best: { nodeId: string; pinId: string; dist: number } | undefined;
+  for (const pin of pins) {
+    if (pin.nodeId === source.nodeId) continue;
+    const dist = Math.hypot(pin.x - pointer.x, pin.y - pointer.y);
+    if (dist >= thresholdPx) continue;
+    if (!best || dist < best.dist) {
+      best = { nodeId: pin.nodeId, pinId: pin.pinId, dist };
+    }
+  }
+  return best ? { nodeId: best.nodeId, pinId: best.pinId } : undefined;
+}
+
 export function collectSafeConnectPins(
   nodes: Array<{ id: string; pins?: SerializedPin[] }>,
   draggedNodeId: string,
@@ -257,7 +318,13 @@ export function shouldOpenAddNodeOnConnectEnd({
   return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
 }
 
-export type ConnectEndAction = "add-node" | "break" | "none";
+export type ConnectEndAction = "add-node" | "break" | "none" | "connect";
+
+function isNearSnapPin(decision: ConnectEndDecision): boolean {
+  return (decision.snapPins ?? []).some((pin) =>
+    isNearSourcePin(pin, decision.pointer, decision.thresholdPx),
+  );
+}
 
 export function connectEndAction(
   decision: ConnectEndBreakDecision,
@@ -270,6 +337,7 @@ export function connectEndAction(
     return "add-node";
   }
   if (mode === "zone-add-node") {
+    if (isNearSnapPin(decision)) return "connect";
     if (decision.pointerOverNode) return "none";
     if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
     return "none";
@@ -330,12 +398,12 @@ export function nodePinLists(
   }));
 }
 
-export function screenCentersForSafePins(
+export function screenPinsForSafeRefs(
   root: ParentNode,
   refs: SafeConnectPinRef[],
-): Array<{ x: number; y: number }> {
+): SnapConnectPin[] {
   const handles = Array.from(root.querySelectorAll(".react-flow__handle"));
-  const centers: Array<{ x: number; y: number }> = [];
+  const pins: SnapConnectPin[] = [];
   for (const ref of refs) {
     const handle = handles.find(
       (entry) =>
@@ -344,12 +412,24 @@ export function screenCentersForSafePins(
     );
     if (!handle) continue;
     const rect = handle.getBoundingClientRect();
-    centers.push({
+    pins.push({
+      nodeId: ref.nodeId,
+      pinId: ref.pinId,
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
     });
   }
-  return centers;
+  return pins;
+}
+
+export function screenCentersForSafePins(
+  root: ParentNode,
+  refs: SafeConnectPinRef[],
+): Array<{ x: number; y: number }> {
+  return screenPinsForSafeRefs(root, refs).map((pin) => ({
+    x: pin.x,
+    y: pin.y,
+  }));
 }
 
 export function isClientPointOverGraphNode(
