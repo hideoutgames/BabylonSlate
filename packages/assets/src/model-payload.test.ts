@@ -69,7 +69,7 @@ describe("normalizeModelPayload", () => {
     expect(payload.skeletonGuid).toBe("skel-1");
     const remapped = remapModelPayloadGuids(
       "Model",
-      payload,
+      { ...payload },
       new Map([["skel-1", "skel-2"]]),
     );
     expect(remapped.skeletonGuid).toBe("skel-2");
