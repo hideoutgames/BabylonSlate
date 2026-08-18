@@ -207,4 +207,90 @@ describe("outlinerTreeDropMoves", () => {
     expect(next.actors.find((actor) => actor.id === "child")?.parentId).toBe("parent");
     expect(next.actors.find((actor) => actor.id === "lamp")?.folderId).toBe("outer");
   });
+
+  it("places an actor beside a folder instead of grouping into it", () => {
+    const world = scene({
+      folders: [
+        { id: "pack", name: "Pack", parentFolderId: null },
+        { id: "inner", name: "Inner", parentFolderId: "pack" },
+      ],
+      actors: [createActor("lamp", "Lamp")],
+    });
+    expect(
+      outlinerTreeDropMoves({
+        dragRowId: actorRowId("lamp"),
+        targetRowId: folderRowId("inner"),
+        selectedRowIds: [],
+        scene: world,
+        placement: "before",
+      }),
+    ).toEqual([
+      { kind: "actor", id: "lamp", parentId: null, folderId: "pack" },
+    ]);
+    expect(
+      outlinerTreeDropMoves({
+        dragRowId: actorRowId("lamp"),
+        targetRowId: folderRowId("pack"),
+        selectedRowIds: [],
+        scene: world,
+        placement: "after",
+      }),
+    ).toEqual([
+      { kind: "actor", id: "lamp", parentId: null, folderId: null },
+    ]);
+  });
+
+  it("reorders sibling actors and keeps into-parent behavior", () => {
+    const world = scene({
+      actors: [
+        createActor("a", "A"),
+        createActor("b", "B"),
+        createActor("c", "C", { parentId: "b" }),
+      ],
+    });
+    const before = outlinerTreeDropMoves({
+      dragRowId: actorRowId("a"),
+      targetRowId: actorRowId("b"),
+      selectedRowIds: [],
+      scene: world,
+      placement: "before",
+    });
+    expect(before).toEqual([
+      {
+        kind: "actor",
+        id: "a",
+        parentId: null,
+        folderId: null,
+        beforeId: "b",
+      },
+    ]);
+    expect(applyOutlinerDropMoves(world, before).actors.map((actor) => actor.id)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    const after = outlinerTreeDropMoves({
+      dragRowId: actorRowId("a"),
+      targetRowId: actorRowId("b"),
+      selectedRowIds: [],
+      scene: world,
+      placement: "after",
+    });
+    expect(applyOutlinerDropMoves(world, after).actors.map((actor) => actor.id)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
+    expect(
+      outlinerTreeDropMoves({
+        dragRowId: actorRowId("a"),
+        targetRowId: actorRowId("b"),
+        selectedRowIds: [],
+        scene: world,
+        placement: "into",
+      }),
+    ).toEqual([
+      { kind: "actor", id: "a", parentId: "b", folderId: null },
+    ]);
+  });
 });

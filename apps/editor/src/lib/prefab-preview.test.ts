@@ -145,6 +145,30 @@ describe("reparentPrefabComponents", () => {
       reparentPrefabComponents([a, nested, c], "c", "b", ["a", "c"]),
     ).toEqual([a, nested, c]);
   });
+
+  it("inserts before a sibling without changing parent", () => {
+    expect(
+      reparentPrefabComponents([a, b, c], "c", "a", [], "before"),
+    ).toEqual([c, a, b]);
+    const nested = { ...c, parentId: "b" };
+    expect(
+      reparentPrefabComponents([a, b, nested], "c", "a", [], "before"),
+    ).toEqual([
+      { ...nested, parentId: null },
+      a,
+      b,
+    ]);
+  });
+
+  it("inserts after a sibling and treats Prefab Root as unparent", () => {
+    expect(
+      reparentPrefabComponents([a, b, c], "a", "b", [], "after"),
+    ).toEqual([b, a, c]);
+    const nested = { ...c, parentId: "a" };
+    expect(
+      reparentPrefabComponents([a, b, nested], "c", PREFAB_ROOT_ID, [], "before"),
+    ).toEqual([a, b, { ...nested, parentId: null }]);
+  });
 });
 
 describe("componentSubtreeIds", () => {

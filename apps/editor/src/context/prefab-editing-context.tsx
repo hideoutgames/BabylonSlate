@@ -13,6 +13,7 @@ import {
   type SerializedGraph,
   type SerializedTransform,
 } from "@babylonslate/core";
+import type { TreeDropPlacement } from "@babylonslate/editor-kit";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
 import {
@@ -39,7 +40,11 @@ interface PrefabEditingContextValue {
   setSelectedIds: (ids: string[]) => void;
   addComponent: (classId: string) => void;
   removeSelected: () => void;
-  reparentComponent: (dragId: string, targetId: string | null) => void;
+  reparentComponent: (
+    dragId: string,
+    targetId: string | null,
+    placement?: TreeDropPlacement,
+  ) => void;
   updateComponent: (
     componentId: string,
     property: string,
@@ -213,9 +218,19 @@ export function PrefabEditingProvider({
   }, [components, selectedIds, upsertLocalFromViews]);
 
   const reparentComponent = useCallback(
-    (dragId: string, targetId: string | null) => {
+    (
+      dragId: string,
+      targetId: string | null,
+      placement?: TreeDropPlacement,
+    ) => {
       upsertLocalFromViews(
-        reparentPrefabComponents(components, dragId, targetId, selectedIds),
+        reparentPrefabComponents(
+          components,
+          dragId,
+          targetId,
+          selectedIds,
+          placement,
+        ),
       );
     },
     [components, selectedIds, upsertLocalFromViews],
