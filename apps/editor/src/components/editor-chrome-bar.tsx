@@ -51,12 +51,8 @@ import {
 } from "@babylonslate/ui/components/tooltip";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { useDocuments } from "../context/document-context";
@@ -77,6 +73,7 @@ import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
+import { PlayDebugMenuItems } from "./play-debug-menu-items";
 import { displayProjectName } from "../lib/display-project-name";
 import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
@@ -234,6 +231,14 @@ export function EditorChromeBar({
     canPlay,
     previewBuild,
     setPreviewBuild,
+    overlayStats,
+    overlayConsole,
+    overlayInspector,
+    pauseOnPlay,
+    setOverlayStats,
+    setOverlayConsole,
+    setOverlayInspector,
+    setPauseOnPlay,
   } = usePlay();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
@@ -530,22 +535,19 @@ export function EditorChromeBar({
                 Debug
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="center">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>Preview debug</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuCheckboxItem
-                    data-testid="preview-build-toggle"
-                    checked={previewBuild}
-                    disabled={playing || preparing}
-                    onCheckedChange={(checked) =>
-                      setPreviewBuild(checked === true)
-                    }
-                  >
-                    Preview Build
-                  </DropdownMenuCheckboxItem>
-                </DropdownMenuGroup>
-              </DropdownMenuContent>
+              <PlayDebugMenuItems
+                overlayStats={overlayStats}
+                overlayConsole={overlayConsole}
+                overlayInspector={overlayInspector}
+                pauseOnPlay={pauseOnPlay}
+                previewBuild={previewBuild}
+                sessionLocked={playing || preparing}
+                onOverlayStatsChange={setOverlayStats}
+                onOverlayConsoleChange={setOverlayConsole}
+                onOverlayInspectorChange={setOverlayInspector}
+                onPauseOnPlayChange={setPauseOnPlay}
+                onPreviewBuildChange={setPreviewBuild}
+              />
             </DropdownMenu>
           </div>
         </div>

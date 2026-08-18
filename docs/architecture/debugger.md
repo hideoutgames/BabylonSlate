@@ -80,16 +80,33 @@ The P5 node already compiles to `ctx.executeConsoleCommand(command)` and binds `
 
 The shared `ParameterListEditor` in `editor-kit` authors those rows (types, optional, defaults, enum values, reorder) and ExecuteJavaScript Inputs/Outputs.
 
-## Console and stats HUD
+## Console, inspector, and stats HUD
 
-Play overlay chrome is a labeled top bar (Pause / Resume, Stats, Console, Stop) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`). Console remains a secondary dialog. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples fps on the rAF pump; Pause / Console stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
+Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`). Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples fps on the rAF pump; Pause / Console / Inspector stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
+
+**Debug menu** (next to Play) persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Do not reuse unused `showFps` (defaults false).
+
+| Group | Item | Default | Notes |
+| --- | --- | --- | --- |
+| Play Overlay | Stats, Console, Inspector | on | Hides that overlay control when off. Checkboxes stay enabled while playing, but the Play overlay is `z-50` full-screen so the toolbar Debug menu is not reachable mid-session — toggle before Play, or hide via overlay chrome. Unchecking Inspector also closes the dialog (it does not reopen when checked again). |
+| Session | Pause On Play | off | After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
+| Session | Preview Build | off | Disabled while playing or preparing |
+
+`showcollision` / `showbounds` / `wireframe` still only log settings — they are not Debug-menu items until a real overlay exists.
 
 Play overlay **extends** the existing FPS / `scriptMs` / `physicsMs` strip:
 
-- Bottom-sheet console (`DebugConsole`): history, registry autocomplete including enum values, accessory key bar, `SelectableText` transcript. Executes through in-process `runtime.executeConsoleCommand` or worker `{ type: "console" }`.
+- Large console overlay (`DebugConsole`): CatalogDialog-sized (`h-[min(92vh,56rem)]` × `w-[min(96vw,80rem)]`), not a small `sm:max-w-lg` dialog. Header **Console** plus Clear / Copy Transcript. Transcript fills the body (`bg-background`, `font-mono text-sm`, success vs failure via tokens, auto-scroll). Completions are `size="touch"` chips **above** the input; Run and the 44px accessory bar stay pinned at the bottom. The input is not autofocused (iPad keyboard). Still a modal `Dialog`; Play keeps ticking. Executes through in-process `runtime.executeConsoleCommand` or worker `{ type: "console" }`.
+- Read-only **Inspector** overlay: same CatalogDialog footprint (`h-[min(90vh,52rem)]` × `w-[min(96vw,64rem)]`). Left: `SearchInput` + `TreeView` (no reparent) of Game Instance, actors (`parentId` order), and components. Right: identity, transform, `Field` + `SelectableText` variables. Selection is kept across snapshots by guid. Compose from catalog only; Play overlay chrome itself stays not-kit.
 - ~5 Hz `StatsHud`: tick-budget flag (`isTickOverBudget`), accounted resource-cache bytes, mesh/texture counts, last-frame draw calls (Babylon `_drawCalls.current` snapshotted after Play `scene.render()` — not `engine.drawCalls`, which is unset), bridge messages/s. Worker `stats` commands own `scriptMs` / `physicsMs`; the main-thread rAF pump only merges FPS so it cannot zero those timings. Editor viewport FPS is not shown on the Debug menu (Always Render is always on). Testids `stats-hud` and `play-fps` stay mounted while collapsed so QA can poll attributes after opening Stats.
 
 Output Log, keyed Print, and the Preview session report are unchanged.
+
+## Inspect protocol
+
+Headless snapshot `createDebugInspectSnapshot(world)` in `@babylonslate/object-model` (separate type from harness `createWorldSnapshot` goldens). Nodes: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is the `name` variable, else `classId`. Values are JSON-safe: primitives stay; `BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`.
+
+Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }` command (same waiter pattern as `console` / `consoleResult`; worker `applyInspectControl`). Overlay Play polls **only while the inspector dialog is open**, ~5 Hz, and skips a tick when a previous inspect RPC is still in flight. In-process Play calls `runtime.inspectWorld()` directly. The inspector is read-only this pass (no `setVariable` from the UI). Identity labels use Title Case acronyms (**GUID**).
 
 ## Trace recorder
 

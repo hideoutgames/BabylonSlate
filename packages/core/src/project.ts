@@ -912,7 +912,11 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
           : "float";
       const typeClassId = optionalTypeClassId(row.typeClassId);
       if (typeClassId) member.typeClassId = typeClassId;
-      if ("defaultValue" in row) member.defaultValue = row.defaultValue;
+      if (member.typeId === "class") {
+        member.defaultValue = typeClassId ?? "BObject";
+      } else if ("defaultValue" in row) {
+        member.defaultValue = row.defaultValue;
+      }
       if (typeof row.functionId === "string" && row.functionId.trim()) {
         member.functionId = row.functionId.trim();
       }
