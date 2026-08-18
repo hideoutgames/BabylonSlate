@@ -2,6 +2,7 @@ import {
   err,
   isEditorOnlyAsset,
   ok,
+  userInterfaceAssetGuidFromClassId,
   type Result,
   type SerializedGraph,
   type SerializedScene,
@@ -61,12 +62,19 @@ function enqueueRefs(
       pending.push(asset.guid);
     }
     const named = byClassName.get(ref);
-    if (!named) continue;
-    for (const entry of named) {
-      if (seen.has(entry.guid)) continue;
-      seen.add(entry.guid);
-      pending.push(entry.guid);
+    if (named) {
+      for (const entry of named) {
+        if (seen.has(entry.guid)) continue;
+        seen.add(entry.guid);
+        pending.push(entry.guid);
+      }
     }
+    const uiGuid = userInterfaceAssetGuidFromClassId(ref);
+    if (!uiGuid) continue;
+    const uiAsset = byGuid.get(uiGuid);
+    if (!uiAsset || seen.has(uiAsset.guid)) continue;
+    seen.add(uiAsset.guid);
+    pending.push(uiAsset.guid);
   }
 }
 
@@ -106,9 +114,14 @@ export function collectExportClosure(
     byClassName.set(asset.name, list);
   }
   const bySceneName = new Map<string, ExportIndexedAsset>();
+  const byFontName = new Map<string, ExportIndexedAsset>();
   for (const asset of input.assets) {
-    if (asset.type !== "Scene" || asset.name.trim() === "") continue;
-    if (!bySceneName.has(asset.name)) bySceneName.set(asset.name, asset);
+    if (asset.type === "Scene" && asset.name.trim() !== "") {
+      if (!bySceneName.has(asset.name)) bySceneName.set(asset.name, asset);
+    }
+    if (asset.type === "Font" && asset.name.trim() !== "") {
+      if (!byFontName.has(asset.name)) byFontName.set(asset.name, asset);
+    }
   }
 
   const seen = new Set<string>([startup]);
@@ -157,6 +170,9 @@ export function collectExportClosure(
     const payload = input.payloadByGuid?.(guid);
     if (payload) {
       enqueueRefs(payload, byGuid, byClassName, pending, seen);
+      if (asset.type === "UserInterface") {
+        enqueueSceneNameRefs(payload, byFontName, pending, seen);
+      }
     }
   }
 

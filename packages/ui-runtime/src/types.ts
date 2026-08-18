@@ -184,12 +184,21 @@ export function pinLayout(
   };
 }
 
+export const DEFAULT_BUTTON_BACKGROUND = "#333333";
+
 export function defaultWidgetStyle(): WidgetStyle {
   return {
     fontSize: 18,
     opacity: 1,
     padding: { ...ZERO_INSETS },
   };
+}
+
+/** Creation-time chrome only. Loaded documents keep an omitted background. */
+export function defaultStyleFor(kind: WidgetKind): WidgetStyle {
+  const style = defaultWidgetStyle();
+  if (kind === "Button") style.background = DEFAULT_BUTTON_BACKGROUND;
+  return style;
 }
 
 export function createWidget(
@@ -205,7 +214,7 @@ export function createWidget(
     layout,
     visible: true,
     children: [],
-    style: defaultWidgetStyle(),
+    style: defaultStyleFor(kind),
     props: defaultPropsFor(kind),
   };
 }

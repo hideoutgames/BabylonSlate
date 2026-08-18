@@ -9,8 +9,14 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
 } from "@babylonslate/assets";
+import type {
+  UiWidgetEventControl,
+  UserInterfaceRuntimeDocument,
+} from "@babylonslate/bridge";
 import {
   isEditorOnlyAsset,
+  userInterfaceClassId,
+  userInterfaceClassMetadata,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -45,32 +51,49 @@ function isSerializedGraph(value: unknown): value is SerializedGraph {
   return Array.isArray(record.nodes) && Array.isArray(record.edges);
 }
 
+export type UiScriptCompileDocument = {
+  path: string;
+  content: SerializedGraph;
+  classId?: string;
+  parentClassId?: string | null;
+};
+
 /** Play compiles UserInterface `logic` the same way as Class graphs. */
 export function logicGraphFromUiPayload(
   path: string,
   payload: unknown,
-): { path: string; content: SerializedGraph } | null {
+  guid?: string,
+): UiScriptCompileDocument | null {
   const logic = asRecord(payload).logic;
   if (!isSerializedGraph(logic) || logic.nodes.length === 0) return null;
-  return { path, content: logic };
+  if (!guid?.trim()) return { path, content: logic };
+  const metadata = userInterfaceClassMetadata(guid.trim());
+  return {
+    path,
+    content: logic,
+    classId: metadata.classId,
+    parentClassId: metadata.parentClassId,
+  };
 }
 
 export function mergePlayScriptDocuments(
   classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
-  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
-): Array<{ path: string; content: SerializedGraph }> {
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown; guid?: string }>,
+): Array<UiScriptCompileDocument> {
   const extra = uiAssets.flatMap((asset) => {
-    const graph = logicGraphFromUiPayload(asset.path, asset.payload);
+    const graph = logicGraphFromUiPayload(asset.path, asset.payload, asset.guid);
     return graph ? [graph] : [];
   });
   return [...classGraphs, ...extra];
 }
 
-export function filterPlayScriptDocuments(
-  graphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
+export function filterPlayScriptDocuments<
+  T extends { path: string; content: SerializedGraph },
+>(
+  graphs: ReadonlyArray<T>,
   headers: Record<string, { type: string; parentClass?: string | null }>,
   parentOf: (id: string) => string | null | undefined,
-): Array<{ path: string; content: SerializedGraph }> {
+): T[] {
   return graphs.filter((graph) => {
     const header = headers[graph.path];
     if (!header) return true;
@@ -80,12 +103,13 @@ export function filterPlayScriptDocuments(
 
 export function collectPlayScriptDocuments(
   classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
-  uiAssets: ReadonlyArray<{ path: string; payload: unknown }>,
+  uiAssets: ReadonlyArray<{ path: string; payload: unknown; guid?: string }>,
   headers: Record<string, { type: string; parentClass?: string | null }>,
   parentOf: (id: string) => string | null | undefined,
 ): Array<{
   path: string;
   content: SerializedGraph;
+  classId?: string;
   parentClassId?: string | null;
 }> {
   return filterPlayScriptDocuments(
@@ -94,13 +118,27 @@ export function collectPlayScriptDocuments(
     parentOf,
   ).map((graph) => ({
     ...graph,
-    parentClassId: headers[graph.path]?.parentClass ?? null,
+    parentClassId:
+      graph.parentClassId ?? headers[graph.path]?.parentClass ?? null,
   }));
 }
 
-export type PlayHudInstance = { instanceId: string; assetGuid: string };
+export type PlayHudInstance = {
+  instanceId: string;
+  assetGuid: string;
+  classId: string;
+};
 
 export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
+
+/** Open in-memory UserInterface payloads win over disk bytes. */
+export function preferOpenPlayUiContent(
+  open: unknown | null | undefined,
+  disk: unknown | null | undefined,
+): unknown | null {
+  if (open != null) return open;
+  return disk ?? null;
+}
 
 export function playUiLibraryFromAssets(
   assets: ReadonlyArray<{ guid: string; path: string; type: string }>,
@@ -116,16 +154,79 @@ export function playUiLibraryFromAssets(
   return library;
 }
 
+/** Slim widget rows for `loadUserInterfaces`. Does not apply a HUD. */
+export function playUserInterfaceRuntimeDocuments(
+  library: PlayUiLibrary,
+): UserInterfaceRuntimeDocument[] {
+  return Object.entries(library).map(([guid, document]) => ({
+    guid,
+    widgets: Object.values(document.widgets).map((widget) => ({
+      id: widget.id,
+      kind: widget.kind,
+      ...(widget.name ? { name: widget.name } : {}),
+    })),
+  }));
+}
+
+export function playHudVisibilityKey(instanceId: string, widgetId: string): string {
+  return `${instanceId}:${widgetId}`;
+}
+
+export function applyPlayHudVisibility(
+  hidden: ReadonlySet<string>,
+  instanceId: string,
+  widgetId: string,
+  visible: boolean,
+): Set<string> {
+  const next = new Set(hidden);
+  const key = playHudVisibilityKey(instanceId, widgetId);
+  if (visible) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
+/** Split `instanceId:widgetId`, keeping nested `/` widget ids after the first colon. */
+export function parsePlayHudControlId(
+  prefixedId: string,
+): { instanceId: string; widgetId: string } | null {
+  const colon = prefixedId.indexOf(":");
+  if (colon <= 0 || colon === prefixedId.length - 1) return null;
+  return {
+    instanceId: prefixedId.slice(0, colon),
+    widgetId: prefixedId.slice(colon + 1),
+  };
+}
+
+export type PlayUiWidgetEvent = Omit<UiWidgetEventControl, "type">;
+
+let playUiWidgetEventSink: ((event: PlayUiWidgetEvent) => boolean) | null = null;
+
+/** Register the live Play session dispatcher for HUD and test-host events. */
+export function setPlayUiWidgetEventSink(
+  sink: ((event: PlayUiWidgetEvent) => boolean) | null,
+): void {
+  playUiWidgetEventSink = sink;
+}
+
+/** Forward a widget event to the mounted Play session, if any. */
+export function dispatchMountedPlayUiWidgetEvent(
+  event: PlayUiWidgetEvent,
+): boolean {
+  return playUiWidgetEventSink?.(event) ?? false;
+}
+
 export function applyPlayHudInstance(
   instances: readonly PlayHudInstance[],
   instanceId: string,
   assetGuid: string,
+  classId?: string,
 ): PlayHudInstance[] {
   const id = instanceId.trim();
   const guid = assetGuid.trim();
   if (!id || !guid) return [...instances];
   if (instances.some((entry) => entry.instanceId === id)) return [...instances];
-  return [...instances, { instanceId: id, assetGuid: guid }];
+  const resolvedClassId = classId?.trim() || userInterfaceClassId(guid);
+  return [...instances, { instanceId: id, assetGuid: guid, classId: resolvedClassId }];
 }
 
 export function removePlayHudInstance(

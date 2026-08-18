@@ -68,6 +68,22 @@ describe("serialize adapter", () => {
     expect(logic.edges[0]?.targetNodeId).toBe("b");
   });
 
+  it("keeps authored default:message on debug.log nodes", () => {
+    const logic = fromSerializedGraph({
+      nodes: [
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 0, y: 0 },
+          data: { "default:message": "hud-clicked" },
+        },
+      ],
+      edges: [],
+    });
+    expect(logic.nodes[0]?.properties["default:message"]).toBe("hud-clicked");
+    expect(logic.nodes[0]?.properties.message).not.toBe("");
+  });
+
   it("compiles a function graph slice as kind function", () => {
     const slice: SerializedGraph = {
       nodes: [

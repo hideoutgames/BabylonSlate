@@ -10,8 +10,10 @@ import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
-import type { ControlMessage } from "@babylonslate/bridge";
+import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { ScenePostProcessEntry } from "@babylonslate/core";
+import { shouldSpawnScriptedActor } from "@babylonslate/runtime";
+import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -36,6 +38,7 @@ export type PackedGameContent = {
   postProcessStack: ScenePostProcessEntry[];
   pixelsPerUnit: number;
   pixelPerfect: boolean;
+  userInterfaces: Map<string, UserInterfaceDocument>;
 };
 
 function jsonFromBytes(bytes: Uint8Array): unknown | null {
@@ -144,6 +147,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     postProcessStack: startupScene?.settings.postProcessStack ?? [],
     pixelsPerUnit,
     pixelPerfect: game.manifest.pixelPerfect === true,
+    userInterfaces: new Map(game.userInterfaces ?? []),
   };
 }
 
@@ -179,5 +183,46 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
       bytes: navmeshArrayBuffer(content.navmeshBytes),
     });
   }
+  return controls;
+}
+
+function widgetMetaFromDocument(document: UserInterfaceDocument) {
+  return Object.values(document.widgets).map((widget) => ({
+    id: widget.id,
+    kind: widget.kind,
+    ...(widget.name ? { name: widget.name } : {}),
+  }));
+}
+
+export function packedUserInterfaceControl(
+  content: PackedGameContent,
+): Extract<ControlMessage, { type: "loadUserInterfaces" }> | null {
+  if (content.userInterfaces.size === 0) return null;
+  return {
+    type: "loadUserInterfaces",
+    documents: [...content.userInterfaces.entries()].map(([guid, document]) => ({
+      guid,
+      widgets: widgetMetaFromDocument(document),
+    })),
+  };
+}
+
+export function packedBootControls(
+  content: PackedGameContent,
+  scripts: readonly ScriptBundleEntry[],
+  spawn: readonly { classId: string }[] = [],
+): ControlMessage[] {
+  const controls: ControlMessage[] = [];
+  const userInterfaces = packedUserInterfaceControl(content);
+  if (userInterfaces) controls.push(userInterfaces);
+  if (scripts.length > 0) {
+    controls.push({
+      type: "loadScripts",
+      scripts: [...scripts],
+      spawn: spawn.filter((entry) => shouldSpawnScriptedActor(entry.classId)),
+    });
+  }
+  controls.push(...packedPlayControls(content));
+  controls.push({ type: "play" });
   return controls;
 }

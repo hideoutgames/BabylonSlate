@@ -347,6 +347,8 @@ function AssetSettingsEditor({
       typeof payload.compressionState === "string"
         ? payload.compressionState
         : "none";
+    const encodeError =
+      typeof payload.encodeError === "string" ? payload.encodeError : "";
     rows.push(
       {
         id: "usage",
@@ -396,6 +398,16 @@ function AssetSettingsEditor({
         onChange: () => undefined,
       },
     );
+    if (encodeError) {
+      rows.push({
+        id: "encodeError",
+        kind: "text",
+        label: "Encode Error",
+        value: encodeError,
+        disabled: true,
+        onChange: () => undefined,
+      });
+    }
   } else {
     for (const [key, value] of Object.entries(payload)) {
       if (typeof value === "number") {

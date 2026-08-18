@@ -1,5 +1,11 @@
 import type { EncodeFn } from "./encode-queue";
 import { decodeSourceToRgba } from "./decode-source-rgba";
+import {
+  ENCODE_WORKER_DECODE_UNAVAILABLE,
+  sourceEncodeTransferables,
+  type EncodeWorkerReply,
+  type SourceEncodeRequest,
+} from "./encode-worker-protocol";
 import type { TextureEncodeSettings } from "./texture-compression";
 
 export interface WorkerEncodeOptions {
@@ -12,11 +18,15 @@ export interface WorkerEncodeOptions {
 interface PendingEncode {
   resolve: (value: { ktx2: Uint8Array; wallMs: number }) => void;
   reject: (error: unknown) => void;
+  source: Uint8Array;
+  settings: TextureEncodeSettings;
+  mime?: string;
 }
 
 /**
  * Browser EncodeFn backed by a dedicated Basis Worker (engineplan §3.5).
- * Decodes on the calling side (or inside worker via rgba payload) then encodes KTX2.
+ * Transfers source bytes + MIME into the worker for decode/clamp; falls back
+ * to main-thread Image.decode when the worker reports decode_unavailable.
  */
 export function createWorkerEncodeFn(
   options: WorkerEncodeOptions = {},
@@ -40,18 +50,57 @@ export function createWorkerEncodeFn(
     ready = null;
   };
 
+  const postSourceEncode = (id: number, job: PendingEncode) => {
+    const sourceCopy = job.source.slice();
+    const message: SourceEncodeRequest = {
+      type: "encode",
+      id,
+      source: sourceCopy.buffer,
+      mime: job.mime,
+      settings: job.settings,
+    };
+    worker!.postMessage(message, sourceEncodeTransferables(message));
+  };
+
+  const postRgbaEncode = (
+    id: number,
+    decoded: { rgba: Uint8Array; width: number; height: number },
+    settings: TextureEncodeSettings,
+  ) => {
+    const rgbaCopy = decoded.rgba.slice();
+    worker!.postMessage(
+      {
+        type: "encode",
+        id,
+        rgba: rgbaCopy.buffer,
+        width: decoded.width,
+        height: decoded.height,
+        settings,
+      },
+      [rgbaCopy.buffer],
+    );
+  };
+
+  const fallbackDecode = (id: number, job: PendingEncode) => {
+    void decodeSourceToRgba(job.source, job.settings.maxDimension, job.mime)
+      .then((decoded) => {
+        if (!pending.has(id) || !worker) return;
+        postRgbaEncode(id, decoded, job.settings);
+      })
+      .catch((error) => {
+        const entry = pending.get(id);
+        if (!entry) return;
+        pending.delete(id);
+        entry.reject(error);
+      });
+  };
+
   const ensureWorker = (): Promise<void> => {
     if (ready) return ready;
     worker = new Worker(workerUrl);
     ready = new Promise<void>((resolve, reject) => {
       const onMessage = (event: MessageEvent) => {
-        const msg = event.data as {
-          type: string;
-          id?: number;
-          error?: string;
-          ktx2?: ArrayBuffer;
-          wallMs?: number;
-        };
+        const msg = event.data as EncodeWorkerReply;
         if (msg.type === "loaded") {
           resolve();
           return;
@@ -70,6 +119,12 @@ export function createWorkerEncodeFn(
             ktx2: new Uint8Array(msg.ktx2!),
             wallMs: msg.wallMs ?? 0,
           });
+          return;
+        }
+        if (msg.type === ENCODE_WORKER_DECODE_UNAVAILABLE && msg.id != null) {
+          const entry = pending.get(msg.id);
+          if (!entry) return;
+          fallbackDecode(msg.id, entry);
           return;
         }
         if (msg.type === "error" && msg.id != null) {
@@ -98,12 +153,9 @@ export function createWorkerEncodeFn(
   const maybeRecycle = async () => {
     completed += 1;
     if (completed < recycleAfter || !worker) return;
+    if (pending.size > 0) return;
     completed = 0;
     recycled += 1;
-    for (const entry of pending.values()) {
-      entry.reject(new Error("encode worker recycled"));
-    }
-    pending.clear();
     worker.terminate();
     worker = null;
     ready = null;
@@ -115,27 +167,18 @@ export function createWorkerEncodeFn(
     mime?: string,
   ) => {
     await ensureWorker();
-    const decoded = await decodeSourceToRgba(
-      source,
-      settings.maxDimension,
-      mime,
-    );
     const id = nextId++;
     const result = await new Promise<{ ktx2: Uint8Array; wallMs: number }>(
       (resolve, reject) => {
-        pending.set(id, { resolve, reject });
-        const rgbaCopy = decoded.rgba.slice();
-        worker!.postMessage(
-          {
-            type: "encode",
-            id,
-            rgba: rgbaCopy.buffer,
-            width: decoded.width,
-            height: decoded.height,
-            settings,
-          },
-          [rgbaCopy.buffer],
-        );
+        const job: PendingEncode = {
+          resolve,
+          reject,
+          source,
+          settings,
+          mime,
+        };
+        pending.set(id, job);
+        postSourceEncode(id, job);
       },
     );
     await maybeRecycle();
@@ -144,20 +187,13 @@ export function createWorkerEncodeFn(
 
   return Object.assign(encode, {
     dispose: () => {
-      worker?.terminate();
-      worker = null;
-      ready = null;
-      pending.clear();
+      failPending(new Error("encode worker disposed"));
     },
     recycleCount: () => recycled,
   });
 }
 
-/** True when dedicated Workers + OffscreenCanvas are available for encode. */
+/** True when a dedicated Worker can host encode (decode may still fall back). */
 export function canUseWorkerEncode(): boolean {
-  return (
-    typeof Worker !== "undefined" &&
-    typeof OffscreenCanvas !== "undefined" &&
-    typeof createImageBitmap === "function"
-  );
+  return typeof Worker !== "undefined";
 }

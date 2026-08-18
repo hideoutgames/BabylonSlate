@@ -1,17 +1,28 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createWorkerEncodeFn } from "./worker-encode";
+import {
+  isRgbaEncodeRequest,
+  isSourceEncodeRequest,
+  type EncodeWorkerHostMessage,
+} from "./encode-worker-protocol";
+import { canUseWorkerEncode, createWorkerEncodeFn } from "./worker-encode";
 
-vi.mock("./decode-source-rgba", () => ({
-  decodeSourceToRgba: async () => ({
+const decodeSourceToRgba = vi.hoisted(() =>
+  vi.fn(async () => ({
     rgba: new Uint8Array(4),
     width: 1,
     height: 1,
     clamped: false,
-  }),
+  })),
+);
+
+vi.mock("./decode-source-rgba", () => ({
+  decodeSourceToRgba,
 }));
 
 class FakeWorker extends EventTarget {
-  postMessage = vi.fn((msg: { type: string; id?: number }) => {
+  postMessage = vi.fn<
+    (msg: EncodeWorkerHostMessage, transfer?: Transferable[]) => void
+  >((msg) => {
     if (msg.type === "init") {
       queueMicrotask(() => {
         this.dispatchEvent(
@@ -38,7 +49,7 @@ describe("createWorkerEncodeFn", () => {
           constructed += 1;
           const worker = new FakeWorker();
           if (constructed === 1) {
-            worker.postMessage = vi.fn((msg: { type: string }) => {
+            worker.postMessage = vi.fn((msg: EncodeWorkerHostMessage) => {
               if (msg.type === "init") {
                 queueMicrotask(() => {
                   worker.dispatchEvent(
@@ -101,5 +112,181 @@ describe("createWorkerEncodeFn", () => {
     worker!.dispatchEvent(new Event("error"));
     await expect(pending).rejects.toThrow(/encode worker/i);
     encode.dispose();
+  });
+
+  it("transfers source bytes and MIME instead of decoded RGBA", async () => {
+    let worker: FakeWorker | null = null;
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          worker = new FakeWorker();
+          return worker;
+        }
+      },
+    );
+
+    const encode = createWorkerEncodeFn({ workerUrl: "/basis/encode-worker.js" });
+    const source = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const pending = encode(
+      source,
+      {
+        format: "uastc",
+        quality: 2,
+        maxDimension: 64,
+        generateMipmaps: true,
+      },
+      "image/png",
+    );
+    await vi.waitFor(() => {
+      expect(
+        worker?.postMessage.mock.calls.some((call) => call[0]?.type === "encode"),
+      ).toBe(true);
+    });
+    const encodeCall = worker!.postMessage.mock.calls.find(
+      (call) => call[0].type === "encode",
+    );
+    expect(encodeCall).toBeDefined();
+    if (!encodeCall) return;
+    const [message, transfer] = encodeCall;
+    expect(isSourceEncodeRequest(message)).toBe(true);
+    expect(isRgbaEncodeRequest(message)).toBe(false);
+    if (!isSourceEncodeRequest(message)) return;
+    expect(message.mime).toBe("image/png");
+    expect(message.source).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(message.source)).toEqual(source);
+    expect(transfer).toEqual([message.source]);
+    expect(decodeSourceToRgba).not.toHaveBeenCalled();
+    encode.dispose();
+    await pending.catch(() => undefined);
+  });
+
+  it("falls back to main-thread decode when the worker cannot decode", async () => {
+    let worker: FakeWorker | null = null;
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          worker = new FakeWorker();
+          worker.postMessage = vi.fn((msg: EncodeWorkerHostMessage) => {
+            if (msg.type === "init") {
+              queueMicrotask(() => {
+                worker!.dispatchEvent(
+                  new MessageEvent("message", { data: { type: "loaded" } }),
+                );
+              });
+            }
+            if (msg.type === "encode" && msg.id != null && !("rgba" in msg)) {
+              queueMicrotask(() => {
+                worker!.dispatchEvent(
+                  new MessageEvent("message", {
+                    data: {
+                      type: "decode_unavailable",
+                      id: msg.id,
+                      error: "createImageBitmap rejected",
+                    },
+                  }),
+                );
+              });
+            }
+          });
+          return worker;
+        }
+      },
+    );
+
+    const encode = createWorkerEncodeFn({ workerUrl: "/basis/encode-worker.js" });
+    const pending = encode(
+      new Uint8Array([0xff, 0xd8]),
+      {
+        format: "uastc",
+        quality: 2,
+        maxDimension: 64,
+        generateMipmaps: true,
+      },
+      "image/jpeg",
+    );
+    await vi.waitFor(
+      () => {
+        expect(decodeSourceToRgba).toHaveBeenCalledWith(
+          expect.any(Uint8Array),
+          64,
+          "image/jpeg",
+        );
+        expect(
+          worker?.postMessage.mock.calls.some(
+            (call) => call[0]?.type === "encode" && isRgbaEncodeRequest(call[0]),
+          ),
+        ).toBe(true);
+      },
+      { timeout: 1000 },
+    );
+    encode.dispose();
+    await pending.catch(() => undefined);
+  });
+
+  it("does not recycle or reject an in-flight encode", async () => {
+    let worker: FakeWorker | null = null;
+    vi.stubGlobal(
+      "Worker",
+      class {
+        constructor() {
+          worker = new FakeWorker();
+          return worker;
+        }
+      },
+    );
+
+    const encode = createWorkerEncodeFn({
+      workerUrl: "/basis/encode-worker.js",
+      recycleAfter: 1,
+    });
+    const settings = {
+      format: "uastc" as const,
+      quality: 2,
+      maxDimension: 64,
+      generateMipmaps: true,
+    };
+    const first = encode(new Uint8Array([1]), settings, "image/png");
+    const second = encode(new Uint8Array([2]), settings, "image/png");
+    await vi.waitFor(() => {
+      expect(
+        worker?.postMessage.mock.calls.filter((call) => call[0]?.type === "encode")
+          .length,
+      ).toBeGreaterThanOrEqual(1);
+    });
+    const firstEncode = worker!.postMessage.mock.calls.find(
+      (call) => call[0].type === "encode",
+    )?.[0];
+    expect(firstEncode?.type).toBe("encode");
+    if (firstEncode?.type !== "encode") return;
+    const firstId = firstEncode.id;
+    worker!.dispatchEvent(
+      new MessageEvent("message", {
+        data: {
+          type: "encoded",
+          id: firstId,
+          ktx2: new Uint8Array([9]).buffer,
+          wallMs: 1,
+        },
+      }),
+    );
+    await expect(first).resolves.toMatchObject({ wallMs: 1 });
+    await expect(
+      Promise.race([
+        second.then(() => "resolved"),
+        Promise.resolve("still-pending"),
+      ]),
+    ).resolves.toBe("still-pending");
+    expect(worker!.terminate).not.toHaveBeenCalled();
+    encode.dispose();
+    await second.catch(() => undefined);
+  });
+
+  it("can use a Worker even when OffscreenCanvas is missing on the main thread", () => {
+    vi.stubGlobal("Worker", class {});
+    vi.stubGlobal("createImageBitmap", undefined);
+    delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
+    expect(canUseWorkerEncode()).toBe(true);
   });
 });

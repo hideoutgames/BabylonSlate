@@ -18,8 +18,9 @@ import {
   type ControlMessage,
 } from "@babylonslate/bridge";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
-import { createRuntimeFromLoad } from "./play-load";
+import { createRuntimeFromLoad, shouldSpawnScriptedActor } from "./play-load";
 import { createPlayBootCoordinator } from "./play-boot";
+import { applyUiRuntimeControl } from "./worker-control";
 
 let runtime: RuntimeDriver | null = null;
 const boot = createPlayBootCoordinator();
@@ -54,8 +55,20 @@ function handleControl(msg: ControlMessage): void {
     }
     case "loadScripts": {
       const rt = ensureRuntime();
-      const spawn = msg.spawn ?? msg.scripts.map((s) => ({ classId: s.classId }));
+      const spawn =
+        msg.spawn ??
+        msg.scripts
+          .filter((script) => shouldSpawnScriptedActor(script.classId))
+          .map((script) => ({ classId: script.classId }));
       boot.queueScripts(rt, msg.scripts, spawn);
+      return;
+    }
+    case "loadUserInterfaces": {
+      applyUiRuntimeControl(ensureRuntime(), msg);
+      return;
+    }
+    case "uiWidgetEvent": {
+      if (runtime) applyUiRuntimeControl(runtime, msg);
       return;
     }
     case "loadAnimGraphs": {

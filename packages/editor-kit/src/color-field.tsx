@@ -34,7 +34,7 @@ export function colorFromHex(hex: string): ColorValue {
 
 export interface ColorFieldProps {
   id?: string;
-  value: ColorValue;
+  value: ColorValue | null;
   onChange: (value: ColorValue) => void;
   disabled?: boolean;
   "data-testid"?: string;
@@ -48,7 +48,8 @@ export function ColorField({
   disabled,
   "data-testid": testId,
 }: ColorFieldProps) {
-  const committed = colorToHex(value);
+  const committed = value ? colorToHex(value) : "";
+  const swatch = value ? colorToHex(value) : "#000000";
   const [draft, setDraft] = useState<string | null>(null);
 
   return (
@@ -57,7 +58,7 @@ export function ColorField({
         type="color"
         id={id}
         className="min-h-[var(--chrome-row,28px)] w-10 shrink-0 rounded-md border border-input bg-background"
-        value={committed}
+        value={swatch}
         disabled={disabled}
         onChange={(event) => {
           setDraft(null);

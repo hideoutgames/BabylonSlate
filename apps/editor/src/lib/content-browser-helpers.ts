@@ -24,6 +24,11 @@ import {
 } from "@babylonslate/shader-graph";
 import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
+  isUserInterfaceClassId,
+  USER_INTERFACE_ENGINE_CLASS_ID,
+  userInterfaceClassId,
+} from "@babylonslate/core";
+import {
   engineParentOf,
   rangeSelectTreeIds,
   resolveTypeVisual,
@@ -305,7 +310,12 @@ export function displayAssetTitle(name: string): string {
 
 export type ClassAssetRef = {
   path?: string;
-  header: { type: string; name: string; parentClass?: string | null };
+  header: {
+    type: string;
+    name: string;
+    parentClass?: string | null;
+    guid?: string;
+  };
 };
 
 /** Compile class id for a Class asset (`main.class` header → `main`). */
@@ -946,13 +956,23 @@ export function classParentLookup(
 ): (id: string) => string | null {
   const map = new Map<string, string | null>();
   for (const asset of assets) {
+    if (asset.header.type === "UserInterface" && asset.header.guid) {
+      map.set(
+        userInterfaceClassId(asset.header.guid),
+        USER_INTERFACE_ENGINE_CLASS_ID,
+      );
+      continue;
+    }
     if (asset.header.type !== "Class") continue;
     const parent = asset.header.parentClass ?? "BObject";
     const id = classIdFromClassAsset(asset);
     map.set(id, parent);
     if (asset.header.name !== id) map.set(asset.header.name, parent);
   }
-  return (id) => map.get(id) ?? engineParentOf(id) ?? null;
+  return (id) => {
+    if (isUserInterfaceClassId(id)) return USER_INTERFACE_ENGINE_CLASS_ID;
+    return map.get(id) ?? engineParentOf(id) ?? null;
+  };
 }
 
 export function visualForIndexedAsset(

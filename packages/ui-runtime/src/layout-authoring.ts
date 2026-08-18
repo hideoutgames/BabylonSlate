@@ -116,9 +116,14 @@ export function preferredWidgetSize(kind: WidgetKind): { width: number; height: 
   }
 }
 
-export function defaultAddLayout(kind: WidgetKind): WidgetLayout {
+export function defaultAddLayout(
+  kind: WidgetKind,
+  staggerIndex = 0,
+): WidgetLayout {
   const size = preferredWidgetSize(kind);
-  return pinLayout("center", "center", size.width, size.height);
+  const step = 48;
+  const offset = Math.max(0, staggerIndex) * step;
+  return pinLayout("center", "center", size.width, size.height, offset, offset);
 }
 
 function nearlyEqual(a: number, b: number): boolean {

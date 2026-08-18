@@ -3,6 +3,9 @@ import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   Actor,
   ActorComponent,
+  BObject,
+  UserInterface,
+  Widget,
   dispatchInterface,
   interfaceHandlerKey,
   type ClassRegistry,
@@ -75,9 +78,11 @@ export interface ScriptHostServices {
     dt: number,
     offset?: number,
   ): void;
-  setWidgetVisible?(widget: string, visible: boolean): void;
-  applyUserInterface?(assetGuid: string): string;
-  removeUserInterface?(instanceId: string): void;
+  setWidgetVisible?(widget: Widget | string, visible: boolean): void;
+  applyUserInterface?(classIdOrGuid: string): UserInterface | null;
+  removeUserInterface?(
+    instance: UserInterface | string | null | undefined,
+  ): void;
   changeScene?(scene: string): void;
   playSound?(asset: string, volume?: number): void;
   setRenderResolution?(width: number, height: number): void;
@@ -97,7 +102,7 @@ export interface ScriptHostServices {
 }
 
 export interface ScriptContext {
-  self: Actor | null;
+  self: BObject | null;
   deltaSeconds: number;
   tickIndex: number;
   formatValue(value: unknown): string;
@@ -111,15 +116,15 @@ export interface ScriptContext {
   ): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
-  getVariableFrom(target: Actor | null | undefined, name: string): unknown;
+  getVariableFrom(target: BObject | null | undefined, name: string): unknown;
   setVariableOn(
-    target: Actor | null | undefined,
+    target: BObject | null | undefined,
     name: string,
     value: unknown,
   ): void;
-  destroyActor(actor: Actor | null | undefined): void;
+  destroyActor(actor: BObject | null | undefined): void;
   setActorLocation(
-    actor: Actor | null | undefined,
+    actor: BObject | null | undefined,
     location: { x: number; y: number; z: number },
   ): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
@@ -129,17 +134,17 @@ export interface ScriptContext {
   args: Record<string, unknown>;
   reportCommand(success: boolean, output: string): void;
   callInterface(
-    target: Actor | null | undefined,
+    target: BObject | null | undefined,
     interfaceGuid: string,
     method: string,
     args?: Record<string, unknown>,
   ): unknown;
-  getComponent(actor: Actor | null | undefined, classId: string): unknown;
-  addComponent(actor: Actor | null | undefined, classId: string): unknown;
+  getComponent(actor: BObject | null | undefined, classId: string): unknown;
+  addComponent(actor: BObject | null | undefined, classId: string): unknown;
   spawnActor(classId: string): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   invokeCustomEvent(
-    target: Actor | null | undefined,
+    target: BObject | null | undefined,
     eventName: string,
     args?: Record<string, unknown>,
   ): void;
@@ -153,7 +158,7 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): void;
   invokeFunction(
-    target: Actor | string | null | undefined,
+    target: BObject | string | null | undefined,
     functionName: string,
     args?: Record<string, unknown>,
   ): Record<string, unknown>;
@@ -186,19 +191,20 @@ export interface ScriptContext {
     end: PhysicsTransform,
   ): HitResult;
   addImpulse(
-    actor: Actor | null | undefined,
+    actor: BObject | null | undefined,
     impulse: Vec3,
     strength?: number,
   ): void;
   moveCharacter(
-    actor: Actor | null | undefined,
+    actor: BObject | null | undefined,
     translation: Vec3,
     offset?: number,
   ): void;
   playSound(asset: string, volume?: number): void;
-  setWidgetVisible(widget: string, visible: boolean): void;
-  applyUserInterface(assetGuid: string): string;
-  removeUserInterface(instanceId: string): void;
+  getWidget(widgetId: string): Widget | null;
+  setWidgetVisible(widget: Widget | string, visible: boolean): void;
+  applyUserInterface(classIdOrGuid: string): UserInterface | null;
+  removeUserInterface(instance: UserInterface | string | null | undefined): void;
   changeScene(scene: string): void;
   setRenderResolution(width: number, height: number): void;
   possessCamera(target: unknown): void;
@@ -217,8 +223,8 @@ export interface ScriptContext {
   getBlackboard(key: string): unknown;
   setBlackboard(key: string, value: unknown): void;
   findPathTo(from: Vec3, to: Vec3): Vec3[];
-  moveTo(actor: Actor | null | undefined, destination: Vec3): void;
-  stopMovement(actor: Actor | null | undefined): void;
+  moveTo(actor: BObject | null | undefined, destination: Vec3): void;
+  stopMovement(actor: BObject | null | undefined): void;
   isPathValid(from: Vec3, to: Vec3): boolean;
   getClosestNavigablePoint(point: Vec3): Vec3 | null;
   getRandomPointInRadius(center: Vec3, radius: number): Vec3 | null;
@@ -255,7 +261,7 @@ type LoadedScript = {
  */
 export class ScriptHost {
   private readonly byClassId = new Map<string, LoadedScript[]>();
-  private readonly pending = new WeakMap<Actor, Set<string>>();
+  private readonly pending = new WeakMap<BObject, Set<string>>();
   private readonly services: ScriptHostServices;
   private commandResult = { success: true, output: "" };
 
@@ -279,7 +285,7 @@ export class ScriptHost {
   }
 
   /** Lifecycle hooks that run every entry point registered for `classId`. */
-  hooksFor(classId: string): LifecycleHooks<Actor> | undefined {
+  hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return undefined;
     return {
@@ -296,6 +302,9 @@ export class ScriptHost {
           {},
           ctx,
         );
+      },
+      onDestroyed: (self) => {
+        this.dispatchEvent(loaded, "onEndPlay", self, 0, 0);
       },
     };
   }
@@ -317,7 +326,7 @@ export class ScriptHost {
   invokeEvent(
     classId: string,
     event: string,
-    self: Actor | null = null,
+    self: BObject | null = null,
     args: Record<string, unknown> = {},
   ): void {
     const loaded = this.byClassId.get(classId);
@@ -378,22 +387,22 @@ export class ScriptHost {
   }
 
   /**
-   * Register compiled function implementations as interface handlers on `actor`.
+   * Register compiled function implementations as interface handlers on `object`.
    * Keys match `interfaceHandlerKey` (`guid:method`).
    */
-  bindInterfaceHandlers(actor: Actor): void {
-    const loaded = this.byClassId.get(actor.classId);
+  bindInterfaceHandlers(object: BObject): void {
+    const loaded = this.byClassId.get(object.classId);
     if (!loaded || loaded.length === 0) return;
-    for (const iface of actor.implementedInterfaces) {
+    for (const iface of object.implementedInterfaces) {
       for (const entry of loaded) {
         for (const impl of entry.script.interfaceImplementations ?? []) {
           if (impl.interfaceGuid !== iface) continue;
           const exportName = impl.exportName;
           const key = interfaceHandlerKey(iface, impl.method);
-          actor.interfaceHandlers.set(key, (args) => {
+          object.interfaceHandlers.set(key, (args) => {
             const fn = entry.exports[exportName];
             if (typeof fn !== "function") return {};
-            const ctx = this.createContext(actor, 0, 0, args);
+            const ctx = this.createContext(object, 0, 0, args);
             try {
               const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
               if (result instanceof Promise) {
@@ -418,7 +427,7 @@ export class ScriptHost {
   private dispatchEvent(
     loaded: readonly LoadedScript[],
     event: string,
-    self: Actor | null,
+    self: BObject | null,
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
@@ -458,22 +467,22 @@ export class ScriptHost {
     }
   }
 
-  private isPending(self: Actor, key: string): boolean {
+  private isPending(self: BObject, key: string): boolean {
     return this.pending.get(self)?.has(key) ?? false;
   }
 
-  private markPending(self: Actor, key: string): void {
+  private markPending(self: BObject, key: string): void {
     const set = this.pending.get(self) ?? new Set<string>();
     set.add(key);
     this.pending.set(self, set);
   }
 
-  private clearPending(self: Actor, key: string): void {
+  private clearPending(self: BObject, key: string): void {
     this.pending.get(self)?.delete(key);
   }
 
   createContext(
-    self: Actor | null,
+    self: BObject | null,
     deltaSeconds: number,
     tickIndex: number,
     commandArgs: Record<string, unknown> = {},
@@ -510,9 +519,12 @@ export class ScriptHost {
       setVariableOn: (target, name, value) => {
         (target ?? self)?.setVariable(name, value);
       },
-      destroyActor: (actor) => services.destroyActor(actor ?? self),
+      destroyActor: (actor) => {
+        const target = asActor(actor ?? self);
+        if (target) services.destroyActor(target);
+      },
       setActorLocation: (actor, location) => {
-        const target = actor ?? self;
+        const target = asActor(actor ?? self);
         if (!target || !location) return;
         target.transform.position.x = Number(location.x ?? 0);
         target.transform.position.y = Number(location.y ?? 0);
@@ -534,9 +546,13 @@ export class ScriptHost {
         );
       },
       getComponent: (actor, classId) =>
-        (actor ?? self)?.components.find((c) => c.classId === classId) ?? null,
-      addComponent: (actor, classId) =>
-        services.addComponent?.(actor ?? self, classId) ?? null,
+        asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
+        null,
+      addComponent: (actor, classId) => {
+        const target = asActor(actor ?? self);
+        if (!target) return null;
+        return services.addComponent?.(target, classId) ?? null;
+      },
       spawnActor: (classId) => services.spawnActor?.(String(classId)) ?? null,
       isA: (instance, classId) => {
         if (instance == null || typeof instance !== "object") return false;
@@ -547,14 +563,14 @@ export class ScriptHost {
         return services.classRegistry?.isA(id, target) ?? id === target;
       },
       invokeCustomEvent: (target, eventName, eventArgs) => {
-        const actor = (target ?? self) as Actor | null;
-        if (!actor || typeof eventName !== "string" || !eventName) return;
-        const loaded = this.byClassId.get(actor.classId);
+        const receiver = (target ?? self) as BObject | null;
+        if (!receiver || typeof eventName !== "string" || !eventName) return;
+        const loaded = this.byClassId.get(receiver.classId);
         if (!loaded || loaded.length === 0) return;
         this.dispatchEvent(
           loaded,
           eventName,
-          actor,
+          receiver,
           0,
           0,
           eventArgs ?? {},
@@ -581,14 +597,14 @@ export class ScriptHost {
           return {};
         }
         let loaded: LoadedScript[] | undefined;
-        let receiver: Actor | null = null;
+        let receiver: BObject | null = null;
         if (typeof target === "string") {
           loaded = this.byClassId.get(target);
         } else {
-          const actor = (target ?? self) as Actor | null;
-          if (!actor) return {};
-          receiver = actor;
-          loaded = this.byClassId.get(actor.classId);
+          const object = (target ?? self) as BObject | null;
+          if (!object) return {};
+          receiver = object;
+          loaded = this.byClassId.get(object.classId);
         }
         if (!loaded || loaded.length === 0) return {};
         let result: unknown = {};
@@ -661,11 +677,15 @@ export class ScriptHost {
           bodyId: null,
         },
       addImpulse: (actor, impulse, strength) => {
-        services.addImpulse?.(actor ?? self, impulse, strength);
+        const target = asActor(actor ?? self);
+        if (!target) return;
+        services.addImpulse?.(target, impulse, strength);
       },
       moveCharacter: (actor, translation, offset) => {
+        const target = asActor(actor ?? self);
+        if (!target) return;
         services.moveCharacter?.(
-          actor ?? self,
+          target,
           translation,
           deltaSeconds,
           offset,
@@ -674,13 +694,18 @@ export class ScriptHost {
       playSound: (asset, volume) => {
         services.playSound?.(String(asset ?? ""), Number(volume ?? 1));
       },
+      getWidget: (widgetId) => {
+        if (!(self instanceof UserInterface)) return null;
+        const id = String(widgetId ?? "");
+        return self.widgets.find((widget) => widget.widgetId === id) ?? null;
+      },
       setWidgetVisible: (widget, visible) => {
         services.setWidgetVisible?.(widget, visible);
       },
-      applyUserInterface: (assetGuid) =>
-        services.applyUserInterface?.(assetGuid) ?? "",
-      removeUserInterface: (instanceId) => {
-        services.removeUserInterface?.(instanceId);
+      applyUserInterface: (classIdOrGuid) =>
+        services.applyUserInterface?.(classIdOrGuid) ?? null,
+      removeUserInterface: (instance) => {
+        services.removeUserInterface?.(instance);
       },
       changeScene: (scene) => {
         services.changeScene?.(scene);
@@ -723,10 +748,14 @@ export class ScriptHost {
       },
       findPathTo: (from, to) => services.findPathTo?.(from, to) ?? [],
       moveTo: (actor, destination) => {
-        services.moveTo?.(actor ?? self, destination);
+        const target = asActor(actor ?? self);
+        if (!target) return;
+        services.moveTo?.(target, destination);
       },
       stopMovement: (actor) => {
-        services.stopMovement?.(actor ?? self);
+        const target = asActor(actor ?? self);
+        if (!target) return;
+        services.stopMovement?.(target);
       },
       isPathValid: (from, to) => services.isPathValid?.(from, to) ?? false,
       getClosestNavigablePoint: (point) =>
@@ -744,6 +773,10 @@ export class ScriptHost {
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
   }
+}
+
+function asActor(target: unknown): Actor | null {
+  return target instanceof Actor ? target : null;
 }
 
 function actorOf(target: unknown): Actor | null {

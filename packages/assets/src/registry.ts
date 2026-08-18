@@ -32,7 +32,7 @@ import {
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
-import { generateThumbnailBytes } from "./thumbnails";
+import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
 export interface IndexedAsset {
@@ -700,7 +700,11 @@ export class AssetRegistry {
       (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
     );
     if (!pixels?.data?.byteLength) return;
-    const thumb = await generateThumbnailBytes(pixels.data);
+    const thumb = await generateThumbnailBytes(
+      pixels.data,
+      DEFAULT_THUMBNAIL_MAX_EDGE,
+      pixels.mime,
+    );
     if (!thumb) return;
     await this.thumbnailWriter(asset.header.guid, thumb);
   }
@@ -708,10 +712,20 @@ export class AssetRegistry {
   async setCompressionState(
     guid: string,
     state: TextureCompressionState,
+    options?: { error?: string },
   ): Promise<void> {
     await this.enqueueTextureWrite(guid, async () => {
       await this.rewriteTexture(guid, async (header, chunks) => {
-        header.payload = { ...header.payload, compressionState: state };
+        const payload: Record<string, unknown> = {
+          ...header.payload,
+          compressionState: state,
+        };
+        if (state === "encode_failed") {
+          if (options?.error) payload.encodeError = options.error;
+        } else {
+          delete payload.encodeError;
+        }
+        header.payload = payload;
         return { header, chunks };
       });
     });
@@ -728,12 +742,14 @@ export class AssetRegistry {
           mime: "image/ktx2",
           data: result.ktx2,
         });
-        header.payload = {
+        const payload: Record<string, unknown> = {
           ...header.payload,
           compressionState: "compressed",
           encodeWallMs: result.wallMs,
           ktx2ChunkId: chunkId,
         };
+        delete payload.encodeError;
+        header.payload = payload;
         return { header, chunks };
       });
     });

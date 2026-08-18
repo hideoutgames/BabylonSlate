@@ -256,6 +256,36 @@ describe("pinDefaultPropertyRows", () => {
     if (row?.kind === "asset") row.onPick();
     expect(onPickClass).toHaveBeenCalledWith("classId", "Actor");
   });
+
+  it("normalizes a legacy raw UserInterface guid onto the class picker row", () => {
+    const onPickClass = vi.fn();
+    const rows = pinDefaultPropertyRows(
+      [
+        {
+          pinId: "asset",
+          name: "asset",
+          type: classRef("UserInterface"),
+          value: "hud-guid",
+        },
+      ],
+      vi.fn(),
+      {
+        classEntries: [{ id: "UserInterface:hud-guid", name: "HUD" }],
+        onPickClass,
+      },
+    );
+    expect(rows).toMatchObject([
+      {
+        kind: "asset",
+        id: "asset",
+        value: "UserInterface:hud-guid",
+        displayLabel: "HUD",
+      },
+    ]);
+    const row = rows[0];
+    if (row?.kind === "asset") row.onPick();
+    expect(onPickClass).toHaveBeenCalledWith("asset", "UserInterface");
+  });
 });
 
 describe("collectEnumMemberNames", () => {

@@ -44,8 +44,9 @@ import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
-  collectUiImageUrls,
+  resolveUiImages,
   revokeUiImageUrls,
+  type UiImageIssue,
 } from "../lib/play-ui-images";
 import type { FontAssetEntry } from "@babylonslate/render";
 import {
@@ -87,6 +88,7 @@ export interface UiEditingContextValue {
   sharedEngine: import("@babylonjs/core").Engine | null;
   fontEntries: FontAssetEntry[];
   resolveImageUrl: (guid: string) => string | null;
+  imageIssues: readonly UiImageIssue[];
   catalogOpen: boolean;
   setCatalogOpen: (open: boolean) => void;
   actionNames: string[];
@@ -162,6 +164,7 @@ export function UiEditingProvider({
   const [imageUrls, setImageUrls] = useState<Map<string, string>>(
     () => new Map(),
   );
+  const [imageIssues, setImageIssues] = useState<UiImageIssue[]>([]);
   const imageUrlsRef = useRef(imageUrls);
   imageUrlsRef.current = imageUrls;
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
@@ -217,15 +220,20 @@ export function UiEditingProvider({
       type: asset.header.type,
       chunks: asset.header.chunks,
     }));
-    const guids = collectImageGuidsFromUiDocuments([
-      ui,
-      ...Object.values(uiLibrary),
-    ]);
-    void collectUiImageUrls(
+    const guids = collectImageGuidsFromUiDocuments(
+      [ui, ...Object.values(uiLibrary)],
+      (guid) => {
+        if (guid === selfGuid) return ui;
+        const asset = assetRegistry?.getByGuid(guid);
+        if (asset?.header.payload) return asUiDocument(asset.header.payload);
+        return uiLibrary[guid] ?? null;
+      },
+    );
+    void resolveUiImages(
       guids,
       assets,
       readAssetChunk ?? (async () => null),
-    ).then((urls) => {
+    ).then(({ urls, issues }) => {
       if (cancelled) {
         revokeUiImageUrls(urls);
         return;
@@ -233,11 +241,12 @@ export function UiEditingProvider({
       revokeUiImageUrls(imageUrlsRef.current);
       imageUrlsRef.current = urls;
       setImageUrls(urls);
+      setImageIssues(issues);
     });
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, readAssetChunk, ui, uiLibrary]);
+  }, [assetRegistry, readAssetChunk, selfGuid, ui, uiLibrary]);
 
   useEffect(
     () => () => {
@@ -383,7 +392,12 @@ export function UiEditingProvider({
       if (!parent) return;
       const widget = parentOwnsChildLayout(parent.kind)
         ? createWidget(id, kind, humanizePropertyLabel(kind))
-        : createWidget(id, kind, humanizePropertyLabel(kind), defaultAddLayout(kind));
+        : createWidget(
+            id,
+            kind,
+            humanizePropertyLabel(kind),
+            defaultAddLayout(kind, parent.children.length),
+          );
       const next = insertWidget(current, widget, parent.id);
       commit({ ...latestPayloadRef.current, ...next });
       setSelectedId(widget.id);
@@ -445,6 +459,7 @@ export function UiEditingProvider({
       sharedEngine,
       fontEntries,
       resolveImageUrl,
+      imageIssues,
       catalogOpen,
       setCatalogOpen,
       actionNames,
@@ -469,6 +484,7 @@ export function UiEditingProvider({
       fitView,
       fontEntries,
       resolveImageUrl,
+      imageIssues,
       isEditorUtilityInterface,
       layout,
       patchLayout,

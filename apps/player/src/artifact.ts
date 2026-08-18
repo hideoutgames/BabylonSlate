@@ -1,5 +1,9 @@
 import { normalizeScene, type SerializedScene } from "@babylonslate/core";
 import {
+  normalizeUserInterfaceDocument,
+  type UserInterfaceDocument,
+} from "@babylonslate/ui-runtime";
+import {
   createHttpPackSource,
   createMemoryPackSource,
   parseGameManifest,
@@ -26,6 +30,7 @@ export type LoadedGame = {
   audioBytes: Map<string, Uint8Array>;
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
+  userInterfaces: Map<string, UserInterfaceDocument>;
 };
 
 function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
@@ -80,6 +85,7 @@ export async function loadGameFromFiles(
   const audioBytes = new Map<string, Uint8Array>();
   const payloads = new Map<string, Uint8Array>();
   const navmeshBytes = new Map<string, Uint8Array>();
+  const userInterfaces = new Map<string, UserInterfaceDocument>();
 
   const packSources = new Map<string, PackSource>();
   for (const packName of manifest.packs) {
@@ -117,6 +123,10 @@ export async function loadGameFromFiles(
     if (entry.type === NAVMESH_EXPORT_TYPE) {
       const sceneGuid = sceneGuidFromNavmeshExport(entry.guid) ?? entry.guid;
       navmeshBytes.set(sceneGuid, bytes);
+      continue;
+    }
+    if (entry.type === "UserInterface") {
+      userInterfaces.set(entry.guid, normalizeUserInterfaceDocument(parseJsonAsset(bytes)));
     }
   }
 
@@ -131,6 +141,7 @@ export async function loadGameFromFiles(
     audioBytes,
     payloads,
     navmeshBytes,
+    userInterfaces,
   };
 }
 
