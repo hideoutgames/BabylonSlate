@@ -23,6 +23,7 @@ import {
   shouldOpenAddNodeOnConnectEnd,
   connectEventPointerId,
   shouldCancelConnectOnSecondaryPointer,
+  shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -699,6 +700,46 @@ describe("shouldCancelConnectOnSecondaryPointer", () => {
       shouldCancelConnectOnSecondaryPointer({
         ...inZone,
         dragPointerId: null,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldCancelConnectionOnSecondaryPointer", () => {
+  const active = {
+    connectionActive: true,
+    dragPointerId: 1,
+    eventPointerId: 2,
+    mode: "add-node" as const,
+  };
+
+  it("cancels a second pointer during an add-node connection drag", () => {
+    expect(shouldCancelConnectionOnSecondaryPointer(active)).toBe(true);
+  });
+
+  it("does not cancel in default mode", () => {
+    expect(
+      shouldCancelConnectionOnSecondaryPointer({
+        ...active,
+        mode: "default",
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores the drag pointer itself", () => {
+    expect(
+      shouldCancelConnectionOnSecondaryPointer({
+        ...active,
+        eventPointerId: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a second pointer when no connection drag is active", () => {
+    expect(
+      shouldCancelConnectionOnSecondaryPointer({
+        ...active,
+        connectionActive: false,
       }),
     ).toBe(false);
   });

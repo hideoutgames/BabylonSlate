@@ -86,6 +86,7 @@ import {
   type PinCompatibilityRule,
   shouldOpenAddNodeOnConnectEnd,
   shouldCancelConnectOnSecondaryPointer,
+  shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
 import type { PinDisplayLookup } from "./wildcard-display";
@@ -1120,28 +1121,16 @@ function GraphEditorCanvas({
   }, []);
 
   const handlePaneClick = useCallback(
-    (event: { clientX: number; clientY: number }) => {
+    () => {
       if (skipPaneClickRef.current) {
         skipPaneClickRef.current = false;
         return;
       }
       const pending = pendingPinRef.current;
       if (!readOnly && connectEndMode === "add-node" && pending) {
-        const pin = pinOnNode(
-          graphStateRef.current.nodes,
-          pending.nodeId,
-          pending.pinId,
-        );
-        if (pin) {
-          const point = { x: event.clientX, y: event.clientY };
-          setPendingConnect({
-            pin,
-            nodeId: pending.nodeId,
-            position: screenToFlowPosition(point),
-          });
-          setPaletteOpen(true);
-          return;
-        }
+        pendingPinRef.current = null;
+        setPendingPin(null);
+        return;
       }
       clearSelection();
       const now = Date.now();
@@ -1160,7 +1149,6 @@ function GraphEditorCanvas({
       connectEndMode,
       emptyPaneDoubleTapAddsNode,
       readOnly,
-      screenToFlowPosition,
     ],
   );
 
@@ -1201,6 +1189,8 @@ function GraphEditorCanvas({
   pinCompatibilityRef.current = pinCompatibility;
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  const connectEndModeRef = useRef(connectEndMode);
+  connectEndModeRef.current = connectEndMode;
 
   useEffect(() => {
     if (!onCanvasApi) return;
@@ -1265,6 +1255,24 @@ function GraphEditorCanvas({
       );
       if (eventPointerId === session.pointerId) return;
       event.preventDefault();
+      const cancelRubberBand = () => {
+        session.connectEndHandled = true;
+        skipPaneClickRef.current = true;
+        pendingPinRef.current = null;
+        setPendingPin(null);
+        storeApi.getState().cancelConnection();
+      };
+      if (
+        shouldCancelConnectionOnSecondaryPointer({
+          connectionActive: true,
+          dragPointerId: session.pointerId,
+          eventPointerId,
+          mode: connectEndModeRef.current,
+        })
+      ) {
+        cancelRubberBand();
+        return;
+      }
       const pin = pinOnNode(
         graphStateRef.current.nodes,
         session.nodeId,
@@ -1302,8 +1310,7 @@ function GraphEditorCanvas({
       ) {
         return;
       }
-      session.connectEndHandled = true;
-      storeApi.getState().cancelConnection();
+      cancelRubberBand();
     };
 
     document.addEventListener("pointermove", onMove, true);
@@ -1368,6 +1375,7 @@ function GraphEditorCanvas({
       nodeErrorCount,
       pinHasError,
       pinDisplayType,
+      connectEndMode,
       onNavigateRequest,
       selectedAttachmentId,
       onAttachmentSelect,
@@ -1383,6 +1391,7 @@ function GraphEditorCanvas({
       pendingPin,
       pinDisplayType,
       pinHasError,
+      connectEndMode,
       selectedAttachmentId,
       onAttachmentSelect,
       onAttachmentDoubleClick,

@@ -745,6 +745,40 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("cancels a pin drag on a second pointer in add-node mode", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="add-node"
+          paletteNodes={pinDragPalette}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      const pane = container.querySelector(".react-flow__pane");
+      expect(pane).not.toBeNull();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop, () => {
+          dispatchPointerEvent(pane!, "pointerdown", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+          dispatchPointerEvent(pane!, "pointerup", {
+            clientX: 400,
+            clientY: 100,
+            pointerId: 2,
+          });
+        });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      expect(queryByTestId("node-palette")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("does not open Add Node or break wires after a second-pointer cancel", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -2335,6 +2369,9 @@ describe("GraphEditor", () => {
       ),
     ).not.toBeNull();
     expect(
+      container.querySelector('[data-id="root"] [data-handleid="parent"]'),
+    ).toBeNull();
+    expect(
       container.querySelector(
         '[data-id="task"] [data-handleid="parent"][data-pin-type="exec"] [data-pin-connected]',
       ),
@@ -2421,8 +2458,8 @@ describe("GraphEditor", () => {
     });
   });
 
-  it("opens Add Node from a pin tap plus empty pane in add-node mode", async () => {
-    const { container, getByTestId } = render(
+  it("cancels a pin tap plus empty pane in add-node mode", async () => {
+    const { container, queryByTestId } = render(
       <GraphEditor
         initialGraph={{
           nodes: [
@@ -2469,7 +2506,7 @@ describe("GraphEditor", () => {
       container.querySelector('[data-id="root"] [data-handleid="children"]')!,
     );
     fireEvent.click(container.querySelector(".react-flow__pane")!);
-    expect(getByTestId("node-palette")).toBeTruthy();
+    expect(queryByTestId("node-palette")).toBeNull();
   });
 
   it("does not open Add Node from a pin tap plus empty pane in default mode", async () => {
