@@ -291,6 +291,12 @@ describe("scene-loader", () => {
     expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:anim")).toBe(
       "ground",
     );
+    expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:a1")).toBe(
+      "ground",
+    );
+    expect(actorIdFromMeshName("editorActor:ground:layer-1:0:0:a1:anim")).toBe(
+      "ground",
+    );
     expect(
       actorIdFromMeshName(editorComponentMeshName("hero", "prefab-mesh")),
     ).toBe("hero");

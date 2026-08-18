@@ -144,7 +144,14 @@ export function decodeTileGid(
       chosen = ref;
     }
   }
-  if (!chosen) return null;
+  if (!chosen) {
+    if (map.tilesets.length > 0) return null;
+    const fallbackGuid = map.tilesetGuid;
+    if (!fallbackGuid) return null;
+    const tileset = tilesets.get(fallbackGuid);
+    if (!tileset) return null;
+    return { guid: fallbackGuid, localId: gid, tileset };
+  }
   const tileset = tilesets.get(chosen.guid);
   if (!tileset) return null;
   const count =

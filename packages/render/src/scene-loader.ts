@@ -1,7 +1,7 @@
 import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial } from "@babylonjs/core";
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import { identitySerializedTransform } from "@babylonslate/core";
-import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import {
@@ -36,8 +36,10 @@ export function actorIdFromMeshName(meshName: string): string | null {
   const rest = meshName.slice(EDITOR_ACTOR_MESH_PREFIX.length);
   const pipe = rest.indexOf(EDITOR_COMPONENT_MESH_SEP);
   if (pipe >= 0) return rest.slice(0, pipe);
-  // Chunk children are `editorActor:<id>:<layer>:<cx>:<cy>` plus optional `:anim`.
-  const chunk = /^(.*):([^:]+):(-?\d+):(-?\d+)(?::anim)?$/.exec(rest);
+  // Chunk children are `editorActor:<id>:<layer>:<cx>:<cy>` plus optional
+  // `:aN` atlas suffix and `:anim`.
+  const chunk =
+    /^(.*):([^:]+):(-?\d+):(-?\d+)(?::a\d+)?(?::anim)?$/.exec(rest);
   return chunk ? chunk[1]! : rest;
 }
 
@@ -228,20 +230,18 @@ function createTilemapComponentMesh(
 ): Mesh {
   const mapGuid = stringProp(component.properties.assetGuid);
   const tilemap = mapGuid ? assets?.tilemaps?.get(mapGuid) : undefined;
-  const tileset = tilemap?.tilesetGuid
-    ? assets?.tilesets?.get(tilemap.tilesetGuid)
-    : undefined;
-  if (tilemap && tileset) {
+  const tilesets = assets?.tilesets ?? new Map();
+  if (tilemap && tilesets.size > 0) {
     const size = worldTileSize(tilemap, assets?.pixelsPerUnit ?? 100);
     const mesh = createTilemapMeshes(
       scene,
       name,
       tilemap,
-      tileset,
+      tilesets,
       size.width,
       size.height,
     );
-    applyAlbedoTexture(mesh, scene, tileset.textureGuid, assets);
+    applyTilemapAlbedoTextures(mesh, scene, assets);
     return mesh;
   }
   return createPrimitiveMesh(scene, name, "tilemap");

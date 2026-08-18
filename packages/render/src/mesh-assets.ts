@@ -84,7 +84,16 @@ export function applyAlbedoTexture(
   material.transparencyMode = Material.MATERIAL_ALPHATEST;
   material.alphaCutOff = 0.4;
   mesh.material = material;
+}
+
+/** Bind each tilemap chunk child to the atlas stored on `metadata.tilemapTextureGuid`. */
+export function applyTilemapAlbedoTextures(
+  mesh: Mesh,
+  scene: Scene,
+  assets?: MeshAssetContext,
+): void {
   for (const child of mesh.getChildMeshes()) {
-    child.material = material;
+    const guid = child.metadata?.tilemapTextureGuid as string | null | undefined;
+    applyAlbedoTexture(child, scene, guid, assets);
   }
 }
