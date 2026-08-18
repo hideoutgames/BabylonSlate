@@ -59,4 +59,23 @@ describe("SpriteAnimation payload", () => {
     });
     expect(spriteAnimationTextureGuids(payload)).toEqual(["tex-a", "tex-b"]);
   });
+
+  it("defaults a missing or empty document instead of throwing", () => {
+    expect(parseSpriteAnimationPayload(null).frames).toHaveLength(1);
+    expect(parseSpriteAnimationPayload({}).frames).toHaveLength(1);
+    expect(parseSpriteAnimationPayload({ frames: [] }).frames).toHaveLength(1);
+    expect(parseSpriteAnimationPayload("walk").frames[0]?.textureGuid).toBe("");
+  });
+
+  it("clamps non-finite normalised time onto the first frame", () => {
+    const payload = parseSpriteAnimationPayload({
+      frames: [
+        { textureGuid: "a", durationMs: 100 },
+        { textureGuid: "b", durationMs: 100 },
+      ],
+    });
+    expect(spriteAnimationFrameAt(payload, Number.NaN)?.textureGuid).toBe("a");
+    expect(spriteAnimationFrameAt(payload, -2)?.textureGuid).toBe("a");
+    expect(spriteAnimationFrameAt({ frames: [] }, 0.5)).toBeNull();
+  });
 });

@@ -695,6 +695,25 @@ describe("EditorSceneSync", () => {
     expect(before!.isDisposed()).toBe(true);
   });
 
+  it("rebuilds meshes when Sprite Animation payloads are added", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A")]));
+    sync.setMeshAssets({
+      spritePayloads: new Map(),
+      spriteAnimations: new Map(),
+    });
+    const before = sync.meshForActor("a");
+    sync.setMeshAssets({
+      spritePayloads: new Map(),
+      spriteAnimations: new Map([["walk-anim", { frames: [] }]]),
+    });
+    const after = sync.meshForActor("a");
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
+    expect(before!.isDisposed()).toBe(true);
+  });
+
   it("binds MeshComponent.materialGuid onto the visual mesh", () => {
     const { scene } = createHandle();
     const assigned = new StandardMaterial("mat-rock", scene);

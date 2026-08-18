@@ -488,4 +488,90 @@ describe("PhysicsWorldSync sprite collision", () => {
     ).toEqual([]);
     sync.dispose();
   });
+
+  it("falls back to the Sprite clip AABB when the Animation asset is missing", () => {
+    const world = createWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      transform: identityTransform(),
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        guid: "rb",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        guid: "col",
+        variables: {
+          shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
+        },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "SpriteComponent",
+        guid: "spr",
+        assetGuid: "hero-sprite",
+        variables: { assetGuid: "hero-sprite" },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    const sprite = createDefaultSpritePayload();
+    sprite.pixelsPerUnit = 100;
+    sprite.frames = [
+      {
+        name: "idle",
+        u: 0,
+        v: 0,
+        uSize: 1,
+        vSize: 1,
+        durationMs: 100,
+        pivot: { x: 0.5, y: 0.5 },
+        collision: { x: 0, y: 0, width: 1, height: 1 },
+        width: 100,
+        height: 100,
+      },
+      {
+        name: "walk",
+        u: 0,
+        v: 0,
+        uSize: 1,
+        vSize: 1,
+        durationMs: 100,
+        pivot: { x: 0.5, y: 0.5 },
+        collision: { x: 0.5, y: 0, width: 0.5, height: 1 },
+        width: 100,
+        height: 100,
+      },
+    ];
+    sprite.clips = [{ name: "Walk", frames: ["walk"] }];
+
+    const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.setSpriteContent({
+      sprites: { "hero-sprite": sprite },
+      spriteAnimations: {},
+      pixelsPerUnit: 100,
+    });
+    sync.setActorSpriteClip("hero", {
+      assetGuid: "missing-walk-anim",
+      clipName: "Walk",
+      normalisedTime: 0,
+    });
+    sync.syncFromWorld(world);
+
+    expect(
+      backend.sphereOverlap({ x: 0.25, y: 0, z: 0 }, 0.05).actorIds,
+    ).toContain("hero");
+    expect(
+      backend.sphereOverlap({ x: -0.4, y: 0, z: 0 }, 0.05).actorIds,
+    ).toEqual([]);
+    sync.dispose();
+  });
 });

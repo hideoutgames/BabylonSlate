@@ -16,6 +16,8 @@ import {
   serializedToAnimGraph,
   hydrateAnimGraphForEditor,
   animGraphMembersFromVariables,
+  migrateAnimHandle,
+  normalizeAnimConnection,
   setTransitionBidirectional,
 } from "./index";
 
@@ -129,6 +131,67 @@ describe("anim graph evaluator", () => {
       pins.some((pin) => pin.id === "right-out" && pin.direction === "out"),
     ).toBe(true);
     expect(pins.some((pin) => pin.id === "in" || pin.id === "out")).toBe(false);
+  });
+
+  it("migrates legacy in/out handles onto the matching side plates", () => {
+    expect(migrateAnimHandle("in", "in")).toBe("left-in");
+    expect(migrateAnimHandle("out", "out")).toBe("right-out");
+    expect(migrateAnimHandle(null, "in")).toBe("left-in");
+    expect(migrateAnimHandle("garbage", "out")).toBe("right-out");
+    expect(migrateAnimHandle("top-in", "out")).toBe("top-out");
+    expect(migrateAnimHandle("left-out", "in")).toBe("left-in");
+  });
+
+  it("drops incomplete or self-loop canvas connections", () => {
+    expect(
+      normalizeAnimConnection({ source: "idle", target: null }),
+    ).toBeNull();
+    expect(
+      normalizeAnimConnection({ source: "idle", target: "idle" }),
+    ).toBeNull();
+    expect(
+      normalizeAnimConnection({
+        source: "idle",
+        target: "run",
+        sourceHandle: "out",
+        targetHandle: "in",
+      }),
+    ).toEqual({
+      source: "idle",
+      target: "run",
+      sourceHandle: "right-out",
+      targetHandle: "left-in",
+    });
+  });
+
+  it("rewrites stored in/out handles when merging a canvas edge", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.transitions.push({
+      id: "idle-to-run",
+      fromStateId: "idle",
+      toStateId: "run",
+      blendSeconds: 0.15,
+      priority: 2,
+      sourceHandle: "out",
+      targetHandle: "in",
+      ruleGraph: createDefaultTransitionRuleGraph(),
+    });
+    const next = serializedToAnimGraph(animGraphToSerialized(doc), doc);
+    expect(next.transitions[0]).toMatchObject({
+      id: "idle-to-run",
+      sourceHandle: "right-out",
+      targetHandle: "left-in",
+      blendSeconds: 0.15,
+      priority: 2,
+    });
   });
 
   it("round-trips dragged node positions through the graph-ui serialized shape", () => {
