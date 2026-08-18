@@ -521,6 +521,7 @@ export function DocumentWorkspace() {
         if (
           doc.ref.kind === "sprite" ||
           doc.ref.kind === "plugin-settings" ||
+          doc.ref.kind === "audio" ||
           doc.ref.kind === "audio-mixer" ||
           doc.ref.kind === "audio-channel" ||
           doc.ref.kind === "sound-attenuation" ||

@@ -19,6 +19,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "structure",
   "script-interface",
   "plugin-settings",
+  "audio",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
@@ -89,6 +90,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ScriptInterface";
     case "plugin-settings":
       return "PluginSettings";
+    case "audio":
+      return "Audio";
     case "audio-mixer":
       return "AudioMixer";
     case "audio-channel":
@@ -169,6 +172,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "script-interface";
     case "PluginSettings":
       return "plugin-settings";
+    case "Audio":
+      return "audio";
     case "AudioMixer":
       return "audio-mixer";
     case "AudioChannel":
@@ -181,7 +186,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "particle-system";
     case "Texture":
     case "Model":
-    case "Audio":
     case "Animation":
       return "asset-settings";
     default:
@@ -229,6 +233,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Script Interface";
     case "plugin-settings":
       return "Plugin Settings";
+    case "audio":
+      return "Audio";
     case "audio-mixer":
       return "Audio Mixer";
     case "audio-channel":

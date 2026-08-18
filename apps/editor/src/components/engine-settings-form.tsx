@@ -94,6 +94,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Behaviour Tree",
   },
   {
+    kind: "audio",
+    keepKey: "audio",
+    label: "Audio",
+  },
+  {
     kind: "audio-mixer",
     keepKey: "audio-mixer",
     label: "Audio Mixer",

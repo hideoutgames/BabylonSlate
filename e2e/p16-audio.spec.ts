@@ -135,10 +135,11 @@ test.describe("P16 audio", () => {
     await pickAsset(page, "audio-mixer-channel-picker", channelGuid);
 
     await openAssetFromBrowser(page, "assets/beep.babasset");
-    await expect(page.getByTestId("document-workspace-asset-settings")).toBeVisible();
+    await expect(page.getByTestId("document-workspace-audio")).toBeVisible();
     await expect(page.getByTestId("audio-preview")).toBeVisible();
     await expect(page.getByTestId("audio-preview-play")).toBeVisible();
     await page.getByTestId("audio-preview-play").click();
+    await expect(page.getByTestId("audio-clip-0-name")).toHaveText(/beep/i);
 
     await page.getByTestId("property-audioChannelGuid").click();
     await pickAsset(page, "audio-channel-picker", channelGuid);
