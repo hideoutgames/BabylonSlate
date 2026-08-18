@@ -13,6 +13,7 @@ import {
   hasBlockingErrors,
   toSerializedGraph as logicToSerializedGraph,
   isAssignable,
+  isActorClassId,
   isLogicGraphPayload,
   type ClassHierarchy,
   type ClassMemberSymbol,
@@ -28,8 +29,16 @@ import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
+  ENGINE_WIDGET_CLASS_IDS,
 } from "@babylonslate/object-model";
-import { createDefaultNodeRegistry, castDefaultClassId, callInterfaceTitle } from "@babylonslate/scripting-nodes";
+import {
+  boundGetWidgetEntries,
+  createDefaultNodeRegistry,
+  castDefaultClassId,
+  callInterfaceTitle,
+  uiGetWidgetNodeId,
+  type BoundWidgetRef,
+} from "@babylonslate/scripting-nodes";
 import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
 import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
@@ -65,7 +74,8 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "variables.get" ||
     typeId === "variables.set" ||
     typeId === "component.getNamed" ||
-    typeId === "casting.cast"
+    typeId === "casting.cast" ||
+    typeId === uiGetWidgetNodeId
   );
 }
 
@@ -79,7 +89,12 @@ function resultKindForClass(
   classId: string,
   parentOf: (id: string) => string | null | undefined,
 ): "actorRef" | "objectRef" {
-  return walkAncestry(classId, parentOf).includes("Actor")
+  return isActorClassId(classId, {
+    isSubclassOf(childClassId, parentClassId) {
+      if (childClassId === parentClassId) return true;
+      return walkAncestry(childClassId, parentOf).includes(parentClassId);
+    },
+  })
     ? "actorRef"
     : "objectRef";
 }
@@ -418,6 +433,7 @@ export function createDefaultLogicGraphSerialized(
 export type ScriptPaletteOptions = ClassEventOptions & {
   classId?: string;
   graph?: SerializedGraph;
+  widgets?: readonly BoundWidgetRef[];
   otherClassGraphs?: Record<string, SerializedGraph>;
   activeFunctionId?: string | null;
   functionLibraries?: Array<{
@@ -924,8 +940,27 @@ export function scriptPaletteNodes(
           ...callInterfacePaletteNodes(nodeRegistry, options),
           ...variableAccessPaletteNodes(nodeRegistry, options),
           ...castPaletteNodes(nodeRegistry, options),
+          ...getWidgetPaletteNodes(nodeRegistry, options),
         ];
   return [...catalog, ...injected];
+}
+
+function getWidgetPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get(uiGetWidgetNodeId);
+  if (!def || !options?.widgets?.length) return [];
+  return boundGetWidgetEntries(options.widgets).map((entry) => ({
+    id: entry.id,
+    nodeType: entry.nodeType,
+    title: entry.title,
+    category: def.category,
+    pins: def.pins(entry.defaultData),
+    pure: def.pure,
+    latent: def.latent,
+    defaultData: entry.defaultData,
+  }));
 }
 
 export function hydrateClassDocumentPayload(
@@ -1035,6 +1070,7 @@ export function knownClassIdSet(
   const ids = new Set<string>([
     ...ENGINE_BASE_CLASS_IDS,
     ...ENGINE_COMPONENT_CLASS_IDS,
+    ...ENGINE_WIDGET_CLASS_IDS,
     ...ENGINE_BT_BUILTIN_CLASSES.map((entry) => entry.id),
   ]);
   for (const id of classIds) {

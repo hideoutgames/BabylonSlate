@@ -224,12 +224,14 @@ describe("Play createEngine view", () => {
         name: "actor-0",
         visible: true,
         position: [-3, 1, 0],
+        worldMatrixPosition: [-3, 1, 0],
       }),
       expect.objectContaining({
         slotId: 1,
         name: "actor-1",
         visible: true,
         position: [3, 1, 0],
+        worldMatrixPosition: [3, 1, 0],
       }),
     ]);
   });

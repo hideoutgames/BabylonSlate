@@ -188,7 +188,9 @@ import {
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
+  preferOpenPlayUiContent,
   collectPlayScriptDocuments,
+  dispatchMountedPlayUiWidgetEvent,
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
@@ -251,6 +253,8 @@ interface DocumentContextValue {
     guid: string,
     options?: { maxDimension?: number; force?: boolean },
   ) => Promise<boolean>;
+  onSessionDiagnostic: (listener: (line: string) => void) => () => void;
+  sessionDiagnostics: string[];
   openDocuments: OpenDocument[];
   tabOrder: string[];
   activeDocumentId: string | null;
@@ -967,6 +971,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return ok;
     },
     [bump, projectService],
+  );
+
+  const onSessionDiagnostic = useCallback(
+    (listener: (line: string) => void) => projectService.onDiagnostic(listener),
+    [projectService],
   );
 
   const replayRecoveryJournal = useCallback(async () => {
@@ -1859,24 +1868,34 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [documentService, projectService]);
 
   const loadProjectGraphDocuments = useCallback(async (): Promise<
-    Array<{ path: string; content: SerializedGraph }>
+    Array<{
+      path: string;
+      content: SerializedGraph;
+      classId?: string;
+      parentClassId?: string | null;
+    }>
   > => {
     const documents = await loadClassGraphDocuments();
     const open = documentService.getState().openDocuments;
     const uiAssets = (projectService.registry?.list() ?? []).filter(
       (asset) => asset.header.type === "UserInterface",
     );
-    const uiPayloads: Array<{ path: string; payload: unknown }> = [];
+    const uiPayloads: Array<{ path: string; payload: unknown; guid?: string }> = [];
     for (const asset of uiAssets) {
       const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
       if (openDoc?.content) {
-        uiPayloads.push({ path: asset.path, payload: openDoc.content });
+        uiPayloads.push({
+          path: asset.path,
+          payload: openDoc.content,
+          guid: asset.header.guid,
+        });
         continue;
       }
       try {
         uiPayloads.push({
           path: asset.path,
           payload: await projectService.loadDocument("ui", asset.path),
+          guid: asset.header.guid,
         });
       } catch (error) {
         console.error(`[play] failed to load UserInterface logic ${asset.path}`, error);
@@ -2020,7 +2039,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
         graphId: documentId({ kind: "graph", path: doc.path }),
-        classId: classIdForGraphPath(doc.path),
+        classId: doc.classId ?? classIdForGraphPath(doc.path),
         hierarchy: classHierarchyFromParentOf(parentOf),
         members: classMemberSymbolsFromGraphs(classGraphs),
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
@@ -2053,18 +2072,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const asset of assets) {
       if (asset.type !== "UserInterface") continue;
       const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
-      if (openDoc?.content) {
-        loaded.set(asset.path, openDoc.content);
-        continue;
+      let disk: unknown | null = null;
+      if (!openDoc?.content) {
+        try {
+          disk = await projectService.loadDocument("ui", asset.path);
+        } catch (error) {
+          console.error(`[play] failed to load UserInterface ${asset.path}`, error);
+        }
       }
-      try {
-        loaded.set(
-          asset.path,
-          await projectService.loadDocument("ui", asset.path),
-        );
-      } catch (error) {
-        console.error(`[play] failed to load UserInterface ${asset.path}`, error);
-      }
+      const content = preferOpenPlayUiContent(openDoc?.content, disk);
+      if (content) loaded.set(asset.path, content);
     }
     return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
   }, [documentService, projectService]);
@@ -2509,6 +2526,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         } | null) => void;
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
+        setUiDocumentContent: (
+          path: string,
+          content: Record<string, unknown>,
+        ) => Promise<boolean>;
+        dispatchPlayUiWidgetEvent: (event: {
+          instanceId: string;
+          widgetId: string;
+          kind: "click" | "value" | "checked" | "text";
+          value?: unknown;
+        }) => boolean;
         setMainGraphComponents: (
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
@@ -2547,6 +2574,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           error?: string;
         } | null;
         dirtyDocuments: () => { kind: string; id: string }[];
+        textureEncodeState: (path: string) => {
+          compressionState: string | null;
+          encodeError: string | null;
+          hasPixels: boolean;
+        } | null;
       };
       __babylonslateSourceControl?: SourceControlService;
     };
@@ -2704,6 +2736,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
         return true;
       },
+      setUiDocumentContent: async (
+        path: string,
+        content: Record<string, unknown>,
+      ) => {
+        const id = documentId({ kind: "ui", path });
+        if (!documentService.getState().openDocuments.has(id)) {
+          await documentService.openDocument(
+            projectService,
+            { kind: "ui", path, label: path.split("/").pop() ?? path },
+            null,
+            false,
+          );
+        }
+        return applyAssetDocumentChange(id, content);
+      },
+      dispatchPlayUiWidgetEvent: (event) =>
+        dispatchMountedPlayUiWidgetEvent(event),
       setMainGraphComponents: async (components) => {
         const openGraph = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph" && entry.content,
@@ -2721,6 +2770,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return applySceneChange(openScene.id, structuredClone(scene));
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      textureEncodeState: (path: string) => {
+        const asset = projectService.registry
+          ?.list()
+          .find((entry) => entry.path === path);
+        if (!asset) return null;
+        const state = asset.header.payload.compressionState;
+        const encodeError = asset.header.payload.encodeError;
+        return {
+          compressionState: typeof state === "string" ? state : null,
+          encodeError: typeof encodeError === "string" ? encodeError : null,
+          hasPixels: asset.header.chunks.some(
+            (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
+          ),
+        };
+      },
       projectStartupSceneGuid: () =>
         projectDocument?.settings.startupSceneGuid?.trim() ?? "",
       pluginGuids: () =>
@@ -3329,6 +3393,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
+      onSessionDiagnostic,
+      sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,
@@ -3374,6 +3440,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       repathDocument,
       retryFailedTextureEncoding,
       retryTextureEncoding,
+      onSessionDiagnostic,
       loadAssetThumbnail,
       thumbnailsEnabled,
       collectScriptBundles,

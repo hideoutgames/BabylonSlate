@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
+import {
+  ENGINE_WIDGET_KINDS,
+  USER_INTERFACE_ENGINE_CLASS_ID,
+  WIDGET_ENGINE_CLASS_ID,
+  userInterfaceClassId,
+  widgetClassIdForKind,
+} from "@babylonslate/core";
 import { ClassRegistry } from "./class-registry";
-import { ENGINE_COMPONENT_CLASS_IDS } from "./ids";
+import {
+  ENGINE_COMPONENT_CLASS_IDS,
+  ENGINE_WIDGET_CLASS_IDS,
+  isLockedEngineClassId,
+  userInterfaceAssetClassDef,
+} from "./ids";
 
 describe("ClassRegistry", () => {
   it("registers engine bases and components by default", () => {
@@ -26,6 +38,41 @@ describe("ClassRegistry", () => {
     expect(registry.isA("BTTask_Wait", "BTTask")).toBe(true);
     expect(registry.isA("BTTask_MoveTo", "BTTask")).toBe(true);
     expect(registry.isA("BTDecorator_BlackboardIsSet", "BTDecorator")).toBe(true);
+    expect(registry.has(USER_INTERFACE_ENGINE_CLASS_ID)).toBe(true);
+    expect(registry.isA(USER_INTERFACE_ENGINE_CLASS_ID, "BObject")).toBe(true);
+    expect(registry.isA(USER_INTERFACE_ENGINE_CLASS_ID, "Actor")).toBe(false);
+    expect(registry.get(USER_INTERFACE_ENGINE_CLASS_ID)?.kind).toBe("object");
+    expect(registry.has(WIDGET_ENGINE_CLASS_ID)).toBe(true);
+    expect(registry.isA(WIDGET_ENGINE_CLASS_ID, "BObject")).toBe(true);
+    expect(registry.isA(WIDGET_ENGINE_CLASS_ID, "Actor")).toBe(false);
+    expect(registry.has("ButtonWidget")).toBe(true);
+    expect(registry.has("ImageWidget")).toBe(true);
+    expect(registry.isA("ButtonWidget", WIDGET_ENGINE_CLASS_ID)).toBe(true);
+    expect(registry.isA("ImageWidget", WIDGET_ENGINE_CLASS_ID)).toBe(true);
+    for (const kind of ENGINE_WIDGET_KINDS) {
+      const classId = widgetClassIdForKind(kind);
+      expect(registry.has(classId)).toBe(true);
+      expect(registry.isA(classId, WIDGET_ENGINE_CLASS_ID)).toBe(true);
+      expect(ENGINE_WIDGET_CLASS_IDS).toContain(classId);
+      expect(isLockedEngineClassId(classId)).toBe(true);
+    }
+    expect(isLockedEngineClassId(USER_INTERFACE_ENGINE_CLASS_ID)).toBe(true);
+    expect(isLockedEngineClassId(WIDGET_ENGINE_CLASS_ID)).toBe(true);
+  });
+
+  it("describes a project UserInterface asset as a UserInterface subclass", () => {
+    const def = userInterfaceAssetClassDef("hud-guid");
+    expect(def).toEqual({
+      id: userInterfaceClassId("hud-guid"),
+      parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    const registry = new ClassRegistry();
+    expect(registry.ensure(def).ok).toBe(true);
+    expect(registry.isA(def.id, USER_INTERFACE_ENGINE_CLASS_ID)).toBe(true);
+    expect(registry.isA(def.id, "Actor")).toBe(false);
   });
 
   it("supports user class inheritance queries", () => {

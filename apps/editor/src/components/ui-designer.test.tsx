@@ -31,6 +31,23 @@ function dispatchPointerEvent(
   target.dispatchEvent(event);
 }
 
+function widgetCenter(target: HTMLElement): { x: number; y: number } {
+  const canvas = screen.getByTestId("ui-design-canvas");
+  const canvasWidth = Number.parseFloat(canvas.style.width);
+  const canvasHeight = Number.parseFloat(canvas.style.height);
+  const zoom = Number(canvas.getAttribute("data-zoom"));
+  const panX = Number(canvas.getAttribute("data-pan-x"));
+  const panY = Number(canvas.getAttribute("data-pan-y"));
+  const left = Number.parseFloat(target.style.left) / 100;
+  const top = Number.parseFloat(target.style.top) / 100;
+  const width = Number.parseFloat(target.style.width) / 100;
+  const height = Number.parseFloat(target.style.height) / 100;
+  return {
+    x: panX + (left + width / 2) * canvasWidth * zoom,
+    y: panY + (top + height / 2) * canvasHeight * zoom,
+  };
+}
+
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
     constructor(type: string, init?: MouseEventInit) {
@@ -184,10 +201,20 @@ describe("UiDesigner", () => {
   it("drags a widget to write left/top once on pointer up", () => {
     const { onChange } = renderHud();
     const stick = screen.getByTestId("ui-widget-stick");
-    dispatchPointerEvent(stick, "pointerdown", { clientX: 10, clientY: 10 });
-    dispatchPointerEvent(stick, "pointermove", { clientX: 55, clientY: 10 });
+    const start = widgetCenter(stick);
+    dispatchPointerEvent(stick, "pointerdown", {
+      clientX: start.x,
+      clientY: start.y,
+    });
+    dispatchPointerEvent(stick, "pointermove", {
+      clientX: start.x + 45,
+      clientY: start.y,
+    });
     expect(onChange).not.toHaveBeenCalled();
-    dispatchPointerEvent(stick, "pointerup", { clientX: 55, clientY: 10 });
+    dispatchPointerEvent(stick, "pointerup", {
+      clientX: start.x + 45,
+      clientY: start.y,
+    });
     expect(onChange).toHaveBeenCalledTimes(1);
     const [next] = onChange.mock.calls[0] as [Record<string, unknown>];
     const widgets = next.widgets as Record<
@@ -218,10 +245,13 @@ describe("UiDesigner", () => {
     const next = onChange.mock.calls.at(-1)![0] as {
       widgets: Record<string, { kind: string; layout: { horizontalAlignment: string; verticalAlignment: string } }>;
     };
-    const button = Object.values(next.widgets).find((row) => row.kind === "Button");
+    const button = Object.values(next.widgets).find((row) => row.kind === "Button") as
+      | { layout: { horizontalAlignment: string; verticalAlignment: string }; style?: { background?: string } }
+      | undefined;
     expect(button).toBeTruthy();
     expect(button!.layout.horizontalAlignment).toBe("center");
     expect(button!.layout.verticalAlignment).toBe("center");
+    expect(button!.style?.background).toBe("#333333");
   });
 
   it("deletes a widget from the hierarchy settings menu", () => {
@@ -347,15 +377,25 @@ describe("UiDesigner", () => {
     fireEvent.click(screen.getByTestId("ui-widget-icon"));
     fireEvent.click(screen.getByTestId("property-image"));
     expect(await screen.findByTestId("search-item-tex-1")).toBeTruthy();
+    const iconBefore = screen.getByTestId("ui-widget-icon");
+    const beforeX = iconBefore.getAttribute("data-gui-x");
+    const beforeY = iconBefore.getAttribute("data-gui-y");
     fireEvent.click(screen.getByTestId("search-item-tex-1"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         widgets: expect.objectContaining({
           icon: expect.objectContaining({
             props: expect.objectContaining({ imageGuid: "tex-1" }),
+            layout: payload.widgets.icon!.layout,
           }),
         }),
       }),
+    );
+    expect(screen.getByTestId("ui-widget-icon").getAttribute("data-gui-x")).toBe(
+      beforeX,
+    );
+    expect(screen.getByTestId("ui-widget-icon").getAttribute("data-gui-y")).toBe(
+      beforeY,
     );
 
     fireEvent.click(screen.getByTestId("ui-widget-header"));

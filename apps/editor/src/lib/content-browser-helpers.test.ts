@@ -662,6 +662,19 @@ describe("content-browser-helpers", () => {
     expect(parentOf("main.class")).toBe("Actor");
   });
 
+  it("parents a project UserInterface class id under UserInterface", () => {
+    const parentOf = classParentLookup([
+      {
+        header: {
+          type: "UserInterface",
+          name: "HUD",
+          guid: "hud-guid",
+        },
+      },
+    ]);
+    expect(parentOf("UserInterface:hud-guid")).toBe("UserInterface");
+  });
+
   it("uses the compile class id for a Class asset named main.class", () => {
     expect(
       classIdFromClassAsset({

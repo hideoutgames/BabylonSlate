@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   isEditorGraphClass,
+  userInterfaceClassId,
   type SerializedComponent,
 } from "@babylonslate/core";
 import {
@@ -1039,7 +1040,12 @@ export function subclassClassEntries(
   baseClassId: string,
   assets: ReadonlyArray<{
     path?: string;
-    header: { type: string; name: string; parentClass?: string | null };
+    header: {
+      type: string;
+      name: string;
+      parentClass?: string | null;
+      guid?: string;
+    };
   }>,
   options?: { editorGraph?: boolean },
 ): ClassPickerEntry[] {
@@ -1059,6 +1065,14 @@ export function subclassClassEntries(
   for (const id of ENGINE_BASE_CLASS_IDS) add(id, id, "Engine");
   for (const id of ENGINE_COMPONENT_CLASS_IDS) add(id, id, "Engine");
   for (const asset of assets) {
+    if (asset.header.type === "UserInterface" && asset.header.guid) {
+      add(
+        userInterfaceClassId(asset.header.guid),
+        asset.header.name || asset.header.guid,
+        "Project",
+      );
+      continue;
+    }
     if (asset.header.type !== "Class") continue;
     const id = classIdFromClassAsset(asset);
     add(id, id, "Project");

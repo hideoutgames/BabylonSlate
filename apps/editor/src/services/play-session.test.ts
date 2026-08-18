@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
 import {
   applyPlayFpsSample,
+  applyPlayUiCommand,
   applyWorkerPlayStats,
   diagnosticFromCommand,
+  dispatchPlayUiWidgetEvent,
   isFatalPlayDiagnostic,
   playInputStampTick,
+  playSessionBootControls,
   previewFixtureThrowHint,
   resolvePlayFrameCap,
 } from "./play-session";
@@ -130,6 +133,159 @@ describe("Play HUD stats merge", () => {
     expect(afterFps.scriptMs).toBe(4.2);
     expect(afterFps.physicsMs).toBe(1.8);
     expect(afterFps.frameId).toBe(12);
+  });
+});
+
+describe("applyPlayUiCommand", () => {
+  it("forwards classId on apply and instanceId on visibility", () => {
+    const onUiApply = vi.fn();
+    const onUiRemove = vi.fn();
+    const onUiSetVisible = vi.fn();
+    expect(
+      applyPlayUiCommand(
+        {
+          type: "uiApply",
+          instanceId: "ui-1",
+          classId: "UserInterface:hud-guid",
+          assetGuid: "hud-guid",
+        },
+        { onUiApply, onUiRemove, onUiSetVisible },
+      ),
+    ).toBe(true);
+    expect(onUiApply).toHaveBeenCalledWith(
+      "ui-1",
+      "UserInterface:hud-guid",
+      "hud-guid",
+    );
+    expect(
+      applyPlayUiCommand(
+        {
+          type: "uiSetVisible",
+          instanceId: "ui-1",
+          widgetId: "play-btn",
+          visible: false,
+        },
+        { onUiApply, onUiRemove, onUiSetVisible },
+      ),
+    ).toBe(true);
+    expect(onUiSetVisible).toHaveBeenCalledWith("ui-1", "play-btn", false);
+    expect(
+      applyPlayUiCommand(
+        { type: "uiRemove", instanceId: "ui-1" },
+        { onUiApply, onUiRemove, onUiSetVisible },
+      ),
+    ).toBe(true);
+    expect(onUiRemove).toHaveBeenCalledWith("ui-1");
+  });
+
+  it("ignores non-UI commands", () => {
+    expect(
+      applyPlayUiCommand(
+        {
+          type: "stats",
+          frameId: 1,
+          tickIndex: 1,
+          scriptMs: 0,
+          physicsMs: 0,
+        },
+        {},
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("dispatchPlayUiWidgetEvent", () => {
+  it("posts uiWidgetEvent to the worker when present", () => {
+    const postControl = vi.fn();
+    expect(
+      dispatchPlayUiWidgetEvent(
+        { worker: { postControl }, runtime: null },
+        {
+          instanceId: "ui-1",
+          widgetId: "play-btn",
+          kind: "click",
+        },
+      ),
+    ).toBe(true);
+    expect(postControl).toHaveBeenCalledWith({
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "click",
+    });
+  });
+
+  it("dispatches to the in-process runtime when the worker is absent", () => {
+    const dispatchUiWidgetEvent = vi.fn();
+    expect(
+      dispatchPlayUiWidgetEvent(
+        { worker: null, runtime: { dispatchUiWidgetEvent } },
+        {
+          instanceId: "ui-2",
+          widgetId: "slider",
+          kind: "value",
+          value: 0.4,
+        },
+      ),
+    ).toBe(true);
+    expect(dispatchUiWidgetEvent).toHaveBeenCalledWith({
+      type: "uiWidgetEvent",
+      instanceId: "ui-2",
+      widgetId: "slider",
+      kind: "value",
+      value: 0.4,
+    });
+  });
+});
+
+describe("playSessionBootControls", () => {
+  it("sends loadUserInterfaces before loadScripts so Apply can resolve widgets", () => {
+    const controls = playSessionBootControls({
+      load: {
+        type: "load",
+        sceneAssetGuid: "play-scene",
+      },
+      userInterfaces: [
+        {
+          guid: "hud-guid",
+          widgets: [{ id: "play-btn", kind: "Button", name: "Play" }],
+        },
+      ],
+      scripts: [
+        {
+          assetGuid: "hero",
+          classId: "Hero",
+          source: "export const onBeginPlay = () => {}",
+          anchors: [],
+          entryPoints: [],
+        },
+      ],
+    });
+    const types = controls.map((control) => control.type);
+    expect(types.indexOf("loadUserInterfaces")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("loadScripts")).toBeGreaterThan(
+      types.indexOf("loadUserInterfaces"),
+    );
+    expect(types.indexOf("play")).toBeGreaterThan(types.indexOf("loadScripts"));
+    expect(controls.find((control) => control.type === "loadUserInterfaces")).toEqual({
+      type: "loadUserInterfaces",
+      documents: [
+        {
+          guid: "hud-guid",
+          widgets: [{ id: "play-btn", kind: "Button", name: "Play" }],
+        },
+      ],
+    });
+  });
+
+  it("omits loadUserInterfaces when the Play library is empty and still does not auto-apply", () => {
+    const controls = playSessionBootControls({
+      load: { type: "load", sceneAssetGuid: "play-scene" },
+      userInterfaces: [],
+    });
+    const types = controls.map((control) => control.type);
+    expect(types).toEqual(["load", "play"]);
+    expect(types).not.toContain("loadUserInterfaces");
   });
 });
 

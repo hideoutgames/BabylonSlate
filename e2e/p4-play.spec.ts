@@ -1,8 +1,55 @@
 import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, PLAY_OVERLAY_TIMEOUT_MS, waitForPlayOverlay } from "./play";
+import { saveAllIfEnabled } from "./save-all";
+import {
+  EXPECTED_PREVIEW_ACTOR_POSITIONS,
+  previewPlacementScene,
+} from "./preview-scene-fixture";
 
 test.describe("P4 Play overlay and session report", () => {
+  test("overlay Play keeps each authored mesh at its own world position", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+    const scene = previewPlacementScene();
+    expect(
+      await page.evaluate(async (nextScene) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
+      }, scene),
+    ).toBe(true);
+    await saveAllIfEnabled(page);
+    await clickPlayAndWaitForOverlay(page);
+
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const host = globalThis as unknown as {
+              __babylonslatePlayTest?: {
+                visuals: () => Array<{
+                  visible: boolean;
+                  worldMatrixPosition: [number, number, number];
+                }>;
+              };
+            };
+            return (host.__babylonslatePlayTest?.visuals() ?? [])
+              .filter((visual) => visual.visible)
+              .map((visual) => visual.worldMatrixPosition)
+              .sort((a, b) => a[0] - b[0]);
+          }),
+        { timeout: 15_000 },
+      )
+      .toEqual(expect.arrayContaining(EXPECTED_PREVIEW_ACTOR_POSITIONS));
+    await page.getByTestId("play-overlay-close").click();
+  });
+
   test("Play opens overlay; fixture throw shows report and focuses node", async ({
     page,
   }) => {

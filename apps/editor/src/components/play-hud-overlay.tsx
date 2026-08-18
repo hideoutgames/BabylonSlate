@@ -15,8 +15,12 @@ import {
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 import { Button } from "@babylonslate/ui/components/button";
+import { Input } from "@babylonslate/ui/components/input";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
+import { parsePlayHudControlId } from "../lib/play-content";
+
+export { parsePlayHudControlId };
 
 const defaultResolveImageUrl = (): string | null => null;
 
@@ -30,6 +34,12 @@ export interface PlayHudOverlayProps {
   height: number;
   hiddenWidgetIds?: ReadonlySet<string>;
   onTouchAxis: (controlId: string, value: number) => void;
+  onWidgetEvent?: (event: {
+    instanceId: string;
+    widgetId: string;
+    kind: "click" | "value" | "checked" | "text";
+    value?: unknown;
+  }) => void;
   /** Play scene; when set, widgets render through Babylon GUI. */
   scene?: Scene | null;
   fontEntries?: readonly FontAssetEntry[];
@@ -86,6 +96,7 @@ export function PlayHudOverlay({
   height,
   hiddenWidgetIds,
   onTouchAxis,
+  onWidgetEvent,
   scene = null,
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
@@ -93,6 +104,8 @@ export function PlayHudOverlay({
   const pointerIdRef = useRef<number | null>(null);
   const onTouchAxisRef = useRef(onTouchAxis);
   onTouchAxisRef.current = onTouchAxis;
+  const onWidgetEventRef = useRef(onWidgetEvent);
+  onWidgetEventRef.current = onWidgetEvent;
   const resolveImageUrlRef = useRef(resolveImageUrl);
   resolveImageUrlRef.current = resolveImageUrl;
   const boundResolveImageUrl = useCallback(
@@ -159,6 +172,16 @@ export function PlayHudOverlay({
         safeArea: preset.safeArea,
         resolveImageUrl: boundResolveImageUrl,
         onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
+        onWidgetEvent: (event) => {
+          const parsed = parsePlayHudControlId(event.widgetId);
+          if (!parsed) return;
+          onWidgetEventRef.current?.({
+            instanceId: parsed.instanceId,
+            widgetId: parsed.widgetId,
+            kind: event.kind,
+            ...("value" in event ? { value: event.value } : {}),
+          });
+        },
       });
       attachedRef.current = attached;
       setGuiReady(true);
@@ -217,6 +240,24 @@ export function PlayHudOverlay({
     [onTouchAxis],
   );
 
+  const emitWidget = useCallback(
+    (
+      controlId: string,
+      kind: "click" | "value" | "checked" | "text",
+      value?: unknown,
+    ) => {
+      const parsed = parsePlayHudControlId(controlId);
+      if (!parsed) return;
+      onWidgetEvent?.({
+        instanceId: parsed.instanceId,
+        widgetId: parsed.widgetId,
+        kind,
+        value,
+      });
+    },
+    [onWidgetEvent],
+  );
+
   const useDomHits = !guiReady;
 
   return (
@@ -231,7 +272,10 @@ export function PlayHudOverlay({
         const isStick = control.kind === "TouchJoystick";
         const isPad = control.kind === "TouchDPad";
         const isButton = control.kind === "TouchButton";
+        const isUiButton = control.kind === "Button";
         const isSlider = control.kind === "Slider";
+        const isCheck = control.kind === "CheckBox";
+        const isText = control.kind === "TextInput";
         const analog = isStick || isPad;
         const deadZone = numberProp(control.props, "deadZone", analog ? 0.15 : 0);
         const controlIdX = stringProp(
@@ -272,6 +316,30 @@ export function PlayHudOverlay({
                 </span>
               ) : null}
             </div>
+          );
+        }
+        if (isText) {
+          return (
+            <Input
+              key={control.id}
+              type="text"
+              data-testid={testId}
+              data-kind={control.kind}
+              data-gui-x={String(Math.round(control.guiRect.x))}
+              data-gui-y={String(Math.round(control.guiRect.y))}
+              className="pointer-events-auto absolute h-auto min-h-0"
+              style={{
+                ...boxStyle,
+                fontFamily: control.style.fontFamily,
+                color: control.style.color,
+                background: control.style.background,
+                opacity: control.style.opacity,
+              }}
+              defaultValue={stringProp(control.props, "text", "")}
+              onChange={(event) =>
+                emitWidget(control.id, "text", event.currentTarget.value)
+              }
+            />
           );
         }
         return (
@@ -325,8 +393,30 @@ export function PlayHudOverlay({
                           bounds.width > 0
                             ? (event.clientX - bounds.left) / bounds.width
                             : 0;
+                        const clamped = Math.max(0, Math.min(1, t));
+                        const min = numberProp(control.props, "min", 0);
+                        const max = numberProp(control.props, "max", 1);
                         onTouchAxis(sliderId, Math.max(-1, Math.min(1, t * 2 - 1)));
+                        emitWidget(
+                          control.id,
+                          "value",
+                          min + clamped * (max - min),
+                        );
                       }
+                    : undefined
+            }
+            onClick={
+              analog || isButton
+                ? undefined
+                : isUiButton
+                  ? () => emitWidget(control.id, "click")
+                  : isCheck
+                    ? () =>
+                        emitWidget(
+                          control.id,
+                          "checked",
+                          !control.props.checked,
+                        )
                     : undefined
             }
             onPointerMove={

@@ -176,6 +176,7 @@ export async function collectAndExportGame(
       const uiGraph = logicGraphFromUiPayload(
         uiPath,
         params.payloadByGuid?.(guid) ?? null,
+        guid,
       );
       if (uiGraph) graphDocs.push(uiGraph);
     }

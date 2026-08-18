@@ -1,3 +1,9 @@
+import {
+  USER_INTERFACE_ENGINE_CLASS_ID,
+  WIDGET_ENGINE_CLASS_ID,
+  isUserInterfaceClassId,
+  isWidgetClassId,
+} from "@babylonslate/core";
 import type { LogicGraph } from "./ir";
 import type { Diagnostic } from "./diagnostics";
 import type { ClassHierarchy, PinType } from "./types";
@@ -44,6 +50,30 @@ export type ParentFunctionSignature = {
     typeClassId?: string;
   }>;
 };
+
+/** True when a class should use actorRef rather than objectRef. */
+export function isActorClassId(
+  classId: string,
+  hierarchy?: ClassHierarchy,
+): boolean {
+  if (
+    classId === USER_INTERFACE_ENGINE_CLASS_ID ||
+    classId === WIDGET_ENGINE_CLASS_ID ||
+    isUserInterfaceClassId(classId) ||
+    isWidgetClassId(classId)
+  ) {
+    return false;
+  }
+  if (classId === "Actor") return true;
+  return hierarchy?.isSubclassOf(classId, "Actor") ?? false;
+}
+
+export function resultKindForClassId(
+  classId: string,
+  hierarchy?: ClassHierarchy,
+): "actorRef" | "objectRef" {
+  return isActorClassId(classId, hierarchy) ? "actorRef" : "objectRef";
+}
 
 export type TypeContext = {
   assetGuid: string;

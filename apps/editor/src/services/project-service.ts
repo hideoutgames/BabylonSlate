@@ -206,15 +206,22 @@ export class ProjectService {
   /** Asset guids stay stable across saves so references survive a rewrite. */
   private readonly assetGuids = new Map<string, string>();
   private readonly registryListeners = new Set<() => void>();
+  private readonly diagnostics: string[] = [];
+  private readonly diagnosticListeners = new Set<(line: string) => void>();
 
-  constructor(storage: ProjectStorage) {
+  constructor(
+    storage: ProjectStorage,
+    options: { encode?: EncodeFn } = {},
+  ) {
     this.storage = storage;
     this.blobs = createVfsBlobStore(storage);
-    this.workerEncode = canUseWorkerEncode()
-      ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
-      : null;
+    this.workerEncode = options.encode
+      ? null
+      : canUseWorkerEncode()
+        ? createWorkerEncodeFn({ workerUrl: editorEncodeWorkerUrl() })
+        : null;
     this.encodeQueue = new EncodeQueue({
-      encode: this.workerEncode ?? undefined,
+      encode: options.encode ?? this.workerEncode ?? undefined,
       onState: (guid, state) => {
         // `compressed` is written with the KTX2 chunk in onComplete.
         if (state === "compressed") return;
@@ -226,13 +233,36 @@ export class ProjectService {
         await this.assetRegistry?.commitCompressedTexture(result);
         this.emitRegistryChange();
       },
-      onError: (guid) => {
+      onError: (guid, error) => {
+        this.emitTextureEncodeDiagnostic(guid, error);
+        const message = error instanceof Error ? error.message : String(error);
         void this.assetRegistry
-          ?.setCompressionState(guid, "encode_failed")
+          ?.setCompressionState(guid, "encode_failed", { error: message })
           .then(() => this.emitRegistryChange());
       },
     });
     this.bindEncodeQueueVisibility();
+  }
+
+  get sessionDiagnostics(): string[] {
+    return [...this.diagnostics];
+  }
+
+  onDiagnostic(listener: (line: string) => void): () => void {
+    this.diagnosticListeners.add(listener);
+    return () => {
+      this.diagnosticListeners.delete(listener);
+    };
+  }
+
+  private emitTextureEncodeDiagnostic(guid: string, error: unknown): void {
+    const asset = this.assetRegistry?.getByGuid(guid);
+    const name = asset?.header.name?.trim() || "Texture";
+    const message = error instanceof Error ? error.message : String(error);
+    const line = `Texture encode failed for ${name} (${guid}): ${message}`;
+    this.diagnostics.push(line);
+    if (this.diagnostics.length > 200) this.diagnostics.shift();
+    for (const listener of this.diagnosticListeners) listener(line);
   }
 
   /** When self-hosted transcoder files are missing, prefer source chunks. */

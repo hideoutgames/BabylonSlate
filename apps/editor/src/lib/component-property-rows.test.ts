@@ -594,4 +594,28 @@ describe("subclassClassEntries", () => {
     expect(main).toMatchObject({ id: "main", name: "main", group: "Project" });
     expect(entries.map((entry) => entry.id)).not.toContain("main.class");
   });
+
+  it("lists project UserInterface classes on an Apply classRef pin", () => {
+    const entries = subclassClassEntries("UserInterface", [
+      {
+        header: {
+          type: "UserInterface",
+          name: "HUD",
+          guid: "hud-guid",
+        },
+      },
+      {
+        header: { type: "Class", name: "Hero", parentClass: "Actor" },
+      },
+    ]);
+    const ids = entries.map((entry) => entry.id);
+    expect(ids).toContain("UserInterface");
+    expect(ids).toContain("UserInterface:hud-guid");
+    expect(ids).not.toContain("Hero");
+    expect(entries.find((entry) => entry.id === "UserInterface:hud-guid")).toMatchObject({
+      id: "UserInterface:hud-guid",
+      name: "HUD",
+      group: "Project",
+    });
+  });
 });

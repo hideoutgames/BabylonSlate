@@ -103,6 +103,10 @@ export function createUiSurface(
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
     safeArea: options.safeArea,
+    onImageReady: () => {
+      designAdt.markAsDirty();
+      blitDesign();
+    },
   });
   const host = new BabylonUiApplyHost(factory, {
     interactive: options.interactive,
@@ -168,6 +172,7 @@ export function attachFullscreenGui(
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
     safeArea: options.safeArea,
+    onImageReady: () => adt.markAsDirty(),
   });
   const host = new BabylonUiApplyHost(factory, {
     interactive: options.interactive,
@@ -200,7 +205,7 @@ function createStandaloneAdt(
     height: Math.max(1, height),
   });
   adt.disablePicking = !interactive;
-  adt.markAsDirty();
+  prepareAdtForExternalPresent(adt);
   adt._checkUpdate(null);
   return adt;
 }
@@ -325,11 +330,26 @@ export function attachAdtCanvasPointers(
   };
 }
 
+/**
+ * Standalone ADTs copied onto a 2D canvas must redraw the whole texture.
+ * Babylon's invalidate-rect path only refreshes the dirty control, so a moved
+ * image/button leaves a stale backing store (hitbox-only leftover).
+ * Play HUD {@link attachFullscreenGui} stays on the default Layer path.
+ */
+export function prepareAdtForExternalPresent(adt: {
+  useInvalidateRectOptimization: boolean;
+  markAsDirty(): void;
+}): void {
+  adt.useInvalidateRectOptimization = false;
+  adt.markAsDirty();
+}
+
 /** Paint the ADT's Canvas2D backing store onto a 2D designer canvas. */
 export function presentAdtToCanvas(
   adt: AdvancedDynamicTexture,
   canvas: HTMLCanvasElement,
 ): void {
+  prepareAdtForExternalPresent(adt);
   adt._checkUpdate(null);
   let source = (adt.getContext() as CanvasRenderingContext2D | null)?.canvas;
   if (!source) {

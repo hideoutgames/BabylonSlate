@@ -6,7 +6,8 @@ import {
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { PanelFrame } from "@babylonslate/editor-kit";
-import type { SerializedGraph } from "@babylonslate/core";
+import { userInterfaceClassId, type SerializedGraph } from "@babylonslate/core";
+import type { BoundWidgetRef } from "@babylonslate/scripting-nodes";
 import {
   Empty,
   EmptyDescription,
@@ -98,7 +99,36 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     indexed?.header.parentClass ??
     (doc?.ref.kind === "ui" || doc?.ref.kind === "anim-graph" ? "BObject" : null);
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
+  const classId =
+    doc?.ref.kind === "ui" && indexed?.header.guid
+      ? userInterfaceClassId(indexed.header.guid)
+      : doc?.ref.path
+        ? classIdForGraphPath(doc.ref.path)
+        : undefined;
+  const widgets = useMemo((): BoundWidgetRef[] => {
+    if (doc?.ref.kind !== "ui" || !doc.content || typeof doc.content !== "object") {
+      return [];
+    }
+    const record = doc.content as {
+      widgets?: Record<string, { id?: unknown; name?: unknown; kind?: unknown }>;
+    };
+    if (!record.widgets) return [];
+    return Object.values(record.widgets).flatMap((widget) => {
+      if (!widget || typeof widget.id !== "string" || !widget.id.trim()) {
+        return [];
+      }
+      return [
+        {
+          id: widget.id,
+          name:
+            typeof widget.name === "string" && widget.name.trim()
+              ? widget.name
+              : widget.id,
+          kind: typeof widget.kind === "string" ? widget.kind : "Border",
+        },
+      ];
+    });
+  }, [doc?.content, doc?.ref.kind]);
   const graphContent = serializedGraphFromDocument(
     doc?.ref.kind ?? "",
     doc?.content,
@@ -244,6 +274,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         parentOf,
         classId,
         graph: graphContent ?? undefined,
+        widgets,
         otherClassGraphs,
         activeFunctionId,
         assetType: indexed?.header.type,
@@ -255,6 +286,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     [
       activeFunctionId,
       classId,
+      widgets,
       functionLibraries,
       scriptInterfaces,
       graphContent,

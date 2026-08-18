@@ -2,6 +2,30 @@
 
 import type { SerializedScene } from "@babylonslate/core";
 
+/** Slim widget rows the worker needs to spawn typed Widget objects. */
+export type UserInterfaceWidgetMeta = {
+  id: string;
+  name?: string;
+  kind: string;
+};
+
+/** UserInterface document metadata shipped on `loadUserInterfaces`. */
+export type UserInterfaceRuntimeDocument = {
+  guid: string;
+  widgets: UserInterfaceWidgetMeta[];
+};
+
+export type UiWidgetEventKind = "click" | "value" | "checked" | "text";
+
+/** Main-thread widget input routed to the owning UserInterface object. */
+export type UiWidgetEventControl = {
+  type: "uiWidgetEvent";
+  instanceId: string;
+  widgetId: string;
+  kind: UiWidgetEventKind;
+  value?: unknown;
+};
+
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
   line: number;
@@ -97,6 +121,11 @@ export type ControlMessage =
       pixelsPerUnit?: number;
     }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
+  | {
+      type: "loadUserInterfaces";
+      documents: UserInterfaceRuntimeDocument[];
+    }
+  | UiWidgetEventControl
   | { type: "play" }
   | { type: "pause" }
   | { type: "step" }
@@ -210,12 +239,14 @@ export type CommandMessage =
     }
     | {
       type: "uiSetVisible";
+      instanceId: string;
       widgetId: string;
       visible: boolean;
     }
     | {
       type: "uiApply";
       instanceId: string;
+      classId: string;
       assetGuid: string;
     }
     | {

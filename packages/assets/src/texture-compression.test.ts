@@ -417,6 +417,107 @@ describe("registry encode pipeline", () => {
     });
   });
 
+  it("keeps source pixels when encode_failed is recorded with an error", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("pixels.babproject");
+    await storage.mkdir("assets", true);
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "keep-tex",
+        type: "Texture",
+        name: "Keep",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: { compressionState: "encoding", usage: "albedo" },
+      },
+      chunks: [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "image/png",
+          data: new Uint8Array([9, 8, 7, 6]),
+        },
+      ],
+    });
+    await storage.writeBinary("assets/keep.babasset", bytes);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+
+    await registry.setCompressionState("keep-tex", "encode_failed", {
+      error: "BasisEncoder.encode returned 0",
+    });
+    const updated = registry.getByGuid("keep-tex")!;
+    expect(updated.header.payload.compressionState).toBe("encode_failed");
+    expect(updated.header.payload.encodeError).toBe(
+      "BasisEncoder.encode returned 0",
+    );
+    expect(
+      updated.header.chunks.some(
+        (chunk) => chunk.kind === "pixels" || chunk.id === "pixels",
+      ),
+    ).toBe(true);
+    const selected = selectTextureChunk(updated.header);
+    expect(selected.kind).toBe("source");
+    const fileBytes = await storage.readBinary("assets/keep.babasset");
+    const pixels = updated.header.chunks.find((chunk) => chunk.kind === "pixels")!;
+    const loaded = await registry.payloadLoader.loadChunk(fileBytes, pixels);
+    expect(loaded).toEqual(new Uint8Array([9, 8, 7, 6]));
+  });
+
+  it("clears encodeError when a later encode commits KTX2", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("clear-err.babproject");
+    await storage.mkdir("assets", true);
+    const bytes = await encodeBabasset({
+      header: {
+        guid: "clear-tex",
+        type: "Texture",
+        name: "Clear",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        parentClass: null,
+        payload: {
+          compressionState: "encode_failed",
+          usage: "albedo",
+          encodeError: "old failure",
+        },
+      },
+      chunks: [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "image/png",
+          data: new Uint8Array([1]),
+        },
+      ],
+    });
+    await storage.writeBinary("assets/clear.babasset", bytes);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    await registry.commitCompressedTexture({
+      assetGuid: "clear-tex",
+      ktx2: new Uint8Array([2, 3]),
+      wallMs: 4,
+      settings: {
+        format: "uastc",
+        quality: 2,
+        maxDimension: 2048,
+        generateMipmaps: true,
+      },
+    });
+    const updated = registry.getByGuid("clear-tex")!;
+    expect(updated.header.payload.compressionState).toBe("compressed");
+    expect(updated.header.payload.encodeError).toBeUndefined();
+    expect(
+      updated.header.chunks.some((chunk) => chunk.kind === "pixels"),
+    ).toBe(true);
+  });
+
   it("does not let a slow encoding write clobber encode_failed", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("race.babproject");

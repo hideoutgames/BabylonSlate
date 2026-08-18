@@ -28,8 +28,12 @@ import { encodeInputEvents } from "@babylonslate/input";
 import {
   snapshotFloatCount,
   type CommandMessage,
+  type ControlMessage,
   type ScriptBundleEntry,
+  type UiWidgetEventControl,
+  type UserInterfaceRuntimeDocument,
 } from "@babylonslate/bridge";
+import { applyUiRuntimeControl } from "@babylonslate/runtime";
 import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
@@ -73,6 +77,112 @@ export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
 }
 
+export type PlayUiCommandHandlers = {
+  onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
+  onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
+  onUiRemove?: (instanceId: string) => void;
+};
+
+/** Apply worker UI commands onto Play HUD callbacks. */
+export function applyPlayUiCommand(
+  command: CommandMessage,
+  handlers: PlayUiCommandHandlers,
+): boolean {
+  if (command.type === "uiSetVisible") {
+    handlers.onUiSetVisible?.(command.instanceId, command.widgetId, command.visible);
+    return true;
+  }
+  if (command.type === "uiApply") {
+    handlers.onUiApply?.(command.instanceId, command.classId, command.assetGuid);
+    return true;
+  }
+  if (command.type === "uiRemove") {
+    handlers.onUiRemove?.(command.instanceId);
+    return true;
+  }
+  return false;
+}
+
+export type PlayUiWidgetEventTarget = {
+  worker?: { postControl: (message: ControlMessage) => void } | null;
+  runtime?: {
+    dispatchUiWidgetEvent: (event: UiWidgetEventControl) => void;
+  } | null;
+};
+
+/** Send a HUD widget event to the worker, or the in-process driver. */
+export function dispatchPlayUiWidgetEvent(
+  target: PlayUiWidgetEventTarget,
+  event: Omit<UiWidgetEventControl, "type">,
+): boolean {
+  const payload: UiWidgetEventControl = { type: "uiWidgetEvent", ...event };
+  if (target.worker) {
+    target.worker.postControl(payload);
+    return true;
+  }
+  if (target.runtime) {
+    target.runtime.dispatchUiWidgetEvent(payload);
+    return true;
+  }
+  return false;
+}
+
+export function playSessionBootControls(options: {
+  load: Extract<ControlMessage, { type: "load" }>;
+  userInterfaces?: readonly UserInterfaceRuntimeDocument[];
+  scripts?: readonly ScriptBundleEntry[];
+  spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
+  animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
+  behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
+  blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
+  tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
+  navmeshBytes?: Uint8Array | null;
+}): ControlMessage[] {
+  const controls: ControlMessage[] = [options.load];
+  if ((options.userInterfaces?.length ?? 0) > 0) {
+    controls.push({
+      type: "loadUserInterfaces",
+      documents: [...(options.userInterfaces ?? [])],
+    });
+  }
+  if ((options.scripts?.length ?? 0) > 0) {
+    controls.push({
+      type: "loadScripts",
+      scripts: [...(options.scripts ?? [])],
+      spawn: options.spawn,
+    });
+  }
+  if ((options.animGraphs?.length ?? 0) > 0) {
+    controls.push({
+      type: "loadAnimGraphs",
+      graphs: [...(options.animGraphs ?? [])],
+    });
+  }
+  if (
+    (options.behaviourTrees?.length ?? 0) > 0 ||
+    (options.blackboards?.length ?? 0) > 0
+  ) {
+    controls.push({
+      type: "loadBehaviourTrees",
+      trees: [...(options.behaviourTrees ?? [])],
+      blackboards: [...(options.blackboards ?? [])],
+    });
+  }
+  if (options.tilemaps) controls.push(options.tilemaps);
+  if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
+    const copy = options.navmeshBytes.slice();
+    controls.push({
+      type: "loadNavMesh",
+      bytes: copy.buffer.slice(
+        copy.byteOffset,
+        copy.byteOffset + copy.byteLength,
+      ) as ArrayBuffer,
+    });
+  }
+  controls.push({ type: "play" });
+  return controls;
+}
+
 export interface PlaySessionResult {
   diagnostics: SessionReportEntry[];
   droppedDiagnostics: number;
@@ -98,6 +208,10 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Push a touch joystick sample into the Play input ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
+  /** Route a mounted HUD widget event to the worker or in-process runtime. */
+  dispatchUiWidgetEvent: (
+    event: Omit<UiWidgetEventControl, "type">,
+  ) => boolean;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + unmatched scripts). */
@@ -215,9 +329,11 @@ export function startPlaySession(options: {
   }) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
-  onUiSetVisible?: (widgetId: string, visible: boolean) => void;
-  onUiApply?: (instanceId: string, assetGuid: string) => void;
+  onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
+  onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
   onUiRemove?: (instanceId: string) => void;
+  /** Slim UserInterface metadata; posted before `loadScripts`. */
+  userInterfaces?: readonly UserInterfaceRuntimeDocument[];
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** BehaviourTree / Blackboard documents for worker load. */
@@ -401,15 +517,11 @@ export function startPlaySession(options: {
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
     }
-    if (command.type === "uiSetVisible") {
-      options.onUiSetVisible?.(command.widgetId, command.visible);
-    }
-    if (command.type === "uiApply") {
-      options.onUiApply?.(command.instanceId, command.assetGuid);
-    }
-    if (command.type === "uiRemove") {
-      options.onUiRemove?.(command.instanceId);
-    }
+    applyPlayUiCommand(command, {
+      onUiSetVisible: options.onUiSetVisible,
+      onUiApply: options.onUiApply,
+      onUiRemove: options.onUiRemove,
+    });
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
     }
@@ -459,49 +571,23 @@ export function startPlaySession(options: {
     runtimeMode = "worker";
     worker.onCommand((cmd) => onCommand(cmd));
     worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
-    worker.postControl(loadControl);
-    if (scripts.length > 0) {
-      worker.postControl({
-        type: "loadScripts",
-        scripts: [...scripts],
-        spawn,
-      });
+    for (const control of playSessionBootControls({
+      load: loadControl,
+      userInterfaces: options.userInterfaces,
+      scripts,
+      spawn,
+      animGraphs: options.animGraphs,
+      behaviourTrees: options.behaviourTrees,
+      blackboards: options.blackboards,
+      tilemaps: playLoadTilemapsControl(
+        options.tilemapPayloads,
+        options.tilesetPayloads,
+        options.pixelsPerUnit,
+      ),
+      navmeshBytes: options.navmeshBytes,
+    })) {
+      worker.postControl(control);
     }
-    if ((options.animGraphs?.length ?? 0) > 0) {
-      worker.postControl({
-        type: "loadAnimGraphs",
-        graphs: [...(options.animGraphs ?? [])],
-      });
-    }
-    if (
-      (options.behaviourTrees?.length ?? 0) > 0 ||
-      (options.blackboards?.length ?? 0) > 0
-    ) {
-      worker.postControl({
-        type: "loadBehaviourTrees",
-        trees: [...(options.behaviourTrees ?? [])],
-        blackboards: [...(options.blackboards ?? [])],
-      });
-    }
-    const tilemapsControl = playLoadTilemapsControl(
-      options.tilemapPayloads,
-      options.tilesetPayloads,
-      options.pixelsPerUnit,
-    );
-    if (tilemapsControl) {
-      worker.postControl(tilemapsControl);
-    }
-    if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
-      const copy = options.navmeshBytes.slice();
-      worker.postControl({
-        type: "loadNavMesh",
-        bytes: copy.buffer.slice(
-          copy.byteOffset,
-          copy.byteOffset + copy.byteLength,
-        ) as ArrayBuffer,
-      });
-    }
-    worker.postControl({ type: "play" });
   } catch (err) {
     worker = null;
     runtimeMode = "in-process";
@@ -517,6 +603,12 @@ export function startPlaySession(options: {
     ]);
     const inProcess = runtime;
     const boot = createPlayBootCoordinator();
+    if ((options.userInterfaces?.length ?? 0) > 0) {
+      applyUiRuntimeControl(inProcess, {
+        type: "loadUserInterfaces",
+        documents: [...(options.userInterfaces ?? [])],
+      });
+    }
     if (scripts.length > 0) {
       boot.queueScripts(inProcess, scripts, spawn);
     }
@@ -656,6 +748,8 @@ export function startPlaySession(options: {
     pushTouchAxis: (controlId: string, value: number) => {
       input.pushTouchAxis(controlId, value);
     },
+    dispatchUiWidgetEvent: (event) =>
+      dispatchPlayUiWidgetEvent({ worker, runtime }, event),
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },

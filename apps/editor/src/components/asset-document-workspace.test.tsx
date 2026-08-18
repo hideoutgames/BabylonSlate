@@ -55,7 +55,11 @@ vi.mock("../context/document-context", () => ({
           path: "assets/albedo.babasset",
           label: "albedo",
         },
-        content: { usage: "albedo", compressionState: "pending" },
+        content: {
+          usage: "albedo",
+          compressionState: "encode_failed",
+          encodeError: "BasisEncoder.encode returned 0",
+        },
         layout: null,
         dirty: false,
       },
@@ -205,6 +209,16 @@ describe("AssetDocumentWorkspace authoring", () => {
     expect(screen.getByTestId("property-usage")).toBeTruthy();
     expect(screen.queryByTestId("property-mipmap")).toBeNull();
     expect(screen.queryByTestId("property-nearest")).toBeNull();
+  });
+
+  it("exposes the latest encode error on Texture settings when the payload has one", () => {
+    render(
+      <AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />,
+    );
+    const encodeError = screen.getByTestId(
+      "property-encodeError",
+    ) as HTMLInputElement;
+    expect(encodeError.value).toBe("BasisEncoder.encode returned 0");
   });
 
   it("shows a Texture preview for Pixel Art without encode controls beyond Usage", () => {

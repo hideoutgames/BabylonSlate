@@ -120,6 +120,7 @@ export interface EngineHandle {
     name: string;
     visible: boolean;
     position: [number, number, number];
+    worldMatrixPosition: [number, number, number];
     materialName: string | null;
   }>;
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
@@ -910,6 +911,7 @@ export function createEngine(
         name: string;
         visible: boolean;
         position: [number, number, number];
+        worldMatrixPosition: [number, number, number];
         materialName: string | null;
       }> = [];
       for (const [slotId, root] of binding.meshes) {
@@ -925,11 +927,17 @@ export function createEngine(
         for (const visual of visuals) {
           visual.computeWorldMatrix(true);
           const position = visual.getAbsolutePosition();
+          const worldMatrixPosition = visual.getWorldMatrix().getTranslation();
           states.push({
             slotId,
             name: visual.name,
             visible: visual.isVisible && visual.isEnabled(),
             position: [position.x, position.y, position.z],
+            worldMatrixPosition: [
+              worldMatrixPosition.x,
+              worldMatrixPosition.y,
+              worldMatrixPosition.z,
+            ],
             materialName: visual.material?.name ?? null,
           });
         }

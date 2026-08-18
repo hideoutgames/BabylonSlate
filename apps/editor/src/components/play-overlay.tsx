@@ -45,8 +45,11 @@ import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
   applyPlayHudInstance,
+  applyPlayHudVisibility,
+  playUserInterfaceRuntimeDocuments,
   removePlayHudInstance,
   resolvePlayHudDocuments,
+  setPlayUiWidgetEventSink,
   type PlayHudInstance,
 } from "../lib/play-content";
 
@@ -301,17 +304,15 @@ export function PlayOverlay({
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
-      onUiSetVisible: (widgetId, visible) => {
-        setHiddenWidgetIds((prev) => {
-          const next = new Set(prev);
-          if (visible) next.delete(widgetId);
-          else next.add(widgetId);
-          return next;
-        });
+      userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
+      onUiSetVisible: (instanceId, widgetId, visible) => {
+        setHiddenWidgetIds((prev) =>
+          applyPlayHudVisibility(prev, instanceId, widgetId, visible),
+        );
       },
-      onUiApply: (instanceId, assetGuid) => {
+      onUiApply: (instanceId, classId, assetGuid) => {
         setHudInstances((prev) =>
-          applyPlayHudInstance(prev, instanceId, assetGuid),
+          applyPlayHudInstance(prev, instanceId, assetGuid, classId),
         );
       },
       onUiRemove: (instanceId) => {
@@ -339,6 +340,27 @@ export function PlayOverlay({
       onFatalDiagnostic: () => finishSessionRef.current(),
     });
     sessionRef.current = session;
+    setPlayUiWidgetEventSink((event) =>
+      sessionRef.current?.dispatchUiWidgetEvent(event) ?? false,
+    );
+    if (isTestModeEnabled()) {
+      const host = globalThis as {
+        __babylonslateTest?: {
+          dispatchPlayUiWidgetEvent?: (
+            event: {
+              instanceId: string;
+              widgetId: string;
+              kind: "click" | "value" | "checked" | "text";
+              value?: unknown;
+            },
+          ) => boolean;
+        };
+      };
+      if (host.__babylonslateTest) {
+        host.__babylonslateTest.dispatchPlayUiWidgetEvent = (event) =>
+          sessionRef.current?.dispatchUiWidgetEvent(event) ?? false;
+      }
+    }
     setHudScene(session.handle.scene);
     syncFramebuffer(session.handle);
     const resizeObserver = new ResizeObserver(() => {
@@ -386,6 +408,7 @@ export function PlayOverlay({
       window.clearInterval(movePoll);
       detachLifecycle();
       reportBtState(null);
+      setPlayUiWidgetEventSink(null);
       if (sessionRef.current) {
         sessionRef.current.stop();
         sessionRef.current = null;
@@ -498,6 +521,9 @@ export function PlayOverlay({
         scene={hudScene}
         onTouchAxis={(controlId, value) =>
           sessionRef.current?.pushTouchAxis(controlId, value)
+        }
+        onWidgetEvent={(event) =>
+          sessionRef.current?.dispatchUiWidgetEvent(event)
         }
       />
       <PrintOverlay entries={printEntries} />

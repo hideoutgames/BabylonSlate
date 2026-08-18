@@ -23,7 +23,8 @@
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/render": "workspace:*",
     "@babylonslate/runtime": "workspace:*",
-    "@babylonslate/shader-graph": "workspace:*"
+    "@babylonslate/shader-graph": "workspace:*",
+    "@babylonslate/ui-runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

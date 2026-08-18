@@ -1,5 +1,10 @@
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import type { SerializedScene } from "@babylonslate/core";
+import {
+  USER_INTERFACE_ENGINE_CLASS_ID,
+  isUserInterfaceClassId,
+  isWidgetClassId,
+  type SerializedScene,
+} from "@babylonslate/core";
 import {
   createInProcessRuntime,
   type RuntimeDriver,
@@ -73,10 +78,22 @@ export function createRuntimeFromLoad(
   });
 }
 
+/** UserInterface / Widget classes are mounted by apply, never spawned as Actors. */
+export function shouldSpawnScriptedActor(classId: string): boolean {
+  if (classId === USER_INTERFACE_ENGINE_CLASS_ID) return false;
+  if (isUserInterfaceClassId(classId)) return false;
+  if (isWidgetClassId(classId)) return false;
+  return true;
+}
+
 /** Skip graph-only spawns whose class already exists as a scene actor. */
 export function unmatchedScriptSpawns<T extends { classId: string }>(
   spawn: readonly T[],
   sceneClassIds: ReadonlySet<string>,
 ): T[] {
-  return spawn.filter((entry) => !sceneClassIds.has(entry.classId));
+  return spawn.filter(
+    (entry) =>
+      shouldSpawnScriptedActor(entry.classId) &&
+      !sceneClassIds.has(entry.classId),
+  );
 }

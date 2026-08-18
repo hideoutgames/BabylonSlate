@@ -27,6 +27,7 @@ export type {
 } from "./types";
 export {
   CONTAINER_KINDS,
+  DEFAULT_BUTTON_BACKGROUND,
   DEFAULT_DESIGN_RESOLUTION,
   DEFAULT_DESIRED_SIZE,
   WIDGET_KINDS,
@@ -35,6 +36,7 @@ export {
   createDefaultUserInterface,
   createWidget,
   defaultPropsFor,
+  defaultStyleFor,
   defaultWidgetLayout,
   defaultWidgetStyle,
   pinLayout,

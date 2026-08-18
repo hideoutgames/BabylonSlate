@@ -16,7 +16,12 @@ import {
 } from "@babylonslate/behaviour-tree";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { loadGameFromFiles } from "./artifact";
-import { packedContentFromGame, packedPlayControls } from "./hydrate";
+import {
+  packedBootControls,
+  packedContentFromGame,
+  packedPlayControls,
+  packedUserInterfaceControl,
+} from "./hydrate";
 
 const encoder = new TextEncoder();
 
@@ -308,5 +313,88 @@ describe("packedContentFromGame", () => {
     const content = packedContentFromGame(game);
     expect(content.audioReverbBytes).toEqual(new Uint8Array([4, 5, 6]));
     expect(content.audioReverbByScene.get("scene-2")).toEqual(new Uint8Array([7, 8]));
+  });
+
+  it("hydrates UserInterface documents and emits loadUserInterfaces before scripts", async () => {
+    const scene = { ...createDefaultScene(), name: "Arena" };
+    const hud = {
+      name: "HUD",
+      rootId: "canvas",
+      widgets: {
+        canvas: { id: "canvas", kind: "Canvas", name: "Canvas", children: ["play-btn"] },
+        "play-btn": { id: "play-btn", kind: "Button", name: "Play" },
+      },
+    };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [
+        {
+          assetGuid: "host",
+          classId: "HudHost",
+          source: "export function onBeginPlay() {}\n",
+          anchors: [],
+          entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+        },
+        {
+          assetGuid: "hud-1",
+          classId: "UserInterface:hud-1",
+          source: "export function onBeginPlay() {}\n",
+          anchors: [],
+          entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+          parentClassId: "UserInterface",
+        },
+      ],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(scene)),
+        },
+        {
+          guid: "hud-1",
+          type: "UserInterface",
+          sceneGuid: "scene-1",
+          name: "HUD",
+          bytes: encoder.encode(JSON.stringify(hud)),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    expect(content.userInterfaces.get("hud-1")?.widgets["play-btn"]?.kind).toBe("Button");
+    const uiControl = packedUserInterfaceControl(content);
+    expect(uiControl).toEqual({
+      type: "loadUserInterfaces",
+      documents: [
+        {
+          guid: "hud-1",
+          widgets: expect.arrayContaining([
+            { id: "canvas", kind: "Canvas", name: "Canvas" },
+            { id: "play-btn", kind: "Button", name: "Play" },
+          ]),
+        },
+      ],
+    });
+    expect(packedPlayControls(content).some((entry) => entry.type === "loadUserInterfaces")).toBe(
+      false,
+    );
+    const boot = packedBootControls(content, game.scripts, [
+      { classId: "HudHost" },
+      { classId: "UserInterface:hud-1" },
+    ]);
+    expect(boot.map((entry) => entry.type)).toEqual([
+      "loadUserInterfaces",
+      "loadScripts",
+      "play",
+    ]);
+    const scripts = boot.find((entry) => entry.type === "loadScripts");
+    expect(scripts && scripts.type === "loadScripts" ? scripts.spawn : undefined).toEqual([
+      { classId: "HudHost" },
+    ]);
   });
 });

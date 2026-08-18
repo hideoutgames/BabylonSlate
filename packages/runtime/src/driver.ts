@@ -3,6 +3,8 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
   type CommandMessage,
+  type UiWidgetEventControl,
+  type UserInterfaceWidgetMeta,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -12,10 +14,24 @@ import {
   stringifyWorldSnapshot,
   Actor,
   ActorComponent,
+  BObject,
+  UserInterface,
+  Widget,
+  createWidgetForKind,
+  userInterfaceAssetClassDef,
   type ClassKind,
+  type TickContext,
   type TickPhase,
 } from "@babylonslate/object-model";
-import { eulerDegreesToQuaternion, type SerializedScene } from "@babylonslate/core";
+import {
+  USER_INTERFACE_ENGINE_CLASS_ID,
+  eulerDegreesToQuaternion,
+  isUserInterfaceClassId,
+  normalizeUserInterfaceClassRef,
+  userInterfaceAssetGuidFromClassId,
+  widgetClassIdForKind,
+  type SerializedScene,
+} from "@babylonslate/core";
 import {
   InputRingBuffer,
   InputResolver,
@@ -74,6 +90,7 @@ import {
   type BtResult,
 } from "@babylonslate/behaviour-tree";
 import { ScriptHost, type CompiledScript } from "./script-host";
+import { shouldSpawnScriptedActor } from "./play-load";
 import { PhysicsWorldSync } from "./physics-sync";
 import { actorWorldTransforms } from "./actor-world-transform";
 import type { TilemapPayload, TilesetPayload } from "@babylonslate/assets";
@@ -134,6 +151,8 @@ export interface RuntimeDriverOptions {
   tilemaps?: Readonly<Record<string, TilemapPayload>>;
   tilesets?: Readonly<Record<string, TilesetPayload>>;
   pixelsPerUnit?: number;
+  /** Slim UserInterface widget metadata keyed by asset guid. */
+  userInterfaces?: Readonly<Record<string, readonly UserInterfaceWidgetMeta[]>>;
 }
 
 export interface RuntimeDriver {
@@ -179,9 +198,20 @@ export interface RuntimeDriver {
   invokeScriptEvent(
     classId: string,
     event: string,
-    self?: Actor | null,
+    self?: BObject | null,
     args?: Record<string, unknown>,
   ): void;
+  registerUserInterfaceDocument(
+    guid: string,
+    widgets: readonly UserInterfaceWidgetMeta[],
+  ): void;
+  getUserInterface(instanceId: string): UserInterface | undefined;
+  listUserInterfaces(): readonly UserInterface[];
+  applyUserInterface(classIdOrGuid: string): UserInterface | null;
+  removeUserInterface(
+    instance: UserInterface | string | null | undefined,
+  ): void;
+  dispatchUiWidgetEvent(event: UiWidgetEventControl): void;
   registerUserCommand(def: UserCommandDef): void;
   bindUserCommand(
     def: Omit<UserCommandDef, "run"> & { classId: string },
@@ -277,6 +307,11 @@ class InProcessRuntime implements RuntimeDriver {
   private currentBtNodeId: string | null = null;
   private currentBtAssetGuid: string | null = null;
   private uiInstanceSeq = 0;
+  private readonly userInterfaces = new Map<string, UserInterface>();
+  private readonly userInterfaceDocuments = new Map<
+    string,
+    UserInterfaceWidgetMeta[]
+  >();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private pixelsPerUnit = 100;
@@ -365,6 +400,11 @@ class InProcessRuntime implements RuntimeDriver {
     if (options.audioAssetGuids) {
       for (const guid of options.audioAssetGuids) {
         if (guid) this.audioAssetGuids.add(guid);
+      }
+    }
+    if (options.userInterfaces) {
+      for (const [guid, widgets] of Object.entries(options.userInterfaces)) {
+        this.registerUserInterfaceDocument(guid, widgets);
       }
     }
     const maxActors = options.maxActors ?? 256;
@@ -544,19 +584,12 @@ class InProcessRuntime implements RuntimeDriver {
         this.physicsSync.moveCharacter(target, translation, dt, offset);
       },
       setWidgetVisible: (widget, visible) => {
-        this.emit({ type: "uiSetVisible", widgetId: widget, visible });
+        this.emitWidgetVisible(widget, visible);
       },
-      applyUserInterface: (assetGuid) => {
-        const guid = String(assetGuid ?? "").trim();
-        if (!guid) return "";
-        const instanceId = `ui-${++this.uiInstanceSeq}`;
-        this.emit({ type: "uiApply", instanceId, assetGuid: guid });
-        return instanceId;
-      },
-      removeUserInterface: (instanceId) => {
-        const id = String(instanceId ?? "").trim();
-        if (!id) return;
-        this.emit({ type: "uiRemove", instanceId: id });
+      applyUserInterface: (classIdOrGuid) =>
+        this.applyUserInterface(classIdOrGuid),
+      removeUserInterface: (instance) => {
+        this.removeUserInterface(instance);
       },
       changeScene: (scene) => {
         this.applyChangeScene(scene);
@@ -679,7 +712,11 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private registerScriptClass(script: CompiledScript): void {
-    const requestedParent = script.parentClassId?.trim() || "Actor";
+    const requestedParent =
+      script.parentClassId?.trim() ||
+      (isUserInterfaceClassId(script.classId)
+        ? USER_INTERFACE_ENGINE_CLASS_ID
+        : "Actor");
     const parentClassId = this.world.classRegistry.has(requestedParent)
       ? requestedParent
       : "Actor";
@@ -703,6 +740,7 @@ class InProcessRuntime implements RuntimeDriver {
     variables?: Record<string, unknown>;
     implementedInterfaces?: string[];
   }): Actor | null {
+    if (!this.canSpawnActorClass(options.classId)) return null;
     const hooks = this.scriptHost.hooksFor(options.classId);
     if (!hooks) return null;
     const actor = this.world.createActor({
@@ -792,6 +830,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.world.loadScene(key);
       return;
     }
+    this.teardownAllUserInterfaces();
     for (const actor of [...this.world.getActors()]) {
       const slotId = this.slotByGuid.get(actor.guid);
       this.emitAudioStops(actor);
@@ -822,10 +861,106 @@ class InProcessRuntime implements RuntimeDriver {
   invokeScriptEvent(
     classId: string,
     event: string,
-    self?: Actor | null,
+    self?: BObject | null,
     args?: Record<string, unknown>,
   ): void {
     this.scriptHost.invokeEvent(classId, event, self ?? null, args ?? {});
+  }
+
+  registerUserInterfaceDocument(
+    guid: string,
+    widgets: readonly UserInterfaceWidgetMeta[],
+  ): void {
+    const id = String(guid ?? "").trim();
+    if (!id) return;
+    this.userInterfaceDocuments.set(
+      id,
+      widgets.map((widget) => ({ ...widget })),
+    );
+  }
+
+  getUserInterface(instanceId: string): UserInterface | undefined {
+    return this.userInterfaces.get(instanceId);
+  }
+
+  listUserInterfaces(): readonly UserInterface[] {
+    return [...this.userInterfaces.values()];
+  }
+
+  applyUserInterface(classIdOrGuid: string): UserInterface | null {
+    const classId = normalizeUserInterfaceClassRef(classIdOrGuid);
+    if (!classId) return null;
+    const assetGuid = userInterfaceAssetGuidFromClassId(classId);
+    if (!assetGuid) return null;
+    this.ensureUserInterfaceClass(classId, assetGuid);
+    const hooks = this.scriptHost.hooksFor(classId);
+    const defaults = this.objectDefaults(classId);
+    const instanceId = `ui-${++this.uiInstanceSeq}`;
+    const ui = new UserInterface({
+      classId,
+      guid: instanceId,
+      assetGuid,
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
+      hooks: hooks
+        ? {
+            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+            onTick: (self, ctx) =>
+              this.guardScript(() => hooks.onTick?.(self, ctx)),
+            onDestroyed: (self) =>
+              this.guardScript(() => hooks.onDestroyed?.(self)),
+          }
+        : undefined,
+    });
+    for (const meta of this.userInterfaceDocuments.get(assetGuid) ?? []) {
+      const widget = createWidgetForKind(meta.kind, {
+        classId: widgetClassIdForKind(meta.kind),
+        widgetId: meta.id,
+        guid: `${instanceId}:${meta.id}`,
+        owner: ui,
+      });
+      ui.widgets.push(widget);
+      widget.callOnCreation();
+    }
+    this.scriptHost.bindInterfaceHandlers(ui);
+    this.userInterfaces.set(instanceId, ui);
+    ui.callOnCreation();
+    this.emit({
+      type: "uiApply",
+      instanceId,
+      classId,
+      assetGuid,
+    });
+    return ui;
+  }
+
+  removeUserInterface(
+    instance: UserInterface | string | null | undefined,
+  ): void {
+    const id =
+      instance instanceof UserInterface
+        ? instance.guid
+        : String(instance ?? "").trim();
+    if (!id) return;
+    const ui = this.userInterfaces.get(id);
+    if (!ui) {
+      this.emit({ type: "uiRemove", instanceId: id });
+      return;
+    }
+    this.teardownUserInterface(ui);
+  }
+
+  dispatchUiWidgetEvent(event: UiWidgetEventControl): void {
+    const ui = this.userInterfaces.get(event.instanceId);
+    if (!ui || ui.destroyed) return;
+    const widget =
+      ui.widgets.find((entry) => entry.widgetId === event.widgetId) ?? null;
+    const eventName = uiWidgetEventName(event.kind);
+    this.scriptHost.invokeEvent(ui.classId, eventName, ui, {
+      widget,
+      widgetId: event.widgetId,
+      value: event.value,
+    });
   }
 
   registerUserCommand(def: UserCommandDef): void {
@@ -1760,18 +1895,14 @@ class InProcessRuntime implements RuntimeDriver {
         variables: { ticks: 0 },
         hooks: {
           onCreation: (self) => {
-            this.guardScript(() =>
-              hooks?.onCreation?.(self as unknown as Actor),
-            );
+            this.guardScript(() => hooks?.onCreation?.(self));
           },
           onTick: (self, ctx) => {
             self.setVariable(
               "ticks",
               Number(self.getVariable("ticks")) + 1,
             );
-            this.guardScript(() =>
-              hooks?.onTick?.(self as unknown as Actor, ctx),
-            );
+            this.guardScript(() => hooks?.onTick?.(self, ctx));
           },
         },
       }),
@@ -1787,6 +1918,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     this.running = false;
+    this.teardownAllUserInterfaces();
     this.world.end();
     this.physicsSync.dispose();
   }
@@ -1852,6 +1984,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (!isInfiniteLoopError(error)) throw error;
     }
     this.advanceDelays();
+    this.tickMountedUserInterfaces();
     this.tickAnimGraphs();
     this.tickBehaviourTrees();
     this.tickCrowd();
@@ -2041,6 +2174,110 @@ class InProcessRuntime implements RuntimeDriver {
   private emit(command: CommandMessage): void {
     this.onCommand?.(command);
   }
+
+  private canSpawnActorClass(classId: string): boolean {
+    if (!shouldSpawnScriptedActor(classId)) return false;
+    const kind = this.world.classRegistry.get(classId)?.kind;
+    return kind !== "object" && kind !== "gameInstance";
+  }
+
+  private ensureUserInterfaceClass(classId: string, assetGuid: string): void {
+    if (this.world.classRegistry.has(classId)) return;
+    this.world.classRegistry.ensure(userInterfaceAssetClassDef(assetGuid));
+  }
+
+  private objectDefaults(classId: string): {
+    variables: Record<string, unknown>;
+    implementedInterfaces: string[];
+  } {
+    const variables: Record<string, unknown> = {};
+    for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
+      if (variable.defaultValue !== undefined) {
+        variables[variable.name] = variable.defaultValue;
+      }
+    }
+    return {
+      variables,
+      implementedInterfaces: this.world.classRegistry.inheritedInterfaces(classId),
+    };
+  }
+
+  private emitWidgetVisible(widget: Widget | string, visible: boolean): void {
+    if (widget instanceof Widget) {
+      this.emit({
+        type: "uiSetVisible",
+        instanceId: widget.owner?.guid ?? "",
+        widgetId: widget.widgetId,
+        visible: Boolean(visible),
+      });
+      return;
+    }
+    const widgetId = String(widget ?? "").trim();
+    if (!widgetId) return;
+    this.emit({
+      type: "uiSetVisible",
+      instanceId: "",
+      widgetId,
+      visible: Boolean(visible),
+    });
+  }
+
+  private teardownUserInterface(ui: UserInterface): void {
+    this.userInterfaces.delete(ui.guid);
+    for (const widget of [...ui.widgets].reverse()) {
+      widget.destroyed = true;
+      widget.callOnDestroyed();
+      widget.owner = null;
+    }
+    ui.widgets.length = 0;
+    ui.destroyed = true;
+    ui.callOnDestroyed();
+    this.emit({ type: "uiRemove", instanceId: ui.guid });
+  }
+
+  private teardownAllUserInterfaces(): void {
+    for (const ui of [...this.userInterfaces.values()]) {
+      this.teardownUserInterface(ui);
+    }
+  }
+
+  private tickMountedUserInterfaces(): void {
+    const ctx: TickContext = {
+      dt: this.dt,
+      tickIndex: this.world.clock.tickIndex,
+      world: this.world,
+      isActionHeld: (action) => this.resolvedInput.actions[action]?.held ?? false,
+      wasActionPressed: (action) =>
+        this.resolvedInput.actions[action]?.pressed ?? false,
+      wasActionReleased: (action) =>
+        this.resolvedInput.actions[action]?.released ?? false,
+      getAxis: (axis) => this.resolvedInput.axes[axis] ?? 0,
+      getAxis2D: (axis) => this.resolvedInput.axes2D[axis] ?? { x: 0, y: 0 },
+      gamepadConnections: this.connectionBox.current,
+      setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
+        this.emit({
+          type: "log",
+          severity: "log",
+          category: "input",
+          message: `rumble pad=${gamepadIndex} intensity=${intensity} ms=${durationMs}`,
+          frameId: this.frameId,
+        });
+      },
+    };
+    for (const ui of [...this.userInterfaces.values()]) {
+      if (ui.destroyed) continue;
+      this.guardScript(() => ui.callOnTick(ctx));
+    }
+  }
+}
+
+function uiWidgetEventName(
+  kind: UiWidgetEventControl["kind"],
+): "onWidgetClick" | "onWidgetValue" | "onWidgetChecked" | "onWidgetText" {
+  if (kind === "value") return "onWidgetValue";
+  if (kind === "checked") return "onWidgetChecked";
+  if (kind === "text") return "onWidgetText";
+  return "onWidgetClick";
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {

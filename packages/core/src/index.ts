@@ -3,6 +3,7 @@ export * from "./command-bus";
 export * from "./scene";
 export * from "./project";
 export * from "./document";
+export * from "./class-metadata";
 export * from "./editor-only";
 export * from "./engine-version";
 export * from "./guid-result";

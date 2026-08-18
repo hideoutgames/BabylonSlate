@@ -511,6 +511,8 @@ export interface AdtFactoryOptions extends Pick<
   "resolveImageUrl" | "onTouchAxis"
 > {
   safeArea?: EdgeInsets;
+  /** Designer blit / host dirty when an Image finishes decoding. */
+  onImageReady?: () => void;
 }
 
 export function createAdtControlFactory(
@@ -519,8 +521,26 @@ export function createAdtControlFactory(
 ): GuiControlFactory {
   const byId = new Map<string, Control>();
   const handles: Control[] = [];
+  const imageLoadUnbind = new Map<Control, () => void>();
   let safeArea: Container | null = null;
   let rootCanvas: Container | null = null;
+
+  const unbindImageLoad = (control: Control): void => {
+    imageLoadUnbind.get(control)?.();
+    imageLoadUnbind.delete(control);
+  };
+
+  const bindImageLoad = (control: Control): void => {
+    unbindImageLoad(control);
+    if (!(control instanceof Image) || !options.onImageReady) return;
+    const observer = control.onImageLoadedObservable.add(() => {
+      options.onImageReady?.();
+    });
+    if (!observer) return;
+    imageLoadUnbind.set(control, () => {
+      control.onImageLoadedObservable.remove(observer);
+    });
+  };
 
   const attach = (parent: Container | GuiTextureHost, child: Control): void => {
     if ("addControl" in parent) {
@@ -555,6 +575,7 @@ export function createAdtControlFactory(
       const control = createBabylonControl(spec, options);
       byId.set(spec.id, control);
       handles.push(control);
+      bindImageLoad(control);
       if (!spec.parentId) {
         attach(adt, control);
         if (spec.kind === "Canvas" && control instanceof Container) {
@@ -589,6 +610,7 @@ export function createAdtControlFactory(
       if (!control) return false;
       applyCommon(control, spec);
       applyTypeSpecific(control, spec, previous, options.resolveImageUrl);
+      bindImageLoad(control);
       return true;
     },
     remove(id) {
@@ -598,6 +620,7 @@ export function createAdtControlFactory(
     },
     clear() {
       for (const control of handles) {
+        unbindImageLoad(control);
         disposeAttached(control);
       }
       handles.length = 0;
@@ -608,6 +631,7 @@ export function createAdtControlFactory(
   };
 
   function disposeControl(control: Control): void {
+    unbindImageLoad(control);
     disposeAttached(control);
     const index = handles.indexOf(control);
     if (index >= 0) handles.splice(index, 1);

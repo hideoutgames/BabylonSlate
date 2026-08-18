@@ -14,6 +14,7 @@ export function fromSerializedGraph(
 ): LogicGraph {
   const nodes: GraphNode[] = graph.nodes.map((n) => {
     if (n.type === "logMessage" || n.type === "debug.log") {
+      const data = (n.data ?? {}) as Record<string, unknown>;
       return {
         id: n.id,
         typeId: "debug.log",
@@ -24,16 +25,10 @@ export function fromSerializedGraph(
           pin("message", "message", "in", STRING, "data", true),
         ],
         properties: {
-          message: String((n.data as { message?: string }).message ?? ""),
-          severity: "log",
-          category: "Script",
-          ...((n.data as { developmentOnly?: unknown }).developmentOnly !==
-          undefined
-            ? {
-                developmentOnly: (n.data as { developmentOnly: unknown })
-                  .developmentOnly,
-              }
-            : {}),
+          ...data,
+          message: String(data["default:message"] ?? data.message ?? ""),
+          severity: data.severity ?? "log",
+          category: data.category ?? "Script",
         },
       };
     }

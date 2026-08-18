@@ -81,6 +81,7 @@ export class ThumbnailDecodeLru {
 export async function generateThumbnailBytes(
   source: Uint8Array,
   maxEdge: number = DEFAULT_THUMBNAIL_MAX_EDGE,
+  mime?: string,
 ): Promise<Uint8Array | null> {
   if (typeof createImageBitmap !== "function") {
     return null;
@@ -88,7 +89,9 @@ export async function generateThumbnailBytes(
   const copy = source.slice();
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(new Blob([copy]));
+    bitmap = await createImageBitmap(
+      new Blob([copy], mime ? { type: mime } : undefined),
+    );
   } catch {
     return null;
   }

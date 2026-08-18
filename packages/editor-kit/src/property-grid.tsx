@@ -72,8 +72,8 @@ export type PropertyRow =
     })
   | (PropertyRowBase & {
       kind: "color";
-      value: ColorValue;
-      defaultValue?: ColorValue;
+      value: ColorValue | null;
+      defaultValue?: ColorValue | null;
       onChange: (value: ColorValue) => void;
     })
   | (PropertyRowBase & {
