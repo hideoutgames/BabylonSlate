@@ -26,7 +26,7 @@ Missing or stale startup scene: `MISSING_STARTUP_SCENE_MESSAGE` (`Set Startup Sc
 Not `header.dependencies` alone — scene saves often leave those empty.
 
 1. Apply export-preset `pluginOverrides` (layer 3) **before** the walk so disabled plugin roots are absent.
-2. Seed with `startupSceneGuid` (must be a Scene asset) **and** Project Settings `audioMixerGuid` the same way `gameInstanceClass` is seeded.
+2. Seed with `startupSceneGuid` (must be a Scene asset) **and** Project Settings `audioMixerGuid` the same way `gameInstanceClass` is seeded. Pack `occlusionEnabled` and reverb wet/decay/damping scales from Project Settings Audio.
 3. Walk `SerializedScene` actors/components (guids in properties, Mesh/Model `assetGuid`, textures, UserInterface, Font, Class ids) plus scene `gameInstanceClass` **and** the project `gameInstanceClass` when the scene field is empty.
 4. Load Class/Graph/UI/Sprite/Tilemap documents; pull asset-typed pin values (including **Apply User Interface** `UserInterface:<guid>`), `header.dependencies`, payload fields such as sprite `textureGuid`, nested `nestedUiGuid` / `imageGuid`, Font **family names** on UI `style.fontFamily`, and **Scene display names** on Change Scene nodes so `changeScene("Level 2")` packs that Scene.
 5. Recurse to a fixed point. Drop EditorUtilityObject / EditorUtilityInterface / PluginSettings (`isEditorOnlyAsset`). Unused UserInterface assets stay out of the pack.
@@ -51,7 +51,7 @@ havok/HavokPhysics.wasm   # 3d only
 ktx2/…              # transcoder files the player needs
 ```
 
-`GameManifest` records `startupSceneGuid`, optional `gameInstanceClass` (project field), `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), `packs`, `physicsWorld`, and `assets[]`. Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`. The player boot prefers `manifest.gameInstanceClass`, then the startup scene field. When `bundleDebugger` is true the manifest also carries `infiniteLoopDetection` and `loopCount` from Project Settings (defaults on / 1_000_000); release packs omit those keys. `parseGameManifest` fills the defaults for old debugger-bundled `game.json` files and ignores the fields on release manifests.
+`GameManifest` records `startupSceneGuid`, optional `gameInstanceClass` (project field), `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), `packs`, `physicsWorld`, and `assets[]`. Audio fields: optional `audioMixerGuid`, `occlusionEnabled` (default on), and reverb scales (default 1). Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`. The player boot prefers `manifest.gameInstanceClass`, then the startup scene field. When `bundleDebugger` is true the manifest also carries `infiniteLoopDetection` and `loopCount` from Project Settings (defaults on / 1_000_000); release packs omit those keys. `parseGameManifest` fills the defaults for old debugger-bundled `game.json` files and ignores the fields on release manifests.
 
 `loose` is an explicit preset option (`packed: false`): tree-shaken `assets/<guid>.bin`, no `.babpack`. Wasm, transcoder, and `coi-serviceworker.js` stay real files in both modes.
 

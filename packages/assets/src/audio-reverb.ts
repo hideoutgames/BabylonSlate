@@ -131,31 +131,6 @@ function occupancyBitCount(sizeX: number, sizeY: number, sizeZ: number): number 
   return Math.max(0, Math.ceil((sizeX * sizeY * sizeZ) / 8));
 }
 
-function occupancyFromGrid(grid: InternalGrid): AudioReverbOccupancy {
-  const sizeX = Math.max(1, Math.floor(grid.sizeX));
-  const sizeY = Math.max(1, Math.floor(grid.sizeY));
-  const sizeZ = Math.max(1, Math.floor(grid.sizeZ));
-  const cellCount = sizeX * sizeY * sizeZ;
-  const bits = new Uint8Array(occupancyBitCount(sizeX, sizeY, sizeZ));
-  for (let i = 0; i < cellCount && i < grid.occupied.length; i += 1) {
-    if (grid.occupied[i] !== 0) {
-      bits[i >> 3] |= 1 << (i & 7);
-    }
-  }
-  return {
-    originX: grid.originX,
-    originY: grid.originY,
-    originZ: grid.originZ,
-    voxelX: grid.voxelX,
-    voxelY: grid.voxelY,
-    voxelZ: grid.voxelZ,
-    sizeX,
-    sizeY,
-    sizeZ,
-    bits,
-  };
-}
-
 function encodeOccupancy(occupancy: AudioReverbOccupancy): Uint8Array {
   const sizeX = Math.max(1, Math.floor(occupancy.sizeX));
   const sizeY = Math.max(1, Math.floor(occupancy.sizeY));
@@ -611,6 +586,31 @@ type InternalGrid = AudioReverbOccupancyGrid & {
   voxelY: number;
   voxelZ: number;
 };
+
+function occupancyFromGrid(grid: InternalGrid): AudioReverbOccupancy {
+  const sizeX = Math.max(1, Math.floor(grid.sizeX));
+  const sizeY = Math.max(1, Math.floor(grid.sizeY));
+  const sizeZ = Math.max(1, Math.floor(grid.sizeZ));
+  const cellCount = sizeX * sizeY * sizeZ;
+  const bits = new Uint8Array(occupancyBitCount(sizeX, sizeY, sizeZ));
+  for (let i = 0; i < cellCount && i < grid.occupied.length; i += 1) {
+    if (grid.occupied[i] !== 0) {
+      bits[i >> 3] |= 1 << (i & 7);
+    }
+  }
+  return {
+    originX: grid.originX,
+    originY: grid.originY,
+    originZ: grid.originZ,
+    voxelX: grid.voxelX,
+    voxelY: grid.voxelY,
+    voxelZ: grid.voxelZ,
+    sizeX,
+    sizeY,
+    sizeZ,
+    bits,
+  };
+}
 
 function emptyGrid(): InternalGrid {
   return {

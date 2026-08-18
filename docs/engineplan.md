@@ -323,7 +323,7 @@ Authored lights and cameras already exist. The foundation wave created Babylon `
 Old imported Audio assets normalise to those defaults without rewriting source bytes. Both nullable guids are header dependencies, participate in Show References, guid remap and export closure, and degrade to `null` with one diagnostic when missing. Audio remains import-created rather than appearing in New Asset; its editor adds source metadata, preview controls and these typed settings.
 
 **Three authored asset types complete the routing model.**
-- `AudioChannel` is a user-created routing/effects asset. It stores a nullable `parentChannelGuid` and an ordered, versioned effects list. P16 implements one effect, `{ kind: "environmentReverb", enabled: boolean }`; the discriminated list can add effects without changing Audio assets. A channel deliberately has no volume property. Parent chains are cycle-checked at edit, validation and load, and a rejected/missing parent routes to master.
+- `AudioChannel` is a user-created routing/effects asset. It stores a nullable `parentChannelGuid` and an ordered, versioned effects list. P16 shipped `{ kind: "environmentReverb", enabled: boolean }`; additive work keeps that row and adds `{ kind: "muffleThroughWalls", enabled: boolean }` without changing Audio assets. A channel deliberately has no volume property. Parent chains are cycle-checked at edit, validation and load, and a rejected/missing parent routes to master.
 - `AudioMixer` is a user-created asset, not an implicit engine singleton. It stores `globalVolume` (default `1`) and channel defaults keyed by `AudioChannel` guid, each clamped to `0..1`. Duplicate channel entries are invalid. Project Settings → Audio owns nullable `audioMixerGuid`; `null` is the default.
 - `SoundAttenuation` is a reusable asset with `innerRadius`, `maxRadius`, distance model / rolloff, spatialisation quality (`equalPower` or `hrtf`), and optional directional cone and Doppler fields. Radii are non-negative and `maxRadius >= innerRadius`. Referencing it opts an Audio asset into 3D spatial playback; `null` means non-spatial audio.
 
@@ -354,7 +354,7 @@ Runtime reverb is intentionally parametric. Channels with enabled `environmentRe
 
 The built-in BT **PlaySound** task uses the same command/service and actor-emitter rule; it succeeds when playback is accepted and fails for an invalid/missing Audio reference. Graph execution and behaviour-tree evaluation emit commands only and never touch Babylon directly.
 
-**Out of P16:** streaming music, microphone/input capture, user-authored acoustic zones, per-triangle acoustic materials, runtime geometry ray tracing/occlusion, waveform editing, DSP plugin code, and physically exact impulse-response simulation. The routing/effects schemas leave those additive.
+**Out of P16:** streaming music, microphone/input capture, user-authored acoustic zones, per-triangle acoustic materials, **triangle** runtime geometry ray tracing/occlusion, waveform editing, DSP plugin code, and physically exact impulse-response simulation. The routing/effects schemas leave those additive. **Voxel DDA muffling** on the existing occupancy bake (persisted in `audioReverb` v2) is additive on Done P16 — still no triangle rays.
 
 ## 3. Asset system
 
