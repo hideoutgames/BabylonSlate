@@ -47,19 +47,16 @@
 }
 
 .homepage-template-card,
-.homepage-open-folder,
 .homepage-project-row {
   transition: transform 0.18s ease-out;
 }
 
 .homepage-template-card:hover,
-.homepage-open-folder:hover,
 .homepage-project-row:hover {
   transform: translateY(-1px);
 }
 
 .homepage-template-card:active,
-.homepage-open-folder:active,
 .homepage-project-row:active {
   transform: translateY(0);
 }
@@ -172,16 +169,13 @@
   }
 
   .homepage-template-card,
-  .homepage-open-folder,
   .homepage-project-row {
     transition: none;
   }
 
   .homepage-template-card:hover,
-  .homepage-open-folder:hover,
   .homepage-project-row:hover,
   .homepage-template-card:active,
-  .homepage-open-folder:active,
   .homepage-project-row:active {
     transform: none;
   }

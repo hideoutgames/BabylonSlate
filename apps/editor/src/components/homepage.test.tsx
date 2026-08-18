@@ -76,15 +76,41 @@ describe("Homepage branding", () => {
   });
 });
 
-describe("Homepage Start strip", () => {
-  it("shows Empty, 2D, Open Folder, and Create Project on the Start strip", () => {
+describe("Homepage Start gallery", () => {
+  it("places Open Folder beside Create Project, not in the template gallery", () => {
     renderHomepage();
 
     expect(screen.getByTestId("homepage-start")).toBeTruthy();
     expect(screen.getByTestId("homepage-start-empty")).toBeTruthy();
     expect(screen.getByTestId("homepage-start-2d")).toBeTruthy();
-    expect(screen.getByTestId("open-project").textContent).toMatch(/Open Folder/i);
-    expect(screen.getByTestId("create-project")).toBeTruthy();
+
+    const create = screen.getByTestId("create-project");
+    const open = screen.getByTestId("open-project");
+    const actions = create.closest('[data-testid="homepage-start-actions"]');
+    expect(actions).toBeTruthy();
+    expect(actions?.contains(open)).toBe(true);
+    expect(open.textContent).toMatch(/Open Folder/i);
+    expect(open.closest('[data-testid="homepage-start-gallery"]')).toBeNull();
+  });
+
+  it("scrolls Start templates as a wrapping list", () => {
+    renderHomepage({
+      templates: [
+        { id: "arena", name: "Arena" },
+        { id: "dungeon", name: "Dungeon" },
+      ],
+    });
+
+    const gallery = screen.getByTestId("homepage-start-gallery");
+    expect(gallery.querySelector('[data-testid="homepage-start-empty"]')).toBeTruthy();
+    expect(gallery.querySelector('[data-testid="homepage-start-2d"]')).toBeTruthy();
+    expect(
+      gallery.querySelector('[data-testid="homepage-start-template-arena"]'),
+    ).toBeTruthy();
+    expect(gallery.className).toMatch(/overflow-y-auto/);
+    expect(gallery.className).toMatch(/flex-wrap/);
+    expect(gallery.className).toMatch(/overscroll/);
+    expect(gallery.className).toMatch(/max-h-/);
   });
 
   it("gives Start template cards an image well", () => {
@@ -102,7 +128,7 @@ describe("Homepage Start strip", () => {
     ).toBeTruthy();
   });
 
-  it("shows discovered templates in the Start strip", () => {
+  it("shows discovered templates in the Start gallery", () => {
     renderHomepage({ templates: [{ id: "arena", name: "Arena" }] });
 
     expect(screen.getByTestId("homepage-start-template-arena")).toBeTruthy();
@@ -113,7 +139,7 @@ describe("Homepage Start strip", () => {
     ).toBeTruthy();
   });
 
-  it("opens Create Project with Empty selected from the Start strip", async () => {
+  it("opens Create Project with Empty selected from the Start gallery", async () => {
     renderHomepage();
     screen.getByTestId("homepage-start-empty").click();
 
@@ -123,7 +149,7 @@ describe("Homepage Start strip", () => {
     ).toBe("true");
   });
 
-  it("opens Create Project with 2D selected from the Start strip", async () => {
+  it("opens Create Project with 2D selected from the Start gallery", async () => {
     renderHomepage();
     screen.getByTestId("homepage-start-2d").click();
 
@@ -133,7 +159,7 @@ describe("Homepage Start strip", () => {
     ).toBe("true");
   });
 
-  it("opens Create Project with a discovered template selected from the Start strip", async () => {
+  it("opens Create Project with a discovered template selected from the Start gallery", async () => {
     renderHomepage({ templates: [{ id: "arena", name: "Arena" }] });
     screen.getByTestId("homepage-start-template-arena").click();
 
@@ -177,6 +203,42 @@ describe("Homepage recent project rows", () => {
     });
     const row = screen.getByTestId("open-listed-project-Game.babproject");
     expect(row.querySelector('[data-testid="project-card-well"]')).toBeTruthy();
+  });
+
+  it("shows Created and Last opened dates on a recent row", () => {
+    renderHomepage({
+      projects: [
+        {
+          ...listedProject("Game.babproject", "opfs"),
+          createdAt: "2026-03-15T12:00:00.000Z",
+          lastOpenedAt: "2026-08-18T12:00:00.000Z",
+        },
+      ],
+    });
+    const row = screen.getByTestId("open-listed-project-Game.babproject");
+    expect(row.textContent).toMatch(/Created/);
+    expect(row.textContent).toMatch(/Last opened/);
+    expect(row.textContent).toContain(
+      new Date("2026-03-15T12:00:00.000Z").toLocaleDateString(),
+    );
+    expect(row.textContent).toContain(
+      new Date("2026-08-18T12:00:00.000Z").toLocaleDateString(),
+    );
+    expect(row.textContent).not.toMatch(/2026-03-15T12:00:00/);
+  });
+
+  it("omits Created when createdAt is missing", () => {
+    renderHomepage({
+      projects: [
+        {
+          ...listedProject("Game.babproject", "opfs"),
+          lastOpenedAt: "2026-08-18T12:00:00.000Z",
+        },
+      ],
+    });
+    const row = screen.getByTestId("open-listed-project-Game.babproject");
+    expect(row.textContent).not.toMatch(/Created/);
+    expect(row.textContent).toMatch(/Last opened/);
   });
 
   it("does not show storage API names when every listed project is the same tier", () => {

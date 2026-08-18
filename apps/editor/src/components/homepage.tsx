@@ -18,7 +18,6 @@ import {
 } from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
-import { Card } from "@babylonslate/ui/components/card";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -49,7 +48,7 @@ import {
 import { Input } from "@babylonslate/ui/components/input";
 import { displayProjectName } from "../lib/display-project-name";
 import {
-  listedProjectLocationLabel,
+  listedProjectMetaParts,
   type ListedProject,
 } from "../lib/listed-projects";
 import {
@@ -60,10 +59,7 @@ import {
 } from "../lib/create-project";
 import { BrandIcon } from "./brand-icon";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
-import {
-  TemplateCardWell,
-  TemplatePickCard,
-} from "./homepage-template-card";
+import { TemplatePickCard } from "./homepage-template-card";
 import { SettingsModal } from "./settings-modal";
 import "./homepage.css";
 
@@ -238,17 +234,35 @@ export function Homepage({
                 {createProjectCardDescription(templates.length, hostPlatform)}
               </p>
             </div>
-            <Button
-              size="touch"
-              data-testid="create-project"
-              disabled={busy}
-              onClick={() => openCreate("empty")}
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="homepage-start-actions"
             >
-              <PlusIcon data-icon="inline-start" />
-              Create Project
-            </Button>
+              <Button
+                size="touch"
+                data-testid="create-project"
+                disabled={busy}
+                onClick={() => openCreate("empty")}
+              >
+                <PlusIcon data-icon="inline-start" />
+                Create Project
+              </Button>
+              <Button
+                variant="outline"
+                size="touch"
+                data-testid="open-project"
+                disabled={busy}
+                onClick={() => void run(onOpenExternal)}
+              >
+                <FolderOpenIcon data-icon="inline-start" />
+                Open Folder…
+              </Button>
+            </div>
           </div>
-          <div className="homepage-stagger flex gap-3 overflow-x-auto overscroll-x-contain pb-1">
+          <div
+            className="homepage-stagger flex max-h-[min(22rem,45vh)] flex-wrap gap-3 overflow-x-auto overflow-y-auto overscroll-contain pb-1"
+            data-testid="homepage-start-gallery"
+          >
             <TemplatePickCard
               title="Empty"
               description="Blank 3D project"
@@ -272,30 +286,6 @@ export function Homepage({
                 onSelect={() => openCreate(template.id)}
               />
             ))}
-            <Card
-              size="sm"
-              className="homepage-open-folder w-52 shrink-0 gap-0 border border-dashed border-foreground/25 py-0 ring-0"
-            >
-              <Button
-                variant="ghost"
-                disabled={busy}
-                data-testid="open-project"
-                className="flex h-auto min-h-[var(--touch-target,44px)] w-full flex-col items-stretch gap-0 whitespace-normal rounded-xl p-0"
-                onClick={() => void run(onOpenExternal)}
-              >
-                <TemplateCardWell>
-                  <FolderOpenIcon />
-                </TemplateCardWell>
-                <span className="flex flex-col items-start gap-1 px-3 py-3 text-left">
-                  <span className="font-heading text-base font-medium leading-snug">
-                    Open Folder…
-                  </span>
-                  <span className="whitespace-normal text-sm font-normal text-muted-foreground">
-                    Choose an existing project folder.
-                  </span>
-                </span>
-              </Button>
-            </Card>
           </div>
         </section>
 
@@ -321,10 +311,7 @@ export function Homepage({
           ) : (
             <ul className="flex flex-col gap-2" data-testid="project-list">
               {projects.map((project) => {
-                const location = listedProjectLocationLabel(
-                  projects,
-                  project,
-                );
+                const meta = listedProjectMetaParts(projects, project);
                 return (
                   <li key={project.id}>
                     <ContextMenu>
@@ -350,9 +337,9 @@ export function Homepage({
                             <span className="font-medium">
                               {displayProjectName(project.label)}
                             </span>
-                            {location ? (
+                            {meta.length > 0 ? (
                               <span className="text-xs text-muted-foreground">
-                                {location}
+                                {meta.join(" · ")}
                               </span>
                             ) : null}
                           </span>

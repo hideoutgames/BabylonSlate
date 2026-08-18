@@ -182,6 +182,21 @@ describe("app settings", () => {
     ]);
   });
 
+  it("accepts optional createdAt on recents", () => {
+    const parsed = engineSettingsSchema.parse({
+      recents: [
+        {
+          id: "opfs:Game.babproject",
+          name: "Game.babproject",
+          tier: "opfs",
+          lastOpenedAt: "2026-08-18T12:00:00.000Z",
+          createdAt: "2026-03-15T12:00:00.000Z",
+        },
+      ],
+    });
+    expect(parsed.recents[0]?.createdAt).toBe("2026-03-15T12:00:00.000Z");
+  });
+
   it("round-trips through the memory store", async () => {
     const store = new MemoryAppSettingsStore();
     const next = engineSettingsSchema.parse({
