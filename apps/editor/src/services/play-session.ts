@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/behaviour-tree";
 import {
   createPlayBootCoordinator,
+  createPlayPauseGate,
   createRuntimeFromLoad,
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
@@ -84,6 +85,17 @@ export function inspectSnapshotFromCommand(
 ): DebugInspectSnapshot | null {
   if (command.type !== "inspectSnapshot") return null;
   return command.snapshot;
+}
+
+/** Resolve the next inspect waiter from a worker inspectSnapshot command. */
+export function deliverInspectSnapshot(
+  waiters: Array<(snapshot: DebugInspectSnapshot) => void>,
+  command: CommandMessage,
+): boolean {
+  const snapshot = inspectSnapshotFromCommand(command);
+  if (!snapshot) return false;
+  waiters.shift()?.(snapshot);
+  return true;
 }
 
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
@@ -175,6 +187,7 @@ export function playSessionBootControls(options: {
   tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
   sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
   navmeshBytes?: Uint8Array | null;
+  pauseOnPlay?: boolean;
 }): ControlMessage[] {
   const controls: ControlMessage[] = [options.load];
   if ((options.userInterfaces?.length ?? 0) > 0) {
@@ -219,6 +232,9 @@ export function playSessionBootControls(options: {
     });
   }
   controls.push({ type: "play" });
+  if (options.pauseOnPlay) {
+    controls.push({ type: "setPaused", paused: true });
+  }
   return controls;
 }
 
@@ -406,6 +422,8 @@ export function startPlaySession(options: {
   loopCount?: number;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
+  /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
+  pauseOnPlay?: boolean;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -462,6 +480,7 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let runtimeMode: "worker" | "in-process" = "in-process";
+  let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
@@ -560,11 +579,7 @@ export function startPlaySession(options: {
       const waiter = consoleWaiters.shift();
       waiter?.({ success: command.success, output: command.output });
     }
-    const inspectSnapshot = inspectSnapshotFromCommand(command);
-    if (inspectSnapshot) {
-      const waiter = inspectWaiters.shift();
-      waiter?.(inspectSnapshot);
-    }
+    deliverInspectSnapshot(inspectWaiters, command);
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
     }
@@ -641,6 +656,7 @@ export function startPlaySession(options: {
         options.pixelsPerUnit,
       ),
       navmeshBytes: options.navmeshBytes,
+      pauseOnPlay: options.pauseOnPlay,
     })) {
       worker.postControl(control);
     }
@@ -659,6 +675,10 @@ export function startPlaySession(options: {
     ]);
     const inProcess = runtime;
     const boot = createPlayBootCoordinator();
+    pauseGate = createPlayPauseGate({
+      pause: () => inProcess.pause(),
+      resume: () => inProcess.resume(),
+    });
     if ((options.userInterfaces?.length ?? 0) > 0) {
       applyUiRuntimeControl(inProcess, {
         type: "loadUserInterfaces",
@@ -704,9 +724,12 @@ export function startPlaySession(options: {
     if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(inProcess, options.navmeshBytes);
     }
-    void boot.play(inProcess).catch((error) => {
+    void pauseGate.beginPlay(() => boot.play(inProcess)).catch((error) => {
       inProcess.reportError(error);
     });
+    if (options.pauseOnPlay) {
+      pauseGate.setPaused(true);
+    }
     options.onLog?.(
       `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,
       "warning",
@@ -799,10 +822,7 @@ export function startPlaySession(options: {
     runtimeMode,
     setPaused: (paused: boolean) => {
       handle.setPaused(paused);
-      if (runtime) {
-        if (paused) runtime.pause();
-        else runtime.resume();
-      }
+      pauseGate?.setPaused(paused);
       worker?.postControl({ type: "setPaused", paused });
     },
     lastMoveX: () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
+import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   applyPlayFpsSample,
   applyPlayUiCommand,
@@ -7,6 +8,7 @@ import {
   diagnosticFromCommand,
   applyPlaySessionStep,
   dispatchPlayUiWidgetEvent,
+  deliverInspectSnapshot,
   inspectSnapshotFromCommand,
   isFatalPlayDiagnostic,
   playInputStampTick,
@@ -134,6 +136,31 @@ describe("inspectSnapshotFromCommand", () => {
         },
       ],
     });
+  });
+
+  it("delivers inspectSnapshot commands to queued waiters in order", () => {
+    const received: DebugInspectSnapshot[] = [];
+    const waiters: Array<(snapshot: DebugInspectSnapshot) => void> = [
+      (snapshot) => received.push(snapshot),
+    ];
+    expect(
+      deliverInspectSnapshot(waiters, {
+        type: "stats",
+        frameId: 1,
+        tickIndex: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      }),
+    ).toBe(false);
+    expect(waiters).toHaveLength(1);
+    expect(
+      deliverInspectSnapshot(waiters, {
+        type: "inspectSnapshot",
+        snapshot: { tickIndex: 9, nodes: [] },
+      }),
+    ).toBe(true);
+    expect(received).toEqual([{ tickIndex: 9, nodes: [] }]);
+    expect(waiters).toHaveLength(0);
   });
 });
 
@@ -368,6 +395,19 @@ describe("playSessionBootControls", () => {
     const types = controls.map((control) => control.type);
     expect(types).toEqual(["load", "play"]);
     expect(types).not.toContain("loadUserInterfaces");
+  });
+
+  it("appends setPaused after play when Pause On Play is on", () => {
+    const controls = playSessionBootControls({
+      load: { type: "load", sceneAssetGuid: "play-scene" },
+      pauseOnPlay: true,
+    });
+    expect(controls.map((control) => control.type)).toEqual([
+      "load",
+      "play",
+      "setPaused",
+    ]);
+    expect(controls.at(-1)).toEqual({ type: "setPaused", paused: true });
   });
 
   it("sends loadSprites with Sprite Animation payloads before play", () => {

@@ -23,3 +23,11 @@ export function playDebuggerOverlayFromSettings(
     pauseOnPlay: defaults?.pauseOnPlay === true,
   };
 }
+
+/** Inspector dialog stays open only while Debug Overlay Inspector is enabled. */
+export function nextPlayInspectorOpen(
+  inspectorOpen: boolean,
+  overlayInspector: boolean,
+): boolean {
+  return inspectorOpen && overlayInspector;
+}

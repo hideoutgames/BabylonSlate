@@ -56,6 +56,10 @@ describe("DebugConsole", () => {
     expect(root.className).toContain("w-[min(96vw,80rem)]");
     expect(root.className).toContain("max-w-none");
     expect(root.className).not.toContain("sm:max-w-lg");
+    const header = root.querySelector('[data-slot="dialog-header"]');
+    expect(header?.className).toContain("flex-row");
+    expect(header?.className).toContain("gap-2");
+    expect(header?.className).not.toContain("space-y-");
     expect(screen.getByTestId("debug-console-input").hasAttribute("autofocus")).toBe(
       false,
     );
