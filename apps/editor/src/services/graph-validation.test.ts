@@ -756,6 +756,10 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
       false,
     );
+    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(
+      false,
+    );
   });
 
   it("does not inject editor-only class functions into a runtime Actor palette", () => {
@@ -816,6 +820,11 @@ describe("scriptPaletteNodes", () => {
     );
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseExit")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mousePress")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseRelease")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
     expect(nodes.some((node) => node.id === "ui.getWidget")).toBe(false);
   });
 
@@ -850,6 +859,8 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
       true,
     );
+    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
       false,
     );

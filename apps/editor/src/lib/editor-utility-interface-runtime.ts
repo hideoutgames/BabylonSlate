@@ -1,6 +1,7 @@
 import { ScriptHost, type ScriptHostServices } from "@babylonslate/runtime";
 import { ClassRegistry } from "@babylonslate/object-model";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import { uiWidgetEventExport } from "@babylonslate/bridge";
 import type { UiWidgetEvent } from "@babylonslate/render";
 import { logicGraphFromUiPayload } from "./play-content";
 import { compileGraphDocuments } from "../services/script-compiler";
@@ -81,14 +82,7 @@ export function bindEditorUtilityWidgetEvent(
   host: Pick<ScriptHost, "classIds" | "invokeEvent">,
   event: UiWidgetEvent,
 ): void {
-  const name =
-    event.kind === "click"
-      ? "onWidgetClick"
-      : event.kind === "value"
-        ? "onWidgetValue"
-        : event.kind === "checked"
-          ? "onWidgetChecked"
-          : "onWidgetText";
+  const name = uiWidgetEventExport(event.kind);
   const args = { widgetId: event.widgetId, value: "value" in event ? event.value : undefined };
   for (const classId of host.classIds()) {
     host.invokeEvent(classId, name, null, args);

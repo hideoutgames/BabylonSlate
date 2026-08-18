@@ -57,7 +57,7 @@ Engine bases `UserInterface` and `Widget` are `BObject`s (`kind: "object"`), not
 - **Apply** registers the asset class, constructs the `UserInterface`, then widgets from `loadUserInterfaces` metadata (`guid` `ui-N:widgetId`, `owner` = the instance). Widgets then the UI run `onCreation`; interfaces bind; the worker emits `uiApply`.
 - **Remove** tears widgets down in reverse (`onDestroyed`, `owner = null`) then the UI, and emits `uiRemove`. Change-scene and Play stop tear down every mounted UI.
 - **Tick** calls `onTick` only while mounted. Two applies of one class are independent (variables, widgets, visibility).
-- **Events** (`click` / `value` / `checked` / `text`) travel main → worker as `uiWidgetEvent` and invoke `onWidgetClick` / `onWidgetValue` / `onWidgetChecked` / `onWidgetText` on the owning UI with `{ widget, widgetId, value }`.
+- **Events** (`click` / `value` / `checked` / `text` / `pointerEnter` / `pointerExit` / `pointerDown` / `pointerUp`) travel main → worker as `uiWidgetEvent` and invoke `onWidgetClick` / `onWidgetValue` / `onWidgetChecked` / `onWidgetText` / `onMouseEnter` / `onMouseExit` / `onMousePress` / `onMouseRelease` on the owning UI with `{ widget, widgetId, value }`. Catalog nodes: **Event On Mouse Enter/Exit/Press/Release** and **Event On Widget Click**. Empty Canvas hits do not emit widget events. Live EUI fires the same pointer events at editor time.
 - **Visibility** is instance-scoped (`uiSetVisible` `{ instanceId, widgetId, visible }`). Hosts prefix control ids `instanceId:widgetId`.
 - UI / Widget class ids are **not** spawned as Actors (`shouldSpawnScriptedActor`).
 

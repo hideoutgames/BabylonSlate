@@ -29,6 +29,11 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.tick": "Event Tick",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
+  "flow.event.mouseEnter": "Event On Mouse Enter",
+  "flow.event.mouseExit": "Event On Mouse Exit",
+  "flow.event.mousePress": "Event On Mouse Press",
+  "flow.event.mouseRelease": "Event On Mouse Release",
+  "flow.event.widgetClick": "Event On Widget Click",
   "flow.event.editorStartup": "Event On Editor Startup",
   "flow.event.sceneOpen": "Event On Scene Open",
   "flow.event.sceneSaved": "Event On Scene Saved",
@@ -47,6 +52,14 @@ const EDITOR_UTILITY_EVENT_TYPES = [
 ] as const;
 
 const EDITOR_BEGIN_PLAY_EVENT = "flow.event.editorBeginPlay";
+
+const WIDGET_POINTER_EVENT_TYPE_IDS = [
+  "flow.event.mouseEnter",
+  "flow.event.mouseExit",
+  "flow.event.mousePress",
+  "flow.event.mouseRelease",
+  "flow.event.widgetClick",
+] as const;
 
 const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginPlay",
@@ -285,6 +298,14 @@ export function isScriptCatalogNodeAllowed(
     return (
       isEditorUtilityInterfaceHost(options) ||
       ancestryChain(options).includes("EditorUtilityObject")
+    );
+  }
+  if (
+    (WIDGET_POINTER_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)
+  ) {
+    return (
+      isUserInterfaceLogicHost(options) ||
+      isEditorUtilityInterfaceHost(options)
     );
   }
   if (

@@ -29,7 +29,7 @@ import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands } from "../lib/play-console";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type {
@@ -360,7 +360,7 @@ export function PlayOverlay({
             event: {
               instanceId: string;
               widgetId: string;
-              kind: "click" | "value" | "checked" | "text";
+              kind: UiWidgetEventKind;
               value?: unknown;
             },
           ) => boolean;

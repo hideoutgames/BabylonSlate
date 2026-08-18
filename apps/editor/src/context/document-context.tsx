@@ -63,7 +63,7 @@ import {
   createNativeHttp,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import {
   DocumentService,
@@ -2603,7 +2603,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dispatchPlayUiWidgetEvent: (event: {
           instanceId: string;
           widgetId: string;
-          kind: "click" | "value" | "checked" | "text";
+          kind: UiWidgetEventKind;
           value?: unknown;
         }) => boolean;
         setMainGraphComponents: (

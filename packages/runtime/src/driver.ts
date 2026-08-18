@@ -5,6 +5,7 @@ import {
   type CommandMessage,
   type UiWidgetEventControl,
   type UserInterfaceWidgetMeta,
+  uiWidgetEventExport,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -2401,11 +2402,8 @@ class InProcessRuntime implements RuntimeDriver {
 
 function uiWidgetEventName(
   kind: UiWidgetEventControl["kind"],
-): "onWidgetClick" | "onWidgetValue" | "onWidgetChecked" | "onWidgetText" {
-  if (kind === "value") return "onWidgetValue";
-  if (kind === "checked") return "onWidgetChecked";
-  if (kind === "text") return "onWidgetText";
-  return "onWidgetClick";
+): string {
+  return uiWidgetEventExport(kind);
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {

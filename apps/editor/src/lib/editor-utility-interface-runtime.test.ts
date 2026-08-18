@@ -108,4 +108,40 @@ describe("createEditorUtilityInterfaceHost", () => {
       widgetId: "btn",
     });
   });
+
+  it("forwards mouse enter, exit, press, and release into the loaded class", () => {
+    const invokeEvent = vi.fn();
+    const host = {
+      classIds: () => ["Tools"],
+      invokeEvent,
+    } as Pick<ScriptHost, "classIds" | "invokeEvent">;
+    bindEditorUtilityWidgetEvent(host, {
+      kind: "pointerEnter",
+      widgetId: "btn",
+    });
+    bindEditorUtilityWidgetEvent(host, {
+      kind: "pointerExit",
+      widgetId: "btn",
+    });
+    bindEditorUtilityWidgetEvent(host, {
+      kind: "pointerDown",
+      widgetId: "btn",
+    });
+    bindEditorUtilityWidgetEvent(host, {
+      kind: "pointerUp",
+      widgetId: "btn",
+    });
+    expect(invokeEvent).toHaveBeenCalledWith("Tools", "onMouseEnter", null, {
+      widgetId: "btn",
+    });
+    expect(invokeEvent).toHaveBeenCalledWith("Tools", "onMouseExit", null, {
+      widgetId: "btn",
+    });
+    expect(invokeEvent).toHaveBeenCalledWith("Tools", "onMousePress", null, {
+      widgetId: "btn",
+    });
+    expect(invokeEvent).toHaveBeenCalledWith("Tools", "onMouseRelease", null, {
+      widgetId: "btn",
+    });
+  });
 });

@@ -595,6 +595,92 @@ describe("BabylonUiApplyHost", () => {
     box.dispose();
     input.dispose();
   });
+
+  it("emits mouse enter, exit, press, and release on interactive buttons", () => {
+    const onWidgetEvent = vi.fn();
+    const buttonDesc = descriptor({
+      id: "btn",
+      kind: "Button",
+      text: "Play",
+    });
+    const button = createBabylonControl(
+      guiSpecFromDescriptor(buttonDesc, { interactive: true }),
+    );
+    const factory: GuiControlFactory = {
+      create() {
+        return {
+          id: "btn",
+          type: "button",
+          spec: guiSpecFromDescriptor(buttonDesc, { interactive: true }),
+          control: button,
+          dispose() {},
+        };
+      },
+      clear() {},
+    };
+    const host = new BabylonUiApplyHost(factory, {
+      interactive: true,
+      onWidgetEvent,
+    });
+    host.addControl(buttonDesc);
+    const info = new Vector2WithInfo(new Vector2(0, 0));
+    button.onPointerEnterObservable.notifyObservers(button);
+    button.onPointerOutObservable.notifyObservers(button);
+    button.onPointerDownObservable.notifyObservers(info);
+    button.onPointerUpObservable.notifyObservers(info);
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "pointerEnter",
+      widgetId: "btn",
+    });
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "pointerExit",
+      widgetId: "btn",
+    });
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "pointerDown",
+      widgetId: "btn",
+    });
+    expect(onWidgetEvent).toHaveBeenCalledWith({
+      kind: "pointerUp",
+      widgetId: "btn",
+    });
+    host.clear();
+    button.dispose();
+  });
+
+  it("does not emit pointer events from the Canvas root", () => {
+    const onWidgetEvent = vi.fn();
+    const canvasDesc = descriptor({
+      id: "canvas",
+      kind: "Canvas",
+    });
+    const canvas = createBabylonControl(
+      guiSpecFromDescriptor(canvasDesc, { interactive: true }),
+    );
+    const factory: GuiControlFactory = {
+      create() {
+        return {
+          id: "canvas",
+          type: "rectangle",
+          spec: guiSpecFromDescriptor(canvasDesc, { interactive: true }),
+          control: canvas,
+          dispose() {},
+        };
+      },
+      clear() {},
+    };
+    const host = new BabylonUiApplyHost(factory, {
+      interactive: true,
+      onWidgetEvent,
+    });
+    host.addControl(canvasDesc);
+    canvas.onPointerDownObservable.notifyObservers(
+      new Vector2WithInfo(new Vector2(0, 0)),
+    );
+    expect(onWidgetEvent).not.toHaveBeenCalled();
+    host.clear();
+    canvas.dispose();
+  });
 });
 
 describe("Babylon GUI Image widgets", () => {

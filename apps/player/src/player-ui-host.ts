@@ -120,7 +120,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       instanceId,
       widgetId,
       kind: event.kind,
-      ...(event.kind === "click" ? {} : { value: event.value }),
+      ...("value" in event ? { value: event.value } : {}),
     });
   };
 

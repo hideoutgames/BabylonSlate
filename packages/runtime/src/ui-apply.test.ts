@@ -458,6 +458,56 @@ describe("mounted UserInterface lifecycle", () => {
     runtime.stop();
   });
 
+  it("dispatches pointer enter onto onMouseEnter on the owning UI", async () => {
+    const registry = createDefaultNodeRegistry();
+    const uiGraph: LogicGraph = {
+      id: "ui-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "enter", "flow.event.mouseEnter"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "enter", "execOut", "log", "execIn"),
+        edge("e2", "enter", "widgetId", "log", "message"),
+      ],
+    };
+    const hostGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "apply", "ui.applyToViewport", { asset: HUD_GUID }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "apply", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.registerUserInterfaceDocument(HUD_GUID, hudWidgets());
+    await runtime.loadScripts([
+      toScript(uiGraph, registry, HUD_CLASS_ID, HUD_GUID, {
+        parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
+      }),
+      toScript(hostGraph, registry, "HudHost", "hud-host-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "HudHost" });
+    runtime.dispatchUiWidgetEvent({
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerEnter",
+    });
+    const logs = commands.filter((command) => command.type === "log");
+    expect(logs.some((command) => String(command.message).includes("play-btn"))).toBe(
+      true,
+    );
+    runtime.stop();
+  });
+
   it("tears down every mounted UI on change-scene and stop", async () => {
     const registry = createDefaultNodeRegistry();
     const hostGraph: LogicGraph = {

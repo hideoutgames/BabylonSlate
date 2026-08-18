@@ -29,6 +29,11 @@ describe("editor utility events", () => {
     expect(eventNameForEntry(entry("flow.event.editorBeginPlay"))).toBe(
       "onEditorBeginPlay",
     );
+    expect(EVENT_BY_TYPE_ID["flow.event.mouseEnter"]).toBe("onMouseEnter");
+    expect(EVENT_BY_TYPE_ID["flow.event.mouseExit"]).toBe("onMouseExit");
+    expect(EVENT_BY_TYPE_ID["flow.event.mousePress"]).toBe("onMousePress");
+    expect(EVENT_BY_TYPE_ID["flow.event.mouseRelease"]).toBe("onMouseRelease");
+    expect(EVENT_BY_TYPE_ID["flow.event.widgetClick"]).toBe("onWidgetClick");
   });
 
   it("maps Animation Object lifecycle nodes to ScriptHost events", () => {

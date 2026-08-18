@@ -90,5 +90,33 @@ describe("UserInterface command and control contracts", () => {
     expect(value.value).toBe(0.4);
     expect(checked.value).toBe(true);
     expect(text.value).toBe("Ada");
+    const enter = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerEnter",
+    } satisfies ControlMessage;
+    const exit = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerExit",
+    } satisfies ControlMessage;
+    const press = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerDown",
+    } satisfies ControlMessage;
+    const release = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerUp",
+    } satisfies ControlMessage;
+    expect(enter.kind).toBe("pointerEnter");
+    expect(exit.kind).toBe("pointerExit");
+    expect(press.kind).toBe("pointerDown");
+    expect(release.kind).toBe("pointerUp");
   });
 });

@@ -14,6 +14,7 @@ import {
   layoutUserInterface,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
+import type { UiWidgetEventKind } from "@babylonslate/bridge";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
@@ -37,7 +38,7 @@ export interface PlayHudOverlayProps {
   onWidgetEvent?: (event: {
     instanceId: string;
     widgetId: string;
-    kind: "click" | "value" | "checked" | "text";
+    kind: UiWidgetEventKind;
     value?: unknown;
   }) => void;
   /** Play scene; when set, widgets render through Babylon GUI. */
@@ -250,7 +251,7 @@ export function PlayHudOverlay({
   const emitWidget = useCallback(
     (
       controlId: string,
-      kind: "click" | "value" | "checked" | "text",
+      kind: UiWidgetEventKind,
       value?: unknown,
     ) => {
       const parsed = parsePlayHudControlId(controlId);
