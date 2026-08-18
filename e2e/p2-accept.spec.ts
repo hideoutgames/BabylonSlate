@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
-import { openTestProject } from "./open-test-project";
+import { openAssetFromBrowser, openContentBrowser, openTestProject } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
 
 const fixtures = path.join(process.cwd(), "e2e/fixtures");
@@ -37,12 +37,13 @@ test.describe("P2 acceptance proofs", () => {
       page.locator('[data-asset-path="assets/hero_HeroMat.babasset"]'),
     ).toBeVisible();
 
-    await page.locator('[data-asset-path="assets/hero.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/hero.babasset");
     await expect(page.getByTestId("model-preview")).toBeVisible();
     await expect(page.getByTestId("model-details-panel")).toBeVisible();
     await expect(page.getByTestId("property-slot-0")).toBeVisible();
     await expect(page.getByTestId("property-materialCount")).toHaveCount(0);
 
+    await openContentBrowser(page);
     const albedo = page.locator('[data-asset-path="assets/albedo.babasset"]');
     await expect(async () => {
       await expect(albedo.getByText("Encoding")).toHaveCount(0);
