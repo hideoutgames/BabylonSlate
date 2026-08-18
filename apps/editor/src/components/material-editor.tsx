@@ -41,6 +41,7 @@ import {
   serializedToMaterialFunctionGraph,
   serializedToMaterialGraph,
   setMaterialDomain,
+  parseMaterialDomain,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
   type MaterialDocument,
@@ -503,14 +504,10 @@ function MaterialDocumentDetails() {
       options: [
         { value: "surface", label: "Surface" },
         { value: "postProcess", label: "Post Process" },
+        { value: "interface", label: "Interface" },
       ],
       onChange: (value) =>
-        commit(
-          setMaterialDomain(
-            document,
-            value === "postProcess" ? "postProcess" : "surface",
-          ),
-        ),
+        commit(setMaterialDomain(document, parseMaterialDomain(value))),
     },
     {
       id: "shadingModel",

@@ -1,5 +1,9 @@
 import type { MaterialDomain } from "./catalog";
-import { materialNodeDefinition, terminalNodeTypeFor } from "./catalog";
+import {
+  materialNodeDefinition,
+  parseMaterialDomain,
+  terminalNodeTypeFor,
+} from "./catalog";
 import type { MaterialValueType } from "./types";
 
 export const MATERIAL_SCHEMA_VERSION = 2;
@@ -195,84 +199,139 @@ function withTerminal(
   ];
 }
 
+function defaultSurfaceGraph(): {
+  nodes: MaterialGraphNode[];
+  edges: MaterialGraphEdge[];
+} {
+  return {
+    nodes: [
+      {
+        id: "baseColor",
+        type: "const.color",
+        position: { x: 0, y: 0 },
+        properties: { value: [0.8, 0.8, 0.8] },
+      },
+      {
+        id: "output",
+        type: "output.surface",
+        position: { x: 300, y: 0 },
+        properties: {},
+      },
+    ],
+    edges: [
+      {
+        id: "e-color-output",
+        sourceNodeId: "baseColor",
+        sourcePinId: "out",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    ],
+  };
+}
+
+function defaultPostProcessGraph(): {
+  nodes: MaterialGraphNode[];
+  edges: MaterialGraphEdge[];
+} {
+  return {
+    nodes: [
+      {
+        id: "screenUv",
+        type: "input.screenUv",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "sceneColor",
+        type: "input.sceneColor",
+        position: { x: 200, y: 0 },
+        properties: {},
+      },
+      {
+        id: "output",
+        type: "output.postProcess",
+        position: { x: 420, y: 0 },
+        properties: {},
+      },
+    ],
+    edges: [
+      {
+        id: "e-uv-scene",
+        sourceNodeId: "screenUv",
+        sourcePinId: "uv",
+        targetNodeId: "sceneColor",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-scene-output",
+        sourceNodeId: "sceneColor",
+        sourcePinId: "color",
+        targetNodeId: "output",
+        targetPinId: "color",
+      },
+    ],
+  };
+}
+
+function defaultInterfaceGraph(): {
+  nodes: MaterialGraphNode[];
+  edges: MaterialGraphEdge[];
+} {
+  return {
+    nodes: [
+      {
+        id: "uv",
+        type: "input.uv",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "color",
+        type: "const.vec4",
+        position: { x: 0, y: 140 },
+        properties: { value: [0.8, 0.8, 0.8, 1] },
+      },
+      {
+        id: "output",
+        type: "output.interface",
+        position: { x: 300, y: 0 },
+        properties: {},
+      },
+    ],
+    edges: [
+      {
+        id: "e-color-output",
+        sourceNodeId: "color",
+        sourcePinId: "out",
+        targetNodeId: "output",
+        targetPinId: "color",
+      },
+    ],
+  };
+}
+
 export function createDefaultMaterialDocument(
   name = "Material",
   domain: MaterialDomain = "surface",
 ): MaterialDocument {
-  const nodes: MaterialGraphNode[] =
-    domain === "surface"
-      ? [
-          {
-            id: "baseColor",
-            type: "const.color",
-            position: { x: 0, y: 0 },
-            properties: { value: [0.8, 0.8, 0.8] },
-          },
-          {
-            id: "output",
-            type: "output.surface",
-            position: { x: 300, y: 0 },
-            properties: {},
-          },
-        ]
-      : [
-          {
-            id: "screenUv",
-            type: "input.screenUv",
-            position: { x: 0, y: 0 },
-            properties: {},
-          },
-          {
-            id: "sceneColor",
-            type: "input.sceneColor",
-            position: { x: 200, y: 0 },
-            properties: {},
-          },
-          {
-            id: "output",
-            type: "output.postProcess",
-            position: { x: 420, y: 0 },
-            properties: {},
-          },
-        ];
-  const edges: MaterialGraphEdge[] =
-    domain === "surface"
-      ? [
-          {
-            id: "e-color-output",
-            sourceNodeId: "baseColor",
-            sourcePinId: "out",
-            targetNodeId: "output",
-            targetPinId: "baseColor",
-          },
-        ]
-      : [
-          {
-            id: "e-uv-scene",
-            sourceNodeId: "screenUv",
-            sourcePinId: "uv",
-            targetNodeId: "sceneColor",
-            targetPinId: "uv",
-          },
-          {
-            id: "e-scene-output",
-            sourceNodeId: "sceneColor",
-            sourcePinId: "color",
-            targetNodeId: "output",
-            targetPinId: "color",
-          },
-        ];
+  const graph =
+    domain === "postProcess"
+      ? defaultPostProcessGraph()
+      : domain === "interface"
+        ? defaultInterfaceGraph()
+        : defaultSurfaceGraph();
   return {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     name,
     domain,
-    shadingModel: "pbr",
+    shadingModel: domain === "interface" ? "unlit" : "pbr",
     blendMode: "opaque",
     twoSided: false,
     alphaCutoff: 0.5,
     preview: { mesh: "cube", customMeshGuid: null },
-    nodes,
-    edges,
+    nodes: graph.nodes,
+    edges: graph.edges,
   };
 }
 
@@ -309,8 +368,7 @@ export function normalizeMaterialDocument(
   fallbackName = "Material",
 ): MaterialDocument {
   const record = asRecord(value);
-  const domain: MaterialDomain =
-    record.domain === "postProcess" ? "postProcess" : "surface";
+  const domain = parseMaterialDomain(record.domain);
   return {
     schemaVersion: asNumber(record.schemaVersion, MATERIAL_SCHEMA_VERSION),
     name: asString(record.name, fallbackName),

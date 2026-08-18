@@ -28,6 +28,7 @@ import {
   materialDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  parseMaterialDomain,
 } from "@babylonslate/shader-graph";
 import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
@@ -1398,7 +1399,7 @@ export function materialHeaderMeta(
     return undefined;
   }
   return {
-    domain: payload.domain === "postProcess" ? "postProcess" : "surface",
+    domain: parseMaterialDomain(payload.domain),
   };
 }
 

@@ -174,6 +174,23 @@ describe("material compiler", () => {
     ).toBe(true);
   });
 
+  it("builds an interface material as an unlit fullscreen quad, not PBR", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument("HudGlow", "interface");
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "hud" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    // NodeMaterialModes.PostProcess — same 2D fragment plumbing as post-process.
+    expect(result.material.mode).toBe(1);
+    const classNames = result.material.attachedBlocks.map((block) =>
+      block.getClassName(),
+    );
+    expect(classNames).toContain("FragmentOutputBlock");
+    expect(classNames).not.toContain("PBRMetallicRoughnessBlock");
+    expect(classNames).not.toContain("CurrentScreenBlock");
+  });
+
   it("samples linearized scene depth instead of fragment coordinates", () => {
     const scene = host();
     const doc = createDefaultMaterialDocument("Depth", "postProcess");

@@ -301,7 +301,7 @@ export function MaterialEditingProvider({
         return;
       }
       setCompileDiagnostics([]);
-      if (document.domain === "postProcess") {
+      if (document.domain === "postProcess" || document.domain === "interface") {
         host.applyMaterial(null);
         host.applyPostProcess(result.material);
       } else {

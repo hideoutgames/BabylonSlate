@@ -22,6 +22,30 @@ describe("material validation", () => {
     expect(validateMaterialDocument(doc)).toEqual([]);
   });
 
+  it("accepts the default interface material", () => {
+    const doc = createDefaultMaterialDocument("HudGlow", "interface");
+    expect(validateMaterialDocument(doc)).toEqual([]);
+  });
+
+  it("flags World Position and Scene Color inside an interface material", () => {
+    const doc = createDefaultMaterialDocument("HudGlow", "interface");
+    doc.nodes.push(
+      {
+        id: "world",
+        type: "input.worldPosition",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "scene",
+        type: "input.sceneColor",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    expect(codes(doc)).toContain("material.domainMismatch");
+  });
+
   it("flags an unknown node type", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
@@ -378,6 +402,31 @@ describe("material validation", () => {
     expect(
       codes(doc, { functions: { "fn-1": createDefaultMaterialFunctionDocument() } }),
     ).not.toContain("material.function.missing");
+  });
+
+  it("lets an interface material call a domain-neutral math function", () => {
+    const fn = createDefaultMaterialFunctionDocument("Opacity");
+    fn.inputs = [{ id: "in_value", name: "Value", type: "float" }];
+    fn.outputs = [{ id: "out_value", name: "Result", type: "float" }];
+    const doc = createDefaultMaterialDocument("HudGlow", "interface");
+    doc.nodes.push({
+      id: "call",
+      type: "function.call",
+      position: { x: 0, y: 0 },
+      properties: { functionGuid: "fn-1" },
+    });
+    doc.edges.push({
+      id: "e-fn-opacity",
+      sourceNodeId: "call",
+      sourcePinId: "out_value",
+      targetNodeId: "output",
+      targetPinId: "opacity",
+    });
+    expect(
+      validateMaterialDocument(doc, {
+        functions: { "fn-1": fn },
+      }),
+    ).toEqual([]);
   });
 
   it("flags recursive function dependencies", () => {

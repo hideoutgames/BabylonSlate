@@ -1,7 +1,12 @@
 import type { MaterialValueType } from "./types";
 
-/** Surface materials shade a mesh; post-process materials shade a camera pass. */
-export type MaterialDomain = "surface" | "postProcess";
+/** Surface shades a mesh; post-process shades a camera pass; interface shades HUD widgets. */
+export type MaterialDomain = "surface" | "postProcess" | "interface";
+
+export function parseMaterialDomain(value: unknown): MaterialDomain {
+  if (value === "postProcess" || value === "interface") return value;
+  return "surface";
+}
 
 export type MaterialStage = "vertex" | "fragment";
 
@@ -38,7 +43,7 @@ export interface MaterialNodeDefinition {
   type: string;
   title: string;
   category: string;
-  /** Legal domains. Undefined means the node works in both. */
+  /** Legal domains. Undefined means the node works in every domain. */
   domains?: readonly MaterialDomain[];
   /** Legal stages. Undefined means the node works in both. */
   stages?: readonly MaterialStage[];
@@ -670,6 +675,25 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
     ],
     outputs: [],
   },
+  {
+    type: "output.interface",
+    title: "Interface Output",
+    category: "Output",
+    domains: ["interface"],
+    terminal: "interface",
+    cost: 0,
+    inputs: [
+      {
+        id: "color",
+        name: "Color",
+        type: VEC4,
+        colorHint: true,
+        defaultValue: [0.8, 0.8, 0.8, 1],
+      },
+      { id: "opacity", name: "Opacity", type: FLOAT, defaultValue: [1] },
+    ],
+    outputs: [],
+  },
 ];
 
 export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
@@ -727,5 +751,7 @@ export function materialPaletteEntries(
 }
 
 export function terminalNodeTypeFor(domain: MaterialDomain): string {
-  return domain === "postProcess" ? "output.postProcess" : "output.surface";
+  if (domain === "postProcess") return "output.postProcess";
+  if (domain === "interface") return "output.interface";
+  return "output.surface";
 }

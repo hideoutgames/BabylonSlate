@@ -1438,6 +1438,9 @@ describe("content-browser-helpers", () => {
     expect(materialHeaderMeta("Material", { domain: "postProcess" })).toEqual({
       domain: "postProcess",
     });
+    expect(materialHeaderMeta("Material", { domain: "interface" })).toEqual({
+      domain: "interface",
+    });
     expect(materialHeaderMeta("Material", {})).toEqual({ domain: "surface" });
     expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
   });

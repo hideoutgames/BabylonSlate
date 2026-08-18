@@ -4,6 +4,7 @@ import {
   materialNodeDefinition,
   materialPaletteEntries,
   nodeIsLegalInDomain,
+  parseMaterialDomain,
 } from "./catalog";
 
 /** GLSL ES 1.00/3.00 builtins the plan requires as first-class nodes. */
@@ -134,9 +135,36 @@ describe("material node catalog", () => {
     expect(nodeIsLegalInDomain("output.postProcess", "surface")).toBe(false);
   });
 
+  it("keeps interface graphs unlit 2D: UV and texture, not world or scene samples", () => {
+    expect(nodeIsLegalInDomain("input.uv", "interface")).toBe(true);
+    expect(nodeIsLegalInDomain("input.time", "interface")).toBe(true);
+    expect(nodeIsLegalInDomain("texture.sample", "interface")).toBe(true);
+    expect(nodeIsLegalInDomain("math.sin", "interface")).toBe(true);
+    expect(nodeIsLegalInDomain("color.desaturate", "interface")).toBe(true);
+    expect(nodeIsLegalInDomain("output.interface", "interface")).toBe(true);
+    expect(nodeIsLegalInDomain("input.worldPosition", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.worldNormal", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.vertexColor", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.sceneColor", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.sceneDepth", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.sceneNormal", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.screenUv", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("output.surface", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("output.postProcess", "interface")).toBe(false);
+    expect(nodeIsLegalInDomain("output.interface", "surface")).toBe(false);
+    expect(nodeIsLegalInDomain("output.interface", "postProcess")).toBe(false);
+  });
+
   it("allows shared math in both domains", () => {
     expect(nodeIsLegalInDomain("math.sin", "surface")).toBe(true);
     expect(nodeIsLegalInDomain("math.sin", "postProcess")).toBe(true);
+  });
+
+  it("parses known material domains and falls back to surface", () => {
+    expect(parseMaterialDomain("interface")).toBe("interface");
+    expect(parseMaterialDomain("postProcess")).toBe("postProcess");
+    expect(parseMaterialDomain("surface")).toBe("surface");
+    expect(parseMaterialDomain("nope")).toBe("surface");
   });
 
   it("exposes the Unreal-style surface output channels", () => {
@@ -166,12 +194,34 @@ describe("material node catalog", () => {
     expect(post?.inputs[0]?.type).toEqual({ kind: "vec4" });
   });
 
+  it("takes Color and Opacity on the interface output", () => {
+    const terminal = materialNodeDefinition("output.interface");
+    expect(terminal?.inputs.map((pin) => pin.id)).toEqual(["color", "opacity"]);
+    expect(terminal?.inputs[0]).toMatchObject({
+      name: "Color",
+      type: { kind: "vec4" },
+    });
+    expect(terminal?.inputs[1]).toMatchObject({
+      name: "Opacity",
+      type: { kind: "float" },
+      defaultValue: [1],
+    });
+  });
+
   it("filters palette entries by domain", () => {
     const surface = materialPaletteEntries("surface").map((row) => row.type);
     expect(surface).toContain("output.surface");
     expect(surface).not.toContain("output.postProcess");
     expect(surface).not.toContain("input.sceneColor");
     expect(surface).not.toContain("input.sceneNormal");
+    const iface = materialPaletteEntries("interface").map((row) => row.type);
+    expect(iface).toContain("output.interface");
+    expect(iface).toContain("input.uv");
+    expect(iface).toContain("texture.sample");
+    expect(iface).not.toContain("output.surface");
+    expect(iface).not.toContain("output.postProcess");
+    expect(iface).not.toContain("input.sceneColor");
+    expect(iface).not.toContain("input.worldPosition");
   });
 
   it("costs a texture sample above a scalar multiply", () => {
