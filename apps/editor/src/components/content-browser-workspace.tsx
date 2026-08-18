@@ -125,6 +125,7 @@ import {
   sortChildFolders,
   uniqueAssetTypes,
   visualForIndexedAsset,
+  withAutoCollapsedNestedFolders,
   type ContentBrowserContextAction,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
@@ -219,6 +220,7 @@ export function ContentBrowserWorkspace() {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     () => new Set(),
   );
+  const userToggledFoldersRef = useRef(new Set<string>());
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
@@ -332,6 +334,27 @@ export function ContentBrowserWorkspace() {
       ];
     });
   }, [assetRegistry, browserRoots, registryVersion]);
+
+  useEffect(() => {
+    setCollapsedFolders((current) => {
+      const next = withAutoCollapsedNestedFolders(
+        current,
+        folderTrees,
+        userToggledFoldersRef.current,
+      );
+      if (next.size === current.size) {
+        let same = true;
+        for (const path of next) {
+          if (!current.has(path)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return current;
+      }
+      return next;
+    });
+  }, [folderTrees]);
 
   const allAssets = useMemo(() => {
     if (!assetRegistry) return [];
@@ -1738,6 +1761,7 @@ export function ContentBrowserWorkspace() {
               onToggleExpanded={(id) => {
                 const row = browserRows.find((item) => item.id === id);
                 if (!row || row.kind !== "folder" || !row.hasChildren) return;
+                userToggledFoldersRef.current.add(id);
                 setCollapsedFolders((current) => {
                   const next = new Set(current);
                   if (next.has(id)) next.delete(id);

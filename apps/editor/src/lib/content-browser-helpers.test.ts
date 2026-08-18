@@ -20,8 +20,10 @@ import {
   filterAssets,
   sortAssets,
   sortChildFolders,
+  flattenContentBrowserForest,
   flattenContentBrowserTree,
   flattenFolderTree,
+  withAutoCollapsedNestedFolders,
   filterFolderTreeRows,
   isFolderNameTaken,
   contentBrowserDeleteListNames,
@@ -445,6 +447,79 @@ describe("content-browser-helpers", () => {
       hasChildren: true,
       expanded: false,
     });
+  });
+
+  it("auto-collapses nested folders so a Mannequin pack does not hide root assets", () => {
+    const trees = [
+      {
+        name: "assets",
+        path: "assets",
+        assets: ["scene-guid"],
+        children: [
+          {
+            name: "Mannequin",
+            path: "assets/Mannequin",
+            assets: ["idle-guid"],
+            children: [],
+          },
+        ],
+      },
+      {
+        name: "starter-content",
+        path: "plugins/starter-content",
+        assets: [],
+        children: [
+          {
+            name: "assets",
+            path: "plugins/starter-content/assets",
+            assets: ["starter-guid"],
+            children: [],
+          },
+        ],
+      },
+    ];
+    const collapsed = withAutoCollapsedNestedFolders(new Set(), trees, new Set());
+    const assets = [
+      asset({
+        guid: "scene-guid",
+        name: "main",
+        path: "assets/main.scene.babasset",
+        type: "Scene",
+      }),
+      asset({
+        guid: "idle-guid",
+        name: "idle",
+        path: "assets/Mannequin/mannequin_idle.babasset",
+        type: "Animation",
+      }),
+      asset({
+        guid: "starter-guid",
+        name: "StarterActor",
+        path: "plugins/starter-content/assets/StarterActor.class.babasset",
+        type: "Class",
+      }),
+    ];
+    const rows = flattenContentBrowserForest(trees, assets, collapsed);
+    expect(rows.map((row) => row.id)).toEqual([
+      "assets",
+      "assets/Mannequin",
+      "assets/main.scene.babasset",
+      "plugins/starter-content",
+      "plugins/starter-content/assets",
+    ]);
+    expect(collapsed.has("assets/Mannequin")).toBe(true);
+    const userExpanded = withAutoCollapsedNestedFolders(
+      new Set(),
+      trees,
+      new Set(["assets/Mannequin"]),
+    );
+    expect(userExpanded.has("assets/Mannequin")).toBe(false);
+    const userCollapsed = withAutoCollapsedNestedFolders(
+      new Set(["assets/Mannequin"]),
+      trees,
+      new Set(["assets/Mannequin"]),
+    );
+    expect(userCollapsed.has("assets/Mannequin")).toBe(true);
   });
 
   it("treats a folder with only assets as having children", () => {

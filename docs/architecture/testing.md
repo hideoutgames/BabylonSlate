@@ -77,7 +77,7 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 
 `e2e/scene-outliner-folders.spec.ts` covers Outliner folders: create, rename, save / close / reload / reopen persistence, and undo restoring a deleted folder without losing its actors.
 
-`e2e/mannequin-empty.spec.ts` covers 3D Empty: Outliner **Mannequin** (not Cube), Skeleton Preview bone overlay (`data-bones`), and Animation Preview looping idle (`data-playing` / `data-looping`).
+`e2e/mannequin-empty.spec.ts` covers 3D Empty: Outliner **Mannequin** (not Cube), Skeleton Preview bone overlay (`data-bones`), and Animation Preview looping idle (`data-playing` / `data-looping`). Nested `assets/Mannequin/` clips stay collapsed in the Content Browser tree; `openAssetFromBrowser` double-clicks folder tiles to reach them.
 
 `e2e/p15-source-control.spec.ts` uses test-mode `FakeLockProvider`: enable Source Control, edit the scene → Content Browser `data-lock-state="mine"`, Locks panel held count, hatch `addTheirs` → **Edit Anyway**, **Release All My Locks** confirm copy, and `touchAssetOnDisk` + `runForegroundRescan` → dirty-disk reload dialog. Unit tests cover Git LFS 409 already-ours via verify, skip auto-lock create after a restart verify, rename/folder lock transfer helpers, delete unlocking our paths, and desktop source-read of iOS App-target `BabylonSlateSecretsPlugin` registration. Two-device GitHub lock visibility is manual, not CI.
 

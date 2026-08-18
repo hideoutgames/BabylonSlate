@@ -95,6 +95,15 @@ export async function openAssetFromBrowser(
   assetPath: string,
 ): Promise<void> {
   await openContentBrowser(page);
+  const assetsRoot = page.getByTestId("tree-row-assets");
+  if ((await assetsRoot.count()) > 0) {
+    await assetsRoot.click();
+  }
+  const segments = assetPath.split("/");
+  for (let index = 1; index < segments.length - 1; index += 1) {
+    const folderPath = segments.slice(0, index + 1).join("/");
+    await page.getByTestId(`content-folder-${folderPath}`).dblclick();
+  }
   await page.locator(`[data-asset-path="${assetPath}"]`).dblclick();
 }
 

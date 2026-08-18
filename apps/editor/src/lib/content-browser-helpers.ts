@@ -959,6 +959,37 @@ export function flattenContentBrowserForest(
   );
 }
 
+/** Nested folder paths (depth > 0). Forest roots stay expanded. */
+export function nestedFolderPaths(
+  trees: readonly FolderTreeLike[],
+): string[] {
+  const paths: string[] = [];
+  const walk = (node: FolderTreeLike, depth: number) => {
+    if (depth > 0) paths.push(node.path);
+    for (const child of node.children) walk(child, depth + 1);
+  };
+  for (const tree of trees) walk(tree, 0);
+  return paths;
+}
+
+/**
+ * Collapse nested folders by default so a packed character folder cannot
+ * virtualize root assets (and sibling plugin roots) off the tree viewport.
+ * Paths in `userToggled` keep the user's expand/collapse choice.
+ */
+export function withAutoCollapsedNestedFolders(
+  current: ReadonlySet<string>,
+  trees: readonly FolderTreeLike[],
+  userToggled: ReadonlySet<string>,
+): Set<string> {
+  const next = new Set(current);
+  for (const path of nestedFolderPaths(trees)) {
+    if (userToggled.has(path)) continue;
+    next.add(path);
+  }
+  return next;
+}
+
 export function flattenContentBrowserTree(
   node: FolderTreeLike,
   assets: ReadonlyArray<IndexedAsset>,
