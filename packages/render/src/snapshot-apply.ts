@@ -334,16 +334,54 @@ export function applyAssignMesh(
   refreshPlayActiveCamera(scene, binding);
 }
 
-function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
-  const origin = Boolean(
-    (mesh.metadata as { playActorOrigin?: boolean } | null)?.playActorOrigin,
+function playMeshMetadata(
+  mesh: Mesh,
+): { playActorOrigin?: boolean; playHelperVisual?: boolean } | null {
+  return (mesh.metadata as {
+    playActorOrigin?: boolean;
+    playHelperVisual?: boolean;
+  } | null);
+}
+
+function isPlayActorOrigin(mesh: Mesh): boolean {
+  return Boolean(playMeshMetadata(mesh)?.playActorOrigin);
+}
+
+function isPlayHelperVisual(mesh: Mesh): boolean {
+  const meta = playMeshMetadata(mesh);
+  return Boolean(meta?.playHelperVisual || meta?.playActorOrigin);
+}
+
+export function isPlayHelperMeshKind(
+  meshKind: string | null | undefined,
+): boolean {
+  if (!meshKind) return true;
+  return (
+    meshKind === "camera" ||
+    meshKind === "audio" ||
+    meshKind.startsWith("light:")
   );
-  mesh.isVisible = origin ? false : visible;
+}
+
+function markPlayHelperVisual(mesh: Mesh): void {
+  mesh.isVisible = false;
+  mesh.isPickable = false;
+  mesh.metadata = { ...(mesh.metadata ?? {}), playHelperVisual: true };
+}
+
+function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
+  const origin = isPlayActorOrigin(mesh);
+  const helper = isPlayHelperVisual(mesh);
+  mesh.isVisible = origin || helper ? false : visible;
   if (!origin) return;
   for (const child of mesh.getChildMeshes()) {
     if (!child.name.includes("|")) continue;
     const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
     if (afterPipe.includes(":")) continue;
+    if (isPlayHelperVisual(child)) {
+      child.isVisible = false;
+      continue;
+    }
     child.isVisible = visible;
   }
 }
@@ -415,7 +453,6 @@ function createPlayVisual(
       playComponentMeshName(slotId, part.componentId),
     );
     applyPartTransform(child, part);
-    child.isVisible = true;
     meshes.set(part.componentId, child);
   }
   for (const part of parts ?? []) {
@@ -495,51 +532,50 @@ export function createPlayMesh(
       return loaded;
     }
   }
-  if (meshKind?.startsWith("light:") && binding) {
+  if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
-    mesh.isVisible = false;
-    const kind = meshKind.slice("light:".length);
-    const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}`;
-    const light =
-      kind === "directional"
-        ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
-        : kind === "spot"
-          ? new SpotLight(
-              lightName,
-              Vector3.Zero(),
-              new Vector3(0, 0, 1),
-              Math.PI / 3,
-              2,
-              scene,
-            )
-          : new PointLight(lightName, Vector3.Zero(), scene);
-    const props = binding.lightProps.get(slotId);
-    if (props) applyAuthoredLightProperties(light, props);
-    binding.lights.set(slotId, light);
-    if (props?.castShadows && binding.shadowOwnerSlot === null) {
-      binding.shadowOwnerSlot = slotId;
+    markPlayHelperVisual(mesh);
+    if (meshKind?.startsWith("light:") && binding) {
+      const kind = meshKind.slice("light:".length);
+      const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}`;
+      const light =
+        kind === "directional"
+          ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
+          : kind === "spot"
+            ? new SpotLight(
+                lightName,
+                Vector3.Zero(),
+                new Vector3(0, 0, 1),
+                Math.PI / 3,
+                2,
+                scene,
+              )
+            : new PointLight(lightName, Vector3.Zero(), scene);
+      const props = binding.lightProps.get(slotId);
+      if (props) applyAuthoredLightProperties(light, props);
+      binding.lights.set(slotId, light);
+      if (props?.castShadows && binding.shadowOwnerSlot === null) {
+        binding.shadowOwnerSlot = slotId;
+      }
+      applyPlayShadows(scene, binding);
     }
-    applyPlayShadows(scene, binding);
-    return mesh;
-  }
-  if (meshKind === "camera" && binding) {
-    const mesh = createPrimitiveMesh(scene, name, null);
-    mesh.isVisible = false;
-    const camera = new UniversalCamera(
-      `${AUTHORED_CAMERA_PREFIX}${slotId}`,
-      Vector3.Zero(),
-      scene,
-    );
-    camera.minZ = 0.1;
-    camera.maxZ = 1000;
-    camera.rotationQuaternion = Quaternion.Identity();
-    camera.rotation.set(0, 0, 0);
-    camera.detachControl();
-    camera.inputs.clear();
-    const props = binding.cameraProps.get(slotId);
-    if (props) applyAuthoredCameraProperties(camera, props);
-    binding.cameras.set(slotId, camera);
-    refreshPlayActiveCamera(scene, binding);
+    if (meshKind === "camera" && binding) {
+      const camera = new UniversalCamera(
+        `${AUTHORED_CAMERA_PREFIX}${slotId}`,
+        Vector3.Zero(),
+        scene,
+      );
+      camera.minZ = 0.1;
+      camera.maxZ = 1000;
+      camera.rotationQuaternion = Quaternion.Identity();
+      camera.rotation.set(0, 0, 0);
+      camera.detachControl();
+      camera.inputs.clear();
+      const props = binding.cameraProps.get(slotId);
+      if (props) applyAuthoredCameraProperties(camera, props);
+      binding.cameras.set(slotId, camera);
+      refreshPlayActiveCamera(scene, binding);
+    }
     return mesh;
   }
   return createPrimitiveMesh(scene, name, meshKind);
