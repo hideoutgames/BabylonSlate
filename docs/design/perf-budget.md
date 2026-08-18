@@ -40,7 +40,8 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags). **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material / UI reuse the viewport cache even when `sharedEngine` is set; eviction stays unreferenced-LRU only.
 - Editor idle `freezeActiveMeshes()` / static `freezeWorldMatrix()` / `material.freeze()` / unique-id maps / scene-load `forceCompilationAsync` are **P20** (`p20-editor-scene-freeze`). Visible editor stays at `viewportFrameCap` — do not dirty-skip an on-screen scene.
 - Global Search rebuilds when the dialog is initiated (`p20-search-on-demand`), not on project open. Async/chunked; include open-document JSON. No on-disk search cache.
-- No per-actor per-frame allocation in snapshot apply (reuse scratch math objects).
+- No per-actor per-frame allocation in snapshot apply (reuse scratch math objects). `SnapshotInterpolator.push` copies into two owned `Float32Array`s (ping-pong); do not `slice()` a new buffer per snapshot.
+- Play overlay / packaged-player HUD must not `setState` (or rewrite chrome DOM) at 60 Hz. Worker `stats` is ~5 Hz; rAF FPS sampling is 1 Hz. Tick stamp and worker timings also live on the snapshot header.
 
 
 ## CI
@@ -48,6 +49,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 `p14-perf-smoke` is in `pnpm verify` (Vitest):
 
 - Tiny in-process scene: `lastScriptMs`, `lastPhysicsMs`, and combined tick `< TICK_BUDGET_MS` (8 ms). Keep the fixture small so GitHub runners stay under budget.
+- 120 ticks → `stats` command count is ~5 Hz (not 120); snapshot header `tickIndex` is still 120. 2000 ticks with one looping `AudioComponent`: one `playSound`, `stats` stays ~5 Hz, last-100 median tick cost is not much worse than first-100.
 - Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 512 MB, `GEOMETRY_BYTE_CEILING` 128 MB). Drift fails CI.
 - Obstructed / hidden editor: `RenderScheduler.shouldRender() === false` (zero frames).
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.

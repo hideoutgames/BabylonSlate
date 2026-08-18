@@ -1062,4 +1062,109 @@ describe("AudioService", () => {
     expect(backend.plays[0]?.loop).toBe(true);
     service.dispose();
   });
+
+  it("keeps one looping voice across many snapshot follows", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: { bed: { ...createDefaultAudioPayload(), loop: true } },
+      }),
+    );
+    service.setSourceBytes("bed", new Uint8Array([1, 2, 3]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "bed",
+      volume: 1,
+      frameId: 1,
+      voiceId: "bed-1",
+    });
+    await service.flush();
+    expect(service.hasSpatialVoices()).toBe(false);
+    for (let i = 0; i < 2000; i++) {
+      service.syncSnapshot([{ slotId: 0, position: { x: i, y: 0, z: 0 } }]);
+      service.syncListener({ x: 0, y: 0, z: 0 });
+    }
+    expect(backend.plays).toHaveLength(1);
+    expect(service.stats().voices).toBe(1);
+    expect(backend.poses.size).toBe(0);
+    service.dispose();
+  });
+
+  it("removes a finished one-shot voice and leaves a looping voice playing", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: createDefaultAudioPayload(),
+          bed: { ...createDefaultAudioPayload(), loop: true },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setSourceBytes("bed", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "one-shot",
+    });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "bed",
+      volume: 1,
+      frameId: 1,
+      voiceId: "looping",
+    });
+    await service.flush();
+    expect(service.stats().voices).toBe(2);
+    backend.finish("one-shot");
+    backend.finish("looping");
+    expect(service.stats().voices).toBe(1);
+    service.dispose();
+  });
+
+  it("replays the same voiceId without leaking a cache pin", async () => {
+    const evicted: string[] = [];
+    const cache = new AudioBufferCache({
+      byteCeiling: 50,
+      onEvict: (guid) => evicted.push(guid),
+    });
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, cache });
+    service.setLibrary(
+      library({
+        audio: { jump: createDefaultAudioPayload() },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array(30));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "same",
+    });
+    await service.flush();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 2,
+      voiceId: "same",
+    });
+    await service.flush();
+    expect(backend.plays).toHaveLength(2);
+    expect(service.stats().voices).toBe(1);
+    service.handleCommand({ type: "stopSound", voiceId: "same" });
+    await service.flush();
+    cache.put("other", new Uint8Array(30), 30);
+    expect(evicted.some((guid) => guid.startsWith("jump"))).toBe(true);
+    service.dispose();
+  });
 });

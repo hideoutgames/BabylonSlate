@@ -1,3 +1,4 @@
+import { snapshotTickIndex } from "@babylonslate/bridge";
 import { drawCallCeilingWarning } from "@babylonslate/render";
 
 export type PlayerHudStats = {
@@ -39,6 +40,14 @@ export function applyPlayerFpsSample(
     physicsMs: previous?.physicsMs ?? 0,
     draws: previous?.draws ?? 0,
   };
+}
+
+/** Worker hosts stamp input from snapshot tickIndex so throttled stats cannot drop sticks. */
+export function applyPlayerSnapshotTick(
+  previous: number,
+  buffer: Float32Array,
+): number {
+  return snapshotTickIndex(buffer) ?? previous;
 }
 
 export function mountPlayerHud(

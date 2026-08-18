@@ -2,8 +2,10 @@ import {
   isPublishedSnapshot,
   readActorSlot,
   readSnapshotHeader,
+  snapshotFloatCount,
   type ActorSlot,
 } from "@babylonslate/bridge";
+import type { AudioPose } from "./audio-playback-backend";
 
 export interface SampledSnapshot {
   frameId: number;
@@ -30,6 +32,8 @@ function emptySlot(): ActorSlot {
 export class SnapshotInterpolator {
   private prev: Float32Array | null = null;
   private next: Float32Array | null = null;
+  private write = 0;
+  private readonly pair: [Float32Array, Float32Array];
   private readonly maxActors: number;
   private readonly scratch: ActorSlot[];
   private readonly prevIndexBySlot: Int32Array;
@@ -37,6 +41,8 @@ export class SnapshotInterpolator {
 
   constructor(maxActors: number) {
     this.maxActors = maxActors;
+    const floats = snapshotFloatCount(maxActors);
+    this.pair = [new Float32Array(floats), new Float32Array(floats)];
     this.scratch = Array.from({ length: maxActors }, () => emptySlot());
     this.prevIndexBySlot = new Int32Array(maxActors);
     this.sampled = {
@@ -50,12 +56,15 @@ export class SnapshotInterpolator {
 
   push(buffer: Float32Array): void {
     if (!isPublishedSnapshot(buffer)) return;
-    if (!this.next) {
-      this.next = buffer.slice();
-      return;
+    const dest = this.pair[this.write]!;
+    if (buffer.length <= dest.length) {
+      dest.set(buffer);
+    } else {
+      for (let i = 0; i < dest.length; i++) dest[i] = buffer[i]!;
     }
     this.prev = this.next;
-    this.next = buffer.slice();
+    this.next = dest;
+    this.write = 1 - this.write;
   }
 
   sample(alpha: number): SampledSnapshot | null {
@@ -156,4 +165,44 @@ function copySlot(src: ActorSlot, dst: ActorSlot): void {
   dst.scale.y = src.scale.y;
   dst.scale.z = src.scale.z;
   dst.flags = src.flags;
+}
+
+export type SampledAudioPose = {
+  slotId: number;
+  position: AudioPose;
+};
+
+/** Fill `out` with snapshot actor poses without allocating per actor. */
+export function writeSampledAudioPoses(
+  sampled: {
+    actorCount: number;
+    actors: ReadonlyArray<{
+      slotId: number;
+      position: { x: number; y: number; z: number };
+      rotation: { x: number; y: number; z: number; w: number };
+    }>;
+  },
+  out: SampledAudioPose[],
+): number {
+  const count = sampled.actorCount;
+  for (let i = 0; i < count; i++) {
+    const actor = sampled.actors[i]!;
+    const row =
+      out[i] ??
+      (out[i] = {
+        slotId: 0,
+        position: { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 },
+      });
+    row.slotId = actor.slotId;
+    const pose = row.position;
+    pose.x = actor.position.x;
+    pose.y = actor.position.y;
+    pose.z = actor.position.z;
+    pose.qx = actor.rotation.x;
+    pose.qy = actor.rotation.y;
+    pose.qz = actor.rotation.z;
+    pose.qw = actor.rotation.w;
+  }
+  out.length = count;
+  return count;
 }
