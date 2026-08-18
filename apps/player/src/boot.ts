@@ -30,7 +30,8 @@ import {
   type PlayerHudStats,
 } from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
-import { packedFontEntries, registerPackedFonts } from "./fonts";
+import { packedFontEntries } from "./fonts";
+import { applyPlayerUiCommand, createPlayerUiHost } from "./player-ui-host";
 import { playerSpawnListForScripts } from "./spawn-list";
 
 function havokWasmUrl(): string {

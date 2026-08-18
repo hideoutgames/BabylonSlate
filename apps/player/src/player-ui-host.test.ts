@@ -165,15 +165,17 @@ describe("createPlayerUiHost", () => {
         dirty();
       },
     );
-    const attachGui = vi.fn(() => ({
-      adt: { markAsDirty },
-      host: new RecordingUiHost(),
-      dispose: vi.fn(),
-    }));
+    const attachGui = vi.fn(
+      (_scene: unknown, _options: Record<string, unknown>) => ({
+        adt: { markAsDirty },
+        host: new RecordingUiHost(),
+        dispose: vi.fn(),
+      }),
+    );
     const host = createPlayerUiHost({
       library: new Map([["hud-1", hudDocument()]]),
       scene: {} as never,
-      attachGui,
+      attachGui: attachGui as never,
       applyFonts,
       fontEntries: [
         {
