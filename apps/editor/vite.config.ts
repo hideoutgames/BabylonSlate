@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { enginePluginsVitePlugin } from "./vite-engine-plugins.ts";
+import { kenneyMannequinVitePlugin } from "./vite-kenney-mannequin.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,16 @@ export default defineConfig({
     enginePluginsVitePlugin({
       sourceDir: path.join(repoRoot, "engine-plugins"),
       publicDir: path.join(rootDir, "public/engine-plugins"),
+    }),
+    kenneyMannequinVitePlugin({
+      sourceFile: path.join(
+        repoRoot,
+        "engine-content/kenney-assets/Mannequin/mannequin.glb",
+      ),
+      publicFile: path.join(
+        rootDir,
+        "public/engine-content/kenney-assets/Mannequin/mannequin.glb",
+      ),
     }),
     playerHostVitePlugin(
       path.join(rootDir, "../player/dist"),

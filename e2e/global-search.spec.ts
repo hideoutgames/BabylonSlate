@@ -21,7 +21,7 @@ test.describe("Global project search", () => {
     await expect(page.getByTestId("global-search-dialog")).toBeVisible();
     await expect(page.getByTestId("global-search-empty")).toBeVisible();
 
-    await page.getByTestId("global-search-query").fill("Cube");
+    await page.getByTestId("global-search-query").fill("Mannequin");
     await expect(page.getByTestId("global-search-group-actor")).toBeVisible();
     await page.locator('[data-testid^="global-search-item-actor:"]').first().click();
     await expect(page.getByTestId("global-search-dialog")).toHaveCount(0);

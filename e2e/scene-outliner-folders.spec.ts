@@ -88,7 +88,7 @@ test.describe("Scene Outliner folders", () => {
     await page.getByTestId("outliner-menu-folder:folder-1").click();
     await page.getByTestId("outliner-delete-folder-folder-1").click();
     await expect(page.getByTestId("tree-row-folder:folder-1")).toHaveCount(0);
-    // The default Cube must survive a folder delete.
+    // The default Mannequin must survive a folder delete.
     await expect(page.getByTestId("tree-row-actor:actor-1")).toBeVisible();
 
     await page.getByTestId("undo-document").click();

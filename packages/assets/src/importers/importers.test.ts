@@ -50,6 +50,29 @@ describe("importers", () => {
     expect(model.payload.clipNames).toEqual(["Walk"]);
   });
 
+  it("uniquifies duplicate glTF image names so Kenney Mannequin can import", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const bytes = new Uint8Array(
+      await readFile(
+        resolve("engine-content/kenney-assets/Mannequin/mannequin.glb"),
+      ),
+    );
+    const results = await importModel(bytes, {
+      fileName: "mannequin.glb",
+      existingGuids: new Set(),
+    });
+    const names = results.map((result) => result.name);
+    expect(names).toContain("mannequin");
+    expect(new Set(names).size).toBe(names.length);
+    expect(
+      results.find((result) => result.type === "Skeleton")?.payload.kind,
+    ).toBe("hierarchy");
+    expect(
+      results.filter((result) => result.type === "Animation"),
+    ).toHaveLength(27);
+  });
+
   it("rejects OBJ, STL, FBX, and invalid GLB bytes", async () => {
     await expect(
       importModel(new Uint8Array([1]), { fileName: "mesh.obj", existingGuids: new Set() }),

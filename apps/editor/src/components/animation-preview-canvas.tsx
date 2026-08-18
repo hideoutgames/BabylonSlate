@@ -31,6 +31,7 @@ export function AnimationPreviewCanvas({
   const play = useOptionalPlay();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
+  const [clipPlaying, setClipPlaying] = useState(false);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
@@ -99,6 +100,7 @@ export function AnimationPreviewCanvas({
           presenterRef.current = null;
           return;
         }
+        setClipPlaying(Boolean(group));
         setPreviewGeneration((value) => value + 1);
         const tick = () => {
           if (cancelled) return;
@@ -115,6 +117,7 @@ export function AnimationPreviewCanvas({
         host?.dispose();
         hostRef.current = null;
         presenterRef.current = null;
+        setClipPlaying(false);
       }
     })();
     return () => {
@@ -122,6 +125,7 @@ export function AnimationPreviewCanvas({
       window.cancelAnimationFrame(raf.id);
       playingRef.current?.stop();
       playingRef.current = null;
+      setClipPlaying(false);
       bonesRef.current?.dispose();
       bonesRef.current = null;
       gestures?.dispose();
@@ -155,6 +159,8 @@ export function AnimationPreviewCanvas({
       ref={canvasRef}
       className="h-full w-full touch-none"
       data-testid="animation-preview-canvas"
+      data-playing={clipPlaying ? "true" : "false"}
+      data-looping={clipPlaying ? "true" : "false"}
     />
   );
 }

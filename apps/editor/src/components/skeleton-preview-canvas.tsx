@@ -25,6 +25,7 @@ export function SkeletonPreviewCanvas({
   const play = useOptionalPlay();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
+  const [bonesAttached, setBonesAttached] = useState(false);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const bonesRef = useRef<{ dispose: () => void } | null>(null);
@@ -101,11 +102,13 @@ export function SkeletonPreviewCanvas({
     const host = hostRef.current;
     bonesRef.current?.dispose();
     bonesRef.current = null;
+    setBonesAttached(false);
     if (!host || !showBones) {
       presenterRef.current?.present({ force: true });
       return;
     }
     bonesRef.current = attachSkeletonPreview(host.mesh, host.scene, kind);
+    setBonesAttached(true);
     presenterRef.current?.present({ force: true });
   }, [kind, showBones, previewGeneration]);
 
@@ -114,6 +117,7 @@ export function SkeletonPreviewCanvas({
       ref={canvasRef}
       className="h-full w-full touch-none"
       data-testid="skeleton-preview-canvas"
+      data-bones={bonesAttached ? "true" : "false"}
     />
   );
 }

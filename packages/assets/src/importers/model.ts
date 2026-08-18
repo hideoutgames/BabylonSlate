@@ -4,6 +4,7 @@ import { newAssetGuid } from "../guid";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
 import { normalizeModelPayload } from "../model-payload";
 import { normalizeSkeletonPayload } from "../skeleton-payload";
+import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import {
@@ -65,6 +66,12 @@ export async function importModel(
   return importFromBrowse(name, mime, bytes, browse);
 }
 
+function uniqueImportName(base: string, used: string[]): string {
+  const name = nextCopyName(base, used);
+  used.push(name);
+  return name;
+}
+
 function importFromBrowse(
   name: string,
   mime: string,
@@ -73,6 +80,7 @@ function importFromBrowse(
 ): ImportResult[] {
   const results: ImportResult[] = [];
   const imageGuids: string[] = [];
+  const usedNames: string[] = [name];
 
   for (const image of browse.images) {
     const guid = newAssetGuid();
@@ -90,7 +98,7 @@ function importFromBrowse(
         : [];
     results.push({
       type: "Texture",
-      name: `${name}_${image.name}`,
+      name: uniqueImportName(`${name}_${image.name}`, usedNames),
       guid,
       version: 1,
       dependencies: [],
@@ -109,7 +117,7 @@ function importFromBrowse(
     if (imageGuids.length === 0) {
       results.push({
         type: "Texture",
-        name: `${name}_Texture`,
+        name: uniqueImportName(`${name}_Texture`, usedNames),
         guid: textureGuid,
         version: 1,
         dependencies: [],
@@ -119,16 +127,17 @@ function importFromBrowse(
       });
       imageGuids.push(textureGuid);
     }
+    const materialName = uniqueImportName(`${name}_Material`, usedNames);
     const materialGuid = newAssetGuid();
     materialGuids.push(materialGuid);
     results.push({
       type: "Material",
-      name: `${name}_Material`,
+      name: materialName,
       guid: materialGuid,
       version: MATERIAL_PAYLOAD_VERSION,
       dependencies: [textureGuid],
       parentClass: null,
-      payload: importedMaterialPayload(`${name}_Material`, textureGuid),
+      payload: importedMaterialPayload(materialName, textureGuid),
       chunks: [],
     });
   } else {
@@ -142,9 +151,13 @@ function importFromBrowse(
           : imageGuids[0]
             ? [imageGuids[0]]
             : [];
+      const materialName = uniqueImportName(
+        `${name}_${material.name}`,
+        usedNames,
+      );
       results.push({
         type: "Material",
-        name: `${name}_${material.name}`,
+        name: materialName,
         guid: materialGuid,
         version: MATERIAL_PAYLOAD_VERSION,
         dependencies: dep,
@@ -152,7 +165,7 @@ function importFromBrowse(
         // The slot index keeps model-to-material assignment stable across
         // re-imports even when material names change.
         payload: {
-          ...importedMaterialPayload(`${name}_${material.name}`, dep[0]),
+          ...importedMaterialPayload(materialName, dep[0]),
           slotIndex: i,
         },
         chunks: [],
@@ -165,7 +178,7 @@ function importFromBrowse(
   if (skeletonGuid) {
     results.push({
       type: "Skeleton",
-      name: `${name}_Skeleton`,
+      name: uniqueImportName(`${name}_Skeleton`, usedNames),
       guid: skeletonGuid,
       version: 1,
       dependencies: [modelGuid],
@@ -188,7 +201,7 @@ function importFromBrowse(
     animationGuids.push(guid);
     results.push({
       type: "Animation",
-      name: `${name}_${animation.name}`,
+      name: uniqueImportName(`${name}_${animation.name}`, usedNames),
       guid,
       version: 1,
       dependencies: [modelGuid, ...(skeletonGuid ? [skeletonGuid] : [])],
