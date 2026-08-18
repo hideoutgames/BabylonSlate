@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   emptyPlayParticleLibrary,
+  emitterPreviewLibrary,
+  emittersFromRegistry,
   particleMaterialGuidsFromLibrary,
   particleTextureGuidsFromLibrary,
   playParticleLibraryFromAssets,
+  systemPreviewLibrary,
 } from "./play-particles";
 import {
   createDefaultParticleEmitterPayload,
+  createDefaultParticleSystemPayload,
 } from "@babylonslate/assets";
 
 describe("playParticleLibraryFromAssets", () => {
@@ -63,5 +67,48 @@ describe("playParticleLibraryFromAssets", () => {
     expect(particleTextureGuidsFromLibrary(emptyPlayParticleLibrary())).toEqual(
       [],
     );
+  });
+
+  it("wraps a single Emitter as a Preview Particle System", () => {
+    const emitter = {
+      ...createDefaultParticleEmitterPayload(),
+      textureGuid: "tex-1",
+    };
+    const library = emitterPreviewLibrary(emitter);
+    expect(library.emitters.get("preview-em")?.textureGuid).toBe("tex-1");
+    expect(library.systems.get("preview-sys")?.emitterGuids).toEqual([
+      "preview-em",
+    ]);
+  });
+
+  it("collects only the Emitters referenced by a System", () => {
+    const used = {
+      ...createDefaultParticleEmitterPayload(),
+      textureGuid: "tex-1",
+    };
+    const unused = createDefaultParticleEmitterPayload();
+    const library = systemPreviewLibrary(
+      { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
+      new Map([
+        ["em-1", used],
+        ["em-2", unused],
+      ]),
+    );
+    expect([...library.emitters.keys()]).toEqual(["em-1"]);
+    expect(
+      emittersFromRegistry(
+        [
+          {
+            header: {
+              guid: "em-1",
+              type: "ParticleEmitter",
+              payload: { capacity: 32 },
+            },
+          },
+          { header: { guid: "tex-1", type: "Texture" } },
+        ],
+        new Map(),
+      ).get("em-1")?.capacity,
+    ).toBe(32);
   });
 });

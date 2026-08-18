@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Texture, type Engine } from "@babylonjs/core";
-import {
-  createDefaultParticleSystemPayload,
-  normalizeParticleEmitterPayload,
-  type ParticleEmitterPayload,
-  type ParticleSystemPayload,
+import type {
+  ParticleEmitterPayload,
+  ParticleSystemPayload,
 } from "@babylonslate/assets";
 import {
   ParticleService,
@@ -17,12 +15,6 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import type { PlayParticleLibrary } from "../lib/play-particles";
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 async function loadTextureBytes(
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
@@ -145,55 +137,4 @@ export function ParticlePreviewCanvas({
       data-testid={testId}
     />
   );
-}
-
-export function emitterPreviewLibrary(
-  emitter: ParticleEmitterPayload,
-): PlayParticleLibrary {
-  return {
-    emitters: new Map([["preview-em", emitter]]),
-    systems: new Map([
-      [
-        "preview-sys",
-        {
-          ...createDefaultParticleSystemPayload(),
-          emitterGuids: ["preview-em"],
-        },
-      ],
-    ]),
-  };
-}
-
-export function systemPreviewLibrary(
-  system: ParticleSystemPayload,
-  emitters: ReadonlyMap<string, ParticleEmitterPayload>,
-): PlayParticleLibrary {
-  const used = new Map<string, ParticleEmitterPayload>();
-  for (const guid of system.emitterGuids) {
-    const emitter = emitters.get(guid);
-    if (emitter) used.set(guid, emitter);
-  }
-  return {
-    emitters: used,
-    systems: new Map([["preview-sys", system]]),
-  };
-}
-
-export function emittersFromRegistry(
-  assets: ReadonlyArray<{
-    header: { guid: string; type: string; payload?: Record<string, unknown> };
-  }>,
-  openPayloads: ReadonlyMap<string, unknown>,
-): Map<string, ParticleEmitterPayload> {
-  const emitters = new Map<string, ParticleEmitterPayload>();
-  for (const asset of assets) {
-    if (asset.header.type !== "ParticleEmitter") continue;
-    const payload =
-      openPayloads.get(asset.header.guid) ?? asset.header.payload ?? {};
-    emitters.set(
-      asset.header.guid,
-      normalizeParticleEmitterPayload(asRecord(payload)),
-    );
-  }
-  return emitters;
 }

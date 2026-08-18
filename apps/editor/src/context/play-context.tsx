@@ -955,6 +955,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTextureBytes,
       collectPlayModelBytes,
       collectPlayAudio,
+      collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       diagnostics,

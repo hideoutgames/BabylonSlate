@@ -29,11 +29,11 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
 import {
-  ParticlePreviewCanvas,
   emitterPreviewLibrary,
   emittersFromRegistry,
   systemPreviewLibrary,
-} from "./particle-preview-canvas";
+} from "../lib/play-particles";
+import { ParticlePreviewCanvas } from "./particle-preview-canvas";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
