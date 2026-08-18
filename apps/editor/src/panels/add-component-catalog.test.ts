@@ -18,6 +18,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
     expect(ids).toContain("AudioComponent");
+    expect(ids).toContain("SkyboxComponent");
   });
 
   it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
@@ -40,6 +41,7 @@ describe("Add Component catalog", () => {
       "SpriteComponent",
       "TilemapComponent",
       "LightComponent",
+      "SkyboxComponent",
     ]);
     expect(byCategory.get("UI")).toBeUndefined();
     expect(byCategory.get("Animation")).toEqual(["AnimationGraphComponent"]);
@@ -101,6 +103,17 @@ describe("Add Component catalog", () => {
       innerAngle: 30,
       enabled: true,
       castShadows: false,
+    });
+    expect(defaultPropertiesFor("SkyboxComponent")).toEqual({
+      size: 1000,
+      faces: {
+        px: null,
+        py: null,
+        pz: null,
+        nx: null,
+        ny: null,
+        nz: null,
+      },
     });
   });
 

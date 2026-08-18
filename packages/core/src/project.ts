@@ -1,3 +1,4 @@
+import { lookAtRotation } from "./euler";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -9,6 +10,11 @@ import {
   type SerializedScene,
   type ViewportMode,
 } from "./scene";
+import {
+  createDefaultSkyboxActor,
+  createDefaultSunActor,
+  DEFAULT_SCENE_SUN_POSITION,
+} from "./skybox";
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
@@ -772,6 +778,11 @@ function createDefaultCameraActor(viewportMode: ViewportMode): SerializedActor {
   });
 }
 
+/** Horizon blue so a deleted skybox does not flash near-black in 3D. */
+const DEFAULT_3D_ENVIRONMENT_COLOR: [number, number, number] = [
+  0.45, 0.62, 0.85,
+];
+
 export function createDefaultScene(
   viewportMode: ViewportMode = "3d",
 ): SerializedScene {
@@ -783,6 +794,10 @@ export function createDefaultScene(
           createActor("actor-1", "Cube", {
             components: [createMeshComponent("component-1", "box")],
           }),
+          createDefaultSkyboxActor(),
+          createDefaultSunActor(
+            lookAtRotation(DEFAULT_SCENE_SUN_POSITION, [0, 0, 0]),
+          ),
           camera,
         ];
   return {
@@ -790,6 +805,9 @@ export function createDefaultScene(
     viewportMode,
     settings: {
       ...createDefaultSceneSettings(viewportMode),
+      ...(viewportMode === "3d"
+        ? { environmentColor: DEFAULT_3D_ENVIRONMENT_COLOR }
+        : {}),
       mainCameraActorId: camera.id,
       mainCameraComponentId: DEFAULT_SCENE_CAMERA_COMPONENT_ID,
     },

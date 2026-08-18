@@ -739,7 +739,7 @@ describe("p7-play-scene-load", () => {
     expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
       {
         type: "assignMaterial",
-        slotId: 2,
+        slotId: 4,
         materialAssetGuid: "mat-rock",
       },
     ]);

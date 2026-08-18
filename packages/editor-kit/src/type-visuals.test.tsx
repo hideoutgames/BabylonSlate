@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
   AppWindowIcon,
+  CloudIcon,
   FilmIcon,
   ListTreeIcon,
   PanelTopIcon,
@@ -236,6 +237,10 @@ describe("resolveTypeVisual", () => {
     expect(mesh.colorVar).toBe("var(--asset-component)");
     expect(light.colorVar).toBe(mesh.colorVar);
     expect(mesh.icon).not.toBe(light.icon);
+    const skybox = resolveTypeVisual({ classId: "SkyboxComponent" });
+    expect(skybox.iconKey).toBe("SkyboxComponent");
+    expect(skybox.icon).toBe(CloudIcon);
+    expect(skybox.colorVar).toBe(mesh.colorVar);
     expect(
       resolveTypeVisual({ classId: "MeshComponent", family: "class" }).colorVar,
     ).toBe("var(--asset-animation)");

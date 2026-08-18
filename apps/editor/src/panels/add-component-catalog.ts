@@ -1,4 +1,5 @@
 import type { PhysicsWorldKind, ViewportMode } from "@babylonslate/core";
+import { emptySkyboxFaces } from "@babylonslate/core";
 import {
   parseColliderProperties,
   parseRigidBodyProperties,
@@ -50,6 +51,12 @@ export const ADDABLE_COMPONENT_CLASSES = [
     id: "LightComponent",
     label: "Light",
     description: "Scene light",
+    category: "Rendering",
+  },
+  {
+    id: "SkyboxComponent",
+    label: "Skybox",
+    description: "Cubemap sky surrounding the scene",
     category: "Rendering",
   },
   {
@@ -122,6 +129,8 @@ export function defaultPropertiesFor(
         enabled: true,
         castShadows: false,
       };
+    case "SkyboxComponent":
+      return { size: 1000, faces: emptySkyboxFaces() };
     case "AudioComponent":
       return {
         audioAssetGuid: null,

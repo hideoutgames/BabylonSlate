@@ -49,9 +49,14 @@ describe("scene schema", () => {
     const scene = createDefaultScene();
     expect(scene.viewportMode).toBe("3d");
     expect(scene.settings.physicsWorld).toBe("3d");
-    expect(scene.actors.map((actor) => actor.name)).toEqual(["Cube", "Camera"]);
+    expect(scene.actors.map((actor) => actor.name)).toEqual([
+      "Cube",
+      "Skybox",
+      "Directional Light",
+      "Camera",
+    ]);
     expect(scene.actors[0]?.components[0]?.classId).toBe("MeshComponent");
-    expect(scene.actors[1]?.components[0]?.classId).toBe("CameraComponent");
+    expect(scene.actors[3]?.components[0]?.classId).toBe("CameraComponent");
   });
 
   it("normalizes a partial payload into a valid scene", () => {
