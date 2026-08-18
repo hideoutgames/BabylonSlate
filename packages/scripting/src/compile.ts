@@ -142,6 +142,14 @@ function stripExecSuccessors(graph: LogicGraph, node: GraphNode): string[] {
   return [];
 }
 
+const ENUM_SWITCH_CASE_PREFIX = "case:";
+
+function enumSwitchMemberName(pinId: string): string | undefined {
+  return pinId.startsWith(ENUM_SWITCH_CASE_PREFIX)
+    ? pinId.slice(ENUM_SWITCH_CASE_PREFIX.length)
+    : undefined;
+}
+
 function execSuccessors(
   graph: LogicGraph,
   nodeId: string,
@@ -379,6 +387,57 @@ export function compileGraph(
           emitExecChain(t, new Set(visited));
         }
         emitBody(`  }`, anchor);
+        break;
+      }
+
+      if (node.typeId === "enum.switch") {
+        const ctx = makeCtx(node);
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
+        const valueExpr = ctx.input("value");
+        const cases = node.pins.filter(
+          (pin) =>
+            pin.kind === "exec" &&
+            pin.direction === "out" &&
+            enumSwitchMemberName(pin.id) !== undefined,
+        );
+        const wiredCases = cases.filter(
+          (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
+        );
+        const defaultTargets = execSuccessors(graph, node.id, "Default");
+        if (wiredCases.length === 0 && defaultTargets.length === 0) {
+          emitBody(`  /* enum.switch ${node.id}: no exec outs */`, anchor);
+          break;
+        }
+        for (let i = 0; i < wiredCases.length; i++) {
+          const pin = wiredCases[i]!;
+          const memberName = enumSwitchMemberName(pin.id) ?? pin.name;
+          const keyword = i === 0 ? "if" : "} else if";
+          emitBody(
+            `  ${keyword} (${valueExpr} === ${JSON.stringify(memberName)}) {`,
+            anchor,
+          );
+          for (const target of execSuccessors(graph, node.id, pin.name)) {
+            emitExecChain(target, new Set(visited));
+          }
+        }
+        if (defaultTargets.length > 0) {
+          if (wiredCases.length > 0) {
+            emitBody(`  } else {`, anchor);
+          }
+          for (const target of defaultTargets) {
+            emitExecChain(target, new Set(visited));
+          }
+          if (wiredCases.length > 0) {
+            emitBody(`  }`, anchor);
+          }
+        } else if (wiredCases.length > 0) {
+          emitBody(`  }`, anchor);
+        }
         break;
       }
 
