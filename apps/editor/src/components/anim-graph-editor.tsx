@@ -30,6 +30,16 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Input } from "@babylonslate/ui/components/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@babylonslate/ui/components/select";
+import { cn } from "@babylonslate/ui/lib/utils";
+import { Trash2Icon } from "lucide-react";
 import {
   GraphEditor,
   animGraphEdgeTypes,
@@ -47,6 +57,7 @@ import {
   validateSerializedGraph,
 } from "../services/graph-validation";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
+import { IconActionButton } from "./icon-action-button";
 
 const VARIABLE_TYPE_OPTIONS: Array<{ value: AnimVariableTypeId; label: string }> =
   [
@@ -244,62 +255,96 @@ function AnimGraphVariablesList({
   const { selectedId, setSelectedId } = useAnimGraphEditing();
   return (
     <PanelFrame>
-      <div className="flex flex-col gap-4 p-3">
-        <div className="flex flex-col gap-2" data-testid="anim-graph-parameters">
-          <div className="text-sm font-medium">Variables</div>
+      <div className="flex flex-col gap-3 p-2">
+        <div className="flex flex-col gap-1" data-testid="anim-graph-parameters">
+          <div className="flex items-center justify-between gap-1 px-1">
+            <div className="text-sm font-medium">Variables</div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="anim-graph-add-variable"
+              onClick={() => {
+                const typeId: AnimVariableTypeId = "bool";
+                commit(
+                  withVariables(doc, [
+                    ...doc.variables,
+                    {
+                      id: uniqueVariableId(doc),
+                      name: uniqueVariableName(doc),
+                      typeId,
+                      defaultValue: defaultAnimVariableValue(typeId),
+                    },
+                  ]),
+                );
+              }}
+            >
+              Add Variable
+            </Button>
+          </div>
           {doc.variables.map((variable) => (
             <div
               key={variable.id}
-              className="rounded-md border border-border p-2"
+              className="flex min-h-[var(--chrome-row,28px)] items-center gap-1 px-1"
               data-testid={`anim-graph-variable-${variable.id}`}
             >
-              <PropertyGrid
-                rows={[
-                  {
-                    id: `${variable.id}-name`,
-                    kind: "text",
-                    label: "Name",
-                    value: variable.name,
-                    onChange: (name) =>
-                      commit(
-                        withVariables(
-                          doc,
-                          doc.variables.map((row) =>
-                            row.id === variable.id ? { ...row, name } : row,
-                          ),
-                        ),
+              <Input
+                className="h-7 min-h-7 min-w-0 flex-1"
+                value={variable.name}
+                aria-label="Variable Name"
+                data-testid={`anim-graph-variable-name-${variable.id}`}
+                onChange={(event) =>
+                  commit(
+                    withVariables(
+                      doc,
+                      doc.variables.map((row) =>
+                        row.id === variable.id
+                          ? { ...row, name: event.target.value }
+                          : row,
                       ),
-                  },
-                  {
-                    id: `${variable.id}-type`,
-                    kind: "enum",
-                    label: "Type",
-                    value: variable.typeId,
-                    options: VARIABLE_TYPE_OPTIONS,
-                    onChange: (value) => {
-                      const typeId = value as AnimVariableTypeId;
-                      commit(
-                        withVariables(
-                          doc,
-                          doc.variables.map((row) =>
-                            row.id === variable.id
-                              ? {
-                                  ...row,
-                                  typeId,
-                                  defaultValue: defaultAnimVariableValue(typeId),
-                                }
-                              : row,
-                          ),
-                        ),
-                      );
-                    },
-                  },
-                ]}
+                    ),
+                  )
+                }
               />
-              <Button
-                type="button"
+              <Select
+                value={variable.typeId}
+                onValueChange={(value) => {
+                  const typeId = value as AnimVariableTypeId;
+                  commit(
+                    withVariables(
+                      doc,
+                      doc.variables.map((row) =>
+                        row.id === variable.id
+                          ? {
+                              ...row,
+                              typeId,
+                              defaultValue: defaultAnimVariableValue(typeId),
+                            }
+                          : row,
+                      ),
+                    ),
+                  );
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-24"
+                  aria-label="Variable Type"
+                  data-testid={`anim-graph-variable-type-${variable.id}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {VARIABLE_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <IconActionButton
+                label="Remove Variable"
                 variant="ghost"
-                className="mt-2 min-h-[var(--touch-target,44px)]"
                 data-testid={`anim-graph-variable-remove-${variable.id}`}
                 onClick={() =>
                   commit(
@@ -310,42 +355,37 @@ function AnimGraphVariablesList({
                   )
                 }
               >
-                Remove
-              </Button>
+                <Trash2Icon />
+              </IconActionButton>
             </div>
           ))}
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-[var(--touch-target,44px)] w-fit"
-            data-testid="anim-graph-add-variable"
-            onClick={() => {
-              const typeId: AnimVariableTypeId = "bool";
-              commit(
-                withVariables(doc, [
-                  ...doc.variables,
-                  {
-                    id: uniqueVariableId(doc),
-                    name: uniqueVariableName(doc),
-                    typeId,
-                    defaultValue: defaultAnimVariableValue(typeId),
-                  },
-                ]),
-              );
-            }}
-          >
-            Add Variable
-          </Button>
         </div>
         {showStates ? (
-          <div className="flex flex-col gap-2">
-            <div className="text-sm font-medium">States</div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-1 px-1">
+              <div className="text-sm font-medium">States</div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="anim-graph-add-state"
+                onClick={() => commit(addAnimState(doc))}
+              >
+                Add State
+              </Button>
+            </div>
             {doc.states.map((state) => (
               <Button
                 key={state.id}
                 type="button"
-                variant={selectedId === state.id ? "outline" : "ghost"}
-                className="min-h-[var(--touch-target,44px)] w-full justify-start"
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "w-full justify-start rounded-none border-l-2",
+                  selectedId === state.id
+                    ? "border-l-primary bg-primary/20"
+                    : "border-l-transparent",
+                )}
                 aria-pressed={selectedId === state.id}
                 data-testid={`anim-graph-state-${state.id}`}
                 onClick={() => setSelectedId(state.id)}
@@ -353,15 +393,6 @@ function AnimGraphVariablesList({
                 {state.name}
               </Button>
             ))}
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-[var(--touch-target,44px)] w-fit"
-              data-testid="anim-graph-add-state"
-              onClick={() => commit(addAnimState(doc))}
-            >
-              Add State
-            </Button>
           </div>
         ) : null}
       </div>
@@ -391,12 +422,13 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     selectedId,
     setSelectedId,
     setSelectedTransitionId,
+    focusedNodeId,
     openTransitionId,
     openTransitionRule,
     closeTransitionRule,
   } = useAnimGraphEditing();
   const { activeDocumentId, animEditorMode } = useDocuments();
-  const { setDiagnostics, diagnostics } = useValidation();
+  const { setDiagnostics, diagnostics, focusDiagnostic } = useValidation();
   const graphDiagnostics = useMemo(
     () =>
       diagnostics.map((row) => ({
@@ -519,7 +551,9 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           edgeTypes={animGraphEdgeTypes}
           defaultEdgeOptions={{ type: "animTransition" }}
           diagnostics={graphDiagnostics}
-          focusedNodeId={selectedId ?? undefined}
+          selectedNodeId={selectedId ?? undefined}
+          focusedNodeId={focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
+          connectEndMode="disabled"
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedId(nodeIds[0] ?? null));
           }}

@@ -124,6 +124,8 @@ export interface GraphEditorProps {
   onSelectionChange?: (nodeIds: string[]) => void;
   /** Pin click in read-only previews (does not mutate). */
   onPinSelect?: (nodeId: string, pinId: string) => void;
+  /** Highlight a node without fit-view (host list selection). */
+  selectedNodeId?: string;
   focusedNodeId?: string;
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
@@ -289,6 +291,29 @@ function clientPoint(
   return null;
 }
 
+function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
+  const { getNode, setNodes } = useReactFlow();
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    if (!getNode(selectedNodeId)) return;
+    setNodes((current) => {
+      const already =
+        current.some((entry) => entry.id === selectedNodeId && entry.selected) &&
+        current.every(
+          (entry) => entry.id === selectedNodeId || !entry.selected,
+        );
+      if (already) return current;
+      return current.map((entry) => ({
+        ...entry,
+        selected: entry.id === selectedNodeId,
+      }));
+    });
+  }, [getNode, selectedNodeId, setNodes]);
+
+  return null;
+}
+
 function FocusedNodeSync({
   focusedNodeId,
   fitViewOptions,
@@ -324,6 +349,7 @@ function GraphEditorCanvas({
   onChange,
   commitPositionsOnDragEnd = false,
   onSelectionChange,
+  selectedNodeId,
   focusedNodeId,
   diagnostics,
   onNavigateRequest,
@@ -1375,6 +1401,7 @@ function GraphEditorCanvas({
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
         data-testid="graph-editor"
+        data-focused-node-id={focusedNodeId || undefined}
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
       >
@@ -1510,6 +1537,7 @@ function GraphEditorCanvas({
             showInteractive={false}
             fitViewOptions={graphViewport.fitViewOptions}
           />
+          <SelectedNodeSync selectedNodeId={selectedNodeId} />
           <FocusedNodeSync
             focusedNodeId={focusedNodeId}
             fitViewOptions={graphViewport.focusedFitViewOptions}

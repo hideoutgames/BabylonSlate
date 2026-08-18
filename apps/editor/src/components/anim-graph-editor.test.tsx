@@ -208,11 +208,18 @@ describe("AnimGraphEditor", () => {
     });
   });
 
-  it("lists Parameters and Add State", () => {
+  it("uses compact action-height controls in Variables and States", () => {
     renderAnimGraph();
-    expect(screen.getByTestId("anim-graph-parameters")).toBeTruthy();
-    expect(screen.getByTestId("anim-graph-add-state")).toBeTruthy();
-    expect(screen.getByTestId("anim-graph-state-idle")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("anim-graph-add-variable"));
+    const addVariable = screen.getByTestId("anim-graph-add-variable");
+    const addState = screen.getByTestId("anim-graph-add-state");
+    const stateRow = screen.getByTestId("anim-graph-state-idle");
+    const remove = screen.getByTestId(/anim-graph-variable-remove-/);
+    expect(addVariable.className).not.toMatch(/min-h-\[var\(--touch-target/);
+    expect(addState.className).not.toMatch(/min-h-\[var\(--touch-target/);
+    expect(stateRow.className).not.toMatch(/min-h-\[var\(--touch-target/);
+    expect(remove.getAttribute("aria-label")).toMatch(/remove/i);
+    expect(remove.className).not.toMatch(/min-h-\[var\(--touch-target/);
   });
 
   it("adds a typed Animation Graph variable", () => {
@@ -258,6 +265,18 @@ describe("AnimGraphEditor", () => {
         states: [expect.objectContaining({ id: "idle", loop: false })],
       }),
     );
+  });
+
+  it("selects a state from the list without zooming the graph to that node", async () => {
+    renderAnimGraph(locoGraph());
+    await waitFor(() => {
+      expect(screen.getByTestId("anim-state-node-run")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("anim-graph-state-run"));
+    expect(screen.getByTestId("property-name")).toBeTruthy();
+    expect(
+      screen.getByTestId("graph-editor").getAttribute("data-focused-node-id"),
+    ).toBeNull();
   });
 
   it("edits outgoing transition blend and priority without a condition row", () => {
