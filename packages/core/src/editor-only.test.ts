@@ -28,7 +28,9 @@ describe("editor-only assets", () => {
   it("treats EditorUtilityInterface as editor-only", () => {
     expect(isEditorOnlyAssetType("EditorUtilityInterface")).toBe(true);
     expect(isEditorOnlyAssetType("PluginSettings")).toBe(true);
+    expect(isEditorOnlyAssetType("SkyboxCreator")).toBe(true);
     expect(isEditorOnlyAssetType("UserInterface")).toBe(false);
+    expect(isEditorOnlyAssetType("Texture")).toBe(false);
     expect(
       isEditorOnlyAsset(
         { type: "EditorUtilityInterface", parentClass: null },
@@ -57,6 +59,10 @@ describe("editor-only assets", () => {
     expect(normalizeEditorUtilityDockKind("scene")).toBe("scene");
     expect(normalizeEditorUtilityDockKind("sprite")).toBe("sprite");
     expect(normalizeEditorUtilityDockKind("tilemap")).toBe("tilemap");
+    expect(normalizeEditorUtilityDockKind("skybox-creator")).toBe(
+      "skybox-creator",
+    );
+    expect(editorUtilityDockKindLabel("skybox-creator")).toBe("Skybox Creator");
     expect(normalizeEditorUtilityDockKind(undefined)).toBe("scene");
     expect(normalizeEditorUtilityDockKind("viewport")).toBe("scene");
     expect(editorUtilityDockKindLabel("graph")).toBe("Class");

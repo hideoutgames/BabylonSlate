@@ -110,6 +110,15 @@ describe("resolveTypeVisual", () => {
     expect(component.icon).toBe(system.icon);
   });
 
+  it("uses CloudIcon for Skybox Creator assets", () => {
+    const helper = resolveTypeVisual({ assetType: "SkyboxCreator" });
+    const material = resolveTypeVisual({ assetType: "Material" });
+    expect(helper.family).toBe("material");
+    expect(helper.colorVar).toBe(material.colorVar);
+    expect(helper.iconKey).toBe("SkyboxCreator");
+    expect(helper.icon).toBe(CloudIcon);
+  });
+
   it("treats Mesh assets as the model family", () => {
     const mesh = resolveTypeVisual({ assetType: "Mesh" });
     const model = resolveTypeVisual({ assetType: "Model" });

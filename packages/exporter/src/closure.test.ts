@@ -3,6 +3,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  createSkyboxComponent,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -318,6 +319,71 @@ describe("collectExportClosure", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toEqual(["scene-1"]);
+  });
+
+  it("strips SkyboxCreator helpers and keeps referenced skybox face Textures", () => {
+    const skybox = createSkyboxComponent("sky-1");
+    skybox.properties.faces = {
+      px: "face-px",
+      py: "face-py",
+      pz: "face-pz",
+      nx: "face-nx",
+      ny: "face-ny",
+      nz: "face-nz",
+    };
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("sky", "Skybox", {
+          components: [skybox],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({
+          guid: "scene-1",
+          type: "Scene",
+          name: "Main",
+          dependencies: ["helper-1"],
+        }),
+        asset({
+          guid: "helper-1",
+          type: "SkyboxCreator",
+          name: "Day",
+          dependencies: ["src-tex", "face-px"],
+        }),
+        asset({ guid: "src-tex", type: "Texture", name: "Source" }),
+        asset({ guid: "face-px", type: "Texture", name: "Day_px" }),
+        asset({ guid: "face-py", type: "Texture", name: "Day_py" }),
+        asset({ guid: "face-pz", type: "Texture", name: "Day_pz" }),
+        asset({ guid: "face-nx", type: "Texture", name: "Day_nx" }),
+        asset({ guid: "face-ny", type: "Texture", name: "Day_ny" }),
+        asset({ guid: "face-nz", type: "Texture", name: "Day_nz" }),
+        asset({ guid: "unused-tex", type: "Texture", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining([
+        "scene-1",
+        "face-px",
+        "face-py",
+        "face-pz",
+        "face-nx",
+        "face-ny",
+        "face-nz",
+      ]),
+    );
+    expect(result.value).not.toContain("helper-1");
+    expect(result.value).not.toContain("src-tex");
+    expect(result.value).not.toContain("unused-tex");
   });
 
   it("includes a Scene referenced by Change Scene display name", () => {

@@ -1083,6 +1083,9 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("ParticleSystem", "Fire")).toBe(
       "Fire.particles.babasset",
     );
+    expect(newAssetFileName("SkyboxCreator", "Day")).toBe(
+      "Day.skyboxcreator.babasset",
+    );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
     expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
@@ -1233,6 +1236,30 @@ describe("content-browser-helpers", () => {
     });
   });
 
+  it("seeds Skybox Creator New Asset documents", () => {
+    const helper = buildNewAssetResult({
+      type: "SkyboxCreator",
+      name: "Day",
+      guid: "sky-tool-1",
+      parentClass: null,
+    });
+    expect(helper.type).toBe("SkyboxCreator");
+    expect(helper.payload).toEqual({
+      sourceTextureGuid: null,
+      generatedFaces: {
+        px: null,
+        py: null,
+        pz: null,
+        nx: null,
+        ny: null,
+        nz: null,
+      },
+    });
+    expect(newAssetFileName("SkyboxCreator", "Day")).toBe(
+      "Day.skyboxcreator.babasset",
+    );
+  });
+
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
@@ -1256,6 +1283,7 @@ describe("content-browser-helpers", () => {
       "SoundAttenuation",
       "ParticleEmitter",
       "ParticleSystem",
+      "SkyboxCreator",
     ]);
   });
 
@@ -1275,6 +1303,7 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
     expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Particle Emitter");
     expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
+    expect(creatableAssetTypeLabel("SkyboxCreator")).toBe("Skybox Creator");
   });
 
   it("groups every creatable type once", () => {
@@ -1312,6 +1341,7 @@ describe("content-browser-helpers", () => {
       "MaterialFunction",
       "ParticleEmitter",
       "ParticleSystem",
+      "SkyboxCreator",
     ]);
     expect(audio!.hint).toMatch(/Import/i);
     expect(audio!.hint).toMatch(/WAV/);
@@ -1321,6 +1351,8 @@ describe("content-browser-helpers", () => {
 
   it("describes the selected creatable type", () => {
     expect(creatableAssetTypeDescription("Scene")).toMatch(/world/i);
+    expect(creatableAssetTypeDescription("SkyboxCreator")).toMatch(/editor-only/i);
+    expect(creatableAssetTypeDescription("SkyboxCreator")).toMatch(/skybox/i);
     expect(creatableAssetTypeDescription("Class")).toMatch(/parent/i);
     expect(creatableAssetTypeDescription("Class")).toMatch(/logic graph/i);
     expect(creatableAssetTypeDescription("Class")).not.toMatch(/blueprint/i);
@@ -1694,6 +1726,12 @@ describe("content-browser-helpers", () => {
         emitterGuids: ["em-b", "em-a", "em-b"],
       }),
     ).toEqual(["em-a", "em-b"]);
+    expect(
+      assetHeaderDependencies("SkyboxCreator", {
+        sourceTextureGuid: "src-1",
+        generatedFaces: { px: "face-px", ny: "face-ny" },
+      }),
+    ).toEqual(["face-ny", "face-px", "src-1"]);
   });
 
   it("stores Material domain on the scanned header", () => {
