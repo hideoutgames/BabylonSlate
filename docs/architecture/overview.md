@@ -55,7 +55,7 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 
 ## Data flow today
 
-- **Lifecycle**: Homepage opens/creates a `.babproject`; editor shell only runs against an open project.
+- **Lifecycle**: Homepage opens/creates a project folder; editor shell only runs against an open project.
 - **Documents**: `ProjectService` + `DocumentService` + Dockview layout JSON per tab. **Open** (tab in the chrome bar, JSON + undo in `DocumentService`) is not the same as **mounted** (DockView / Babylon hosts in the React tree). **P18** idle-unmounts inactive workspaces after 2 minutes, cap 3 warm non-CB tabs — see [command-layer.md](command-layer.md#document-tab-lifecycle). The global **Windows** menu toggles dock panels for the active DockView document (Scene, Class, Enum, Structure, ScriptInterface, Sprite, Tileset, Tilemap, Material, Material Function, UserInterface / EditorUtilityInterface, Animation Graph, Behaviour Tree, Audio, Audio Mixer / Channel / Attenuation, PluginSettings, …) and stores last **addPanel-relative** placements in `layout.json`. New asset editors must be DockView documents — see [Asset document docks](#asset-document-docks).
 - **Files**: binary `ProjectStorage` via `createStorage()` — never Capacitor from panels.
 - **Containers / registry**: `@babylonslate/assets` encodes containers and owns the content-root-aware guid index (header-only). Enabled plugins mount as extra roots ([plugins.md](plugins.md)); engine plugins unpack into a separate read-only Memory storage. New projects copy them into `plugins/` with the same guids (project copy shadows the engine original).

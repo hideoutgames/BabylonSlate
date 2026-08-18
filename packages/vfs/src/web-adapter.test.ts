@@ -64,7 +64,7 @@ describe("OPFS / web storage adapter", () => {
   it("falls back to a default name when the prompt is dismissed", async () => {
     vi.stubGlobal("prompt", vi.fn(() => null));
     const storage = new OpfsStorageAdapter();
-    expect((await storage.pickProjectFolder()).name).toBe("MyGame.babproject");
+    expect((await storage.pickProjectFolder()).name).toBe("MyGame");
   });
 
   it("has no current folder until one is picked", async () => {

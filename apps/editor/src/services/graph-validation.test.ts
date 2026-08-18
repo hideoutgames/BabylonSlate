@@ -1365,6 +1365,124 @@ describe("scriptPaletteNodes", () => {
     expect(pins?.map((pin) => pin.id)).toEqual(["Health", "Label", "out"]);
   });
 
+  it("keeps Make Structure wires by field name and drops renamed fields", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "get",
+          type: "debug.log",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: "make",
+          type: "struct.make",
+          position: { x: 80, y: 0 },
+          data: {
+            structGuid: "struct-stats",
+            fields: [
+              { name: "Health", typeId: "int" },
+              { name: "Mana", typeId: "float" },
+            ],
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "keep-health",
+          source: "get",
+          target: "make",
+          sourceHandle: "message",
+          targetHandle: "Health",
+        },
+        {
+          id: "drop-mana",
+          source: "get",
+          target: "make",
+          sourceHandle: "message",
+          targetHandle: "Mana",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      structs: {
+        "struct-stats": {
+          name: "Stats",
+          fields: [
+            { name: "Health", typeId: "int" },
+            { name: "Armor", typeId: "float" },
+          ],
+        },
+      },
+    });
+    const pins = hydrated.nodes[1]?.data.__pins as Array<{ id: string }>;
+    expect(pins?.map((pin) => pin.id)).toEqual(["Health", "Armor", "out"]);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep-health"]);
+    expect(hydrated.edges[0]).toMatchObject({
+      target: "make",
+      targetHandle: "Health",
+    });
+  });
+
+  it("keeps Switch case wires by member name and drops renamed members", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sw",
+          type: "enum.switch",
+          position: { x: 0, y: 0 },
+          data: {
+            enumGuid: "enum-team",
+            members: [
+              { name: "Red", value: 1 },
+              { name: "Green", value: 2 },
+            ],
+          },
+        },
+        {
+          id: "red",
+          type: "debug.log",
+          position: { x: 80, y: 0 },
+          data: {},
+        },
+        {
+          id: "green",
+          type: "debug.log",
+          position: { x: 80, y: 40 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "keep-red",
+          source: "sw",
+          target: "red",
+          sourceHandle: "case:Red",
+          targetHandle: "execIn",
+        },
+        {
+          id: "drop-green",
+          source: "sw",
+          target: "green",
+          sourceHandle: "case:Green",
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      enums: {
+        "enum-team": {
+          name: "Team",
+          members: [
+            { name: "Red", value: 1 },
+            { name: "Blue", value: 2 },
+          ],
+        },
+      },
+    });
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep-red"]);
+  });
+
   it("copies a wired enum guid onto Switch and rebuilds member exec pins", () => {
     const graph: SerializedGraph = {
       nodes: [

@@ -9,9 +9,17 @@ export async function openTestProject(
 ): Promise<void> {
   await page.goto(path);
   await expect(page.getByTestId("homepage")).toBeVisible();
-  const listed = page.getByTestId("open-listed-project-TestProject.babproject");
+  const listed = page.getByTestId("open-listed-project-TestProject");
+  const listedLegacy = page.getByTestId(
+    "open-listed-project-TestProject.babproject",
+  );
   if ((await listed.count()) > 0) {
     await listed.click();
+    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    return;
+  }
+  if ((await listedLegacy.count()) > 0) {
+    await listedLegacy.click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     return;
   }
@@ -31,7 +39,7 @@ export async function openTestProject(
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */
 export async function submitCreateOrOpenListed(
   page: Page,
-  listedName = "TestProject.babproject",
+  listedName = "TestProject",
 ): Promise<void> {
   const submit = page.getByTestId("create-project-submit");
   if (await submit.isEnabled()) {
@@ -40,7 +48,12 @@ export async function submitCreateOrOpenListed(
   }
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("create-project-dialog")).toHaveCount(0);
-  await page.getByTestId(`open-listed-project-${listedName}`).click();
+  const listed = page.getByTestId(`open-listed-project-${listedName}`);
+  if ((await listed.count()) > 0) {
+    await listed.click();
+    return;
+  }
+  await page.getByTestId(`open-listed-project-${listedName}.babproject`).click();
 }
 
 export async function openContentBrowser(page: Page): Promise<void> {

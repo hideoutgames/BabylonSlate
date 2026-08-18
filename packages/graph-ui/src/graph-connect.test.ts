@@ -1,3 +1,4 @@
+import { isAssignable, type PinType } from "@babylonslate/scripting";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PaletteNode, SerializedPin } from "./graph-types";
 import {
@@ -27,6 +28,7 @@ import {
   shouldCancelConnectionOnSecondaryPointer,
   firstCompatiblePin,
   oppositeSideHandleId,
+  type PinCompatibilityRule,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -164,6 +166,85 @@ describe("filterPaletteForPin", () => {
     expect(filterPaletteForPin([log, begin], stringOut).map((n) => n.id)).toEqual(
       ["debug.log"],
     );
+  });
+
+  it("prefers matching Make/Break Structure and Switch/Equal Enum rows", () => {
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const statsOut: SerializedPin = {
+      id: "value",
+      name: "Stats",
+      kind: "data",
+      direction: "out",
+      type: { kind: "structRef", guid: "struct-stats" },
+    };
+    const teamOut: SerializedPin = {
+      id: "value",
+      name: "Team",
+      kind: "data",
+      direction: "out",
+      type: { kind: "enumRef", guid: "enum-team" },
+    };
+    const structIn: SerializedPin = {
+      id: "in",
+      name: "In",
+      kind: "data",
+      direction: "in",
+      type: { kind: "structRef", guid: "struct-stats" },
+    };
+    const enumIn: SerializedPin = {
+      id: "value",
+      name: "Value",
+      kind: "data",
+      direction: "in",
+      type: { kind: "enumRef", guid: "enum-team" },
+    };
+    const setStats: PaletteNode = {
+      id: "variables.set:Hero:Stats",
+      title: "Set Stats",
+      category: "variables",
+      pins: [execIn, structIn],
+    };
+    const breakStats: PaletteNode = {
+      id: "struct.break:struct-stats",
+      title: "Break Stats",
+      category: "struct",
+      pins: [structIn],
+    };
+    const setTeam: PaletteNode = {
+      id: "variables.set:Hero:Team",
+      title: "Set Team",
+      category: "variables",
+      pins: [execIn, enumIn],
+    };
+    const switchTeam: PaletteNode = {
+      id: "enum.switch:enum-team",
+      title: "Switch on Team",
+      category: "enum",
+      pins: [execIn, enumIn],
+    };
+    const equalTeam: PaletteNode = {
+      id: "enum.equals:enum-team",
+      title: "Equal Team",
+      category: "enum",
+      pins: [enumIn],
+    };
+    expect(
+      filterPaletteForPin([setStats, log, breakStats], statsOut, assignable).map(
+        (node) => node.id,
+      ),
+    ).toEqual(["struct.break:struct-stats", "variables.set:Hero:Stats"]);
+    expect(
+      filterPaletteForPin(
+        [setTeam, switchTeam, equalTeam],
+        teamOut,
+        assignable,
+      ).map((node) => node.id),
+    ).toEqual([
+      "enum.switch:enum-team",
+      "enum.equals:enum-team",
+      "variables.set:Hero:Team",
+    ]);
   });
 });
 

@@ -14,7 +14,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [design/gestures.md](design/gestures.md) | Touch and gesture design |
 | [architecture/](architecture/) | Package and subsystem notes |
 | [architecture/overview.md](architecture/overview.md) | Package and subsystem overview |
-| [architecture/containers.md](architecture/containers.md) | `.babasset` / `.babproject` wire formats |
+| [architecture/containers.md](architecture/containers.md) | `.babasset` / project folder / `.babplugin` wire formats |
 | [architecture/vfs.md](architecture/vfs.md) | Binary VFS, storage tiers, app settings |
 | [architecture/command-layer.md](architecture/command-layer.md) | Undo, journal, dirty saves |
 | [architecture/asset-registry.md](architecture/asset-registry.md) | Header-only guid index and importers |

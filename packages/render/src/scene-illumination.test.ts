@@ -248,6 +248,7 @@ describe("syncAuthoredIllumination", () => {
       { projectionMode: "perspective", fieldOfView: 60 },
       16 / 9,
     );
+    scene.activeCamera = camera;
     applyAuthoredCameraLens(
       camera,
       { projectionMode: "orthographic", orthographicSize: 5 },
@@ -259,6 +260,28 @@ describe("syncAuthoredIllumination", () => {
     expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
     const matrix = camera.getProjectionMatrix(true).m;
     expect(matrix.every((value) => Number.isFinite(value))).toBe(true);
+    expect(scene.activeCamera).toBe(camera);
+  });
+
+  it("refreshes Play-style authoredCamera cameras that are not in the illumination map", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(1920);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(1080);
+    const camera = new UniversalCamera(
+      `${AUTHORED_CAMERA_PREFIX}7`,
+      Vector3.Zero(),
+      scene,
+    );
+    applyAuthoredCameraLens(
+      camera,
+      { projectionMode: "orthographic", orthographicSize: 5 },
+      16 / 9,
+    );
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(600);
+    refreshAuthoredCameraLenses(scene);
+    expect(camera.orthoLeft).toBeCloseTo(-5 * (4 / 3));
+    expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
   });
 
   it("refreshes authored ortho extents when the render aspect changes", () => {
