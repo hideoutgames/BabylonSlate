@@ -1510,6 +1510,11 @@ function GraphEditorCanvas({
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
+      connectionLineKind:
+        defaultEdgeOptions.type === "animTransition" ||
+        defaultEdgeOptions.type === "animTransitionBoth"
+          ? ("animTransition" as const)
+          : ("default" as const),
     }),
     [
       nodeErrorCount,
@@ -1525,6 +1530,7 @@ function GraphEditorCanvas({
       contextMenuItemsForNode,
       contextMenuItemsForAttachment,
       onEdgeDoubleClick,
+      defaultEdgeOptions.type,
     ],
   );
 
