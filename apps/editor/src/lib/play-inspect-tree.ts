@@ -1,4 +1,3 @@
-import { formatValue } from "@babylonslate/core";
 import type { DebugInspectNode } from "@babylonslate/object-model";
 
 export type FlattenedInspectNode = DebugInspectNode & {
@@ -86,8 +85,4 @@ export function nextInspectSelection(
     return null;
   }
   return nodes.some((node) => node.id === previousId) ? previousId : null;
-}
-
-export function formatInspectVariable(value: unknown): string {
-  return formatValue(value);
 }

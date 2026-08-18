@@ -137,6 +137,7 @@ describe("Play inspect contract", () => {
             classId: "Actor",
             parentId: null,
             variables: { health: 10 },
+            variableTypes: { health: "float" },
           },
         ],
       },
