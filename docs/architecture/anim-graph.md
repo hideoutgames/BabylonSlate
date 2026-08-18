@@ -1,8 +1,8 @@
 # Animation graph (P9)
 
-Worker-side state machine plus per-instance Animation Object graphs that drive glTF `AnimationGroup` clips and Sprite named clips (engineplan §12). Package `@babylonslate/anim-graph`: no React, no Babylon — the evaluator runs in the game worker.
+Worker-side state machine plus per-instance Animation Object graphs that drive glTF `AnimationGroup` clips and **Sprite Animation** assets (engineplan §13.2). Package `@babylonslate/anim-graph`: no React, no Babylon — the evaluator runs in the game worker.
 
-`render` seeks `AnimationGroup` / sprite clip UVs from `animState` and **never** lets Babylon auto-advance gameplay animation ([engineplan §2.3](../engineplan.md)).
+`render` seeks `AnimationGroup` / sprite frames from `animState` and **never** lets Babylon auto-advance gameplay animation ([engineplan §2.3](../engineplan.md)).
 
 ## Document (schema v2)
 
@@ -10,7 +10,7 @@ Worker-side state machine plus per-instance Animation Object graphs that drive g
 
 | Field | Role |
 | --- | --- |
-| `states` / `entryStateId` / `clips` | FSM. Clip kind is `animation` (Model guid + glTF `AnimationGroup` name) or `sprite` (Sprite guid + named clip). |
+| `states` / `entryStateId` / `clips` | FSM. Clip kind is `animation` (Model guid + glTF `AnimationGroup` name) or `sprite` (**Sprite Animation** guid; Clip Name hidden). Legacy Sprite guid + clip name still resolves via `spriteClipFrameAt`. |
 | `variables[]` | Typed graph-owned store (`bool` / `int` / `float` / `string`). Bool names stay mirrored on legacy `parameters`. |
 | `animationObject` | Serialized scripting graph. Default seeds protected `Event Initialize Animation` and `Event Update Animation`. |
 | `transitions[]` | `blendSeconds`, `priority` (lower wins), `ruleGraph`. Legacy `condition` / `hasExitTime` remain as evaluator fallback. |
@@ -38,12 +38,14 @@ Each tick `tickAnimGraphs`:
 
 `self` on those scripts is the **Actor**. Get/Set Variable hit the component `variableStore` when the host passes it. Animation Object Get Variable nodes migrate with `implicitSelf: true`.
 
+**Actor Class graphs** may use `anim.actor.*` (`Set` / `Get` graph variable, `Get Current State`, `Jump To State`) targeting `AnimationGraphComponent` on `self`. `anim.event.*` / `anim.rule.*` / `anim.state.*` stay gated to Animation Object / rule hosts. Jump is pending until the next `tickAnimGraphs` so Actor `onTick` (inside `world.tick()`) cannot race the evaluator.
+
 Protocol: extra command-channel `animState` (not a snapshot stride bump). See [bridge.md](bridge.md).
 
 Drives:
 
 - glTF `Animation` clips via `@babylonjs/loaders` `LoadAssetContainerAsync` (Play `modelBytes` → paused per-slot `AnimationGroup`s).
-- Sprite named clips from [sprites.md](sprites.md).
+- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of frame `durationMs`.
 
 ## Render
 
@@ -55,7 +57,7 @@ GLB `createMeshFromModelBytes` still builds the first primitive synchronously so
 
 `compileAnimGraphScripts([{ guid, path, document }])` emits `AnimGraph:{guid}` (Animation Object → `onInitializeAnimation` / `onUpdateAnimation`) and one `AnimRule:{guid}:{transitionId}` per transition (`export function evaluate(ctx)`). `parentClassId: "BObject"`. Failures log and skip that asset. `spawnListForScripts` only spawns `onBeginPlay` / `onTick`, so these classes do not spawn extra actors.
 
-Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those bundles with Class/UI scripts. The packaged player hydrates `loadAnimGraphs` before `play` ([exporter.md](exporter.md)). Editor Play parses graphs then `resolveAnimGraphClips` so worker layers carry the Model guid + glTF group name.
+Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those bundles with Class/UI scripts. The packaged player hydrates `loadAnimGraphs` and `loadSprites` (Sprite + Sprite Animation payloads) before `play` ([exporter.md](exporter.md)). Editor Play parses graphs then `resolveAnimGraphClips` so worker layers carry the Model guid + glTF group name, or a Sprite Animation guid + summed `durationMs`. Play collects Sprite Animation payloads referenced by **loaded graphs** (not only open tabs), plus their Textures.
 
 ## Authoring
 
@@ -70,9 +72,9 @@ Engine Settings Focus keep-lists: **Animation Graph State Machine** (`anim-graph
 
 ### State Machine
 
-- **Variables** (left) — typed name + type enum, **Add Variable** (`anim-graph-add-variable`), plus a States list and **Add State**. Keeps `data-testid="anim-graph-parameters"` for existing e2e.
-- **Graph** (primary) — `GraphEditor` with `animGraphNodeTypes` / `animGraphEdgeTypes`, `defaultEdgeOptions` type `animTransition`. Unreal-style rounded state nodes (Entry mark) and CSS-triangle transition badges (no lucide). Double-click a badge (or Details **Open Rule**) opens a nested rule graph: breadcrumb `State Machine > Source To Target`, undeletable Enter/Exit sinks. Palette: `scriptPaletteNodes(..., { animationGraphHost: "rule" })` — `anim.state.*` queries, pure math/bool, Get Variable; no events, no Set Variable, no `debug.log`.
-- **Details** (right) — selected state (name, entry, clip kind, **Model**/Sprite `AssetPicker`, Clip Name enum from Model `payload.clipNames` or Sprite clips, speed, loop) and outgoing `blendSeconds` / `priority` / Open Rule. Condition / hasExitTime / exit-time rows live in the rule graph, not Details. `kind: "animation"` `assetGuid` is the Model Play loads (`modelBytes`), not a Content Browser Animation row. `resolveAnimGraphClips` rewrites legacy Animation guids to the owning Model (`Model.dependencies`) and fills `clipName` from the Animation payload `{ clipName }` or the Model’s `clipNames`. Importers store those fields on Animation / Model payloads.
+- **Variables** (left) — compact `--chrome-row` (28px) name `Input` + type `Select` `size="sm"` and trash `IconActionButton`. **Add Variable** / **Add State** use `Button` `size="sm"` (not 44px touch). States are a compact selected list (`bg-primary/20` + ink bar). Keeps `data-testid="anim-graph-parameters"` for existing e2e. Selecting a state from the list or canvas updates Details **without** `fitView` / `focusedNodeId`; only compiler diagnostics / Frame zoom.
+- **Graph** (primary) — `GraphEditor` with `animGraphNodeTypes` / `animGraphEdgeTypes`, `defaultEdgeOptions` type `animTransition`, `connectEndMode="disabled"` (dangling wires cancel; no add-node palette). Unreal-style rounded state nodes with **four side handles** (no left `in` / right `out` pins). Directed `MarkerType.ArrowClosed` paths; **Both Ways** is two `AnimTransition` rows that render as one visual edge with arrows on both ends. CSS-triangle blend badges rotate with the edge tangent. Single-click a badge selects the edge (Details). Double-click (or Details **Open Rule**) opens a nested rule graph: breadcrumb `State Machine > Source To Target`, undeletable Enter/Exit sinks. Palette: `scriptPaletteNodes(..., { animationGraphHost: "rule" })` — `anim.state.*` queries, pure math/bool, Get Variable; no events, no Set Variable, no `debug.log`.
+- **Details** (right) — selected state (name, entry, **Clip Kind**, **Clip Asset**, **Clip Name**, speed, loop) and outgoing **Blend Seconds** / **Priority** / **Direction** (`One Way` | `Both Ways`) / Open Rule. Clip Kind **Animation**: Clip Asset is Models only; Clip Name is a `SearchDropdown` of Model `payload.clipNames` (never a type-in). Empty catalog shows disabled **No Clips**. Clip Kind **Sprite**: Clip Asset is **Sprite Animation** only; Clip Name is hidden. `kind: "animation"` `assetGuid` is the Model Play loads (`modelBytes`), not a Content Browser Animation row. `resolveAnimGraphClips` rewrites legacy Animation guids to the owning Model (`Model.dependencies`) and fills Sprite Animation `durationMs`. Importers store Model `clipNames` on the header payload.
 
 `AnimState.position` round-trips through `animGraphToSerialized` / `serializedToAnimGraph`. Transition blend / priority / `ruleGraph` merge when canvas edge ids change.
 
@@ -82,7 +84,7 @@ Reuses Class **Graph** / **Inspector** panels (`GraphPanel`, `InspectorPanel`) w
 
 ### Palettes and protected nodes
 
-`ClassEventOptions.animationGraphHost?: "object" | "rule"`. Actor palettes hide all `anim.*`. `PROTECTED_NODE_TYPES` includes `anim.event.initialize` / `update` and `anim.rule.enterState` / `exitState`. `nodeVisualRole` paints those as events.
+`ClassEventOptions.animationGraphHost?: "object" | "rule"`. Actor palettes hide `anim.event.*` / `anim.rule.*` / `anim.state.*` and show `anim.actor.*`. `PROTECTED_NODE_TYPES` includes `anim.event.initialize` / `update` and `anim.rule.enterState` / `exitState`. `nodeVisualRole` paints those as events.
 
 ### Diagnostics
 
