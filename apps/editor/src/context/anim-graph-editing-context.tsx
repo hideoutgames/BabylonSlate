@@ -12,6 +12,8 @@ export interface AnimGraphEditingContextValue {
   setSelectedId: (id: string | null) => void;
   selectedTransitionId: string | null;
   setSelectedTransitionId: (id: string | null) => void;
+  focusedNodeId: string | null;
+  focusNode: (nodeId: string) => void;
   openTransitionId: string | null;
   openTransitionRule: (id: string) => void;
   closeTransitionRule: () => void;
@@ -25,6 +27,7 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   const [selectedTransitionId, setSelectedTransitionIdState] = useState<
     string | null
   >(null);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [openTransitionId, setOpenTransitionId] = useState<string | null>(null);
   const setSelectedId = useCallback((id: string | null) => {
     setSelectedIdState(id);
@@ -32,6 +35,11 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
   }, []);
   const setSelectedTransitionId = useCallback((id: string | null) => {
     setSelectedTransitionIdState(id);
+  }, []);
+  const focusNode = useCallback((nodeId: string) => {
+    setSelectedIdState(nodeId);
+    setSelectedTransitionIdState(null);
+    setFocusedNodeId(nodeId);
   }, []);
   const openTransitionRule = useCallback((id: string) => {
     setOpenTransitionId(id);
@@ -46,12 +54,16 @@ export function AnimGraphEditingProvider({ children }: { children: ReactNode }) 
       setSelectedId,
       selectedTransitionId,
       setSelectedTransitionId,
+      focusedNodeId,
+      focusNode,
       openTransitionId,
       openTransitionRule,
       closeTransitionRule,
     }),
     [
       closeTransitionRule,
+      focusNode,
+      focusedNodeId,
       openTransitionId,
       openTransitionRule,
       selectedId,

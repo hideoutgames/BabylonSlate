@@ -49,6 +49,9 @@ export interface AnimTransition {
   /** Lower numbers win when several transitions pass. */
   priority: number;
   ruleGraph: SerializedGraph;
+  /** Canvas handle ids (`right-out` / `left-in`). Legacy `out` / `in` migrate. */
+  sourceHandle?: string;
+  targetHandle?: string;
   /** Legacy named bool/trigger; kept after migration for evaluator fallback. */
   condition?: string;
   hasExitTime?: boolean;
@@ -879,6 +882,14 @@ export function parseAnimGraphDocument(
           hasExitTime,
           exitTime,
         ),
+        sourceHandle:
+          typeof transition.sourceHandle === "string"
+            ? transition.sourceHandle
+            : undefined,
+        targetHandle:
+          typeof transition.targetHandle === "string"
+            ? transition.targetHandle
+            : undefined,
         condition,
         hasExitTime,
         exitTime,
@@ -917,6 +928,8 @@ export interface AnimClipCatalogEntry {
   clipName?: string;
   clipNames?: string[];
   dependencyGuids?: string[];
+  /** Sprite Animation total duration (sum of frame `durationMs`). */
+  durationMs?: number;
 }
 
 function stateNameForClip(
@@ -941,9 +954,21 @@ function resolveOneClip(
   catalog: readonly AnimClipCatalogEntry[],
   stateName?: string,
 ): AnimClipRef {
-  if (clip.kind !== "animation") return clip;
   const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
   const entry = byGuid.get(clip.assetGuid);
+  if (clip.kind === "sprite") {
+    if (!entry || entry.type !== "SpriteAnimation") return clip;
+    if (
+      typeof entry.durationMs !== "number" ||
+      !Number.isFinite(entry.durationMs) ||
+      entry.durationMs <= 0 ||
+      entry.durationMs === clip.durationMs
+    ) {
+      return clip;
+    }
+    return { ...clip, durationMs: entry.durationMs };
+  }
+  if (clip.kind !== "animation") return clip;
   if (!entry) return clip;
   if (entry.type === "Model") {
     const names = entry.clipNames ?? [];

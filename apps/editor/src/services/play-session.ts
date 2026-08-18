@@ -12,12 +12,17 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type {
+  SpriteAnimationPayload,
+  SpritePayload,
+  TilemapPayload,
+  TilesetPayload,
+} from "@babylonslate/assets";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { playLoadTilemapsControl, playSceneByGuid } from "../lib/play-content";
+import { playLoadSpritesControl, playLoadTilemapsControl, playSceneByGuid } from "../lib/play-content";
 import {
   createEngine,
   type AudioLibrary,
@@ -136,6 +141,7 @@ export function playSessionBootControls(options: {
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
+  sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
   navmeshBytes?: Uint8Array | null;
 }): ControlMessage[] {
   const controls: ControlMessage[] = [options.load];
@@ -169,6 +175,7 @@ export function playSessionBootControls(options: {
     });
   }
   if (options.tilemaps) controls.push(options.tilemaps);
+  if (options.sprites) controls.push(options.sprites);
   if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
     const copy = options.navmeshBytes.slice();
     controls.push({
@@ -341,6 +348,8 @@ export function startPlaySession(options: {
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** Sprite payloads keyed by asset guid for Play clip UV seeks. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  /** Sprite Animation clips referenced by loaded Animation Graphs. */
+  spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes and Rapier chains. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -385,6 +394,7 @@ export function startPlaySession(options: {
     maxActors: 256,
     frameCap: resolvePlayFrameCap(options.frameCap),
     spritePayloads: options.spritePayloads,
+    spriteAnimations: options.spriteAnimationPayloads,
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
@@ -584,6 +594,11 @@ export function startPlaySession(options: {
         options.tilesetPayloads,
         options.pixelsPerUnit,
       ),
+      sprites: playLoadSpritesControl(
+        options.spritePayloads,
+        options.spriteAnimationPayloads,
+        options.pixelsPerUnit,
+      ),
       navmeshBytes: options.navmeshBytes,
     })) {
       worker.postControl(control);
@@ -631,6 +646,17 @@ export function startPlaySession(options: {
       inProcess.registerTileContent({
         tilemaps: options.tilemapPayloads ?? new Map(),
         tilesets: options.tilesetPayloads ?? new Map(),
+        pixelsPerUnit: options.pixelsPerUnit,
+      });
+    }
+    if (
+      (options.spritePayloads && options.spritePayloads.size > 0) ||
+      (options.spriteAnimationPayloads &&
+        options.spriteAnimationPayloads.size > 0)
+    ) {
+      inProcess.registerSpriteContent({
+        sprites: options.spritePayloads ?? new Map(),
+        spriteAnimations: options.spriteAnimationPayloads ?? new Map(),
         pixelsPerUnit: options.pixelsPerUnit,
       });
     }

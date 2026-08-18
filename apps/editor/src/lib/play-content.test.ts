@@ -12,6 +12,7 @@ import {
   ENGINE_WIDGET_KINDS,
 } from "@babylonslate/core";
 import {
+  createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
@@ -41,8 +42,11 @@ import {
   setPlayUiWidgetEventSink,
   readPlayNavmeshBytes,
   readPlayAudioReverbBytes,
+  playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
+  playLoadSpritesControl,
   playUiLibraryFromAssets,
+  spriteAnimationGuidsFromAnimGraphs,
   removePlayHudInstance,
   resolvePlayHudDocuments,
   spriteAssetGuidsFromScene,
@@ -509,6 +513,50 @@ describe("scene-referenced Play content", () => {
     expect(map.get("hero-sprite")).toEqual(payload);
   });
 
+  it("collects Sprite Animation guids from loaded anim graphs", () => {
+    const graph = createDefaultAnimGraph("Loco");
+    graph.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "walk-anim",
+      clipName: "",
+      durationMs: 250,
+    };
+    expect(
+      spriteAnimationGuidsFromAnimGraphs([{ guid: "loco", document: graph }]),
+    ).toEqual(["walk-anim"]);
+  });
+
+  it("maps Sprite Animation guids to payloads and ignores Sprite atlas documents", () => {
+    const animation = createDefaultSpriteAnimationPayload();
+    animation.frames[0]!.textureGuid = "tex-walk";
+    const map = playSpriteAnimationPayloadsFromGuids(
+      ["walk-anim", "hero-sprite"],
+      (guid) =>
+        guid === "walk-anim" ? animation : createDefaultSpritePayload(),
+    );
+    expect(map.get("walk-anim")).toEqual(animation);
+    expect(map.has("hero-sprite")).toBe(false);
+  });
+
+  it("builds a worker loadSprites control from sprite and Sprite Animation payloads", () => {
+    const sprite = createDefaultSpritePayload();
+    const animation = createDefaultSpriteAnimationPayload();
+    expect(
+      playLoadSpritesControl(
+        new Map([["hero-sprite", sprite]]),
+        new Map([["walk-anim", animation]]),
+        16,
+      ),
+    ).toEqual({
+      type: "loadSprites",
+      sprites: [{ guid: "hero-sprite", document: sprite }],
+      spriteAnimations: [{ guid: "walk-anim", document: animation }],
+      pixelsPerUnit: 16,
+    });
+    expect(playLoadSpritesControl(new Map(), new Map())).toBeNull();
+  });
+
   it("collects tileset guids from loaded tilemaps", () => {
     const tilemap = {
       ...createDefaultTilemapPayload(),
@@ -562,6 +610,22 @@ describe("scene-referenced Play content", () => {
         new Map([["overworld-set", tileset]]),
       ),
     ).toEqual(["tex-sprite", "tex-atlas"]);
+  });
+
+  it("collects texture guids from Sprite Animation frames", () => {
+    const animation = createDefaultSpriteAnimationPayload();
+    animation.frames[0]!.textureGuid = "tex-walk";
+    animation.frames.push({
+      ...animation.frames[0]!,
+      textureGuid: "tex-walk-2",
+    });
+    expect(
+      textureGuidsFromPlayPayloads(
+        new Map(),
+        new Map(),
+        new Map([["walk-anim", animation]]),
+      ),
+    ).toEqual(["tex-walk", "tex-walk-2"]);
   });
 
   it("skips missing texture guids and de-duplicates", () => {

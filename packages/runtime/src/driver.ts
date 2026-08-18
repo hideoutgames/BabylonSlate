@@ -93,7 +93,7 @@ import { ScriptHost, type CompiledScript } from "./script-host";
 import { shouldSpawnScriptedActor } from "./play-load";
 import { PhysicsWorldSync } from "./physics-sync";
 import { actorWorldTransforms } from "./actor-world-transform";
-import type { TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   createNavigationBackend,
   facingYawFromVelocity,
@@ -150,6 +150,8 @@ export interface RuntimeDriverOptions {
   blackboards?: Readonly<Record<string, BlackboardDocument>>;
   tilemaps?: Readonly<Record<string, TilemapPayload>>;
   tilesets?: Readonly<Record<string, TilesetPayload>>;
+  sprites?: Readonly<Record<string, SpritePayload>>;
+  spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
   pixelsPerUnit?: number;
   /** Slim UserInterface widget metadata keyed by asset guid. */
   userInterfaces?: Readonly<Record<string, readonly UserInterfaceWidgetMeta[]>>;
@@ -225,6 +227,13 @@ export interface RuntimeDriver {
   registerTileContent(options: {
     tilemaps: Readonly<Record<string, TilemapPayload>> | ReadonlyMap<string, TilemapPayload>;
     tilesets: Readonly<Record<string, TilesetPayload>> | ReadonlyMap<string, TilesetPayload>;
+    pixelsPerUnit?: number;
+  }): void;
+  registerSpriteContent(options: {
+    sprites: Readonly<Record<string, SpritePayload>> | ReadonlyMap<string, SpritePayload>;
+    spriteAnimations:
+      | Readonly<Record<string, SpriteAnimationPayload>>
+      | ReadonlyMap<string, SpriteAnimationPayload>;
     pixelsPerUnit?: number;
   }): void;
   /** Import a baked Scene navmesh chunk. Never generates. */
@@ -314,6 +323,9 @@ class InProcessRuntime implements RuntimeDriver {
   >();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
+  private sprites = new Map<string, SpritePayload>();
+  private spriteAnimations = new Map<string, SpriteAnimationPayload>();
+  private pendingAnimJumpBySlot = new Map<number, string>();
   private pixelsPerUnit = 100;
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void }> =
     [];
@@ -438,6 +450,13 @@ class InProcessRuntime implements RuntimeDriver {
         pixelsPerUnit: options.pixelsPerUnit,
       });
     }
+    if (options.sprites || options.spriteAnimations) {
+      this.registerSpriteContent({
+        sprites: options.sprites ?? {},
+        spriteAnimations: options.spriteAnimations ?? {},
+        pixelsPerUnit: options.pixelsPerUnit,
+      });
+    }
 
     let guidSeq = 0;
     this.world = new World({
@@ -547,6 +566,39 @@ class InProcessRuntime implements RuntimeDriver {
         const component = this.world.createComponent({ classId: id });
         target.attachComponent(component);
         return component;
+      },
+      animGraphControl: (self) => {
+        if (!(self instanceof Actor) || self.destroyed) return null;
+        const component = self.components.find(
+          (entry) =>
+            entry.classId === "AnimationGraphComponent" && !entry.destroyed,
+        );
+        if (!component) return null;
+        const slotId = this.slotByGuid.get(self.guid);
+        const guid = this.animGraphGuid(component);
+        const document = guid ? this.animGraphs.get(guid) : undefined;
+        return {
+          getVariable: (name) => component.getVariable(name),
+          setVariable: (name, value) => {
+            component.setVariable(name, value);
+          },
+          getCurrentState: () => {
+            const evalState =
+              slotId !== undefined ? this.animEvalBySlot.get(slotId) : undefined;
+            const stateId = evalState?.stateId ?? document?.entryStateId;
+            if (!stateId || !document) return null;
+            const state = document.states.find((row) => row.id === stateId);
+            return { id: stateId, name: state?.name ?? stateId };
+          },
+          jumpToState: (state) => {
+            if (!document || slotId === undefined) return;
+            const match = document.states.find(
+              (row) => row.id === state || row.name === state,
+            );
+            if (!match) return;
+            this.pendingAnimJumpBySlot.set(slotId, match.id);
+          },
+        };
       },
       spawnActor: (classId) => {
         const id = String(classId ?? "").trim();
@@ -843,6 +895,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.world.flushPending();
     this.animEvalBySlot.clear();
     this.animInitializedBySlot.clear();
+    this.pendingAnimJumpBySlot.clear();
     this.btEvalBySlot.clear();
     this.clearNavAgents();
     this.playScene = next;
@@ -1034,6 +1087,31 @@ class InProcessRuntime implements RuntimeDriver {
     this.physicsSync.setTileContent({
       tilemaps: this.tilemaps,
       tilesets: this.tilesets,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
+  }
+
+  registerSpriteContent(options: {
+    sprites: Readonly<Record<string, SpritePayload>> | ReadonlyMap<string, SpritePayload>;
+    spriteAnimations:
+      | Readonly<Record<string, SpriteAnimationPayload>>
+      | ReadonlyMap<string, SpriteAnimationPayload>;
+    pixelsPerUnit?: number;
+  }): void {
+    this.sprites =
+      options.sprites instanceof Map
+        ? new Map(options.sprites)
+        : new Map(Object.entries(options.sprites));
+    this.spriteAnimations =
+      options.spriteAnimations instanceof Map
+        ? new Map(options.spriteAnimations)
+        : new Map(Object.entries(options.spriteAnimations));
+    if (options.pixelsPerUnit && options.pixelsPerUnit > 0) {
+      this.pixelsPerUnit = options.pixelsPerUnit;
+    }
+    this.physicsSync.setSpriteContent({
+      sprites: this.sprites,
+      spriteAnimations: this.spriteAnimations,
       pixelsPerUnit: this.pixelsPerUnit,
     });
   }
@@ -1268,6 +1346,35 @@ class InProcessRuntime implements RuntimeDriver {
       const initKey = `${slotId}:${guid}`;
       liveKeys.add(initKey);
       this.seedAnimVariables(component, document);
+      const jumpTo = this.pendingAnimJumpBySlot.get(slotId);
+      if (jumpTo) {
+        this.pendingAnimJumpBySlot.delete(slotId);
+        const jumped = document.states.find((state) => state.id === jumpTo);
+        if (jumped) {
+          this.animEvalBySlot.set(slotId, {
+            stateId: jumped.id,
+            normalisedTime: 0,
+            blendWeights: { [jumped.id]: 1 },
+            timeMs: 0,
+            facts: {
+              elapsedSeconds: 0,
+              durationSeconds: 0,
+              normalisedTime: 0,
+              remainingSeconds: 0,
+              remainingRatio: 1,
+              looping: jumped.loop,
+              loopCount: 0,
+              justLooped: false,
+              justFinished: false,
+            },
+            layers: [],
+            blendFromStateId: null,
+            blendFromTimeMs: 0,
+            blendElapsedMs: 0,
+            loopCount: 0,
+          });
+        }
+      }
       const extras = {
         variableStore: component,
         animFacts: this.animEvalBySlot.get(slotId)?.facts,
@@ -1307,6 +1414,13 @@ class InProcessRuntime implements RuntimeDriver {
       );
       this.animEvalBySlot.set(slotId, next);
       const clip = clipForState(document, next.stateId);
+      if (clip?.kind === "sprite" && clip.assetGuid) {
+        this.physicsSync.setActorSpriteClip(actor.guid, {
+          assetGuid: clip.assetGuid,
+          clipName: clip.clipName,
+          normalisedTime: next.normalisedTime,
+        });
+      }
       const currentLayer =
         next.layers.find((layer) => layer.stateId === next.stateId) ??
         next.layers[next.layers.length - 1];

@@ -110,6 +110,10 @@ describe("listDockWindows", () => {
       "sprite-preview",
       "sprite-details",
     ]);
+    expect(listDockWindows("sprite-animation").map((entry) => entry.id)).toEqual([
+      "sprite-animation-preview",
+      "sprite-animation-details",
+    ]);
     expect(listDockWindows("tileset").map((entry) => entry.id)).toEqual([
       "tileset-preview",
       "tileset-details",
@@ -226,6 +230,7 @@ describe("listDockWindows", () => {
       "structure",
       "script-interface",
       "sprite",
+      "sprite-animation",
       "tileset",
       "tilemap",
       "ui",
@@ -265,6 +270,11 @@ describe("listDockWindows", () => {
         (entry) => entry.id === "locks",
       )?.defaultPosition?.referencePanelId,
     ).toBe("sprite-preview");
+    expect(
+      listDockWindows("sprite-animation", { sourceControl: true }).find(
+        (entry) => entry.id === "locks",
+      )?.defaultPosition?.referencePanelId,
+    ).toBe("sprite-animation-preview");
   });
 });
 

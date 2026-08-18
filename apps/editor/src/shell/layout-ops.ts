@@ -68,6 +68,7 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   structure: primaryDockPanel("structure"),
   "script-interface": primaryDockPanel("script-interface"),
   sprite: primaryDockPanel("sprite"),
+  "sprite-animation": primaryDockPanel("sprite-animation"),
   tileset: primaryDockPanel("tileset"),
   tilemap: primaryDockPanel("tilemap"),
   material: primaryDockPanel("material"),

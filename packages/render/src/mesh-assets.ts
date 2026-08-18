@@ -7,7 +7,7 @@ import {
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
@@ -15,6 +15,7 @@ export interface MeshAssetContext {
   resourceCache?: ResourceCache;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   tilemaps?: ReadonlyMap<string, TilemapPayload>;
   tilesets?: ReadonlyMap<string, TilesetPayload>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
@@ -51,6 +52,7 @@ export function meshAssetFingerprint(
   return [
     `ppu:${assets.pixelsPerUnit ?? ""}`,
     `sprites:${sortedMapKeys(assets.spritePayloads)}`,
+    `spriteAnims:${sortedMapKeys(assets.spriteAnimations)}`,
     `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
     `tilesets:${sortedMapKeys(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,

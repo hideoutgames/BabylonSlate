@@ -9,20 +9,28 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   createDefaultSpritePayload,
+  parseSpriteCollision,
+  parseSpritePivot,
   type SpritePayload,
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 
 export function SpritePreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
+  const { openDocuments, applyAssetDocumentChange } = useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="sprite-preview-panel">
-      <SpritePreview payload={payload} />
+      <SpritePreview
+        payload={payload}
+        onChange={(next) => {
+          void applyAssetDocumentChange(documentId, next);
+        }}
+      />
     </PanelFrame>
   );
 }
@@ -47,8 +55,10 @@ export function SpriteDetailsPanel(_props: IDockviewPanelProps) {
 
 export function SpritePreview({
   payload,
+  onChange,
 }: {
   payload: Record<string, unknown>;
+  onChange?: (next: Record<string, unknown>) => void;
 }) {
   const sprite = normalizeSprite(payload);
   const { assetRegistry, readAssetChunk } = useDocuments();
@@ -83,6 +93,7 @@ export function SpritePreview({
   const vSize = Math.max(frame?.vSize ?? 1, 0.0001);
   const pivotX = frame?.pivot.x ?? 0.5;
   const pivotY = frame?.pivot.y ?? 0.5;
+  const collision = parseSpriteCollision(frame?.collision);
 
   return (
     <div className="flex flex-col gap-2 p-3" data-testid="sprite-preview">
@@ -127,6 +138,17 @@ export function SpritePreview({
             <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-primary" />
           </div>
         </div>
+        <SpriteCollisionOverlay
+          collision={collision}
+          onChange={(next) => {
+            if (!onChange) return;
+            const frames = [...sprite.frames];
+            if (frames[0]) {
+              frames[0] = { ...frames[0], collision: next };
+            }
+            onChange({ ...sprite, frames });
+          }}
+        />
       </div>
     </div>
   );
@@ -201,6 +223,28 @@ export function SpriteEditor({
       },
     },
     {
+      id: "collision",
+      kind: "vector3",
+      label: "Collision",
+      value: [
+        parseSpriteCollision(frame?.collision).x,
+        parseSpriteCollision(frame?.collision).y,
+        parseSpriteCollision(frame?.collision).width,
+        parseSpriteCollision(frame?.collision).height,
+      ],
+      axes: ["X", "Y", "W", "H"],
+      onChange: ([x, y, width, height]) => {
+        const frames = [...sprite.frames];
+        if (frames[0]) {
+          frames[0] = {
+            ...frames[0],
+            collision: parseSpriteCollision({ x, y, width, height }),
+          };
+        }
+        onChange({ ...sprite, frames });
+      },
+    },
+    {
       id: "clip-name",
       kind: "text",
       label: "Clip Name",
@@ -249,7 +293,11 @@ function normalizeSprite(payload: Record<string, unknown>): SpritePayload {
         ? source.pixelsPerUnit
         : defaults.pixelsPerUnit,
     frames: Array.isArray(source.frames) && source.frames.length > 0
-      ? source.frames
+      ? source.frames.map((frame) => ({
+          ...frame,
+          pivot: parseSpritePivot(frame.pivot),
+          collision: parseSpriteCollision(frame.collision),
+        }))
       : defaults.frames,
     clips: Array.isArray(source.clips) && source.clips.length > 0
       ? source.clips

@@ -206,12 +206,16 @@ function isAnimCatalogNode(nodeId: string): boolean {
 function isAnimCatalogNodeAllowed(
   nodeId: string,
   host: ClassEventOptions["animationGraphHost"],
+  options?: ClassEventOptions,
 ): boolean {
   if (host === "object") {
     return nodeId.startsWith("anim.event.");
   }
   if (host === "rule") {
     return nodeId.startsWith("anim.state.");
+  }
+  if (nodeId.startsWith("anim.actor.")) {
+    return ancestryChain(options).includes("Actor");
   }
   return false;
 }
@@ -245,7 +249,11 @@ export function isScriptCatalogNodeAllowed(
     return false;
   }
   if (isAnimCatalogNode(nodeId)) {
-    return isAnimCatalogNodeAllowed(nodeId, options?.animationGraphHost);
+    return isAnimCatalogNodeAllowed(
+      nodeId,
+      options?.animationGraphHost,
+      options,
+    );
   }
   const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
     nodeId,

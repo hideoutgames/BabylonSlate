@@ -190,6 +190,13 @@ describe("resolveTypeVisual", () => {
     expect(widget.icon).toBe(PanelTopIcon);
   });
 
+  it("reuses the Animation Film glyph for Sprite Animation clips", () => {
+    const visual = resolveTypeVisual({ assetType: "SpriteAnimation" });
+    expect(visual.icon).toBe(FilmIcon);
+    expect(visual.family).toBe("animation");
+    expect(visual.colorVar).toBe("var(--asset-animation)");
+  });
+
   it("gives AnimationGraph a workflow glyph distinct from clip Animation Film", () => {
     const animation = resolveTypeVisual({ assetType: "Animation" });
     const graph = resolveTypeVisual({ assetType: "AnimationGraph" });

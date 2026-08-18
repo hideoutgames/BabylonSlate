@@ -1,7 +1,10 @@
-import type { Mesh } from "@babylonjs/core";
+import { Vector3, type Mesh } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
-import type { SpritePayload } from "@babylonslate/assets";
-import { spriteClipFrameAt } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload } from "@babylonslate/assets";
+import {
+  spriteAnimationFrameAt,
+  spriteClipFrameAt,
+} from "@babylonslate/assets";
 import { applySpriteFrameUvs } from "./sprite-quad";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
@@ -40,6 +43,45 @@ export function applySpriteAnimFrame(
   if (frame) applySpriteFrameUvs(mesh, frame);
 }
 
+/** Bind a Sprite Animation asset frame (full UVs, texture, pivot) onto the sprite quad. */
+export function applySpriteAnimationAssetFrame(
+  mesh: Mesh,
+  payload: SpriteAnimationPayload,
+  normalisedTime: number,
+  options?: {
+    applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
+    pixelsPerUnit?: number;
+  },
+): void {
+  const frame = spriteAnimationFrameAt(payload, normalisedTime);
+  if (!frame) return;
+  applySpriteFrameUvs(mesh, {
+    name: "sprite-animation",
+    u: 0,
+    v: 0,
+    uSize: 1,
+    vSize: 1,
+    durationMs: frame.durationMs,
+    pivot: frame.pivot,
+    width: frame.width,
+    height: frame.height,
+  });
+  options?.applyTexture?.(mesh, frame.textureGuid || null);
+  const ppu =
+    options?.pixelsPerUnit && options.pixelsPerUnit > 0
+      ? options.pixelsPerUnit
+      : 100;
+  const worldWidth = (frame.width ?? 100) / ppu;
+  const worldHeight = (frame.height ?? 100) / ppu;
+  mesh.setPivotPoint(
+    new Vector3(
+      (frame.pivot.x - 0.5) * worldWidth,
+      (0.5 - frame.pivot.y) * worldHeight,
+      0,
+    ),
+  );
+}
+
 export type AnimStateCommand = Extract<CommandMessage, { type: "animState" }>;
 
 export type AnimClipLayer = NonNullable<AnimStateCommand["layers"]>[number];
@@ -48,6 +90,8 @@ export interface SpriteAnimSlot {
   mesh: Mesh;
   payload: SpritePayload;
   overlayMesh?: Mesh;
+  spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
+  applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
 }
 
 export function resolvePlaySpriteSlot(
@@ -96,12 +140,12 @@ function animStateLayers(command: AnimStateCommand): AnimClipLayer[] {
   if (command.layers && command.layers.length > 0) {
     return command.layers;
   }
-  if (!command.clipName) return [];
+  if (!command.clipName && !command.clipAssetGuid) return [];
   return [
     {
       stateId: command.stateId,
       clipAssetGuid: command.clipAssetGuid ?? "",
-      clipName: command.clipName,
+      clipName: command.clipName ?? "",
       clipKind: command.clipKind ?? "animation",
       normalisedTime: command.normalisedTime,
       weight: command.blendWeights[command.stateId] ?? 1,
@@ -135,6 +179,24 @@ function resolveAnimationGroup(
   );
 }
 
+function applySpriteLayer(
+  slot: SpriteAnimSlot,
+  mesh: Mesh,
+  layer: AnimClipLayer,
+): void {
+  const animation = layer.clipAssetGuid
+    ? slot.spriteAnimations?.get(layer.clipAssetGuid)
+    : undefined;
+  if (animation) {
+    applySpriteAnimationAssetFrame(mesh, animation, layer.normalisedTime, {
+      applyTexture: slot.applyTexture,
+      pixelsPerUnit: slot.payload.pixelsPerUnit,
+    });
+    return;
+  }
+  applySpriteAnimFrame(mesh, slot.payload, layer.clipName, layer.normalisedTime);
+}
+
 function applySpriteLayers(
   scene: SceneAnimHost,
   slotId: number,
@@ -154,22 +216,12 @@ function applySpriteLayers(
     return;
   }
   const primary = layers[0]!;
-  applySpriteAnimFrame(
-    slot.mesh,
-    slot.payload,
-    primary.clipName,
-    primary.normalisedTime,
-  );
+  applySpriteLayer(slot, slot.mesh, primary);
   slot.mesh.visibility = primary.weight;
   if (slot.overlayMesh) {
     const secondary = layers[1];
     if (secondary) {
-      applySpriteAnimFrame(
-        slot.overlayMesh,
-        slot.payload,
-        secondary.clipName,
-        secondary.normalisedTime,
-      );
+      applySpriteLayer(slot, slot.overlayMesh, secondary);
       slot.overlayMesh.visibility = secondary.weight;
     } else {
       slot.overlayMesh.visibility = 0;
@@ -214,6 +266,8 @@ export function sceneAnimHostFromBinding(
   options: {
     animationGroups: NamedSeekableGroup[];
     spritePayloads?: ReadonlyMap<string, SpritePayload>;
+    spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
+    applyTexture?: (mesh: Mesh, textureGuid: string | null | undefined) => void;
     onMissingClip?: (info: MissingAnimClip) => void;
   },
 ): SceneAnimHost {
@@ -225,8 +279,20 @@ export function sceneAnimHostFromBinding(
         groupMatchesClip(group, clipName, clipAssetGuid),
       );
     },
-    getSpriteSlot: (slotId) =>
-      resolvePlaySpriteSlot(binding, options.spritePayloads, slotId),
+    getSpriteSlot: (slotId) => {
+      const slot = resolvePlaySpriteSlot(
+        binding,
+        options.spritePayloads,
+        slotId,
+      );
+      if (!slot) return undefined;
+      return {
+        ...slot,
+        spriteAnimations:
+          options.spriteAnimations ?? binding.spriteAnimations,
+        applyTexture: options.applyTexture,
+      };
+    },
     onMissingClip: options.onMissingClip,
   };
 }

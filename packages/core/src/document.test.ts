@@ -82,6 +82,19 @@ describe("P9 document kinds", () => {
     ).toBe("Ground Tileset");
   });
 
+  it("opens Sprite Animation as its own document kind", () => {
+    expect(documentKindForAssetType("SpriteAnimation")).toBe("sprite-animation");
+    expect(assetTypeForDocumentKind("sprite-animation")).toBe("SpriteAnimation");
+    expect(documentKindLabel("sprite-animation")).toBe("Sprite Animation");
+    expect(isAssetDocumentKind("sprite-animation")).toBe(true);
+    expect(labelFromPath("assets/walk.spriteanim.babasset")).toBe("Walk");
+    expect(
+      createDocumentRef("sprite-animation", "assets/walk.spriteanim.babasset", {
+        name: "Walk",
+      }).label,
+    ).toBe("Walk Sprite Animation");
+  });
+
   it("parses document ids and labels compound suffixes", () => {
     expect(parseDocumentId("ui:assets/hud.ui.babasset")).toEqual({
       kind: "ui",

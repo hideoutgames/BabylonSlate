@@ -11,6 +11,7 @@ export type DockviewDocumentKind =
   | "structure"
   | "script-interface"
   | "sprite"
+  | "sprite-animation"
   | "tileset"
   | "tilemap"
   | "material"
@@ -31,6 +32,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "structure",
   "script-interface",
   "sprite",
+  "sprite-animation",
   "tileset",
   "tilemap",
   "material",
@@ -78,6 +80,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   structure: "structure-members",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
+  "sprite-animation": "sprite-animation-preview",
   tileset: "tileset-preview",
   tilemap: "tilemap-paint",
   material: "material-graph",
@@ -326,6 +329,24 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
     title: "Details",
     defaultPosition: {
       referencePanelId: "sprite-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "sprite-animation-preview",
+    component: "sprite-animation-preview",
+    title: "Preview",
+  },
+  {
+    id: "sprite-animation-details",
+    component: "sprite-animation-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "sprite-animation-preview",
       direction: "right",
       initialWidth: 280,
     },
@@ -627,6 +648,9 @@ export function listDockWindows(
     return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
   }
   if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "sprite-animation") {
+    return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
+  }
   if (kind === "tileset") {
     return withOptionalLocks(kind, TILESET_WINDOWS, options);
   }

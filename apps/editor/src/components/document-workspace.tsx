@@ -19,6 +19,7 @@ import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
+import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
@@ -443,6 +444,29 @@ export function DocumentWorkspace() {
                     />
                   </DocumentShell>
                 </BehaviourTreeEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "sprite-animation") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <SpriteAnimationEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-sprite-animation"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="sprite-animation"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </SpriteAnimationEditingProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );
