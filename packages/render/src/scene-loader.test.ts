@@ -158,6 +158,12 @@ describe("scene-loader", () => {
     const origin = scene.getMeshByName(editorMeshName("lamp"));
     const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"));
     expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    expect(origin!.visibility).toBe(0);
+    expect(origin!.isVisible).toBe(true);
+    expect(origin!.isPickable).toBe(true);
+    expect(
+      (origin!.metadata as { editorPickProxy?: boolean }).editorPickProxy,
+    ).toBe(true);
     expect(mesh).not.toBeNull();
     expect(mesh!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(

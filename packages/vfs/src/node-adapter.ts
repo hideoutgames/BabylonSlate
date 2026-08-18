@@ -19,7 +19,7 @@ export class NodeStorageAdapter implements ProjectStorage {
     this.baseDir = baseDir;
   }
   async pickProjectFolder(): Promise<ProjectFolderHandle> {
-    return this.openDocumentsProject("MyGame.babproject");
+    return this.openDocumentsProject("MyGame");
   }
 
   async openDocumentsProject(name: string): Promise<ProjectFolderHandle> {
