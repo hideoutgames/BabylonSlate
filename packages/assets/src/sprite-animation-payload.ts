@@ -9,6 +9,8 @@ import {
 
 export interface SpriteAnimationFrame {
   textureGuid: string;
+  /** When true, `durationMs` is used instead of payload `frameDurationMs`. */
+  durationMsOverride?: boolean;
   durationMs: number;
   pivot: { x: number; y: number };
   collision: SpriteCollision;
@@ -18,11 +20,14 @@ export interface SpriteAnimationFrame {
 }
 
 export interface SpriteAnimationPayload {
+  /** Default duration for frames that do not set `durationMsOverride`. */
+  frameDurationMs: number;
   frames: SpriteAnimationFrame[];
 }
 
 export function createDefaultSpriteAnimationPayload(): SpriteAnimationPayload {
   return {
+    frameDurationMs: 100,
     frames: [
       {
         textureGuid: "",
@@ -55,6 +60,9 @@ export function parseSpriteAnimationFrame(
     pivot: parseSpritePivot(source.pivot),
     collision: parseSpriteCollision(source.collision),
   };
+  if (source.durationMsOverride === true) {
+    frame.durationMsOverride = true;
+  }
   if (typeof source.width === "number" && Number.isFinite(source.width)) {
     frame.width = source.width;
   }
@@ -64,18 +72,65 @@ export function parseSpriteAnimationFrame(
   return frame;
 }
 
+function withoutDurationOverride(
+  frame: SpriteAnimationFrame,
+): SpriteAnimationFrame {
+  if (frame.durationMsOverride === undefined) return frame;
+  const { durationMsOverride: _omit, ...rest } = frame;
+  return rest;
+}
+
 export function parseSpriteAnimationPayload(
   value: unknown,
 ): SpriteAnimationPayload {
   const source =
     value && typeof value === "object"
-      ? (value as { frames?: unknown })
+      ? (value as { frames?: unknown; frameDurationMs?: unknown })
       : {};
   const frames = Array.isArray(source.frames)
     ? source.frames.map((frame) => parseSpriteAnimationFrame(frame))
     : [];
   if (frames.length === 0) return createDefaultSpriteAnimationPayload();
-  return { frames };
+  if ("frameDurationMs" in source) {
+    return {
+      frameDurationMs: Math.max(
+        1,
+        asFinitePositive(
+          source.frameDurationMs,
+          createDefaultSpriteAnimationPayload().frameDurationMs,
+        ),
+      ),
+      frames,
+    };
+  }
+  const firstDuration = frames[0]!.durationMs;
+  const uniform = frames.every((frame) => frame.durationMs === firstDuration);
+  if (uniform) {
+    return {
+      frameDurationMs: firstDuration,
+      frames: frames.map(withoutDurationOverride),
+    };
+  }
+  return {
+    frameDurationMs: firstDuration,
+    frames: frames.map((frame) =>
+      frame.durationMs === firstDuration
+        ? withoutDurationOverride(frame)
+        : { ...frame, durationMsOverride: true },
+    ),
+  };
+}
+
+export function spriteAnimationFrameDurationMs(
+  payload: SpriteAnimationPayload,
+  frame: SpriteAnimationFrame,
+): number {
+  return Math.max(
+    1,
+    frame.durationMsOverride
+      ? frame.durationMs
+      : asFinitePositive(payload.frameDurationMs, 100),
+  );
 }
 
 export function spriteAnimationDurationMs(
@@ -83,7 +138,10 @@ export function spriteAnimationDurationMs(
 ): number {
   return Math.max(
     1,
-    payload.frames.reduce((sum, frame) => sum + Math.max(1, frame.durationMs), 0),
+    payload.frames.reduce(
+      (sum, frame) => sum + spriteAnimationFrameDurationMs(payload, frame),
+      0,
+    ),
   );
 }
 
@@ -100,7 +158,7 @@ export function spriteAnimationFrameAt(
   const total = spriteAnimationDurationMs(payload);
   let cursor = t * total;
   for (const frame of payload.frames) {
-    cursor -= Math.max(1, frame.durationMs);
+    cursor -= spriteAnimationFrameDurationMs(payload, frame);
     if (cursor < 0) return frame;
   }
   return payload.frames[payload.frames.length - 1]!;
@@ -114,7 +172,7 @@ export function spriteAnimationFrameStartMs(
   const clamped = Math.min(Math.max(0, index), last);
   let sum = 0;
   for (let i = 0; i < clamped; i++) {
-    sum += Math.max(1, payload.frames[i]!.durationMs);
+    sum += spriteAnimationFrameDurationMs(payload, payload.frames[i]!);
   }
   return sum;
 }
@@ -136,7 +194,7 @@ export function spriteAnimationPlayhead(
   const timeMs = loop ? raw % total : Math.min(raw, total);
   let cursor = timeMs;
   for (let i = 0; i < frames.length; i++) {
-    const duration = Math.max(1, frames[i]!.durationMs);
+    const duration = spriteAnimationFrameDurationMs(payload, frames[i]!);
     if (cursor < duration) {
       return { index: i, timeMs, finished: false };
     }

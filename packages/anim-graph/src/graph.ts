@@ -928,7 +928,7 @@ export interface AnimClipCatalogEntry {
   clipName?: string;
   clipNames?: string[];
   dependencyGuids?: string[];
-  /** Sprite Animation total duration (sum of frame `durationMs`). */
+  /** Sprite Animation total duration (sum of effective frame durations). */
   durationMs?: number;
 }
 
