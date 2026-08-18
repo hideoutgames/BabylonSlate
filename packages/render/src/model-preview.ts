@@ -42,7 +42,7 @@ function visualMeshes(root: AbstractMesh): AbstractMesh[] {
  */
 export function applyModelMaterialSlots(
   root: AbstractMesh,
-  slots: readonly Pick<ModelMaterialSlot, "index" | "materialGuid">[],
+  slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string) => Material | null,
 ): void {
   const meshes = visualMeshes(root);

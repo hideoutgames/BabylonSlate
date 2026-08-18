@@ -29,7 +29,7 @@ function rgbaBytesFromReadback(
 export async function captureModelThumbnailPng(
   engine: Engine,
   bytes: Uint8Array,
-  slots: readonly Pick<ModelMaterialSlot, "index" | "materialGuid">[],
+  slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string, scene: Scene) => Material | null,
   maxEdge: number = DEFAULT_THUMBNAIL_MAX_EDGE,
 ): Promise<Uint8Array | null> {

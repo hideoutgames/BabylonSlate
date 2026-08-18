@@ -187,14 +187,16 @@ function importFromBrowse(
     version: 1,
     dependencies: [...materialGuids, ...animationGuids],
     parentClass: null,
-    payload: normalizeModelPayload({
-      clipNames: animations.map((animation) => animation.name),
-      materialSlots: materialGuids.map((guid, index) => ({
-        index,
-        name: slotNames[index],
-        materialGuid: guid,
-      })),
-    }),
+    payload: {
+      ...normalizeModelPayload({
+        clipNames: animations.map((animation) => animation.name),
+        materialSlots: materialGuids.map((guid, index) => ({
+          index,
+          name: slotNames[index],
+          materialGuid: guid,
+        })),
+      }),
+    } as Record<string, unknown>,
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
   });
 
@@ -218,12 +220,14 @@ function importStubDependents(
       version: 1,
       dependencies: [materialGuid],
       parentClass: null,
-      payload: normalizeModelPayload({
-        clipNames: [],
-        materialSlots: [
-          { index: 0, name: "Material", materialGuid },
-        ],
-      }),
+      payload: {
+        ...normalizeModelPayload({
+          clipNames: [],
+          materialSlots: [
+            { index: 0, name: "Material", materialGuid },
+          ],
+        }),
+      } as Record<string, unknown>,
       chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
     },
     {

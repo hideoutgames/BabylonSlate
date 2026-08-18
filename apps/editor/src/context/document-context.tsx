@@ -3837,8 +3837,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       toggleLayoutFocus,
       focusedLayoutIds,
       getAvailableDocuments,
-      writeAssetThumbnail,
-      thumbnailEpoch,
     ],
   );
 
