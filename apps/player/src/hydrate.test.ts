@@ -15,6 +15,7 @@ import {
   createDefaultBlackboard,
 } from "@babylonslate/behaviour-tree";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
+import { resolveAudioPlayback } from "@babylonslate/assets";
 import { loadGameFromFiles } from "./artifact";
 import {
   packedBootControls,
@@ -276,6 +277,14 @@ describe("packedContentFromGame", () => {
     expect(content.audioLibrary.audio.get("jump")?.volume).toBe(0.5);
     expect(content.audioLibrary.channels.has("sfx")).toBe(true);
     expect(content.audioLibrary.attenuations.get("near")?.innerRadius).toBe(2);
+    expect(
+      resolveAudioPlayback({
+        audio: content.audioLibrary.audio.get("jump")!,
+        playCallVolume: 0.5,
+        mixer: content.audioLibrary.mixers.get("mixer-1") ?? null,
+        channels: content.audioLibrary.channels,
+      }).gain,
+    ).toBe(0.25);
   });
 
   it("hydrates a packed audioReverb sidecar for the startup scene", async () => {

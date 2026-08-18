@@ -73,7 +73,7 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 AudioV2 behind `AudioPlaybackBackend`. Unit tests use `FakeAudioPlaybackBackend`; `babylon-audio-backend.ts` is coverage-excluded (needs a real audio context).
 
 - Play library + `audioBytes` (BSAU envelope or raw source) load beside `textureBytes`. Scene `audioReverb` extra chunks feed `setReverbField`.
-- Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). Spatial voices follow interpolated snapshot poses; the listener is the active Play camera once per rendered frame.
+- Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). Spatial voices follow interpolated snapshot poses; the listener is the active Play camera once per rendered frame (position and orientation). Doppler `playbackRate` uses snapshot dt only.
 - First `pointerdown` / `touchstart` calls `unlockAsync()` and drains a bounded ordered queue (cap 32). Decode / missing-context diagnose without crashing Play.
 - `AudioBufferCache` is a separate 64 MiB guid-keyed PCM LRU with active-voice pins — **not** stuffed into `ResourceCache`.
 - Channels with `environmentReverb.enabled` send to one shared parametric bus; channel-less stays dry. Failed bake → marked dry fallback, wet 0.

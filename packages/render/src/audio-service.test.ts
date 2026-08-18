@@ -3,6 +3,7 @@ import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
   AUDIO_REVERB_VERSION,
+  AUDIO_SPEED_OF_SOUND,
   createDefaultAudioPayload,
   encodeAudioReverbChunk,
   type AudioChannelPayload,
@@ -276,6 +277,138 @@ describe("AudioService", () => {
     service.syncSnapshot([{ slotId: 1, position: { x: 10, y: 0, z: 0 } }]);
     expect(service.stats().lastDistance).toBe(10);
     expect(backend.poses.get("v1")).toEqual({ x: 10, y: 0, z: 0 });
+    expect(backend.gains.get("v1")).toBeUndefined();
+    service.dispose();
+  });
+
+  it("does not invent session gain when Set Channel / Set Global have no mixer", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({
+      backend,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+    service.setLibrary(library({ audio: { jump: createDefaultAudioPayload() } }));
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "setChannelVolume",
+      channelGuid: "sfx",
+      volume: 0.1,
+    });
+    service.handleCommand({ type: "setGlobalVolume", volume: 0.1 });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(backend.plays[0]?.gain).toBe(1);
+    expect(diagnostics.map((entry) => entry.code)).toEqual([
+      "audio.no_mixer",
+      "audio.no_mixer",
+    ]);
+    service.dispose();
+  });
+
+  it("warns and no-ops Set Channel Volume for a channel the mixer does not know", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({
+      backend,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+    service.setLibrary(
+      library({
+        mixer: {
+          globalVolume: 1,
+          channels: [{ channelGuid: "sfx", volume: 1 }],
+        },
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "environmentReverb", enabled: false }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "setChannelVolume",
+      channelGuid: "ghost",
+      volume: 0,
+    });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(backend.plays[0]?.gain).toBe(1);
+    expect(diagnostics.map((entry) => entry.code)).toEqual(["audio.unknown_channel"]);
+    service.dispose();
+  });
+
+  it("applies Doppler playbackRate from emitter motion, not a second distance gain", async () => {
+    let now = 0;
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, now: () => now });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: null,
+            soundAttenuationGuid: "near",
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: { enabled: true, factor: 1 },
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    now = 0;
+    service.syncSnapshot([{ slotId: 1, position: { x: 10, y: 0, z: 0 } }]);
+    now = 100;
+    service.syncSnapshot([{ slotId: 1, position: { x: 5, y: 0, z: 0 } }]);
+    // Production calls syncListener after each snapshot; that must not reset rate to 1.
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    expect(backend.gains.get("v1")).toBeUndefined();
+    expect(backend.playbackRates.get("v1")).toBeCloseTo(
+      1 + 50 / AUDIO_SPEED_OF_SOUND,
+      5,
+    );
     service.dispose();
   });
 
