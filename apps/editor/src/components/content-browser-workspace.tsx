@@ -86,8 +86,8 @@ import {
   contentBrowserContextActions,
   contentBrowserDeleteListNames,
   contentBrowserDeletingGuids,
-  contentBrowserMoveFromDrop,
   contentBrowserMovePreviewName,
+  contentBrowserTreeDropMoves,
   lastSceneClassDeleteLines,
   defaultParentClassForType,
   CONTENT_BROWSER_SORT_OPTIONS,
@@ -112,6 +112,7 @@ import {
   uniqueAssetTypes,
   visualForIndexedAsset,
   type ContentBrowserContextAction,
+  type ContentBrowserDropMove,
   type ContentBrowserSortMode,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
@@ -1008,40 +1009,34 @@ export function ContentBrowserWorkspace() {
     transferFolderLocks,
   ]);
 
-  const confirmMove = useCallback(async () => {
-    if (!assetRegistry || !moveTarget) return;
-    const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
-    if (dest.readOnly) return;
-    if (moveTarget.operation !== "copy") {
+  const applyRegistryMoves = useCallback(
+    async (moves: ContentBrowserDropMove[]) => {
+      if (!assetRegistry || moves.length === 0) return;
+      const destPath = moves[0]!.destinationPath;
+      const dest = contentBrowserFolderOps(destPath, browserRoots);
+      if (dest.readOnly) return;
+      const destRelative = dest.relative;
       const paths: string[] = [];
-      for (const fromPath of moveTarget.folderPaths) {
-        paths.push(...containedAssetPaths(allAssets, fromPath));
-      }
-      for (const guid of moveTarget.guids) {
-        const path = assetRegistry.getByGuid(guid)?.path;
-        if (path) paths.push(path);
+      for (const move of moves) {
+        if (move.kind === "folder") {
+          paths.push(...containedAssetPaths(allAssets, move.sourcePath));
+        } else if (move.guid) {
+          const path = assetRegistry.getByGuid(move.guid)?.path;
+          if (path) paths.push(path);
+        }
       }
       if (refuseTheirsAssetPaths(paths)) return;
-    }
-    setBusy(true);
-    try {
-      const destPath = moveTarget.folderPath;
-      const destRelative = dest.relative;
-      for (const fromPath of moveTarget.folderPaths) {
-        const from = contentBrowserFolderOps(fromPath, browserRoots);
-        if (from.rootId !== dest.rootId) continue;
-        if (moveTarget.operation === "copy") {
-          await assetRegistry.copyFolder(
-            from.rootId,
-            from.relative,
-            destRelative,
-          );
-        } else {
+      for (const move of moves) {
+        if (move.kind === "folder") {
+          const fromPath = move.sourcePath;
+          const from = contentBrowserFolderOps(fromPath, browserRoots);
+          if (from.readOnly || from.rootId !== dest.rootId) continue;
           const folderName = fromPath.slice(fromPath.lastIndexOf("/") + 1);
           const nextFolder = `${destPath}/${folderName}`;
           const contained = allAssets.filter(
             (asset) =>
-              asset.path === fromPath || asset.path.startsWith(`${fromPath}/`),
+              asset.path === fromPath ||
+              asset.path.startsWith(`${fromPath}/`),
           );
           await assetRegistry.moveFolder(
             from.rootId,
@@ -1057,20 +1052,15 @@ export function ContentBrowserWorkspace() {
             );
           }
           setSelectedFolderPath(nextFolder);
-        }
-      }
-      for (const guid of moveTarget.guids) {
-        const before = assetRegistry.getByGuid(guid);
-        if (!before) continue;
-        if (moveTarget.operation === "copy") {
-          await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
-        } else {
+        } else if (move.guid) {
+          const before = assetRegistry.getByGuid(move.guid);
+          if (!before) continue;
           const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
           const relative = destRelative
             ? `${destRelative}/${fileName}`
             : fileName;
           const moved = await assetRegistry.moveAsset(
-            guid,
+            move.guid,
             dest.rootId,
             relative,
           );
@@ -1083,21 +1073,74 @@ export function ContentBrowserWorkspace() {
           setSelectedFolderPath(destPath);
         }
       }
+    },
+    [
+      allAssets,
+      assetRegistry,
+      browserRoots,
+      refuseTheirsAssetPaths,
+      repairDocumentPath,
+      sourceControl,
+      transferFolderLocks,
+    ],
+  );
+
+  const confirmMove = useCallback(async () => {
+    if (!assetRegistry || !moveTarget) return;
+    const dest = contentBrowserFolderOps(moveTarget.folderPath, browserRoots);
+    if (dest.readOnly) return;
+    setBusy(true);
+    try {
+      const destPath = moveTarget.folderPath;
+      const destRelative = dest.relative;
+      if (moveTarget.operation === "copy") {
+        for (const fromPath of moveTarget.folderPaths) {
+          const from = contentBrowserFolderOps(fromPath, browserRoots);
+          if (from.rootId !== dest.rootId) continue;
+          await assetRegistry.copyFolder(
+            from.rootId,
+            from.relative,
+            destRelative,
+          );
+        }
+        for (const guid of moveTarget.guids) {
+          await assetRegistry.copyAsset(guid, dest.rootId, destRelative);
+        }
+      } else {
+        const moves: ContentBrowserDropMove[] = [
+          ...moveTarget.folderPaths.map((path) => ({
+            kind: "folder" as const,
+            sourcePath: path,
+            destinationPath: destPath,
+            id: path,
+          })),
+          ...moveTarget.guids.flatMap((guid) => {
+            const before = assetRegistry.getByGuid(guid);
+            if (!before) return [];
+            return [
+              {
+                kind: "asset" as const,
+                sourcePath: parentFolderPath(before.path),
+                destinationPath: destPath,
+                id: before.path,
+                guid,
+              },
+            ];
+          }),
+        ];
+        await applyRegistryMoves(moves);
+      }
       await refreshAssetRegistry();
       setMoveTarget(null);
     } finally {
       setBusy(false);
     }
   }, [
-    allAssets,
+    applyRegistryMoves,
     assetRegistry,
     moveTarget,
     refreshAssetRegistry,
-    refuseTheirsAssetPaths,
-    repairDocumentPath,
     browserRoots,
-    sourceControl,
-    transferFolderLocks,
   ]);
 
   const handleImport = useCallback(async () => {
@@ -1262,74 +1305,21 @@ export function ContentBrowserWorkspace() {
 
   const handleTreeReparent = useCallback(
     (dragId: string, targetId: string | null) => {
-      const move = contentBrowserMoveFromDrop(
+      if (!assetRegistry) return;
+      const moves = contentBrowserTreeDropMoves({
         dragId,
         targetId,
-        browserRows,
-        rootPrefixes,
-      );
-      if (!move || !assetRegistry) return;
+        rows: browserRows,
+        selectedGuids,
+        selectedFolderPaths,
+        rootPaths: rootPrefixes,
+        resolvePath: (guid) => assetRegistry.getByGuid(guid)?.path,
+      });
+      if (moves.length === 0) return;
       void (async () => {
         setBusy(true);
         try {
-          if (move.kind === "folder") {
-            const fromPath = move.sourcePath;
-            const destPath = move.destinationPath;
-            const from = contentBrowserFolderOps(fromPath, browserRoots);
-            const dest = contentBrowserFolderOps(destPath, browserRoots);
-            if (from.readOnly || dest.readOnly || from.rootId !== dest.rootId) {
-              return;
-            }
-            const folderName = fromPath.slice(fromPath.lastIndexOf("/") + 1);
-            const nextFolder = `${destPath}/${folderName}`;
-            const contained = allAssets.filter(
-              (asset) =>
-                asset.path === fromPath ||
-                asset.path.startsWith(`${fromPath}/`),
-            );
-            if (refuseTheirsAssetPaths(contained.map((asset) => asset.path))) {
-              return;
-            }
-            await assetRegistry.moveFolder(
-              from.rootId,
-              from.relative,
-              dest.relative,
-            );
-            await transferFolderLocks(fromPath, nextFolder);
-            for (const asset of contained) {
-              repairDocumentPath(
-                asset.path,
-                remapPathAfterFolderMove(asset.path, fromPath, nextFolder),
-                asset.header.type,
-              );
-            }
-            setSelectedFolderPath(nextFolder);
-          } else if (move.guid) {
-            const before = assetRegistry.getByGuid(move.guid);
-            if (!before) return;
-            if (refuseTheirsAssetPaths([before.path])) return;
-            const fileName = before.path.slice(before.path.lastIndexOf("/") + 1);
-            const dest = contentBrowserFolderOps(
-              move.destinationPath,
-              browserRoots,
-            );
-            if (dest.readOnly) return;
-            const relative = dest.relative
-              ? `${dest.relative}/${fileName}`
-              : fileName;
-            const moved = await assetRegistry.moveAsset(
-              move.guid,
-              dest.rootId,
-              relative,
-            );
-            await applyLockTransfers(
-              [{ from: before.path, to: moved.path }],
-              (path) => sourceControl.lockStateForPath(path),
-              (from, to) => sourceControl.transferLock(from, to),
-            );
-            repairDocumentPath(before.path, moved.path, moved.header.type);
-            setSelectedFolderPath(move.destinationPath);
-          }
+          await applyRegistryMoves(moves);
           await refreshAssetRegistry();
         } finally {
           setBusy(false);
@@ -1337,16 +1327,13 @@ export function ContentBrowserWorkspace() {
       })();
     },
     [
-      allAssets,
+      applyRegistryMoves,
       assetRegistry,
       browserRows,
-      browserRoots,
-      rootPrefixes,
       refreshAssetRegistry,
-      refuseTheirsAssetPaths,
-      repairDocumentPath,
-      sourceControl,
-      transferFolderLocks,
+      rootPrefixes,
+      selectedFolderPaths,
+      selectedGuids,
     ],
   );
 
