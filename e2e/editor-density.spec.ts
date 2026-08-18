@@ -414,7 +414,7 @@ test.describe("Editor density and IA", () => {
     await folderTile.click();
     await sceneTile.click({ button: "right" });
     await expect(page.getByTestId("context-menu-panel")).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.getByTestId("context-menu-backdrop").dispatchEvent("click");
     await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
     const deleteSelected = page.getByTestId("content-browser-delete-selected");
     await expect(deleteSelected).toHaveText(/Delete \(2\)/);
