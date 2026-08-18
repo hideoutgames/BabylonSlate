@@ -41,6 +41,7 @@ export * from "./model-preview";
 export * from "./model-thumbnail";
 export * from "./png-encode";
 export * from "./scene-illumination";
+export * from "./skybox";
 export * from "./material-block-registry";
 export * from "./material-compiler";
 export * from "./material-library";

@@ -1,4 +1,4 @@
-import { Material, PointLight, Quaternion, SpotLight, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -12,6 +12,7 @@ import {
   applySnapshotToScene,
   createPlayMesh,
   createSnapshotSceneBinding,
+  isPlayHelperMeshKind,
 } from "./snapshot-apply";
 import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
 
@@ -903,5 +904,53 @@ describe("createPlayMesh", () => {
     expect(sphere?.parent).toBe(root);
     expect(box?.position.x).toBeCloseTo(0);
     expect(sphere?.position.x).toBeCloseTo(2);
+  });
+
+  it("creates a visible unpickable skybox for meshKind skybox", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 3,
+      meshAssetGuid: null,
+      meshKind: "skybox",
+      skybox: {
+        size: 1000,
+        faces: {
+          px: null,
+          py: null,
+          pz: null,
+          nx: null,
+          ny: null,
+          nz: null,
+        },
+      },
+    });
+    const mesh = scene.getMeshByName("actor-3") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect(mesh!.isVisible).toBe(false);
+    expect(mesh!.isPickable).toBe(false);
+    expect(mesh!.infiniteDistance).toBe(true);
+    expect(mesh!.ignoreCameraMaxZ).toBe(true);
+    expect(isPlayHelperMeshKind("skybox")).toBe(false);
+    binding.liveSlots.add(3);
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 3,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    expect(mesh!.isVisible).toBe(true);
   });
 });

@@ -23,7 +23,10 @@ import {
 } from "../lib/prefab-preview";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
-import { modelSlotMaterialGuidsFromPayloads } from "../lib/play-content";
+import {
+  modelSlotMaterialGuidsFromPayloads,
+  skyboxFaceGuidsFromScene,
+} from "../lib/play-content";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -162,7 +165,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
-          materials.textureGuids,
+          [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(
