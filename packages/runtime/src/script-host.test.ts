@@ -1608,6 +1608,35 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("emits setInputMode when Begin Play runs input.setInputMode", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "mode", "input.setInputMode", { mode: "Interface" }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "mode", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "HudDirector", "input-mode-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "HudDirector" });
+    runtime.start();
+    runtime.tick();
+    expect(
+      commands.filter((command) => command.type === "setInputMode"),
+    ).toEqual([{ type: "setInputMode", mode: "Interface" }]);
+    runtime.stop();
+  });
+
   it("emits possessCamera when Begin Play runs camera.possess", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

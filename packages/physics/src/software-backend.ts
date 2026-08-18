@@ -1,4 +1,5 @@
 import type { PhysicsBackend } from "./backend";
+import { listDebugCollidersFromRecords } from "./debug-colliders";
 import type {
   CharacterControllerDesc,
   ColliderDesc,
@@ -268,6 +269,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     this.colliders.delete(colliderId);
+  }
+
+  listDebugColliders() {
+    return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
+      this.bodies.get(bodyId)
+        ? cloneTransform(this.bodies.get(bodyId)!.transform)
+        : null,
+    );
   }
 
   step(dt: number): void {

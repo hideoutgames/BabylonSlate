@@ -106,7 +106,7 @@ describe("applyPlayPreviewCanvasLayout", () => {
 });
 
 describe("custom render resolution layout", () => {
-  it("stretches the canvas to fill the overlay when black bars are off", () => {
+  it("letterboxes a locked framebuffer even when black bars are off", () => {
     const overlay = document.createElement("div");
     overlay.className = "fixed inset-0 z-50 flex flex-col bg-background";
     const canvas = document.createElement("canvas");
@@ -128,10 +128,10 @@ describe("custom render resolution layout", () => {
       },
     });
 
-    expect(canvas.style.width).toBe("100%");
-    expect(canvas.style.height).toBe("100%");
-    expect(canvas.style.objectFit).toBe("fill");
-    expect(overlay.classList.contains("bg-black")).toBe(false);
+    expect(canvas.style.width).toBe("800px");
+    expect(canvas.style.height).toBe("450px");
+    expect(canvas.style.objectFit).not.toBe("fill");
+    expect(overlay.classList.contains("bg-black")).toBe(true);
     expect(overlay.classList.contains("items-center")).toBe(true);
     expect(overlay.classList.contains("justify-center")).toBe(true);
   });

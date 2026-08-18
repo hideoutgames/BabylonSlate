@@ -15,9 +15,15 @@ import { NamedListEditor } from "./named-list-editor";
 import { TypeColorMark } from "./type-color-mark";
 import { PinTypePicker } from "./pin-type-picker";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
-import { PickerIdentity, classRowIdentity } from "./picker-identity";
+import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
+import {
+  PickerIdentity,
+  assetRowIdentity,
+  classRowIdentity,
+} from "./picker-identity";
 import {
   pinPickerColorVar,
+  pinPickerKeepsTypeClassId,
   type PinPickerType,
 } from "./pin-types";
 
@@ -41,6 +47,7 @@ export type PinListEditorProps = {
   showDirection?: boolean;
   types?: readonly string[];
   classEntries?: readonly ClassPickerEntry[];
+  typeAssets?: readonly AssetPickerEntry[];
   testIdPrefix?: string;
   readOnly?: boolean;
   "data-testid"?: string;
@@ -48,6 +55,14 @@ export type PinListEditorProps = {
 
 function isReferencePinType(type: string): boolean {
   return type === "object" || type === "class";
+}
+
+function isTypeAssetPinType(type: string): boolean {
+  return type === "struct" || type === "enum";
+}
+
+function typeAssetAllowedTypes(type: string): string[] {
+  return type === "enum" ? ["Enum"] : ["Structure"];
 }
 
 function patchRow(
@@ -58,7 +73,7 @@ function patchRow(
   return rows.map((row) => {
     if (row.id !== id) return row;
     const next = { ...row, ...patch };
-    if ("type" in patch && !isReferencePinType(String(patch.type))) {
+    if ("type" in patch && !pinPickerKeepsTypeClassId(String(patch.type))) {
       delete next.typeClassId;
     }
     return next;
@@ -105,12 +120,18 @@ export function PinListEditor({
   showDirection = false,
   types,
   classEntries = [],
+  typeAssets,
   testIdPrefix = "pin",
   readOnly = false,
   "data-testid": testId = "pin-list-editor",
 }: PinListEditorProps) {
   const [draftName, setDraftName] = useState("");
   const [classPickRowId, setClassPickRowId] = useState<string | null>(null);
+  const [typeAssetPickRowId, setTypeAssetPickRowId] = useState<string | null>(
+    null,
+  );
+  const hasTypeAssets = typeAssets !== undefined;
+  const typeAssetList = typeAssets ?? [];
 
   const commitAdd = (direction?: "in" | "out") => {
     const name = draftName.trim();
@@ -122,6 +143,9 @@ export function PinListEditor({
   const classPickRow = classPickRowId
     ? rows.find((row) => row.id === classPickRowId)
     : undefined;
+  const typeAssetPickRow = typeAssetPickRowId
+    ? rows.find((row) => row.id === typeAssetPickRowId)
+    : undefined;
 
   return (
     <div className="flex flex-col gap-1.5" data-testid={testId}>
@@ -132,6 +156,19 @@ export function PinListEditor({
         const classIdentity = classRowIdentity(
           classEntries.find((entry) => entry.id === classId),
           classId,
+        );
+        const typeAsset = typeAssetList.find(
+          (asset) => asset.guid === row.typeClassId,
+        );
+        const typeAssetIdentity = assetRowIdentity(
+          typeAsset
+            ? { name: typeAsset.name, type: typeAsset.type }
+            : row.typeClassId
+              ? {
+                  name: row.typeClassId,
+                  type: row.type === "enum" ? "Enum" : "Structure",
+                }
+              : undefined,
         );
         return (
           <div key={row.id} className="flex flex-col gap-1">
@@ -241,6 +278,31 @@ export function PinListEditor({
                       />
                     </Button>
                   </Field>
+                ) : isTypeAssetPinType(row.type) && hasTypeAssets ? (
+                  <Field className="min-w-32 flex-1">
+                    <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-type-asset`}>
+                      {row.type === "enum" ? "Enum Type" : "Structure Type"}
+                    </FieldLabel>
+                    <Button
+                      id={`${testIdPrefix}-${row.id}-type-asset`}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-auto min-h-7 justify-start"
+                      data-testid={`${testIdPrefix}-${row.id}-type-asset`}
+                      onClick={() => setTypeAssetPickRowId(row.id)}
+                    >
+                      <PickerIdentity
+                        label={
+                          typeAssetIdentity.displayLabel ??
+                          row.typeClassId ??
+                          "None"
+                        }
+                        description={typeAssetIdentity.displayType}
+                        visual={typeAssetIdentity.visual}
+                      />
+                    </Button>
+                  </Field>
                 ) : (
                   <Field className="min-w-32 flex-1">
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-default`}>
@@ -261,7 +323,7 @@ export function PinListEditor({
                     />
                   </Field>
                 )}
-                {row.type === "enum" ? (
+                {row.type === "enum" && !hasTypeAssets ? (
                   <NamedListEditor
                     values={[...(row.enumValues ?? [])]}
                     onChange={(enumValues) =>
@@ -339,6 +401,35 @@ export function PinListEditor({
           setClassPickRowId(null);
         }}
         data-testid={`${testId}-class-picker`}
+      />
+      <AssetPicker
+        open={typeAssetPickRowId !== null}
+        onOpenChange={(open) => {
+          if (!open) setTypeAssetPickRowId(null);
+        }}
+        assets={[...typeAssetList]}
+        allowedTypes={
+          typeAssetPickRow
+            ? typeAssetAllowedTypes(String(typeAssetPickRow.type))
+            : undefined
+        }
+        allowNone
+        title={
+          typeAssetPickRow?.type === "enum"
+            ? "Pick Enum Type"
+            : "Pick Structure Type"
+        }
+        onPick={(guid) => {
+          if (typeAssetPickRow) {
+            onChange(
+              patchRow(rows, typeAssetPickRow.id, {
+                typeClassId: guid ?? undefined,
+              }),
+            );
+          }
+          setTypeAssetPickRowId(null);
+        }}
+        data-testid={`${testId}-type-asset-picker`}
       />
     </div>
   );

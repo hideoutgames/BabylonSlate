@@ -54,7 +54,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 ### Regions that still scroll internally
 
 - Homepage `<main>` — project list and create cards
-- Chrome closable-tab scroller (`.editor-chrome-tabs-scroll`) — horizontal overflow; pinned Content Browser stays put
+- Chrome closable-tab scroller (`.editor-chrome-tabs-scroll`) — horizontal overflow; pinned Content Browser and the open Scene tab stay put
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
 - Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog

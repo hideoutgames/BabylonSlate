@@ -11,17 +11,24 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import {
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
 } from "@babylonslate/core";
-import { composeActorComponentTransform } from "./scene-illumination";
+import {
+  composeActorComponentTransform,
+  applyAuthoredCameraLens,
+  type AuthoredCameraProperties,
+} from "./scene-illumination";
 import { editorMeshName } from "./scene-loader";
 
 export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
 export const CAMERA_PREVIEW_WIDTH = 320;
 export const CAMERA_PREVIEW_HEIGHT = 180;
+const CAMERA_PREVIEW_ASPECT = CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT;
 
 export type LightDebugKind = "point" | "spot" | "directional";
 
@@ -45,7 +52,6 @@ function actorForward(actor: SerializedActor): Vector3 {
   return Vector3.Forward().applyRotationQuaternion(actorRotation(actor));
 }
 
-const FRUSTUM_ASPECT = 16 / 9;
 const DEBUG_FAR_MIN = 8;
 const DEBUG_FAR_NEAR_SCALE = 40;
 
@@ -83,18 +89,24 @@ function buildFrustumCornersLocal(component: SerializedComponent): Vector3[] {
   let farH: number;
   let farW: number;
   if (component.properties.projectionMode === "orthographic") {
-    const ortho = Math.max(0.01, asNumber(component.properties.orthographicSize, 5));
+    const ortho = Math.max(
+      0.01,
+      asNumber(component.properties.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE),
+    );
     nearH = ortho;
     farH = ortho;
-    nearW = ortho * FRUSTUM_ASPECT;
+    nearW = ortho * CAMERA_PREVIEW_ASPECT;
     farW = nearW;
   } else {
-    const fov = (asNumber(component.properties.fieldOfView, 60) * Math.PI) / 180;
+    const fov =
+      (asNumber(component.properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW) *
+        Math.PI) /
+      180;
     const t = Math.tan(fov / 2);
     nearH = t * near;
     farH = t * far;
-    nearW = nearH * FRUSTUM_ASPECT;
-    farW = farH * FRUSTUM_ASPECT;
+    nearW = nearH * CAMERA_PREVIEW_ASPECT;
+    farW = farH * CAMERA_PREVIEW_ASPECT;
   }
   return [
     new Vector3(-nearW, -nearH, near),
@@ -141,6 +153,7 @@ export class EditorDebugOverlay {
   private readonly now: () => number;
   private readonly useExternalClock: boolean;
   private previewCamera: FreeCamera | null = null;
+  private previewLens: AuthoredCameraProperties | null = null;
   private previewCanvas: HTMLCanvasElement | null = null;
   private lastPreviewMs = Number.NEGATIVE_INFINITY;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -177,6 +190,13 @@ export class EditorDebugOverlay {
     const now = nowMs ?? this.now();
     if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
     this.lastPreviewMs = now;
+    if (this.previewLens) {
+      applyAuthoredCameraLens(
+        this.previewCamera,
+        this.previewLens,
+        CAMERA_PREVIEW_ASPECT,
+      );
+    }
     this.previewTexture.render(false);
     this.previewRenderCount += 1;
     void this.blitPreview();
@@ -210,6 +230,7 @@ export class EditorDebugOverlay {
     this.previewTexture = null;
     this.previewCamera?.dispose();
     this.previewCamera = null;
+    this.previewLens = null;
     this.previewRenderCount = 0;
     this.lastPreviewMs = Number.NEGATIVE_INFINITY;
     this.clearTimer();
@@ -258,17 +279,25 @@ export class EditorDebugOverlay {
     );
     camera.minZ = Math.max(0.01, asNumber(component.properties.nearClip, 0.1));
     camera.maxZ = Math.max(camera.minZ + 0.01, asNumber(component.properties.farClip, 1000));
-    camera.fov = (asNumber(component.properties.fieldOfView, 60) * Math.PI) / 180;
     camera.rotationQuaternion = composed.rotation.clone();
     camera.rotation.set(0, 0, 0);
-    if (component.properties.projectionMode === "orthographic") {
-      const ortho = Math.max(0.01, asNumber(component.properties.orthographicSize, 5));
-      camera.mode = 1;
-      camera.orthoTop = ortho;
-      camera.orthoBottom = -ortho;
-      camera.orthoLeft = -ortho * FRUSTUM_ASPECT;
-      camera.orthoRight = ortho * FRUSTUM_ASPECT;
-    }
+    this.previewLens = {
+      projectionMode:
+        component.properties.projectionMode === "orthographic"
+          ? "orthographic"
+          : "perspective",
+      fieldOfView: asNumber(
+        component.properties.fieldOfView,
+        DEFAULT_CAMERA_FIELD_OF_VIEW,
+      ),
+      orthographicSize: asNumber(
+        component.properties.orthographicSize,
+        DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+      ),
+      nearClip: camera.minZ,
+      farClip: camera.maxZ,
+    };
+    applyAuthoredCameraLens(camera, this.previewLens, CAMERA_PREVIEW_ASPECT);
     this.previewCamera = camera;
     const rtt = new RenderTargetTexture(
       `debugCameraPreview:${actor.id}`,

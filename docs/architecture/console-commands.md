@@ -4,7 +4,7 @@ Plan for making built-in Play/export console commands actually useful, without b
 
 The organising idea does not change: **the command system is always present; only the debugger UI and debug-tier commands are optional.** What changes is that engine names must **do the thing they say**, editor Play must ship a useful debug set **by default**, and user commands stay first-class on every build.
 
-## How it works today
+## How it works
 
 | Layer | Role |
 | --- | --- |
@@ -16,49 +16,68 @@ The organising idea does not change: **the command system is always present; onl
 
 Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `snapshot start`), positional or `name=value` args, coercion to string/float/int/bool/enum. Unknown names and stripped debug names return `{ success: false, output }` and never throw.
 
-## Audit — existing builtins
+## Audit — builtins
 
-**Applies** means the host mutates simulation, renderer, audio, or overlay chrome. **Log only** means `emitSetting` writes `key=value` to the log ring and nothing else happens.
+**Applies** means the host mutates simulation, renderer, audio, or overlay chrome.
 
 ### Core (every build)
 
-| Command | Registered | Applies today | Notes |
+| Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
 | `changescene` | yes | **yes** | Loads from the Play scene library (guid or display name). Same path as `ctx.changeScene`. |
-| `shadowquality` | yes | **yes** | Emits `{ type: "setShadowQuality" }`; renderer sizes or disposes the one `ShadowGenerator`. `2048` warns. |
+| `shadowquality` | yes | **yes** | Emits `{ type: "setShadowQuality" }`; renderer sizes or disposes the one `ShadowGenerator`. `2048` warns. No arg → print current. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
-| `renderquality` | yes | log only | Enum `low` / `medium` / `high`. Should drive the hardware-scaling floor / quality tier (engineplan §2.4). |
-| `resolutionscale` | yes | log only | Should call `HardwareScalingController.setLevel`. |
-| `framecap` | yes | log only | Play session already has `setFrameCap` → `scheduler.setFrameCap`. Console never calls it. |
-| `volume` | yes | log only | Should emit existing `{ type: "setGlobalVolume" }` (P16 mixer). |
+| `renderquality` | yes | **yes** | `{ type: "setRenderQuality" }` → Play `HardwareScalingController` (`high=1`, `medium=1.5`, `low=2`). No arg → print current. |
+| `resolutionscale` | yes | **yes** | `{ type: "setResolutionScale" }` → `setLevel`. No arg → print current. |
+| `framecap` | yes | **yes** | `{ type: "setFrameCap" }` → Play/player `scheduler.setFrameCap`. No arg → print current. |
+| `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). No arg → print current. |
+| `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
 
 ### Debug (editor Play and bundled-debugger exports)
 
-| Command | Registered | Applies today | Notes |
+| Command | Registered | Applies | Notes |
 | --- | --- | --- | --- |
-| `pause` | yes | **sim only** | `runtime.pause()`. Overlay Pause/Resume chrome does **not** update. No `resume` command. |
-| `step` | yes | **broken while paused** | Console calls `tick()`, and `tick()` returns immediately when `paused`. Overlay **Step** uses `resume` → `tick` → `pause` (worker `{ type: "step" }`). |
-| `slomo` | yes | log only | Should scale tick `dt`. Runtime has no time-dilation field. |
-| `showfps` | yes | log only | Stats HUD is a separate overlay toggle. Flag default is **on** (`showfps` with no arg enables). |
-| `stat unit` / `memory` / `draws` / `threads` | yes | log only | `stat X` only enables; there is no off / query. HUD already shows fps, script/physics ms, memory, draws. |
-| `showcollision` / `showbounds` / `wireframe` | yes | log only | debugger.md already records that no overlay exists yet. |
+| `pause` | yes | **yes** | Idempotent. Emits `{ type: "sessionPaused"; paused: true }`. Overlay button reads Resume. |
+| `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
+| `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
+| `slomo` | yes | **yes** | `RuntimeDriver.timeDilation` clamp `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace replay keeps recorded `dt`. No arg → print current. |
+| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; gamepad still forwards. Off / `changescene` / `possessCamera` restore. |
+| `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
+| `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings, not OS threads. |
+| `showcollision` / `showbounds` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/polylines). Skip helper/debug meshes. |
+| `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene with the session navmesh bytes. |
+| `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
+| `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages. |
 | `snapshot start` / `stop` | yes | **yes** | `TraceRecorder`; stop emits `{ type: "trace" }`. |
 
 ### Overlay vs console (session control)
 
-Play chrome already has **Pause** / **Resume** (one button) and **Step** while paused (`PlayOverlayChrome`). Those call `session.setPaused` / `session.step`, not the console registry. Typing `pause` in the console and tapping Pause are two unsynced paths.
+Play chrome **Pause** / **Resume** and **Step** share `RuntimeDriver.pause` / `resume` and the overlay step helper. Console pause/resume emit `sessionPaused` so the chrome label matches. Overlay Pause still toggles via `session.setPaused`.
 
-`RuntimeDriver.resume()` exists and the worker `setPaused: false` control uses it. It is not a console command.
+### Autocomplete
+
+`suggestConsoleCompletions(line, commands, context?)` completes:
+
+- Command names (prefix)
+- Enum values
+- Bool flags: `on` / `off`
+- `param=` chips when the next arg is empty
+- Default / example values when `defaultValue` is set
+- Context lists from `CommandParameter.complete`: `scenes` (`changescene`), `actors` (`inspect`), `commands` (`help`)
+
+Play passes scene keys and live actor names (inspect snapshots while the **console or inspector** is open). Debugger stays headless.
+
+`applyConsoleCompletion(line, suggestion, commands)` replaces the **current token** (or appends after a trailing space). Command-name hits become `name `. DebugConsole chips and Tab call this helper; history stays ArrowUp/Down.
 
 ### User commands
 
 - Authored on `Event On Command Run` (`commandName`, description, category, parameter list). Empty name falls back to the class id lowercased (`consoleCommandFromGraph`).
-- Registered **after** builtins with `byName.set` — a user `pause` **silently overwrites** the engine command.
-- Autocomplete includes them. `ExecuteConsoleCommand` runs them in release builds.
-- No reserved-name lint. No `help`.
+- Registered **after** builtins. Engine names are reserved: `register` refuses overwrite; edit-time `console.reserved_name` on `commandName`.
+- Autocomplete includes them. `ExecuteConsoleCommand` runs them in release builds (`includeDebug: false`).
+- Duplicate **user** names: last compiled class wins; keep last-wins.
 
-## Target behaviour
+## Landed spec
 
 ### Principles
 
@@ -72,7 +91,7 @@ Play chrome already has **Pause** / **Resume** (one button) and **Step** while p
 
 ### Core catalog (every build)
 
-Keep the current seven. Add `help`. Wire the log-only setters.
+Seven core setters plus `help`. Optional args print the current value.
 
 | Command | Target |
 | --- | --- |
@@ -83,7 +102,7 @@ Keep the current seven. Add `help`. Wire the log-only setters.
 | `framecap [fps]` | Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
-| `help [name]` | **New, core.** No arg: names + one-line descriptions, user commands included, grouped by category (`engine` vs authored category). With a name: parameters and enum values. Stripped debug names still print “not available in this build” rather than “unknown”. |
+| `help [name]` | Core. No arg: names + one-line descriptions, user commands included, grouped by category (`engine` vs authored category). With a name: parameters and enum values. Stripped debug names still print “not available in this build” rather than “unknown”. |
 
 `help` ships in release so `ExecuteConsoleCommand("help")` and a bundled-debugger player console can list what is actually registered.
 
@@ -92,7 +111,7 @@ Keep the current seven. Add `help`. Wire the log-only setters.
 | Command | Target |
 | --- | --- |
 | `pause` | Pause simulation (idempotent). Emit `sessionPaused`. Overlay button reads **Resume**. |
-| `resume` | **New.** Unpause (idempotent). Alias `unpause`. Overlay button reads **Pause**. Does not stop free cam. |
+| `resume` | Unpause (idempotent). Alias `unpause`. Overlay button reads **Pause**. Does not stop free cam. |
 | `step` | Same as overlay Step: one tick while staying paused (`resume` → `tick` → `pause`). Safe no-op if not paused (still advances one tick, then leaves running). |
 | `slomo [rate]` | Store a dilation on the driver; `tick` uses `dt * rate` (rate `0` is pause-equivalent for sim, not a substitute for `pause`). Clamp to a documented range (e.g. `0..8`). No arg → print current. Default `1`. |
 
@@ -102,7 +121,7 @@ Do **not** make `pause` a toggle. The overlay button toggles; the console uses e
 
 | Command | Target |
 | --- | --- |
-| `freecam [on\|off]` | **New.** Detach a fly/pan camera from the possessed game camera. **Simulation keeps ticking.** No arg → on (same bool-flag convention as `showfps`). `off` restores the possessed / default Play camera. |
+| `freecam [on\|off]` | Detach a fly/pan camera from the possessed game camera. **Simulation keeps ticking.** No arg → on (same bool-flag convention as `showfps`). `off` restores the possessed / default Play camera. |
 
 Constraints:
 
@@ -122,13 +141,13 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means main vs worker timings (script/physics vs render), not OS threads. |
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
-| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). No overlay exists yet; this slice adds one, editor-grid 2D camera bounds are unrelated. |
-| `shownav [on\|off]` | **New.** Reuse `NavMeshDebugOverlay` on the Play scene when a nav chunk is loaded. |
-| `dumpactors` | **New.** One line per actor: name, class, guid, world position. |
-| `inspect [name\|guid]` | **New.** Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |
+| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/polylines from `listDebugColliders()`; not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. |
+| `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene when a nav chunk is loaded. |
+| `dumpactors` | One line per actor: name, class, guid, world position. |
+| `inspect [name\|guid]` | Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |
 | `dumplog` / `snapshot start` / `snapshot stop` | Unchanged. |
 
-`showcollision` / `showbounds` / `wireframe` stay debug-tier and stay off the Debug menu until the overlay exists; the console is the default way to arm them.
+`showcollision` / `showbounds` / `wireframe` / `shownav` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
 
 ### Intentionally not engine commands
 
@@ -142,82 +161,41 @@ Parked (do not block this pass):
 
 ## Host and bridge
 
-Extend `ConsoleCommandHost` with required-or-optional methods matching the catalog. Runtime implements them by mutating driver state and/or emitting commands. New worker→main command types (names indicative):
+Worker→main commands:
 
 | Command | Direction | Purpose |
 | --- | --- | --- |
 | `sessionPaused` | worker → main | Overlay chrome Pause/Resume label + `userPausedRef` |
 | `setRenderQuality` / `setResolutionScale` / `setFrameCap` | worker → main | Play view hardware scaling + scheduler cap |
-| `setGlobalVolume` | already exists | `volume` console command reuses it |
+| `setGlobalVolume` | already existed | `volume` console command reuses it |
 | `setFreeCam` | worker → main | Attach/detach debug camera, input steal |
 | `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` | worker → main | Play-scene overlays |
+| `debugColliders` | worker → main | Collision primitives while `showcollision` is on |
 | `setShowFps` / `setStat` | worker → main | Stats HUD open + row |
 
-Core setters that already succeed in tests while only logging must keep succeeding, but tests should assert the **command or driver field**, not only `log`.
-
-`step` on the host must call the overlay helper semantics, not `tick()` while paused.
-
 ## User-command usability
-
-Keep:
 
 - Core tier, every export.
 - Authored `commandName` / description / category / parameter list.
 - Console autocomplete + `ExecuteConsoleCommand`.
 - `help` listing user commands next to engine ones.
-
-Add:
-
 - Reserved-name set = `CORE_COMMAND_NAMES` ∪ `DEBUG_COMMAND_NAMES` (lowercase). Used by `CommandRegistry.register`, graph validation, and the Command Name field (inline error, not a silent overwrite).
-- Duplicate **user** names: last compiled class wins today; keep last-wins but log once (same as two classes claiming one command). Do not invent a prefix.
-- Descriptions shown in `help` and in autocomplete chips when a single command is matched (parameter hints already exist for enums).
+- Duplicate **user** names: last compiled class wins; keep last-wins. Do not invent a prefix.
 
 ## Implementation slices
 
-Do not reopen P8. Land as named follow-ups. Each slice updates this doc’s audit table and [debugger.md](debugger.md) host table in the same PR.
+Landed on this pass (do not reopen P8). Spec above matches the code.
 
-### `p8-console-session`
+- [x] **p8-console-session** — `resume` / `unpause`; `step` resume→tick→pause; `sessionPaused`; `help [name]`; reserved names
+- [x] **p8-console-apply** — `volume` / `framecap` / `renderquality` / `resolutionscale` apply; omitted args print current
+- [x] **p8-console-slomo** — `tick` uses `dt * rate` (script, physics, nav, BT); traces keep recorded `dt`
+- [x] **p8-console-freecam** — detached fly/pan; no pause; restore on off / `changescene` / possess; pointer/WASD steal, gamepad still forwards
+- [x] **p8-console-viz** — Stats HUD, wireframe/bounds/collision/nav, `dumpactors` / `inspect`
 
-Session control and registry hygiene.
-
-- `resume` / `unpause`; `pause` stays idempotent.
-- Fix `step` (resume/tick/pause).
-- `sessionPaused` so overlay chrome matches the console.
-- `help [name]`.
-- Reserved names: register refuses overwrite; edit-time diagnostic on `commandName`.
-- Getter form (no args) for `slomo` can wait for the slomo slice; `help` should still list `slomo`.
-
-Tests: registry + `execute-console` + overlay chrome (`play-overlay-chrome` / play-session) + validation for a user class named `pause`.
-
-### `p8-console-apply`
-
-Core setters actually apply.
-
-- `volume` → `setGlobalVolume`.
-- `framecap` → Play/player scheduler.
-- `renderquality` / `resolutionscale` → hardware scaling on the Play view (not the editor viewport). Map `low`/`medium`/`high` onto documented scaling levels (same ladder as §2.4 / Engine Settings).
-- Optional-arg query prints the last applied value.
-
-Tests: runtime emit assertions + render/player apply tests. Keep `includeDebug: false` coverage so release still runs these.
-
-### `p8-console-slomo`
-
-Time dilation on `RuntimeDriver.tick` (`dt * rate`) including physics, nav crowd, BT, and script `deltaSeconds`. `slomo 1` is identity. Trace replay stays on the recorded `dt` (do not bake dilation into traces unless a later trace slice says so).
-
-### `p8-console-freecam`
-
-`freecam` as specified above. Tests: registry; emit `setFreeCam`; render attach/detach restores possessed camera; `changescene` clears it; pause state unchanged. Playwright: optional Play overlay smoke if an existing play spec can type into the console without a new fixture.
-
-### `p8-console-viz`
-
-`wireframe`, `showbounds`, `showcollision`, `shownav`, `showfps`/`stat *` HUD wiring, `dumpactors`, `inspect`. Collision draw is the largest piece (physics debug primitives on the Play scene, 2D and 3D). `shownav` is the small Recast overlay reuse.
+Parked (unchanged): packaged-player command **line** UI, `god`/`give` as engine commands, making `pause` a toggle.
 
 ## Docs and tests
 
-- This page is the catalog. [debugger.md](debugger.md) keeps package API, tiers, parser, HUD, and the host table (update as slices land).
+- This page is the catalog. [debugger.md](debugger.md) keeps package API, tiers, parser, HUD, and the host table.
 - engineplan §9.1 lists the extra names; Appendix A holds the slice checkboxes.
-- New behaviour in `packages/debugger`, `packages/runtime`, `packages/render`, `apps/editor` Play overlay, and graph validation needs tests in those packages. `pnpm verify` before merge.
-
-## Suggested order
-
-`p8-console-session` first (resume, step, help, reserved names — unblocks daily debugging with almost no render work). Then `p8-console-apply` and `p8-console-slomo` (host already has the hooks). Then `p8-console-freecam`. Visualization last (`p8-console-viz`) because collision debug draw is new rendering, not a one-line host call.
+- New behaviour in `packages/debugger`, `packages/runtime`, `packages/render`, `apps/editor` Play overlay, and graph validation is covered by unit tests in those packages.

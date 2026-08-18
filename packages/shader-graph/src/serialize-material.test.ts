@@ -126,6 +126,14 @@ describe("material graph serialization", () => {
     );
   });
 
+  it("lists interface palette nodes without surface or post-process terminals", () => {
+    const palette = materialPaletteNodes("interface");
+    expect(palette.some((entry) => entry.id === "output.interface")).toBe(true);
+    expect(palette.some((entry) => entry.id === "input.uv")).toBe(true);
+    expect(palette.some((entry) => entry.id === "output.surface")).toBe(false);
+    expect(palette.some((entry) => entry.id === "input.sceneColor")).toBe(false);
+  });
+
   it("lists Particle Color on the particle palette and hides surface terminals", () => {
     const palette = materialPaletteNodes("particle");
     expect(palette.some((entry) => entry.id === "input.particleColor")).toBe(

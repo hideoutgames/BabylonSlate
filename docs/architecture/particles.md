@@ -17,12 +17,12 @@ Do **not** write a custom thin-instance simulator, Solid Particle System, points
 | Particle Emitter | `.emitter.babasset` | One `IParticleSystem` recipe: Texture, optional particle-domain Material, capacity, rate, shape, lifetime, single-value gradients, gravity, blend. No mesh guid. |
 | Particle System | `.particles.babasset` | Ordered Emitter guids (duplicates allowed, max 8). Runtime starts one Babylon system per slot on the same actor. |
 
-`ParticleComponent` references a Particle System. `playOnStart`, sorting layer/order. Actor transform is `IParticleSystem.emitter`.
+`ParticleComponent` references a Particle System. `playOnStart`, sorting layer/order. Actor transform is `IParticleSystem.emitter`. Sorting layer maps onto Babylon `renderingGroupId` (Background / world / Foreground / UI). Particle systems have no mesh `alphaIndex`; `orderInLayer` is stored and forwarded on `assignParticle` for component parity.
 
 ## Authoring
 
 - **New Asset → Rendering**: Particle Emitter (`.emitter.babasset`) and Particle System (`.particles.babasset`).
-- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. Preview with no Texture shows **No Texture**. With a Texture guid, Preview runs `GPUParticleSystem` (CPU fallback) on the Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine).
+- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. Preview with no Texture shows **No Texture**. With a Texture guid, Preview runs `GPUParticleSystem` (CPU fallback) on the Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Preview compiles an optional particle-domain Material and calls `createEffectForParticles`.
 - Lucide `Sparkles` (Particle System / ParticleComponent) and `Wind` (Particle Emitter); family color matches Material.
 - **Place Actors → Particles** and **Place Actors → Project** Particle System spawn `ParticleComponent`. Engine Particle stays empty until a System is picked.
 - Add Component / Search: `ParticleComponent` (`particleSystemGuid`, play-on-start, sorting layer/order).
@@ -36,7 +36,7 @@ System Details: space world/local, looping, duration, up to 8 Emitter slots (dup
 
 Construct `GPUParticleSystem` when `GPUParticleSystem.IsSupported`; else `ParticleSystem` with `min(capacity, 512)`. Capacity default 256, clamp 16–4096.
 
-Author only the shared CPU/GPU surface: `emitRate`; `createPointEmitter` / `createBoxEmitter` / `createSphereEmitter` / `createConeEmitter`; `minLifeTime` / `maxLifeTime`; `minEmitPower` / `maxEmitPower`; `gravity`; `minSize` / `maxSize` plus single-value `addSizeGradient` / `addColorGradient` (2–8 keys); angular speed or one `addAngularSpeedGradient`; optional `addDragGradient` (0 and 1 keys); `blendMode` Standard / Additive; `isLocal`; looping vs `targetStopDuration`; capped `preWarmCycles`.
+Author only the shared CPU/GPU surface: `emitRate`; `createPointEmitter` / `createBoxEmitter` / `createSphereEmitter` / `createConeEmitter`; `minLifeTime` / `maxLifeTime`; `minEmitPower` / `maxEmitPower`; `gravity`; `minSize` / `maxSize` plus single-value `addSizeGradient` / `addColorGradient` (2–8 keys); angular speed **or** one `addAngularSpeedGradient` (gradient wins when both are authored); optional `addDragGradient` (0 and 1 keys); `blendMode` Standard / Additive; `isLocal`; looping vs `targetStopDuration`; capped `preWarmCycles`.
 
 GPU `stop()` still draws leftover particles; teardown must `dispose()`. Do not author sub-emitters, bursts (`manualEmitCount`), `disposeOnStop`, dual min/max gradient values, emit-rate / start-size gradients, `textureMask`, or mesh emitters.
 
@@ -44,7 +44,7 @@ Always set `system.particleTexture` from the Emitter Texture guid (ResourceCache
 
 ## Particle-domain materials
 
-`createEffectForParticles` requires `NodeMaterialModes.Particle`. Material `domain: "particle"` sits beside `surface` | `postProcess`.
+`createEffectForParticles` requires `NodeMaterialModes.Particle`. Material `domain: "particle"` sits beside `surface` | `postProcess` | `interface`.
 
 | Node | Kind | Babylon |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ Overlay Play and `apps/player` pass a particle library (Emitter + System payload
 
 Missing Texture skips that emitter and logs `particle.missing_texture` (asset guid is the Emitter).
 
-Preview uses the same constructors on a Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Prefab Preview uses that Engine too (`p18-shared-prefab-engine`).
+Preview uses the same constructors on a Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Optional particle-domain Material compiles through `MaterialLibrary` then `createEffectForParticles`. Prefab Preview uses that Engine too (`p18-shared-prefab-engine`).
 
 Scripting: **Play Particles** (`particles.play`) / **Stop Particles** (`particles.stop`) — exec + optional `actorRef("Actor")` (unconnected → `ctx.self`). Graphs emit `setParticlePlaying` only.
 
@@ -71,11 +71,12 @@ Worker → main. Main thread resolves Emitter / System payloads from the Play pa
 
 ```ts
 | { type: "assignParticle"; slotId: number; actorGuid: string; componentId: string;
-    particleSystemGuid: string | null; play?: boolean }
+    particleSystemGuid: string | null; play?: boolean;
+    sortingLayer?: string; orderInLayer?: number }
 | { type: "setParticlePlaying"; actorGuid: string; componentId?: string; playing: boolean }
 ```
 
-`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Graph Play/Stop target `self` when Actor is unconnected.
+`ParticleComponent` properties: `particleSystemGuid`, `playOnStart`, sorting layer/order. Play-on-start emits `assignParticle` with `play: true`. Sorting layer sets `IParticleSystem.renderingGroupId`. Graph Play/Stop target `self` when Actor is unconnected.
 
 ## Out of P17
 

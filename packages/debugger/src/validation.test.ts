@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { warnDebugTierConsoleCommands } from "./validation";
+import { warnDebugTierConsoleCommands, warnReservedConsoleCommandNames } from "./validation";
 
 describe("warnDebugTierConsoleCommands", () => {
   it("warns when ExecuteConsoleCommand literals name a debug-tier command", () => {
@@ -37,6 +37,39 @@ describe("warnDebugTierConsoleCommands", () => {
         assetGuid: "graph-1",
         graphId: "event-graph",
         nodeId: "cmd",
+      },
+    ]);
+  });
+
+  it("errors when On Command Run uses a reserved engine name", () => {
+    const diags = warnReservedConsoleCommandNames(
+      [
+        {
+          id: "event-graph",
+          nodes: [
+            {
+              id: "run",
+              typeId: "flow.event.commandRun",
+              properties: { commandName: "pause" },
+            },
+            {
+              id: "ok",
+              typeId: "flow.event.commandRun",
+              properties: { commandName: "heal" },
+            },
+          ],
+        },
+      ],
+      { assetGuid: "graph-1" },
+    );
+    expect(diags).toEqual([
+      {
+        severity: "error",
+        code: "console.reserved_name",
+        message: "Command Name 'pause' is reserved by the engine",
+        assetGuid: "graph-1",
+        graphId: "event-graph",
+        nodeId: "run",
       },
     ]);
   });

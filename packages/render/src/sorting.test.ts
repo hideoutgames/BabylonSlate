@@ -3,6 +3,7 @@ import {
   ORDER_IN_LAYER_LIMIT,
   RENDERING_GROUP,
   applySortingToMesh,
+  applySortingToParticleSystem,
   applySortingToSprite,
   clampOrderInLayer,
   computeSortKey,
@@ -69,6 +70,15 @@ describe("applySorting", () => {
     applySortingToMesh(mesh, resolveSortingLayer(["Default"], "Default", 7));
     expect(mesh.alphaIndex).toBe(computeSortKey(0, 7));
     expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
+  });
+
+  it("writes renderingGroupId onto a particle system", () => {
+    const system = { renderingGroupId: 0 };
+    applySortingToParticleSystem(
+      system,
+      resolveSortingLayer(["Background", "Default", "Foreground", "UI"], "UI", 4),
+    );
+    expect(system.renderingGroupId).toBe(RENDERING_GROUP.ui);
   });
 
   it("offsets a sprite's Z by a sub-pixel fraction of the sort key", () => {

@@ -211,12 +211,14 @@ export function defaultValueLiteral(type: PinType): string {
       return '{ tag: "null", value: null }';
     case "objectRef":
     case "actorRef":
-    case "structRef":
-    case "enumRef":
     case "delegate":
     case "exec":
     case "resolvingWildcard":
       return "null";
+    case "structRef":
+      return "{}";
+    case "enumRef":
+      return '""';
     case "classRef":
       return JSON.stringify(type.classId);
     case "assetRef":

@@ -37,6 +37,7 @@ import type {
   RigidBodyDesc,
   Vec3,
 } from "./types";
+import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 
 type BodyRecord = {
@@ -295,6 +296,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     this.colliders.delete(colliderId);
+  }
+
+  listDebugColliders() {
+    return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
+      this.getBodyTransform(bodyId),
+    );
   }
 
   step(dt: number): void {

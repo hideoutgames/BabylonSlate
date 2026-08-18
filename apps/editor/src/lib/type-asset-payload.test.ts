@@ -50,6 +50,7 @@ describe("asStructureAsset", () => {
           { name: "Health", typeId: "int", defaultValue: 100 },
           { name: "Mana" },
           null,
+          { name: "Team", typeId: "enum", typeClassId: " enum-team " },
         ],
       }),
     ).toEqual({
@@ -60,6 +61,7 @@ describe("asStructureAsset", () => {
         { name: "Health", typeId: "int", defaultValue: 100 },
         { name: "Mana", typeId: "float" },
         { name: "Field", typeId: "float" },
+        { name: "Team", typeId: "enum", typeClassId: "enum-team" },
       ],
     });
   });

@@ -12,12 +12,14 @@ import type {
   ParticleSystemPayload,
 } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import {
   applyParticleLook,
   createBabylonParticleSystem,
   gpuParticlesSupported,
   particleCapacityFor,
 } from "./particle-system-factory";
+import { applySortingToParticleSystem, resolveSortingLayer } from "./sorting";
 
 export type ParticleLibrary = {
   emitters: ReadonlyMap<string, ParticleEmitterPayload>;
@@ -233,6 +235,14 @@ export class ParticleService {
       node.dispose();
       this.publishStats();
       return;
+    }
+    const sorting = resolveSortingLayer(
+      DEFAULT_SORTING_LAYERS,
+      command.sortingLayer?.trim() || "Default",
+      typeof command.orderInLayer === "number" ? command.orderInLayer : 0,
+    );
+    for (const system of systems) {
+      applySortingToParticleSystem(system, sorting);
     }
     const entry: LiveComponent = {
       actorGuid: command.actorGuid,

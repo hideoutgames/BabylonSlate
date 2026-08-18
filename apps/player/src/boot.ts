@@ -11,6 +11,7 @@ import {
   createRuntimeFromLoad,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { createEngine, audioStats, particleStats, type EngineHandle } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
@@ -107,6 +108,8 @@ export function startPlayer(options: {
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
+    viewportMode: scene.viewportMode,
+    navmeshBytes: content.navmeshBytes,
     ktx2BasePath: ktx2BasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
       diagnostics.push({
@@ -174,6 +177,17 @@ export function startPlayer(options: {
       fontBytes: game.fontBytes,
       fontFamilies: game.fontFamilies,
     }),
+    resolveInterfaceMaterial: (guid) => {
+      const document = content.materialDocuments.get(guid);
+      return document?.domain === "interface" ? document : null;
+    },
+    materialFunctions: () => Object.fromEntries(content.materialFunctions),
+    resolveTexture: (guid) => {
+      const bytes = game.textureBytes.get(guid);
+      if (!bytes) return null;
+      const texture = handle.resourceCache.getTexture(guid, handle.engine, bytes);
+      return texture instanceof Texture ? texture : null;
+    },
     onWidgetEvent: (event) => {
       if (worker) worker.postControl(event);
       else if (runtime) applyUiRuntimeControl(runtime, event);
@@ -248,6 +262,9 @@ export function startPlayer(options: {
     applyPlayerEngineCommand(handle, command);
     applyPlayerActiveScene(handle, game.scenes, command);
     applyPlayerUiCommand(uiHost, command);
+    if (command.type === "setInputMode") {
+      input?.setInputMode(String(command.mode ?? "All"));
+    }
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;
@@ -336,7 +353,9 @@ export function startPlayer(options: {
     });
   }
 
-  input = attachInputCapture(canvas);
+  input = attachInputCapture(canvas, {
+    skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+  });
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
   });

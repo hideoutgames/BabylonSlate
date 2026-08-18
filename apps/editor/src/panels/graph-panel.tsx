@@ -40,9 +40,11 @@ import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
+  collectGraphTypeAssets,
   collectScriptInterfacesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
+  typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 import {
   collectImplementedInterfaceContexts,
@@ -165,6 +167,18 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       }),
     [assetRegistry, openDocuments],
   );
+  const typeAssets = useMemo(
+    () =>
+      collectGraphTypeAssets({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+      }),
+    [assetRegistry, openDocuments],
+  );
+  const typeSchemas = useMemo(
+    () => typeSchemasFromGraphAssets(typeAssets),
+    [typeAssets],
+  );
   const hierarchy = useMemo(
     () => classHierarchyFromParentOf(parentOf),
     [parentOf],
@@ -203,9 +217,16 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           assetType: indexed?.header.type,
         }),
       registry,
-      { parentOf },
+      { parentOf, structs: typeSchemas.structs, enums: typeSchemas.enums },
     );
-  }, [activeFunctionId, graphContent, indexed?.header.type, parentClass, parentOf]);
+  }, [
+    activeFunctionId,
+    graphContent,
+    indexed?.header.type,
+    parentClass,
+    parentOf,
+    typeSchemas,
+  ]);
 
   const assetGuid = doc?.ref.path ?? documentId;
 
@@ -252,6 +273,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             parentOf,
             parentGraphs: otherClassGraphs,
           }),
+          enums: typeSchemas.enums,
+          structs: typeSchemas.structs,
         }),
       );
     }, VALIDATION_DEBOUNCE_MS);
@@ -272,6 +295,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     parentOf,
     scriptInterfaces,
     setDiagnostics,
+    typeSchemas,
     uiEditorMode,
     animEditorMode,
   ]);
@@ -289,6 +313,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         assetType: indexed?.header.type,
         functionLibraries,
         scriptInterfaces,
+        structures: typeAssets.structures,
+        enums: typeAssets.enums,
         animationGraphHost:
           doc?.ref.kind === "anim-graph" ? "object" : undefined,
       }),
@@ -303,6 +329,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       otherClassGraphs,
       parentClass,
       parentOf,
+      typeAssets,
       doc?.ref.kind,
     ],
   );
