@@ -140,6 +140,7 @@ import {
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
 import { writeRetargetedAnimations } from "../lib/animation-retarget";
+import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";

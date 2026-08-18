@@ -158,7 +158,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
     guid: newAssetGuid(),
     parentClass: "Actor",
   });
-  const classGraph = classPayload.payload as SerializedGraph;
+  const classGraph = classPayload.payload as unknown as SerializedGraph;
   classGraph.components = [
     mesh,
     {
