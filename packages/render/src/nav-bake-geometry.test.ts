@@ -126,4 +126,47 @@ describe("collectNavBakeGeometry", () => {
     expect(geometry.indices).toEqual([0, 3, 2, 0, 2, 1]);
     expect(geometry.positions[1]).toBe(0);
   });
+
+  it("excludes SkyboxComponent meshes from Recast input", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const sync = new EditorSceneSync(handle.scene);
+    const ground = createActor("ground", "Ground", {
+      components: [createMeshComponent("mesh", "ground")],
+    });
+    const skybox = createActor("sky", "Skybox", {
+      components: [
+        {
+          id: "sky",
+          classId: "SkyboxComponent",
+          properties: {
+            size: 1000,
+            faces: {
+              px: null,
+              py: null,
+              pz: null,
+              nx: null,
+              ny: null,
+              nz: null,
+            },
+          },
+        },
+      ],
+    });
+    const withoutSky: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [ground],
+    };
+    const withSky: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [ground, skybox],
+    };
+    sync.apply(withoutSky);
+    const baseline = collectNavBakeGeometry(sync, withoutSky);
+    sync.apply(withSky);
+    const withSkybox = collectNavBakeGeometry(sync, withSky);
+    expect(withSkybox.positions.length).toBe(baseline.positions.length);
+    expect(withSkybox.indices.length).toBe(baseline.indices.length);
+    sync.dispose();
+  });
 });

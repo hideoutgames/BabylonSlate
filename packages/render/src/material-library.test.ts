@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, Scene } from "@babylonjs/core";
+import { NullEngine, Scene, Texture } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   type MaterialDocument,
@@ -106,7 +106,9 @@ describe("material library", () => {
 
   it("resolves textures through the injected provider", () => {
     const scene = host();
-    const resolveTexture = vi.fn(() => null);
+    const texture = new Texture(null, scene, true, false);
+    disposers.push(() => texture.dispose());
+    const resolveTexture = vi.fn(() => texture);
     const library = new MaterialLibrary({ resolveTexture });
     disposers.push(() => library.dispose());
     const doc = createDefaultMaterialDocument();

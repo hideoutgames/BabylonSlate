@@ -64,6 +64,46 @@ function hasNonEmptyPins(data: Record<string, unknown>): boolean {
   return Array.isArray(data.__pins) && data.__pins.length > 0;
 }
 
+function pinIdsFromNodeData(data: Record<string, unknown>): Set<string> | undefined {
+  const pins = data.__pins;
+  if (!Array.isArray(pins)) return undefined;
+  return new Set(
+    pins.flatMap((pin) => {
+      if (!pin || typeof pin !== "object") return [];
+      const id = (pin as { id?: unknown }).id;
+      return typeof id === "string" && id ? [id] : [];
+    }),
+  );
+}
+
+function pruneEdgesToMissingPins(
+  edges: SerializedGraph["edges"],
+  nodes: SerializedGraph["nodes"],
+): SerializedGraph["edges"] {
+  const pinsByNode = new Map(
+    nodes.map((node) => [node.id, pinIdsFromNodeData(node.data)] as const),
+  );
+  return edges.filter((edge) => {
+    const sourcePins = pinsByNode.get(edge.source);
+    const targetPins = pinsByNode.get(edge.target);
+    if (
+      sourcePins &&
+      edge.sourceHandle &&
+      !sourcePins.has(edge.sourceHandle)
+    ) {
+      return false;
+    }
+    if (
+      targetPins &&
+      edge.targetHandle &&
+      !targetPins.has(edge.targetHandle)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function catalogTypeId(node: {
   type: string;
   data: Record<string, unknown>;
@@ -308,9 +348,7 @@ export function hydrateSerializedGraphForEditor(
   options?: HydrateGraphOptions,
 ): SerializedGraph {
   const parentOf = parentLookup(options?.parentOf);
-  return {
-    ...graph,
-    nodes: graph.nodes.map((node) => {
+  const nodes = graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
       const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
       if (hasNonEmptyPins(rawData) && !shouldRegeneratePins(typeIdHint)) {
@@ -442,7 +480,11 @@ export function hydrateSerializedGraphForEditor(
           typeId,
         ),
       };
-    }),
+    });
+  return {
+    ...graph,
+    nodes,
+    edges: pruneEdgesToMissingPins(graph.edges, nodes),
   };
 }
 
@@ -1314,13 +1356,25 @@ export function materializeLogicGraph(
     sourceHandle?: string;
     targetHandle?: string;
   }>;
-  logic.edges = rawEdges.map((e, i) => ({
-    id: e.id || `e${i}`,
-    sourceNodeId: e.source,
-    sourcePinId: e.sourceHandle ?? logic.edges[i]?.sourcePinId ?? "execOut",
-    targetNodeId: e.target,
-    targetPinId: e.targetHandle ?? logic.edges[i]?.targetPinId ?? "execIn",
-  }));
+  logic.edges = rawEdges
+    .map((e, i) => ({
+      id: e.id || `e${i}`,
+      sourceNodeId: e.source,
+      sourcePinId: e.sourceHandle ?? logic.edges[i]?.sourcePinId ?? "execOut",
+      targetNodeId: e.target,
+      targetPinId: e.targetHandle ?? logic.edges[i]?.targetPinId ?? "execIn",
+    }))
+    .filter((edge) => {
+      const source = logic.nodes.find((node) => node.id === edge.sourceNodeId);
+      const target = logic.nodes.find((node) => node.id === edge.targetNodeId);
+      if (source && !source.pins.some((pin) => pin.id === edge.sourcePinId)) {
+        return false;
+      }
+      if (target && !target.pins.some((pin) => pin.id === edge.targetPinId)) {
+        return false;
+      }
+      return true;
+    });
   return logic;
 }
 

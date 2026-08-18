@@ -19,6 +19,25 @@ import {
   useMaterialRenderControl,
 } from "./material-render-control-context";
 
+function sampledRock() {
+  const doc = createDefaultMaterialDocument("Rock");
+  doc.nodes.push({
+    id: "sample",
+    type: "texture.sample",
+    position: { x: 0, y: 0 },
+    properties: { textureGuid: "tex-1" },
+  });
+  doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+  doc.edges.push({
+    id: "e-sample",
+    sourceNodeId: "sample",
+    sourcePinId: "rgb",
+    targetNodeId: "output",
+    targetPinId: "baseColor",
+  });
+  return doc;
+}
+
 const harness = vi.hoisted(() => ({
   playing: false,
   engine: {
@@ -58,6 +77,20 @@ const harness = vi.hoisted(() => ({
     dispose: vi.fn(),
   },
   gestures: { dispose: vi.fn() },
+  libraryOptions: null as {
+    resolveTexture?: (guid: string) => unknown;
+    functions?: () => unknown;
+  } | null,
+  content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
+  readAssetChunk: vi.fn(
+    async (_path: string, chunkId: string) =>
+      chunkId === "pixels" ? new Uint8Array([1, 2, 3, 4]) : null,
+  ),
+  textureAsset: {
+    path: "assets/albedo.babasset",
+    header: { guid: "tex-1", type: "Texture", name: "albedo" },
+  },
+  cachedTextures: [] as Array<{ guid: string; bytes: Uint8Array }>,
 }));
 
 const playValue = {
@@ -77,12 +110,19 @@ vi.mock("./document-context", () => ({
       {
         id: "material:assets/Rock.material.babasset",
         ref: { kind: "material", path: "assets/Rock.material.babasset" },
-        content: createDefaultMaterialDocument("Rock"),
+        get content() {
+          return harness.content;
+        },
       },
     ],
-    assetRegistry: { list: () => [], getByGuid: () => null },
+    assetRegistry: {
+      list: () => [harness.textureAsset],
+      getByGuid: (guid: string) =>
+        guid === harness.textureAsset.header.guid ? harness.textureAsset : null,
+    },
     projectDocument: { settings: { playFrameCap: 60 } },
-    readAssetChunk: vi.fn(),
+    readAssetChunk: (path: string, chunkId: string) =>
+      harness.readAssetChunk(path, chunkId),
   }),
 }));
 
@@ -90,7 +130,20 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
   return {
     ...actual,
+    ResourceCache: class {
+      getTexture(guid: string, _engine: unknown, bytes: Uint8Array) {
+        harness.cachedTextures.push({ guid, bytes });
+        return { name: guid };
+      }
+      dispose() {}
+    },
     MaterialLibrary: class {
+      constructor(options: {
+        resolveTexture?: (guid: string) => unknown;
+        functions?: () => unknown;
+      }) {
+        harness.libraryOptions = options;
+      }
       acquire() {
         return harness.acquireResult;
       }
@@ -163,6 +216,14 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.presenter.setFrozen.mockReset();
     harness.presenter.dispose.mockReset();
     harness.gestures.dispose.mockReset();
+    harness.libraryOptions = null;
+    harness.cachedTextures = [];
+    harness.content = createDefaultMaterialDocument("Rock");
+    harness.readAssetChunk.mockClear();
+    harness.readAssetChunk.mockImplementation(
+      async (_path: string, chunkId: string) =>
+        chunkId === "pixels" ? new Uint8Array([1, 2, 3, 4]) : null,
+    );
   });
 
   afterEach(() => {
@@ -252,4 +313,44 @@ describe("MaterialEditingProvider preview isolation", () => {
       }
     },
   );
+
+  it("constructs the preview library with a texture resolver", async () => {
+    mount();
+    await waitFor(() => {
+      expect(harness.createScene).toHaveBeenCalled();
+    });
+    expect(typeof harness.libraryOptions?.resolveTexture).toBe("function");
+  });
+
+  it("loads Texture pixels then source and resolves them for preview compile", async () => {
+    harness.content = sampledRock();
+    harness.readAssetChunk.mockImplementation(
+      async (_path: string, chunkId: string) => {
+        if (chunkId === "pixels") return null;
+        if (chunkId === "source") return new Uint8Array([9, 9, 9]);
+        return null;
+      },
+    );
+    mount();
+    await waitFor(() => {
+      expect(harness.readAssetChunk).toHaveBeenCalledWith(
+        "assets/albedo.babasset",
+        "pixels",
+      );
+    });
+    await waitFor(() => {
+      expect(harness.readAssetChunk).toHaveBeenCalledWith(
+        "assets/albedo.babasset",
+        "source",
+      );
+    });
+    await waitFor(() => {
+      expect(harness.libraryOptions?.resolveTexture?.("tex-1")).toEqual({
+        name: "tex-1",
+      });
+    });
+    expect(harness.cachedTextures).toEqual([
+      { guid: "tex-1", bytes: new Uint8Array([9, 9, 9]) },
+    ]);
+  });
 });

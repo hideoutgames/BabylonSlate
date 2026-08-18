@@ -5,7 +5,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | Document | Purpose |
 | --- | --- |
 | [Overview](overview.md) | Package map and data flow |
-| [Containers](containers.md) | `.babasset` / `.babproject` wire formats |
+| [Containers](containers.md) | `.babasset` / project folder / `.babplugin` wire formats |
 | [VFS](vfs.md) | Binary VFS, storage tiers, app settings |
 | [Command layer](command-layer.md) | Undo, journal, dirty saves |
 | [Asset registry](asset-registry.md) | Header-only guid index and importers |

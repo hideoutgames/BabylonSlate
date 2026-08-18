@@ -137,6 +137,22 @@ describe("listUnconnectedLiteralPinDefaults", () => {
     );
     expect(listed.map((entry) => entry.pinId)).toEqual(["b"]);
   });
+
+  it("reads a stored default by pin id when the display name is Title Case", () => {
+    const listed = listUnconnectedLiteralPinDefaults(
+      [pin("location", "Location", "in", VEC3)],
+      { "default:location": { x: 1, y: 2, z: 3 } },
+      new Set(),
+    );
+    expect(listed).toEqual([
+      {
+        pinId: "location",
+        name: "Location",
+        type: VEC3,
+        value: { x: 1, y: 2, z: 3 },
+      },
+    ]);
+  });
 });
 
 describe("pin default editor conversions", () => {

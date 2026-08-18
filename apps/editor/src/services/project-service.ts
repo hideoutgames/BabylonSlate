@@ -89,6 +89,7 @@ import {
   SEARCH_NODE_TITLES,
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
+import { normalizeProjectFolderName } from "../lib/create-project";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
@@ -458,12 +459,10 @@ export class ProjectService {
   ): Promise<ProjectLoadResult> {
     const projectName =
       name && name.trim()
-        ? name.endsWith(".babproject")
-          ? name
-          : `${name}.babproject`
+        ? normalizeProjectFolderName(name)
         : isTestModeEnabled()
           ? TEST_PROJECT_NAME
-          : "MyGame.babproject";
+          : "MyGame";
     if (options?.pickFolder) {
       await this.storage.pickProjectFolder();
       if (await this.storage.exists(PROJECT_FILE)) {
@@ -483,9 +482,7 @@ export class ProjectService {
     name: string;
     pickFolder?: boolean;
   }): Promise<ProjectLoadResult> {
-    const projectName = options.name.endsWith(".babproject")
-      ? options.name
-      : `${options.name}.babproject`;
+    const projectName = normalizeProjectFolderName(options.name);
     if (options.pickFolder) {
       await this.storage.pickProjectFolder();
     } else {

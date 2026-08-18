@@ -67,6 +67,34 @@ describe("struct nodes", () => {
     expect(brk.find((pin) => pin.id === "Health")?.type).toEqual(INT);
   });
 
+  it("Title Cases Structure field pin displays while ids stay the field name", () => {
+    const pins = createDefaultNodeRegistry().get("struct.make")!.pins({
+      structGuid: "struct-stats",
+      fields: [{ name: "maxHealth", typeId: "int" }],
+    });
+    expect(pins.find((pin) => pin.id === "maxHealth")).toMatchObject({
+      id: "maxHealth",
+      name: "Max Health",
+    });
+    expect(pins.find((pin) => pin.id === "out")?.name).toBe("Out");
+  });
+
+  it("Title Cases engine Rotator, Color, and Transform pin displays", () => {
+    const registry = createDefaultNodeRegistry();
+    const rotator = registry.get("struct.makeRotator")!.pins({});
+    expect(
+      rotator.filter((pin) => pin.direction === "in").map((pin) => pin.name),
+    ).toEqual(["Pitch", "Yaw", "Roll"]);
+    const color = registry.get("struct.breakColor")!.pins({});
+    expect(
+      color.filter((pin) => pin.direction === "out").map((pin) => pin.name),
+    ).toEqual(["R", "G", "B", "A"]);
+    const transform = registry.get("struct.makeTransform")!.pins({});
+    expect(
+      transform.filter((pin) => pin.direction === "in").map((pin) => pin.name),
+    ).toEqual(["Location", "Rotation", "Scale"]);
+  });
+
   it("compiles Make Structure to an object literal keyed by field name", () => {
     const registry = createDefaultNodeRegistry();
     const properties = {
