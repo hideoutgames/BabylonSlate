@@ -19,6 +19,8 @@ import {
   assetRef,
   classRef,
   objectRef,
+  enumRef,
+  structRef,
 } from "./types";
 import { diagnostic } from "./diagnostics";
 
@@ -726,5 +728,126 @@ describe("validateGraphs", () => {
       interfaceImplementation: true,
     });
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
+  });
+
+  it("errors unbound struct and enum pins and members", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "get",
+          typeId: "variables.get",
+          position: { x: 0, y: 0 },
+          pins: [pin("value", "Stats", "out", structRef(""))],
+          properties: {
+            variableId: "var-1",
+            variableName: "Stats",
+            typeId: "struct",
+            classId: "Hero",
+          },
+        },
+        {
+          id: "make",
+          typeId: "enum.make",
+          position: { x: 80, y: 0 },
+          pins: [pin("out", "out", "out", enumRef(""))],
+          properties: {},
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      classId: "Hero",
+      members: [
+        {
+          id: "var-1",
+          name: "Stats",
+          kind: "variable",
+          classId: "Hero",
+          typeId: "struct",
+        },
+      ],
+    });
+    expect(diags.some((d) => d.code === "type.unbound_struct")).toBe(true);
+    expect(diags.some((d) => d.code === "type.unbound_enum")).toBe(true);
+  });
+
+  it("errors unknown struct and enum guids when a known-guid table is provided", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "get",
+          typeId: "variables.get",
+          position: { x: 0, y: 0 },
+          pins: [pin("value", "Stats", "out", structRef("missing-struct"))],
+          properties: {
+            variableId: "var-1",
+            variableName: "Stats",
+            typeId: "struct",
+            typeClassId: "missing-struct",
+            classId: "Hero",
+          },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      classId: "Hero",
+      knownGuids: new Set(["struct-stats", "enum-team"]),
+      members: [
+        {
+          id: "var-1",
+          name: "Stats",
+          kind: "variable",
+          classId: "Hero",
+          typeId: "struct",
+          typeClassId: "missing-struct",
+        },
+      ],
+    });
+    expect(diags.some((d) => d.code === "ref.unknown_guid")).toBe(true);
+    expect(diags.some((d) => d.code === "member.unknown_class")).toBe(false);
+  });
+
+  it("flags a type mismatch between different Structure guids", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "a",
+          typeId: "variables.get",
+          position: { x: 0, y: 0 },
+          pins: [pin("value", "Health", "out", structRef("struct-a"))],
+          properties: {},
+        },
+        {
+          id: "b",
+          typeId: "variables.set",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("value", "Damage", "in", structRef("struct-b")),
+          ],
+          properties: { implicitSelf: true },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "a",
+          sourcePinId: "value",
+          targetNodeId: "b",
+          targetPinId: "value",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "type.mismatch")).toBe(true);
   });
 });

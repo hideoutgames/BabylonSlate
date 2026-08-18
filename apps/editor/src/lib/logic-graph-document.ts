@@ -8,6 +8,15 @@ import {
   animGraphMembersFromVariables,
   parseAnimGraphDocument,
 } from "@babylonslate/anim-graph";
+import {
+  ENGINE_ENUMS,
+  ENGINE_STRUCTS,
+  mergeEngineTypeSchemas,
+  type EnumMember,
+  type StructField,
+  type TypeSchemas,
+} from "@babylonslate/scripting";
+import { asEnumAsset, asStructureAsset } from "./type-asset-payload";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -468,4 +477,173 @@ export function commitLogicGraph(
     }
   }
   return { kind: "graph", graph: next };
+}
+
+export type GraphStructureEntry = {
+  guid: string;
+  name: string;
+  fields: StructField[];
+};
+
+export type GraphEnumEntry = {
+  guid: string;
+  name: string;
+  members: EnumMember[];
+};
+
+export type GraphTypeAssetCatalog = {
+  structures: GraphStructureEntry[];
+  enums: GraphEnumEntry[];
+};
+
+function structureEntryFromPayload(
+  payload: Record<string, unknown>,
+  fallbackGuid: string,
+  fallbackName: string,
+): GraphStructureEntry | null {
+  const parsed = asStructureAsset({
+    ...payload,
+    guid:
+      typeof payload.guid === "string" && payload.guid.trim()
+        ? payload.guid
+        : fallbackGuid,
+    name:
+      typeof payload.name === "string" && payload.name.trim()
+        ? payload.name
+        : fallbackName,
+  });
+  if (!parsed.guid) return null;
+  return { guid: parsed.guid, name: parsed.name, fields: parsed.fields };
+}
+
+function enumEntryFromPayload(
+  payload: Record<string, unknown>,
+  fallbackGuid: string,
+  fallbackName: string,
+): GraphEnumEntry | null {
+  const parsed = asEnumAsset({
+    ...payload,
+    guid:
+      typeof payload.guid === "string" && payload.guid.trim()
+        ? payload.guid
+        : fallbackGuid,
+    name:
+      typeof payload.name === "string" && payload.name.trim()
+        ? payload.name
+        : fallbackName,
+  });
+  if (!parsed.guid) return null;
+  return { guid: parsed.guid, name: parsed.name, members: parsed.members };
+}
+
+/** Closed Structure/Enum headers, open documents, and the engine registry. */
+export function collectGraphTypeAssets(options: {
+  assets: ReadonlyArray<{
+    header: {
+      type: string;
+      guid?: string;
+      name: string;
+      payload?: Record<string, unknown>;
+    };
+  }>;
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string };
+    content: unknown;
+  }>;
+}): GraphTypeAssetCatalog {
+  const structures = new Map<string, GraphStructureEntry>();
+  const enums = new Map<string, GraphEnumEntry>();
+  for (const entry of ENGINE_STRUCTS) {
+    structures.set(entry.id, {
+      guid: entry.id,
+      name: entry.name,
+      fields: [...entry.fields],
+    });
+  }
+  for (const entry of ENGINE_ENUMS) {
+    enums.set(entry.id, {
+      guid: entry.id,
+      name: entry.name,
+      members: [...entry.members],
+    });
+  }
+  for (const asset of options.assets) {
+    if (asset.header.type === "Structure") {
+      const payload = asset.header.payload ?? {};
+      const entry = structureEntryFromPayload(
+        payload,
+        asset.header.guid ?? "",
+        asset.header.name,
+      );
+      if (entry) structures.set(entry.guid, entry);
+    }
+    if (asset.header.type === "Enum") {
+      const payload = asset.header.payload ?? {};
+      const entry = enumEntryFromPayload(
+        payload,
+        asset.header.guid ?? "",
+        asset.header.name,
+      );
+      if (entry) enums.set(entry.guid, entry);
+    }
+  }
+  for (const doc of options.openDocuments) {
+    if (!isRecord(doc.content)) continue;
+    if (doc.ref.kind === "structure") {
+      const entry = structureEntryFromPayload(
+        doc.content,
+        typeof doc.content.guid === "string" ? doc.content.guid : "",
+        typeof doc.content.name === "string" ? doc.content.name : "Structure",
+      );
+      if (entry) structures.set(entry.guid, entry);
+    }
+    if (doc.ref.kind === "enum") {
+      const entry = enumEntryFromPayload(
+        doc.content,
+        typeof doc.content.guid === "string" ? doc.content.guid : "",
+        typeof doc.content.name === "string" ? doc.content.name : "Enum",
+      );
+      if (entry) enums.set(entry.guid, entry);
+    }
+  }
+  return {
+    structures: [...structures.values()],
+    enums: [...enums.values()],
+  };
+}
+
+export function typeSchemasFromGraphAssets(
+  catalog: GraphTypeAssetCatalog,
+): TypeSchemas {
+  return mergeEngineTypeSchemas({
+    structs: Object.fromEntries(
+      catalog.structures.map((entry) => [
+        entry.guid,
+        { name: entry.name, fields: entry.fields },
+      ]),
+    ),
+    enums: Object.fromEntries(
+      catalog.enums.map((entry) => [
+        entry.guid,
+        { name: entry.name, members: entry.members },
+      ]),
+    ),
+  });
+}
+
+export function typeAssetPickerEntries(
+  catalog: GraphTypeAssetCatalog,
+): Array<{ guid: string; name: string; type: string }> {
+  return [
+    ...catalog.structures.map((entry) => ({
+      guid: entry.guid,
+      name: entry.name,
+      type: "Structure",
+    })),
+    ...catalog.enums.map((entry) => ({
+      guid: entry.guid,
+      name: entry.name,
+      type: "Enum",
+    })),
+  ];
 }

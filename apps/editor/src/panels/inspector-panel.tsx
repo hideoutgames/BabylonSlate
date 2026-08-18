@@ -21,6 +21,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
@@ -58,11 +59,14 @@ import {
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
+import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
   collectEnumMemberNames,
   commandParameterRows,
   commandParametersFromRows,
+  connectedEnumGuidFromSerialized,
   developmentOnlyPropertyRows,
+  enumNodePropertyRows,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
   parameterRowsFromPinList,
@@ -71,13 +75,15 @@ import {
   pinsFromNodeData,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
-import { defaultJsValue, pinDefaultPropertyKey } from "@babylonslate/scripting";
-import { pinTypeForMember } from "@babylonslate/scripting-nodes";
+import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import {
   commitLogicGraph,
+  collectGraphTypeAssets,
   serializedGraphFromDocument,
+  typeAssetPickerEntries,
+  typeSchemasFromGraphAssets,
 } from "../lib/logic-graph-document";
 
 function memberPinRows(
@@ -119,16 +125,23 @@ function ClassMemberDetails({
   member,
   interfaceAssets,
   classEntries,
+  typeAssets,
+  schemas,
+  enumMembers,
   onChange,
 }: {
   graph: SerializedGraph;
   member: GraphClassMember;
   interfaceAssets: Array<{ guid: string; name: string; type: string }>;
   classEntries: ClassPickerEntry[];
+  typeAssets: Array<{ guid: string; name: string; type: string }>;
+  schemas: ReturnType<typeof typeSchemasFromGraphAssets>;
+  enumMembers: Record<string, string[]>;
   onChange: (next: SerializedGraph) => void;
 }) {
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
   };
@@ -137,7 +150,18 @@ function ClassMemberDetails({
     const typeId = member.typeId ?? "float";
     const isObject = typeId === "object";
     const isClass = typeId === "class";
-    const typeClassId = member.typeClassId?.trim() || "BObject";
+    const isStruct = typeId === "struct";
+    const isEnum = typeId === "enum";
+    const typeClassId =
+      member.typeClassId?.trim() || (isObject || isClass ? "BObject" : "");
+    const typeAsset = typeAssets.find((asset) => asset.guid === typeClassId);
+    const typeAssetIdentity = assetRowIdentity(
+      typeAsset
+        ? { name: typeAsset.name, type: typeAsset.type }
+        : typeClassId
+          ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+          : undefined,
+    );
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -153,8 +177,15 @@ function ClassMemberDetails({
               value: member.name,
               onChange: (name) => commit({ name }),
             },
-            ...variableDefaultPropertyRows(typeId, member.defaultValue, (value) =>
-              commit({ defaultValue: value }),
+            ...variableDefaultPropertyRows(
+              typeId,
+              member.defaultValue,
+              (value) => commit({ defaultValue: value }),
+              {
+                typeClassId: member.typeClassId,
+                schemas,
+                enumMembers,
+              },
             ),
           ]}
         />
@@ -163,20 +194,19 @@ function ClassMemberDetails({
           <PinTypePicker
             value={typeId}
             onChange={(nextType) => {
+              const keepParam = keepsTypeClassId(nextType);
+              const nextClassId = keepParam ? member.typeClassId : undefined;
               const next: Partial<GraphClassMember> = {
                 typeId: nextType,
                 defaultValue:
                   nextType === "object"
                     ? undefined
                     : nextType === "class"
-                      ? (member.typeClassId ?? "BObject")
-                      : defaultJsValue(pinTypeForMember(nextType)),
+                      ? (nextClassId ?? "BObject")
+                      : defaultValueForMember(nextType, nextClassId, schemas),
               };
-              if (nextType !== "object" && nextType !== "class") {
-                next.typeClassId = undefined;
-              } else if (member.typeClassId) {
-                next.typeClassId = member.typeClassId;
-              }
+              if (!keepParam) next.typeClassId = undefined;
+              else if (member.typeClassId) next.typeClassId = member.typeClassId;
               commit(next);
             }}
             data-testid="inspector-member-type"
@@ -200,7 +230,28 @@ function ClassMemberDetails({
               )}
             </Button>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex flex-col gap-1">
+            <div className="text-sm font-medium">
+              {isEnum ? "Enum Type" : isStruct ? "Structure Type" : "Type Asset"}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto w-full justify-start"
+              disabled={!isStruct && !isEnum}
+              data-testid="inspector-member-type-asset"
+              onClick={() => {
+                if (isStruct || isEnum) setTypeAssetPickerOpen(true);
+              }}
+            >
+              {selectedPickerIdentity(
+                typeAssetIdentity,
+                typeClassId || "Pick type",
+              )}
+            </Button>
+          </div>
+        )}
         <ClassPicker
           open={classPickerOpen}
           onOpenChange={setClassPickerOpen}
@@ -215,6 +266,22 @@ function ClassMemberDetails({
             setClassPickerOpen(false);
           }}
           data-testid="inspector-member-class-picker"
+        />
+        <AssetPicker
+          open={typeAssetPickerOpen}
+          onOpenChange={setTypeAssetPickerOpen}
+          assets={typeAssets}
+          allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+          allowNone
+          title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+          onPick={(guid) => {
+            commit({
+              typeClassId: guid ?? undefined,
+              defaultValue: defaultValueForMember(typeId, guid ?? undefined, schemas),
+            });
+            setTypeAssetPickerOpen(false);
+          }}
+          data-testid="inspector-member-type-asset-picker"
         />
       </div>
     );
@@ -274,6 +341,7 @@ function ClassMemberDetails({
           rows={inputRows}
           types={FUNCTION_PIN_PICKER_TYPES}
           classEntries={classEntries}
+          typeAssets={typeAssets}
           testIdPrefix="class-fn-in"
           data-testid="inspector-member-inputs"
           readOnly={lockSignature}
@@ -284,6 +352,7 @@ function ClassMemberDetails({
           rows={outputRows}
           types={FUNCTION_PIN_PICKER_TYPES}
           classEntries={classEntries}
+          typeAssets={typeAssets}
           testIdPrefix="class-fn-out"
           data-testid="inspector-member-outputs"
           readOnly={lockSignature}
@@ -587,6 +656,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     type: asset.header.type,
     path: asset.path,
   }));
+  const typeCatalog = collectGraphTypeAssets({
+    assets: assetRegistry?.list() ?? [],
+    openDocuments,
+  });
+  const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
+  const typeAssets = typeAssetPickerEntries(typeCatalog);
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const assetLabel = (guid: string | null | undefined) => {
@@ -659,6 +734,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             "BObject",
             assetRegistry?.list() ?? [],
             { editorGraph },
+          )}
+          typeAssets={typeAssets}
+          schemas={typeSchemas}
+          enumMembers={collectEnumMemberNames(
+            openDocuments,
+            assetRegistry?.list() ?? [],
           )}
           onChange={persistGraph}
         />
@@ -788,8 +869,23 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             ?.name ?? pinId;
         setAssetPinPick({ pinId, name, assetType });
       },
+      schemas: typeSchemas,
     },
   );
+  const isEnumNode = selectedNode.type.startsWith("enum.");
+  const enumNodeRows = isEnumNode
+    ? enumNodePropertyRows(
+        selectedNode.type,
+        selectedNode.data,
+        updateNodeData,
+        {
+          enums: typeCatalog.enums,
+          typeSelectDisabled: Boolean(
+            connectedEnumGuidFromSerialized(graph, selectedNode.id),
+          ),
+        },
+      )
+    : [];
   const logRows = isLog
     ? logNodePropertyRows(selectedNode.data, updateNodeData)
     : [];
@@ -810,6 +906,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           rows={developmentOnlyRows}
           data-testid="inspector-development-only"
         />
+        {enumNodeRows.length > 0 ? (
+          <PropertyGrid
+            rows={enumNodeRows}
+            data-testid="inspector-enum-properties"
+          />
+        ) : null}
         {pinDefaultRows.length > 0 ? (
           <PropertyGrid
             title="Defaults"
@@ -855,7 +957,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         {isCommandRun ? (
           <>
             <FieldGroup>
-              <Field>
+              <Field
+                data-invalid={
+                  isReservedConsoleCommandName(
+                    String(selectedNode.data.commandName ?? ""),
+                  ) || undefined
+                }
+              >
                 <FieldLabel htmlFor="command-name">Command Name</FieldLabel>
                 <Input
                   id="command-name"
@@ -866,6 +974,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                     updateNodeData({ commandName: event.target.value })
                   }
                 />
+                {isReservedConsoleCommandName(
+                  String(selectedNode.data.commandName ?? ""),
+                ) ? (
+                  <FieldError data-testid="command-name-reserved">
+                    Command Name '{String(selectedNode.data.commandName ?? "").trim()}' is reserved by the engine
+                  </FieldError>
+                ) : null}
               </Field>
               <Field>
                 <FieldLabel htmlFor="command-description">
@@ -913,6 +1028,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               assetRegistry?.list() ?? [],
               { editorGraph },
             )}
+            typeAssets={typeAssets}
             testIdPrefix="event-out"
             data-testid="inspector-event-outputs"
             onChange={(rows) => {

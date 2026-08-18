@@ -7,6 +7,7 @@ import {
   TransformNode,
   Vector3,
   VertexBuffer,
+  type Camera,
 } from "@babylonjs/core";
 import {
   createActor,
@@ -88,6 +89,19 @@ function maxAbs(points: readonly Vector3[], axis: "x" | "y" | "z"): number {
   return points.reduce((max, point) => Math.max(max, Math.abs(point[axis])), 0);
 }
 
+function projectionAspect(camera: Camera): number {
+  const m = camera.getProjectionMatrix(true).m;
+  return m[5]! / m[0]!;
+}
+
+function previewCamera(scene: { cameras: Camera[] }): Camera {
+  const camera = scene.cameras.find((entry) =>
+    entry.name.startsWith("debugPreviewCam:"),
+  );
+  if (!camera) throw new Error("preview camera missing");
+  return camera;
+}
+
 describe("EditorDebugOverlay", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
     [];
@@ -137,6 +151,54 @@ describe("EditorDebugOverlay", () => {
     overlay.sync({ sceneData, selectedActorIds: [] });
     expect(overlay.frustumMesh).toBeNull();
     expect(overlay.previewTexture).toBeNull();
+    overlay.dispose();
+  });
+
+  it("pins the preview camera projection to 320x180 even when the engine canvas is tall", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(200);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(800);
+    const overlay = new EditorDebugOverlay(scene);
+    overlay.sync({
+      sceneData: sceneWith([cameraActor()]),
+      selectedActorIds: ["cam"],
+    });
+    expect(projectionAspect(previewCamera(scene))).toBeCloseTo(
+      CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
+      5,
+    );
+    overlay.dispose();
+  });
+
+  it("sizes the frustum and ortho preview to the 16:9 PIP, not the engine canvas", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(200);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(800);
+    const overlay = new EditorDebugOverlay(scene);
+    overlay.sync({
+      sceneData: sceneWith([
+        cameraActor({
+          properties: {
+            projectionMode: "orthographic",
+            orthographicSize: 5,
+            fieldOfView: 60,
+            nearClip: 1,
+            farClip: 20,
+          },
+        }),
+      ]),
+      selectedActorIds: ["cam"],
+    });
+    const preview = previewCamera(scene);
+    expect(preview.orthoRight! / preview.orthoTop!).toBeCloseTo(
+      CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
+      5,
+    );
+    const points = frustumWorldPoints(overlay.frustumMesh as TransformNode);
+    expect(maxAbs(points, "x") / maxAbs(points, "y")).toBeCloseTo(
+      CAMERA_PREVIEW_WIDTH / CAMERA_PREVIEW_HEIGHT,
+      5,
+    );
     overlay.dispose();
   });
 

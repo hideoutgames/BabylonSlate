@@ -80,6 +80,7 @@ export {
   pinPickerColorVar,
   pinPickerLabel,
   isPinPickerType,
+  pinPickerKeepsTypeClassId,
   type PinPickerType,
   type FunctionPinPickerType,
 } from "./pin-types";

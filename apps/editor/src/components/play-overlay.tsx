@@ -13,12 +13,14 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { TracePayload } from "@babylonslate/debugger";
+import { applyInspectSelectionToConsoleLine } from "@babylonslate/runtime";
 import type { Engine } from "@babylonjs/core";
 import {
   startPlaySession,
   type PlaySession,
   type PlaySessionResult,
 } from "../services/play-session";
+import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
   applyLiveEngineSettings,
@@ -32,7 +34,7 @@ import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
-import { playConsoleCommands } from "../lib/play-console";
+import { playConsoleCommands, playConsoleCompletionContext } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
@@ -202,6 +204,10 @@ export function PlayOverlay({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [statsHighlight, setStatsHighlight] = useState<StatsHudHighlight | null>(
+    null,
+  );
+  const inspectSelectionRef = useRef<string | null>(null);
   const userPausedRef = useRef(pauseOnPlay);
   const [trace, setTrace] = useState<TracePayload | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
@@ -290,10 +296,21 @@ export function PlayOverlay({
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
   const inspectSnapshot = useInspectWorldPoll(
-    nextPlayInspectorOpen(inspectorOpen, overlayInspector),
+    consoleOpen || nextPlayInspectorOpen(inspectorOpen, overlayInspector),
     () =>
       sessionRef.current?.inspectWorld() ??
       Promise.resolve({ tickIndex: 0, nodes: [] }),
+  );
+  const completionContext = useMemo(
+    () =>
+      playConsoleCompletionContext({
+        commands,
+        sceneAssetGuid,
+        scene,
+        scenes,
+        inspectNodes: inspectSnapshot.nodes,
+      }),
+    [commands, sceneAssetGuid, scene, scenes, inspectSnapshot],
   );
 
   useEffect(() => {
@@ -371,6 +388,26 @@ export function PlayOverlay({
       audioReverbBytes: audioReverbBytesRef.current,
       audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,
+      onSessionPaused: (next) => {
+        userPausedRef.current = next;
+        setPaused(next);
+      },
+      onShowFps: (enabled) => {
+        setStatsOpen(enabled);
+        if (!enabled) setStatsHighlight(null);
+      },
+      onStatHighlight: (name, enabled) => {
+        setStatsOpen(true);
+        setStatsHighlight(
+          enabled &&
+            (name === "unit" ||
+              name === "memory" ||
+              name === "draws" ||
+              name === "threads")
+            ? name
+            : null,
+        );
+      },
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {
         setHiddenWidgetIds((prev) =>
@@ -559,6 +596,7 @@ export function PlayOverlay({
             textureCount={textureCount}
             draws={draws}
             bridgeMessagesPerSec={bridgeRate}
+            highlight={statsHighlight}
           />
         }
         extras={
@@ -642,15 +680,23 @@ export function PlayOverlay({
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
+        completionContext={completionContext}
         onExecute={(line) =>
-          sessionRef.current?.executeConsoleCommand(line) ??
-          Promise.resolve({ success: false, output: "not playing" })
+          sessionRef.current?.executeConsoleCommand(
+            applyInspectSelectionToConsoleLine(
+              line,
+              inspectSelectionRef.current,
+            ),
+          ) ?? Promise.resolve({ success: false, output: "not playing" })
         }
       />
       <DebugInspectDialog
         open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}
         onOpenChange={setInspectorOpen}
         snapshot={inspectSnapshot}
+        onSelectedIdChange={(id) => {
+          inspectSelectionRef.current = id;
+        }}
       />
       {trace ? (
         <div

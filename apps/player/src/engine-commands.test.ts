@@ -87,6 +87,64 @@ describe("applyPlayerEngineCommand", () => {
     ]);
   });
 
+  it("forwards Play hardware scaling and frame cap commands", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setFrameCap", fps: 30 }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setRenderQuality", level: "low" }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "setResolutionScale",
+        scale: 1.5,
+      }),
+    ).toBe(true);
+    expect(applied).toEqual([
+      "setFrameCap",
+      "setRenderQuality",
+      "setResolutionScale",
+    ]);
+  });
+
+  it("forwards setFreeCam onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setFreeCam", enabled: true }),
+    ).toBe(true);
+    expect(applied).toEqual(["setFreeCam"]);
+  });
+
+  it("forwards Play visualization commands onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setWireframe", enabled: true }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "debugColliders",
+        colliders: [],
+      }),
+    ).toBe(true);
+    expect(applied).toEqual(["setWireframe", "debugColliders"]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

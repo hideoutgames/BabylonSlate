@@ -1,5 +1,9 @@
 import type { PhysicsWorldKind, ViewportMode } from "@babylonslate/core";
 import {
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+} from "@babylonslate/core";
+import {
   parseColliderProperties,
   parseRigidBodyProperties,
 } from "@babylonslate/physics";
@@ -110,8 +114,8 @@ export function defaultPropertiesFor(
       return { ...defaultNavMeshBlockerComponentProperties() };
     case "CameraComponent":
       return {
-        fieldOfView: 60,
-        orthographicSize: 5,
+        fieldOfView: DEFAULT_CAMERA_FIELD_OF_VIEW,
+        orthographicSize: DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
         projectionMode: viewportMode === "2d" ? "orthographic" : "perspective",
         nearClip: 0.1,
         farClip: 1000,

@@ -87,6 +87,87 @@ describe("PinListEditor", () => {
     ]);
   });
 
+  it("shows a Structure AssetPicker when typeAssets is passed even if empty", () => {
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "stats",
+            type: "struct",
+            direction: "in",
+          },
+        ]}
+        selectedId="a"
+        typeAssets={[]}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("pin-a-type-asset")).toBeTruthy();
+  });
+
+  it("keeps typeClassId when switching to struct or enum and shows an asset picker", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "stats",
+            type: "struct",
+            direction: "in",
+            typeClassId: "struct-stats",
+          },
+        ]}
+        selectedId="a"
+        typeAssets={[
+          { guid: "struct-stats", name: "Stats", type: "Structure" },
+          { guid: "enum-team", name: "Team", type: "Enum" },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("pin-a-type-asset")).toBeTruthy();
+    expect(screen.getByTestId("pin-a-type-asset").textContent).toContain("Stats");
+    screen.getByTestId("pin-a-type-asset").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-struct-stats")).toBeTruthy();
+    });
+  });
+
+  it("does not clear typeClassId when switching the pin type to enum", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "team",
+            type: "object",
+            direction: "in",
+            typeClassId: "Hero",
+          },
+        ]}
+        selectedId="a"
+        classEntries={[{ id: "Hero", name: "Hero" }]}
+        typeAssets={[{ guid: "enum-team", name: "Team", type: "Enum" }]}
+        onChange={onChange}
+      />,
+    );
+    screen.getByTestId("pin-a-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-enum")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-enum").click();
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: "a",
+        type: "enum",
+        typeClassId: "Hero",
+      }),
+    ]);
+  });
+
   it("adds an input or output pin", () => {
     const onChange = vi.fn();
     render(

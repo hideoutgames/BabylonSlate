@@ -23,28 +23,21 @@ export function applyPlayPreviewCanvasLayout(options: {
   const { overlay, canvas, followSystem, aspectWidth, aspectHeight } = options;
   const framebuffer = playFramebufferSize(options.render, options.liveSize);
   if (framebuffer) {
-    const blackBars = options.render?.blackBars === true;
-    overlay.classList.toggle("bg-black", blackBars);
-    overlay.classList.toggle("bg-background", !blackBars);
+    overlay.classList.toggle("bg-black", true);
+    overlay.classList.toggle("bg-background", false);
     overlay.classList.toggle("items-center", true);
     overlay.classList.toggle("justify-center", true);
     canvas.classList.toggle("h-full", false);
     canvas.classList.toggle("w-full", false);
-    if (blackBars) {
-      const fitted = fitContainedRect(
-        overlay.clientWidth,
-        overlay.clientHeight,
-        framebuffer.width,
-        framebuffer.height,
-      );
-      canvas.style.width = `${fitted.width}px`;
-      canvas.style.height = `${fitted.height}px`;
-      canvas.style.objectFit = "";
-    } else {
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
-      canvas.style.objectFit = "fill";
-    }
+    const fitted = fitContainedRect(
+      overlay.clientWidth,
+      overlay.clientHeight,
+      framebuffer.width,
+      framebuffer.height,
+    );
+    canvas.style.width = `${fitted.width}px`;
+    canvas.style.height = `${fitted.height}px`;
+    canvas.style.objectFit = "";
     return;
   }
   overlay.classList.toggle("bg-black", !followSystem);

@@ -43,4 +43,13 @@ describe("StatsHud", () => {
     render(<StatsHud fps={60} scriptMs={1} physicsMs={1} draws={401} />);
     expect(screen.getByTestId("stats-hud-draw-warn")).toBeTruthy();
   });
+
+  it("marks the highlighted stats row", () => {
+    render(
+      <StatsHud fps={60} scriptMs={1} physicsMs={1} draws={12} highlight="unit" />,
+    );
+    expect(screen.getByTestId("stats-hud").getAttribute("data-highlight")).toBe(
+      "unit",
+    );
+  });
 });

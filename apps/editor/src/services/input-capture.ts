@@ -28,7 +28,11 @@ export interface InputCaptureHandle {
  */
 export function attachInputCapture(
   canvas: HTMLCanvasElement,
-  options: { ring?: InputRingBuffer } = {},
+  options: {
+    ring?: InputRingBuffer;
+    /** When true, pointer and keyboard stay off the game ring (free cam). */
+    skipPointerAndKeyboard?: () => boolean;
+  } = {},
 ): InputCaptureHandle {
   const ring = options.ring ?? new InputRingBuffer(512);
   let tick = 0;
@@ -54,6 +58,7 @@ export function attachInputCapture(
         y: event.offsetY,
         button: event.button,
       };
+      if (options.skipPointerAndKeyboard?.()) return;
       push(raw);
     };
 
@@ -63,6 +68,7 @@ export function attachInputCapture(
   const cancel = onPointer("cancel");
 
   const onKey = (phase: "down" | "up") => (event: KeyboardEvent) => {
+    if (options.skipPointerAndKeyboard?.()) return;
     push({ kind: "key", tick, code: event.code, phase });
   };
   const keyDown = onKey("down");

@@ -5,6 +5,8 @@ import { SelectableText } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { cn } from "@babylonslate/ui/lib/utils";
 
+export type StatsHudHighlight = "unit" | "memory" | "draws" | "threads";
+
 export type StatsHudProps = {
   fps: number;
   scriptMs: number;
@@ -14,6 +16,7 @@ export type StatsHudProps = {
   textureCount?: number;
   draws?: number;
   bridgeMessagesPerSec?: number;
+  highlight?: StatsHudHighlight | null;
 };
 
 type Sample = { scriptMs: number; physicsMs: number };
@@ -37,6 +40,7 @@ export function StatsHud({
   textureCount,
   draws,
   bridgeMessagesPerSec,
+  highlight = null,
 }: StatsHudProps) {
   const latest = useRef({ scriptMs, physicsMs });
   latest.current = { scriptMs, physicsMs };
@@ -60,15 +64,34 @@ export function StatsHud({
     <div
       className="pointer-events-none flex flex-col gap-1 rounded-md bg-background/80 px-2 py-1 text-xs text-muted-foreground"
       data-testid="stats-hud"
+      data-highlight={highlight ?? ""}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span data-testid="play-fps" data-fps={String(fps)}>
+        <span
+          data-testid="play-fps"
+          data-fps={String(fps)}
+          className={cn(highlight === "threads" && "text-foreground ring-1 ring-ring")}
+        >
           <SelectableText>{fps} fps</SelectableText>
         </span>
-        <span data-testid="play-script-ms" data-ms={String(scriptMs)}>
+        <span
+          data-testid="play-script-ms"
+          data-ms={String(scriptMs)}
+          className={cn(
+            (highlight === "unit" || highlight === "threads") &&
+              "text-foreground ring-1 ring-ring",
+          )}
+        >
           <SelectableText>script {scriptMs.toFixed(2)} ms</SelectableText>
         </span>
-        <span data-testid="play-physics-ms" data-ms={String(physicsMs)}>
+        <span
+          data-testid="play-physics-ms"
+          data-ms={String(physicsMs)}
+          className={cn(
+            (highlight === "unit" || highlight === "threads") &&
+              "text-foreground ring-1 ring-ring",
+          )}
+        >
           <SelectableText>physics {physicsMs.toFixed(2)} ms</SelectableText>
         </span>
         {overBudget ? (
@@ -82,7 +105,10 @@ export function StatsHud({
           <span data-testid="stats-hud-within-budget">Tick OK</span>
         )}
         {memoryBytes != null ? (
-          <span data-testid="stats-hud-memory">
+          <span
+            data-testid="stats-hud-memory"
+            className={cn(highlight === "memory" && "text-foreground ring-1 ring-ring")}
+          >
             <SelectableText>mem {formatBytes(memoryBytes)}</SelectableText>
           </span>
         ) : null}
@@ -97,7 +123,11 @@ export function StatsHud({
           </span>
         ) : null}
         {draws != null ? (
-          <span data-testid="stats-hud-draws" data-draws={String(draws)}>
+          <span
+            data-testid="stats-hud-draws"
+            data-draws={String(draws)}
+            className={cn(highlight === "draws" && "text-foreground ring-1 ring-ring")}
+          >
             <SelectableText>draws {draws}</SelectableText>
           </span>
         ) : null}

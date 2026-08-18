@@ -66,7 +66,7 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
@@ -475,6 +475,12 @@ export function EditorChromeBar({
                         openDocuments,
                         classIdForPath: classIdForGraphPath,
                       });
+                      const typeSchemas = typeSchemasFromGraphAssets(
+                        collectGraphTypeAssets({
+                          assets: assetRegistry?.list() ?? [],
+                          openDocuments,
+                        }),
+                      );
                       return validateSerializedGraph(
                         doc.content as SerializedGraph,
                         {
@@ -487,6 +493,8 @@ export function EditorChromeBar({
                             parentOf,
                             Object.keys(classGraphs),
                           ),
+                          enums: typeSchemas.enums,
+                          structs: typeSchemas.structs,
                         },
                       );
                     }),

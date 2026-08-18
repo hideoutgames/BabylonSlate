@@ -39,6 +39,9 @@ export function asStructureAsset(
       return {
         name: typeof row.name === "string" ? row.name : "Field",
         typeId: typeof row.typeId === "string" ? row.typeId : "float",
+        ...(typeof row.typeClassId === "string" && row.typeClassId.trim()
+          ? { typeClassId: row.typeClassId.trim() }
+          : {}),
         ...(row.defaultValue !== undefined
           ? { defaultValue: row.defaultValue }
           : {}),
