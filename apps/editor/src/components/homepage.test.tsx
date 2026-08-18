@@ -56,11 +56,13 @@ function listedProject(
 }
 
 describe("Homepage branding", () => {
-  it("shows the Slate wordmark in the header", () => {
+  it("shows the Slate icon mark and product name, not the wordmark", () => {
     renderHomepage();
 
-    expect(screen.getByTestId("brand-logo")).toBeTruthy();
+    expect(screen.getByTestId("brand-icon")).toBeTruthy();
+    expect(screen.queryByTestId("brand-logo")).toBeNull();
     expect(screen.getByRole("heading", { name: "BabylonSlate" })).toBeTruthy();
+    expect(screen.getByTestId("engine-settings")).toBeTruthy();
   });
 
   it("offers a built-in 2D Create Project card next to Empty", async () => {
@@ -71,6 +73,76 @@ describe("Homepage branding", () => {
     expect(screen.getByTestId("create-project-width")).toBeTruthy();
     expect(screen.getByTestId("create-project-height")).toBeTruthy();
     expect(screen.getByTestId("create-project-black-bars")).toBeTruthy();
+  });
+});
+
+describe("Homepage Start strip", () => {
+  it("shows Empty, 2D, Open Folder, and Create Project on the Start strip", () => {
+    renderHomepage();
+
+    expect(screen.getByTestId("homepage-start")).toBeTruthy();
+    expect(screen.getByTestId("homepage-start-empty")).toBeTruthy();
+    expect(screen.getByTestId("homepage-start-2d")).toBeTruthy();
+    expect(screen.getByTestId("open-project").textContent).toMatch(/Open Folder/i);
+    expect(screen.getByTestId("create-project")).toBeTruthy();
+  });
+
+  it("gives Start template cards an image well", () => {
+    renderHomepage();
+
+    expect(
+      screen
+        .getByTestId("homepage-start-empty")
+        .querySelector('[data-testid="template-card-well"]'),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("homepage-start-2d")
+        .querySelector('[data-testid="template-card-well"]'),
+    ).toBeTruthy();
+  });
+
+  it("shows discovered templates in the Start strip", () => {
+    renderHomepage({ templates: [{ id: "arena", name: "Arena" }] });
+
+    expect(screen.getByTestId("homepage-start-template-arena")).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("homepage-start-template-arena")
+        .querySelector('[data-testid="template-card-well"]'),
+    ).toBeTruthy();
+  });
+
+  it("opens Create Project with Empty selected from the Start strip", async () => {
+    renderHomepage();
+    screen.getByTestId("homepage-start-empty").click();
+
+    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
+    expect(
+      screen.getByTestId("create-project-empty").getAttribute("data-selected"),
+    ).toBe("true");
+  });
+
+  it("opens Create Project with 2D selected from the Start strip", async () => {
+    renderHomepage();
+    screen.getByTestId("homepage-start-2d").click();
+
+    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
+    expect(
+      screen.getByTestId("create-project-2d").getAttribute("data-selected"),
+    ).toBe("true");
+  });
+
+  it("opens Create Project with a discovered template selected from the Start strip", async () => {
+    renderHomepage({ templates: [{ id: "arena", name: "Arena" }] });
+    screen.getByTestId("homepage-start-template-arena").click();
+
+    expect(await screen.findByTestId("create-project-dialog")).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("create-project-template-arena")
+        .getAttribute("data-selected"),
+    ).toBe("true");
   });
 });
 
@@ -99,6 +171,14 @@ describe("Homepage Create Project copy", () => {
 });
 
 describe("Homepage recent project rows", () => {
+  it("renders recent projects as card rows with image wells", () => {
+    renderHomepage({
+      projects: [listedProject("Game.babproject", "opfs")],
+    });
+    const row = screen.getByTestId("open-listed-project-Game.babproject");
+    expect(row.querySelector('[data-testid="project-card-well"]')).toBeTruthy();
+  });
+
   it("does not show storage API names when every listed project is the same tier", () => {
     renderHomepage({
       projects: [
@@ -164,5 +244,35 @@ describe("Homepage Create Project dialog", () => {
       "On this device.",
     );
     expect(dialog.textContent).toMatch(/letterboxes/i);
+  });
+
+  it("gives dialog template cards an image well", async () => {
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+    const empty = await screen.findByTestId("create-project-empty");
+    expect(empty.querySelector('[data-testid="template-card-well"]')).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("create-project-2d")
+        .querySelector('[data-testid="template-card-well"]'),
+    ).toBeTruthy();
+  });
+
+  it("uses App Documents and Choose Folder toggles on native", async () => {
+    getHostPlatform.mockReturnValue("ios");
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+
+    expect(await screen.findByTestId("create-project-app-documents")).toBeTruthy();
+    expect(screen.getByTestId("create-project-choose-folder")).toBeTruthy();
+    expect(screen.getByTestId("create-project-location").textContent).toMatch(
+      /App Documents/,
+    );
+
+    const choose = screen.getByTestId("create-project-choose-folder");
+    fireEvent.click(choose);
+    expect(screen.getByTestId("create-project-location").textContent).toMatch(
+      /Choose a folder/,
+    );
   });
 });
