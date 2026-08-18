@@ -135,6 +135,13 @@ describe("Play HUD instances", () => {
     );
   });
 
+  it("appends Apply order so a second HUD stays after the first", () => {
+    const first = applyPlayHudInstance([], "ui-1", "hud-a");
+    const stacked = applyPlayHudInstance(first, "ui-2", "hud-b");
+    expect(stacked.map((row) => row.instanceId)).toEqual(["ui-1", "ui-2"]);
+    expect(applyPlayHudInstance(stacked, "ui-1", "hud-a")).toEqual(stacked);
+  });
+
   it("derives classId from the asset guid when the apply command omits it", () => {
     expect(applyPlayHudInstance([], "ui-1", "hud-guid")).toEqual([
       {

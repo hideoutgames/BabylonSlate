@@ -72,6 +72,17 @@ describe("createPlayerUiHost", () => {
     expect(host.resolveImageUrl("tex-logo")).toBeNull();
   });
 
+  it("stacks later Apply instances after earlier ones so they paint and pick on top", () => {
+    const host = createTestHost();
+    host.apply("ui-1", "hud-1");
+    host.apply("ui-2", "hud-1");
+    const ids = host.recording.controls.map((control) => control.id);
+    expect(ids.indexOf("ui-1:canvas")).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf("ui-2:canvas")).toBeGreaterThan(ids.indexOf("ui-1:canvas"));
+    expect(ids.indexOf("ui-2:play-btn")).toBeGreaterThan(ids.indexOf("ui-1:play-btn"));
+    expect(host.instances().map((row) => row.instanceId)).toEqual(["ui-1", "ui-2"]);
+  });
+
   it("keeps two instances independent and honors instance-scoped visibility", () => {
     const host = createTestHost();
     host.apply("ui-1", "hud-1");

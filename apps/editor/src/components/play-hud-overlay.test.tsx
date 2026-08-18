@@ -386,6 +386,28 @@ describe("PlayHudOverlay fullscreen GUI persistence", () => {
     );
   });
 
+  it("reconciles later applied HUDs after earlier ones", () => {
+    const attached = mockAttachedGui();
+    const scene = {} as never;
+    render(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[
+          { instanceId: "ui-1", document: hudWith("Button") },
+          { instanceId: "ui-2", document: hudWith("Button") },
+        ]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    const controls = attached.host.reconcile.mock.calls.at(-1)?.[0] as Array<{
+      id: string;
+    }>;
+    const ids = controls.map((control) => control.id);
+    expect(ids.indexOf("ui-2:ctrl")).toBeGreaterThan(ids.indexOf("ui-1:ctrl"));
+  });
+
   it("resizes the existing HUD ADT instead of remounting", () => {
     const attached = mockAttachedGui();
     const scene = {} as never;
