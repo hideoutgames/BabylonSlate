@@ -13,6 +13,8 @@ export type DebugInspectNode = {
   parentId: string | null;
   transform?: ReturnType<typeof serializeTransform>;
   variables: Record<string, unknown>;
+  /** Class-def types for keys that exist in `variables`. Untyped keys are omitted. */
+  variableTypes?: Record<string, string>;
 };
 
 export type DebugInspectSnapshot = {
@@ -42,6 +44,20 @@ function sortedSanitizedVariables(
     out[key] = sanitizeInspectValue(variables.get(key));
   }
   return out;
+}
+
+function classVariableTypes(
+  world: World,
+  classId: string,
+  variables: Record<string, unknown>,
+): Record<string, string> | undefined {
+  const types: Record<string, string> = {};
+  for (const def of world.classRegistry.inheritedVariables(classId)) {
+    if (Object.hasOwn(variables, def.name)) {
+      types[def.name] = def.type;
+    }
+  }
+  return Object.keys(types).length > 0 ? types : undefined;
 }
 
 /** JSON-safe inspect values: primitives stay; BObject → guid/classId; cycles stringify. */
@@ -78,7 +94,9 @@ function visitActor(
   actor: Actor,
   children: Map<string, Actor[]>,
   nodes: DebugInspectNode[],
+  world: World,
 ): void {
+  const variables = sortedSanitizedVariables(actor.variables);
   nodes.push({
     id: actor.guid,
     kind: "actor",
@@ -86,9 +104,11 @@ function visitActor(
     classId: actor.classId,
     parentId: actorParentId(actor),
     transform: serializeTransform(actor.transform),
-    variables: sortedSanitizedVariables(actor.variables),
+    variables,
+    variableTypes: classVariableTypes(world, actor.classId, variables),
   });
   for (const component of actor.components) {
+    const componentVariables = sortedSanitizedVariables(component.variables);
     nodes.push({
       id: component.guid,
       kind: "component",
@@ -96,11 +116,16 @@ function visitActor(
       classId: component.classId,
       parentId: actor.guid,
       transform: serializeTransform(component.transform),
-      variables: sortedSanitizedVariables(component.variables),
+      variables: componentVariables,
+      variableTypes: classVariableTypes(
+        world,
+        component.classId,
+        componentVariables,
+      ),
     });
   }
   for (const child of children.get(actor.guid) ?? []) {
-    visitActor(child, children, nodes);
+    visitActor(child, children, nodes, world);
   }
 }
 
@@ -109,13 +134,15 @@ export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
   const nodes: DebugInspectNode[] = [];
   const gi = world.gameInstance;
   if (gi) {
+    const variables = sortedSanitizedVariables(gi.variables);
     nodes.push({
       id: gi.guid,
       kind: "gameInstance",
       label: inspectLabel(gi.variables, gi.classId),
       classId: gi.classId,
       parentId: null,
-      variables: sortedSanitizedVariables(gi.variables),
+      variables,
+      variableTypes: classVariableTypes(world, gi.classId, variables),
     });
   }
 
@@ -133,7 +160,7 @@ export function createDebugInspectSnapshot(world: World): DebugInspectSnapshot {
       roots.push(actor);
     }
   }
-  for (const root of roots) visitActor(root, children, nodes);
+  for (const root of roots) visitActor(root, children, nodes, world);
 
   return {
     tickIndex: world.clock.tickIndex,
