@@ -286,7 +286,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private resumeAudioContext(): void {
     const ctx = this.audioContext;
     if (!ctx) return;
-    if (ctx.state === "suspended" || ctx.state === "interrupted") {
+    if (ctx.state === "suspended") {
       void ctx.resume();
     }
   }
