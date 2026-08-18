@@ -5,6 +5,7 @@ import {
   ANIM_GRAPH_SCHEMA_VERSION,
   ANIM_RULE_ENTER_TYPE,
   ANIM_RULE_EXIT_TYPE,
+  ANIM_STATE_LAYOUT_GAP_X,
   clipForState,
   createDefaultAnimGraph,
   createDefaultTransitionRuleGraph,
@@ -129,6 +130,10 @@ describe("anim graph evaluator", () => {
       pins.some((pin) => pin.id === "right-out" && pin.direction === "out"),
     ).toBe(true);
     expect(pins.some((pin) => pin.id === "in" || pin.id === "out")).toBe(false);
+  });
+
+  it("spaces default states wider than a 200px node body", () => {
+    expect(ANIM_STATE_LAYOUT_GAP_X).toBeGreaterThanOrEqual(280);
   });
 
   it("round-trips dragged node positions through the graph-ui serialized shape", () => {
