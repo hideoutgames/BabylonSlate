@@ -221,6 +221,18 @@ function treeWithWait(): BehaviourTreeDocument {
   return doc;
 }
 
+function treeWithSetBlackboard(
+  key: string,
+  value: unknown = true,
+): BehaviourTreeDocument {
+  const doc = createDefaultBehaviourTree();
+  doc.blackboardGuid = "bb-1";
+  const task = doc.nodes.find((node) => node.id === "task")!;
+  task.classId = "bt.task.setBlackboard";
+  task.properties = { key, value };
+  return doc;
+}
+
 function treeWithMisorderedSiblings(): BehaviourTreeDocument {
   const doc = createDefaultBehaviourTree();
   doc.nodes.push({
@@ -439,6 +451,64 @@ describe("BehaviourTreeEditor", () => {
     renderTree(doc);
     fireEvent.click(screen.getByTestId(`bt-decorator-${decoratorId}`));
     expect(screen.getByTestId("property-key").tagName).not.toBe("INPUT");
+  });
+
+  it("hides Set Blackboard value until a key is chosen", () => {
+    const doc = treeWithSetBlackboard("");
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    expect(screen.getByTestId("property-key")).toBeTruthy();
+    expect(screen.queryByTestId("property-value")).toBeNull();
+  });
+
+  it("shows a bool checkbox for a Set Blackboard bool key", () => {
+    const doc = treeWithSetBlackboard("alert", true);
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    const value = screen.getByTestId("property-value");
+    expect(value.getAttribute("role")).toBe("checkbox");
+    expect(value.tagName).not.toBe("INPUT");
+  });
+
+  it("shows a number field for a Set Blackboard float key", () => {
+    const doc = treeWithSetBlackboard("hp", 12);
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    const value = screen.getByTestId("property-value");
+    expect(value.tagName).toBe("INPUT");
+    fireEvent.change(value, { target: { value: "13" } });
+    fireEvent.blur(value);
+    const task = lastCommit().nodes.find((node) => node.id === "task");
+    expect(task?.properties.value).toBe(13);
+  });
+
+  it("resets Set Blackboard value when the key type changes", async () => {
+    const doc = treeWithSetBlackboard("alert", true);
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    fireEvent.click(screen.getByTestId("property-key"));
+    const option = await screen.findByRole("option", { name: "Hp" });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
+    const task = lastCommit().nodes.find((node) => node.id === "task");
+    expect(task?.properties.key).toBe("hp");
+    expect(task?.properties.value).toBe(0);
+  });
+
+  it("types Compare Blackboard Value from the selected key", () => {
+    const doc = addDecorator(
+      createDefaultBehaviourTree(),
+      "task",
+      "bt.decorator.compareBlackboardValue",
+    );
+    doc.blackboardGuid = "bb-1";
+    const decorator = doc.nodes.find((node) => node.id === "task")!.decorators[0]!;
+    decorator.properties = { key: "alert", op: "eq", value: true };
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId(`bt-decorator-${decorator.id}`));
+    expect(screen.getByTestId("property-value").getAttribute("role")).toBe(
+      "checkbox",
+    );
   });
 
   it("shows a canvas diagnostic on an empty composite", () => {
