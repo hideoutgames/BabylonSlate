@@ -20,6 +20,8 @@ export interface MeshAssetContext {
   tilesets?: ReadonlyMap<string, TilesetPayload>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  /** Native clipName → Animation guid, keyed by Model guid. */
+  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   pixelsPerUnit?: number;
 }
 

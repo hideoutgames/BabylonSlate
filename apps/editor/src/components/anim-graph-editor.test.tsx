@@ -354,49 +354,29 @@ describe("AnimGraphEditor", () => {
     expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
   });
 
-  it("picks a Model clip for the selected state and lists glTF group names", async () => {
+  it("picks an Animation clip for the selected state and hides Clip Name", async () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
     fireEvent.click(screen.getByTestId("property-clipAsset"));
     await waitFor(() => {
-      expect(screen.getByTestId("search-item-model-1")).toBeTruthy();
+      expect(screen.getByTestId("search-item-anim-1")).toBeTruthy();
     });
-    expect(screen.queryByTestId("search-item-anim-1")).toBeNull();
+    expect(screen.queryByTestId("search-item-model-1")).toBeNull();
     expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
-    fireEvent.click(screen.getByTestId("search-item-model-1"));
+    fireEvent.click(screen.getByTestId("search-item-anim-1"));
     expect(lastCommit()).toEqual(
       expect.objectContaining({
         clips: expect.arrayContaining([
           expect.objectContaining({
             id: "idle-clip",
             kind: "animation",
-            assetGuid: "model-1",
-            clipName: "Idle",
+            assetGuid: "anim-1",
+            clipName: "Walk",
           }),
         ]),
       }),
     );
-    expect(screen.getByTestId("property-clipName")).toBeTruthy();
-    expect(screen.getByTestId("property-clipName").tagName).not.toBe("INPUT");
-    fireEvent.click(screen.getByTestId("property-clipName"));
-    await waitFor(() => {
-      expect(screen.getByTestId("search-item-Idle")).toBeTruthy();
-    });
-    expect(screen.getByTestId("search-item-Walk")).toBeTruthy();
-  });
-
-  it("shows No Clips when the Model has no clip names instead of a type-in", async () => {
-    renderAnimGraph();
-    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
-    fireEvent.click(screen.getByTestId("property-clipAsset"));
-    await waitFor(() => {
-      expect(screen.getByTestId("search-item-model-empty")).toBeTruthy();
-    });
-    fireEvent.click(screen.getByTestId("search-item-model-empty"));
-    const clipName = screen.getByTestId("property-clipName");
-    expect((clipName as HTMLButtonElement).disabled).toBe(true);
-    expect(clipName.textContent).toMatch(/No Clips/);
-    expect(clipName.tagName).not.toBe("INPUT");
+    expect(screen.queryByTestId("property-clipName")).toBeNull();
   });
 
   it("picks a Sprite Animation for sprite clip kind and hides Clip Name", async () => {

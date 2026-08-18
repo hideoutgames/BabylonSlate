@@ -104,6 +104,7 @@ export interface PlayOverlayProps {
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: PlayAudioLibrary;
   particleLibrary?: PlayParticleLibrary;
@@ -166,6 +167,7 @@ export function PlayOverlay({
   textureBytes,
   modelBytes,
   modelPayloads,
+  modelClipAnimationGuids,
   audioBytes,
   audioLibrary,
   particleLibrary,
@@ -258,6 +260,8 @@ export function PlayOverlay({
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
   modelPayloadsRef.current = modelPayloads;
+  const modelClipAnimationGuidsRef = useRef(modelClipAnimationGuids);
+  modelClipAnimationGuidsRef.current = modelClipAnimationGuids;
   const audioBytesRef = useRef(audioBytes);
   audioBytesRef.current = audioBytes;
   const audioLibraryRef = useRef(audioLibrary);
@@ -375,6 +379,7 @@ export function PlayOverlay({
       textureBytes: textureBytesRef.current,
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
+      modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
       audioBytes: audioBytesRef.current,
       audioLibrary: audioLibraryRef.current,
       particleLibrary: particleLibraryRef.current,

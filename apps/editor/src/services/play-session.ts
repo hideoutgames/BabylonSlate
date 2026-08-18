@@ -477,6 +477,7 @@ export function startPlaySession(options: {
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: AudioLibrary;
   particleLibrary?: ParticleLibrary;
@@ -537,6 +538,7 @@ export function startPlaySession(options: {
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
+    modelClipAnimationGuids: options.modelClipAnimationGuids,
     audioBytes: options.audioBytes,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,

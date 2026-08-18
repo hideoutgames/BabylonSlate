@@ -15,7 +15,7 @@ export type AnimVariableTypeId = "bool" | "int" | "float" | "string";
 export interface AnimClipRef {
   id: string;
   kind: AnimClipKind;
-  /** Model (glTF) or Sprite asset guid. */
+  /** Animation (glTF clip) or Sprite Animation asset guid. */
   assetGuid: string;
   /** glTF AnimationGroup name or sprite clip name. */
   clipName: string;
@@ -369,7 +369,10 @@ function migrateConditionToRuleGraph(
   return graph;
 }
 
-export function validateAnimGraph(doc: AnimGraphDocument): AnimDiagnostic[] {
+export function validateAnimGraph(
+  doc: AnimGraphDocument,
+  catalog: readonly AnimClipCatalogEntry[] = [],
+): AnimDiagnostic[] {
   const diagnostics: AnimDiagnostic[] = [];
   const stateIds = new Set(doc.states.map((state) => state.id));
   const clipIds = new Set(doc.clips.map((clip) => clip.id));
@@ -437,6 +440,29 @@ export function validateAnimGraph(doc: AnimGraphDocument): AnimDiagnostic[] {
         severity: "error",
       });
     }
+  }
+  const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
+  for (const clip of doc.clips) {
+    if (clip.kind !== "animation" || !clip.assetGuid) continue;
+    const entry = byGuid.get(clip.assetGuid);
+    if (!entry || entry.type !== "Animation") continue;
+    const animationSkeleton = entry.skeletonGuid;
+    const model = entry.modelGuid ? byGuid.get(entry.modelGuid) : undefined;
+    if (
+      !animationSkeleton ||
+      !model ||
+      model.type !== "Model" ||
+      !model.skeletonGuid ||
+      model.skeletonGuid === animationSkeleton
+    ) {
+      continue;
+    }
+    diagnostics.push({
+      code: "anim.skeletonMismatch",
+      message: `Animation "${entry.name}" skeleton does not match Model "${model.name}"`,
+      nodeId: clip.id,
+      severity: "error",
+    });
   }
   return diagnostics;
 }
@@ -920,7 +946,7 @@ export function parseAnimGraphDocument(
   };
 }
 
-/** Asset index used to bind animation clips to the Model GLB Play actually loads. */
+/** Asset index used to bind animation clips to Play. */
 export interface AnimClipCatalogEntry {
   guid: string;
   type: string;
@@ -928,8 +954,10 @@ export interface AnimClipCatalogEntry {
   clipName?: string;
   clipNames?: string[];
   dependencyGuids?: string[];
-  /** Sprite Animation total duration (sum of effective frame durations). */
+  /** Sprite Animation or Animation clip duration. */
   durationMs?: number;
+  skeletonGuid?: string | null;
+  modelGuid?: string;
 }
 
 function stateNameForClip(
@@ -977,26 +1005,18 @@ function resolveOneClip(
     return nextName === clip.clipName ? clip : { ...clip, clipName: nextName };
   }
   if (entry.type !== "Animation") return clip;
-  const owner = catalog.find(
-    (row) =>
-      row.type === "Model" &&
-      (row.dependencyGuids ?? []).includes(entry.guid),
-  );
-  if (!owner) return clip;
-  const names = owner.clipNames ?? [];
-  const fromAnimation = entry.clipName;
-  const nextName =
-    fromAnimation &&
-    (shouldReplaceClipName(clip.clipName, stateName, names) ||
-      clip.clipName === stateName)
-      ? fromAnimation
-      : shouldReplaceClipName(clip.clipName, stateName, names)
-        ? (names[0] ?? clip.clipName)
-        : clip.clipName;
-  return { ...clip, assetGuid: owner.guid, clipName: nextName };
+  const nextName = entry.clipName || clip.clipName;
+  const nextDuration =
+    typeof entry.durationMs === "number" &&
+    Number.isFinite(entry.durationMs) &&
+    entry.durationMs > 0
+      ? entry.durationMs
+      : clip.durationMs;
+  if (nextName === clip.clipName && nextDuration === clip.durationMs) return clip;
+  return { ...clip, clipName: nextName, durationMs: nextDuration };
 }
 
-/** Rewrite Animation-asset clip guids to the owning Model and fill glTF group names. */
+/** Fill Animation clip names and durations from catalog assets. Keep Animation guids. */
 export function resolveAnimGraphClips(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[],

@@ -146,11 +146,16 @@ export function beginSlotModelAnimLoad(
       container.addAllToScene();
       adoptLoadedHierarchy(placeholder, container);
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
+      const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);
+      const nativeGuids = new Set<string>([clipAssetGuid]);
+      if (clipGuids) {
+        for (const guid of clipGuids.values()) nativeGuids.add(guid);
+      }
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
-        (group) => group.clipAssetGuid !== clipAssetGuid,
+        (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
       );
       const wrapped = container.animationGroups.map((group) =>
-        wrapGroup(group, clipAssetGuid),
+        wrapGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
       onAdopted?.(placeholder);

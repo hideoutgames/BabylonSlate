@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { animClipCatalogFromAssets } from "./anim-clip-catalog";
+import {
+  animClipCatalogFromAssets,
+  modelClipAnimationGuidsFromAssets,
+} from "./anim-clip-catalog";
 
 describe("animClipCatalogFromAssets", () => {
   it("reads Model clipNames and Animation clipName from payload", () => {
@@ -40,6 +43,46 @@ describe("animClipCatalogFromAssets", () => {
         clipNames: [],
         dependencyGuids: [],
       },
+    ]);
+  });
+
+  it("reads Animation skeleton, model, and duration from payload", () => {
+    expect(
+      animClipCatalogFromAssets([
+        {
+          header: {
+            guid: "hero-model",
+            type: "Model",
+            name: "Hero",
+            payload: { skeletonGuid: "hero-skel" },
+          },
+        },
+        {
+          header: {
+            guid: "hero-walk",
+            type: "Animation",
+            name: "Hero_Walk",
+            payload: {
+              clipName: "Walk",
+              modelGuid: "hero-model",
+              skeletonGuid: "hero-skel",
+              durationMs: 1800,
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        guid: "hero-model",
+        skeletonGuid: "hero-skel",
+      }),
+      expect.objectContaining({
+        guid: "hero-walk",
+        clipName: "Walk",
+        modelGuid: "hero-model",
+        skeletonGuid: "hero-skel",
+        durationMs: 1800,
+      }),
     ]);
   });
 
@@ -151,5 +194,37 @@ describe("animClipCatalogFromAssets", () => {
         durationMs: 80,
       }),
     ]);
+  });
+
+  it("maps native Model clip names to Animation guids and skips retargeted rows", () => {
+    expect(
+      modelClipAnimationGuidsFromAssets([
+        {
+          header: {
+            guid: "idle",
+            type: "Animation",
+            name: "Hero_Idle",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "hero-model",
+            },
+          },
+        },
+        {
+          header: {
+            guid: "retargeted",
+            type: "Animation",
+            name: "Mixamo_Idle",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "hero-model",
+              sourceAnimationGuid: "mixamo-idle",
+            },
+          },
+        },
+      ]),
+    ).toEqual(
+      new Map([["hero-model", new Map([["Idle", "idle"]])]]),
+    );
   });
 });

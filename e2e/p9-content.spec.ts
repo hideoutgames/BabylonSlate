@@ -556,7 +556,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("property-clipKind")).toBeVisible();
     await page.getByTestId("property-clipAsset").click();
     await expect(page.getByTestId("anim-graph-clip-picker")).toBeVisible();
-    await expect(page.getByTestId("anim-graph-clip-picker").getByText("Pick Model")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-clip-picker").getByText("Pick Animation")).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByTestId("property-clipKind").click();
     await page.getByRole("option", { name: "Sprite" }).click();

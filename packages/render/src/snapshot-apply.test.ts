@@ -143,6 +143,23 @@ describe("createPlayMesh", () => {
     expect(group?.from).toBeLessThan(group?.to ?? 0);
   });
 
+  it("stamps native AnimationGroups with Animation asset guids when mapped", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["hero-model", encodeAnimatedTriangleGlb()]]);
+    binding.modelClipAnimationGuids = new Map([
+      ["hero-model", new Map([["Idle", "hero-idle-anim"]])],
+    ]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+      return entry.name === "Idle" && entry.clipAssetGuid === "hero-idle-anim";
+    });
+    expect(group).toBeDefined();
+  });
+
   it("keeps the slot mesh as the transform root for a parented animated GLB", async () => {
     const handle = createTestEngine();
     handles.push(handle);

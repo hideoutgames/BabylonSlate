@@ -116,6 +116,7 @@ import {
 import { playUserInterfaceRuntimeDocuments, interfaceMaterialGuidsFromUiDocuments } from "../lib/play-content";
 import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
+import { modelClipAnimationGuidsFromAssets } from "../lib/anim-clip-catalog";
 import {
   collectUiImageUrls,
   revokeUiImageUrls,
@@ -279,6 +280,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   );
   const [playModelPayloads, setPlayModelPayloads] = useState<
     Map<string, ModelPayload>
+  >(() => new Map());
+  const [playModelClipAnimationGuids, setPlayModelClipAnimationGuids] = useState<
+    Map<string, Map<string, string>>
   >(() => new Map());
   const [playAudioBytes, setPlayAudioBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
@@ -847,12 +851,16 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayModelBytes(await collectPlayModelBytes(resolvedScene?.scene));
           modelPayloads = await collectPlayModelPayloads(resolvedScene?.scene);
           setPlayModelPayloads(modelPayloads);
+          setPlayModelClipAnimationGuids(
+            modelClipAnimationGuidsFromAssets(assetRegistry?.list() ?? []),
+          );
         } catch (error) {
           appendLog(
             `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayModelBytes(new Map());
           setPlayModelPayloads(new Map());
+          setPlayModelClipAnimationGuids(new Map());
         }
 
         try {
@@ -1196,6 +1204,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             textureBytes={playTextureBytes}
             modelBytes={playModelBytes}
             modelPayloads={playModelPayloads}
+            modelClipAnimationGuids={playModelClipAnimationGuids}
             audioBytes={playAudioBytes}
             audioLibrary={playAudioLibrary}
             particleLibrary={playParticleLibrary}

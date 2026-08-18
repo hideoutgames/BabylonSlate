@@ -373,7 +373,7 @@ describe("playAnimGraphsFromOpenDocuments", () => {
     expect(entries).toEqual([{ guid: "graph-guid", document: graph }]);
   });
 
-  it("rewrites Animation clip guids to the owning Model before Play", () => {
+  it("keeps Animation clip guids and fills the glTF clip name before Play", () => {
     const graph = createDefaultAnimGraph("Loco");
     graph.clips[0] = {
       id: "idle-clip",
@@ -408,7 +408,7 @@ describe("playAnimGraphsFromOpenDocuments", () => {
       ],
     );
     expect((entries[0]!.document as { clips: Array<{ assetGuid: string; clipName: string }> }).clips[0]).toMatchObject({
-      assetGuid: "hero-model",
+      assetGuid: "hero-walk-anim",
       clipName: "Walk",
     });
   });

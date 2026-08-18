@@ -9,6 +9,28 @@ function stringList(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function trimmed(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function nullableGuid(value: unknown): string | null {
+  const guid = trimmed(value);
+  return guid.length > 0 ? guid : null;
+}
+
+function optionalDurationMs(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value;
+}
+
 function spriteAnimationCatalogDuration(payload: Record<string, unknown>): number | undefined {
   if (typeof payload.durationMs === "number" && Number.isFinite(payload.durationMs)) {
     return Math.max(1, payload.durationMs);
@@ -17,27 +39,34 @@ function spriteAnimationCatalogDuration(payload: Record<string, unknown>): numbe
   return spriteAnimationDurationMs(parseSpriteAnimationPayload(payload));
 }
 
+type CatalogAsset = {
+  header: {
+    guid: string;
+    type: string;
+    name: string;
+    dependencies?: string[];
+    payload?: unknown;
+  };
+};
+
 /** Build a clip catalog from Content Browser headers (Model clipNames, Animation clipName). */
 export function animClipCatalogFromAssets(
-  assets: ReadonlyArray<{
-    header: {
-      guid: string;
-      type: string;
-      name: string;
-      dependencies?: string[];
-      payload?: unknown;
-    };
-  }>,
+  assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
   return assets.map((asset) => {
-    const payload =
-      asset.header.payload && typeof asset.header.payload === "object"
-        ? (asset.header.payload as Record<string, unknown>)
-        : {};
+    const payload = asRecord(asset.header.payload);
     const durationMs =
       asset.header.type === "SpriteAnimation"
         ? spriteAnimationCatalogDuration(payload)
+        : asset.header.type === "Animation"
+          ? optionalDurationMs(payload.durationMs)
+          : undefined;
+    const skeletonGuid =
+      asset.header.type === "Model" || asset.header.type === "Animation"
+        ? nullableGuid(payload.skeletonGuid)
         : undefined;
+    const modelGuid =
+      asset.header.type === "Animation" ? trimmed(payload.modelGuid) : "";
     return {
       guid: asset.header.guid,
       type: asset.header.type,
@@ -47,6 +76,30 @@ export function animClipCatalogFromAssets(
       clipNames: stringList(payload.clipNames),
       dependencyGuids: asset.header.dependencies ?? [],
       ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(skeletonGuid ? { skeletonGuid } : {}),
+      ...(modelGuid ? { modelGuid } : {}),
     };
   });
+}
+
+/** Native (non-retargeted) clipName → Animation guid, keyed by owning Model. */
+export function modelClipAnimationGuidsFromAssets(
+  assets: ReadonlyArray<CatalogAsset>,
+): Map<string, Map<string, string>> {
+  const byModel = new Map<string, Map<string, string>>();
+  for (const asset of assets) {
+    if (asset.header.type !== "Animation") continue;
+    const payload = asRecord(asset.header.payload);
+    if (nullableGuid(payload.sourceAnimationGuid)) continue;
+    const modelGuid = trimmed(payload.modelGuid);
+    const clipName = trimmed(payload.clipName);
+    if (!modelGuid || !clipName) continue;
+    let clips = byModel.get(modelGuid);
+    if (!clips) {
+      clips = new Map();
+      byModel.set(modelGuid, clips);
+    }
+    clips.set(clipName, asset.header.guid);
+  }
+  return byModel;
 }
