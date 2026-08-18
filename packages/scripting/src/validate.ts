@@ -14,7 +14,7 @@ import {
 import {
   pinAcceptsLiteralDefault,
   pinRejectsStoredDefault,
-  readPinDefault,
+  readPinDefaultForPin,
 } from "./pin-defaults";
 import {
   pinTypeKey,
@@ -285,7 +285,7 @@ function validatePinTyping(
       const connected = graph.edges.some(
         (e) => e.targetNodeId === node.id && e.targetPinId === pin.id,
       );
-      const stored = readPinDefault(node.properties, pin.name);
+      const stored = readPinDefaultForPin(node.properties, pin);
       const hasStored = stored !== undefined;
       if (hasStored && pinRejectsStoredDefault(pin.type)) {
         out.push(
