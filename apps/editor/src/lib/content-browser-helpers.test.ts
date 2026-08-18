@@ -1432,6 +1432,17 @@ describe("content-browser-helpers", () => {
         ],
       }),
     ).toEqual(["tex-a", "tex-b"]);
+    expect(
+      assetHeaderDependencies("ParticleEmitter", {
+        textureGuid: "tex-p",
+        materialGuid: "mat-p",
+      }),
+    ).toEqual(["mat-p", "tex-p"]);
+    expect(
+      assetHeaderDependencies("ParticleSystem", {
+        emitterGuids: ["em-b", "em-a", "em-b"],
+      }),
+    ).toEqual(["em-a", "em-b"]);
   });
 
   it("stores Material domain on the scanned header", () => {

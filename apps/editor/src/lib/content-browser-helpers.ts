@@ -2,6 +2,7 @@ import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   audioAssetDependencies,
+  particleAssetDependencies,
   createDefaultMigrationRegistry,
   createDefaultSpritePayload,
   createDefaultSpriteAnimationPayload,
@@ -1382,6 +1383,7 @@ export function assetHeaderDependencies(
   const unique = new Set<string>([
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
+    ...particleAssetDependencies(assetType, payload),
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
       : []),
