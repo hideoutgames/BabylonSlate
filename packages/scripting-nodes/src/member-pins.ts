@@ -1,19 +1,10 @@
 import {
   pin,
-  BOOL,
-  EXEC,
-  FLOAT,
-  INT,
-  STRING,
-  VEC2,
-  VEC3,
-  classRef,
   defaultValueLiteral,
-  enumRef,
-  objectRef,
-  structRef,
-  type PinType,
+  pinTypeForMember,
 } from "@babylonslate/scripting";
+
+export { pinTypeForMember } from "@babylonslate/scripting";
 
 export type MemberPinRow = {
   name?: string;
@@ -21,11 +12,6 @@ export type MemberPinRow = {
   typeClassId?: string;
   direction?: string;
 };
-
-function constraintClassId(typeClassId?: string): string {
-  const trimmed = typeClassId?.trim();
-  return trimmed ? trimmed : "BObject";
-}
 
 export function jsIdent(name: string): string {
   const cleaned = name.replace(/[^A-Za-z0-9_$]/g, "_");
@@ -39,36 +25,6 @@ export function localVariableIdent(name: string): string {
 
 export function objectLiteralKey(name: string): string {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name);
-}
-
-export function pinTypeForMember(
-  typeId: string | undefined,
-  typeClassId?: string,
-): PinType {
-  switch (typeId) {
-    case "exec":
-      return EXEC;
-    case "bool":
-      return BOOL;
-    case "int":
-      return INT;
-    case "string":
-      return STRING;
-    case "vec2":
-      return VEC2;
-    case "vec3":
-      return VEC3;
-    case "object":
-      return objectRef(constraintClassId(typeClassId));
-    case "class":
-      return classRef(constraintClassId(typeClassId));
-    case "struct":
-      return structRef("");
-    case "enum":
-      return enumRef("");
-    default:
-      return FLOAT;
-  }
 }
 
 export function memberPinRows(properties: Record<string, unknown>): MemberPinRow[] {

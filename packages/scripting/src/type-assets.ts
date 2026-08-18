@@ -11,7 +11,9 @@ export type EnumAsset = {
 
 export type StructField = {
   name: string;
-  typeId: string; // pin type tag or nested struct guid
+  typeId: string;
+  /** Object/class constraint, or nested Structure/Enum asset guid. */
+  typeClassId?: string;
   defaultValue?: unknown;
 };
 

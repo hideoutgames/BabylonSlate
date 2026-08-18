@@ -1,11 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { BOOL, FLOAT, VEC3, objectRef, classRef, structRef, enumRef } from "@babylonslate/scripting";
+import {
+  BOOL,
+  COLOR,
+  FLOAT,
+  ROTATOR,
+  TRANSFORM,
+  VEC3,
+  VEC4,
+  objectRef,
+  classRef,
+  structRef,
+  enumRef,
+  isAssignable,
+} from "@babylonslate/scripting";
 import { jsIdent, localVariableIdent, objectLiteralKey, pinTypeForMember } from "./member-pins";
 
 describe("pinTypeForMember", () => {
   it("maps picker ids instead of collapsing unknown types to float", () => {
     expect(pinTypeForMember("bool")).toEqual(BOOL);
     expect(pinTypeForMember("vec3")).toEqual(VEC3);
+    expect(pinTypeForMember("vec4")).toEqual(VEC4);
+    expect(pinTypeForMember("rotator")).toEqual(ROTATOR);
+    expect(pinTypeForMember("color")).toEqual(COLOR);
+    expect(pinTypeForMember("transform")).toEqual(TRANSFORM);
     expect(pinTypeForMember("object")).toEqual(objectRef("BObject"));
     expect(pinTypeForMember("class")).toEqual(classRef("BObject"));
     expect(pinTypeForMember("struct")).toEqual(structRef(""));
@@ -18,6 +35,33 @@ describe("pinTypeForMember", () => {
     expect(pinTypeForMember("class", "Actor")).toEqual(classRef("Actor"));
     expect(pinTypeForMember("object", "  ")).toEqual(objectRef("BObject"));
     expect(pinTypeForMember("class")).toEqual(classRef("BObject"));
+  });
+
+  it("uses typeClassId as the Structure and Enum asset guid", () => {
+    expect(pinTypeForMember("struct", "struct-health")).toEqual(
+      structRef("struct-health"),
+    );
+    expect(pinTypeForMember("enum", "enum-team")).toEqual(enumRef("enum-team"));
+    expect(pinTypeForMember("struct", "  ")).toEqual(structRef(""));
+    expect(pinTypeForMember("enum")).toEqual(enumRef(""));
+  });
+
+  it("does not assign an unbound struct pin to a typed Structure pin", () => {
+    expect(
+      isAssignable(pinTypeForMember("struct"), pinTypeForMember("struct", "s1")),
+    ).toBe(false);
+    expect(
+      isAssignable(
+        pinTypeForMember("struct", "s1"),
+        pinTypeForMember("struct", "s2"),
+      ),
+    ).toBe(false);
+    expect(
+      isAssignable(
+        pinTypeForMember("enum", "e1"),
+        pinTypeForMember("enum", "e1"),
+      ),
+    ).toBe(true);
   });
 });
 
