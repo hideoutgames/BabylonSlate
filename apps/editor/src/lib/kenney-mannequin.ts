@@ -7,11 +7,6 @@ export const KENNEY_MANNEQUIN_PUBLIC_PATH =
 const REPO_RELATIVE_PATH =
   "engine-content/kenney-assets/Mannequin/mannequin.glb";
 
-type NodeProcess = {
-  cwd: () => string;
-  release?: { name?: string };
-};
-
 type NodeFs = {
   readFile: (path: string) => Promise<Uint8Array>;
   access: (path: string) => Promise<void>;
@@ -26,31 +21,28 @@ type NodeUrl = {
   fileURLToPath: (url: string | URL) => string;
 };
 
-function nodeProcess(): NodeProcess | undefined {
-  const candidate = (globalThis as { process?: Partial<NodeProcess> }).process;
-  if (typeof candidate?.cwd !== "function") return undefined;
-  if (candidate.release?.name !== "node") return undefined;
-  return candidate as NodeProcess;
+function nodeCwd(): string | null {
+  const proc = (globalThis as { process?: { cwd?: () => string } }).process;
+  if (typeof proc?.cwd !== "function") return null;
+  return proc.cwd();
 }
 
-function importNodeModule<T>(specifier: string): Promise<T> {
-  const importer = new Function("s", "return import(s)") as (
-    s: string,
-  ) => Promise<T>;
-  return importer(specifier);
+/** Non-literal so tsc does not resolve Node built-ins in the app tsconfig. */
+function nodeBuiltin(name: "fs/promises" | "path" | "url"): string {
+  return `node:${name}`;
 }
 
 async function tryReadKenneyMannequinFromDisk(): Promise<Uint8Array | null> {
-  const proc = nodeProcess();
-  if (!proc) return null;
+  const cwd = nodeCwd();
+  if (!cwd) return null;
   try {
-    const [fs, path, url] = await Promise.all([
-      importNodeModule<NodeFs>("node:fs/promises"),
-      importNodeModule<NodePath>("node:path"),
-      importNodeModule<NodeUrl>("node:url"),
-    ]);
+    const [fs, path, url] = (await Promise.all([
+      import(/* @vite-ignore */ nodeBuiltin("fs/promises")),
+      import(/* @vite-ignore */ nodeBuiltin("path")),
+      import(/* @vite-ignore */ nodeBuiltin("url")),
+    ])) as [NodeFs, NodePath, NodeUrl];
     const candidates = [
-      path.resolve(proc.cwd(), REPO_RELATIVE_PATH),
+      path.resolve(cwd, REPO_RELATIVE_PATH),
       path.resolve(
         path.dirname(url.fileURLToPath(import.meta.url)),
         "../../../../",
@@ -75,6 +67,11 @@ async function tryReadKenneyMannequinFromDisk(): Promise<Uint8Array | null> {
 export async function loadKenneyMannequinGlb(): Promise<Uint8Array> {
   const fromDisk = await tryReadKenneyMannequinFromDisk();
   if (fromDisk && fromDisk.byteLength > 0) return fromDisk;
+  if (import.meta.env.MODE === "test") {
+    throw new Error(
+      `Kenney Mannequin GLB was not found at ${REPO_RELATIVE_PATH} (cwd ${nodeCwd() ?? "unknown"}).`,
+    );
+  }
   const response = await fetch(publicAssetUrl(KENNEY_MANNEQUIN_PUBLIC_PATH));
   if (!response.ok) {
     throw new Error(
