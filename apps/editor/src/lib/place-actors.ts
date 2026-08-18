@@ -1,6 +1,7 @@
 import {
   createActor,
   createMeshComponent,
+  createSkyboxComponent,
   identitySerializedTransform,
   type SerializedActor,
   type SerializedComponent,
@@ -23,6 +24,7 @@ export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
   | { type: "light"; lightKind: string }
   | { type: "camera" }
+  | { type: "skybox" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
   | { type: "audio" }
@@ -65,6 +67,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Camera",
     category: "Camera",
     kind: { type: "camera" },
+  },
+  {
+    id: "skybox",
+    title: "Skybox",
+    category: "Environment",
+    kind: { type: "skybox" },
   },
   {
     id: "empty",
@@ -165,6 +173,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "camera") {
     return resolveTypeVisual({ classId: "CameraComponent", family: "class" });
   }
+  if (kind.type === "skybox") {
+    return resolveTypeVisual({ classId: "SkyboxComponent", family: "class" });
+  }
   if (kind.type === "navmesh") {
     return resolveTypeVisual({ classId: "NavMeshComponent", family: "class" });
   }
@@ -244,6 +255,13 @@ export function spawnPlacedActor(
           ),
         },
       ],
+    });
+  }
+  if (kind.type === "skybox") {
+    return createActor(id, "Skybox", {
+      transform,
+      locked: true,
+      components: [createSkyboxComponent(`${id}-skybox`)],
     });
   }
   if (kind.type === "navmesh") {

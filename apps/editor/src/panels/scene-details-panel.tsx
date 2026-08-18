@@ -17,6 +17,7 @@ import {
   DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
   findActor,
+  patchComponentProperties,
   type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -681,10 +682,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                       candidate.id === component.id
                         ? {
                             ...candidate,
-                            properties: {
-                              ...candidate.properties,
-                              [property]: value,
-                            },
+                            properties: patchComponentProperties(
+                              candidate.properties,
+                              property,
+                              value,
+                            ),
                           }
                         : candidate,
                     ),
@@ -735,10 +737,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               candidate.id === componentId
                 ? {
                     ...candidate,
-                    properties: {
-                      ...candidate.properties,
-                      [property]: guid,
-                    },
+                    properties: patchComponentProperties(
+                      candidate.properties,
+                      property,
+                      guid,
+                    ),
                   }
                 : candidate,
             ),

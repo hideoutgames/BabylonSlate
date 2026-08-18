@@ -8,8 +8,12 @@ import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   isEditorGraphClass,
+  parseSkyboxFaces,
+  parseSkyboxSize,
+  SKYBOX_FACE_KEYS,
   userInterfaceClassId,
   type SerializedComponent,
+  type SkyboxFaceKey,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -54,6 +58,27 @@ function guidValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+const SKYBOX_FACE_LABELS: Record<SkyboxFaceKey, string> = {
+  px: "Positive X",
+  py: "Positive Y",
+  pz: "Positive Z",
+  nx: "Negative X",
+  ny: "Negative Y",
+  nz: "Negative Z",
+};
+
+function componentPropertyGuid(
+  component: SerializedComponent,
+  property: string,
+): string | null {
+  if (property.startsWith("faces.")) {
+    const faces = parseSkyboxFaces(component.properties.faces);
+    const key = property.slice("faces.".length) as SkyboxFaceKey;
+    return guidValue(faces[key]);
+  }
+  return guidValue(component.properties[property]);
+}
+
 function assetRow(
   actorId: string,
   component: SerializedComponent,
@@ -65,7 +90,7 @@ function assetRow(
   title?: string,
   placeholder = "None",
 ): PropertyRow {
-  const value = guidValue(component.properties[property]);
+  const value = componentPropertyGuid(component, property);
   const name = value ? context.assetLabel(value) : undefined;
   const type = value
     ? (context.assetType?.(value) ?? allowedTypes[0])
@@ -866,6 +891,39 @@ export function componentPropertyRows(
           new Set(["shape", "friction", "restitution", "layer", "mask"]),
         ),
       ];
+    case "SkyboxComponent": {
+      return [
+        sliderRow(
+          actorId,
+          component.id,
+          "size",
+          "Size",
+          parseSkyboxSize(component.properties.size),
+          1,
+          10000,
+          update,
+        ),
+        ...SKYBOX_FACE_KEYS.map((key) =>
+          assetRow(
+            actorId,
+            component,
+            `faces.${key}`,
+            SKYBOX_FACE_LABELS[key],
+            ["Texture"],
+            update,
+            context,
+            `Pick ${SKYBOX_FACE_LABELS[key]} Texture`,
+            "Engine Default",
+          ),
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["size", "faces"]),
+        ),
+      ];
+    }
     case "LightComponent": {
       const color = asRgb(component.properties.color) ?? [1, 1, 1];
       const lightKind = String(component.properties.lightKind ?? "point");
