@@ -1,12 +1,12 @@
 # Audio engine (P16)
 
-Shared surface for imported Audio, mixer/channel routing, spatial attenuation, overlay Play / packaged player playback, and automatic environmental reverb (engineplan §2.6). Implementation spans `@babylonslate/assets` (payloads, gain math, bake) and `@babylonslate/render` (`AudioService`). Runtime and graph packages emit commands only. Real-device listening is manual; CI proves routing, gain, unlock, spatial parameters, bake identity, and teardown.
+Shared surface for imported Audio, mixer/channel routing, spatial attenuation, overlay Play / packaged player playback, automatic environmental reverb, and cheap occupancy-grid wall muffling (engineplan §2.6). Implementation spans `@babylonslate/assets` (payloads, gain math, bake) and `@babylonslate/render` (`AudioService`). Runtime and graph packages emit commands only. Real-device listening is manual; CI proves routing, gain, unlock, spatial parameters, bake identity, and teardown.
 
 There is **no second sound type**. Imported `Audio` stays kind `audio` with a `source` chunk. Mixer, channel, and attenuation are user-created assets.
 
 ## Author path
 
-- **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so).
+- **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so). Compact Audio stays `asset-settings` (not DockView).
 - **Place Actors → Project** tile for that Audio. That binds `audioAssetGuid` with Play On Start. The engine **Audio** speaker stays empty until an asset is picked.
 - **Play**, then **click the game view** to enable audio. Chrome shows **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load.
 - Mixer, channel, and attenuation are optional. Playback is `assetVolume × playCallVolume` with those refs at None.
@@ -26,7 +26,7 @@ Also:
 | `bridge` | Command types | Playback |
 | `runtime` | Emit commands; `AudioComponent` play-on-start/stop; BT PlaySound host | Babylon / Web Audio |
 | `scripting` + `scripting-nodes` | `assetRef` pin; Play Sound / Set Channel Volume / Set Global Volume | Babylon |
-| Editor / player | DockView editors, catalogs, Project Settings mixer, first-gesture unlock, packed `audioBytes` | Direct Capacitor / per-host mixer |
+| Editor / player | DockView editors, catalogs, Project Settings mixer / occlusion / reverb scales, first-gesture unlock, packed `audioBytes` | Direct Capacitor / per-host mixer |
 
 Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). Overlay Play and `apps/player` use the real Babylon AudioV2 backend (`babylon-audio-backend.ts`, coverage-excluded like `create-engine.ts`).
 
@@ -34,20 +34,20 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 | Type | Created by | Suffix | Editor |
 | --- | --- | --- | --- |
-| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, preview Play/Stop that pauses and resets, Blob MIME from source bytes, Volume, Channel + Attenuation pickers) |
+| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, gesture-safe preview Play/Stop that pauses and resets, Blob MIME from source bytes, Volume, Pitch, clips, Channel + Attenuation pickers) |
 | `AudioMixer` | New Asset | `.mixer.babasset` | DockView Details (`audio-mixer`) |
 | `AudioChannel` | New Asset | `.channel.babasset` | DockView Details (`audio-channel`) |
 | `SoundAttenuation` | New Asset | `.atten.babasset` | DockView Details (`sound-attenuation`) with an SVG falloff **plot** (numeric UI, not artwork) |
 
-**Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`.
+**Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`; `clips` (omitted/empty → `[{ chunkId: "source", name: "", weight: 1 }]`, cap 8); `pitch` default `1` (clamp `0.25..4`); `pitchRandom` default `false`; `pitchMin` / `pitchMax` default `1`. Extra files land as `source:<id>` chunks — not a playlist of other Audio guids. `pickWeightedAudioClip` treats weights `>= 0` (all-zero → equal). Decode cache key is `${guid}:${chunkId}`. Playback rate is `pitch × dopplerRate`; `syncListener` must not overwrite it.
 
-**AudioChannel** has no volume: `parentChannelGuid`, `effects: [{ kind: "environmentReverb", enabled }]`. Parent cycles fail validation; missing/rejected parent routes to master with one diagnostic. `AudioService.setLibrary` sanitizes the Play library the same way: missing channel/attenuation refs and cyclic parents become `null` with one diagnostic each.
+**AudioChannel** has no volume: `parentChannelGuid`, `effects: [{ kind: "environmentReverb" \| "muffleThroughWalls", enabled }]`. Old channels with only reverb gain a disabled muffle row. Parent cycles fail validation; missing/rejected parent routes to master with one diagnostic. `AudioService.setLibrary` sanitizes the Play library the same way: missing channel/attenuation refs and cyclic parents become `null` with one diagnostic each. Channel Details toggles must keep both effect kinds (`setAudioChannelEffect`).
 
 **AudioMixer** is a user asset, not a singleton: `globalVolume` default `1`; `channels: { channelGuid, volume }[]` (duplicate `channelGuid` invalid).
 
 **SoundAttenuation** opts Audio into 3D (`null` = non-spatial): `innerRadius` default `1`, `maxRadius` default `50` (`maxRadius >= innerRadius`, both `>= 0`); `distanceModel` `linear \| inverse \| exponential`; `rolloff` default `1`; `spatialisation` `equalPower \| hrtf`; optional `cone` and `doppler`.
 
-**Project Settings** `audio.audioMixerGuid` default `null` (None).
+**Project Settings** `audio`: `audioMixerGuid` default `null` (None); `occlusionEnabled` default `true`; `reverbWetScale` / `reverbDecayScale` / `reverbDampingScale` default `1`, clamp `0..2`. Overlay Play, Preview Build, and packed `game.json` thread these into `AudioService.setProjectAudioSettings`.
 
 Header `dependencies[]` on save include channel, attenuation, parent, and mixer channel-table guids (Show References / remap / delete guards).
 
@@ -80,19 +80,25 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 
 First `pointerdown` / `touchstart` on overlay Play and the packaged player calls `audioService.unlockAsync()`. Commands before unlock enqueue (cap 32, ordered) and drain after the gesture. Overlay chrome shows **Click the game view to enable audio** (`play-audio-unlock-hint`) while `queued > 0` and still locked. Decode / missing-context → one diagnostic; the game keeps running.
 
+Compact Audio preview **prefetches** clip bytes when the tab opens and starts playback **in the same turn** as Play (unlock + backend `play`, no `await readAssetChunk` before start). WKWebView drops the user-gesture if Play awaits I/O first. Cache miss → `audio.preview_missing_source`; play failure surfaces `audio.play_failed` instead of swallowing. Compact preview is non-spatial (no Play listener). Overlay Play / Preview Build / `apps/player` load **every** clip chunk (`guid` and `guid:chunk` keys); BSAU with a clip table after JSON stays compatible with the old “rest is one source” pack.
+
 `AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32.
 
 ## Spatial
 
-Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply), including actor **quaternion** so cones orient. Listener is the active Play camera, once per rendered frame (position **and** orientation). No scene listener picker. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0). Sound Attenuation Details expose cone angles and Doppler next to radii/model/rolloff/spatialisation.
+Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply), including actor **quaternion** so cones orient. Listener is `scene.activeCamera` after snapshot apply: **possessed camera**, else Scene Default Camera, else the Play fallback named `"camera"`. Pose is world space (`globalPosition` + `absoluteRotation`). No scene listener picker and no second listener actor. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`, composed with authored pitch. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0). Sound Attenuation Details expose cone angles and Doppler next to radii/model/rolloff/spatialisation.
 
 ## Reverb bake
 
 Mirrors nav bake: main-thread collect of **static** `MeshComponent` triangles (chunked, 8 actors per yield), worker occupancy + flood-fill + sparse probes, debounce 1_500 ms after the last static geometry edit, cancel, geometry-hash cache, timeout 8_000 ms. Dynamic rigid bodies do not invalidate.
 
-Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). Save/export await a current result for **every** Scene asset in the Play library (open or closed), not only open tabs, or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes).
+Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). **v2** appends a bit-packed occupancy bitmap after the probes (~1 KiB at 24×24×16); v1 chunks omit occupancy and stay unoccluded until Save rebakes. Stay under 64 KiB. Save/export await a current result for **every** Scene asset in the Play library (open or closed), not only open tabs, or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes, or JSON + a length-prefixed clip table).
 
-Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-pass bus (`AUDIO_REVERB_COMB_COUNT` = 4, `AUDIO_REVERB_ALLPASS_COUNT` = 2). Comb taps use feedback + damping; all-pass taps are Schroeder (delay + negative feedforward). Listener interpolates ≤2 probes for **wet, decay, and damping**. `setReverbProfile` writes comb feedback from decay and the damping low-pass; `setReverbWet` is a wet-only shortcut (default decay 0.4, damping 0.5). No per-voice convolver. Channel-less stays dry. Dry fallback → wet 0. AudioV2 keeps the bus→main dry route at unity; the parametric graph is an extra wet send (`dryPassThrough: false`). If the send cannot attach, wet falls back to scaling the whole bus volume. Do not `disconnect()` AudioV2 private `_outNode` / `_inNode` ports — that hung Play Stop.
+Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-pass bus (`AUDIO_REVERB_COMB_COUNT` = 4, `AUDIO_REVERB_ALLPASS_COUNT` = 2). Comb taps use feedback + damping; all-pass taps are Schroeder (delay + negative feedforward). Listener interpolates ≤2 probes for **wet, decay, and damping**, then Project Settings scales multiply those values (clamp product `0..1`). `setReverbProfile` writes comb feedback from decay and the damping low-pass; `setReverbWet` is a wet-only shortcut (default decay 0.4, damping 0.5). No per-voice convolver. Channel-less stays dry. Dry fallback → wet 0. AudioV2 keeps the bus→main dry route at unity; the parametric graph is an extra wet send (`dryPassThrough: false`). If the send cannot attach, wet falls back to scaling the whole bus volume. Do not `disconnect()` AudioV2 private `_outNode` / `_inNode` ports — that hung Play Stop.
+
+## Wall muffling
+
+Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spatial voices whose channel (or parent) has `muffleThroughWalls` enabled run a DDA walk on the baked occupancy grid each listener/snapshot sync (Play-view listener from Spatial). Occupied voxels along the segment count as walls; saturate after two (`occlusionFactor` `0..1`). Non-spatial, missing emitter, channel-less, missing occupancy, or Project Settings **Occlusion** off → factor `0`. One shared ~700 Hz lowpass bus; per-voice extra send mixed by the factor. Fake backend records `muffles.get(voiceId)`.
 
 ## A16 budgets
 
@@ -113,6 +119,9 @@ Named constants in `packages/assets/src/audio-payload.ts`:
 | Pre-unlock command queue | 32 |
 | Decoded PCM LRU | 64 MiB |
 | Max concurrent voices | 32 |
+| Max clips per Audio | 8 |
+| Muffle lowpass | 700 Hz |
+| Walls to saturate muffle | 2 |
 
 ## Scripting and BT
 
@@ -124,6 +133,6 @@ Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/re
 
 ## Out of P16
 
-Streaming music, mic capture, authored acoustic zones/materials, runtime occlusion/ray tracing, waveform editing, DSP plugins, IR convolution, converting Texture/Model/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19).
+Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform editing, DSP plugins, IR convolution, converting Texture/Model/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays).
 
 See [render.md](render.md), [bridge.md](bridge.md), [scripting.md](scripting.md), [exporter.md](exporter.md). Spec: [engineplan.md](../engineplan.md) §2.6.

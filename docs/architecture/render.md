@@ -72,11 +72,12 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 AudioV2 behind `AudioPlaybackBackend`. Unit tests use `FakeAudioPlaybackBackend`; `babylon-audio-backend.ts` is coverage-excluded (needs a real audio context).
 
-- Play library + `audioBytes` (BSAU envelope or raw source) load beside `textureBytes`. `setLibrary` sanitizes missing channel/attenuation refs and cyclic channel parents. Scene `audioReverb` extra chunks feed `setReverbField`.
-- Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). Set Channel / Set Global update voices that are already playing. Spatial voices follow interpolated snapshot poses; the listener is the active Play camera once per rendered frame (position and orientation). Doppler `playbackRate` uses snapshot dt only.
+- Play library + `audioBytes` (BSAU envelope or raw / multi-clip source) load beside `textureBytes`. `setLibrary` sanitizes missing channel/attenuation refs and cyclic channel parents. Scene `audioReverb` extra chunks feed `setReverbField`. Project Settings audio (occlusion + reverb scales) feed `setProjectAudioSettings`.
+- Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). Set Channel / Set Global update voices that are already playing. Spatial voices follow interpolated snapshot poses; the listener is `scene.activeCamera` (possessed, else Default Camera, else Play fallback) once per rendered frame (world position and orientation). Doppler `playbackRate` uses snapshot dt only, composed with authored pitch.
 - First `pointerdown` / `touchstart` calls `unlockAsync()` and drains a bounded ordered queue (cap 32). Decode / missing-context diagnose without crashing Play.
-- `AudioBufferCache` is a separate 64 MiB guid-keyed PCM LRU with active-voice pins — **not** stuffed into `ResourceCache`.
-- Channels with `environmentReverb.enabled` send to one shared parametric bus; the listener interpolates wet / decay / damping. Channel-less stays dry. Failed bake → marked dry fallback, wet 0.
+- `AudioBufferCache` is a separate 64 MiB guid-keyed PCM LRU with active-voice pins — **not** stuffed into `ResourceCache`. Decode keys are `${guid}:${chunkId}`.
+- Channels with `environmentReverb.enabled` send to one shared parametric bus; the listener interpolates wet / decay / damping, then project scales multiply. Channel-less stays dry. Failed bake → marked dry fallback, wet 0.
+- Channels with `muffleThroughWalls.enabled` add a shared ~700 Hz lowpass send mixed by occupancy DDA (project Occlusion master). Extra send only — do not `disconnect()` AudioV2 `_outNode`.
 - Test-mode `window.__babylonslateAudioStats` (`audioStats`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes`. Play open/close must return voices/buffers to baseline.
 
 See [audio.md](audio.md).
