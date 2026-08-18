@@ -155,6 +155,24 @@ describe("material node catalog", () => {
     expect(nodeIsLegalInDomain("output.interface", "postProcess")).toBe(false);
   });
 
+  it("scopes Particle Color and Particle Texture to the particle domain", () => {
+    expect(materialNodeDefinition("input.particleColor")?.title).toBe(
+      "Particle Color",
+    );
+    expect(materialNodeDefinition("input.particleTexture")?.title).toBe(
+      "Particle Texture",
+    );
+    expect(nodeIsLegalInDomain("input.particleColor", "particle")).toBe(true);
+    expect(nodeIsLegalInDomain("input.particleTexture", "particle")).toBe(true);
+    expect(nodeIsLegalInDomain("input.particleColor", "surface")).toBe(false);
+    expect(nodeIsLegalInDomain("input.worldPosition", "particle")).toBe(false);
+    expect(nodeIsLegalInDomain("shading.normalMap", "particle")).toBe(false);
+    expect(nodeIsLegalInDomain("input.sceneColor", "particle")).toBe(false);
+    expect(nodeIsLegalInDomain("output.surface", "particle")).toBe(false);
+    expect(nodeIsLegalInDomain("math.mix", "particle")).toBe(true);
+    expect(nodeIsLegalInDomain("vector.combine", "particle")).toBe(true);
+  });
+
   it("allows shared math in both domains", () => {
     expect(nodeIsLegalInDomain("math.sin", "surface")).toBe(true);
     expect(nodeIsLegalInDomain("math.sin", "postProcess")).toBe(true);
@@ -162,6 +180,7 @@ describe("material node catalog", () => {
 
   it("parses known material domains and falls back to surface", () => {
     expect(parseMaterialDomain("interface")).toBe("interface");
+    expect(parseMaterialDomain("particle")).toBe("particle");
     expect(parseMaterialDomain("postProcess")).toBe("postProcess");
     expect(parseMaterialDomain("surface")).toBe("surface");
     expect(parseMaterialDomain("nope")).toBe("surface");
@@ -208,12 +227,20 @@ describe("material node catalog", () => {
     });
   });
 
+  it("takes a single Color input on the particle output", () => {
+    const particle = materialNodeDefinition("output.particle");
+    expect(particle?.terminal).toBe("particle");
+    expect(particle?.inputs.map((pin) => pin.id)).toEqual(["color"]);
+    expect(particle?.inputs[0]?.type).toEqual({ kind: "vec4" });
+  });
+
   it("filters palette entries by domain", () => {
     const surface = materialPaletteEntries("surface").map((row) => row.type);
     expect(surface).toContain("output.surface");
     expect(surface).not.toContain("output.postProcess");
     expect(surface).not.toContain("input.sceneColor");
     expect(surface).not.toContain("input.sceneNormal");
+    expect(surface).not.toContain("input.particleColor");
     const iface = materialPaletteEntries("interface").map((row) => row.type);
     expect(iface).toContain("output.interface");
     expect(iface).toContain("input.uv");
@@ -222,6 +249,13 @@ describe("material node catalog", () => {
     expect(iface).not.toContain("output.postProcess");
     expect(iface).not.toContain("input.sceneColor");
     expect(iface).not.toContain("input.worldPosition");
+    const particle = materialPaletteEntries("particle").map((row) => row.type);
+    expect(particle).toContain("output.particle");
+    expect(particle).toContain("input.particleColor");
+    expect(particle).toContain("input.particleTexture");
+    expect(particle).not.toContain("output.surface");
+    expect(particle).not.toContain("input.worldPosition");
+    expect(particle).not.toContain("input.sceneColor");
   });
 
   it("costs a texture sample above a scalar multiply", () => {

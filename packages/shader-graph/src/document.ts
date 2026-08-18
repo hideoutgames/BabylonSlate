@@ -311,6 +311,37 @@ function defaultInterfaceGraph(): {
   };
 }
 
+function defaultParticleGraph(): {
+  nodes: MaterialGraphNode[];
+  edges: MaterialGraphEdge[];
+} {
+  return {
+    nodes: [
+      {
+        id: "particleColor",
+        type: "input.particleColor",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "output",
+        type: "output.particle",
+        position: { x: 300, y: 0 },
+        properties: {},
+      },
+    ],
+    edges: [
+      {
+        id: "e-color-output",
+        sourceNodeId: "particleColor",
+        sourcePinId: "color",
+        targetNodeId: "output",
+        targetPinId: "color",
+      },
+    ],
+  };
+}
+
 export function createDefaultMaterialDocument(
   name = "Material",
   domain: MaterialDomain = "surface",
@@ -320,13 +351,16 @@ export function createDefaultMaterialDocument(
       ? defaultPostProcessGraph()
       : domain === "interface"
         ? defaultInterfaceGraph()
-        : defaultSurfaceGraph();
+        : domain === "particle"
+          ? defaultParticleGraph()
+          : defaultSurfaceGraph();
   return {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     name,
     domain,
-    shadingModel: domain === "interface" ? "unlit" : "pbr",
-    blendMode: "opaque",
+    shadingModel:
+      domain === "interface" || domain === "particle" ? "unlit" : "pbr",
+    blendMode: domain === "particle" ? "additive" : "opaque",
     twoSided: false,
     alphaCutoff: 0.5,
     preview: { mesh: "cube", customMeshGuid: null },

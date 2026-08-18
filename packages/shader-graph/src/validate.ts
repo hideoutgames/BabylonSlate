@@ -12,12 +12,14 @@ import {
 function materialDomainLabel(domain: MaterialDomain): string {
   if (domain === "postProcess") return "post-process";
   if (domain === "interface") return "interface";
+  if (domain === "particle") return "particle";
   return "surface";
 }
 
 function materialTerminalTitle(domain: MaterialDomain): string {
   if (domain === "postProcess") return "Post Process Output";
   if (domain === "interface") return "Interface Output";
+  if (domain === "particle") return "Particle Output";
   return "Material Output";
 }
 import type {

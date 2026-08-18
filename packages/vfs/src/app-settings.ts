@@ -26,6 +26,8 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "audio-mixer": ["audio-mixer-details"],
   "audio-channel": ["audio-channel-details"],
   "sound-attenuation": ["sound-attenuation-details"],
+  "particle-emitter": ["particle-emitter-preview"],
+  "particle-system": ["particle-system-preview"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -76,8 +78,20 @@ export const engineSettingsSchema = z.object({
       showFps: z.boolean().default(false),
       logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
       previewBuild: z.boolean().default(false),
+      overlayStats: z.boolean().default(true),
+      overlayConsole: z.boolean().default(true),
+      overlayInspector: z.boolean().default(true),
+      pauseOnPlay: z.boolean().default(false),
     })
-    .default({ showFps: false, logLevel: "warn", previewBuild: false }),
+    .default({
+      showFps: false,
+      logLevel: "warn",
+      previewBuild: false,
+      overlayStats: true,
+      overlayConsole: true,
+      overlayInspector: true,
+      pauseOnPlay: false,
+    }),
   focusKeepPanels: z
     .object({
       scene: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.scene),
@@ -117,6 +131,12 @@ export const engineSettingsSchema = z.object({
       ),
       "sound-attenuation": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["sound-attenuation"],
+      ),
+      "particle-emitter": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["particle-emitter"],
+      ),
+      "particle-system": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["particle-system"],
       ),
     })
     .default(mutableFocusKeepPanels),

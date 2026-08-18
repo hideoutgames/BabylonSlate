@@ -27,10 +27,12 @@ import {
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import { DebugConsole } from "./debug-console";
+import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands } from "../lib/play-console";
+import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
@@ -42,6 +44,7 @@ import type {
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
+import type { PlayParticleLibrary } from "../lib/play-particles";
 import {
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
@@ -53,6 +56,7 @@ import type {
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { audioStats } from "@babylonslate/render";
+import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
@@ -97,6 +101,7 @@ export interface PlayOverlayProps {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: PlayAudioLibrary;
+  particleLibrary?: PlayParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -105,6 +110,7 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
+  pauseOnPlay?: boolean;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -147,6 +153,7 @@ export function PlayOverlay({
   modelBytes,
   audioBytes,
   audioLibrary,
+  particleLibrary,
   materialDocuments,
   materialFunctions,
   postProcessingEnabled,
@@ -155,9 +162,11 @@ export function PlayOverlay({
   pixelPerfect,
   navmeshBytes,
   audioReverbBytes,
+  pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
-  const { reportBtState } = usePlay();
+  const { reportBtState, overlayStats, overlayConsole, overlayInspector } =
+    usePlay();
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -176,9 +185,10 @@ export function PlayOverlay({
   const [audioQueued, setAudioQueued] = useState(0);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [paused, setPaused] = useState(pauseOnPlay);
   const [statsOpen, setStatsOpen] = useState(false);
-  const userPausedRef = useRef(false);
+  const userPausedRef = useRef(pauseOnPlay);
   const [trace, setTrace] = useState<TracePayload | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
   const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
@@ -230,6 +240,8 @@ export function PlayOverlay({
   audioBytesRef.current = audioBytes;
   const audioLibraryRef = useRef(audioLibrary);
   audioLibraryRef.current = audioLibrary;
+  const particleLibraryRef = useRef(particleLibrary);
+  particleLibraryRef.current = particleLibrary;
   const materialDocumentsRef = useRef(materialDocuments);
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
@@ -252,12 +264,23 @@ export function PlayOverlay({
   });
   sceneRef.current = { sceneAssetGuid, scene, gameInstanceClass, scenes };
   const initialFrameCapRef = useRef(frameCap);
+  const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
   const initialPlayPreviewRef = useRef(playPreview);
   const initialRenderRef = useRef(render);
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
+  const inspectSnapshot = useInspectWorldPoll(
+    nextPlayInspectorOpen(inspectorOpen, overlayInspector),
+    () =>
+      sessionRef.current?.inspectWorld() ??
+      Promise.resolve({ tickIndex: 0, nodes: [] }),
+  );
+
+  useEffect(() => {
+    setInspectorOpen((open) => nextPlayInspectorOpen(open, overlayInspector));
+  }, [overlayInspector]);
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -291,8 +314,8 @@ export function PlayOverlay({
       resizeIfSized(canvas);
     };
     layoutPlay();
-    userPausedRef.current = false;
-    setPaused(false);
+    userPausedRef.current = initialPauseOnPlayRef.current;
+    setPaused(initialPauseOnPlayRef.current);
     setInputMode(DEFAULT_INPUT_MODE);
     const session = startPlaySession({
       canvas,
@@ -318,6 +341,7 @@ export function PlayOverlay({
       modelBytes: modelBytesRef.current,
       audioBytes: audioBytesRef.current,
       audioLibrary: audioLibraryRef.current,
+      particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,
@@ -326,6 +350,7 @@ export function PlayOverlay({
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
+      pauseOnPlay: initialPauseOnPlayRef.current,
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {
         setHiddenWidgetIds((prev) =>
@@ -365,6 +390,9 @@ export function PlayOverlay({
       onFatalDiagnostic: () => finishSessionRef.current(),
     });
     sessionRef.current = session;
+    if (initialPauseOnPlayRef.current) {
+      session.setPaused(true);
+    }
     setPlayUiWidgetEventSink((event) =>
       sessionRef.current?.dispatchUiWidgetEvent(event) ?? false,
     );
@@ -484,6 +512,10 @@ export function PlayOverlay({
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}
+        inspectorOpen={inspectorOpen}
+        showStats={overlayStats}
+        showConsole={overlayConsole}
+        showInspector={overlayInspector}
         onPauseToggle={() => {
           setPaused((prev) => {
             const next = !prev;
@@ -494,6 +526,8 @@ export function PlayOverlay({
         }}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
+        onInspectorToggle={() => setInspectorOpen((open) => !open)}
+        onStep={() => sessionRef.current?.step()}
         onClose={() => finishSessionRef.current()}
         stats={
           <StatsHud
@@ -592,6 +626,11 @@ export function PlayOverlay({
           sessionRef.current?.executeConsoleCommand(line) ??
           Promise.resolve({ success: false, output: "not playing" })
         }
+      />
+      <DebugInspectDialog
+        open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}
+        onOpenChange={setInspectorOpen}
+        snapshot={inspectSnapshot}
       />
       {trace ? (
         <div

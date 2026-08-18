@@ -2,6 +2,7 @@ import type { ImportResult, IndexedAsset } from "@babylonslate/assets";
 import {
   DOCUMENT_CHUNK_ID,
   audioAssetDependencies,
+  particleAssetDependencies,
   createDefaultMigrationRegistry,
   createDefaultSpritePayload,
   createDefaultSpriteAnimationPayload,
@@ -10,6 +11,8 @@ import {
   createDefaultAudioMixerPayload,
   createDefaultAudioChannelPayload,
   createDefaultSoundAttenuationPayload,
+  createDefaultParticleEmitterPayload,
+  createDefaultParticleSystemPayload,
   parseSpriteAnimationPayload,
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
@@ -209,6 +212,8 @@ export const CREATABLE_ASSET_TYPES = [
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
+  "ParticleEmitter",
+  "ParticleSystem",
 ] as const;
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
@@ -246,7 +251,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction"],
+    types: ["Material", "MaterialFunction", "ParticleEmitter", "ParticleSystem"],
   },
   {
     id: "audio",
@@ -281,6 +286,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
+  ParticleEmitter: "One Babylon particle recipe: texture, shape, lifetime, and color.",
+  ParticleSystem: "Starts several Particle Emitters on one actor.",
 };
 
 /** Title Case label for a creatable asset type (`User Interface`). */
@@ -973,22 +980,39 @@ export function flattenContentBrowserTree(
   return rows;
 }
 
-export function contentBrowserMoveFromDrop(
+function contentRootOfPath(
+  path: string,
+  rootPaths: readonly string[],
+): string {
+  return (
+    rootPaths.find(
+      (root) => path === root || path.startsWith(`${root}/`),
+    ) ?? ASSETS_ROOT
+  );
+}
+
+function isFolderMoveCycle(
+  sourcePath: string,
+  destinationPath: string,
+): boolean {
+  return (
+    destinationPath === sourcePath ||
+    destinationPath.startsWith(`${sourcePath}/`)
+  );
+}
+
+function contentBrowserDropDestination(
   dragId: string,
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
-  rootPaths: readonly string[] = [ASSETS_ROOT],
-): ContentBrowserDropMove | null {
+  rootPaths: readonly string[],
+): { destinationPath: string; destRoot: string; sourceRoot: string } | null {
   const source = rows.find((row) => row.id === dragId);
   if (!source) return null;
   if (source.kind === "folder" && isFolderTreeRoot(source.path, rootPaths)) {
     return null;
   }
-  const sourceRoot =
-    rootPaths.find(
-      (root) =>
-        source.path === root || source.path.startsWith(`${root}/`),
-    ) ?? ASSETS_ROOT;
+  const sourceRoot = contentRootOfPath(source.path, rootPaths);
   let destinationPath = sourceRoot;
   if (targetId !== null) {
     const target = rows.find((row) => row.id === targetId);
@@ -998,32 +1022,147 @@ export function contentBrowserMoveFromDrop(
         ? target.path
         : parentFolderPath(target.path, sourceRoot);
   }
-  const sourcePath =
-    source.kind === "asset"
-      ? parentFolderPath(source.path, sourceRoot)
-      : source.path;
-  const destRoot =
-    rootPaths.find(
-      (root) =>
-        destinationPath === root || destinationPath.startsWith(`${root}/`),
-    ) ?? ASSETS_ROOT;
+  const destRoot = contentRootOfPath(destinationPath, rootPaths);
   if (destRoot !== sourceRoot) return null;
+  return { destinationPath, destRoot, sourceRoot };
+}
+
+function contentBrowserDropMoveForRow(
+  row: ContentBrowserTreeRow,
+  destinationPath: string,
+  sourceRoot: string,
+): ContentBrowserDropMove {
+  const sourcePath =
+    row.kind === "asset"
+      ? parentFolderPath(row.path, sourceRoot)
+      : row.path;
+  return {
+    kind: row.kind,
+    sourcePath,
+    destinationPath,
+    id: row.id,
+    ...(row.guid ? { guid: row.guid } : {}),
+  };
+}
+
+function treeRowInSelection(
+  row: ContentBrowserTreeRow,
+  selectedGuids: ReadonlySet<string>,
+  selectedFolderPaths: ReadonlySet<string>,
+): boolean {
+  if (row.kind === "folder") return selectedFolderPaths.has(row.path);
+  return Boolean(row.guid && selectedGuids.has(row.guid));
+}
+
+export function contentBrowserMoveFromDrop(
+  dragId: string,
+  targetId: string | null,
+  rows: ReadonlyArray<ContentBrowserTreeRow>,
+  rootPaths: readonly string[] = [ASSETS_ROOT],
+): ContentBrowserDropMove | null {
+  const source = rows.find((row) => row.id === dragId);
+  const dest = contentBrowserDropDestination(dragId, targetId, rows, rootPaths);
+  if (!source || !dest) return null;
+  const move = contentBrowserDropMoveForRow(
+    source,
+    dest.destinationPath,
+    dest.sourceRoot,
+  );
   if (
     !isValidMoveDestination({
-      kind: source.kind,
-      sourcePath,
-      destinationPath,
+      kind: move.kind,
+      sourcePath: move.sourcePath,
+      destinationPath: move.destinationPath,
     })
   ) {
     return null;
   }
-  return {
-    kind: source.kind,
-    sourcePath,
-    destinationPath,
-    id: source.id,
-    ...(source.guid ? { guid: source.guid } : {}),
-  };
+  return move;
+}
+
+export function contentBrowserTreeDropMoves(options: {
+  dragId: string;
+  targetId: string | null;
+  rows: ReadonlyArray<ContentBrowserTreeRow>;
+  selectedGuids: ReadonlySet<string>;
+  selectedFolderPaths: ReadonlySet<string>;
+  rootPaths?: readonly string[];
+  resolvePath?: (guid: string) => string | undefined;
+}): ContentBrowserDropMove[] {
+  const {
+    dragId,
+    targetId,
+    rows,
+    selectedGuids,
+    selectedFolderPaths,
+    rootPaths = [ASSETS_ROOT],
+  } = options;
+  const source = rows.find((row) => row.id === dragId);
+  const dest = contentBrowserDropDestination(dragId, targetId, rows, rootPaths);
+  if (!source || !dest) return [];
+  if (!treeRowInSelection(source, selectedGuids, selectedFolderPaths)) {
+    const move = contentBrowserMoveFromDrop(dragId, targetId, rows, rootPaths);
+    return move ? [move] : [];
+  }
+  const pathOf = (guid: string) =>
+    options.resolvePath?.(guid) ??
+    rows.find((row) => row.guid === guid)?.path;
+  let folders = rootSelectedFolderPaths(
+    [...selectedFolderPaths].filter(
+      (path) => !isFolderTreeRoot(path, rootPaths),
+    ),
+  ).filter((path) => path !== dest.destinationPath);
+  if (
+    folders.some((path) => isFolderMoveCycle(path, dest.destinationPath))
+  ) {
+    return [];
+  }
+  const guids = guidsOutsideSelectedFolders(
+    [...selectedGuids],
+    folders,
+    pathOf,
+  );
+  folders = folders.filter((path) =>
+    isValidMoveDestination({
+      kind: "folder",
+      sourcePath: path,
+      destinationPath: dest.destinationPath,
+    }),
+  );
+  const moves: ContentBrowserDropMove[] = [];
+  for (const path of folders) {
+    if (contentRootOfPath(path, rootPaths) !== dest.destRoot) return [];
+    moves.push({
+      kind: "folder",
+      sourcePath: path,
+      destinationPath: dest.destinationPath,
+      id: path,
+    });
+  }
+  for (const guid of guids) {
+    const path = pathOf(guid);
+    if (!path) continue;
+    const sourceRoot = contentRootOfPath(path, rootPaths);
+    if (sourceRoot !== dest.destRoot) return [];
+    const sourcePath = parentFolderPath(path, sourceRoot);
+    if (
+      !isValidMoveDestination({
+        kind: "asset",
+        sourcePath,
+        destinationPath: dest.destinationPath,
+      })
+    ) {
+      continue;
+    }
+    moves.push({
+      kind: "asset",
+      sourcePath,
+      destinationPath: dest.destinationPath,
+      id: path,
+      guid,
+    });
+  }
+  return moves;
 }
 
 export function flattenFolderTree(
@@ -1325,6 +1464,24 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "ParticleEmitter") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultParticleEmitterPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "ParticleSystem") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultParticleSystemPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   const exhaustive: never = type;
   throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
 }
@@ -1346,6 +1503,8 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   AudioMixer: ".mixer.babasset",
   AudioChannel: ".channel.babasset",
   SoundAttenuation: ".atten.babasset",
+  ParticleEmitter: ".emitter.babasset",
+  ParticleSystem: ".particles.babasset",
 };
 
 export function newAssetFileName(
@@ -1383,6 +1542,7 @@ export function assetHeaderDependencies(
   const unique = new Set<string>([
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
+    ...particleAssetDependencies(assetType, payload),
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
       : []),
@@ -1409,6 +1569,15 @@ export function isPostProcessMaterialAsset(asset: {
   return (
     asset.header.type === "Material" &&
     asset.header.payload?.domain === "postProcess"
+  );
+}
+
+export function isParticleMaterialAsset(asset: {
+  header: { type: string; payload?: Record<string, unknown> };
+}): boolean {
+  return (
+    asset.header.type === "Material" &&
+    asset.header.payload?.domain === "particle"
   );
 }
 
@@ -1459,6 +1628,26 @@ export function isInterfaceMaterialForPicker(
     return (open.content as { domain?: unknown }).domain === "interface";
   }
   return isInterfaceMaterialAsset(asset);
+}
+
+export function isParticleMaterialForPicker(
+  asset: {
+    path: string;
+    header: { type: string; payload?: Record<string, unknown> };
+  },
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+): boolean {
+  const open = openDocuments.find(
+    (entry) =>
+      entry.ref.kind === "material" && entry.ref.path === asset.path,
+  );
+  if (open && open.content && typeof open.content === "object") {
+    return (open.content as { domain?: unknown }).domain === "particle";
+  }
+  return isParticleMaterialAsset(asset);
 }
 
 function documentAsset(

@@ -89,4 +89,54 @@ describe("PlayOverlayChrome", () => {
       "Click the game view to enable audio",
     );
   });
+
+  it("hides the stats dump when Stats chrome is off even if Stats is open", () => {
+    const { getByTestId } = renderChrome({
+      statsOpen: true,
+      showStats: false,
+    });
+    expect(getByTestId("stats-hud").closest("[hidden]")).toBeTruthy();
+  });
+
+  it("hides Stats, Console, and Inspector when overlay chrome is off", () => {
+    const { queryByTestId } = renderChrome({
+      showStats: false,
+      showConsole: false,
+      showInspector: false,
+    });
+    expect(queryByTestId("play-stats-toggle")).toBeNull();
+    expect(queryByTestId("play-console-open")).toBeNull();
+    expect(queryByTestId("play-inspector-toggle")).toBeNull();
+    expect(queryByTestId("play-overlay-pause")).not.toBeNull();
+    expect(queryByTestId("play-overlay-close")).not.toBeNull();
+  });
+
+  it("shows Inspector pressed while the inspector is open", () => {
+    const onInspectorToggle = vi.fn();
+    const { getByTestId } = renderChrome({
+      inspectorOpen: true,
+      onInspectorToggle,
+    });
+    const inspector = getByTestId("play-inspector-toggle");
+    expect(inspector.textContent).toContain("Inspector");
+    expect(inspector.getAttribute("aria-pressed")).toBe("true");
+    expect(inspector.className).toContain("min-h-[var(--touch-target,44px)]");
+    fireEvent.click(inspector);
+    expect(onInspectorToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows Step next to Resume while paused", () => {
+    const onStep = vi.fn();
+    const { getByTestId } = renderChrome({ paused: true, onStep });
+    const step = getByTestId("play-overlay-step");
+    expect(step.textContent).toContain("Step");
+    expect(step.className).toContain("min-h-[var(--touch-target,44px)]");
+    fireEvent.click(step);
+    expect(onStep).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides Step while the session is running", () => {
+    const { queryByTestId } = renderChrome({ paused: false });
+    expect(queryByTestId("play-overlay-step")).toBeNull();
+  });
 });

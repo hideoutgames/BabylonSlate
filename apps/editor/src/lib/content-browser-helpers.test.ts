@@ -15,6 +15,7 @@ import {
   collectFolderGuids,
   compressionBadgeLabel,
   contentBrowserMoveFromDrop,
+  contentBrowserTreeDropMoves,
   displayAssetTitle,
   filterAssets,
   sortAssets,
@@ -47,6 +48,8 @@ import {
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
   isInterfaceMaterialForPicker,
+  isParticleMaterialAsset,
+  isParticleMaterialForPicker,
   classIdFromClassAsset,
   classParentLookup,
   addSelectedAssetGuid,
@@ -88,6 +91,52 @@ function asset(
     mtime: overrides.mtime,
   };
 }
+
+const multiMoveTree = {
+  name: "assets",
+  path: "assets",
+  assets: ["hero-guid", "villain-guid"],
+  children: [
+    {
+      name: "textures",
+      path: "assets/textures",
+      assets: ["dirt-guid"],
+      children: [
+        {
+          name: "ui",
+          path: "assets/textures/ui",
+          assets: ["icon-guid"],
+          children: [],
+        },
+      ],
+    },
+    {
+      name: "fx",
+      path: "assets/fx",
+      assets: [],
+      children: [],
+    },
+  ],
+};
+
+const multiMoveAssets = [
+  asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+  asset({
+    guid: "villain-guid",
+    name: "villain",
+    path: "assets/villain.babasset",
+  }),
+  asset({
+    guid: "dirt-guid",
+    name: "dirt",
+    path: "assets/textures/dirt.babasset",
+  }),
+  asset({
+    guid: "icon-guid",
+    name: "icon",
+    path: "assets/textures/ui/icon.babasset",
+  }),
+];
 
 describe("content-browser-helpers", () => {
   it("filters by search, type, and folder guids", () => {
@@ -506,6 +555,156 @@ describe("content-browser-helpers", () => {
     expect(contentBrowserMoveFromDrop("missing", "assets/textures", rows)).toBeNull();
   });
 
+  it("moves every selected sibling asset when one of them is dragged", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/hero.babasset",
+        targetId: "assets/textures",
+        rows,
+        selectedGuids: new Set(["hero-guid", "villain-guid"]),
+        selectedFolderPaths: new Set(),
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/villain.babasset",
+        guid: "villain-guid",
+      },
+    ]);
+  });
+
+  it("moves only the folder when a selected child asset is also selected", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(["dirt-guid"]),
+        selectedFolderPaths: new Set(["assets/textures"]),
+      }),
+    ).toEqual([
+      {
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures",
+      },
+    ]);
+  });
+
+  it("collapses nested selected folders to the ancestor on drop", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures/ui",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(),
+        selectedFolderPaths: new Set(["assets/textures", "assets/textures/ui"]),
+      }),
+    ).toEqual([
+      {
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures",
+      },
+    ]);
+  });
+
+  it("moves only the dragged row when it is not in the selection", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures/dirt.babasset",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(["hero-guid"]),
+        selectedFolderPaths: new Set(["assets/textures"]),
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures/dirt.babasset",
+        guid: "dirt-guid",
+      },
+    ]);
+  });
+
+  it("drops onto a selected sibling folder by moving the rest into it", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(["hero-guid"]),
+        selectedFolderPaths: new Set(["assets/textures", "assets/fx"]),
+      }),
+    ).toEqual([
+      {
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures",
+      },
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/fx",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+    ]);
+  });
+
+  it("rejects dropping a selected folder onto its own descendant", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures",
+        targetId: "assets/textures/ui",
+        rows,
+        selectedGuids: new Set(["hero-guid"]),
+        selectedFolderPaths: new Set(["assets/textures"]),
+      }),
+    ).toEqual([]);
+  });
+
+  it("still moves other selected items when the dragged row is already in the destination", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures/dirt.babasset",
+        targetId: "assets/textures",
+        rows,
+        selectedGuids: new Set(["dirt-guid", "hero-guid"]),
+        selectedFolderPaths: new Set(),
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+    ]);
+  });
+
   it("flattens a folder tree for the Move picker", () => {
     const tree = {
       name: "assets",
@@ -878,6 +1077,12 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("SoundAttenuation", "Near")).toBe(
       "Near.atten.babasset",
     );
+    expect(newAssetFileName("ParticleEmitter", "Sparks")).toBe(
+      "Sparks.emitter.babasset",
+    );
+    expect(newAssetFileName("ParticleSystem", "Fire")).toBe(
+      "Fire.particles.babasset",
+    );
     expect(newAssetFileName("Scene", "")).toBe("");
     expect(newAssetFileName("Scene", "   ")).toBe("");
     expect(isNewAssetNameTaken(["assets/NewAsset.scene.babasset"], "assets", "Scene", "")).toBe(
@@ -996,6 +1201,35 @@ describe("content-browser-helpers", () => {
     });
   });
 
+  it("seeds Particle Emitter and Particle System New Asset documents", () => {
+    const emitter = buildNewAssetResult({
+      type: "ParticleEmitter",
+      name: "Sparks",
+      guid: "em-1",
+      parentClass: null,
+    });
+    expect(emitter.type).toBe("ParticleEmitter");
+    expect(emitter.payload).toMatchObject({
+      textureGuid: null,
+      materialGuid: null,
+      capacity: 256,
+      emitRate: 30,
+      blendMode: "additive",
+    });
+    const system = buildNewAssetResult({
+      type: "ParticleSystem",
+      name: "Fire",
+      guid: "ps-1",
+      parentClass: null,
+    });
+    expect(system.type).toBe("ParticleSystem");
+    expect(system.payload).toMatchObject({
+      emitterGuids: [],
+      space: "world",
+      looping: true,
+    });
+  });
+
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
@@ -1017,6 +1251,8 @@ describe("content-browser-helpers", () => {
       "AudioMixer",
       "AudioChannel",
       "SoundAttenuation",
+      "ParticleEmitter",
+      "ParticleSystem",
     ]);
   });
 
@@ -1034,6 +1270,8 @@ describe("content-browser-helpers", () => {
     expect(creatableAssetTypeLabel("AudioMixer")).toBe("Audio Mixer");
     expect(creatableAssetTypeLabel("AudioChannel")).toBe("Audio Channel");
     expect(creatableAssetTypeLabel("SoundAttenuation")).toBe("Sound Attenuation");
+    expect(creatableAssetTypeLabel("ParticleEmitter")).toBe("Particle Emitter");
+    expect(creatableAssetTypeLabel("ParticleSystem")).toBe("Particle System");
   });
 
   it("groups every creatable type once", () => {
@@ -1062,6 +1300,15 @@ describe("content-browser-helpers", () => {
       "AudioMixer",
       "AudioChannel",
       "SoundAttenuation",
+    ]);
+    const rendering = CREATABLE_ASSET_TYPE_GROUPS.find(
+      (group) => group.id === "rendering",
+    );
+    expect([...rendering!.types]).toEqual([
+      "Material",
+      "MaterialFunction",
+      "ParticleEmitter",
+      "ParticleSystem",
     ]);
     expect(audio!.hint).toMatch(/Import/i);
     expect(audio!.hint).toMatch(/WAV/);
@@ -1433,6 +1680,17 @@ describe("content-browser-helpers", () => {
         ],
       }),
     ).toEqual(["tex-a", "tex-b"]);
+    expect(
+      assetHeaderDependencies("ParticleEmitter", {
+        textureGuid: "tex-p",
+        materialGuid: "mat-p",
+      }),
+    ).toEqual(["mat-p", "tex-p"]);
+    expect(
+      assetHeaderDependencies("ParticleSystem", {
+        emitterGuids: ["em-b", "em-a", "em-b"],
+      }),
+    ).toEqual(["em-a", "em-b"]);
   });
 
   it("stores Material domain on the scanned header", () => {
@@ -1441,6 +1699,9 @@ describe("content-browser-helpers", () => {
     });
     expect(materialHeaderMeta("Material", { domain: "interface" })).toEqual({
       domain: "interface",
+    });
+    expect(materialHeaderMeta("Material", { domain: "particle" })).toEqual({
+      domain: "particle",
     });
     expect(materialHeaderMeta("Material", {})).toEqual({ domain: "surface" });
     expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
@@ -1516,6 +1777,46 @@ describe("content-browser-helpers", () => {
         [],
       ),
     ).toBe(false);
+  });
+
+  it("recognizes particle-domain Materials from header payload", () => {
+    expect(
+      isParticleMaterialAsset(
+        asset({
+          type: "Material",
+          payload: { domain: "particle" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isParticleMaterialAsset(
+        asset({ type: "Material", payload: { domain: "surface" } }),
+      ),
+    ).toBe(false);
+    expect(
+      isParticleMaterialAsset(
+        asset({ type: "Material", payload: { domain: "postProcess" } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("prefers an open particle Material document domain over a stale header", () => {
+    const sparks = asset({
+      type: "Material",
+      path: "assets/Sparks.material.babasset",
+      guid: "mat-sparks",
+      name: "Sparks",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isParticleMaterialForPicker(sparks, [
+        {
+          ref: { kind: "material", path: "assets/Sparks.material.babasset" },
+          content: { domain: "particle" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isParticleMaterialForPicker(sparks, [])).toBe(false);
   });
 
   it("lists selected folders and assets for Delete confirm, not flattened contents", () => {

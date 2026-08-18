@@ -505,6 +505,7 @@ function MaterialDocumentDetails() {
         { value: "surface", label: "Surface" },
         { value: "postProcess", label: "Post Process" },
         { value: "interface", label: "Interface" },
+        { value: "particle", label: "Particle" },
       ],
       onChange: (value) =>
         commit(setMaterialDomain(document, parseMaterialDomain(value))),

@@ -34,10 +34,16 @@ describe("app settings", () => {
       "audio-mixer": ["audio-mixer-details"],
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],
+      "particle-emitter": ["particle-emitter-preview"],
+      "particle-system": ["particle-system-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);
+    expect(settings.debuggerDefaults.overlayStats).toBe(true);
+    expect(settings.debuggerDefaults.overlayConsole).toBe(true);
+    expect(settings.debuggerDefaults.overlayInspector).toBe(true);
+    expect(settings.debuggerDefaults.pauseOnPlay).toBe(false);
     expect(settings.postProcessingEnabled).toBe(true);
   });
 
@@ -92,6 +98,27 @@ describe("app settings", () => {
     expect(parsed.debuggerDefaults.previewBuild).toBe(false);
   });
 
+  it("defaults overlay Stats, Console, and Inspector on when debuggerDefaults omits them", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.debuggerDefaults.overlayStats).toBe(true);
+    expect(parsed.debuggerDefaults.overlayConsole).toBe(true);
+    expect(parsed.debuggerDefaults.overlayInspector).toBe(true);
+    expect(parsed.debuggerDefaults.pauseOnPlay).toBe(false);
+  });
+
+  it("keeps overlay chrome defaults when debuggerDefaults only has previewBuild", () => {
+    const parsed = engineSettingsSchema.parse({
+      debuggerDefaults: { previewBuild: true },
+    });
+    expect(parsed.debuggerDefaults.previewBuild).toBe(true);
+    expect(parsed.debuggerDefaults.overlayStats).toBe(true);
+    expect(parsed.debuggerDefaults.overlayConsole).toBe(true);
+    expect(parsed.debuggerDefaults.overlayInspector).toBe(true);
+    expect(parsed.debuggerDefaults.pauseOnPlay).toBe(false);
+  });
+
   it("defaults post-processing on when saved JSON omits the field", () => {
     const parsed = engineSettingsSchema.parse({
       undoHistoryLength: 50,
@@ -130,6 +157,12 @@ describe("app settings", () => {
     ]);
     expect(parsed.focusKeepPanels["sound-attenuation"]).toEqual([
       "sound-attenuation-details",
+    ]);
+    expect(parsed.focusKeepPanels["particle-emitter"]).toEqual([
+      "particle-emitter-preview",
+    ]);
+    expect(parsed.focusKeepPanels["particle-system"]).toEqual([
+      "particle-system-preview",
     ]);
   });
 

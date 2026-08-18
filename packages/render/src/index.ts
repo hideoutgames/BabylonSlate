@@ -48,3 +48,6 @@ export * from "./nav-debug-overlay";
 export * from "./audio-buffer-cache";
 export * from "./audio-playback-backend";
 export * from "./audio-service";
+export * from "./particle-service";
+export * from "./particle-system-factory";
+export * from "./particle-preview";

@@ -21,7 +21,7 @@ and imported `Material` stubs as `material`. Saving rewrites the header to
 renamed, so `.shader.babasset` files keep working and their layout ids,
 references and Git LFS locks stay valid.
 
-`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess` | `interface`),
+`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess` | `interface` | `particle`),
 `shadingModel`, `blendMode`, `twoSided`, `alphaCutoff`, `preview` and the graph.
 `MaterialFunctionDocument` (v1) carries typed `inputs` / `outputs` with **stable
 pin ids** plus the graph; renaming a pin does not break callers.
@@ -92,6 +92,14 @@ not author:
   Functions stay domain-neutral; an Interface graph may call a function that
   does not use restricted nodes. HUD widgets blit this material — they never
   attach a surface or scene post-process material.
+- **Particle**: `NodeMaterialModes.Particle` so `createEffectForParticles` can
+  attach. Vertex program may be empty; the terminal is fragment color/alpha
+  only. **Particle Color** (`input.particleColor`) is the system's
+  `particle_color` attribute (Babylon 9 has no `ParticleColorBlock` class).
+  **Particle Texture** (`input.particleTexture`) is `ParticleTextureBlock`;
+  unwired UV uses `particle_uv`. Live sampling is always
+  `system.particleTexture` — an NME preview texture is ignored. Hide world
+  attributes, WPO, PBR, Normal Map, and post-process buffers.
 
 Babylon reports build failures through `onBuildErrorObservable` rather than
 throwing, so the compiler subscribes and turns them into diagnostics. Blocks
@@ -116,7 +124,7 @@ mesh. Present goes through `camera.outputRenderTarget` (an RTT)
 and a 2D blit onto `material-preview-canvas`. Do **not** `registerView` or
 default-framebuffer `scene.render()` — those overwrite the Scene viewport and
 Play overlay, which share that Engine. Prefab Preview is on that Engine too
-(`p17-shared-prefab-engine`; today it is still a separate Engine). Orbit / pinch / wheel attach to the preview canvas
+(`p18-shared-prefab-engine`; today it is still a separate Engine). Orbit / pinch / wheel attach to the preview canvas
 only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
 Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
 and in-editor Play freeze present.
@@ -179,7 +187,7 @@ defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
 
-- **No node selected:** Domain (Surface / Post Process / Interface), Shading Model, Blend Mode, Two Sided (and Alpha
+- **No node selected:** Domain (Surface / Post Process / Interface / Particle), Shading Model, Blend Mode, Two Sided (and Alpha
   Cutoff when masked) plus the cost line.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.

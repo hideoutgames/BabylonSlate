@@ -158,7 +158,8 @@ export type ControlMessage =
   | { type: "step" }
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
-  | { type: "console"; line: string };
+  | { type: "console"; line: string }
+  | { type: "inspect" };
 
 export type CommandMessage =
   | {
@@ -261,6 +262,25 @@ export type CommandMessage =
       output: string;
     }
   | {
+      type: "inspectSnapshot";
+      snapshot: {
+        tickIndex: number;
+        nodes: Array<{
+          id: string;
+          kind: "gameInstance" | "actor" | "component";
+          label: string;
+          classId: string;
+          parentId: string | null;
+          transform?: {
+            position: [number, number, number];
+            rotation: [number, number, number, number];
+            scale: [number, number, number];
+          };
+          variables: Record<string, unknown>;
+        }>;
+      };
+    }
+  | {
       type: "trace";
       payload: Record<string, unknown>;
     }
@@ -321,6 +341,20 @@ export type CommandMessage =
   | { type: "stopSound"; voiceId: string }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
   | { type: "setGlobalVolume"; volume: number }
+  | {
+      type: "assignParticle";
+      slotId: number;
+      actorGuid: string;
+      componentId: string;
+      particleSystemGuid: string | null;
+      play?: boolean;
+    }
+  | {
+      type: "setParticlePlaying";
+      actorGuid: string;
+      componentId?: string;
+      playing: boolean;
+    }
   | {
       type: "setRenderResolution";
       width: number;

@@ -262,6 +262,32 @@ describe("switching material domain", () => {
     ).toBe(false);
   });
 
+  it("creates a particle-domain graph with Particle Color into the particle terminal", () => {
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    expect(doc.domain).toBe("particle");
+    expect(doc.nodes.some((node) => node.type === "input.particleColor")).toBe(
+      true,
+    );
+    expect(doc.nodes.some((node) => node.type === "output.particle")).toBe(true);
+    expect(doc.nodes.some((node) => node.type === "output.surface")).toBe(false);
+  });
+
+  it("normalizes domain particle without collapsing it to surface", () => {
+    expect(normalizeMaterialDocument({ domain: "particle" }).domain).toBe(
+      "particle",
+    );
+  });
+
+  it("switches a surface material to the particle terminal", () => {
+    const doc = setMaterialDomain(
+      createDefaultMaterialDocument("Rock"),
+      "particle",
+    );
+    expect(doc.domain).toBe("particle");
+    expect(doc.nodes.some((node) => node.type === "output.surface")).toBe(false);
+    expect(doc.nodes.some((node) => node.type === "output.particle")).toBe(true);
+  });
+
   it("keeps nodes that are legal in both domains", () => {
     const doc = createDefaultMaterialDocument("Rock");
     doc.nodes.push({

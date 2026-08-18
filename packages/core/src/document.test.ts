@@ -186,6 +186,23 @@ describe("Class and settings documents", () => {
     ).toBe("Master Audio Mixer");
   });
 
+  it("opens ParticleEmitter and ParticleSystem as DockView documents", () => {
+    expect(documentKindForAssetType("ParticleEmitter")).toBe("particle-emitter");
+    expect(documentKindForAssetType("ParticleSystem")).toBe("particle-system");
+    expect(assetTypeForDocumentKind("particle-emitter")).toBe("ParticleEmitter");
+    expect(assetTypeForDocumentKind("particle-system")).toBe("ParticleSystem");
+    expect(documentKindLabel("particle-emitter")).toBe("Particle Emitter");
+    expect(documentKindLabel("particle-system")).toBe("Particle System");
+    expect(isAssetDocumentKind("particle-emitter")).toBe(true);
+    expect(labelFromPath("assets/sparks.emitter.babasset")).toBe("Sparks");
+    expect(labelFromPath("assets/fire.particles.babasset")).toBe("Fire");
+    expect(
+      createDocumentRef("particle-system", "assets/fire.particles.babasset", {
+        name: "Fire",
+      }).label,
+    ).toBe("Fire Particle System");
+  });
+
   it("opens PluginSettings as its own document kind", () => {
     expect(documentKindForAssetType("PluginSettings")).toBe("plugin-settings");
     expect(assetTypeForDocumentKind("plugin-settings")).toBe("PluginSettings");

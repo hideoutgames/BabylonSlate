@@ -72,7 +72,7 @@ describe("scene schema", () => {
     expect(scene.settings.grid.tileSubdivisions).toBe(4);
     expect(scene.settings.grid.showGrid).toBe(true);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
-    expect(scene.settings.editorJoystickEnabled).toBe(false);
+    expect(scene.settings.editorJoystickEnabled).toBe(true);
   });
 
   it("coerces malformed actors and components so Details can open old projects", () => {
@@ -223,13 +223,18 @@ describe("scene schema", () => {
     ).toBe(true);
   });
 
-  it("normalizes editorJoystickEnabled only when explicitly true", () => {
+  it("normalizes editorJoystickEnabled to true unless explicitly false", () => {
+    expect(normalizeScene({}).settings.editorJoystickEnabled).toBe(true);
     expect(
       normalizeScene({ settings: { editorJoystickEnabled: true } }).settings
         .editorJoystickEnabled,
     ).toBe(true);
     expect(
       normalizeScene({ settings: { editorJoystickEnabled: "yes" } }).settings
+        .editorJoystickEnabled,
+    ).toBe(true);
+    expect(
+      normalizeScene({ settings: { editorJoystickEnabled: false } }).settings
         .editorJoystickEnabled,
     ).toBe(false);
   });

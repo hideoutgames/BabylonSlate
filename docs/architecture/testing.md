@@ -39,7 +39,7 @@ Excluded, each for a stated reason:
 | `create-engine.ts` | Needs a real WebGL context; covered by Playwright |
 | `babylon-audio-backend.ts` | Babylon AudioV2; unit tests inject `FakeAudioPlaybackBackend` |
 | `ui-surface.ts` | Standalone `CreateFullscreenUI` + Canvas2D blit need a real Engine canvas; covered by Playwright HUD / designer |
-| `worker-entry.ts` | Game worker host; covered by Play e2e |
+| `worker-entry.ts` | Game worker host; covered by Play e2e. Inspect control and Pause On Play gating are unit-tested in `inspect-control.ts` / `play-pause-gate.ts` |
 | `bake-worker.ts` | Navmesh bake worker; `runNavBakeJob` unit tests plus editor host |
 | `audio-reverb-worker.ts` | Audio reverb bake worker; occupancy/probe bake is covered in `audio-reverb.test.ts` plus editor host |
 | `havok-backend.ts`, `havok-loader.ts`, `rapier-backend.ts` | Wasm backends; HavokPlugin path asserted in `havok-v2.test.ts`; coverage of the Babylon/Havok surface is environment-dependent |
@@ -80,6 +80,8 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 `e2e/p15-source-control.spec.ts` uses test-mode `FakeLockProvider`: enable Source Control, edit the scene → Content Browser `data-lock-state="mine"`, Locks panel held count, hatch `addTheirs` → **Edit Anyway**, **Release All My Locks** confirm copy, and `touchAssetOnDisk` + `runForegroundRescan` → dirty-disk reload dialog. Unit tests cover Git LFS 409 already-ours via verify, skip auto-lock create after a restart verify, rename/folder lock transfer helpers, delete unlocking our paths, and desktop source-read of iOS App-target `BabylonSlateSecretsPlugin` registration. Two-device GitHub lock visibility is manual, not CI.
 
 `e2e/p16-audio.spec.ts` imports a committed WAV fixture, creates AudioMixer / AudioChannel / SoundAttenuation, wires refs (including Project Settings mixer and AudioComponent), Save All / reopen, preview, and Show References. A second serial case Plays, clicks `play-canvas` to unlock, asserts test-mode `window.__babylonslateAudioStats` (`unlocked`), moves the emitter on X and asserts `lastDistance` changes, then Stop returns `voices` to 0. Cross-package gain / session Set Channel / Set Global (including voices already playing) / reverb opt-in proofs live in `packages/render/src/p16-acceptance.test.ts`. Packed-player gain smoke lives in `apps/player/src/hydrate.test.ts`. Real-device listening is manual, not CI. Test-mode `window.__babylonslateAudioStats` is the same idea as `uiHostStats`.
+
+`e2e/p17-particles.spec.ts` imports `albedo.png`, creates Particle Emitter / Particle System / particle-domain Material, wires Texture + Material + System slots + ParticleComponent, asserts Windows Preview/Details, Play `window.__babylonslateParticleStats` (`systems` / `playing`), teardown to 0, Class palette Play/Stop Particles, missing-texture Play log, and save/reopen. Packed-player hydrate lives in `apps/player/src/hydrate.test.ts`. NullEngine start/stop/dispose lives in `packages/render/src/particle-service.test.ts`.
 
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 

@@ -304,6 +304,9 @@ export function MaterialEditingProvider({
       if (document.domain === "postProcess" || document.domain === "interface") {
         host.applyMaterial(null);
         host.applyPostProcess(result.material);
+      } else if (document.domain === "particle") {
+        host.applyMaterial(null);
+        host.applyPostProcess(null);
       } else {
         host.applyPostProcess(null);
         host.applyMaterial(result.material);

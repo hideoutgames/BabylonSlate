@@ -20,6 +20,7 @@ import {
   type Scene,
   type Texture,
 } from "@babylonjs/core";
+import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import type {
   MaterialBuildPlan,
   MaterialDiagnostic,
@@ -94,7 +95,9 @@ export function compileMaterialPlan(
   material.mode =
     plan.domain === "postProcess" || plan.domain === "interface"
       ? NodeMaterialModes.PostProcess
-      : NodeMaterialModes.Material;
+      : plan.domain === "particle"
+        ? NodeMaterialModes.Particle
+        : NodeMaterialModes.Material;
 
   const created: NodeMaterialBlock[] = [];
   const diagnostics: MaterialDiagnostic[] = [];
@@ -121,7 +124,7 @@ export function compileMaterialPlan(
       if (plan.domain === "interface") {
         plumbing.uv = plumbing.screenUv;
       }
-    } else {
+    } else if (plan.domain !== "particle") {
       outputNodes.push(...createSurfacePlumbing(options.name, created, plumbing));
     }
   } catch (error) {
@@ -301,6 +304,10 @@ export function compileMaterialPlan(
     return fail();
   }
 
+  if (plan.domain === "particle") {
+    ensureParticleTextureUvs(options.name, created);
+  }
+
   const outputPoint = (
     pinId: string,
     name: string,
@@ -312,7 +319,7 @@ export function compileMaterialPlan(
   };
 
   try {
-    if (plan.domain === "postProcess") {
+    if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
       created.push(fragment);
       const color = outputPoint("color", `${options.name}_color`, true);
@@ -392,6 +399,27 @@ function bindTexture(
     texture?: Texture | null;
   };
   if (texture) block.texture = texture;
+}
+
+/** ParticleTextureBlock requires UV; live systems supply `particle_uv`. */
+function ensureParticleTextureUvs(
+  name: string,
+  created: NodeMaterialBlock[],
+): void {
+  const extra: NodeMaterialBlock[] = [];
+  for (const block of created) {
+    if (!(block instanceof ParticleTextureBlock)) continue;
+    if (block.uv.isConnected) continue;
+    const uv = new InputBlock(
+      `${name}_${block.name}_particleUv`.replace(/[^A-Za-z0-9_]/g, "_"),
+      undefined,
+      NodeMaterialBlockConnectionPointTypes.Vector2,
+    );
+    uv.setAsAttribute("particle_uv");
+    uv.output.connectTo(block.uv);
+    extra.push(uv);
+  }
+  created.push(...extra);
 }
 
 function matrixInput(
@@ -694,5 +722,6 @@ export async function prewarmMaterial(
   mesh: Mesh | null,
 ): Promise<void> {
   if (!mesh) return;
+  if (material.mode === NodeMaterialModes.Particle) return;
   await material.forceCompilationAsync(mesh);
 }

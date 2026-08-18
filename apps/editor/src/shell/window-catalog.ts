@@ -22,7 +22,9 @@ export type DockviewDocumentKind =
   | "behaviour-tree"
   | "audio-mixer"
   | "audio-channel"
-  | "sound-attenuation";
+  | "sound-attenuation"
+  | "particle-emitter"
+  | "particle-system";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -44,6 +46,8 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
+  "particle-emitter",
+  "particle-system",
 ]);
 
 export function isDockviewDocumentKind(
@@ -92,6 +96,8 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "audio-mixer": "audio-mixer-details",
   "audio-channel": "audio-channel-details",
   "sound-attenuation": "sound-attenuation-details",
+  "particle-emitter": "particle-emitter-preview",
+  "particle-system": "particle-system-preview",
 };
 
 export function primaryDockPanel(
@@ -364,6 +370,42 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
     title: "Details",
     defaultPosition: {
       referencePanelId: "sprite-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const PARTICLE_EMITTER_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "particle-emitter-preview",
+    component: "particle-emitter-preview",
+    title: "Preview",
+  },
+  {
+    id: "particle-emitter-details",
+    component: "particle-emitter-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "particle-emitter-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "particle-system-preview",
+    component: "particle-system-preview",
+    title: "Preview",
+  },
+  {
+    id: "particle-system-details",
+    component: "particle-system-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "particle-system-preview",
       direction: "right",
       initialWidth: 280,
     },
@@ -683,6 +725,12 @@ export function listDockWindows(
     return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
   }
   if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "particle-emitter") {
+    return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
+  }
+  if (kind === "particle-system") {
+    return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
+  }
   if (kind === "sprite-animation") {
     return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
   }

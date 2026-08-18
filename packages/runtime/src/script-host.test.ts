@@ -1488,6 +1488,50 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("emits setParticlePlaying when Begin Play runs particles.play and particles.stop", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "play", "particles.play"),
+        node(registry, "stop", "particles.stop"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "play", "execIn"),
+        edge("e2", "play", "execOut", "stop", "execIn"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Fx", "particle-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Fx" });
+    runtime.start();
+    runtime.tick();
+    expect(
+      commands.filter((command) => command.type === "setParticlePlaying"),
+    ).toEqual([
+      expect.objectContaining({
+        type: "setParticlePlaying",
+        actorGuid: expect.any(String),
+        playing: true,
+      }),
+      expect.objectContaining({
+        type: "setParticlePlaying",
+        actorGuid: expect.any(String),
+        playing: false,
+      }),
+    ]);
+    runtime.stop();
+  });
+
   it("emits setChannelVolume and setGlobalVolume from audio mixer nodes", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

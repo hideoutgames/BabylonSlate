@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import {
   ActivityIcon,
+  ListTreeIcon,
   PauseIcon,
   PlayIcon,
+  SkipForwardIcon,
   TerminalIcon,
   XIcon,
 } from "lucide-react";
@@ -12,21 +14,33 @@ import { Toggle } from "@babylonslate/ui/components/toggle";
 export type PlayOverlayChromeProps = {
   paused: boolean;
   statsOpen: boolean;
+  inspectorOpen?: boolean;
+  showStats?: boolean;
+  showConsole?: boolean;
+  showInspector?: boolean;
   onPauseToggle: () => void;
   onStatsToggle: () => void;
   onConsoleOpen: () => void;
+  onInspectorToggle?: () => void;
+  onStep?: () => void;
   onClose: () => void;
   stats: ReactNode;
   extras?: ReactNode;
 };
 
-/** Labeled Play chrome: Pause, Stats, Console, Stop. Stats dump stays collapsed. */
+/** Labeled Play chrome: Pause, Stats, Console, Inspector, Stop. Stats dump stays collapsed. */
 export function PlayOverlayChrome({
   paused,
   statsOpen,
+  inspectorOpen = false,
+  showStats = true,
+  showConsole = true,
+  showInspector = true,
   onPauseToggle,
   onStatsToggle,
   onConsoleOpen,
+  onInspectorToggle,
+  onStep,
   onClose,
   stats,
   extras,
@@ -34,7 +48,7 @@ export function PlayOverlayChrome({
   return (
     <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div hidden={!statsOpen} className="pointer-events-none">
+        <div hidden={!statsOpen || !showStats} className="pointer-events-none">
           {stats}
         </div>
         {extras}
@@ -55,27 +69,56 @@ export function PlayOverlayChrome({
           )}
           {paused ? "Resume" : "Pause"}
         </Button>
-        <Toggle
-          size="touch"
-          variant="outline"
-          pressed={statsOpen}
-          data-testid="play-stats-toggle"
-          aria-label="Stats"
-          onPressedChange={() => onStatsToggle()}
-        >
-          <ActivityIcon data-icon="inline-start" />
-          Stats
-        </Toggle>
-        <Button
-          size="touch"
-          variant="secondary"
-          data-testid="play-console-open"
-          aria-label="Console"
-          onClick={onConsoleOpen}
-        >
-          <TerminalIcon data-icon="inline-start" />
-          Console
-        </Button>
+        {paused ? (
+          <Button
+            size="touch"
+            variant="secondary"
+            data-testid="play-overlay-step"
+            aria-label="Step"
+            onClick={() => onStep?.()}
+          >
+            <SkipForwardIcon data-icon="inline-start" />
+            Step
+          </Button>
+        ) : null}
+        {showStats ? (
+          <Toggle
+            size="touch"
+            variant="outline"
+            pressed={statsOpen}
+            data-testid="play-stats-toggle"
+            aria-label="Stats"
+            onPressedChange={() => onStatsToggle()}
+          >
+            <ActivityIcon data-icon="inline-start" />
+            Stats
+          </Toggle>
+        ) : null}
+        {showConsole ? (
+          <Button
+            size="touch"
+            variant="secondary"
+            data-testid="play-console-open"
+            aria-label="Console"
+            onClick={onConsoleOpen}
+          >
+            <TerminalIcon data-icon="inline-start" />
+            Console
+          </Button>
+        ) : null}
+        {showInspector ? (
+          <Toggle
+            size="touch"
+            variant="outline"
+            pressed={inspectorOpen}
+            data-testid="play-inspector-toggle"
+            aria-label="Inspector"
+            onPressedChange={() => onInspectorToggle?.()}
+          >
+            <ListTreeIcon data-icon="inline-start" />
+            Inspector
+          </Toggle>
+        ) : null}
         <Button
           size="touch"
           variant="secondary"

@@ -12,7 +12,7 @@ import {
   type RuntimeDriver,
 } from "@babylonslate/runtime";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import { createEngine, audioStats, type EngineHandle } from "@babylonslate/render";
+import { createEngine, audioStats, particleStats, type EngineHandle } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
@@ -96,6 +96,7 @@ export function startPlayer(options: {
     modelBytes: game.modelBytes,
     audioBytes: game.audioBytes,
     audioLibrary: content.audioLibrary,
+    particleLibrary: content.particleLibrary,
     audioReverbBytes: content.audioReverbBytes,
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
@@ -120,6 +121,15 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onParticleDiagnostic: (diagnostic) => {
+      diagnostics.push({
+        message: diagnostic.message,
+        severity: "warning",
+        code: diagnostic.code,
+        assetGuid: diagnostic.assetGuid,
+      });
+      options.onDiagnostic?.(diagnostics);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -127,6 +137,9 @@ export function startPlayer(options: {
     (
       window as { __babylonslateAudioStats?: typeof audioStats }
     ).__babylonslateAudioStats = audioStats;
+    (
+      window as { __babylonslateParticleStats?: typeof particleStats }
+    ).__babylonslateParticleStats = particleStats;
   }
   const framebuffer = manifest.render.customResolution
     ? {
