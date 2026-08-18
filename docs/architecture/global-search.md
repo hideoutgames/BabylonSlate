@@ -28,18 +28,26 @@ Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
 ## Lifecycle
 
-- **Rebuild** on project open and `remountRegistry`.
-- **Upsert** one asset after `saveDocument`, and from in-memory Scene/Graph content after `applySceneChange` / `applyGraphChange` so unsaved edits are searchable before the autosave write.
-- **Remove** when an asset is deleted.
-- **Clear** on Close Project.
+**P19** (`p19-search-on-demand`) drops the warm index. Until that slice lands, today's code still rebuilds on project open / `remountRegistry` and upserts after save/edit.
 
-In-memory only, keyed by the open project. Query is case-insensitive substring; empty needle returns no rows (cap ~80 hits).
+Target lifecycle:
+
+- Do **not** rebuild on project open or keep a warm index across edits.
+- **Rebuild when Global Search is initiated** (toolbar / `Ctrl/Cmd+K` opens the dialog). Include **open document** JSON so unsaved edits are in that snapshot.
+- Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (empty/spinner while pending). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
+- Drop continuous upsert / rebuild-on-import as the source of truth.
+- **Clear** on Close Project.
+- Result cap ~80 stays; the result body is **not** virtualised (`p19-log-virtualize` may window `SearchDialog` pick lists, not this hit list).
+- Still no on-disk search cache, no ExecuteJavaScript body, no binary payloads.
+
+In-memory only, keyed by the open project. Query is case-insensitive substring; empty needle returns no rows.
 
 ## UI
 
 - Toolbar icon left of Settings (`data-testid="global-search"`), disabled with no project.
 - Centered `Dialog` (`data-testid="global-search-dialog"`), larger than default (`sm:max-w-2xl`), fixed height `h-[min(90svh,52rem)]` with `overflow-hidden` (same cap as catalog dialogs).
-- Results live in a native scroller (`data-testid="global-search-results"`, `min-h-0 flex-1 overflow-y-auto`) so long hit lists scroll instead of growing the popup.
+- While a rebuild is pending, the body is empty/spinner; queries wait until the snapshot is ready.
+- Results live in a native scroller (`data-testid="global-search-results"`, `min-h-0 flex-1 overflow-y-auto`) so long hit lists scroll instead of growing the popup. Cap ~80; do not window-virtualise this list.
 - Results grouped by kind, each hit showing the same type icon/color as the Content Browser. `Ctrl/Cmd+K` toggles on desktop.
 
 ## Navigation
