@@ -4,6 +4,7 @@ import {
   Handle,
   Position,
   getBezierPath,
+  useReactFlow,
   type EdgeProps,
   type Node,
   type NodeProps,
@@ -12,10 +13,26 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
 import { useGraphEditorContext } from "./graph-editor-context";
 
+type AnimStateSide = "top" | "right" | "bottom" | "left";
+
+const ANIM_STATE_SIDES: readonly AnimStateSide[] = [
+  "top",
+  "right",
+  "bottom",
+  "left",
+];
+
 type AnimStateData = {
   title?: string;
   entry?: boolean;
   __nodeType?: string;
+};
+
+const SIDE_POSITION: Record<AnimStateSide, Position> = {
+  top: Position.Top,
+  right: Position.Right,
+  bottom: Position.Bottom,
+  left: Position.Left,
 };
 
 export function AnimStateNode({
@@ -36,24 +53,34 @@ export function AnimStateNode({
       )}
       data-testid={`anim-state-node-${id}`}
     >
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="in"
-        className="anim-state-handle"
-      />
+      {ANIM_STATE_SIDES.map((side) => (
+        <span key={side}>
+          <Handle
+            type="target"
+            position={SIDE_POSITION[side]}
+            id={`${side}-in`}
+            className={cn(
+              "anim-state-handle anim-state-handle-target",
+              `anim-state-handle-${side}`,
+            )}
+          />
+          <Handle
+            type="source"
+            position={SIDE_POSITION[side]}
+            id={`${side}-out`}
+            className={cn(
+              "anim-state-handle anim-state-handle-source",
+              `anim-state-handle-${side}`,
+            )}
+          />
+        </span>
+      ))}
       <div className="anim-state-node-title">{title}</div>
       {data.entry === true ? (
         <div className="anim-state-node-entry-mark" aria-hidden>
           Entry
         </div>
       ) : null}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="out"
-        className="anim-state-handle"
-      />
     </div>
   );
 }
@@ -68,9 +95,12 @@ export function AnimTransitionEdge({
   targetPosition,
   style,
   markerEnd,
+  markerStart,
   selected,
+  type,
 }: EdgeProps) {
   const { onEdgeDoubleClick } = useGraphEditorContext();
+  const { setEdges } = useReactFlow();
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -79,21 +109,40 @@ export function AnimTransitionEdge({
     sourcePosition,
     targetPosition,
   });
+  const angle = (Math.atan2(targetY - sourceY, targetX - sourceX) * 180) / Math.PI;
+  const bidirectional = type === "animTransitionBoth";
   return (
     <>
-      <BaseEdge id={id} path={edgePath} style={style} markerEnd={markerEnd} />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={style}
+        markerEnd={markerEnd}
+        markerStart={bidirectional ? markerStart : undefined}
+      />
       <EdgeLabelRenderer>
         <button
           type="button"
           className={cn(
             "anim-transition-badge nodrag nopan",
             selected && "anim-transition-badge-selected",
+            bidirectional && "anim-transition-badge-both",
           )}
           style={{
-            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+            transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px) rotate(${angle}deg)`,
           }}
           data-testid={`anim-transition-badge-${id}`}
-          aria-label="Open transition rule"
+          data-bidirectional={bidirectional ? "true" : undefined}
+          aria-label="Select transition"
+          onClick={(event) => {
+            event.stopPropagation();
+            setEdges((current) =>
+              current.map((edge) => ({
+                ...edge,
+                selected: edge.id === id,
+              })),
+            );
+          }}
           onDoubleClick={(event) => {
             event.stopPropagation();
             onEdgeDoubleClick?.(id);
@@ -110,4 +159,5 @@ export const animGraphNodeTypes = {
 
 export const animGraphEdgeTypes = {
   animTransition: AnimTransitionEdge,
+  animTransitionBoth: AnimTransitionEdge,
 };

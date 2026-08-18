@@ -17,12 +17,17 @@ import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
 import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
 import { SpritePreviewPanel, SpriteDetailsPanel } from "../components/sprite-editor";
 import {
+  SpriteAnimationPreviewPanel,
+  SpriteAnimationDetailsPanel,
+} from "../components/sprite-animation-editor";
+import {
   TilesetPreviewPanel,
   TilesetDetailsPanel,
 } from "../components/tileset-editor";
 import {
   TilemapPaintPanel,
   TilemapDetailsPanel,
+  TilemapPalettePanel,
 } from "../components/tilemap-editor";
 import {
   UiDesignPanel,
@@ -101,6 +106,12 @@ export const panelComponents = {
   "sprite-details": (props: IDockviewPanelProps) => (
     <SpriteDetailsPanel {...props} />
   ),
+  "sprite-animation-preview": (props: IDockviewPanelProps) => (
+    <SpriteAnimationPreviewPanel {...props} />
+  ),
+  "sprite-animation-details": (props: IDockviewPanelProps) => (
+    <SpriteAnimationDetailsPanel {...props} />
+  ),
   "tileset-preview": (props: IDockviewPanelProps) => (
     <TilesetPreviewPanel {...props} />
   ),
@@ -109,6 +120,9 @@ export const panelComponents = {
   ),
   "tilemap-paint": (props: IDockviewPanelProps) => (
     <TilemapPaintPanel {...props} />
+  ),
+  "tilemap-palette": (props: IDockviewPanelProps) => (
+    <TilemapPalettePanel {...props} />
   ),
   "tilemap-details": (props: IDockviewPanelProps) => (
     <TilemapDetailsPanel {...props} />

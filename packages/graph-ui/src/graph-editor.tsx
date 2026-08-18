@@ -1,7 +1,9 @@
 import {
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   applyEdgeChanges,
@@ -125,6 +127,8 @@ export interface GraphEditorProps {
   onSelectionChange?: (nodeIds: string[]) => void;
   /** Pin click in read-only previews (does not mutate). */
   onPinSelect?: (nodeId: string, pinId: string) => void;
+  /** Highlight a node without fit-view (host list selection). */
+  selectedNodeId?: string;
   focusedNodeId?: string;
   diagnostics?: GraphDiagnostic[];
   onNavigateRequest?: (request: NavigateRequest) => void;
@@ -174,6 +178,10 @@ export interface GraphEditorProps {
     sourceHandle: string;
     targetHandle: string;
   }) => boolean;
+  /** Rewrite handle ids before validation / connect (Animation Graph sides). */
+  normalizeConnection?: (connection: Connection) => Connection | null;
+  /** React Flow connection mode. Animation Graph uses Loose for side handles. */
+  connectionMode?: "strict" | "loose";
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
   contextMenuItemsForAttachment?: (
     nodeId: string,
@@ -189,15 +197,32 @@ export interface GraphEditorProps {
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 
+const CLOSED_ARROW = { type: MarkerType.ArrowClosed } as const;
+
+function asConnection(connection: Connection | Edge): Connection {
+  return {
+    source: connection.source,
+    target: connection.target,
+    sourceHandle: connection.sourceHandle ?? null,
+    targetHandle: connection.targetHandle ?? null,
+  };
+}
+
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    ...(edge.type ? { type: edge.type } : {}),
-  }));
+  return edges.map((edge) => {
+    const both = edge.type === "animTransitionBoth";
+    const directed = both || edge.type === "animTransition";
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+      ...(edge.type ? { type: edge.type } : {}),
+      ...(directed ? { markerEnd: CLOSED_ARROW } : {}),
+      ...(both ? { markerStart: CLOSED_ARROW } : {}),
+    };
+  });
 }
 
 function styleFlowEdges(
@@ -290,6 +315,29 @@ function clientPoint(
   return null;
 }
 
+function SelectedNodeSync({ selectedNodeId }: { selectedNodeId?: string }) {
+  const { getNode, setNodes } = useReactFlow();
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    if (!getNode(selectedNodeId)) return;
+    setNodes((current) => {
+      const already =
+        current.some((entry) => entry.id === selectedNodeId && entry.selected) &&
+        current.every(
+          (entry) => entry.id === selectedNodeId || !entry.selected,
+        );
+      if (already) return current;
+      return current.map((entry) => ({
+        ...entry,
+        selected: entry.id === selectedNodeId,
+      }));
+    });
+  }, [getNode, selectedNodeId, setNodes]);
+
+  return null;
+}
+
 function FocusedNodeSync({
   focusedNodeId,
   fitViewOptions,
@@ -325,6 +373,7 @@ function GraphEditorCanvas({
   onChange,
   commitPositionsOnDragEnd = false,
   onSelectionChange,
+  selectedNodeId,
   focusedNodeId,
   diagnostics,
   onNavigateRequest,
@@ -350,6 +399,8 @@ function GraphEditorCanvas({
   emptyPaneDoubleTapAddsNode = true,
   replaceIncomingOnConnect = false,
   canConnect,
+  normalizeConnection,
+  connectionMode,
   contextMenuItemsForNode,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
@@ -655,45 +706,52 @@ function GraphEditorCanvas({
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (readOnly) return;
+      const next = normalizeConnection
+        ? normalizeConnection(connection)
+        : connection;
       if (
-        !connection.source ||
-        !connection.target ||
-        !connection.sourceHandle ||
-        !connection.targetHandle
+        !next?.source ||
+        !next.target ||
+        !next.sourceHandle ||
+        !next.targetHandle
       ) {
         return;
       }
       addEdge(
-        connection.source,
-        connection.sourceHandle,
-        connection.target,
-        connection.targetHandle,
+        next.source,
+        next.sourceHandle,
+        next.target,
+        next.targetHandle,
       );
       setPendingPin(null);
       pendingPinRef.current = null;
     },
-    [addEdge, readOnly],
+    [addEdge, normalizeConnection, readOnly],
   );
 
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
+      const incoming = asConnection(connection);
+      const next = normalizeConnection
+        ? normalizeConnection(incoming)
+        : incoming;
       if (
-        !connection.source ||
-        !connection.target ||
-        !connection.sourceHandle ||
-        !connection.targetHandle
+        !next?.source ||
+        !next.target ||
+        !next.sourceHandle ||
+        !next.targetHandle
       ) {
         return false;
       }
       const sourcePin = pinOnNode(
         graphStateRef.current.nodes,
-        connection.source,
-        connection.sourceHandle,
+        next.source,
+        next.sourceHandle,
       );
       const targetPin = pinOnNode(
         graphStateRef.current.nodes,
-        connection.target,
-        connection.targetHandle,
+        next.target,
+        next.targetHandle,
       );
       if (!sourcePin || !targetPin) return true;
       if (!pinsAreCompatible(sourcePin, targetPin, pinCompatibility)) {
@@ -701,13 +759,13 @@ function GraphEditorCanvas({
       }
       if (!canConnect) return true;
       return canConnect({
-        source: connection.source,
-        target: connection.target,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
+        source: next.source,
+        target: next.target,
+        sourceHandle: next.sourceHandle,
+        targetHandle: next.targetHandle,
       });
     },
-    [canConnect, pinCompatibility],
+    [canConnect, normalizeConnection, pinCompatibility],
   );
 
   const handleConnectStart = useCallback(
@@ -1390,6 +1448,7 @@ function GraphEditorCanvas({
         ref={wrapperRef}
         className="relative h-full w-full touch-manipulation"
         data-testid="graph-editor"
+        data-focused-node-id={focusedNodeId || undefined}
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
       >
@@ -1506,6 +1565,13 @@ function GraphEditorCanvas({
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
           defaultEdgeOptions={defaultEdgeOptions}
+          connectionMode={
+            connectionMode === "loose"
+              ? ConnectionMode.Loose
+              : connectionMode === "strict"
+                ? ConnectionMode.Strict
+                : undefined
+          }
           fitView
           fitViewOptions={graphViewport.fitViewOptions}
           defaultViewport={graphViewport.defaultViewport}
@@ -1525,6 +1591,7 @@ function GraphEditorCanvas({
             showInteractive={false}
             fitViewOptions={graphViewport.fitViewOptions}
           />
+          <SelectedNodeSync selectedNodeId={selectedNodeId} />
           <FocusedNodeSync
             focusedNodeId={focusedNodeId}
             fitViewOptions={graphViewport.focusedFitViewOptions}

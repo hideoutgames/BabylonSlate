@@ -71,6 +71,8 @@ import {
   shadowEnginePlugins,
   stripAssetFileSuffix,
   writeProjectPlugin,
+  parseSpriteAnimationPayload,
+  spriteAnimationDurationMs,
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
@@ -147,6 +149,12 @@ function headerMetaForSave(
       guid: typeof payload.guid === "string" ? payload.guid : "",
       name: typeof payload.name === "string" ? payload.name : "Interface",
       methods: Array.isArray(payload.methods) ? payload.methods : [],
+    };
+  }
+  if (type === "SpriteAnimation") {
+    const parsed = parseSpriteAnimationPayload(content);
+    return {
+      durationMs: spriteAnimationDurationMs(parsed),
     };
   }
   return undefined;

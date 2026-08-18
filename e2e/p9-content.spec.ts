@@ -24,6 +24,7 @@ async function createAsset(
   type:
     | "UserInterface"
     | "Sprite"
+    | "SpriteAnimation"
     | "AnimationGraph"
     | "Material"
     | "MaterialFunction",
@@ -381,6 +382,14 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
     await expect(page.getByTestId("property-texture")).toBeVisible();
 
+    await createAsset(page, "SpriteAnimation", "Walk");
+    await page
+      .locator('[data-asset-path="assets/Walk.spriteanim.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-sprite-animation")).toBeVisible();
+    await expect(page.getByTestId("sprite-animation-preview")).toBeVisible();
+    await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
+
     await createAsset(page, "AnimationGraph", "Loco");
     await page.locator('[data-asset-path="assets/Loco.anim.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-anim-graph")).toBeVisible();
@@ -421,6 +430,9 @@ test.describe("P9 content systems", () => {
     );
     const stateMachine = animStateMachine(page);
     await expect(stateMachine.getByTestId("anim-graph-add-variable")).toBeVisible();
+    await expect(stateMachine.getByTestId("anim-graph-add-variable")).not.toHaveClass(
+      /min-h-\[var\(--touch-target/,
+    );
     await stateMachine.getByTestId("anim-graph-add-variable").click();
     await expect(stateMachine.getByTestId("anim-graph-variable-var-1")).toBeVisible();
     await expect(page.getByTestId("windows-menu")).toBeEnabled();
@@ -437,11 +449,11 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("anim-state-node-state-1")).toBeVisible();
     const idleOut = page
       .getByTestId("anim-state-node-idle")
-      .locator(".react-flow__handle.source");
+      .locator('[data-handleid="right-out"]');
     const nextIn = page
       .getByTestId("anim-state-node-state-1")
-      .locator(".react-flow__handle.target");
-    await idleOut.dragTo(nextIn);
+      .locator('[data-handleid="left-in"]');
+    await idleOut.dragTo(nextIn, { force: true });
     const badge = page.locator('[data-testid^="anim-transition-badge-"]');
     await expect(badge).toBeVisible();
     await badge.dblclick();
@@ -449,6 +461,21 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("anim-rule-breadcrumb")).toContainText("Idle To State");
     await page.getByTestId("anim-rule-breadcrumb-state-machine").click();
     await expect(page.getByTestId("anim-graph-editor")).toBeVisible();
+
+    await page.getByTestId("anim-graph-state-idle").click();
+    await expect(page.getByTestId("property-clipKind")).toBeVisible();
+    await page.getByTestId("property-clipAsset").click();
+    await expect(page.getByTestId("anim-graph-clip-picker")).toBeVisible();
+    await expect(page.getByTestId("anim-graph-clip-picker").getByText("Pick Model")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("property-clipKind").click();
+    await page.getByRole("option", { name: "Sprite" }).click();
+    await page.getByTestId("property-clipAsset").click();
+    await expect(page.getByTestId("anim-graph-clip-picker")).toBeVisible();
+    await expect(
+      page.getByTestId("anim-graph-clip-picker").getByText("Pick Sprite Animation"),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
 
     await page.getByTestId("anim-editor-mode-animation-object").click();
     await expect(page.getByTestId("anim-editor-mode-animation-object")).toHaveAttribute(

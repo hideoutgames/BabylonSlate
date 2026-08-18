@@ -73,5 +73,6 @@ describe("SpriteEditor", () => {
     );
     expect(screen.getByTestId("sprite-preview")).toBeTruthy();
     expect(screen.getByTestId("sprite-pivot-marker")).toBeTruthy();
+    expect(screen.getByTestId("sprite-collision-overlay")).toBeTruthy();
   });
 });

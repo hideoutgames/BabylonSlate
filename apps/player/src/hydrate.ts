@@ -6,10 +6,12 @@ import {
   normalizeSoundAttenuationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  parseSpriteAnimationPayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
   type SoundAttenuationPayload,
+  type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
@@ -42,6 +44,7 @@ export type PackedAudioLibrary = {
 
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
+  spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
   tilemapPayloads: Map<string, TilemapPayload>;
   tilesetPayloads: Map<string, TilesetPayload>;
   animGraphs: Array<{ guid: string; document: unknown }>;
@@ -75,6 +78,15 @@ function asSpritePayload(value: unknown): SpritePayload | null {
   return value as SpritePayload;
 }
 
+function asSpriteAnimationPayload(
+  value: unknown,
+): SpriteAnimationPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { frames?: unknown; clips?: unknown };
+  if (!Array.isArray(record.frames) || Array.isArray(record.clips)) return null;
+  return parseSpriteAnimationPayload(value);
+}
+
 function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = bytes.slice();
   return copy.buffer.slice(
@@ -85,6 +97,7 @@ function navmeshArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const spritePayloads = new Map<string, SpritePayload>();
+  const spriteAnimationPayloads = new Map<string, SpriteAnimationPayload>();
   const tilemapPayloads = new Map<string, TilemapPayload>();
   const tilesetPayloads = new Map<string, TilesetPayload>();
   const animGraphs: Array<{ guid: string; document: unknown }> = [];
@@ -104,6 +117,11 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     if (entry.type === "Sprite") {
       const sprite = asSpritePayload(parsed);
       if (sprite) spritePayloads.set(entry.guid, sprite);
+      continue;
+    }
+    if (entry.type === "SpriteAnimation" && parsed) {
+      const animation = asSpriteAnimationPayload(parsed);
+      if (animation) spriteAnimationPayloads.set(entry.guid, animation);
       continue;
     }
     if (entry.type === "Tilemap" && parsed) {
@@ -176,6 +194,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
 
   return {
     spritePayloads,
+    spriteAnimationPayloads,
     tilemapPayloads,
     tilesetPayloads,
     animGraphs,
@@ -205,6 +224,19 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
   const controls: ControlMessage[] = [];
   if (content.animGraphs.length > 0) {
     controls.push({ type: "loadAnimGraphs", graphs: [...content.animGraphs] });
+  }
+  if (content.spritePayloads.size > 0 || content.spriteAnimationPayloads.size > 0) {
+    controls.push({
+      type: "loadSprites",
+      sprites: [...content.spritePayloads.entries()].map(([guid, document]) => ({
+        guid,
+        document,
+      })),
+      spriteAnimations: [...content.spriteAnimationPayloads.entries()].map(
+        ([guid, document]) => ({ guid, document }),
+      ),
+      ...(content.pixelsPerUnit > 0 ? { pixelsPerUnit: content.pixelsPerUnit } : {}),
+    });
   }
   if (content.behaviourTrees.length > 0 || content.blackboards.length > 0) {
     controls.push({

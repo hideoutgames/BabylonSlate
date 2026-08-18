@@ -20,6 +20,7 @@ describe("app settings", () => {
       structure: ["structure-members"],
       "script-interface": ["script-interface-preview"],
       sprite: ["sprite-preview"],
+      "sprite-animation": ["sprite-animation-preview"],
       tileset: ["tileset-preview"],
       tilemap: ["tilemap-paint"],
       material: ["material-graph"],

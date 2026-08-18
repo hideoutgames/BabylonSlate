@@ -8,7 +8,7 @@ import {
 } from "@babylonjs/core";
 import type { SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
 import type {
   MaterialDocument,
@@ -61,7 +61,7 @@ import {
   disposeSnapshotBinding,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
-import type { MeshAssetContext } from "./mesh-assets";
+import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { meshNamesInCanvasRect } from "./two-d";
@@ -185,6 +185,7 @@ export interface CreateEngineOptions {
   frameCap?: number;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   /** Tilemap / tileset payloads for Play chunk meshes. */
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
@@ -403,6 +404,7 @@ export function createEngine(
   binding.pixelsPerUnit = options.pixelsPerUnit;
   binding.pixelPerfect = options.pixelPerfect === true;
   binding.spritePayloads = options.spritePayloads;
+  binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
   binding.modelBytes = options.modelBytes;
   binding.resourceCache = resourceCache;
@@ -736,7 +738,16 @@ export function createEngine(
       const camera = scene.activeCamera;
       if (camera) {
         const pos = camera.globalPosition ?? camera.position;
-        audioService.syncListener({ x: pos.x, y: pos.y, z: pos.z });
+        const rot = camera.absoluteRotation;
+        audioService.syncListener({
+          x: pos.x,
+          y: pos.y,
+          z: pos.z,
+          qx: rot.x,
+          qy: rot.y,
+          qz: rot.z,
+          qw: rot.w,
+        });
       }
     }
     // Measure render cost only, not wall-clock gap since the previous
@@ -847,6 +858,10 @@ export function createEngine(
             sceneAnimHostFromBinding(binding, {
               animationGroups: scene.animationGroups,
               spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+              spriteAnimations:
+                binding.spriteAnimations ?? options.spriteAnimations,
+              applyTexture: (mesh, guid) =>
+                applyAlbedoTexture(mesh, scene, guid, binding),
             }),
             pending,
           );
@@ -874,6 +889,10 @@ export function createEngine(
           sceneAnimHostFromBinding(binding, {
             animationGroups: scene.animationGroups,
             spritePayloads: binding.spritePayloads ?? options.spritePayloads,
+            spriteAnimations:
+              binding.spriteAnimations ?? options.spriteAnimations,
+            applyTexture: (mesh, guid) =>
+              applyAlbedoTexture(mesh, scene, guid, binding),
             onMissingClip: (info) => {
               const groups = binding.slotAnimationGroups?.get(info.slotId);
               if (
@@ -951,6 +970,8 @@ export function createEngine(
       binding.textureBytes = assets.textureBytes;
       binding.modelBytes = assets.modelBytes;
       binding.spritePayloads = assets.spritePayloads ?? binding.spritePayloads;
+      binding.spriteAnimations =
+        assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
       if (typeof assets.pixelsPerUnit === "number") {

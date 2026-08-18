@@ -32,6 +32,13 @@ export interface TileUv {
   v1: number;
 }
 
+export interface TileRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 const DEFAULT_TILE = 16;
 
 export function createDefaultTilesetPayload(): TilesetPayload {
@@ -102,6 +109,27 @@ export function ensureTilesetTiles(tileset: TilesetPayload): TilesetPayload {
   return { ...tileset, tiles };
 }
 
+/** Image-space source rect for canvas `drawImage`. Row 0 is the top of the atlas. */
+export function tilesetTileRect(
+  tileset: TilesetPayload,
+  tileId: number,
+): TileRect | null {
+  if (tileId <= 0) return null;
+  const columns = tilesetAtlasColumns(tileset);
+  const rows = tilesetAtlasRows(tileset);
+  const index = tileId - 1;
+  const col = index % columns;
+  const row = Math.floor(index / columns);
+  if (row < 0 || row >= rows) return null;
+  const { tileWidth, tileHeight, margin, spacing } = tileset;
+  return {
+    x: margin + col * (tileWidth + spacing),
+    y: margin + row * (tileHeight + spacing),
+    width: tileWidth,
+    height: tileHeight,
+  };
+}
+
 /**
  * Normalized UVs for a 1-based atlas cell. Image-space row 0 is the top of the
  * texture; GL `v=0` is the bottom, so V is flipped.
@@ -110,26 +138,60 @@ export function tilesetTileUv(
   tileset: TilesetPayload,
   tileId: number,
 ): TileUv | null {
-  if (tileId <= 0) return null;
-  const columns = tilesetAtlasColumns(tileset);
-  const index = tileId - 1;
-  const col = index % columns;
-  const row = Math.floor(index / columns);
-  const { atlasWidth, atlasHeight, tileWidth, tileHeight, margin, spacing } =
-    tileset;
+  const rect = tilesetTileRect(tileset, tileId);
+  if (!rect) return null;
+  const { atlasWidth, atlasHeight } = tileset;
   if (atlasWidth <= 0 || atlasHeight <= 0) return null;
-  const x = margin + col * (tileWidth + spacing);
-  const y = margin + row * (tileHeight + spacing);
-  const u0 = x / atlasWidth;
-  const u1 = (x + tileWidth) / atlasWidth;
-  const vTop = y / atlasHeight;
-  const vBottom = (y + tileHeight) / atlasHeight;
+  const u0 = rect.x / atlasWidth;
+  const u1 = (rect.x + rect.width) / atlasWidth;
+  const vTop = rect.y / atlasHeight;
+  const vBottom = (rect.y + rect.height) / atlasHeight;
   return {
     u0: roundUv(u0),
     v0: roundUv(1 - vBottom),
     u1: roundUv(u1),
     v1: roundUv(1 - vTop),
   };
+}
+
+/** Map a pointer on a displayed atlas image onto a 1-based tile id (0 if outside). */
+export function atlasCellAt(options: {
+  localX: number;
+  localY: number;
+  imageX: number;
+  imageY: number;
+  imageWidth: number;
+  imageHeight: number;
+  tileset: TilesetPayload;
+}): number {
+  const { localX, localY, imageX, imageY, imageWidth, imageHeight, tileset } =
+    options;
+  if (imageWidth <= 0 || imageHeight <= 0) return 0;
+  if (
+    localX < imageX ||
+    localY < imageY ||
+    localX >= imageX + imageWidth ||
+    localY >= imageY + imageHeight
+  ) {
+    return 0;
+  }
+  const ix = ((localX - imageX) / imageWidth) * tileset.atlasWidth;
+  const iy = ((localY - imageY) / imageHeight) * tileset.atlasHeight;
+  const strideX = tileset.tileWidth + tileset.spacing;
+  const strideY = tileset.tileHeight + tileset.spacing;
+  if (strideX <= 0 || strideY <= 0) return 0;
+  const innerX = ix - tileset.margin;
+  const innerY = iy - tileset.margin;
+  if (innerX < 0 || innerY < 0) return 0;
+  const col = Math.floor(innerX / strideX);
+  const row = Math.floor(innerY / strideY);
+  const inTileX = innerX - col * strideX;
+  const inTileY = innerY - row * strideY;
+  if (inTileX >= tileset.tileWidth || inTileY >= tileset.tileHeight) return 0;
+  const columns = tilesetAtlasColumns(tileset);
+  const rows = tilesetAtlasRows(tileset);
+  if (col < 0 || row < 0 || col >= columns || row >= rows) return 0;
+  return row * columns + col + 1;
 }
 
 function roundUv(value: number): number {

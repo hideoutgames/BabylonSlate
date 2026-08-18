@@ -1,4 +1,4 @@
-import { act, fireEvent, render, cleanup, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, cleanup, screen, waitFor } from "@testing-library/react";
 import { useStore } from "@xyflow/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDefaultGraph } from "@babylonslate/core";
@@ -1726,6 +1726,24 @@ describe("GraphEditor", () => {
     await waitFor(() => {
       expect(onSelectionChange).toHaveBeenCalledWith([]);
     });
+  });
+
+  it("highlights selectedNodeId without stamping a focused node", async () => {
+    const onSelectionChange = vi.fn();
+    render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        selectedNodeId="log-a"
+        onSelectionChange={onSelectionChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenCalledWith(["log-a"]);
+    });
+    expect(
+      screen.getByTestId("graph-editor").getAttribute("data-focused-node-id"),
+    ).toBeNull();
   });
 
   it("recolors a boxed wildcard pin when a concrete type is wired in", () => {

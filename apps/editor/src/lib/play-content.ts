@@ -4,11 +4,19 @@ import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import {
+  parseSpriteAnimationPayload,
+  spriteAnimationTextureGuids,
+  type SpriteAnimationPayload,
+  type SpritePayload,
+  type TilemapPayload,
+  type TilesetPayload,
+} from "@babylonslate/assets";
 import {
   AUDIO_REVERB_CHUNK_ID,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  tilemapTilesetGuids,
 } from "@babylonslate/assets";
 import type {
   UiWidgetEventControl,
@@ -465,6 +473,13 @@ function asSpritePayload(value: unknown): SpritePayload | null {
   return value as SpritePayload;
 }
 
+function asSpriteAnimationPayload(value: unknown): SpriteAnimationPayload | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as { frames?: unknown; clips?: unknown };
+  if (!Array.isArray(record.frames) || Array.isArray(record.clips)) return null;
+  return parseSpriteAnimationPayload(value);
+}
+
 export function playSpritePayloadsFromGuids(
   guids: readonly string[],
   payloadForGuid: (guid: string) => unknown | null,
@@ -475,6 +490,38 @@ export function playSpritePayloadsFromGuids(
     if (payload) map.set(guid, payload);
   }
   return map;
+}
+
+export function playSpriteAnimationPayloadsFromGuids(
+  guids: readonly string[],
+  payloadForGuid: (guid: string) => unknown | null,
+): Map<string, SpriteAnimationPayload> {
+  const map = new Map<string, SpriteAnimationPayload>();
+  for (const guid of guids) {
+    const payload = asSpriteAnimationPayload(payloadForGuid(guid));
+    if (payload) map.set(guid, payload);
+  }
+  return map;
+}
+
+/** Sprite Animation asset guids referenced by loaded Animation Graphs. */
+export function spriteAnimationGuidsFromAnimGraphs(
+  graphs: readonly PlayAnimGraphEntry[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of graphs) {
+    const document = parseAnimGraphDocument(entry.document);
+    if (!document) continue;
+    for (const clip of document.clips) {
+      if (clip.kind !== "sprite" || !clip.assetGuid || seen.has(clip.assetGuid)) {
+        continue;
+      }
+      seen.add(clip.assetGuid);
+      guids.push(clip.assetGuid);
+    }
+  }
+  return guids;
 }
 
 export function playTilemapPayloadsFromGuids(
@@ -496,10 +543,11 @@ export function tilesetGuidsFromTilemaps(
   const guids: string[] = [];
   const seen = new Set<string>();
   for (const tilemap of tilemaps.values()) {
-    const guid = tilemap.tilesetGuid;
-    if (!guid || seen.has(guid)) continue;
-    seen.add(guid);
-    guids.push(guid);
+    for (const guid of tilemapTilesetGuids(tilemap)) {
+      if (seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
+    }
   }
   return guids;
 }
@@ -508,6 +556,7 @@ export function tilesetGuidsFromTilemaps(
 export function textureGuidsFromPlayPayloads(
   sprites: ReadonlyMap<string, SpritePayload> | undefined,
   tilesets: ReadonlyMap<string, TilesetPayload> | undefined,
+  spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
 ): string[] {
   const guids: string[] = [];
   const seen = new Set<string>();
@@ -521,6 +570,11 @@ export function textureGuidsFromPlayPayloads(
   }
   if (tilesets) {
     for (const tileset of tilesets.values()) add(tileset.textureGuid);
+  }
+  if (spriteAnimations) {
+    for (const animation of spriteAnimations.values()) {
+      for (const guid of spriteAnimationTextureGuids(animation)) add(guid);
+    }
   }
   return guids;
 }
@@ -652,6 +706,33 @@ function guidDocuments<T>(
 ): Array<{ guid: string; document: unknown }> {
   if (!payloads) return [];
   return [...payloads.entries()].map(([guid, document]) => ({ guid, document }));
+}
+
+/** Worker `loadSprites` control, or null when Play has no sprite content. */
+export function playLoadSpritesControl(
+  sprites: ReadonlyMap<string, SpritePayload> | undefined,
+  spriteAnimations: ReadonlyMap<string, SpriteAnimationPayload> | undefined,
+  pixelsPerUnit?: number,
+): {
+  type: "loadSprites";
+  sprites: Array<{ guid: string; document: unknown }>;
+  spriteAnimations: Array<{ guid: string; document: unknown }>;
+  pixelsPerUnit?: number;
+} | null {
+  if (
+    (!sprites || sprites.size === 0) &&
+    (!spriteAnimations || spriteAnimations.size === 0)
+  ) {
+    return null;
+  }
+  return {
+    type: "loadSprites",
+    sprites: guidDocuments(sprites),
+    spriteAnimations: guidDocuments(spriteAnimations),
+    ...(typeof pixelsPerUnit === "number" && pixelsPerUnit > 0
+      ? { pixelsPerUnit }
+      : {}),
+  };
 }
 
 /** Worker `loadTilemaps` control, or null when Play has no tile content. */

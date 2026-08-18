@@ -1,5 +1,10 @@
 /** Tilemap asset payload: ordered layers of chunked tile ids (engineplan §13.3). */
 
+import {
+  ensureTilesetTiles,
+  type TilesetPayload,
+} from "./tileset-payload";
+
 export const DEFAULT_TILEMAP_CHUNK_SIZE = 32;
 
 export interface TilemapChunk {
@@ -19,8 +24,21 @@ export interface TilemapLayer {
   chunks: TilemapChunk[];
 }
 
+export interface TilemapTilesetRef {
+  guid: string;
+  firstGid: number;
+  tileCount: number;
+}
+
+export interface TileGidHit {
+  guid: string;
+  localId: number;
+  tileset: TilesetPayload;
+}
+
 export interface TilemapPayload {
   tilesetGuid: string | null;
+  tilesets: TilemapTilesetRef[];
   tileWidth: number;
   tileHeight: number;
   chunkSize: number;
@@ -35,6 +53,7 @@ export function emptyChunkTiles(chunkSize: number): number[] {
 export function createDefaultTilemapPayload(): TilemapPayload {
   return {
     tilesetGuid: null,
+    tilesets: [],
     tileWidth: 16,
     tileHeight: 16,
     chunkSize: DEFAULT_TILEMAP_CHUNK_SIZE,
@@ -93,18 +112,136 @@ export function reorderTilemapLayers(
   return { ...map, layers };
 }
 
+export function tilemapTilesetGuids(map: TilemapPayload): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const ref of map.tilesets) {
+    if (!ref.guid || seen.has(ref.guid)) continue;
+    seen.add(ref.guid);
+    guids.push(ref.guid);
+  }
+  if (map.tilesetGuid && !seen.has(map.tilesetGuid)) {
+    guids.unshift(map.tilesetGuid);
+  }
+  return guids;
+}
+
+/** Tiled GID: `firstGid + localId - 1`. Local id 1 is the first atlas cell. */
+export function encodeTileGid(firstGid: number, localId: number): number {
+  if (localId <= 0 || firstGid <= 0) return 0;
+  return firstGid + localId - 1;
+}
+
+export function decodeTileGid(
+  map: TilemapPayload,
+  gid: number,
+  tilesets: ReadonlyMap<string, TilesetPayload>,
+): TileGidHit | null {
+  if (!Number.isInteger(gid) || gid <= 0) return null;
+  let chosen: TilemapTilesetRef | null = null;
+  for (const ref of map.tilesets) {
+    if (ref.firstGid <= gid && (!chosen || ref.firstGid > chosen.firstGid)) {
+      chosen = ref;
+    }
+  }
+  if (!chosen) {
+    if (map.tilesets.length > 0) return null;
+    const fallbackGuid = map.tilesetGuid;
+    if (!fallbackGuid) return null;
+    const tileset = tilesets.get(fallbackGuid);
+    if (!tileset) return null;
+    return { guid: fallbackGuid, localId: gid, tileset };
+  }
+  const tileset = tilesets.get(chosen.guid);
+  if (!tileset) return null;
+  const count =
+    chosen.tileCount > 0
+      ? chosen.tileCount
+      : ensureTilesetTiles(tileset).tiles.length;
+  const localId = gid - chosen.firstGid + 1;
+  if (count > 0 && (localId < 1 || localId > count)) return null;
+  return { guid: chosen.guid, localId, tileset };
+}
+
+export function addTilemapTileset(
+  map: TilemapPayload,
+  guid: string,
+  tileset: TilesetPayload,
+  knownTilesets?: ReadonlyMap<string, TilesetPayload>,
+): TilemapPayload {
+  if (!guid) return map;
+  if (map.tilesets.some((ref) => ref.guid === guid)) return map;
+  const count = Math.max(1, ensureTilesetTiles(tileset).tiles.length);
+  const firstGid = nextTilesetFirstGid(map, knownTilesets);
+  const tilesets = [...map.tilesets, { guid, firstGid, tileCount: count }];
+  return { ...map, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
+}
+
+export function removeTilemapTileset(
+  map: TilemapPayload,
+  guid: string,
+): TilemapPayload {
+  const tilesets = map.tilesets.filter((ref) => ref.guid !== guid);
+  return { ...map, tilesets, tilesetGuid: tilesets[0]?.guid ?? null };
+}
+
+function nextTilesetFirstGid(
+  map: TilemapPayload,
+  knownTilesets?: ReadonlyMap<string, TilesetPayload>,
+): number {
+  let next = 1;
+  for (const ref of map.tilesets) {
+    let count = ref.tileCount;
+    if (count <= 0) {
+      const payload = knownTilesets?.get(ref.guid);
+      count = payload ? ensureTilesetTiles(payload).tiles.length : 1;
+    }
+    next = Math.max(next, ref.firstGid + Math.max(1, count));
+  }
+  return next;
+}
+
 export function normalizeTilemapPayload(value: unknown): TilemapPayload {
   const source =
     value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const chunkSize = positiveInt(source.chunkSize, DEFAULT_TILEMAP_CHUNK_SIZE);
   const layers = normalizeLayers(source.layers, chunkSize);
+  const tilesets = normalizeTilesetRefs(source.tilesets, source.tilesetGuid);
   return {
-    tilesetGuid: stringOrNull(source.tilesetGuid),
+    tilesetGuid: tilesets[0]?.guid ?? null,
+    tilesets,
     tileWidth: positiveInt(source.tileWidth, 16),
     tileHeight: positiveInt(source.tileHeight, 16),
     chunkSize,
     layers: layers.length > 0 ? layers : createDefaultTilemapPayload().layers,
   };
+}
+
+function normalizeTilesetRefs(
+  value: unknown,
+  legacyGuid: unknown,
+): TilemapTilesetRef[] {
+  const refs: TilemapTilesetRef[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue;
+      const row = entry as Record<string, unknown>;
+      const guid = stringOrNull(row.guid);
+      if (!guid || seen.has(guid)) continue;
+      seen.add(guid);
+      refs.push({
+        guid,
+        firstGid: positiveInt(row.firstGid, 1),
+        tileCount: nonNegativeInt(row.tileCount, 0),
+      });
+    }
+  }
+  const fallback = stringOrNull(legacyGuid);
+  if (refs.length === 0 && fallback) {
+    refs.push({ guid: fallback, firstGid: 1, tileCount: 0 });
+  }
+  return refs;
 }
 
 /** Local tile index: `(0,0)` is the bottom-left of the chunk, +Y up. */
@@ -237,6 +374,12 @@ function stringOrNull(value: unknown): string | null {
 
 function positiveInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function nonNegativeInt(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.floor(value)
     : fallback;
 }

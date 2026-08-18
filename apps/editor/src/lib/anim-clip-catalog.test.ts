@@ -82,4 +82,51 @@ describe("animClipCatalogFromAssets", () => {
       },
     ]);
   });
+
+  it("reads Sprite Animation durationMs from header payload", () => {
+    expect(
+      animClipCatalogFromAssets([
+        {
+          header: {
+            guid: "walk-anim",
+            type: "SpriteAnimation",
+            name: "Walk",
+            payload: { durationMs: 250 },
+          },
+        },
+      ]),
+    ).toEqual([
+      {
+        guid: "walk-anim",
+        type: "SpriteAnimation",
+        name: "Walk",
+        clipName: undefined,
+        clipNames: [],
+        dependencyGuids: [],
+        durationMs: 250,
+      },
+    ]);
+  });
+
+  it("sums Sprite Animation frame durations when header durationMs is missing", () => {
+    expect(
+      animClipCatalogFromAssets([
+        {
+          header: {
+            guid: "walk-anim",
+            type: "SpriteAnimation",
+            name: "Walk",
+            payload: {
+              frames: [{ durationMs: 100 }, { durationMs: 150 }],
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        guid: "walk-anim",
+        durationMs: 250,
+      }),
+    ]);
+  });
 });

@@ -15,8 +15,11 @@ import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { GraphEditingProvider } from "../context/graph-editing-context";
 import { MaterialEditingProvider } from "../context/material-editing-context";
 import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
+import { TilesetEditingProvider } from "../context/tileset-editing-context";
+import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
+import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
@@ -446,10 +449,77 @@ export function DocumentWorkspace() {
           );
         }
 
+        if (doc.ref.kind === "sprite-animation") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <SpriteAnimationEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-sprite-animation"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="sprite-animation"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </SpriteAnimationEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "tileset") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <TilesetEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-tileset"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="tileset"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </TilesetEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "tilemap") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <TilemapEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-tilemap"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="tilemap"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </TilemapEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
         if (
           doc.ref.kind === "sprite" ||
-          doc.ref.kind === "tileset" ||
-          doc.ref.kind === "tilemap" ||
           doc.ref.kind === "plugin-settings" ||
           doc.ref.kind === "audio-mixer" ||
           doc.ref.kind === "audio-channel" ||

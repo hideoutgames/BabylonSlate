@@ -1,5 +1,6 @@
 import {
   tilemapCollisionChains,
+  tilemapTilesetGuids,
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
@@ -14,12 +15,11 @@ export function navBakeTilemapChains(
   const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
   const chains: XyChain[] = [];
   for (const map of tilemaps.values()) {
-    const tileset = map.tilesetGuid ? tilesets.get(map.tilesetGuid) : undefined;
-    if (!tileset) continue;
+    if (tilemapTilesetGuids(map).length === 0) continue;
     chains.push(
       ...tilemapCollisionChains(
         map,
-        tileset,
+        tilesets,
         map.tileWidth / ppu,
         map.tileHeight / ppu,
       ),

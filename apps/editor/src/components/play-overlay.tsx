@@ -32,7 +32,12 @@ import { playConsoleCommands } from "../lib/play-console";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type {
+  SpriteAnimationPayload,
+  SpritePayload,
+  TilemapPayload,
+  TilesetPayload,
+} from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
 import type {
@@ -77,6 +82,7 @@ export interface PlayOverlayProps {
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
+  spriteAnimationPayloads?: ReadonlyMap<string, SpriteAnimationPayload>;
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
@@ -126,6 +132,7 @@ export function PlayOverlay({
   behaviourTrees,
   blackboards,
   spritePayloads,
+  spriteAnimationPayloads,
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
@@ -198,6 +205,8 @@ export function PlayOverlay({
   blackboardsRef.current = blackboards;
   const spritePayloadsRef = useRef(spritePayloads);
   spritePayloadsRef.current = spritePayloads;
+  const spriteAnimationPayloadsRef = useRef(spriteAnimationPayloads);
+  spriteAnimationPayloadsRef.current = spriteAnimationPayloads;
   const tilemapPayloadsRef = useRef(tilemapPayloads);
   tilemapPayloadsRef.current = tilemapPayloads;
   const tilesetPayloadsRef = useRef(tilesetPayloads);
@@ -290,6 +299,7 @@ export function PlayOverlay({
       behaviourTrees: behaviourTreesRef.current,
       blackboards: blackboardsRef.current,
       spritePayloads: spritePayloadsRef.current,
+      spriteAnimationPayloads: spriteAnimationPayloadsRef.current,
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,

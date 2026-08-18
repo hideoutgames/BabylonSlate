@@ -15,7 +15,7 @@ import { createEngine, audioStats, type EngineHandle } from "@babylonslate/rende
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
-import type { LoadedGame } from "./artifact";
+import { guiTextureBytesFromGame, type LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 import {
   packedBootControls,
@@ -85,6 +85,7 @@ export function startPlayer(options: {
     maxActors: 256,
     frameCap: manifest.playFrameCap,
     spritePayloads: content.spritePayloads,
+    spriteAnimations: content.spriteAnimationPayloads,
     tilemapPayloads: content.tilemapPayloads,
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
@@ -143,7 +144,7 @@ export function startPlayer(options: {
   const uiHost = createPlayerUiHost({
     scene: handle.scene,
     library: content.userInterfaces,
-    textureBytes: game.textureBytes,
+    textureBytes: guiTextureBytesFromGame(game),
     viewport: {
       width: Math.max(1, canvas.width || canvas.clientWidth || 1),
       height: Math.max(1, canvas.height || canvas.clientHeight || 1),
@@ -291,6 +292,16 @@ export function startPlayer(options: {
       inProcess.registerTileContent({
         tilemaps: content.tilemapPayloads,
         tilesets: content.tilesetPayloads,
+        pixelsPerUnit: content.pixelsPerUnit,
+      });
+    }
+    if (
+      content.spritePayloads.size > 0 ||
+      content.spriteAnimationPayloads.size > 0
+    ) {
+      inProcess.registerSpriteContent({
+        sprites: content.spritePayloads,
+        spriteAnimations: content.spriteAnimationPayloads,
         pixelsPerUnit: content.pixelsPerUnit,
       });
     }

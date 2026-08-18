@@ -287,6 +287,29 @@ describe("playSessionBootControls", () => {
     expect(types).toEqual(["load", "play"]);
     expect(types).not.toContain("loadUserInterfaces");
   });
+
+  it("sends loadSprites with Sprite Animation payloads before play", () => {
+    const controls = playSessionBootControls({
+      load: { type: "load", sceneAssetGuid: "play-scene" },
+      sprites: {
+        type: "loadSprites",
+        sprites: [{ guid: "hero-sprite", document: { frames: [], clips: [] } }],
+        spriteAnimations: [
+          { guid: "walk-anim", document: { frames: [{ durationMs: 100 }] } },
+        ],
+      },
+    });
+    expect(controls.find((control) => control.type === "loadSprites")).toEqual({
+      type: "loadSprites",
+      sprites: [{ guid: "hero-sprite", document: { frames: [], clips: [] } }],
+      spriteAnimations: [
+        { guid: "walk-anim", document: { frames: [{ durationMs: 100 }] } },
+      ],
+    });
+    expect(controls.map((control) => control.type).indexOf("play")).toBeGreaterThan(
+      controls.map((control) => control.type).indexOf("loadSprites"),
+    );
+  });
 });
 
 describe("previewFixtureThrowHint", () => {

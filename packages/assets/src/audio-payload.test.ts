@@ -17,10 +17,14 @@ import {
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
   AUDIO_REVERB_CHUNK_MAX_BYTES,
   AUDIO_SHARED_REVERB_BUSES,
+  AUDIO_REVERB_COMB_COUNT,
+  AUDIO_REVERB_ALLPASS_COUNT,
+  AUDIO_SPEED_OF_SOUND,
   AUDIO_VOXEL_SIZE,
   audioAssetDependencies,
   remapAudioPayloadGuids,
   computeAttenuationGain,
+  computeDopplerPlaybackRate,
   audioChannelHasParentCycle,
   clampAudioGain,
   computeAudioOutputGain,
@@ -61,6 +65,8 @@ describe("audio payloads", () => {
     expect(AUDIO_GEOMETRY_COLLECT_SLICE).toBe(8);
     expect(AUDIO_BAKE_DEBOUNCE_MS).toBe(1_500);
     expect(AUDIO_SHARED_REVERB_BUSES).toBe(1);
+    expect(AUDIO_REVERB_COMB_COUNT).toBe(4);
+    expect(AUDIO_REVERB_ALLPASS_COUNT).toBe(2);
     expect(AUDIO_CROSSFADING_PROFILES).toBe(2);
     expect(AUDIO_PRE_UNLOCK_QUEUE_CAP).toBe(32);
     expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(64 * 1024 * 1024);
@@ -380,6 +386,27 @@ describe("audio payloads", () => {
     const nearer = computeAttenuationGain(10, atten);
     expect(farther).toBeLessThan(nearer);
     expect(farther).toBeGreaterThan(0);
+  });
+
+  it("raises Doppler playbackRate when the emitter moves toward the listener", () => {
+    expect(
+      computeDopplerPlaybackRate({
+        previousEmitter: { x: 10, y: 0, z: 0 },
+        emitter: { x: 5, y: 0, z: 0 },
+        listener: { x: 0, y: 0, z: 0 },
+        dt: 0.1,
+        factor: 1,
+      }),
+    ).toBeCloseTo(1 + 50 / AUDIO_SPEED_OF_SOUND, 5);
+    expect(
+      computeDopplerPlaybackRate({
+        previousEmitter: null,
+        emitter: { x: 5, y: 0, z: 0 },
+        listener: { x: 0, y: 0, z: 0 },
+        dt: 0.1,
+        factor: 1,
+      }),
+    ).toBe(1);
   });
 
   it("enforces attenuation radii and known distance models", () => {

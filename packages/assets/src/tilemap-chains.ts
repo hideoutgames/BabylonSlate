@@ -1,5 +1,9 @@
 import { tilesetTileById, type TilesetPayload } from "./tileset-payload";
-import type { TilemapPayload } from "./tilemap-payload";
+import {
+  decodeTileGid,
+  tilemapTilesetGuids,
+  type TilemapPayload,
+} from "./tilemap-payload";
 
 export interface TilemapChain {
   points: Array<{ x: number; y: number }>;
@@ -21,6 +25,9 @@ export function tilemapChunkChains(options: {
   tileset: TilesetPayload;
   worldTileWidth: number;
   worldTileHeight: number;
+  resolveGid?: (
+    gid: number,
+  ) => { tileset: TilesetPayload; localId: number; guid: string } | null;
 }): TilemapChain[] {
   const {
     tiles,
@@ -30,6 +37,7 @@ export function tilemapChunkChains(options: {
     tileset,
     worldTileWidth,
     worldTileHeight,
+    resolveGid,
   } = options;
   const originX = chunkX * chunkSize * worldTileWidth;
   const originY = chunkY * chunkSize * worldTileHeight;
@@ -40,7 +48,11 @@ export function tilemapChunkChains(options: {
     for (let lx = 0; lx < chunkSize; lx++) {
       const tileId = tiles[ly * chunkSize + lx] ?? 0;
       if (tileId <= 0) continue;
-      const def = tilesetTileById(tileset, tileId);
+      const resolved = resolveGid?.(tileId);
+      if (resolveGid && !resolved) continue;
+      const atlas = resolved?.tileset ?? tileset;
+      const localId = resolved?.localId ?? tileId;
+      const def = tilesetTileById(atlas, localId);
       if (!def) continue;
       const x0 = originX + lx * worldTileWidth;
       const y0 = originY + ly * worldTileHeight;
@@ -73,28 +85,63 @@ export function tilemapChunkChains(options: {
 /** Collision-layer chains for every chunk in a tilemap (nav bake / Rapier). */
 export function tilemapCollisionChains(
   map: TilemapPayload,
-  tileset: TilesetPayload,
+  tileset: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
   worldTileWidth: number,
   worldTileHeight: number,
 ): TilemapChain[] {
+  const tilesets =
+    tileset instanceof Map || isTilesetMap(tileset)
+      ? tileset
+      : null;
+  const fallback = tilesets ? undefined : (tileset as TilesetPayload);
+  const resolveGid = tilesets
+    ? (gid: number) => {
+        const hit = decodeTileGid(map, gid, tilesets);
+        return hit;
+      }
+    : undefined;
   const chains: TilemapChain[] = [];
   for (const layer of map.layers) {
     if (!layer.collision) continue;
     for (const chunk of layer.chunks) {
+      const atlas = fallback ?? firstTileset(map, tilesets);
+      if (!atlas) continue;
       chains.push(
         ...tilemapChunkChains({
           tiles: chunk.tiles,
           chunkSize: map.chunkSize,
           chunkX: chunk.cx,
           chunkY: chunk.cy,
-          tileset,
+          tileset: atlas,
           worldTileWidth,
           worldTileHeight,
+          resolveGid,
         }),
       );
     }
   }
   return chains;
+}
+
+function isTilesetMap(
+  value: TilesetPayload | ReadonlyMap<string, TilesetPayload>,
+): value is ReadonlyMap<string, TilesetPayload> {
+  return (
+    typeof (value as ReadonlyMap<string, TilesetPayload>).get === "function" &&
+    !Array.isArray((value as TilesetPayload).tiles)
+  );
+}
+
+function firstTileset(
+  map: TilemapPayload,
+  tilesets: ReadonlyMap<string, TilesetPayload> | null,
+): TilesetPayload | undefined {
+  if (!tilesets) return undefined;
+  for (const guid of tilemapTilesetGuids(map)) {
+    const tileset = tilesets.get(guid);
+    if (tileset) return tileset;
+  }
+  return tilesets.values().next().value;
 }
 
 function outlineChains(directed: Array<[Point, Point]>): TilemapChain[] {

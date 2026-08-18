@@ -145,6 +145,64 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-tex");
   });
 
+  it("follows Sprite Animation frame textureGuids when header.dependencies is empty", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              id: "anim-comp",
+              classId: "AnimationGraphComponent",
+              properties: { graphGuid: "loco-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "loco-1",
+          type: "AnimationGraph",
+          name: "Loco",
+          dependencies: [],
+        }),
+        asset({
+          guid: "walk-anim",
+          type: "SpriteAnimation",
+          name: "Walk",
+          dependencies: [],
+        }),
+        asset({ guid: "tex-walk", type: "Texture", name: "WalkTex" }),
+        asset({ guid: "unused-tex", type: "Texture", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => {
+        if (guid === "loco-1") {
+          return {
+            clips: [{ kind: "sprite", assetGuid: "walk-anim" }],
+          };
+        }
+        if (guid === "walk-anim") {
+          return { frames: [{ textureGuid: "tex-walk", durationMs: 100 }] };
+        }
+        return null;
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "loco-1", "walk-anim", "tex-walk"]),
+    );
+    expect(result.value).not.toContain("unused-tex");
+  });
+
   it("follows graph pin guids and header dependencies", () => {
     const graph: SerializedGraph = {
       nodes: [
