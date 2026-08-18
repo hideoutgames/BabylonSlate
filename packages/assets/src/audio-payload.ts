@@ -328,6 +328,55 @@ export function allocateAudioClipChunkId(
   return null;
 }
 
+type AudioExtraChunkLike = {
+  id: string;
+  kind?: string;
+  mime?: string;
+  data?: Uint8Array;
+};
+
+function keepAudioExtraChunks(
+  extra: Iterable<AudioExtraChunkLike>,
+  skipId?: string,
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  const next: Array<{ id: string; kind: string; mime: string; data: Uint8Array }> =
+    [];
+  for (const chunk of extra) {
+    if (!chunk.data || chunk.id === skipId) continue;
+    next.push({
+      id: chunk.id,
+      kind: chunk.kind ?? "audio",
+      mime: chunk.mime ?? "application/octet-stream",
+      data: chunk.data,
+    });
+  }
+  return next;
+}
+
+export function extraChunksWithAudioClip(
+  extra: Iterable<AudioExtraChunkLike>,
+  clip: { id: string; bytes: Uint8Array; mime: string },
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  const next = keepAudioExtraChunks(extra, clip.id);
+  next.push({
+    id: clip.id,
+    kind: "audio",
+    mime: clip.mime,
+    data: clip.bytes,
+  });
+  return next;
+}
+
+export function extraChunksWithoutAudioClip(
+  extra: Iterable<AudioExtraChunkLike>,
+  chunkId: string,
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+    return keepAudioExtraChunks(extra);
+  }
+  return keepAudioExtraChunks(extra, chunkId);
+}
+
 function normalizeChannelEffect(value: unknown): AudioChannelEffect | null {
   const source = asRecord(value);
   if (source.kind !== "environmentReverb") return null;

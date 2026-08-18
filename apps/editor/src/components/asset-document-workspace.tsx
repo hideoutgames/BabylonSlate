@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   AssetPicker,
   NamedListEditor,
+  NumericDragField,
   PanelFrame,
   PropertyGrid,
   SelectableText,
@@ -10,8 +11,19 @@ import {
 } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
+import { Input } from "@babylonslate/ui/components/input";
 import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
+  AUDIO_DEFAULT_SOURCE_CHUNK,
+  AUDIO_MAX_CLIPS,
+  AUDIO_PITCH_MAX,
+  AUDIO_PITCH_MIN,
+  allocateAudioClipChunkId,
   normalizeFontPayload,
   normalizeAudioPayload,
   mimeForAudioBytes,
@@ -485,7 +497,12 @@ function AudioSettingsEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const {
+    assetRegistry,
+    readAssetChunk,
+    writeAudioClipChunk,
+    removeAudioClipChunk,
+  } = useDocuments();
   const audio = normalizeAudioPayload(payload);
   const [pick, setPick] = useState<"channel" | "atten" | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -493,6 +510,7 @@ function AudioSettingsEditor({
     element: HTMLAudioElement;
     url: string;
   } | null>(null);
+  const clipInputRef = useRef<HTMLInputElement | null>(null);
   const assets = assetRegistry?.list() ?? [];
   const channel = assets.find(
     (asset) => asset.header.guid === audio.audioChannelGuid,
@@ -571,6 +589,46 @@ function AudioSettingsEditor({
               onChange: (volume) => onChange({ ...audio, volume }),
             },
             {
+              id: "pitch",
+              kind: "number",
+              label: "Pitch",
+              value: audio.pitch,
+              min: AUDIO_PITCH_MIN,
+              max: AUDIO_PITCH_MAX,
+              onChange: (pitch) => onChange({ ...audio, pitch }),
+            },
+            {
+              id: "pitchRandom",
+              kind: "boolean",
+              label: "Randomize Pitch",
+              value: audio.pitchRandom,
+              onChange: (pitchRandom) => onChange({ ...audio, pitchRandom }),
+            },
+            ...(audio.pitchRandom
+              ? [
+                  {
+                    id: "pitchMin",
+                    kind: "number" as const,
+                    label: "Pitch Min",
+                    value: audio.pitchMin,
+                    min: AUDIO_PITCH_MIN,
+                    max: AUDIO_PITCH_MAX,
+                    onChange: (pitchMin: number) =>
+                      onChange({ ...audio, pitchMin }),
+                  },
+                  {
+                    id: "pitchMax",
+                    kind: "number" as const,
+                    label: "Pitch Max",
+                    value: audio.pitchMax,
+                    min: AUDIO_PITCH_MIN,
+                    max: AUDIO_PITCH_MAX,
+                    onChange: (pitchMax: number) =>
+                      onChange({ ...audio, pitchMax }),
+                  },
+                ]
+              : []),
+            {
               id: "audioChannelGuid",
               kind: "asset",
               label: "Audio Channel",
@@ -598,6 +656,110 @@ function AudioSettingsEditor({
             },
           ]}
         />
+        <FieldGroup className="gap-2" data-testid="audio-clips">
+          {audio.clips.map((clip, index) => (
+            <Field
+              key={clip.chunkId}
+              className="gap-1 rounded-md border border-border p-2"
+            >
+              <FieldLabel htmlFor={`audio-clip-${index}-name`}>Name</FieldLabel>
+              <Input
+                id={`audio-clip-${index}-name`}
+                className="min-h-[var(--touch-target,44px)]"
+                value={clip.name}
+                data-testid={`audio-clip-${index}-name`}
+                onChange={(event) => {
+                  const clips = audio.clips.map((entry, clipIndex) =>
+                    clipIndex === index
+                      ? { ...entry, name: event.target.value }
+                      : entry,
+                  );
+                  onChange({ ...audio, clips });
+                }}
+              />
+              <FieldLabel htmlFor={`audio-clip-${index}-weight`}>
+                Weight
+              </FieldLabel>
+              <NumericDragField
+                id={`audio-clip-${index}-weight`}
+                value={clip.weight}
+                min={0}
+                data-testid={`audio-clip-${index}-weight`}
+                onChange={(weight) => {
+                  const clips = audio.clips.map((entry, clipIndex) =>
+                    clipIndex === index ? { ...entry, weight } : entry,
+                  );
+                  onChange({ ...audio, clips });
+                }}
+              />
+              {clip.chunkId === AUDIO_DEFAULT_SOURCE_CHUNK ? null : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="min-h-[var(--touch-target,44px)] w-fit"
+                  data-testid={`audio-clip-${index}-remove`}
+                  onClick={() => {
+                    const clips = audio.clips.filter(
+                      (entry) => entry.chunkId !== clip.chunkId,
+                    );
+                    void removeAudioClipChunk?.(path, clip.chunkId, {
+                      ...audio,
+                      clips,
+                    });
+                    onChange({ ...audio, clips });
+                  }}
+                >
+                  Remove
+                </Button>
+              )}
+            </Field>
+          ))}
+          <input
+            ref={clipInputRef}
+            type="file"
+            accept=".wav,.mp3,.ogg"
+            className="hidden"
+            data-testid="audio-add-clip-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              const chunkId = allocateAudioClipChunkId(
+                audio.clips.map((clip) => clip.chunkId),
+              );
+              if (!chunkId) return;
+              void file.arrayBuffer().then((buffer) => {
+                const bytes = new Uint8Array(buffer);
+                const clips = [
+                  ...audio.clips,
+                  {
+                    chunkId,
+                    name: file.name.replace(/\.[^.]+$/, ""),
+                    weight: 1,
+                  },
+                ];
+                void writeAudioClipChunk?.(
+                  path,
+                  chunkId,
+                  bytes,
+                  mimeForAudioBytes(bytes),
+                  { ...audio, clips },
+                );
+                onChange({ ...audio, clips });
+              });
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[var(--touch-target,44px)] w-fit"
+            data-testid="audio-add-clip"
+            disabled={audio.clips.length >= AUDIO_MAX_CLIPS}
+            onClick={() => clipInputRef.current?.click()}
+          >
+            Add Clip
+          </Button>
+        </FieldGroup>
       </div>
       <AssetPicker
         open={pick === "channel"}

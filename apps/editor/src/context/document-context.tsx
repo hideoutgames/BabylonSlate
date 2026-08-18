@@ -327,6 +327,18 @@ interface DocumentContextValue {
   ) => Promise<boolean>;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  writeAudioClipChunk: (
+    path: string,
+    chunkId: string,
+    bytes: Uint8Array,
+    mime: string,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
+  removeAudioClipChunk: (
+    path: string,
+    chunkId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
   /** Write Recast bake bytes onto the Scene asset extra chunk. */
   writeSceneNavmeshChunk: (
     path: string,
@@ -1879,6 +1891,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const writeSceneAudioReverbChunk = useCallback(
     (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
       projectService.writeSceneAudioReverbChunk(path, bytes, payload),
+    [projectService],
+  );
+
+  const writeAudioClipChunk = useCallback(
+    (
+      path: string,
+      chunkId: string,
+      bytes: Uint8Array,
+      mime: string,
+      payload: Record<string, unknown>,
+    ) => projectService.writeAudioClipChunk(path, chunkId, bytes, mime, payload),
+    [projectService],
+  );
+
+  const removeAudioClipChunk = useCallback(
+    (path: string, chunkId: string, payload: Record<string, unknown>) =>
+      projectService.removeAudioClipChunk(path, chunkId, payload),
     [projectService],
   );
 
@@ -3489,6 +3518,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      writeAudioClipChunk,
+      removeAudioClipChunk,
       writeSceneNavmeshChunk,
       writeSceneAudioReverbChunk,
       updateProjectSettings,
@@ -3669,6 +3700,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      writeAudioClipChunk,
+      removeAudioClipChunk,
       writeSceneNavmeshChunk,
       writeSceneAudioReverbChunk,
       updateProjectSettings,
