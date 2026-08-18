@@ -28,6 +28,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Input", link: "/architecture/input" },
       { text: "Physics", link: "/architecture/physics" },
       { text: "Debugger", link: "/architecture/debugger" },
+      { text: "Console commands", link: "/architecture/console-commands" },
       { text: "UI runtime", link: "/architecture/ui-runtime" },
       { text: "Fonts", link: "/architecture/fonts" },
       { text: "Sprites", link: "/architecture/sprites" },
