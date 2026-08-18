@@ -160,23 +160,12 @@
 .anim-state-handle-source::after {
   content: "";
   position: absolute;
+  left: 50%;
+  top: 50%;
   width: 8px;
   height: 8px;
   background: #c8c8c8;
   pointer-events: none;
-}
-
-.anim-state-handle-source.anim-state-handle-top::after,
-.anim-state-handle-source.anim-state-handle-bottom::after {
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.anim-state-handle-source.anim-state-handle-left::after,
-.anim-state-handle-source.anim-state-handle-right::after {
-  left: 50%;
-  top: 50%;
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
