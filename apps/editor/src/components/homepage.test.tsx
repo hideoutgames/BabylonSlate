@@ -93,7 +93,7 @@ describe("Homepage Start gallery", () => {
     expect(open.closest('[data-testid="homepage-start-gallery"]')).toBeNull();
   });
 
-  it("scrolls Start templates as a wrapping list", () => {
+  it("scrolls Start templates horizontally in a single row", () => {
     renderHomepage({
       templates: [
         { id: "arena", name: "Arena" },
@@ -107,10 +107,12 @@ describe("Homepage Start gallery", () => {
     expect(
       gallery.querySelector('[data-testid="homepage-start-template-arena"]'),
     ).toBeTruthy();
-    expect(gallery.className).toMatch(/overflow-y-auto/);
-    expect(gallery.className).toMatch(/flex-wrap/);
-    expect(gallery.className).toMatch(/overscroll/);
-    expect(gallery.className).toMatch(/max-h-/);
+    expect(gallery.className).toMatch(/overflow-x-auto/);
+    expect(gallery.className).toMatch(/overscroll-x-contain/);
+    expect(gallery.className).toMatch(/flex-nowrap/);
+    expect(gallery.className).not.toMatch(/overflow-y-auto/);
+    expect(gallery.className).not.toMatch(/flex-wrap/);
+    expect(gallery.className).not.toMatch(/max-h-/);
   });
 
   it("gives Start template cards an image well", () => {
@@ -267,6 +269,79 @@ describe("Homepage recent project rows", () => {
     expect(folder.textContent).toMatch(/Chosen folder/);
     expect(device.textContent).not.toMatch(/opfs|idb/i);
     expect(folder.textContent).not.toMatch(/external|idb/i);
+  });
+
+  it("hides Search Filter Sort when there are no recents", () => {
+    renderHomepage();
+    expect(screen.queryByTestId("homepage-project-search")).toBeNull();
+    expect(screen.queryByTestId("homepage-project-filter")).toBeNull();
+    expect(screen.queryByTestId("homepage-project-sort")).toBeNull();
+    expect(screen.getByTestId("no-projects")).toBeTruthy();
+  });
+
+  it("searches, sorts, and vertically scrolls recents", () => {
+    renderHomepage({
+      projects: [
+        {
+          ...listedProject("Zebra.babproject", "opfs"),
+          lastOpenedAt: "2026-08-18T12:00:00.000Z",
+        },
+        {
+          ...listedProject("Alpha.babproject", "opfs"),
+          lastOpenedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
+    expect(screen.getByTestId("homepage-project-sort")).toBeTruthy();
+    expect(screen.queryByTestId("homepage-project-filter")).toBeNull();
+    expect(screen.getByTestId("project-list").className).toMatch(/overflow-y-auto/);
+    expect(screen.getByTestId("project-list").className).toMatch(
+      /overscroll-y-contain/,
+    );
+
+    const list = screen.getByTestId("project-list");
+    const names = () =>
+      [...list.querySelectorAll("[data-testid^='open-listed-project-']")].map(
+        (row) => row.getAttribute("data-testid"),
+      );
+    expect(names()[0]).toBe("open-listed-project-Zebra.babproject");
+
+    fireEvent.click(screen.getByTestId("homepage-project-sort"));
+    fireEvent.click(screen.getByTestId("homepage-project-sort-name-asc"));
+    expect(names()[0]).toBe("open-listed-project-Alpha.babproject");
+
+    fireEvent.change(screen.getByTestId("homepage-project-search"), {
+      target: { value: "zebra" },
+    });
+    expect(screen.queryByTestId("open-listed-project-Alpha.babproject")).toBeNull();
+    expect(screen.getByTestId("open-listed-project-Zebra.babproject")).toBeTruthy();
+  });
+
+  it("filters mixed locations and shows No matching projects", () => {
+    renderHomepage({
+      projects: [
+        listedProject("Game.babproject", "opfs"),
+        listedProject("Studio.babproject", "external"),
+      ],
+    });
+
+    const filter = screen.getByTestId("homepage-project-filter");
+    expect(filter.textContent).toMatch(/^Filter/);
+    fireEvent.click(filter);
+    fireEvent.click(screen.getByTestId("homepage-project-filter-chosen-folder"));
+    expect(screen.getByTestId("homepage-project-filter").textContent).toMatch(
+      /Filter \(1\)/,
+    );
+    expect(screen.getByTestId("open-listed-project-Studio.babproject")).toBeTruthy();
+    expect(screen.queryByTestId("open-listed-project-Game.babproject")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("homepage-project-search"), {
+      target: { value: "does-not-exist" },
+    });
+    expect(screen.getByTestId("no-matching-projects")).toBeTruthy();
+    expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
   });
 });
 

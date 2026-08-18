@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  ArrowUpDownIcon,
   BoxIcon,
   FolderOpenIcon,
   Grid2x2Icon,
   LayoutTemplateIcon,
+  ListFilterIcon,
   PlusIcon,
 } from "lucide-react";
 import {
@@ -18,6 +20,16 @@ import {
 } from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@babylonslate/ui/components/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -46,9 +58,16 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { SearchInput } from "@babylonslate/editor-kit";
 import { displayProjectName } from "../lib/display-project-name";
 import {
+  filterListedProjects,
+  HOMEPAGE_PROJECT_SORT_OPTIONS,
+  listedProjectLocationLabel,
   listedProjectMetaParts,
+  sortListedProjects,
+  type HomepageProjectLocationFilter,
+  type HomepageProjectSortMode,
   type ListedProject,
 } from "../lib/listed-projects";
 import {
@@ -75,6 +94,14 @@ function createProjectCardDescription(
   }
   return "Start with Empty or 2D. Optional templates appear when a templates folder is set in Engine Settings.";
 }
+
+const HOMEPAGE_LOCATION_FILTERS: ReadonlyArray<{
+  id: HomepageProjectLocationFilter;
+  label: string;
+}> = [
+  { id: "on-this-device", label: "On this device" },
+  { id: "chosen-folder", label: "Chosen folder" },
+];
 
 interface HomepageProps {
   projects: ListedProject[];
@@ -125,10 +152,30 @@ export function Homepage({
   const [createHeight, setCreateHeight] = useState(DEFAULT_RENDER_HEIGHT);
   const [createBlackBars, setCreateBlackBars] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [locationFilters, setLocationFilters] = useState<
+    HomepageProjectLocationFilter[]
+  >([]);
+  const [sortMode, setSortMode] =
+    useState<HomepageProjectSortMode>("last-opened-desc");
   const hostPlatform = getHostPlatform();
   const nameIssue = createProjectNameIssue(
     createName,
     projects.map((project) => project.name),
+  );
+  const mixedLocations =
+    projects.length > 0 &&
+    listedProjectLocationLabel(projects, projects[0]!) !== null;
+  const visibleProjects = useMemo(
+    () =>
+      sortListedProjects(
+        filterListedProjects(projects, {
+          search: projectSearch,
+          locationFilters,
+        }),
+        sortMode,
+      ),
+    [projects, projectSearch, locationFilters, sortMode],
   );
 
   const run = async (fn: () => Promise<void>) => {
@@ -175,7 +222,7 @@ export function Homepage({
         </Button>
       </aside>
 
-      <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-10 overflow-y-auto overscroll-y-contain px-6 py-8 lg:px-10 lg:py-12">
+      <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-10 overflow-hidden px-6 py-8 lg:px-10 lg:py-12">
         {needsReconnect ? (
           <Alert variant="destructive" data-testid="reconnect-banner">
             <AlertTitle>Project folder unavailable</AlertTitle>
@@ -223,7 +270,7 @@ export function Homepage({
           </Alert>
         ) : null}
 
-        <section className="flex flex-col gap-4" data-testid="homepage-start">
+        <section className="flex shrink-0 flex-col gap-4" data-testid="homepage-start">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex flex-col gap-1">
               <h2 className="m-0 font-heading text-lg">Start</h2>
@@ -260,7 +307,7 @@ export function Homepage({
             </div>
           </div>
           <div
-            className="homepage-stagger flex max-h-[min(22rem,45vh)] flex-wrap gap-3 overflow-x-auto overflow-y-auto overscroll-contain pb-1"
+            className="homepage-stagger flex flex-nowrap gap-3 overflow-x-auto overscroll-x-contain pb-1"
             data-testid="homepage-start-gallery"
           >
             <TemplatePickCard
@@ -289,12 +336,119 @@ export function Homepage({
           </div>
         </section>
 
-        <section className="flex min-h-0 flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="m-0 font-heading text-lg">Projects</h2>
-            <p className="text-sm text-muted-foreground">
-              Recently opened projects on this device.
-            </p>
+        <section className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex shrink-0 flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <h2 className="m-0 font-heading text-lg">Projects</h2>
+              <p className="text-sm text-muted-foreground">
+                Recently opened projects on this device.
+              </p>
+            </div>
+            {projects.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <SearchInput
+                  value={projectSearch}
+                  onChange={setProjectSearch}
+                  placeholder="Search projects…"
+                  className="min-h-[var(--touch-target,44px)] min-w-40"
+                  data-testid="homepage-project-search"
+                />
+                {mixedLocations ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="touch"
+                          data-testid="homepage-project-filter"
+                          aria-label="Filter"
+                        />
+                      }
+                    >
+                      <ListFilterIcon data-icon="inline-start" />
+                      Filter
+                      {locationFilters.length > 0
+                        ? ` (${locationFilters.length})`
+                        : ""}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="min-w-44"
+                      data-testid="homepage-project-filter-menu"
+                    >
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>Location</DropdownMenuLabel>
+                        {HOMEPAGE_LOCATION_FILTERS.map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.id}
+                            checked={locationFilters.includes(option.id)}
+                            data-testid={`homepage-project-filter-${option.id}`}
+                            onCheckedChange={(checked) => {
+                              setLocationFilters((current) =>
+                                checked === true
+                                  ? current.includes(option.id)
+                                    ? current
+                                    : [...current, option.id]
+                                  : current.filter(
+                                      (entry) => entry !== option.id,
+                                    ),
+                              );
+                            }}
+                          >
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="touch"
+                        data-testid="homepage-project-sort"
+                        aria-label="Sort"
+                      />
+                    }
+                  >
+                    <ArrowUpDownIcon data-icon="inline-start" />
+                    Sort
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="min-w-44"
+                    data-testid="homepage-project-sort-menu"
+                  >
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={sortMode}
+                        onValueChange={(value) => {
+                          const next = HOMEPAGE_PROJECT_SORT_OPTIONS.find(
+                            (option) => option.mode === value,
+                          );
+                          if (next) setSortMode(next.mode);
+                        }}
+                      >
+                        {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
+                          <DropdownMenuRadioItem
+                            key={option.mode}
+                            value={option.mode}
+                            data-testid={`homepage-project-sort-${option.mode}`}
+                          >
+                            {option.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : null}
           </div>
           {projects.length === 0 ? (
             <Empty data-testid="no-projects">
@@ -308,9 +462,24 @@ export function Homepage({
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
+          ) : visibleProjects.length === 0 ? (
+            <Empty data-testid="no-matching-projects">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FolderOpenIcon />
+                </EmptyMedia>
+                <EmptyTitle>No matching projects</EmptyTitle>
+                <EmptyDescription>
+                  Clear search or filters to see recents again.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
-            <ul className="flex flex-col gap-2" data-testid="project-list">
-              {projects.map((project) => {
+            <ul
+              className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain"
+              data-testid="project-list"
+            >
+              {visibleProjects.map((project) => {
                 const meta = listedProjectMetaParts(projects, project);
                 return (
                   <li key={project.id}>
