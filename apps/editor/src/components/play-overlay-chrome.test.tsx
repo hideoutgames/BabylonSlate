@@ -76,4 +76,17 @@ describe("PlayOverlayChrome", () => {
     expect(view.onConsoleOpen).toHaveBeenCalledTimes(1);
     expect(view.onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("shows extras such as the audio unlock hint on Play chrome", () => {
+    const { getByTestId } = renderChrome({
+      extras: (
+        <p data-testid="play-audio-unlock-hint">
+          Click the game view to enable audio
+        </p>
+      ),
+    });
+    expect(getByTestId("play-audio-unlock-hint").textContent).toContain(
+      "Click the game view to enable audio",
+    );
+  });
 });

@@ -260,9 +260,9 @@ export class AudioService {
         });
         return;
       }
-      const known =
-        mixer.channels.some((entry) => entry.channelGuid === command.channelGuid) ||
-        this.library.channels.has(command.channelGuid);
+      const known = mixer.channels.some(
+        (entry) => entry.channelGuid === command.channelGuid,
+      );
       if (!known) {
         this.onDiagnostic?.({
           code: "audio.unknown_channel",

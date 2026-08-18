@@ -91,7 +91,7 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   },
 ];
 
-export const PLACEABLE_PROJECT_TYPES = new Set(["Class", "Model"]);
+export const PLACEABLE_PROJECT_TYPES = new Set(["Class", "Model", "Audio"]);
 
 export function prefabComponentsForGuid(
   guid: string,
@@ -276,6 +276,24 @@ export function spawnPlacedActor(
           kind.components ?? defaultPrefabComponents(),
           id,
         ),
+      });
+    }
+    if (kind.assetType === "Audio") {
+      return createActor(id, kind.name, {
+        transform,
+        components: [
+          {
+            id: `${id}-audio`,
+            classId: "AudioComponent",
+            properties: {
+              ...defaultPropertiesFor("AudioComponent"),
+              audioAssetGuid: kind.guid,
+              playOnStart: true,
+              loop: false,
+              volume: 1,
+            },
+          },
+        ],
       });
     }
     const component = createMeshComponent(`${id}-mesh`, "box");

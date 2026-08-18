@@ -281,6 +281,40 @@ describe("Play createEngine view", () => {
     ]);
   });
 
+  it("exposes snapshot actor orientation for spatial audio cones", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    const snapshot = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(snapshot, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(snapshot, 0, {
+      slotId: 0,
+      position: { x: 2, y: 3, z: 4 },
+      rotation: { x: 0, y: Math.SQRT1_2, z: 0, w: Math.SQRT1_2 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    handle.pushSnapshot(snapshot);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    const pose = handle.lastActorPositions()[0];
+    expect(pose).toMatchObject({ slotId: 0, x: 2, y: 3, z: 4 });
+    expect(pose?.qx).toBeCloseTo(0, 5);
+    expect(pose?.qy).toBeCloseTo(Math.SQRT1_2, 5);
+    expect(pose?.qz).toBeCloseTo(0, 5);
+    expect(pose?.qw).toBeCloseTo(Math.SQRT1_2, 5);
+  });
+
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

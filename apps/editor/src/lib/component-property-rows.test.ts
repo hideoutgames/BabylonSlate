@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SerializedComponent } from "@babylonslate/core";
+import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import {
   componentPropertyRows,
   gameInstanceClassEntries,
@@ -191,6 +192,20 @@ describe("componentPropertyRows", () => {
     expect(audio.rows.find((row) => row.id.endsWith("-volume"))).toMatchObject({
       kind: "number",
       value: 0.5,
+    });
+
+    const emptySpeaker = rowsFor({
+      id: "speaker-empty",
+      classId: "AudioComponent",
+      properties: defaultPropertiesFor("AudioComponent"),
+    });
+    const emptyAsset = emptySpeaker.rows.find((row) =>
+      row.id.endsWith("-audioAssetGuid"),
+    );
+    expect(emptyAsset).toMatchObject({
+      kind: "asset",
+      value: null,
+      placeholder: "Pick Audio — Play On Start needs an asset",
     });
 
     const navMesh = rowsFor({

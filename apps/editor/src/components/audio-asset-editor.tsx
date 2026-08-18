@@ -14,12 +14,18 @@ import {
   normalizeAudioMixerPayload,
   normalizeSoundAttenuationPayload,
   validateAudioMixer,
-  type AudioMixerChannelEntry,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
 import { Button } from "@babylonslate/ui/components/button";
+import { FieldDescription } from "@babylonslate/ui/components/field";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import {
+  AUDIO_MIXER_EMPTY_CHANNELS_COPY,
+  applyMixerChannelPick,
+  type MixerChannelPickTarget,
+} from "../lib/audio-mixer-edit";
+import { soundAttenuationDetailRows } from "../lib/sound-attenuation-rows";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -79,7 +85,9 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
     useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const mixer = normalizeAudioMixerPayload(asRecord(doc?.content));
-  const [pickIndex, setPickIndex] = useState<number | null>(null);
+  const [pickTarget, setPickTarget] = useState<MixerChannelPickTarget | null>(
+    null,
+  );
   const channels = assetRegistry?.list() ?? [];
   const commit = (next: typeof mixer) => {
     void applyAssetDocumentChange(documentId, next as unknown as Record<string, unknown>);
@@ -114,20 +122,9 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
         displayType: identity.displayType,
         visual: identity.visual,
         placeholder: "None",
-        onPick: () => setPickIndex(index),
-        onChange: (channelGuid) => {
-          if (!channelGuid) {
-            commit({
-              ...mixer,
-              channels: mixer.channels.filter((_, i) => i !== index),
-            });
-            return;
-          }
-          const next = mixer.channels.map((row, i) =>
-            i === index ? { ...row, channelGuid } : row,
-          );
-          commit({ ...mixer, channels: next });
-        },
+        onPick: () => setPickTarget(index),
+        onChange: (channelGuid) =>
+          commit(applyMixerChannelPick(mixer, index, channelGuid)),
       },
       {
         id: `channel-volume-${index}`,
@@ -150,6 +147,11 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="audio-mixer-details-panel">
       <div className="flex flex-col gap-3 p-2">
         <PropertyGrid rows={rows} />
+        {mixer.channels.length === 0 ? (
+          <FieldDescription data-testid="audio-mixer-empty-channels">
+            {AUDIO_MIXER_EMPTY_CHANNELS_COPY}
+          </FieldDescription>
+        ) : null}
         {duplicate ? (
           <p className="text-sm text-destructive" data-testid="audio-mixer-duplicate">
             Duplicate Audio Channel entries are invalid.
@@ -160,44 +162,24 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
           variant="outline"
           className="min-h-[var(--touch-target,44px)]"
           data-testid="audio-mixer-add-channel"
-          onClick={() =>
-            commit({
-              ...mixer,
-              channels: [
-                ...mixer.channels,
-                { channelGuid: `new-channel-${mixer.channels.length}`, volume: 1 },
-              ],
-            })
-          }
+          onClick={() => setPickTarget("new")}
         >
           Add Channel
         </Button>
       </div>
       <AssetPicker
-        open={pickIndex !== null}
+        open={pickTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setPickIndex(null);
+          if (!open) setPickTarget(null);
         }}
         assets={pickerAssets(channels, ["AudioChannel"])}
         allowedTypes={["AudioChannel"]}
         title="Pick Audio Channel"
-        allowNone
+        allowNone={pickTarget !== "new"}
         onPick={(guid) => {
-          if (pickIndex === null) return;
-          const next: AudioMixerChannelEntry[] = mixer.channels.map((row, i) =>
-            i === pickIndex
-              ? { ...row, channelGuid: guid ?? row.channelGuid }
-              : row,
-          );
-          if (!guid) {
-            commit({
-              ...mixer,
-              channels: mixer.channels.filter((_, i) => i !== pickIndex),
-            });
-          } else {
-            commit({ ...mixer, channels: next });
-          }
-          setPickIndex(null);
+          if (pickTarget === null) return;
+          commit(applyMixerChannelPick(mixer, pickTarget, guid));
+          setPickTarget(null);
         }}
         data-testid="audio-mixer-channel-picker"
       />
@@ -293,66 +275,7 @@ export function SoundAttenuationDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame data-testid="sound-attenuation-details-panel">
       <div className="flex flex-col gap-3 p-2">
         <AttenuationFalloffPlot attenuation={attenuation} />
-        <PropertyGrid
-          rows={[
-            {
-              id: "innerRadius",
-              kind: "number",
-              label: "Inner Radius",
-              value: attenuation.innerRadius,
-              min: 0,
-              onChange: (innerRadius) => commit({ ...attenuation, innerRadius }),
-            },
-            {
-              id: "maxRadius",
-              kind: "number",
-              label: "Max Radius",
-              value: attenuation.maxRadius,
-              min: 0,
-              onChange: (maxRadius) => commit({ ...attenuation, maxRadius }),
-            },
-            {
-              id: "distanceModel",
-              kind: "enum",
-              label: "Distance Model",
-              value: attenuation.distanceModel,
-              options: [
-                { value: "linear", label: "Linear" },
-                { value: "inverse", label: "Inverse" },
-                { value: "exponential", label: "Exponential" },
-              ],
-              onChange: (distanceModel) =>
-                commit({
-                  ...attenuation,
-                  distanceModel: distanceModel as SoundAttenuationPayload["distanceModel"],
-                }),
-            },
-            {
-              id: "rolloff",
-              kind: "number",
-              label: "Rolloff",
-              value: attenuation.rolloff,
-              min: 0,
-              onChange: (rolloff) => commit({ ...attenuation, rolloff }),
-            },
-            {
-              id: "spatialisation",
-              kind: "enum",
-              label: "Spatialisation",
-              value: attenuation.spatialisation,
-              options: [
-                { value: "equalPower", label: "Equal Power" },
-                { value: "hrtf", label: "HRTF" },
-              ],
-              onChange: (spatialisation) =>
-                commit({
-                  ...attenuation,
-                  spatialisation:
-                    spatialisation as SoundAttenuationPayload["spatialisation"],
-                }),
-            },
-          ]}
-        />
+        <PropertyGrid rows={soundAttenuationDetailRows(attenuation, commit)} />
       </div>
     </PanelFrame>
   );

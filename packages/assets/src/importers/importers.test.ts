@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { encodeBabasset } from "../babasset";
-import { importAudio } from "./audio";
+import { importAudio, mimeForAudioBytes } from "./audio";
 import { importBabasset } from "./babasset";
 import { importFont } from "./font";
 import { importImage } from "./image";
@@ -50,6 +50,23 @@ describe("importers", () => {
       existingGuids: new Set(),
     });
     expect(results[0]!.type).toBe("Audio");
+    expect(results[0]!.chunks[0]!.mime).toBe("audio/wav");
+  });
+
+  it("labels preview blobs from WAV, MP3, and OGG bytes", () => {
+    const wav = new Uint8Array(12);
+    wav.set([0x52, 0x49, 0x46, 0x46], 0);
+    wav.set([0x57, 0x41, 0x56, 0x45], 8);
+    expect(mimeForAudioBytes(wav)).toBe("audio/wav");
+    expect(mimeForAudioBytes(new Uint8Array([0x49, 0x44, 0x33, 0x04]))).toBe(
+      "audio/mpeg",
+    );
+    expect(mimeForAudioBytes(new Uint8Array([0xff, 0xfb, 0x90, 0x00]))).toBe(
+      "audio/mpeg",
+    );
+    expect(
+      mimeForAudioBytes(new Uint8Array([0x4f, 0x67, 0x67, 0x53, 0x00])),
+    ).toBe("audio/ogg");
   });
 
   it("imports fonts and attaches facetype JSON to an existing Font", async () => {

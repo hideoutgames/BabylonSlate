@@ -226,14 +226,35 @@ describe("duplicateSceneActor", () => {
 });
 
 describe("projectPlaceActors", () => {
-  it("lists Class and Model assets, not sounds or textures", () => {
+  it("lists Class, Model, and Audio assets, not textures", () => {
     const items = projectPlaceActors([
       { header: { guid: "hero", name: "Hero", type: "Class" } },
       { header: { guid: "mesh", name: "Tree", type: "Model" } },
-      { header: { guid: "sfx", name: "Jump", type: "Sound" } },
+      { header: { guid: "sfx", name: "Jump", type: "Audio" } },
       { header: { guid: "tex", name: "Grass", type: "Texture" } },
     ]);
-    expect(items.map((item) => item.title)).toEqual(["Hero", "Tree"]);
+    expect(items.map((item) => item.title)).toEqual(["Hero", "Tree", "Jump"]);
+  });
+
+  it("places a project Audio asset with the guid already on AudioComponent", () => {
+    const items = projectPlaceActors([
+      { header: { guid: "beep", name: "Beep", type: "Audio" } },
+    ]);
+    const item = items[0]!;
+    const actor = spawnPlacedActor(
+      createDefaultScene(),
+      item,
+      "actor-beep",
+      ORIGIN,
+    );
+    expect(actor.name).toBe("Beep");
+    expect(actor.components[0]?.classId).toBe("AudioComponent");
+    expect(actor.components[0]?.properties).toEqual({
+      audioAssetGuid: "beep",
+      playOnStart: true,
+      loop: false,
+      volume: 1,
+    });
   });
 
   it("copies prefab components from a closed class graph payload", () => {
