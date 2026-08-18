@@ -301,6 +301,20 @@ export type CommandMessage =
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
   | { type: "setGlobalVolume"; volume: number }
   | {
+      type: "assignParticle";
+      slotId: number;
+      actorGuid: string;
+      componentId: string;
+      particleSystemGuid: string | null;
+      play?: boolean;
+    }
+  | {
+      type: "setParticlePlaying";
+      actorGuid: string;
+      componentId?: string;
+      playing: boolean;
+    }
+  | {
       type: "setRenderResolution";
       width: number;
       height: number;

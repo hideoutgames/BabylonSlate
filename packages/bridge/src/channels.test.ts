@@ -92,3 +92,26 @@ describe("UserInterface command and control contracts", () => {
     expect(text.value).toBe("Ada");
   });
 });
+
+describe("Particle commands", () => {
+  it("assignParticle and setParticlePlaying are CommandMessage variants", () => {
+    const assign = {
+      type: "assignParticle",
+      slotId: 1,
+      actorGuid: "fx",
+      componentId: "particle-1",
+      particleSystemGuid: "sys-1",
+      play: true,
+    } satisfies CommandMessage;
+    const stop = {
+      type: "setParticlePlaying",
+      actorGuid: "fx",
+      componentId: "particle-1",
+      playing: false,
+    } satisfies CommandMessage;
+    expect(commandType(assign)).toBe("assignParticle");
+    expect(commandType(stop)).toBe("setParticlePlaying");
+    expect(assign.particleSystemGuid).toBe("sys-1");
+    expect(stop.playing).toBe(false);
+  });
+});
