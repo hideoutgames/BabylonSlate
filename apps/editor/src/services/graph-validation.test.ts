@@ -7,6 +7,7 @@ import {
   hydrateClassDocumentPayload,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
+  materializeLogicGraph,
   scriptPaletteNodes,
   scriptPinCompatibility,
   validateSerializedGraph,
@@ -1296,6 +1297,184 @@ describe("scriptPaletteNodes", () => {
     expect(pins?.some((pin) => pin.id === "value")).toBe(true);
   });
 
+  it("refreshes Make Structure pins from the live schema and keeps field names", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "make",
+          type: "struct.make",
+          position: { x: 0, y: 0 },
+          data: {
+            structGuid: "struct-stats",
+            fields: [{ name: "Mana", typeId: "float" }],
+            __pins: [
+              {
+                id: "Mana",
+                name: "Mana",
+                kind: "data",
+                direction: "in",
+                type: { kind: "float" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      structs: {
+        "struct-stats": {
+          name: "Stats",
+          fields: [
+            { name: "Health", typeId: "int" },
+            { name: "Label", typeId: "string" },
+          ],
+        },
+      },
+    });
+    expect(hydrated.nodes[0]?.data.title).toBe("Make Stats");
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins?.map((pin) => pin.id)).toEqual(["Health", "Label", "out"]);
+  });
+
+  it("copies a wired enum guid onto Switch and rebuilds member exec pins", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "make",
+          type: "enum.make",
+          position: { x: 0, y: 0 },
+          data: {
+            enumGuid: "enum-team",
+            members: [
+              { name: "Red", value: 1 },
+              { name: "Blue", value: 2 },
+            ],
+            value: "Red",
+          },
+        },
+        {
+          id: "sw",
+          type: "enum.switch",
+          position: { x: 80, y: 0 },
+          data: {
+            __pins: [
+              {
+                id: "execIn",
+                name: "exec",
+                kind: "exec",
+                direction: "in",
+                type: { kind: "exec" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "make",
+          target: "sw",
+          sourceHandle: "out",
+          targetHandle: "value",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      enums: {
+        "enum-team": {
+          name: "Team",
+          members: [
+            { name: "Red", value: 1 },
+            { name: "Blue", value: 2 },
+          ],
+        },
+      },
+    });
+    expect(hydrated.nodes[1]?.data.enumGuid).toBe("enum-team");
+    expect(hydrated.nodes[1]?.data.title).toBe("Switch on Team");
+    const pins = hydrated.nodes[1]?.data.__pins as Array<{ id: string }>;
+    expect(pins?.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:Red",
+      "case:Blue",
+      "default",
+    ]);
+  });
+
+  it("keeps the last Switch enum guid after disconnect", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sw",
+          type: "enum.switch",
+          position: { x: 0, y: 0 },
+          data: {
+            enumGuid: "enum-team",
+            members: [{ name: "Red", value: 1 }],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      enums: {
+        "enum-team": {
+          name: "Team",
+          members: [{ name: "Red", value: 1 }],
+        },
+      },
+    });
+    expect(hydrated.nodes[0]?.data.enumGuid).toBe("enum-team");
+  });
+
+  it("materializes Make Structure pins from the live schema instead of stale __pins", () => {
+    const logic = materializeLogicGraph(
+      {
+        nodes: [
+          {
+            id: "make",
+            type: "struct.make",
+            position: { x: 0, y: 0 },
+            data: {
+              structGuid: "struct-stats",
+              fields: [{ name: "Mana", typeId: "float" }],
+              __pins: [
+                {
+                  id: "Mana",
+                  name: "Mana",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "float" },
+                },
+              ],
+            },
+          },
+        ],
+        edges: [],
+      },
+      "main",
+      "event",
+      {
+        structs: {
+          "struct-stats": {
+            name: "Stats",
+            fields: [
+              { name: "Health", typeId: "int" },
+              { name: "Label", typeId: "string" },
+            ],
+          },
+        },
+      },
+    );
+    expect(logic.nodes[0]?.pins.map((pin) => pin.id)).toEqual([
+      "Health",
+      "Label",
+      "out",
+    ]);
+  });
+
   const libraryParentOf = (id: string) => {
     if (id === "MathLib") return "FunctionLibrary";
     if (id === "FunctionLibrary") return "BObject";
@@ -1547,5 +1726,98 @@ describe("scriptPaletteNodes", () => {
       );
       expect(nodes.some((node) => node.id === "debug.log")).toBe(true);
     }
+  });
+
+  it("hides generic Make/Break Structure and injects typed rows", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      structures: [
+        {
+          guid: "struct-stats",
+          name: "Stats",
+          fields: [
+            { name: "Health", typeId: "int" },
+            { name: "Label", typeId: "string" },
+          ],
+        },
+      ],
+    });
+    expect(nodes.some((node) => node.id === "struct.make")).toBe(false);
+    expect(nodes.some((node) => node.id === "struct.break")).toBe(false);
+    expect(nodes.some((node) => node.id === "struct.makeRotator")).toBe(true);
+    const make = nodes.find((node) => node.id === "struct.make:struct-stats");
+    expect(make?.title).toBe("Make Stats");
+    expect(make?.nodeType).toBe("struct.make");
+    expect(make?.defaultData).toMatchObject({
+      structGuid: "struct-stats",
+    });
+    expect(
+      make?.pins?.some(
+        (pin) =>
+          pin.id === "out" &&
+          (pin.type as { kind?: string; guid?: string }).kind === "structRef" &&
+          (pin.type as { guid?: string }).guid === "struct-stats",
+      ),
+    ).toBe(true);
+    expect(nodes.some((node) => node.id === "struct.break:struct-stats")).toBe(
+      true,
+    );
+  });
+
+  it("keeps generic enum catalog nodes and injects typed Make/Equal/Switch rows", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      enums: [
+        {
+          guid: "enum-team",
+          name: "Team",
+          members: [
+            { name: "Red", value: 1 },
+            { name: "Blue", value: 2 },
+          ],
+        },
+      ],
+    });
+    expect(nodes.some((node) => node.id === "enum.make")).toBe(true);
+    const make = nodes.find((node) => node.id === "enum.make:enum-team");
+    expect(make?.title).toBe("Make Team");
+    expect(make?.defaultData).toMatchObject({
+      enumGuid: "enum-team",
+      value: "Red",
+    });
+    expect(nodes.some((node) => node.id === "enum.switch:enum-team")).toBe(true);
+    expect(nodes.some((node) => node.id === "enum.equals:enum-team")).toBe(true);
+  });
+
+  it("passes typeClassId onto Get/Set palette rows", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Stats",
+            typeId: "struct",
+            typeClassId: "struct-stats",
+          },
+        ],
+      },
+    });
+    const get = nodes.find((node) => node.id === "variables.get:Hero:Stats");
+    expect(get?.defaultData).toMatchObject({
+      typeId: "struct",
+      typeClassId: "struct-stats",
+    });
+    expect(
+      get?.pins?.some(
+        (pin) =>
+          pin.id === "value" &&
+          (pin.type as { kind?: string; guid?: string }).guid === "struct-stats",
+      ),
+    ).toBe(true);
   });
 });

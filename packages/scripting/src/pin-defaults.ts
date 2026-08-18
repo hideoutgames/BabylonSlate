@@ -14,6 +14,7 @@ const LITERAL_DEFAULT_KINDS = new Set<PinType["kind"]>([
   "enumRef",
   "classRef",
   "assetRef",
+  "structRef",
 ]);
 
 export function pinAcceptsLiteralDefault(type: PinType): boolean {
@@ -60,6 +61,8 @@ export function defaultJsValue(type: PinType): unknown {
       return { x: 0, y: 0, z: 0, w: 0 };
     case "enumRef":
       return "";
+    case "structRef":
+      return {};
     case "classRef":
       return type.classId;
     case "assetRef":

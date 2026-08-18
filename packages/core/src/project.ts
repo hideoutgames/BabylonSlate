@@ -243,7 +243,7 @@ export interface GraphClassMemberPin {
   name: string;
   typeId: string;
   direction: "in" | "out";
-  /** Object/class pin constraint. Missing means unconstrained BObject at pin conversion. */
+  /** Object/class pin constraint, or Structure/Enum asset guid. Missing means unconstrained BObject at pin conversion. */
   typeClassId?: string;
 }
 
@@ -263,7 +263,7 @@ export interface GraphClassMember {
   name: string;
   /** Variable pin type (bool, float, …). */
   typeId?: string;
-  /** Object/class variable constraint. Missing means unconstrained BObject at pin conversion. */
+  /** Object/class constraint, or Structure/Enum asset guid when typeId is struct/enum. */
   typeClassId?: string;
   defaultValue?: unknown;
   /** Function and custom-event signature pins. */

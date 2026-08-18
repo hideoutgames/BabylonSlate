@@ -78,8 +78,25 @@ export function resultKindForClassId(
 export type TypeContext = {
   assetGuid: string;
   hierarchy?: ClassHierarchy;
-  /** Optional known enum/struct/interface guids. */
+  /** Optional known enum/struct/interface guids (project + engine). */
   knownGuids?: ReadonlySet<string>;
+  /** Optional Enum schemas keyed by guid (`engine:…` or asset guid). */
+  enums?: Readonly<Record<string, { name: string; members: Array<{ name: string; value: number }> }>>;
+  /** Optional Structure schemas keyed by guid. */
+  structs?: Readonly<
+    Record<
+      string,
+      {
+        name: string;
+        fields: Array<{
+          name: string;
+          typeId: string;
+          typeClassId?: string;
+          defaultValue?: unknown;
+        }>;
+      }
+    >
+  >;
   /** Optional known class ids. */
   knownClassIds?: ReadonlySet<string>;
   /** Optional BehaviourTree document payload for `bt.structural` rules. */

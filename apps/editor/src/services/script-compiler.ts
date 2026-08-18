@@ -20,7 +20,7 @@ import {
   isLogicGraphPayload,
 } from "@babylonslate/scripting";
 import { localVariablePreamble } from "@babylonslate/scripting-nodes";
-import { defaultNodeRegistry, materializeLogicGraph } from "./graph-validation";
+import { defaultNodeRegistry, materializeLogicGraph, type HydrateGraphOptions } from "./graph-validation";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
@@ -113,11 +113,17 @@ export function compileGraphDocument(
     parentClassId?: string | null;
     stripDevelopmentOnly?: boolean;
     instrumentInfiniteLoops?: boolean;
+    enums?: HydrateGraphOptions["enums"];
+    structs?: HydrateGraphOptions["structs"];
   },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
   const serialized = isLogicGraphPayload(content) ? null : content;
-  const logic = materializeLogicGraph(content, graphId);
+  const typeOptions: HydrateGraphOptions = {
+    enums: options.enums,
+    structs: options.structs,
+  };
+  const logic = materializeLogicGraph(content, graphId, "event", typeOptions);
   const instrumentInfiniteLoops =
     options.instrumentInfiniteLoops ?? options.stripDevelopmentOnly !== true;
   const compiledPieces = [];
@@ -139,6 +145,7 @@ export function compileGraphDocument(
         { nodes: slice.nodes, edges: slice.edges },
         exportName,
         "function",
+        typeOptions,
       );
       if (fnLogic.nodes.length === 0) continue;
       const locals = (serialized.members ?? []).filter(
@@ -302,7 +309,11 @@ export function compileGraphDocuments(
     classId?: string;
     parentClassId?: string | null;
   }>,
-  options: { stripDevelopmentOnly?: boolean } = {},
+  options: {
+    stripDevelopmentOnly?: boolean;
+    enums?: HydrateGraphOptions["enums"];
+    structs?: HydrateGraphOptions["structs"];
+  } = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
@@ -312,6 +323,8 @@ export function compileGraphDocuments(
         classId: doc.classId,
         parentClassId: doc.parentClassId,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
+        enums: options.enums,
+        structs: options.structs,
       });
       if (script) scripts.push(script);
     } catch (error) {
