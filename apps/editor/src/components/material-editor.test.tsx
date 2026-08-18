@@ -349,6 +349,11 @@ describe("Material graph panel", () => {
     await waitFor(() => {
       expect(container.querySelector('[data-handleid="baseColor"]')).not.toBeNull();
     });
+    expect(
+      container.querySelector(
+        '[data-id="output"] [data-handleid="worldPositionOffset"]',
+      ),
+    ).not.toBeNull();
   });
 
   it("shows read-only default widgets on unconnected material pins", async () => {

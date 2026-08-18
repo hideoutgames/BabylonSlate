@@ -150,6 +150,12 @@ export function PlayHudOverlay({
   const attachedRef = useRef<ReturnType<typeof attachFullscreenGui> | null>(
     null,
   );
+  const sizeRef = useRef({ width, height });
+  sizeRef.current = { width, height };
+  const instancesRef = useRef(instances);
+  instancesRef.current = instances;
+  const safeAreaRef = useRef(preset.safeArea);
+  safeAreaRef.current = preset.safeArea;
 
   useEffect(() => {
     if (!scene) {
@@ -158,18 +164,19 @@ export function PlayHudOverlay({
       return;
     }
     try {
-      const first = instances[0]?.document;
+      const { width: attachWidth, height: attachHeight } = sizeRef.current;
+      const first = instancesRef.current[0]?.document;
       const attached = attachFullscreenGui(scene, {
         name: "play-hud",
         interactive: true,
-        width: Math.max(1, width),
-        height: Math.max(1, height),
+        width: Math.max(1, attachWidth),
+        height: Math.max(1, attachHeight),
         designResolution: first?.designResolution ?? {
-          width: Math.max(1, width),
-          height: Math.max(1, height),
+          width: Math.max(1, attachWidth),
+          height: Math.max(1, attachHeight),
         },
         scaleRule: first?.scaleRule ?? "shortestSide",
-        safeArea: preset.safeArea,
+        safeArea: safeAreaRef.current,
         resolveImageUrl: boundResolveImageUrl,
         onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
         onWidgetEvent: (event) => {
@@ -194,7 +201,7 @@ export function PlayHudOverlay({
       attachedRef.current = null;
       setGuiReady(false);
     }
-  }, [scene, width, height, instances, preset.safeArea]);
+  }, [scene, boundResolveImageUrl]);
 
   useEffect(() => {
     const attached = attachedRef.current;

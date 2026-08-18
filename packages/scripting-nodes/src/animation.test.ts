@@ -54,6 +54,10 @@ describe("animation nodes", () => {
       "anim.state.loopCount",
       "anim.state.justLooped",
       "anim.state.justFinished",
+      "anim.actor.getVariable",
+      "anim.actor.setVariable",
+      "anim.actor.getCurrentState",
+      "anim.actor.jumpToState",
     ]);
   });
 
@@ -203,5 +207,61 @@ describe("animation nodes", () => {
       "onInitializeAnimation",
       "onUpdateAnimation",
     ]);
+  });
+
+  it("compiles Actor Anim Graph control nodes against ctx helpers", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "hero",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "jump", "anim.actor.jumpToState", { state: "Run" }),
+        node(registry, "get", "anim.actor.getCurrentState"),
+        node(registry, "read", "anim.actor.getVariable", { name: "moving" }),
+        node(registry, "set", "anim.actor.setVariable", {
+          name: "moving",
+          value: true,
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "tick",
+          sourcePinId: "execOut",
+          targetNodeId: "set",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "set",
+          sourcePinId: "execOut",
+          targetNodeId: "jump",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "read",
+          sourcePinId: "value",
+          targetNodeId: "set",
+          targetPinId: "value",
+        },
+        {
+          id: "e4",
+          sourceNodeId: "get",
+          sourcePinId: "name",
+          targetNodeId: "jump",
+          targetPinId: "state",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "hero-1",
+      registry,
+    });
+    expect(compiled.source).toContain("ctx.setAnimGraphVariable");
+    expect(compiled.source).toContain("ctx.jumpAnimGraphState");
+    expect(compiled.source).toContain("ctx.getAnimGraphCurrentState");
+    expect(compiled.source).toContain("ctx.getAnimGraphVariable");
   });
 });

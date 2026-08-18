@@ -11,7 +11,10 @@ export const AUDIO_BAKE_WORKER_TIMEOUT_MS = 8_000;
 export const AUDIO_GEOMETRY_COLLECT_SLICE = 8;
 export const AUDIO_BAKE_DEBOUNCE_MS = 1_500;
 export const AUDIO_SHARED_REVERB_BUSES = 1;
+export const AUDIO_REVERB_COMB_COUNT = 4;
+export const AUDIO_REVERB_ALLPASS_COUNT = 2;
 export const AUDIO_CROSSFADING_PROFILES = 2;
+export const AUDIO_SPEED_OF_SOUND = 343;
 export const AUDIO_PRE_UNLOCK_QUEUE_CAP = 32;
 export const AUDIO_DECODED_PCM_LRU_BYTES = 64 * 1024 * 1024;
 export const AUDIO_MAX_CONCURRENT_VOICES = 32;
@@ -471,6 +474,32 @@ export function computeAttenuationGain(
     return clampAudioGain((raw - atMax) / (1 - atMax));
   }
   return clampAudioGain(1 - t);
+}
+
+/** Web Audio no longer has PannerNode Doppler; playbackRate carries the authored factor. */
+export function computeDopplerPlaybackRate(options: {
+  emitter: { x: number; y: number; z: number };
+  previousEmitter: { x: number; y: number; z: number } | null;
+  listener: { x: number; y: number; z: number };
+  dt: number;
+  factor: number;
+}): number {
+  if (!options.previousEmitter || !(options.dt > 0) || !(options.factor > 0)) {
+    return 1;
+  }
+  const vx = (options.emitter.x - options.previousEmitter.x) / options.dt;
+  const vy = (options.emitter.y - options.previousEmitter.y) / options.dt;
+  const vz = (options.emitter.z - options.previousEmitter.z) / options.dt;
+  const dx = options.listener.x - options.emitter.x;
+  const dy = options.listener.y - options.emitter.y;
+  const dz = options.listener.z - options.emitter.z;
+  const distance = Math.hypot(dx, dy, dz);
+  if (distance < 1e-4) return 1;
+  const radialTowardListener = (vx * dx + vy * dy + vz * dz) / distance;
+  const rate = 1 + options.factor * (radialTowardListener / AUDIO_SPEED_OF_SOUND);
+  if (rate < 0.25) return 0.25;
+  if (rate > 4) return 4;
+  return rate;
 }
 
 export function attenuationPlotPoints(

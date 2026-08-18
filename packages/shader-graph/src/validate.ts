@@ -1,6 +1,7 @@
 import {
   materialNodeDefinition,
   nodeIsLegalInDomain,
+  nodeIsLegalInStage,
   terminalNodeTypeFor,
   type MaterialCapability,
   type MaterialDomain,
@@ -545,6 +546,12 @@ export function validateMaterialDocument(
     });
   }
 
+  if (doc.domain === "surface") {
+    diagnostics.push(
+      ...validateWorldPositionOffsetStage(doc, context.functions ?? {}),
+    );
+  }
+
   if (doc.domain === "postProcess" && context.warnPostProcessCost) {
     diagnostics.push({
       code: "material.postProcessCost",
@@ -555,6 +562,144 @@ export function validateMaterialDocument(
   }
 
   return diagnostics;
+}
+
+interface WorldPositionOffsetWalkFrame {
+  graph: GraphLike;
+  functions: Record<string, MaterialFunctionDocument>;
+  /** Diagnostic node-id prefix so function bodies stay `call/inner`. */
+  prefix: string;
+  parent?: {
+    frame: WorldPositionOffsetWalkFrame;
+    callNodeId: string;
+  };
+}
+
+/**
+ * World Position Offset compiles in the vertex stage. Walk only the ancestors
+ * of that pin — including Material Function bodies — and reject fragment-only
+ * nodes such as derivatives.
+ */
+function validateWorldPositionOffsetStage(
+  doc: MaterialDocument,
+  functions: Record<string, MaterialFunctionDocument>,
+): MaterialDiagnostic[] {
+  const terminal = doc.nodes.find((node) => node.type === "output.surface");
+  if (!terminal) return [];
+  const diagnostics: MaterialDiagnostic[] = [];
+  const seen = new Set<string>();
+  const root: WorldPositionOffsetWalkFrame = {
+    graph: doc,
+    functions,
+    prefix: "",
+  };
+  walkWorldPositionOffsetPin(
+    root,
+    terminal.id,
+    "worldPositionOffset",
+    seen,
+    diagnostics,
+  );
+  return diagnostics;
+}
+
+function walkWorldPositionOffsetPin(
+  frame: WorldPositionOffsetWalkFrame,
+  targetNodeId: string,
+  targetPinId: string,
+  seen: Set<string>,
+  diagnostics: MaterialDiagnostic[],
+): void {
+  const pinKey = `pin:${frame.prefix}${targetNodeId}:${targetPinId}`;
+  if (seen.has(pinKey)) return;
+  seen.add(pinKey);
+  for (const edge of frame.graph.edges) {
+    if (edge.targetNodeId !== targetNodeId || edge.targetPinId !== targetPinId) {
+      continue;
+    }
+    walkWorldPositionOffsetNode(
+      frame,
+      edge.sourceNodeId,
+      edge.sourcePinId,
+      seen,
+      diagnostics,
+    );
+  }
+}
+
+function walkWorldPositionOffsetNode(
+  frame: WorldPositionOffsetWalkFrame,
+  nodeId: string,
+  sourcePinId: string,
+  seen: Set<string>,
+  diagnostics: MaterialDiagnostic[],
+): void {
+  const nodeKey = `node:${frame.prefix}${nodeId}:${sourcePinId}`;
+  if (seen.has(nodeKey)) return;
+  seen.add(nodeKey);
+  const node = frame.graph.nodes.find((entry) => entry.id === nodeId);
+  if (!node) return;
+
+  if (node.type === "function.call") {
+    const guid = node.properties.functionGuid;
+    const fn = typeof guid === "string" ? frame.functions[guid] : undefined;
+    const outputNode = fn?.nodes.find(
+      (entry) => entry.type === "function.output",
+    );
+    if (fn && outputNode) {
+      walkWorldPositionOffsetPin(
+        {
+          graph: fn,
+          functions: frame.functions,
+          prefix: `${frame.prefix}${node.id}/`,
+          parent: { frame, callNodeId: node.id },
+        },
+        outputNode.id,
+        sourcePinId,
+        seen,
+        diagnostics,
+      );
+    }
+    return;
+  }
+
+  if (node.type === "function.input") {
+    if (frame.parent) {
+      walkWorldPositionOffsetPin(
+        frame.parent.frame,
+        frame.parent.callNodeId,
+        sourcePinId,
+        seen,
+        diagnostics,
+      );
+    }
+    return;
+  }
+
+  const definition = materialNodeDefinition(node.type);
+  if (
+    definition &&
+    node.type !== "function.output" &&
+    !nodeIsLegalInStage(node.type, "vertex")
+  ) {
+    diagnostics.push({
+      code: "material.stageMismatch",
+      message: `"${definition.title}" cannot feed World Position Offset because it only runs in the fragment stage`,
+      severity: "error",
+      nodeId: `${frame.prefix}${node.id}`,
+    });
+  }
+
+  for (const edge of frame.graph.edges) {
+    if (edge.targetNodeId !== node.id) continue;
+    walkWorldPositionOffsetPin(
+      frame,
+      node.id,
+      edge.targetPinId,
+      seen,
+      diagnostics,
+    );
+  }
 }
 
 export function validateMaterialFunctionDocument(

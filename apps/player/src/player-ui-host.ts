@@ -1,4 +1,5 @@
 import type { Scene } from "@babylonjs/core/scene";
+import { mimeForGuiTextureBytes } from "@babylonslate/assets";
 import type { UiWidgetEventControl } from "@babylonslate/bridge";
 import {
   applyAdtIdeal,
@@ -52,20 +53,8 @@ function documentFromLibrary(
   return (library as Readonly<Record<string, UserInterfaceDocument>>)[guid];
 }
 
-function mimeForTextureBytes(bytes: Uint8Array): string {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.length >= 4 &&
-    bytes[0] === 0x89 &&
-    bytes[1] === 0x50 &&
-    bytes[2] === 0x4e &&
-    bytes[3] === 0x47
-  ) {
-    return "image/png";
-  }
-  return "image/png";
+function mimeForTextureBytes(bytes: Uint8Array): string | null {
+  return mimeForGuiTextureBytes(bytes);
 }
 
 function scopeControlId(instanceId: string, id: string | null | undefined): string | null {
@@ -105,9 +94,11 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
     if (cached) return cached;
     const bytes = options.textureBytes?.get(id);
     if (!bytes || bytes.byteLength === 0) return null;
+    const mime = mimeForTextureBytes(bytes);
+    if (!mime) return null;
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
-    const url = createObjectURL(new Blob([copy], { type: mimeForTextureBytes(bytes) }));
+    const url = createObjectURL(new Blob([copy], { type: mime }));
     if (!url) return null;
     imageUrls.set(id, url);
     return url;

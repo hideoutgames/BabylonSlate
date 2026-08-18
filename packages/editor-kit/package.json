@@ -12,6 +12,7 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project jsdom packages/editor-kit"
   },
   "dependencies": {
+    "@babylonslate/assets": "workspace:*",
     "@babylonslate/input": "workspace:*",
     "@babylonslate/ui": "workspace:*",
     "lucide-react": "^0.487.0",

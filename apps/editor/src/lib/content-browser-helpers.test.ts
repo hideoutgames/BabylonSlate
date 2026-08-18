@@ -17,6 +17,8 @@ import {
   contentBrowserMoveFromDrop,
   displayAssetTitle,
   filterAssets,
+  sortAssets,
+  sortChildFolders,
   flattenContentBrowserTree,
   flattenFolderTree,
   filterFolderTreeRows,
@@ -64,6 +66,7 @@ function asset(
     guid?: string;
     type?: string;
     name?: string;
+    mtime?: number | null;
   },
 ): IndexedAsset {
   return {
@@ -81,6 +84,7 @@ function asset(
       payload: overrides.payload ?? {},
       chunks: [],
     },
+    mtime: overrides.mtime,
   };
 }
 
@@ -137,6 +141,104 @@ describe("content-browser-helpers", () => {
     expect(matchesAssetSearch(item, "model")).toBe(true);
     expect(matchesAssetSearch(item, "crate")).toBe(true);
     expect(matchesAssetSearch(item, "missing")).toBe(false);
+  });
+
+  it("sorts assets by display name case-insensitively", () => {
+    const zebra = asset({ guid: "z", name: "Zebra.Texture" });
+    const alpha = asset({ guid: "a", name: "alpha" });
+    const beta = asset({ guid: "b", name: "Beta" });
+    const items = [zebra, alpha, beta];
+
+    expect(sortAssets(items, "name-asc").map((item) => item.header.guid)).toEqual([
+      "a",
+      "b",
+      "z",
+    ]);
+    expect(sortAssets(items, "name-desc").map((item) => item.header.guid)).toEqual([
+      "z",
+      "b",
+      "a",
+    ]);
+    expect(items.map((item) => item.header.guid)).toEqual(["z", "a", "b"]);
+  });
+
+  it("sorts assets by type then name", () => {
+    const sceneB = asset({ guid: "sb", name: "Beta", type: "Scene" });
+    const texture = asset({ guid: "t", name: "Alpha", type: "Texture" });
+    const sceneA = asset({ guid: "sa", name: "Alpha", type: "Scene" });
+
+    expect(
+      sortAssets([sceneB, texture, sceneA], "type-asc").map((item) => item.header.guid),
+    ).toEqual(["sa", "sb", "t"]);
+    expect(
+      sortAssets([sceneB, texture, sceneA], "type-desc").map((item) => item.header.guid),
+    ).toEqual(["t", "sa", "sb"]);
+  });
+
+  it("sorts assets by mtime and treats missing mtime as oldest", () => {
+    const newest = asset({ guid: "n", name: "New", mtime: 300 });
+    const older = asset({ guid: "o", name: "Old", mtime: 100 });
+    const unknown = asset({ guid: "u", name: "Unknown", mtime: null });
+    const missing = asset({ guid: "m", name: "Missing" });
+
+    expect(
+      sortAssets([newest, unknown, older, missing], "date-desc").map(
+        (item) => item.header.guid,
+      ),
+    ).toEqual(["n", "o", "m", "u"]);
+    expect(
+      sortAssets([newest, unknown, older, missing], "date-asc").map(
+        (item) => item.header.guid,
+      ),
+    ).toEqual(["m", "u", "o", "n"]);
+  });
+
+  it("breaks remaining sort ties with guid", () => {
+    const first = asset({ guid: "aaa", name: "Same", type: "Scene", mtime: 10 });
+    const second = asset({ guid: "zzz", name: "Same", type: "Scene", mtime: 10 });
+
+    expect(sortAssets([second, first], "name-asc").map((item) => item.header.guid)).toEqual([
+      "aaa",
+      "zzz",
+    ]);
+    expect(sortAssets([second, first], "type-asc").map((item) => item.header.guid)).toEqual([
+      "aaa",
+      "zzz",
+    ]);
+    expect(sortAssets([second, first], "date-asc").map((item) => item.header.guid)).toEqual([
+      "aaa",
+      "zzz",
+    ]);
+  });
+
+  it("sorts folder tiles by name only in name modes", () => {
+    const folders = [
+      { name: "Zed", path: "assets/Zed" },
+      { name: "alpha", path: "assets/alpha" },
+      { name: "Beta", path: "assets/Beta" },
+    ];
+
+    expect(sortChildFolders(folders, "name-asc").map((folder) => folder.name)).toEqual([
+      "alpha",
+      "Beta",
+      "Zed",
+    ]);
+    expect(sortChildFolders(folders, "name-desc").map((folder) => folder.name)).toEqual([
+      "Zed",
+      "Beta",
+      "alpha",
+    ]);
+    expect(sortChildFolders(folders, "type-desc").map((folder) => folder.name)).toEqual([
+      "alpha",
+      "Beta",
+      "Zed",
+    ]);
+    expect(sortChildFolders(folders, "date-desc").map((folder) => folder.name)).toEqual([
+      "alpha",
+      "Beta",
+      "Zed",
+    ]);
+    expect(folders.map((folder) => folder.name)).toEqual(["Zed", "alpha", "Beta"]);
   });
 
   it("reads texture compression badges", () => {
@@ -744,6 +846,9 @@ describe("content-browser-helpers", () => {
   it("seeds P9 document assets with typed suffixes", () => {
     expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
+    expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
+      "Walk.spriteanim.babasset",
+    );
     expect(newAssetFileName("AnimationGraph", "Loco")).toBe("Loco.anim.babasset");
     expect(newAssetFileName("Material", "Rock")).toBe("Rock.material.babasset");
     expect(newAssetFileName("MaterialFunction", "Tint")).toBe(
@@ -816,6 +921,24 @@ describe("content-browser-helpers", () => {
     expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 
+  it("seeds Sprite Animation New Asset documents", () => {
+    const walk = buildNewAssetResult({
+      type: "SpriteAnimation",
+      name: "Walk",
+      guid: "sa-1",
+      parentClass: null,
+    });
+    expect(walk.type).toBe("SpriteAnimation");
+    expect(walk.payload.frames).toEqual([
+      expect.objectContaining({
+        textureGuid: "",
+        durationMs: 100,
+        pivot: { x: 0.5, y: 0.5 },
+        collision: { x: 0, y: 0, width: 1, height: 1 },
+      }),
+    ]);
+  });
+
   it("seeds BehaviourTree and Blackboard New Asset documents", () => {
     const tree = buildNewAssetResult({
       type: "BehaviourTree",
@@ -878,6 +1001,7 @@ describe("content-browser-helpers", () => {
       "Class",
       "UserInterface",
       "Sprite",
+      "SpriteAnimation",
       "AnimationGraph",
       "Material",
       "MaterialFunction",
@@ -902,6 +1026,7 @@ describe("content-browser-helpers", () => {
       "Editor Utility Interface",
     );
     expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
+    expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
     expect(creatableAssetTypeLabel("BehaviourTree")).toBe("Behaviour Tree");
     expect(creatableAssetTypeLabel("ScriptInterface")).toBe("Script Interface");
@@ -931,7 +1056,7 @@ describe("content-browser-helpers", () => {
     );
     const audio = CREATABLE_ASSET_TYPE_GROUPS.find((group) => group.id === "audio");
     expect([...twoD!.types]).toEqual(["Sprite", "Tileset", "Tilemap"]);
-    expect([...animation!.types]).toEqual(["AnimationGraph"]);
+    expect([...animation!.types]).toEqual(["AnimationGraph", "SpriteAnimation"]);
     expect([...audio!.types]).toEqual([
       "AudioMixer",
       "AudioChannel",
@@ -1294,6 +1419,15 @@ describe("content-browser-helpers", () => {
         effects: [],
       }),
     ).toEqual(["ch-master"]);
+    expect(
+      assetHeaderDependencies("SpriteAnimation", {
+        frames: [
+          { textureGuid: "tex-a" },
+          { textureGuid: "tex-a" },
+          { textureGuid: "tex-b" },
+        ],
+      }),
+    ).toEqual(["tex-a", "tex-b"]);
   });
 
   it("stores Material domain on the scanned header", () => {

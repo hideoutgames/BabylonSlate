@@ -1,4 +1,5 @@
 import {
+  AddBlock,
   FragmentOutputBlock,
   InputBlock,
   NodeMaterial,
@@ -9,6 +10,7 @@ import {
   RemapBlock,
   TransformBlock,
   VectorMergerBlock,
+  VectorSplitterBlock,
   VertexOutputBlock,
   ViewDirectionBlock,
   type Mesh,
@@ -153,7 +155,8 @@ export function compileMaterialPlan(
     return producer.outputs[operand.pinId] ?? null;
   };
 
-  for (const operation of plan.operations) {
+  const realizeOperation = (operation: MaterialOperation): boolean => {
+    if (realized.has(operation.id)) return true;
     const isConstant =
       operation.nodeType.startsWith("const.") ||
       operation.nodeType.startsWith("param.");
@@ -162,7 +165,7 @@ export function compileMaterialPlan(
         // Texture parameters have no block of their own; the sampling node
         // owns the Babylon TextureBlock and reads the guid from here.
         realized.set(operation.id, { blocks: [], inputs: {}, outputs: {} });
-        continue;
+        return true;
       }
       const value = Array.isArray(operation.properties.value)
         ? (operation.properties.value as number[])
@@ -183,7 +186,7 @@ export function compileMaterialPlan(
         inputs: {},
         outputs: { out: block.output },
       });
-      continue;
+      return true;
     }
 
     const adapter = blockAdapterFor(operation.nodeType);
@@ -194,7 +197,7 @@ export function compileMaterialPlan(
         severity: "error",
         nodeId: anchorNodeId(operation),
       });
-      return fail();
+      return false;
     }
     if (operation.nodeType === "custom.glsl" && scene.getEngine().isWebGPU) {
       diagnostics.push({
@@ -203,7 +206,7 @@ export function compileMaterialPlan(
         severity: "error",
         nodeId: anchorNodeId(operation),
       });
-      return fail();
+      return false;
     }
 
     let realization: BlockRealization;
@@ -225,7 +228,7 @@ export function compileMaterialPlan(
         severity: "error",
         nodeId: anchorNodeId(operation),
       });
-      return fail();
+      return false;
     }
     realized.set(operation.id, realization);
 
@@ -258,9 +261,40 @@ export function compileMaterialPlan(
           nodeId: anchorNodeId(operation),
           pinId,
         });
-        return fail();
+        return false;
       }
     }
+    return true;
+  };
+
+  const realizeOperations = (ids?: ReadonlySet<string>): boolean => {
+    for (const operation of plan.operations) {
+      if (ids && !ids.has(operation.id)) continue;
+      if (!realizeOperation(operation)) return false;
+    }
+    return true;
+  };
+
+  if (plan.domain === "surface") {
+    const vertexIds = collectWorldPositionOffsetOperationIds(plan);
+    if (!realizeOperations(vertexIds)) return fail();
+    const offsetOperand = plan.outputs.worldPositionOffset ?? null;
+    if (!isIdentityWorldPositionOffset(offsetOperand) && offsetOperand) {
+      const offset = pointForOperand(
+        offsetOperand,
+        `${options.name}_worldPositionOffset`,
+        false,
+      );
+      if (offset) {
+        applyWorldPositionOffset(options.name, created, plumbing, offset);
+      }
+    }
+    if (!realizeOperations()) return fail();
+    if (plumbing.clipPosition && plumbing.worldPosition) {
+      plumbing.worldPosition.connectTo(plumbing.clipPosition);
+    }
+  } else if (!realizeOperations()) {
+    return fail();
   }
 
   const outputPoint = (
@@ -365,6 +399,58 @@ function matrixInput(
   return block;
 }
 
+function collectWorldPositionOffsetOperationIds(
+  plan: MaterialBuildPlan,
+): Set<string> {
+  const ids = new Set<string>();
+  const visit = (operand: MaterialOperand | null | undefined): void => {
+    if (!operand || operand.kind !== "operation") return;
+    if (ids.has(operand.operationId)) return;
+    ids.add(operand.operationId);
+    const operation = plan.operations.find(
+      (entry) => entry.id === operand.operationId,
+    );
+    if (!operation) return;
+    for (const input of Object.values(operation.inputs)) {
+      visit(input);
+    }
+  };
+  visit(plan.outputs.worldPositionOffset);
+  return ids;
+}
+
+function isIdentityWorldPositionOffset(
+  operand: MaterialOperand | null,
+): boolean {
+  if (!operand) return true;
+  if (operand.kind !== "constant") return false;
+  return operand.value.every((component) => component === 0);
+}
+
+/**
+ * Add an authored world-space vec3 to the plumbed world position, then keep w.
+ * Clip and PBR read the updated plumbing tap; graph World Position nodes that
+ * already compiled still see the pre-offset position.
+ */
+function applyWorldPositionOffset(
+  name: string,
+  created: NodeMaterialBlock[],
+  plumbing: MaterialPlumbing,
+  offset: NodeMaterialConnectionPoint,
+): void {
+  if (!plumbing.worldPosition) return;
+  const split = new VectorSplitterBlock(`${name}_worldPosSplit`);
+  plumbing.worldPosition.connectTo(split.xyzw);
+  const add = new AddBlock(`${name}_worldPosOffset`);
+  split.xyzOut.connectTo(add.left);
+  offset.connectTo(add.right);
+  const merge = new VectorMergerBlock(`${name}_worldPosDisplaced`);
+  add.output.connectTo(merge.xyzIn);
+  split.w.connectTo(merge.w);
+  created.push(split, add, merge);
+  plumbing.worldPosition = merge.xyzw;
+}
+
 /**
  * Vertex transform and world-space geometry every surface material needs.
  * Returns the vertex output node the material must own.
@@ -411,7 +497,6 @@ function createSurfacePlumbing(
   world.output.connectTo(worldPosition.transform);
 
   const clipPosition = new TransformBlock(`${name}_clipPos`);
-  worldPosition.output.connectTo(clipPosition.vector);
   viewProjection.output.connectTo(clipPosition.transform);
 
   const worldNormal = new TransformBlock(`${name}_worldNormal`);
@@ -442,6 +527,7 @@ function createSurfacePlumbing(
   );
 
   plumbing.worldPosition = worldPosition.output;
+  plumbing.clipPosition = clipPosition.vector;
   plumbing.worldNormal = worldNormal.xyz;
   plumbing.worldNormal4 = worldNormal.output;
   plumbing.cameraPosition = cameraPosition.output;

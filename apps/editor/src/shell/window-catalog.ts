@@ -11,6 +11,7 @@ export type DockviewDocumentKind =
   | "structure"
   | "script-interface"
   | "sprite"
+  | "sprite-animation"
   | "tileset"
   | "tilemap"
   | "material"
@@ -31,6 +32,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "structure",
   "script-interface",
   "sprite",
+  "sprite-animation",
   "tileset",
   "tilemap",
   "material",
@@ -78,6 +80,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   structure: "structure-members",
   "script-interface": "script-interface-preview",
   sprite: "sprite-preview",
+  "sprite-animation": "sprite-animation-preview",
   tileset: "tileset-preview",
   tilemap: "tilemap-paint",
   material: "material-graph",
@@ -332,6 +335,24 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
+const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "sprite-animation-preview",
+    component: "sprite-animation-preview",
+    title: "Preview",
+  },
+  {
+    id: "sprite-animation-details",
+    component: "sprite-animation-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "sprite-animation-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
 const TILESET_WINDOWS: DockWindowDefinition[] = [
   { id: "tileset-preview", component: "tileset-preview", title: "Preview" },
   {
@@ -348,6 +369,16 @@ const TILESET_WINDOWS: DockWindowDefinition[] = [
 
 const TILEMAP_WINDOWS: DockWindowDefinition[] = [
   { id: "tilemap-paint", component: "tilemap-paint", title: "Paint" },
+  {
+    id: "tilemap-palette",
+    component: "tilemap-palette",
+    title: "Palette",
+    defaultPosition: {
+      referencePanelId: "tilemap-paint",
+      direction: "left",
+      initialWidth: 280,
+    },
+  },
   {
     id: "tilemap-details",
     component: "tilemap-details",
@@ -617,6 +648,9 @@ export function listDockWindows(
     return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
   }
   if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "sprite-animation") {
+    return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
+  }
   if (kind === "tileset") {
     return withOptionalLocks(kind, TILESET_WINDOWS, options);
   }

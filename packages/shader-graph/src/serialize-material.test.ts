@@ -67,9 +67,13 @@ describe("material graph serialization", () => {
     }>;
     const roughness = pins.find((pin) => pin.id === "roughness");
     const baseColor = pins.find((pin) => pin.id === "baseColor");
+    const worldPositionOffset = pins.find(
+      (pin) => pin.id === "worldPositionOffset",
+    );
     expect(roughness?.defaultValue).toEqual([0.5]);
     expect(baseColor?.colorHint).toBe(true);
     expect(baseColor?.defaultValue).toEqual([0.8, 0.8, 0.8]);
+    expect(worldPositionOffset?.defaultValue).toEqual([0, 0, 0]);
     expect(output?.data["default:roughness"]).toBeUndefined();
   });
 

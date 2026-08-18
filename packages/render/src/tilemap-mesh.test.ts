@@ -134,4 +134,50 @@ describe("createTilemapMeshes", () => {
     const root = createTilemapMeshes(scene, "actor-0", tilemap, tileset, 1, 1);
     expect(root.getChildMeshes()).toHaveLength(0);
   });
+
+  it("splits a chunk into one child mesh per atlas", () => {
+    const ground = normalizeTilesetPayload({
+      textureGuid: "ground-tex",
+      atlasWidth: 16,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+    });
+    const deco = normalizeTilesetPayload({
+      textureGuid: "deco-tex",
+      atlasWidth: 16,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+    });
+    let tilemap = createDefaultTilemapPayload();
+    tilemap = {
+      ...tilemap,
+      chunkSize: 2,
+      tilesetGuid: "ground",
+      tilesets: [
+        { guid: "ground", firstGid: 1, tileCount: 1 },
+        { guid: "deco", firstGid: 2, tileCount: 1 },
+      ],
+    };
+    tilemap = setTile(tilemap, "layer-1", 0, 0, 1);
+    tilemap = setTile(tilemap, "layer-1", 1, 0, 2);
+    const root = createTilemapMeshes(
+      scene,
+      "actor-0",
+      tilemap,
+      new Map([
+        ["ground", ground],
+        ["deco", deco],
+      ]),
+      1,
+      1,
+    );
+    const children = root.getChildMeshes();
+    expect(children).toHaveLength(2);
+    const textures = children.map(
+      (mesh) => mesh.metadata?.tilemapTextureGuid as string,
+    );
+    expect(textures.sort()).toEqual(["deco-tex", "ground-tex"]);
+  });
 });

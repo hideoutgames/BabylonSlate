@@ -107,6 +107,53 @@ describe("tilemapChunkVertexData", () => {
     expect(staticData.positions[0]).toBe(0);
     expect(animatedData.positions[0]).toBe(1);
   });
+
+  it("draws only GIDs that belong to the requested atlas", () => {
+    const ground = normalizeTilesetPayload({
+      atlasWidth: 16,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+    });
+    const deco = normalizeTilesetPayload({
+      atlasWidth: 32,
+      atlasHeight: 16,
+      tileWidth: 16,
+      tileHeight: 16,
+    });
+    const tiles = emptyChunkTiles(2);
+    tiles[0] = 1;
+    tiles[1] = 3;
+    const resolveGid = (gid: number) => {
+      if (gid >= 3) return { tileset: deco, localId: gid - 2, guid: "deco" };
+      if (gid > 0) return { tileset: ground, localId: gid, guid: "ground" };
+      return null;
+    };
+    const groundDraw = tilemapChunkVertexData({
+      tiles,
+      chunkSize: 2,
+      chunkX: 0,
+      chunkY: 0,
+      tileset: ground,
+      worldTileWidth: 1,
+      worldTileHeight: 1,
+      resolveGid,
+      atlasGuid: "ground",
+    });
+    const decoDraw = tilemapChunkVertexData({
+      tiles,
+      chunkSize: 2,
+      chunkX: 0,
+      chunkY: 0,
+      tileset: deco,
+      worldTileWidth: 1,
+      worldTileHeight: 1,
+      resolveGid,
+      atlasGuid: "deco",
+    });
+    expect(groundDraw.positions).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
+    expect(decoDraw.positions).toEqual([1, 0, 0, 2, 0, 0, 2, 1, 0, 1, 1, 0]);
+  });
 });
 
 describe("tilemapParallaxOffset", () => {

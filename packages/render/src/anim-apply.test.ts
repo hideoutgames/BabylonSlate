@@ -14,7 +14,11 @@ import {
   disposeSnapshotBinding,
 } from "./snapshot-apply";
 import { createSpriteQuad } from "./sprite-quad";
-import { spriteFrameUvs, type SpritePayload } from "@babylonslate/assets";
+import {
+  spriteFrameUvs,
+  type SpriteAnimationPayload,
+  type SpritePayload,
+} from "@babylonslate/assets";
 
 describe("seekGameplayAnimation", () => {
   it("pauses the group and seeks a normalised frame instead of auto-advancing", () => {
@@ -122,6 +126,92 @@ describe("seekGameplayAnimation", () => {
     const expected = spriteFrameUvs(payload.frames[1]!);
     expect(uvs[0]).toBeCloseTo(expected.u0);
     expect(uvs[2]).toBeCloseTo(expected.u1);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("binds a Sprite Animation frame texture, full UVs, and pivot on the sprite mesh", () => {
+    const sprite: SpritePayload = {
+      textureGuid: "sprite-tex",
+      pixelsPerUnit: 100,
+      frames: [
+        {
+          name: "a",
+          u: 0,
+          v: 0,
+          uSize: 1,
+          vSize: 1,
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          width: 100,
+          height: 100,
+        },
+      ],
+      clips: [{ name: "Idle", frames: ["a"] }],
+    };
+    const animation: SpriteAnimationPayload = {
+      frames: [
+        {
+          textureGuid: "frame-a",
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+          width: 100,
+          height: 100,
+        },
+        {
+          textureGuid: "frame-b",
+          durationMs: 100,
+          pivot: { x: 0, y: 1 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+          width: 100,
+          height: 100,
+        },
+      ],
+    };
+    const engine = new NullEngine({
+      renderWidth: 64,
+      renderHeight: 64,
+      textureSize: 4,
+      deterministicLockstep: false,
+      lockstepMaxSteps: 1,
+    });
+    const scene = new Scene(engine);
+    const mesh = createSpriteQuad(scene, "hero", sprite.frames[0]!);
+    const textures: string[] = [];
+    applyAnimStateToScene(
+      {
+        animationGroups: [],
+        getSpriteSlot: (slotId) =>
+          slotId === 3
+            ? {
+                mesh,
+                payload: sprite,
+                spriteAnimations: new Map([["walk-anim", animation]]),
+                applyTexture: (target, guid) => {
+                  if (target === mesh && guid) textures.push(guid);
+                },
+              }
+            : undefined,
+      },
+      {
+        type: "animState",
+        slotId: 3,
+        stateId: "walk",
+        normalisedTime: 0.8,
+        blendWeights: { walk: 1 },
+        clipName: "",
+        clipKind: "sprite",
+        clipAssetGuid: "walk-anim",
+      },
+    );
+    const uvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
+    expect(uvs[0]).toBeCloseTo(0);
+    expect(uvs[2]).toBeCloseTo(1);
+    expect(textures).toEqual(["frame-b"]);
+    const pivot = mesh.getPivotPoint();
+    expect(pivot.x).toBeCloseTo(-0.5);
+    expect(pivot.y).toBeCloseTo(-0.5);
     scene.dispose();
     engine.dispose();
   });

@@ -19,6 +19,12 @@ export function tilemapChunkVertexData(options: {
   worldTileHeight: number;
   /** Omit to include every non-empty tile (golden / debug dumps). */
   kind?: TilemapChunkDrawKind;
+  /** When set, GIDs are decoded before UV lookup. */
+  resolveGid?: (
+    gid: number,
+  ) => { tileset: TilesetPayload; localId: number; guid: string } | null;
+  /** With `resolveGid`, emit only tiles that belong to this tileset guid. */
+  atlasGuid?: string;
 }): TilemapChunkVertexData {
   const {
     tiles,
@@ -29,6 +35,8 @@ export function tilemapChunkVertexData(options: {
     worldTileWidth,
     worldTileHeight,
     kind,
+    resolveGid,
+    atlasGuid,
   } = options;
   const positions: number[] = [];
   const uvs: number[] = [];
@@ -40,12 +48,17 @@ export function tilemapChunkVertexData(options: {
     for (let lx = 0; lx < chunkSize; lx++) {
       const tileId = tiles[ly * chunkSize + lx] ?? 0;
       if (tileId <= 0) continue;
-      const meta = tilesetTileById(tileset, tileId);
+      const resolved = resolveGid?.(tileId);
+      if (resolveGid && !resolved) continue;
+      if (atlasGuid && resolved && resolved.guid !== atlasGuid) continue;
+      const atlas = resolved?.tileset ?? tileset;
+      const localId = resolved?.localId ?? tileId;
+      const meta = tilesetTileById(atlas, localId);
       const animated = (meta?.animation.length ?? 0) > 0;
       if (kind === "static" && animated) continue;
       if (kind === "animated" && !animated) continue;
-      const uvId = animated ? (meta?.animation[0] ?? tileId) : tileId;
-      const uv = tilesetTileUv(tileset, uvId);
+      const uvId = animated ? (meta?.animation[0] ?? localId) : localId;
+      const uv = tilesetTileUv(atlas, uvId);
       if (!uv) continue;
       const x0 = originX + lx * worldTileWidth;
       const y0 = originY + ly * worldTileHeight;

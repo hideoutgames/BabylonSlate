@@ -199,6 +199,8 @@ test.describe("P16 audio", () => {
     await page.getByTestId(`search-item-${beepGuid}`).click();
     await expect(page.getByTestId("details-asset-picker")).toHaveCount(0);
 
+    await expect(page.getByTestId("property-actor-position-x")).toBeVisible();
+    await page.getByTestId("property-actor-position-x").fill("0");
     await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
@@ -226,17 +228,46 @@ test.describe("P16 audio", () => {
           unlocked: true,
         }),
       );
+    let nearDistance: number | null = null;
     await expect
       .poll(async () => {
-        return page.evaluate(() => {
+        nearDistance = await page.evaluate(() => {
           return (
             window as {
               __babylonslateAudioStats?: { lastDistance: number | null };
             }
-          ).__babylonslateAudioStats?.lastDistance;
+          ).__babylonslateAudioStats?.lastDistance ?? null;
         });
+        return nearDistance;
       }, { timeout: 15_000 })
       .toEqual(expect.any(Number));
+
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    await page.getByTestId("property-actor-position-x").fill("40");
+    await saveAllIfEnabled(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await page.getByTestId("play-canvas").click({
+      position: { x: 200, y: 200 },
+      force: true,
+    });
+    await expect
+      .poll(async () => {
+        return page.evaluate((previous) => {
+          const distance = (
+            window as {
+              __babylonslateAudioStats?: { lastDistance: number | null };
+            }
+          ).__babylonslateAudioStats?.lastDistance;
+          return (
+            typeof distance === "number" &&
+            typeof previous === "number" &&
+            Math.abs(distance - previous) > 1
+          );
+        }, nearDistance);
+      }, { timeout: 15_000 })
+      .toBe(true);
 
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);

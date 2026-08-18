@@ -5,6 +5,8 @@ import {
   BOOL,
   FLOAT,
   INT,
+  STRING,
+  BOXED_WILDCARD,
 } from "@babylonslate/scripting";
 
 function factExpr(field: string, fallback: string): string {
@@ -101,6 +103,62 @@ export const animationNodes: NodeDefinition[] = [
   intFact("anim.state.loopCount", "Loop Count", "loopCount"),
   boolFact("anim.state.justLooped", "Just Looped", "justLooped"),
   boolFact("anim.state.justFinished", "Just Finished", "justFinished"),
+  {
+    id: "anim.actor.getVariable",
+    title: "Get Anim Graph Variable",
+    category: "animation",
+    pure: true,
+    pins: () => [
+      pin("name", "name", "in", STRING),
+      pin("value", "value", "out", BOXED_WILDCARD),
+    ],
+    codegen: (ctx) => ({
+      value: `ctx.getAnimGraphVariable(${ctx.input("name")})`,
+    }),
+  },
+  {
+    id: "anim.actor.setVariable",
+    title: "Set Anim Graph Variable",
+    category: "animation",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("name", "name", "in", STRING),
+      pin("value", "value", "in", BOXED_WILDCARD),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `ctx.setAnimGraphVariable(${ctx.input("name")}, ${ctx.input("value")});`,
+      );
+    },
+  },
+  {
+    id: "anim.actor.getCurrentState",
+    title: "Get Current State",
+    category: "animation",
+    pure: true,
+    pins: () => [
+      pin("name", "name", "out", STRING),
+      pin("id", "id", "out", STRING),
+    ],
+    codegen: () => ({
+      name: `(ctx.getAnimGraphCurrentState()?.name ?? "")`,
+      id: `(ctx.getAnimGraphCurrentState()?.id ?? "")`,
+    }),
+  },
+  {
+    id: "anim.actor.jumpToState",
+    title: "Jump To State",
+    category: "animation",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("state", "state", "in", STRING),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.jumpAnimGraphState(${ctx.input("state")});`);
+    },
+  },
 ];
 
 export function isAnimationExclusiveNode(nodeId: string): boolean {

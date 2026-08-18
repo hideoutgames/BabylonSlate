@@ -4,11 +4,14 @@ import {
   audioAssetDependencies,
   createDefaultMigrationRegistry,
   createDefaultSpritePayload,
+  createDefaultSpriteAnimationPayload,
   createDefaultTilemapPayload,
   createDefaultTilesetPayload,
   createDefaultAudioMixerPayload,
   createDefaultAudioChannelPayload,
   createDefaultSoundAttenuationPayload,
+  parseSpriteAnimationPayload,
+  spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
@@ -190,6 +193,7 @@ export const CREATABLE_ASSET_TYPES = [
   "Class",
   "UserInterface",
   "Sprite",
+  "SpriteAnimation",
   "AnimationGraph",
   "Material",
   "MaterialFunction",
@@ -235,7 +239,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "animation",
     label: "Animation",
-    types: ["AnimationGraph"],
+    types: ["AnimationGraph", "SpriteAnimation"],
   },
   {
     id: "rendering",
@@ -259,6 +263,7 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Class: "A class with a parent and a logic graph.",
   UserInterface: "A game HUD or menu authored with Babylon GUI.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
+  SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",
   Material: "A shader graph that compiles to a Babylon material.",
   MaterialFunction: "A reusable shader subgraph for materials.",
@@ -498,6 +503,90 @@ export function filterAssets(
       return false;
     }
     return matchesAssetSearch(asset, options.search);
+  });
+}
+
+export type ContentBrowserSortMode =
+  | "name-asc"
+  | "name-desc"
+  | "type-asc"
+  | "type-desc"
+  | "date-desc"
+  | "date-asc";
+
+export const CONTENT_BROWSER_SORT_OPTIONS: ReadonlyArray<{
+  mode: ContentBrowserSortMode;
+  label: string;
+}> = [
+  { mode: "name-asc", label: "Name A–Z" },
+  { mode: "name-desc", label: "Name Z–A" },
+  { mode: "type-asc", label: "Type A–Z" },
+  { mode: "type-desc", label: "Type Z–A" },
+  { mode: "date-desc", label: "Date Modified (Newest)" },
+  { mode: "date-asc", label: "Date Modified (Oldest)" },
+];
+
+const NAME_COMPARE: Intl.CollatorOptions = { sensitivity: "base" };
+
+function compareNames(a: string, b: string): number {
+  return a.localeCompare(b, undefined, NAME_COMPARE);
+}
+
+function assetDisplayName(asset: IndexedAsset): string {
+  return displayAssetTitle(asset.header.name) || asset.header.name;
+}
+
+function compareAssetNames(a: IndexedAsset, b: IndexedAsset): number {
+  const byDisplay = compareNames(assetDisplayName(a), assetDisplayName(b));
+  if (byDisplay !== 0) return byDisplay;
+  return compareNames(a.header.name, b.header.name);
+}
+
+function assetMtime(asset: IndexedAsset): number {
+  return asset.mtime ?? 0;
+}
+
+export function sortAssets(
+  assets: readonly IndexedAsset[],
+  mode: ContentBrowserSortMode,
+): IndexedAsset[] {
+  return [...assets].sort((left, right) => {
+    let primary = 0;
+    switch (mode) {
+      case "name-asc":
+      case "name-desc":
+        primary = compareAssetNames(left, right);
+        if (mode === "name-desc") primary = -primary;
+        break;
+      case "type-asc":
+      case "type-desc":
+        primary = compareNames(left.header.type, right.header.type);
+        if (mode === "type-desc") primary = -primary;
+        break;
+      case "date-asc":
+      case "date-desc":
+        primary = assetMtime(left) - assetMtime(right);
+        if (mode === "date-desc") primary = -primary;
+        break;
+    }
+    if (primary !== 0) return primary;
+    if (mode !== "name-asc" && mode !== "name-desc") {
+      const byName = compareAssetNames(left, right);
+      if (byName !== 0) return byName;
+    }
+    return left.header.guid.localeCompare(right.header.guid);
+  });
+}
+
+export function sortChildFolders<T extends { name: string }>(
+  folders: readonly T[],
+  mode: ContentBrowserSortMode,
+): T[] {
+  const descending = mode === "name-desc";
+  return [...folders].sort((left, right) => {
+    const byName = compareNames(left.name, right.name);
+    if (byName !== 0) return descending ? -byName : byName;
+    return 0;
   });
 }
 
@@ -1111,6 +1200,15 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "SpriteAnimation") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultSpriteAnimationPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   if (type === "AnimationGraph") {
     return documentAsset(
       type,
@@ -1234,6 +1332,7 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   UserInterface: ".ui.babasset",
   EditorUtilityInterface: ".eui.babasset",
   Sprite: ".sprite.babasset",
+  SpriteAnimation: ".spriteanim.babasset",
   AnimationGraph: ".anim.babasset",
   Material: ".material.babasset",
   MaterialFunction: ".matfunc.babasset",
@@ -1281,6 +1380,9 @@ export function assetHeaderDependencies(
   const unique = new Set<string>([
     ...materialAssetDependencies(assetType, payload),
     ...audioAssetDependencies(assetType, payload),
+    ...(assetType === "SpriteAnimation"
+      ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
+      : []),
   ]);
   return [...unique].sort();
 }

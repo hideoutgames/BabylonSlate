@@ -38,9 +38,16 @@ export {
 } from "./graph";
 export {
   ANIM_STATE_PINS,
+  ANIM_STATE_SIDES,
   animGraphToSerialized,
   animPaletteNodes,
+  findReverseTransition,
   hydrateAnimGraphForEditor,
+  migrateAnimHandle,
+  normalizeAnimConnection,
   serializedToAnimGraph,
+  setTransitionBidirectional,
+  visualTransitions,
   type AnimGraphPin,
+  type AnimStateSide,
 } from "./serialize";
