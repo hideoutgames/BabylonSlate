@@ -31,6 +31,8 @@ export type AudioPlayRequest = {
 };
 
 export interface AudioPlaybackBackend {
+  /** Create the AudioV2 engine (suspended) before the first gesture. */
+  warmAsync(): Promise<void>;
   unlockAsync(): Promise<void>;
   isUnlocked(): boolean;
   decode(assetGuid: string, bytes: Uint8Array): Promise<{ pcmBytes: number }>;
@@ -47,6 +49,8 @@ export interface AudioPlaybackBackend {
     damping: number;
   }): void;
   setVoiceMuffle(voiceId: string, factor: number): void;
+  /** Pause or resume live voices without stopping them. */
+  setPaused(paused: boolean): void;
   dispose(): void;
   onVoiceEnded: ((voiceId: string) => void) | null;
 }
@@ -54,6 +58,8 @@ export interface AudioPlaybackBackend {
 /** In-memory backend for NullEngine unit tests (no Web Audio / AudioV2). */
 export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   unlocked = false;
+  paused = false;
+  engineCreateCount = 0;
   plays: AudioPlayRequest[] = [];
   stopped: string[] = [];
   poses = new Map<string, AudioPose>();
@@ -69,6 +75,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   isUnlocked(): boolean {
     return this.unlocked;
+  }
+
+  async warmAsync(): Promise<void> {
+    if (this.engineCreateCount === 0) this.engineCreateCount = 1;
   }
 
   async unlockAsync(): Promise<void> {
@@ -119,6 +129,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setVoiceMuffle(voiceId: string, factor: number): void {
     this.muffles.set(voiceId, factor);
+  }
+
+  setPaused(paused: boolean): void {
+    this.paused = paused;
   }
 
   dispose(): void {

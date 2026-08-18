@@ -1,8 +1,17 @@
 # Testing architecture
 
-`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build. CI runs the same command.
+`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
 
-GitHub Actions must use **standard** hosted runners only (`ubuntu-latest`, `macos-latest`, …). Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
+## GitHub Actions
+
+[`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into two standard `ubuntu-latest` jobs (`unit` and `e2e`). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
+
+GitHub Free public repos cap concurrent jobs at 20. Agents wait on Verify before merge, so a backed-up queue stalls every PR.
+
+- **Concurrency.** Verify cancels superseded runs for the same pull request (or `main` ref). Preview already cancels in-progress Pages deploys.
+- **Timeouts.** Each Verify job is 45 minutes (healthy `unit` is ~6–7 min; `e2e` is ~20–25 min). Playwright Chromium download and OS-deps install each time out at 5 minutes so a hung `apt` or browser fetch cannot occupy a runner for six hours.
+- **Playwright cache.** `e2e` restores `~/.cache/ms-playwright` keyed on `pnpm-lock.yaml`, then runs `playwright install chromium` and `playwright install-deps chromium` as separate steps (not `--with-deps`).
+- **Drafts.** Draft pull requests skip both jobs. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate.
 
 ## Vitest projects
 
@@ -10,7 +19,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage + repo-link rewriter), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed) — no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage, repo-link rewriter, Verify workflow policy), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed) — no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` (`.test.ts` and `.test.tsx`) |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
@@ -79,7 +88,7 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 
 `e2e/p15-source-control.spec.ts` uses test-mode `FakeLockProvider`: enable Source Control, edit the scene → Content Browser `data-lock-state="mine"`, Locks panel held count, hatch `addTheirs` → **Edit Anyway**, **Release All My Locks** confirm copy, and `touchAssetOnDisk` + `runForegroundRescan` → dirty-disk reload dialog. Unit tests cover Git LFS 409 already-ours via verify, skip auto-lock create after a restart verify, rename/folder lock transfer helpers, delete unlocking our paths, and desktop source-read of iOS App-target `BabylonSlateSecretsPlugin` registration. Two-device GitHub lock visibility is manual, not CI.
 
-`e2e/p16-audio.spec.ts` imports a committed WAV fixture, creates AudioMixer / AudioChannel / SoundAttenuation, wires refs (including Project Settings mixer and AudioComponent), Save All / reopen, preview, and Show References. A second serial case Plays, clicks `play-canvas` to unlock, asserts test-mode `window.__babylonslateAudioStats` (`unlocked`), moves the emitter on X and asserts `lastDistance` changes, then Stop returns `voices` to 0. Cross-package gain / session Set Channel / Set Global (including voices already playing) / reverb opt-in proofs live in `packages/render/src/p16-acceptance.test.ts`. Packed-player gain smoke lives in `apps/player/src/hydrate.test.ts`. Real-device listening is manual, not CI. Test-mode `window.__babylonslateAudioStats` is the same idea as `uiHostStats`.
+`e2e/p16-audio.spec.ts` imports a committed WAV fixture, creates AudioMixer / AudioChannel / SoundAttenuation, wires refs (including Project Settings mixer and AudioComponent), Save All / reopen, DockView Preview / Details / Clips, and Show References. A second serial case Plays, clicks `play-canvas` to unlock, asserts test-mode `window.__babylonslateAudioStats` (`unlocked`), moves the emitter on X and asserts `lastDistance` changes, then Stop returns `voices` to 0. A third case toggles **Preview Build**, Place Audio, clicks `player-canvas` in the iframe, and asserts iframe `__babylonslateAudioStats.unlocked` and `voices > 0`. Overlay Play and Preview Build cases turn on Preview **Loop** first: `beep.wav` is ~0ms, and `onVoiceEnded` drops finished one-shots so `voices` would otherwise hit 0 before the poll. Cross-package gain / session Set Channel / Set Global (including voices already playing) / reverb opt-in proofs live in `packages/render/src/p16-acceptance.test.ts`. Packed-player gain smoke lives in `apps/player/src/hydrate.test.ts`. Real-device listening is manual, not CI. Test-mode `window.__babylonslateAudioStats` is the same idea as `uiHostStats`.
 
 `e2e/p17-particles.spec.ts` imports `albedo.png`, creates Particle Emitter / Particle System / particle-domain Material, wires Texture + Material + System slots + ParticleComponent, asserts Windows Preview/Details, Play `window.__babylonslateParticleStats` (`systems` / `playing`), teardown to 0, Class palette Play/Stop Particles, missing-texture Play log, and save/reopen. Packed-player hydrate lives in `apps/player/src/hydrate.test.ts`. NullEngine start/stop/dispose lives in `packages/render/src/particle-service.test.ts`.
 

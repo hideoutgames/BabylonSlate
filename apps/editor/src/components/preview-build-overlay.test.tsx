@@ -23,7 +23,8 @@ describe("PreviewBuildOverlay", () => {
     const iframe = view.getByTestId("preview-build-iframe");
     const chrome = stop.parentElement;
     expect(chrome?.className).toContain("z-10");
-    expect(iframe.className).not.toContain("z-10");
+    expect(iframe.className).toContain("outline-none");
+    expect(iframe.className).toContain("focus-visible:outline-none");
   });
 
   it("invokes onClose from Stop so Preview Build can leave the editor", () => {

@@ -21,6 +21,7 @@ describe("playConsoleCommands", () => {
     expect(names).toContain("changescene");
     expect(names).toContain("heal");
     expect(names).toContain("showfps");
+    expect(names).toContain("showaudiodebug");
   });
 
   it("builds scene, actor, and command completion values", () => {
