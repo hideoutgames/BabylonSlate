@@ -43,9 +43,9 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
   test("chrome document tab bar hides scrollbars while remaining scrollable", async ({
     page,
   }) => {
-    const tabBar = page.getByTestId("document-tab-bar");
-    await expect(tabBar).toBeVisible();
-    const styles = await tabBar.evaluate((el) => {
+    const scroller = page.getByTestId("document-tab-scroll");
+    await expect(scroller).toBeVisible();
+    const styles = await scroller.evaluate((el) => {
       const cs = getComputedStyle(el);
       return {
         overflowX: cs.overflowX,
@@ -54,6 +54,46 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     });
     expect(styles.overflowX).toBe("auto");
     expect(styles.scrollbarWidth).toBe("none");
+  });
+
+  test("pinned Content Browser tab stays visible when closable tabs scroll", async ({
+    page,
+  }) => {
+    const scroller = page.getByTestId("document-tab-scroll");
+    const contentBrowser = page.locator(
+      '[data-testid="document-tab"][data-document-kind="content-browser"]',
+    );
+    await expect(scroller).toBeVisible();
+    await expect(contentBrowser).toBeVisible();
+
+    await scroller.evaluate((el) => {
+      const extra = el.clientWidth + 80;
+      for (const tab of el.querySelectorAll(".chrome-tab-closable")) {
+        (tab as HTMLElement).style.minWidth = `${extra}px`;
+      }
+    });
+
+    const overflowed = await scroller.evaluate(
+      (el) => el.scrollWidth > el.clientWidth + 1,
+    );
+    expect(overflowed).toBe(true);
+
+    const before = await contentBrowser.boundingBox();
+    expect(before).not.toBeNull();
+
+    await scroller.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+    });
+
+    const after = await contentBrowser.boundingBox();
+    expect(after).not.toBeNull();
+    expect(after!.x).toBeCloseTo(before!.x, 0);
+    expect(after!.width).toBeGreaterThan(0);
+
+    const scrollerBox = await scroller.boundingBox();
+    expect(scrollerBox).not.toBeNull();
+    expect(after!.x + after!.width).toBeLessThanOrEqual(scrollerBox!.x + 1);
+    expect(after!.x).toBeGreaterThanOrEqual(0);
   });
 
   test("dockview tabs meet pointer-aware height", async ({ page }) => {

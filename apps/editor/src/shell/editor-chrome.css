@@ -105,17 +105,25 @@
   flex: 1;
   align-items: stretch;
   gap: 0;
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.editor-chrome-tabs-scroll {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: stretch;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
   overscroll-behavior-x: contain;
-  background: var(--muted);
   touch-action: pan-x;
   -webkit-overflow-scrolling: touch;
 }
 
-.editor-chrome-tabs::-webkit-scrollbar {
+.editor-chrome-tabs-scroll::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
@@ -174,6 +182,10 @@
 
 .chrome-tab-close:hover {
   background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
+.chrome-tab-pinned {
+  flex-shrink: 0;
 }
 
 .chrome-tab-pinned .chrome-tab-label {
