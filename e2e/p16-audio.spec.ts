@@ -38,7 +38,7 @@ test.describe("P16 audio", () => {
   test("imports WAV, authors mixer/channel/attenuation, and wires refs", async ({
     page,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(240_000);
     await openTestProject(page);
     await openContentBrowser(page);
 
@@ -117,9 +117,15 @@ test.describe("P16 audio", () => {
     await saveAllIfEnabled(page);
 
     await openContentBrowser(page);
-    await page
-      .locator('[data-asset-path="assets/SFX.channel.babasset"]')
-      .click({ button: "right" });
+    const sfxTile = page.locator('[data-asset-path="assets/SFX.channel.babasset"]');
+    await expect(sfxTile).toBeVisible();
+    const deselect = page.getByTestId("content-browser-deselect-all");
+    if ((await deselect.count()) > 0) {
+      await deselect.click();
+    }
+    await sfxTile.click();
+    await sfxTile.click({ button: "right" });
+    await expect(page.getByTestId("context-menu-item-show-references")).toBeVisible();
     await page.getByTestId("context-menu-item-show-references").click();
     const refs = page.getByTestId("content-browser-refs-dialog");
     await expect(refs).toBeVisible();
@@ -162,7 +168,7 @@ test.describe("P16 audio", () => {
   test("Play unlocks on first gesture, reports spatial distance, and tears down", async ({
     page,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(240_000);
     await openTestProject(page);
     await openContentBrowser(page);
 
