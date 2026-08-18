@@ -4,7 +4,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
-import { copyEngineDefaultSkyboxFaces } from "./vite-engine-skybox";
+import {
+  copyEngineDefaultSkyboxFaces,
+  ENGINE_DEFAULT_SKYBOX_FACE_FILES,
+} from "./vite-engine-skybox";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -13,6 +16,9 @@ describe("copyEngineDefaultSkyboxFaces", () => {
     const dest = mkdtempSync(join(tmpdir(), "engine-skybox-"));
     try {
       copyEngineDefaultSkyboxFaces(REPO_ROOT, dest);
+      expect([...ENGINE_DEFAULT_SKYBOX_FACE_FILES]).toEqual(
+        SKYBOX_FACE_KEYS.map((key) => `${key}.png`),
+      );
       for (const key of SKYBOX_FACE_KEYS) {
         const copied = readFileSync(
           join(dest, "engine-content/skybox", `${key}.png`),
