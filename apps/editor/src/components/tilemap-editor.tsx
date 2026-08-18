@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   EraserIcon,
+  HandIcon,
   PaintBucketIcon,
   PencilIcon,
   PipetteIcon,
@@ -35,6 +36,7 @@ import {
   addTilemapLayer,
   addTilemapTileset,
   applyPinchView,
+  applyPointerPan,
   applyTilemapPaint,
   applyWheelZoom,
   cellsAlongSegment,
@@ -42,12 +44,14 @@ import {
   DEFAULT_PAINT_CELL_SIZE,
   encodeTileGid,
   ensureTilesetTiles,
+  isTilemapPaintStrokeTool,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   paintCanvasTileAt,
   pickTileId,
   removeTilemapTileset,
   reorderTilemapLayers,
+  resizeTilemap,
   tilemapStrokeMergeKey,
   tilemapTilesetGuids,
   tilesetTileRect,
@@ -68,6 +72,7 @@ const TOOLS: Array<{
   label: string;
   icon: typeof PencilIcon;
 }> = [
+  { id: "move", label: "Move", icon: HandIcon },
   { id: "brush", label: "Brush", icon: PencilIcon },
   { id: "eraser", label: "Eraser", icon: EraserIcon },
   { id: "rect", label: "Rect", icon: SquareIcon },
@@ -214,6 +219,22 @@ export function TilemapDetails({
   };
 
   const rows: PropertyRow[] = [
+    {
+      id: "mapWidth",
+      kind: "number",
+      label: "Map Width",
+      value: tilemap.width,
+      min: 1,
+      onChange: (value) => commit(resizeTilemap(tilemap, value, tilemap.height)),
+    },
+    {
+      id: "mapHeight",
+      kind: "number",
+      label: "Map Height",
+      value: tilemap.height,
+      min: 1,
+      onChange: (value) => commit(resizeTilemap(tilemap, tilemap.width, value)),
+    },
     {
       id: "tileWidth",
       kind: "number",
@@ -538,7 +559,7 @@ export function TilemapPaint({
   };
   const [layerOpen, setLayerOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [tool, setTool] = useState<TilemapPaintTool>("brush");
+  const [tool, setTool] = useState<TilemapPaintTool>("move");
   const [layerId, setLayerId] = useState(tilemap.layers[0]?.id ?? "layer-1");
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [cellSize, setCellSize] = useState(DEFAULT_PAINT_CELL_SIZE);
@@ -554,6 +575,12 @@ export function TilemapPaint({
     midX: number;
     midY: number;
   } | null>(null);
+  const panDragRef = useRef<{
+    pointerId: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+  const pinchActiveRef = useRef(false);
   const strokeRef = useRef<{
     id: string;
     base: TilemapPayload;
@@ -646,7 +673,7 @@ export function TilemapPaint({
     cell: { x: number; y: number },
     pointerType: "down" | "move",
   ) => {
-    if (!layer || tool === "picker") return;
+    if (!layer || !isTilemapPaintStrokeTool(tool)) return;
     if (pointerType === "down") {
       strokeRef.current = {
         id: newStrokeId(),
@@ -749,7 +776,7 @@ export function TilemapPaint({
       <div className="flex flex-wrap items-center gap-2 px-2 py-2">
         <ToggleGroup
           variant="outline"
-          size="sm"
+          size="touch"
           spacing={1}
           value={[tool]}
           onValueChange={(value) => {
@@ -769,6 +796,7 @@ export function TilemapPaint({
                 data-testid={`tilemap-tool-${entry.id}`}
               >
                 <Icon />
+                {entry.id === "move" ? <span>{entry.label}</span> : null}
               </ToggleGroupItem>
             );
           })}
@@ -815,6 +843,8 @@ export function TilemapPaint({
           data-gid={String(selectedGid)}
           data-cell-size={String(cellSize)}
           data-zoom={String(cellSize / DEFAULT_PAINT_CELL_SIZE)}
+          data-pan-x={String(pan.x)}
+          data-pan-y={String(pan.y)}
           data-paint-source={atlases.size > 0 ? "atlas" : "hsl"}
           onWheel={(event) => {
             event.preventDefault();
@@ -844,7 +874,14 @@ export function TilemapPaint({
               y: event.clientY,
             });
             if (pointersRef.current.size >= 2) {
-              strokeRef.current = null;
+              const stroke = strokeRef.current;
+              if (stroke) {
+                latestRef.current = stroke.base;
+                commitStroke(stroke.base, stroke.id);
+                strokeRef.current = null;
+              }
+              panDragRef.current = null;
+              pinchActiveRef.current = true;
               const points = [...pointersRef.current.values()];
               const spread = Math.hypot(
                 points[0]!.x - points[1]!.x,
@@ -857,6 +894,15 @@ export function TilemapPaint({
                 spread: Math.max(1, spread),
                 midX: (points[0]!.x + points[1]!.x) / 2,
                 midY: (points[0]!.y + points[1]!.y) / 2,
+              };
+              return;
+            }
+            pinchActiveRef.current = false;
+            if (tool === "move") {
+              panDragRef.current = {
+                pointerId,
+                lastX: event.clientX,
+                lastY: event.clientY,
               };
               return;
             }
@@ -903,19 +949,49 @@ export function TilemapPaint({
               setCellSize(view.cellSize);
               return;
             }
+            if (pinchActiveRef.current) return;
+            const drag = panDragRef.current;
+            if (drag && drag.pointerId === pointerId) {
+              const dx = event.clientX - drag.lastX;
+              const dy = event.clientY - drag.lastY;
+              drag.lastX = event.clientX;
+              drag.lastY = event.clientY;
+              const next = applyPointerPan({
+                panX: viewRef.current.pan.x,
+                panY: viewRef.current.pan.y,
+                dx,
+                dy: -dy,
+              });
+              setPan({ x: next.panX, y: next.panY });
+              return;
+            }
             const cell = cellAt(event.clientX, event.clientY);
             if (!cell) return;
             paintAt(cell, "move");
           }}
           onPointerUp={(event) => {
-            pointersRef.current.delete(pointerIdOf(event));
+            const pointerId = pointerIdOf(event);
+            pointersRef.current.delete(pointerId);
+            if (panDragRef.current?.pointerId === pointerId) {
+              panDragRef.current = null;
+            }
             if (pointersRef.current.size < 2) pinchStartRef.current = null;
-            if (pointersRef.current.size === 0) strokeRef.current = null;
+            if (pointersRef.current.size === 0) {
+              strokeRef.current = null;
+              pinchActiveRef.current = false;
+            }
           }}
           onPointerCancel={(event) => {
-            pointersRef.current.delete(pointerIdOf(event));
+            const pointerId = pointerIdOf(event);
+            pointersRef.current.delete(pointerId);
+            if (panDragRef.current?.pointerId === pointerId) {
+              panDragRef.current = null;
+            }
             if (pointersRef.current.size < 2) pinchStartRef.current = null;
-            if (pointersRef.current.size === 0) strokeRef.current = null;
+            if (pointersRef.current.size === 0) {
+              strokeRef.current = null;
+              pinchActiveRef.current = false;
+            }
           }}
         />
       </div>
@@ -1106,6 +1182,9 @@ function drawTilemapCanvas(
           if (gid <= 0) continue;
           const gx = chunk.cx * size + lx;
           const gy = chunk.cy * size + ly;
+          if (gx < 0 || gy < 0 || gx >= tilemap.width || gy >= tilemap.height) {
+            continue;
+          }
           const screenX = gx * cellSize + pan.x;
           const screenY = cssHeight - (gy + 1) * cellSize - pan.y;
           if (
@@ -1140,26 +1219,38 @@ function drawTilemapCanvas(
       }
     }
   }
+  const mapW = Math.max(1, tilemap.width);
+  const mapH = Math.max(1, tilemap.height);
+  const mapLeft = pan.x;
+  const mapBottom = cssHeight - pan.y;
+  const mapPixelW = mapW * cellSize;
+  const mapPixelH = mapH * cellSize;
+  const mapTop = mapBottom - mapPixelH;
+  const mapRight = mapLeft + mapPixelW;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(mapLeft, mapTop, mapPixelW, mapPixelH);
+  ctx.clip();
   ctx.strokeStyle = "oklch(0.4 0 0 / 0.4)";
   ctx.lineWidth = 1;
-  const minX = Math.floor(-pan.x / cellSize) - 1;
-  const maxX = Math.ceil((cssWidth - pan.x) / cellSize) + 1;
-  const minY = Math.floor(-pan.y / cellSize) - 1;
-  const maxY = Math.ceil((cssHeight - pan.y) / cellSize) + 1;
-  for (let gx = minX; gx <= maxX; gx++) {
-    const x = gx * cellSize + pan.x;
+  for (let gx = 0; gx <= mapW; gx++) {
+    const x = mapLeft + gx * cellSize;
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, cssHeight);
+    ctx.moveTo(x, mapTop);
+    ctx.lineTo(x, mapBottom);
     ctx.stroke();
   }
-  for (let gy = minY; gy <= maxY; gy++) {
-    const y = cssHeight - gy * cellSize - pan.y;
+  for (let gy = 0; gy <= mapH; gy++) {
+    const y = mapBottom - gy * cellSize;
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(cssWidth, y);
+    ctx.moveTo(mapLeft, y);
+    ctx.lineTo(mapRight, y);
     ctx.stroke();
   }
+  ctx.restore();
+  ctx.strokeStyle = "oklch(0.92 0 0)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(mapLeft + 0.5, mapTop + 0.5, mapPixelW, mapPixelH);
 }
 
 function pointerIdOf(event: { pointerId?: number; nativeEvent?: { pointerId?: number } }): number {
