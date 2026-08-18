@@ -1,7 +1,9 @@
 import {
   Background,
   BackgroundVariant,
+  ConnectionMode,
   Controls,
+  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   applyEdgeChanges,
@@ -194,15 +196,32 @@ export interface GraphEditorProps {
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 
+const CLOSED_ARROW = { type: MarkerType.ArrowClosed } as const;
+
+function asConnection(connection: Connection | Edge): Connection {
+  return {
+    source: connection.source,
+    target: connection.target,
+    sourceHandle: connection.sourceHandle ?? null,
+    targetHandle: connection.targetHandle ?? null,
+  };
+}
+
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
-  return edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    ...(edge.type ? { type: edge.type } : {}),
-  }));
+  return edges.map((edge) => {
+    const both = edge.type === "animTransitionBoth";
+    const directed = both || edge.type === "animTransition";
+    return {
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+      ...(edge.type ? { type: edge.type } : {}),
+      ...(directed ? { markerEnd: CLOSED_ARROW } : {}),
+      ...(both ? { markerStart: CLOSED_ARROW } : {}),
+    };
+  });
 }
 
 function styleFlowEdges(
@@ -709,9 +728,10 @@ function GraphEditorCanvas({
 
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
+      const incoming = asConnection(connection);
       const next = normalizeConnection
-        ? normalizeConnection(connection)
-        : connection;
+        ? normalizeConnection(incoming)
+        : incoming;
       if (
         !next?.source ||
         !next.target ||
@@ -1530,7 +1550,13 @@ function GraphEditorCanvas({
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
           defaultEdgeOptions={defaultEdgeOptions}
-          connectionMode={connectionMode}
+          connectionMode={
+            connectionMode === "loose"
+              ? ConnectionMode.Loose
+              : connectionMode === "strict"
+                ? ConnectionMode.Strict
+                : undefined
+          }
           fitView
           fitViewOptions={graphViewport.fitViewOptions}
           defaultViewport={graphViewport.defaultViewport}

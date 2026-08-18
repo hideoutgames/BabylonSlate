@@ -2,7 +2,6 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   Handle,
-  MarkerType,
   Position,
   getBezierPath,
   useReactFlow,
@@ -86,8 +85,6 @@ export function AnimStateNode({
   );
 }
 
-const closedArrow = { type: MarkerType.ArrowClosed };
-
 export function AnimTransitionEdge({
   id,
   sourceX,
@@ -120,8 +117,8 @@ export function AnimTransitionEdge({
         id={id}
         path={edgePath}
         style={style}
-        markerEnd={markerEnd ?? closedArrow}
-        markerStart={bidirectional ? (markerStart ?? closedArrow) : markerStart}
+        markerEnd={markerEnd}
+        markerStart={bidirectional ? markerStart : undefined}
       />
       <EdgeLabelRenderer>
         <button
