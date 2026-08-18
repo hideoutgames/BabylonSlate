@@ -142,7 +142,13 @@ describe("applyPlayerEngineCommand", () => {
         colliders: [],
       }),
     ).toBe(true);
-    expect(applied).toEqual(["setWireframe", "debugColliders"]);
+    expect(applyPlayerEngineCommand(handle, { type: "setShowNav", enabled: true })).toBe(
+      true,
+    );
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setShowAudioDebug", enabled: true }),
+    ).toBe(true);
+    expect(applied).toEqual(["setWireframe", "debugColliders", "setShowNav", "setShowAudioDebug"]);
   });
 
   it("ignores commands the Engine does not apply", () => {

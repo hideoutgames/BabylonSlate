@@ -31,6 +31,7 @@ describe("app settings", () => {
       "anim-graph": ["anim-graph-graph"],
       animGraphObject: ["anim-object-graph"],
       "behaviour-tree": ["behaviour-tree-graph"],
+      audio: ["audio-preview"],
       "audio-mixer": ["audio-mixer-details"],
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],
@@ -184,6 +185,7 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels["script-interface"]).toEqual([
       "script-interface-preview",
     ]);
+    expect(parsed.focusKeepPanels.audio).toEqual(["audio-preview"]);
   });
 
   it("accepts optional createdAt on recents", () => {

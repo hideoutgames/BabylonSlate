@@ -44,6 +44,12 @@ vi.mock("../context/graph-editing-context", () => ({
   }),
 }));
 
+vi.mock("../context/document-context", () => ({
+  useDocuments: () => ({
+    assetRegistry: { list: () => [] },
+  }),
+}));
+
 vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
     frameActor,
@@ -90,6 +96,17 @@ describe("flattenPrefabComponents", () => {
       { id: "child", depth: 2 },
     ]);
     expect(nodes.find((node) => node.id === "root")?.hasChildren).toBe(true);
+  });
+
+  it("labels a mesh with the catalog title and bound asset name", () => {
+    const mesh = createMeshComponent("root", "box");
+    mesh.properties.assetGuid = "hero";
+    const nodes = flattenPrefabComponents(
+      [mesh],
+      new Set(),
+      (guid) => (guid === "hero" ? "Hero" : undefined),
+    );
+    expect(nodes.find((node) => node.id === "root")?.label).toBe("Mesh (Hero)");
   });
 });
 

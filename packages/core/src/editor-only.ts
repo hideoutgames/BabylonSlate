@@ -16,6 +16,7 @@ export const EDITOR_UTILITY_DOCK_KINDS = [
   "plugin-settings",
   "anim-graph",
   "behaviour-tree",
+  "audio",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",

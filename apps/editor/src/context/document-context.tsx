@@ -2212,6 +2212,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sound-attenuation"
         | "particle-emitter"
         | "particle-system"
+        | "audio"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
@@ -2506,7 +2507,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             ? "audio-channel"
             : asset.header.type === "SoundAttenuation"
               ? "sound-attenuation"
-              : "asset-settings";
+              : "audio";
       const content =
         (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
       payloads.push({
