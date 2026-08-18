@@ -23,6 +23,7 @@ import {
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   decodePackedAudioAsset,
+  mapPackedAudioClipBytes,
   normalizeAudioPayload,
   type AudioPayload,
 } from "@babylonslate/assets";
@@ -135,7 +136,12 @@ export async function loadGameFromFiles(
     if (entry.type === "Audio") {
       const packed = decodePackedAudioAsset(bytes);
       if (packed) {
-        audioBytes.set(entry.guid, packed.source);
+        for (const [key, clipBytes] of mapPackedAudioClipBytes(
+          entry.guid,
+          packed,
+        )) {
+          audioBytes.set(key, clipBytes);
+        }
         audioPayloads.set(entry.guid, packed.payload);
       } else {
         audioBytes.set(entry.guid, bytes);

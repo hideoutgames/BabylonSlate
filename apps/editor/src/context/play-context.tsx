@@ -1187,6 +1187,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             pauseOnPlay={pauseOnPlay}
             navmeshBytes={playNavmeshBytes}
             audioReverbBytes={playAudioReverbBytes}
+            audioProjectSettings={projectDocument?.settings.audio}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

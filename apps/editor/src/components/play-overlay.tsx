@@ -7,6 +7,7 @@ import {
   type InputMode,
   type PlayPreviewProjectSettings,
   type RenderProjectSettings,
+  type AudioProjectSettings,
   type SerializedScene,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -110,6 +111,15 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
+  >;
   pauseOnPlay?: boolean;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -162,6 +172,7 @@ export function PlayOverlay({
   pixelPerfect,
   navmeshBytes,
   audioReverbBytes,
+  audioProjectSettings,
   pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
@@ -250,6 +261,8 @@ export function PlayOverlay({
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
   audioReverbBytesRef.current = audioReverbBytes;
+  const audioProjectSettingsRef = useRef(audioProjectSettings);
+  audioProjectSettingsRef.current = audioProjectSettings;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -350,6 +363,7 @@ export function PlayOverlay({
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
+      audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {

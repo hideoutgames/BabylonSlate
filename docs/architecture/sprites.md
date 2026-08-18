@@ -31,9 +31,11 @@ Separate asset (`.spriteanim.babasset`) in the Content Browser **Animation** gro
 
 ```ts
 SpriteAnimationPayload = {
+  frameDurationMs: number; // default 100; used by frames without an override
   frames: Array<{
     textureGuid: string;
-    durationMs: number;
+    durationMsOverride?: boolean; // default false; omit when false
+    durationMs: number;           // used only when durationMsOverride is true
     pivot: { x: number; y: number }; // default {0.5,0.5}
     collision: SpriteCollision;      // default {0,0,1,1}
     width?: number;   // texture pixels; stamped from PNG IHDR when missing
@@ -42,9 +44,9 @@ SpriteAnimationPayload = {
 }
 ```
 
-DockView **Preview** (25%) + **Details** (75%). Preview: token checkerboard, current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box, Play / Pause / Loop / scrubber, and a frame strip. Details: Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` PNG IHDR), duration, pivot, collision numbers. Play and the packaged player fill missing frame sizes from collected Texture bytes (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
+DockView **Preview** (25%) + **Details** (75%). Preview: token checkerboard, current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box, Play / Pause / Loop / scrubber, and a frame strip. Details **Animation**: Frame Duration MS (global). Details **Selected Frame**: Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` PNG IHDR), Frame Duration MS Override (when on, a per-frame duration seeded from the global), pivot, collision numbers. Play and the packaged player fill missing frame sizes from collected Texture bytes (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
 
-AnimGraph **Sprite** clip kind picks this asset (not Sprite). Duration for the evaluator is `sum(durationMs)`.
+AnimGraph **Sprite** clip kind picks this asset (not Sprite). Duration for the evaluator is the sum of **effective** frame durations (`frameDurationMs`, or `durationMs` when `durationMsOverride` is true). Legacy documents without `frameDurationMs` promote a uniform per-frame duration to the global, and mark mixed durations as overrides against the first frame.
 
 ## Editor
 

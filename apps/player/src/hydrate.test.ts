@@ -384,6 +384,57 @@ describe("packedContentFromGame", () => {
     ).toBe(0.25);
   });
 
+  it("hydrates every packed Audio clip onto guid:chunk keys", async () => {
+    const { audioClipCacheKey, encodePackedAudioAsset } = await import(
+      "@babylonslate/assets"
+    );
+    const packedAudio = encodePackedAudioAsset(
+      {
+        clips: [
+          { chunkId: "source", name: "a", weight: 1 },
+          { chunkId: "source:2", name: "b", weight: 1 },
+        ],
+      },
+      [new Uint8Array([1, 2, 3]), new Uint8Array([9, 8])],
+    );
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "jump",
+          type: "Audio",
+          sceneGuid: "scene-1",
+          bytes: packedAudio,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    expect(game.audioBytes.get("jump")).toEqual(new Uint8Array([1, 2, 3]));
+    expect(game.audioBytes.get(audioClipCacheKey("jump", "source"))).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+    expect(game.audioBytes.get(audioClipCacheKey("jump", "source:2"))).toEqual(
+      new Uint8Array([9, 8]),
+    );
+    expect(packedContentFromGame(game).audioLibrary.audio.get("jump")?.clips).toEqual(
+      [
+        { chunkId: "source", name: "a", weight: 1 },
+        { chunkId: "source:2", name: "b", weight: 1 },
+      ],
+    );
+  });
+
   it("hydrates a packed audioReverb sidecar for the startup scene", async () => {
     const { audioReverbExportGuid } = await import("@babylonslate/exporter");
     const packed = await exportGame({

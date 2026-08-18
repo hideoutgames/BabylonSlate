@@ -151,6 +151,7 @@ describe("seekGameplayAnimation", () => {
       clips: [{ name: "Idle", frames: ["a"] }],
     };
     const animation: SpriteAnimationPayload = {
+      frameDurationMs: 100,
       frames: [
         {
           textureGuid: "frame-a",
@@ -219,6 +220,7 @@ describe("seekGameplayAnimation", () => {
 
   it("sizes the sprite quad from Sprite Animation texture pixels", () => {
     const animation: SpriteAnimationPayload = {
+      frameDurationMs: 100,
       frames: [
         {
           textureGuid: "frame-a",

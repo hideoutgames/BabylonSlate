@@ -19,6 +19,7 @@ import {
   pinsAreCompatible,
   screenCentersForSafePins,
   connectEndAction,
+  nearestSnapConnectPin,
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
   connectEventPointerId,
@@ -684,6 +685,58 @@ describe("connectEndAction", () => {
       connectEndAction({ ...far, hasTargetHandle: true }, "zone-add-node"),
     ).toBe("none");
   });
+
+  it("snap-connects in zone-add-node mode when the pointer is near a compatible pin", () => {
+    const overOccupied = {
+      ...far,
+      pointer: { x: 200, y: 0 },
+      snapPins: [{ x: 200, y: 0 }],
+    };
+    expect(connectEndAction(overOccupied, "zone-add-node")).toBe("connect");
+    expect(
+      connectEndAction(
+        { ...overOccupied, pointerOverNode: true },
+        "zone-add-node",
+      ),
+    ).toBe("connect");
+    expect(
+      connectEndAction(
+        { ...overOccupied, hasTargetHandle: true },
+        "zone-add-node",
+      ),
+    ).toBe("none");
+  });
+});
+
+describe("nearestSnapConnectPin", () => {
+  const source = { nodeId: "walk", pinId: "right-out" };
+  const pins = [
+    { nodeId: "walk", pinId: "right-out", x: 0, y: 0 },
+    { nodeId: "idle", pinId: "left-in", x: 200, y: 0 },
+    { nodeId: "run", pinId: "left-in", x: 400, y: 0 },
+  ];
+
+  it("returns the closest compatible pin within the cancel radius", () => {
+    expect(
+      nearestSnapConnectPin({ x: 210, y: 8 }, source, pins),
+    ).toEqual({ nodeId: "idle", pinId: "left-in" });
+  });
+
+  it("ignores every pin on the dragged node, including the source", () => {
+    expect(nearestSnapConnectPin({ x: 0, y: 0 }, source, pins)).toBeUndefined();
+    expect(
+      nearestSnapConnectPin({ x: 0, y: 0 }, source, [
+        ...pins,
+        { nodeId: "walk", pinId: "left-in", x: 0, y: 0 },
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when every compatible pin is outside the radius", () => {
+    expect(
+      nearestSnapConnectPin({ x: 100, y: 200 }, source, pins, 40),
+    ).toBeUndefined();
+  });
 });
 
 describe("connectEventPointerId", () => {
@@ -995,5 +1048,88 @@ describe("edgesAfterConnect", () => {
     ];
     const connected = edgesAfterConnect(existingData, existingData[0]!, pinFor);
     expect(connected).toEqual(existingData);
+  });
+
+  it("is a no-op when the same topology already exists under a different id", () => {
+    const existingAnim = [
+      {
+        id: "idle-to-run",
+        source: "idle",
+        target: "run",
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingAnim,
+      {
+        id: "e:idle:right-out:run:left-in",
+        source: "idle",
+        target: "run",
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+      },
+      unknownPin,
+    );
+    expect(connected).toEqual(existingAnim);
+  });
+
+  it("updates handles on an existing directed pair instead of adding a second edge", () => {
+    const existingAnim = [
+      {
+        id: "idle-to-run",
+        source: "idle",
+        target: "run",
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingAnim,
+      {
+        id: "e:idle:bottom-out:run:top-in",
+        source: "idle",
+        target: "run",
+        sourceHandle: "bottom-out",
+        targetHandle: "top-in",
+      },
+      unknownPin,
+      { uniqueDirectedPair: true },
+    );
+    expect(connected).toEqual([
+      {
+        id: "idle-to-run",
+        source: "idle",
+        target: "run",
+        sourceHandle: "bottom-out",
+        targetHandle: "top-in",
+      },
+    ]);
+  });
+
+  it("still allows a second source into the same occupied target when pairs differ", () => {
+    const existingAnim = [
+      {
+        id: "idle-to-run",
+        source: "idle",
+        target: "run",
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingAnim,
+      {
+        id: "e:walk:right-out:run:left-in",
+        source: "walk",
+        target: "run",
+        sourceHandle: "right-out",
+        targetHandle: "left-in",
+      },
+      unknownPin,
+      { uniqueDirectedPair: true },
+    );
+    expect(connected).toHaveLength(2);
+    expect(connected[1]?.source).toBe("walk");
   });
 });

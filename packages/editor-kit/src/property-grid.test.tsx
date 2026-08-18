@@ -349,6 +349,49 @@ describe("PropertyGrid", () => {
     );
   });
 
+  it("places the label left of the control when orientation is horizontal", () => {
+    render(
+      <PropertyGrid
+        orientation="horizontal"
+        rows={[
+          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
+        ]}
+      />,
+    );
+    const row = screen.getByTestId("property-row-name");
+    expect(row.getAttribute("data-orientation")).toBe("horizontal");
+    expect(row.className).toContain("flex-row");
+    const label = row.querySelector('[data-slot="field-label"]');
+    const content = row.querySelector('[data-slot="field-content"]');
+    expect(label).not.toBeNull();
+    expect(content).not.toBeNull();
+    expect(content).toContain(screen.getByTestId("property-name"));
+    expect(
+      Boolean(
+        label!.compareDocumentPosition(content!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+  });
+
+  it("hides reset on disabled rows even when a default is present", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "number",
+            id: "speed",
+            label: "Speed",
+            value: 5,
+            defaultValue: 1,
+            disabled: true,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByTestId("property-speed-reset")).toBeNull();
+  });
+
   it("keeps vector axes on one nowrap row", () => {
     render(
       <PropertyGrid
