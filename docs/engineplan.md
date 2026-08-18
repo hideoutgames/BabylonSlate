@@ -70,7 +70,7 @@ Appendix A `[x]` means the **package/slice** landed. It does not mean every Play
 - **Object model and Play (P3–P4).** Headless World/tick; SAB + transferable bridge; game worker; snapshot-driven renderer; visibility-gated editor loop; LRU resource cache; fullscreen Play overlay; Preview session report.
 - **Scripting and scene editing (P5–P6).** Graph IR, validator, JS codegen, node catalog, touch graph UI; outliner/details/gizmos; 2D/3D viewport toggle; input mappings; global Search.
 - **Physics (P7).** `@babylonslate/physics` in the game worker (Havok 3D + Rapier 2D); Play loads authored `SerializedScene` actors. `physics.moveCharacter` takes an Actor, lazily creates a character controller on that actor’s rigid body, and applies the resolved transform the same tick.
-- **Debugger (P8).** `@babylonslate/debugger` command registry, parser, `ExecuteConsoleCommand`, `BDebugCommand` (core-tier user commands), Play console + 5 Hz stats HUD, and `.babtrace` recorder/replay. Output Log, keyed Print, and the session report already shipped in P4/P5 and are consumed rather than replaced. See [architecture/debugger.md](architecture/debugger.md).
+- **Debugger (P8).** `@babylonslate/debugger` command registry, parser, `ExecuteConsoleCommand`, `BDebugCommand` (core-tier user commands), Play console + 5 Hz stats HUD, and `.babtrace` recorder/replay. Output Log, keyed Print, and the session report already shipped in P4/P5 and are consumed rather than replaced. Engine command catalog and apply-vs-log follow-up: [architecture/debugger.md](architecture/debugger.md), [architecture/console-commands.md](architecture/console-commands.md).
 - **Content systems (P9).** `@babylonslate/ui-runtime` Babylon GUI layout fields and `previewRect` tables; Font payload + `FontRegistry` on Play and designer ADTs; UserInterface designer (Designer | Logic mode bar, Babylon GUI canvas) and Play / player ADT HUD; typed `UserInterface` / `Widget` objects (`UserInterface:<guid>`); TouchJoystick → P6 `touchAxis` / default `Move`; Sprite packer + quad; `@babylonslate/anim-graph` worker evaluator + `animState`; `@babylonslate/shader-graph` Material IR compiled to real Babylon NodeMaterial blocks. See [architecture/ui-runtime.md](architecture/ui-runtime.md).
 - **Plugins (P13).** PluginSettings, PluginHost mount of project `plugins/` and bundled `engine-plugins/`, `.babplugin` interchange, Show Plugin Content, guid-preserving Unresolved placeholders. See [architecture/plugins.md](architecture/plugins.md).
 - **CI.** `verify.yml` (typecheck, lint, Vitest with coverage, Playwright, VitePress docs) plus `preview.yml` (GitHub Pages: editor at `/`, docs at `/docs/`). A deployed URL is the practical iPad loop without a Mac.
@@ -773,8 +773,10 @@ A `packages/debugger` holds the runtime side (command registry, parser, stat col
 ### 9.1 Command tiers
 
 Every registered command carries a tier, and the non-debug build tree-shakes the debug tier out entirely.
-- **Core commands ship in every build**: `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, and every user-authored command. These mutate real engine settings, so they have to exist in a release build.
-- **Debugger commands ship only when the debugger is bundled**: `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `step`, `slomo`, `dumplog`, `snapshot start` and `snapshot stop`.
+- **Core commands ship in every build**: `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, `help`, and every user-authored command. These mutate real engine settings, so they have to exist in a release build.
+- **Debugger commands ship only when the debugger is bundled**: `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `dumpactors`, `inspect`, `dumplog`, `snapshot start` and `snapshot stop`.
+
+`pause` is idempotent; `resume` is the missing counterpart (Play overlay Pause/Resume already exists as chrome). `freecam` detaches a fly/pan camera **without pausing** simulation. Engine names are reserved so a user `BDebugCommand` cannot silently overwrite them. Catalog, apply-vs-log audit, and slices: [architecture/console-commands.md](architecture/console-commands.md).
 
 `ExecuteConsoleCommand` targeting a stripped command returns failure with a clear message rather than throwing, and the editor flags at compile time when a graph references a debug-tier command so the failure is visible before shipping rather than after.
 
@@ -784,7 +786,7 @@ User commands are authored as classes inheriting `BDebugCommand`, an Object subc
 
 The pin list editor is the same component as the ExecuteJavaScript pin-list editor. Both are "a typed, named, reorderable row list feeding generated pins", and building it once in `editor-kit` is the sort of reuse this project is meant to be organised around; the function-signature editor in the Class panel and the ScriptInterface signature editor are the third and fourth users of it.
 
-User commands are discovered by the asset registry (any class whose parent chain reaches `BDebugCommand`), compiled into the build, and registered at runtime startup. They ship in **every** export regardless of the debugger setting, because `ExecuteConsoleCommand` must keep working.
+User commands are discovered by the asset registry (any class whose parent chain reaches `BDebugCommand`), compiled into the build, and registered at runtime startup. They ship in **every** export regardless of the debugger setting, because `ExecuteConsoleCommand` must keep working. Builtin names (`pause`, `changescene`, …) are reserved — a user `commandName` that collides must fail at edit-time rather than overwrite the engine command ([console-commands.md](architecture/console-commands.md)).
 
 ### 9.3 The console
 
@@ -1372,6 +1374,14 @@ Granular tasks tracked against the roadmap in section 18. Update checkboxes as s
 - [x] **p8-bdebugcommand** — P8: BDebugCommand object base class with command name, description, category and a typed parameter list driving generated OnCommandRun pins; registry discovery through the parent chain; user commands shipped in every export; the parameter-list editor extracted as `PinListEditor` / `ParameterListEditor`, also used by ExecuteJavaScript, Class panel function signatures and ScriptInterface
 - [x] **p8-console-hud** — P8: debug console with history, argument hints and registry-driven autocomplete including enum value completion, as a large overlay dialog (not a small centered card) with Clear / Copy Transcript, touch suggestion chips, the accessory key bar and SelectableText transcript; read-only live inspector overlay (actor tree + variables, 5 Hz while open); stats HUD at 5Hz covering frame time split across main-thread render, the script phase and the physics phase (separated even though both run in the game worker, because they share one budget), the combined tick flagged against the section 1.2 budget, memory including how much texture memory is compressed, draw calls, object counts and per-channel bridge traffic
 - [x] **p8-trace-recorder** — P8: debug snapshot recorder - capped in-memory buffer spilling to a .babtrace file reusing the container format, capturing stats, log and print events, world snapshots, the input stream and the RNG seed; playback document tab with scrubbable timeline, graphs and time-filtered log; replay of a recorded trace through the headless deterministic harness
+
+P8 follow-up (do not rebuild P8). Spec: [architecture/console-commands.md](architecture/console-commands.md).
+
+- [ ] **p8-console-session** — Engine console session: `resume` / `unpause`; `step` uses resume→tick→pause (console `step` currently no-ops while paused); overlay Pause/Resume follows `sessionPaused`; core `help [name]`; reserved builtin names so user `BDebugCommand` cannot overwrite `pause` / `changescene` / …
+- [ ] **p8-console-apply** — Core setters actually apply: `volume` → `setGlobalVolume`, `framecap` → Play scheduler, `renderquality` / `resolutionscale` → Play hardware scaling; omitted args print the current value
+- [ ] **p8-console-slomo** — `slomo` scales runtime tick `dt` (script, physics, nav, BT); `slomo 1` is identity
+- [ ] **p8-console-freecam** — `freecam` debug fly/pan camera that does **not** pause; restores possessed camera on off / `changescene`; canvas look-move stolen, gamepad can still feed the worker
+- [ ] **p8-console-viz** — `wireframe` / `showbounds` / `showcollision` / `shownav` draw on the Play scene; `showfps` / `stat *` open the Stats HUD; `dumpactors` / `inspect` print world state
 
 ### P9
 
