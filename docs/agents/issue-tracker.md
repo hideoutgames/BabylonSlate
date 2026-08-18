@@ -19,6 +19,15 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Inspector identity labeled `Guid` instead of Title Case `GUID` | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Console `DialogHeader` used `space-y-0`; repo spacing is `flex` + `gap-*` | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Package API docs omitted `createDebugInspectSnapshot`; bridge Channels omitted `inspect` / `inspectSnapshot` (and `console` / `consoleResult`) | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Spec | Worker `{ type: "inspect" }` → `inspectSnapshot` had no unit test (`worker-entry` is coverage-excluded); extracted `applyInspectControl` | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Spec | Pause On Play posted `setPaused` while `boot.play` was still loading, then `resume()` undid the pause; `createPlayPauseGate` holds pause until boot finishes | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Spec | Inspect poll could overlap worker RPCs; now skips while a pull is in flight | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Spec | Unchecking Debug Overlay Inspector hid the dialog without clearing `inspectorOpen`, so checking it again reopened the modal | Resolved |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Spec | Debug Overlay checkboxes stay enabled while playing, but the Play overlay covers the toolbar; e2e toggles before Play. Accepted — hide via overlay chrome mid-session | Accepted |
+| 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Spec | Inspector live-update e2e asserts header `tickIndex` (spec: “tick counter or similar”), not an actor variable | Accepted |
 | 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Spec | Sprite Animation physics/render used `frame.width ?? 100` while Texture pick did not stamp pixels; Play/player now hydrate missing sizes from PNG IHDR | Resolved |
 | 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Spec | Sprite Animation Preview overlay covered the letterbox, not the `object-contain` image | Resolved |
 | 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Spec | Leaving a sprite clip never called `setActorSpriteClip(null)`, so a later Model state kept the last Sprite Animation AABB | Resolved |

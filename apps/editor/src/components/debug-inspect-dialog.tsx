@@ -189,7 +189,7 @@ export function DebugInspectDialog({
                 <FieldGroup>
                   <InspectField label="Name" value={selected.label} />
                   <InspectField label="Class" value={selected.classId} />
-                  <InspectField label="Guid" value={selected.id} />
+                  <InspectField label="GUID" value={selected.id} />
                 </FieldGroup>
                 {selected.transform ? (
                   <FieldGroup>
