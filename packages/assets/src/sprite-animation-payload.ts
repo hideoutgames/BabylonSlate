@@ -106,6 +106,45 @@ export function spriteAnimationFrameAt(
   return payload.frames[payload.frames.length - 1]!;
 }
 
+export function spriteAnimationFrameStartMs(
+  payload: SpriteAnimationPayload,
+  index: number,
+): number {
+  const last = Math.max(0, payload.frames.length - 1);
+  const clamped = Math.min(Math.max(0, index), last);
+  let sum = 0;
+  for (let i = 0; i < clamped; i++) {
+    sum += Math.max(1, payload.frames[i]!.durationMs);
+  }
+  return sum;
+}
+
+export function spriteAnimationPlayhead(
+  payload: SpriteAnimationPayload,
+  elapsedMs: number,
+  loop: boolean,
+): { index: number; timeMs: number; finished: boolean } {
+  const frames = payload.frames;
+  if (frames.length === 0) {
+    return { index: 0, timeMs: 0, finished: true };
+  }
+  const total = spriteAnimationDurationMs(payload);
+  const raw = Number.isFinite(elapsedMs) ? Math.max(0, elapsedMs) : 0;
+  if (!loop && raw >= total) {
+    return { index: frames.length - 1, timeMs: total, finished: true };
+  }
+  const timeMs = loop ? raw % total : Math.min(raw, total);
+  let cursor = timeMs;
+  for (let i = 0; i < frames.length; i++) {
+    const duration = Math.max(1, frames[i]!.durationMs);
+    if (cursor < duration) {
+      return { index: i, timeMs, finished: false };
+    }
+    cursor -= duration;
+  }
+  return { index: frames.length - 1, timeMs, finished: false };
+}
+
 export function spriteAnimationTextureGuids(
   payload: SpriteAnimationPayload,
 ): string[] {

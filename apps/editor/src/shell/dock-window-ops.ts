@@ -1,5 +1,10 @@
 import type { PanelPlacement } from "@babylonslate/core";
-import type { DockWindowDefinition, DockWindowDirection } from "./window-catalog";
+import {
+  dockLayoutHostWidth,
+  resolveDockInitialWidth,
+  type DockWindowDefinition,
+  type DockWindowDirection,
+} from "./window-catalog";
 
 export type { PanelPlacement };
 
@@ -17,6 +22,8 @@ export interface DockWindowPanel {
 }
 
 export interface DockWindowApi {
+  width?: number;
+  element?: { clientWidth?: number };
   getPanel: (id: string) => DockWindowPanel | undefined;
   panels?: Iterable<DockWindowPanel> | DockWindowPanel[];
   addPanel: (options: {
@@ -245,7 +252,10 @@ function resolveOpenTarget(
       return {
         reference,
         direction: fallback.direction,
-        initialWidth: fallback.initialWidth,
+        initialWidth: resolveDockInitialWidth(
+          fallback,
+          dockLayoutHostWidth(api),
+        ),
         initialHeight: fallback.initialHeight,
       };
     }

@@ -7,6 +7,8 @@ import {
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
   spriteAnimationFrameAt,
+  spriteAnimationFrameStartMs,
+  spriteAnimationPlayhead,
   spriteAnimationTextureGuids,
 } from "./sprite-animation-payload";
 
@@ -61,6 +63,36 @@ describe("SpriteAnimation payload", () => {
     expect(spriteAnimationFrameAt(payload, 0)?.textureGuid).toBe("a");
     expect(spriteAnimationFrameAt(payload, 0.75)?.textureGuid).toBe("b");
     expect(spriteAnimationFrameAt(payload, 1)?.textureGuid).toBe("b");
+  });
+
+  it("maps elapsed time onto a looping or finishing playhead", () => {
+    const payload = parseSpriteAnimationPayload({
+      frames: [
+        { textureGuid: "a", durationMs: 100 },
+        { textureGuid: "b", durationMs: 100 },
+      ],
+    });
+    expect(spriteAnimationFrameStartMs(payload, 1)).toBe(100);
+    expect(spriteAnimationPlayhead(payload, 0, true)).toEqual({
+      index: 0,
+      timeMs: 0,
+      finished: false,
+    });
+    expect(spriteAnimationPlayhead(payload, 150, true)).toEqual({
+      index: 1,
+      timeMs: 150,
+      finished: false,
+    });
+    expect(spriteAnimationPlayhead(payload, 200, true)).toEqual({
+      index: 0,
+      timeMs: 0,
+      finished: false,
+    });
+    expect(spriteAnimationPlayhead(payload, 250, false)).toEqual({
+      index: 1,
+      timeMs: 200,
+      finished: true,
+    });
   });
 
   it("collects unique texture guids from frames", () => {

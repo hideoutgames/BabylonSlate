@@ -2,8 +2,10 @@ import type { DockviewApi } from "dockview-react";
 import {
   CLASS_PANEL_INITIAL_HEIGHT,
   CLASS_PANEL_TITLE,
+  dockLayoutHostWidth,
   listDockWindows,
   primaryDockPanel,
+  resolveDockInitialWidth,
   type DockviewDocumentKind,
   type DockWindowOptions,
 } from "./window-catalog";
@@ -18,6 +20,7 @@ function applyCatalogLayout(
 ): void {
   const windows = listDockWindows(kind, options);
   const primaryId = primaryDockPanel(kind, options);
+  const hostWidth = dockLayoutHostWidth(api);
   const ordered = [
     ...windows.filter((def) => def.id === primaryId),
     ...windows.filter((def) => def.id !== primaryId),
@@ -27,6 +30,10 @@ function applyCatalogLayout(
     const reference = def.defaultPosition
       ? api.getPanel(def.defaultPosition.referencePanelId)
       : undefined;
+    const initialWidth = resolveDockInitialWidth(
+      def.defaultPosition,
+      hostWidth,
+    );
     const panel = api.addPanel({
       id: def.id,
       component: def.component,
@@ -37,7 +44,7 @@ function applyCatalogLayout(
               referencePanel: reference,
               direction: def.defaultPosition.direction,
             },
-            initialWidth: def.defaultPosition.initialWidth,
+            ...(typeof initialWidth === "number" ? { initialWidth } : {}),
             initialHeight: def.defaultPosition.initialHeight,
           }
         : {}),

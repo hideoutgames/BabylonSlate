@@ -134,7 +134,42 @@ export interface DockWindowDefaultPosition {
   referencePanelId: string;
   direction: DockWindowDirection;
   initialWidth?: number;
+  /** Fraction of the DockView host width (0–1). Wins over `initialWidth`. */
+  initialWidthRatio?: number;
   initialHeight?: number;
+}
+
+export function dockLayoutHostWidth(api: {
+  width?: number;
+  element?: { clientWidth?: number };
+}): number {
+  if (typeof api.width === "number" && Number.isFinite(api.width) && api.width > 0) {
+    return api.width;
+  }
+  const clientWidth = api.element?.clientWidth;
+  if (
+    typeof clientWidth === "number" &&
+    Number.isFinite(clientWidth) &&
+    clientWidth > 0
+  ) {
+    return clientWidth;
+  }
+  return 0;
+}
+
+export function resolveDockInitialWidth(
+  position: DockWindowDefaultPosition | undefined,
+  hostWidth: number,
+): number | undefined {
+  if (!position) return undefined;
+  if (
+    typeof position.initialWidthRatio === "number" &&
+    Number.isFinite(position.initialWidthRatio)
+  ) {
+    if (hostWidth <= 0) return undefined;
+    return Math.round(hostWidth * position.initialWidthRatio);
+  }
+  return position.initialWidth;
 }
 
 export interface DockWindowDefinition {
@@ -348,7 +383,7 @@ const SPRITE_ANIMATION_WINDOWS: DockWindowDefinition[] = [
     defaultPosition: {
       referencePanelId: "sprite-animation-preview",
       direction: "right",
-      initialWidth: 280,
+      initialWidthRatio: 0.75,
     },
   },
 ];

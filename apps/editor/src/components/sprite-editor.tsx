@@ -173,7 +173,6 @@ export function SpriteEditor({
   const textureName = assets.find((asset) => asset.guid === sprite.textureGuid)
     ?.name;
   const frame = sprite.frames[0];
-  const clip = sprite.clips[0];
   const rows: PropertyRow[] = [
     {
       id: "texture",
@@ -242,21 +241,6 @@ export function SpriteEditor({
           };
         }
         onChange({ ...sprite, frames });
-      },
-    },
-    {
-      id: "clip-name",
-      kind: "text",
-      label: "Clip Name",
-      value: clip?.name ?? "Idle",
-      onChange: (name) => {
-        const clips = [...sprite.clips];
-        if (clips[0]) {
-          clips[0] = { ...clips[0], name };
-        } else {
-          clips.push({ name, frames: frame ? [frame.name] : [] });
-        }
-        onChange({ ...sprite, clips });
       },
     },
   ];

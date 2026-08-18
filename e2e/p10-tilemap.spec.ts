@@ -208,7 +208,6 @@ test.describe("P10 tilemaps", () => {
     await createAsset(page, "Sprite", "Hero");
     await page.locator('[data-asset-path="assets/Hero.sprite.babasset"]').dblclick();
     await expect(page.getByTestId("sprite-editor")).toBeVisible();
-    await expect(page.getByTestId("property-clip-name")).toHaveValue("Idle");
     await createAsset(page, "AnimationGraph", "Loco");
 
     await showContentBrowser(page);

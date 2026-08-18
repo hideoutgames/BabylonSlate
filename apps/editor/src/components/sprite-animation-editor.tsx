@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -15,12 +16,17 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Slider } from "@babylonslate/ui/components/slider";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   createDefaultSpriteAnimationPayload,
   parseSpriteAnimationPayload,
   parseSpriteCollision,
   parseSpritePivot,
   pngPixelSize,
+  spriteAnimationDurationMs,
+  spriteAnimationFrameStartMs,
+  spriteAnimationPlayhead,
   type SpriteAnimationPayload,
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
@@ -28,7 +34,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
-import { PlusIcon, Trash2Icon } from "lucide-react";
+import { PauseIcon, PlayIcon, PlusIcon, RepeatIcon, Trash2Icon } from "lucide-react";
 
 type SpriteAnimationEditingValue = {
   selectedFrameIndex: number;
@@ -110,6 +116,11 @@ export function SpriteAnimationDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
+function sliderNumber(next: number | readonly number[]): number | undefined {
+  const value = Array.isArray(next) ? next[0] : next;
+  return typeof value === "number" ? value : undefined;
+}
+
 export function SpriteAnimationPreview({
   payload,
   onChange,
@@ -126,6 +137,57 @@ export function SpriteAnimationPreview({
     (asset) => asset.header.guid === frame?.textureGuid,
   );
   const [url, setUrl] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [loop, setLoop] = useState(true);
+  const [timeMs, setTimeMs] = useState(0);
+  const durationMs = spriteAnimationDurationMs(animation);
+  const animationRef = useRef(animation);
+  animationRef.current = animation;
+  const loopRef = useRef(loop);
+  loopRef.current = loop;
+  const timeMsRef = useRef(timeMs);
+  timeMsRef.current = timeMs;
+  const lastTickRef = useRef(0);
+  const selectedFrameIndexRef = useRef(selectedFrameIndex);
+  selectedFrameIndexRef.current = selectedFrameIndex;
+
+  useEffect(() => {
+    if (!playing) return;
+    const head = spriteAnimationPlayhead(
+      animationRef.current,
+      timeMsRef.current,
+      loopRef.current,
+    );
+    if (head.index !== selectedFrameIndexRef.current) {
+      const start = spriteAnimationFrameStartMs(
+        animationRef.current,
+        selectedFrameIndexRef.current,
+      );
+      timeMsRef.current = start;
+      setTimeMs(start);
+    }
+    lastTickRef.current = performance.now();
+    let rafId = 0;
+    const tick = (now: number) => {
+      const elapsed = timeMsRef.current + (now - lastTickRef.current);
+      lastTickRef.current = now;
+      const next = spriteAnimationPlayhead(
+        animationRef.current,
+        elapsed,
+        loopRef.current,
+      );
+      timeMsRef.current = next.timeMs;
+      setTimeMs(next.timeMs);
+      setSelectedFrameIndex(next.index);
+      if (next.finished) {
+        setPlaying(false);
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [playing, setSelectedFrameIndex]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,8 +217,29 @@ export function SpriteAnimationPreview({
       ? objectContainRect(1, 1, imageWidth, imageHeight)
       : { left: 0, top: 0, width: 1, height: 1 };
 
+  const seekToFrame = (index: number) => {
+    setPlaying(false);
+    setSelectedFrameIndex(index);
+    const start = spriteAnimationFrameStartMs(animation, index);
+    timeMsRef.current = start;
+    setTimeMs(start);
+  };
+
+  const seekToTime = (nextTimeMs: number) => {
+    setPlaying(false);
+    const head = spriteAnimationPlayhead(animation, nextTimeMs, false);
+    timeMsRef.current = head.timeMs;
+    setTimeMs(head.timeMs);
+    setSelectedFrameIndex(head.index);
+  };
+
   return (
-    <div className="flex min-h-0 flex-col gap-2 p-3" data-testid="sprite-animation-preview">
+    <div
+      className="flex min-h-0 flex-col gap-2 p-3"
+      data-testid="sprite-animation-preview"
+      data-playing={playing ? "true" : "false"}
+      data-frame-index={String(selectedFrameIndex)}
+    >
       <div
         className="relative aspect-square w-full overflow-hidden rounded-md border border-border"
         style={{
@@ -210,6 +293,45 @@ export function SpriteAnimationPreview({
           />
         </div>
       </div>
+      <div
+        className="flex min-w-0 items-center gap-1"
+        data-testid="sprite-animation-playback"
+      >
+        <IconActionButton
+          label={playing ? "Pause" : "Play"}
+          data-testid={playing ? "sprite-animation-pause" : "sprite-animation-play"}
+          onClick={() => setPlaying((current) => !current)}
+        >
+          {playing ? (
+            <PauseIcon className="icon-sm" />
+          ) : (
+            <PlayIcon className="icon-sm" />
+          )}
+        </IconActionButton>
+        <Toggle
+          size="sm"
+          variant="outline"
+          pressed={loop}
+          aria-label="Loop"
+          data-testid="sprite-animation-loop"
+          onPressedChange={setLoop}
+        >
+          <RepeatIcon className="icon-sm" />
+        </Toggle>
+        <Slider
+          className="min-w-0 flex-1"
+          min={0}
+          max={durationMs}
+          step={1}
+          value={timeMs}
+          aria-label="Playback"
+          data-testid="sprite-animation-scrubber"
+          onValueChange={(next) => {
+            const value = sliderNumber(next);
+            if (value !== undefined) seekToTime(value);
+          }}
+        />
+      </div>
       <div className="flex flex-wrap gap-1" data-testid="sprite-animation-frame-strip">
         {animation.frames.map((entry, index) => (
           <Button
@@ -218,7 +340,8 @@ export function SpriteAnimationPreview({
             size="sm"
             variant={index === selectedFrameIndex ? "default" : "outline"}
             data-testid={`sprite-animation-frame-${index}`}
-            onClick={() => setSelectedFrameIndex(index)}
+            aria-pressed={index === selectedFrameIndex}
+            onClick={() => seekToFrame(index)}
           >
             {index + 1}
           </Button>
