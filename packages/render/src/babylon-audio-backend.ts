@@ -41,6 +41,11 @@ function webAudioPort(
     : null;
 }
 
+function engineAudioContext(engine: AudioEngineV2): AudioContext | null {
+  const value = (engine as { _audioContext?: unknown })._audioContext;
+  return value instanceof AudioContext ? value : null;
+}
+
 /**
  * Babylon 9 AudioV2 playback. Coverage-excluded like create-engine; unit tests
  * inject {@link FakeAudioPlaybackBackend}.
@@ -173,13 +178,31 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   dispose(): void {
-    for (const voiceId of [...this.voices.keys()]) this.stop(voiceId);
+    for (const voiceId of [...this.voices.keys()]) {
+      try {
+        this.stop(voiceId);
+      } catch {
+        this.voices.delete(voiceId);
+      }
+    }
     this.buffers.clear();
-    this.reverbGraph?.dispose();
+    try {
+      this.reverbGraph?.dispose();
+    } catch {
+      /* Play stop must still finish. */
+    }
     this.reverbGraph = null;
-    this.reverbBus?.dispose();
+    try {
+      this.reverbBus?.dispose();
+    } catch {
+      /* keep tearing down */
+    }
     this.reverbBus = null;
-    this.engine?.dispose();
+    try {
+      this.engine?.dispose();
+    } catch {
+      /* keep tearing down */
+    }
     this.engine = null;
     this.audioContext = null;
     this.unlocked = false;
@@ -187,13 +210,12 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
 
   private async ensureEngine(): Promise<AudioEngineV2> {
     if (this.engine) return this.engine;
-    this.audioContext = new AudioContext();
     const engine = await CreateAudioEngineAsync({
       disableDefaultUI: true,
       resumeOnInteraction: false,
       listenerEnabled: true,
-      audioContext: this.audioContext,
     });
+    this.audioContext = engineAudioContext(engine);
     for (let i = 0; i < AUDIO_SHARED_REVERB_BUSES; i += 1) {
       this.reverbBus = await CreateAudioBusAsync(
         i === 0 ? "environmentReverb" : `environmentReverb-${i}`,
@@ -216,23 +238,13 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       webAudioPort(engine.mainOut, "_inNode") ??
       webAudioPort(engine.defaultMainBus, "_inNode");
     if (!context || !busOut || !mainIn) return;
+    // Add a wet send only. Disconnecting AudioV2's private ports hung Play Stop.
     try {
-      busOut.disconnect(mainIn);
+      this.reverbGraph = connectParametricReverb(context, busOut, mainIn, {
+        dryPassThrough: false,
+      });
     } catch {
-      try {
-        busOut.disconnect();
-      } catch {
-        return;
-      }
-    }
-    try {
-      this.reverbGraph = connectParametricReverb(context, busOut, mainIn);
-    } catch {
-      try {
-        busOut.connect(mainIn);
-      } catch {
-        // Fallback: setReverbWet scales the whole bus volume.
-      }
+      this.reverbGraph = null;
     }
   }
 }

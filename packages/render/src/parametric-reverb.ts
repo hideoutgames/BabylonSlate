@@ -51,6 +51,14 @@ function schroederAllpass(
   return output;
 }
 
+export type ParametricReverbOptions = {
+  /**
+   * When true (default), also connect a unity dry path. Skip this when the
+   * host already routes the send bus to the main mix (Babylon AudioV2).
+   */
+  dryPassThrough?: boolean;
+};
+
 /**
  * Dry pass-through plus one shared delay/comb/all-pass wet branch.
  * `input` is the reverb-send bus output; `output` is the main mix.
@@ -59,17 +67,21 @@ export function connectParametricReverb(
   context: BaseAudioContext,
   input: AudioNode,
   output: AudioNode,
+  options?: ParametricReverbOptions,
 ): ParametricReverbGraph {
   const { combDelays, allpassDelays } = parametricReverbTopology();
   const nodes: AudioNode[] = [];
-  const dry = context.createGain();
-  dry.gain.value = 1;
   const wet = context.createGain();
   wet.gain.value = 0;
-  input.connect(dry);
-  dry.connect(output);
   input.connect(wet);
-  nodes.push(dry, wet);
+  nodes.push(wet);
+  if (options?.dryPassThrough !== false) {
+    const dry = context.createGain();
+    dry.gain.value = 1;
+    input.connect(dry);
+    dry.connect(output);
+    nodes.push(dry);
+  }
 
   const combOut = context.createGain();
   combOut.gain.value = 1 / Math.max(1, combDelays.length);

@@ -91,4 +91,21 @@ describe("parametric reverb topology", () => {
     expect(wet).toBeDefined();
     connected.dispose();
   });
+
+  it("skips a second dry path when the host already routes the send bus", () => {
+    const graph = mockAudioGraph();
+    connectParametricReverb(graph.context, graph.input, graph.output, {
+      dryPassThrough: false,
+    });
+    const input = graph.nodes.find((node) => node.kind === "input");
+    const output = graph.nodes.find((node) => node.kind === "output");
+    const duplicateDry = input?.connections.find(
+      (dest) =>
+        dest.kind === "gain" &&
+        dest.gain.value === 1 &&
+        output !== undefined &&
+        dest.connections.includes(output),
+    );
+    expect(duplicateDry).toBeUndefined();
+  });
 });
