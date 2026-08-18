@@ -1,4 +1,4 @@
-import { snapshotFloatCount, type ScriptBundleEntry } from "@babylonslate/bridge";
+import { snapshotFloatCount } from "@babylonslate/bridge";
 import { encodeInputEvents } from "@babylonslate/input";
 import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
 import {
@@ -6,6 +6,7 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import {
+  applyUiRuntimeControl,
   createPlayBootCoordinator,
   createRuntimeFromLoad,
   type RuntimeDriver,
@@ -16,7 +17,11 @@ import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import type { LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
-import { packedContentFromGame, packedPlayControls } from "./hydrate";
+import {
+  packedBootControls,
+  packedContentFromGame,
+  packedUserInterfaceControl,
+} from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
@@ -24,28 +29,8 @@ import {
   type PlayerHudStats,
 } from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
-
-const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
-
-function spawnListForScripts(
-  scripts: readonly ScriptBundleEntry[],
-): Array<{ classId: string }> {
-  const seen = new Set<string>();
-  const spawn: Array<{ classId: string }> = [];
-  for (const script of scripts) {
-    if (
-      !script.entryPoints.some(
-        (entry) => entry.event && ACTOR_LIFECYCLE_EVENTS.has(entry.event),
-      )
-    ) {
-      continue;
-    }
-    if (seen.has(script.classId)) continue;
-    seen.add(script.classId);
-    spawn.push({ classId: script.classId });
-  }
-  return spawn;
-}
+import { applyPlayerUiCommand, createPlayerUiHost } from "./player-ui-host";
+import { playerSpawnListForScripts } from "./spawn-list";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -134,13 +119,39 @@ export function startPlayer(options: {
     handle.resize();
   }
 
+  let worker: PlayerWorkerHost | null = null;
+  let runtime: RuntimeDriver | null = null;
+  let input: ReturnType<typeof attachInputCapture> | null = null;
+  const uiHost = createPlayerUiHost({
+    scene: handle.scene,
+    library: content.userInterfaces,
+    textureBytes: game.textureBytes,
+    viewport: {
+      width: Math.max(1, canvas.width || canvas.clientWidth || 1),
+      height: Math.max(1, canvas.height || canvas.clientHeight || 1),
+    },
+    onWidgetEvent: (event) => {
+      if (worker) worker.postControl(event);
+      else if (runtime) applyUiRuntimeControl(runtime, event);
+    },
+    onTouchAxis: (controlId, value) => {
+      input?.pushTouchAxis(controlId, value);
+    },
+  });
+
   // Without a locked framebuffer the canvas is CSS-sized, so the backing store
   // has to follow the element or the first frames draw at the wrong size.
   const resizeObserver =
     framebuffer || typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
-          if (canvas.clientWidth > 0 && canvas.clientHeight > 0) handle.resize();
+          if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
+            handle.resize();
+            uiHost.resize(
+              Math.max(1, canvas.width || canvas.clientWidth),
+              Math.max(1, canvas.height || canvas.clientHeight),
+            );
+          }
         });
   resizeObserver?.observe(canvas);
 
@@ -166,11 +177,9 @@ export function startPlayer(options: {
     ...loopGuardLoadFields(manifest),
   };
 
-  const spawn = spawnListForScripts(game.scripts);
+  const spawn = playerSpawnListForScripts(game.scripts);
   let ticks = 0;
   let lastWorkerTickIndex = 0;
-  let worker: PlayerWorkerHost | null = null;
-  let runtime: RuntimeDriver | null = null;
   let raf = 0;
   let halted = false;
   let hudStats: PlayerHudStats | undefined;
@@ -193,6 +202,7 @@ export function startPlayer(options: {
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
     applyPlayerActiveScene(handle, game.scenes, command);
+    applyPlayerUiCommand(uiHost, command);
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;
@@ -229,17 +239,9 @@ export function startPlayer(options: {
     worker.onCommand((cmd) => onCommand(cmd as never));
     worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
     worker.postControl(loadControl);
-    if (game.scripts.length > 0) {
-      worker.postControl({
-        type: "loadScripts",
-        scripts: [...game.scripts],
-        spawn,
-      });
-    }
-    for (const control of packedPlayControls(content)) {
+    for (const control of packedBootControls(content, game.scripts, spawn)) {
       worker.postControl(control);
     }
-    worker.postControl({ type: "play" });
   } catch {
     worker = null;
     const inProcess = createRuntimeFromLoad(loadControl, (command) =>
@@ -247,6 +249,8 @@ export function startPlayer(options: {
     );
     runtime = inProcess;
     const boot = createPlayBootCoordinator();
+    const uiControl = packedUserInterfaceControl(content);
+    if (uiControl) applyUiRuntimeControl(inProcess, uiControl);
     if (game.scripts.length > 0) {
       boot.queueScripts(inProcess, game.scripts, spawn);
     }
@@ -277,7 +281,7 @@ export function startPlayer(options: {
     });
   }
 
-  const input = attachInputCapture(canvas);
+  input = attachInputCapture(canvas);
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let frames = 0;
@@ -292,9 +296,9 @@ export function startPlayer(options: {
       runtime?.getWorld().clock.tickIndex,
       lastWorkerTickIndex,
     );
-    input.setTick(tick);
-    input.pollGamepads();
-    const drained = input.ring.drain();
+    input?.setTick(tick);
+    input?.pollGamepads();
+    const drained = input?.ring.drain() ?? [];
     if (drained.length > 0) {
       if (worker) worker.pushInput(drained);
       else if (runtime) runtime.pushInputBuffer(encodeInputEvents(drained));
@@ -322,7 +326,8 @@ export function startPlayer(options: {
       halted = true;
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();
-      input.dispose();
+      input?.dispose();
+      uiHost.dispose();
       worker?.terminate();
       runtime?.stop();
       handle.dispose();

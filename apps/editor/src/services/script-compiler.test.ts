@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SerializedGraph } from "@babylonslate/core";
+import {
+  userInterfaceClassId,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import {
   classIdForGraphPath,
   compileGraphDocument,
@@ -360,6 +363,70 @@ describe("script compiler service", () => {
       true,
     );
     expect(spawnListForScripts([script!])).toEqual([]);
+  });
+
+  it("compiles UI onWidgetClick default:message into the log literal", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "click",
+            type: "flow.event.custom",
+            position: { x: 40, y: 80 },
+            data: { name: "onWidgetClick" },
+          },
+          {
+            id: "log",
+            type: "debug.log",
+            position: { x: 320, y: 80 },
+            data: { "default:message": "hud-clicked" },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "click",
+            target: "log",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+        ],
+      },
+      {
+        path: "assets/HUD.ui.babasset",
+        classId: "UserInterface:hud-guid",
+        parentClassId: "UserInterface",
+      },
+    );
+    expect(script?.entryPoints.some((entry) => entry.event === "onWidgetClick")).toBe(
+      true,
+    );
+    expect(script?.source).toContain("hud-clicked");
+  });
+
+  it("binds a UserInterface script to an explicit guid class id", () => {
+    const classId = userInterfaceClassId("hud-guid");
+    const script = compileGraphDocument(tickToLog, {
+      path: "assets/HUD.ui.babasset",
+      classId,
+      parentClassId: "UserInterface",
+    });
+    expect(script?.classId).toBe(classId);
+    expect(script?.parentClassId).toBe("UserInterface");
+    expect(script?.classId).not.toBe("HUD");
+  });
+
+  it("does not spawn actors for UserInterface script class ids", () => {
+    const classId = userInterfaceClassId("hud-guid");
+    const script = compileGraphDocument(tickToLog, {
+      path: "assets/HUD.ui.babasset",
+      classId,
+      parentClassId: "UserInterface",
+    })!;
+    expect(script.entryPoints.some((entry) => entry.event === "onTick")).toBe(
+      true,
+    );
+    expect(spawnListForScripts([script])).toEqual([]);
   });
 });
 

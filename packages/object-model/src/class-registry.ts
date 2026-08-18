@@ -1,7 +1,12 @@
 import { err, ok, type Result } from "@babylonslate/core";
 import {
+  USER_INTERFACE_ENGINE_CLASS_ID,
+  WIDGET_ENGINE_CLASS_ID,
+} from "@babylonslate/core";
+import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
+  ENGINE_WIDGET_CLASS_IDS,
   isLockedEngineClassId,
 } from "./ids";
 
@@ -125,6 +130,29 @@ export class ClassRegistry {
         id,
         parentClassId: "ActorComponent",
         kind: "component",
+        variables: [],
+        implementedInterfaces: [],
+      });
+    }
+    this.register({
+      id: USER_INTERFACE_ENGINE_CLASS_ID,
+      parentClassId: "BObject",
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
+      id: WIDGET_ENGINE_CLASS_ID,
+      parentClassId: "BObject",
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    for (const id of ENGINE_WIDGET_CLASS_IDS) {
+      this.register({
+        id,
+        parentClassId: WIDGET_ENGINE_CLASS_ID,
+        kind: "object",
         variables: [],
         implementedInterfaces: [],
       });

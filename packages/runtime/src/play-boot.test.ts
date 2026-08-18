@@ -99,6 +99,17 @@ describe("createPlayBootCoordinator", () => {
     expect(runtime.spawned).toEqual(["Extra"]);
   });
 
+  it("does not spawn UserInterface script classes as Actors", async () => {
+    const runtime = fakeRuntime();
+    const boot = createPlayBootCoordinator();
+    boot.queueScripts(runtime, [], [
+      { classId: "UserInterface:hud-guid" },
+      { classId: "Extra" },
+    ]);
+    await boot.play(runtime);
+    expect(runtime.spawned).toEqual(["Extra"]);
+  });
+
   it("reports a loadScripts failure and still starts Play", async () => {
     const reported: unknown[] = [];
     const runtime = fakeRuntime({

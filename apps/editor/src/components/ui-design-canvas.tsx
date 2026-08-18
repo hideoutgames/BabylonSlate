@@ -36,11 +36,13 @@ import {
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
 import {
-  UI_DESIGN_HANDLE_SIZE_PX,
+  UI_DESIGN_HANDLE_HIT_SIZE_PX,
+  UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
   applyWidgetDragOffset,
+  designerControlHitRect,
+  designerGestureAt,
   canvasDeltaToLayoutDelta,
   clampDesignZoom,
-  designRectToBitmap,
   designRectToScreen,
   handleEdges,
   passedDragThreshold,
@@ -59,6 +61,8 @@ import {
   presentLiveUiIfVisible,
 } from "../lib/live-ui-present";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
+import { UiImageIssueAlert } from "./ui-image-issue";
+import type { UiImageIssue } from "../lib/play-ui-images";
 
 const defaultResolveImageUrl = (): string | null => null;
 
@@ -73,6 +77,7 @@ export function UiDesignCanvas({
   sharedEngine,
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
+  imageIssues = [],
   bitmapScale,
   onSelect,
   onViewChange,
@@ -96,6 +101,7 @@ export function UiDesignCanvas({
   sharedEngine: Engine | null;
   fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
+  imageIssues?: readonly UiImageIssue[];
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
   onLayoutChange: (id: string, next: WidgetLayout, mergeKey?: string) => void;
@@ -294,15 +300,24 @@ export function UiDesignCanvas({
     ? widgetAllowsDesignerTransform(ui, selected.id)
     : false;
   const selectedHit = selectedControl
-    ? (liveRects[selectedControl.id] ??
-      designRectToBitmap(selectedControl.guiRect, bitmapScale))
+    ? designerControlHitRect(
+        selectedControl,
+        liveRects[selectedControl.id],
+        viewport,
+        bitmapScale,
+        ui.rootId,
+      )
     : null;
   const selectedScreen = selectedHit
     ? designRectToScreen(selectedHit, view, previewScale)
     : null;
   const handles =
     canTransform && selectedScreen
-      ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_SIZE_PX)
+      ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_HIT_SIZE_PX)
+      : null;
+  const visualHandles =
+    canTransform && selectedScreen
+      ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_VISUAL_SIZE_PX)
       : null;
   const pivotScreen =
     selected && selectedHit
@@ -332,7 +347,7 @@ export function UiDesignCanvas({
     if (!surface?.gizmoAdt) return;
     const state: DesignerGizmoState = {
       selection: selectedScreen,
-      handles,
+      handles: visualHandles,
       safeArea: hasSafeArea ? safeScreen : null,
       pivot: canTransform ? pivotScreen : null,
     };
@@ -353,12 +368,12 @@ export function UiDesignCanvas({
     canTransform,
     documentActive,
     guiLive,
-    handles,
     hasSafeArea,
     panelVisible,
     pivotScreen,
     safeScreen,
     selectedScreen,
+    visualHandles,
   ]);
 
   useEffect(() => {
@@ -416,23 +431,56 @@ export function UiDesignCanvas({
       beginTwoFinger();
       return;
     }
-    const handleHost = (event.target as Element | null)?.closest(
-      "[data-resize-handle]",
-    );
-    const handle = handleHost?.getAttribute("data-resize-handle") as HandleEdge | null;
-    if (handle && selected && canTransform) {
+    const hitBounds = viewportRef.current?.getBoundingClientRect();
+    const point = {
+      x: event.clientX - (hitBounds?.left ?? 0),
+      y: event.clientY - (hitBounds?.top ?? 0),
+    };
+    const interior = [...displayControls].reverse().find((control) => {
+      if (control.id === ui.rootId) return false;
+      if (!widgetAllowsDesignerTransform(ui, control.id)) return false;
+      const hit = designerControlHitRect(
+        control,
+        liveRects[control.id],
+        viewport,
+        bitmapScale,
+        ui.rootId,
+      );
+      return (
+        designerGestureAt(point, designRectToScreen(hit, view, previewScale)) ===
+        "move"
+      );
+    });
+    if (interior) {
+      onSelect(interior.id);
       dragRef.current = {
-        mode: "resize",
-        id: selected.id,
-        handle,
+        mode: "move",
+        id: interior.id,
         startX: event.clientX,
         startY: event.clientY,
         lastX: event.clientX,
         lastY: event.clientY,
-        armed: true,
+        armed: false,
         strokeId: newStrokeId(),
       };
       return;
+    }
+    if (selected && canTransform && selectedScreen) {
+      const gesture = designerGestureAt(point, selectedScreen);
+      if (gesture && gesture !== "move") {
+        dragRef.current = {
+          mode: "resize",
+          id: selected.id,
+          handle: gesture,
+          startX: event.clientX,
+          startY: event.clientY,
+          lastX: event.clientX,
+          lastY: event.clientY,
+          armed: true,
+          strokeId: newStrokeId(),
+        };
+        return;
+      }
     }
     const host = (event.target as Element | null)?.closest("[data-widget-id]");
     const widgetId = host?.getAttribute("data-widget-id");
@@ -614,9 +662,13 @@ export function UiDesignCanvas({
           height={viewport.height}
         />
         {displayControls.map((control) => {
-          const hit =
-            liveRects[control.id] ??
-            designRectToBitmap(control.guiRect, bitmapScale);
+          const hit = designerControlHitRect(
+            control,
+            liveRects[control.id],
+            viewport,
+            bitmapScale,
+            ui.rootId,
+          );
           return (
           <div
             key={control.id}
@@ -702,6 +754,7 @@ export function UiDesignCanvas({
             )
           : null}
       </div>
+      <UiImageIssueAlert issues={imageIssues} />
       {previewError ? (
         <Empty
           data-testid="ui-gui-preview-error"

@@ -89,6 +89,8 @@ import {
   collectImageGuidsFromUiDocuments,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
+import { playUserInterfaceRuntimeDocuments } from "../lib/play-content";
+import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
   collectUiImageUrls,
@@ -104,6 +106,17 @@ import {
 } from "../lib/shared-engine-generation";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
+
+/** Slim UI metadata for Play. Never auto-applies a HUD. */
+export function playSessionUiOptions(library: Record<string, UserInterfaceDocument>): {
+  userInterfaces: UserInterfaceRuntimeDocument[];
+  autoApply: false;
+} {
+  return {
+    userInterfaces: playUserInterfaceRuntimeDocuments(library),
+    autoApply: false,
+  };
+}
 
 export type LiveBtState = {
   slotId: number;
@@ -255,6 +268,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     saveAll,
     assetRegistry,
     readAssetChunk,
+    onSessionDiagnostic,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const playScene = resolvePlayScene({
@@ -326,6 +340,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
   }, []);
+
+  useEffect(
+    () => onSessionDiagnostic(appendLog),
+    [appendLog, onSessionDiagnostic],
+  );
 
   const registerSharedEngine = useCallback((engine: Engine | null) => {
     const previous = engineRef.current;

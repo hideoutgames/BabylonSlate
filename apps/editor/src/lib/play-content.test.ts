@@ -1,7 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { createDefaultPlayHud } from "@babylonslate/ui-runtime";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createDefaultPlayHud,
+  createDefaultUserInterface,
+  createWidget,
+  WIDGET_KINDS,
+} from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
-import { createActor, createDefaultScene } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  ENGINE_WIDGET_KINDS,
+} from "@babylonslate/core";
 import {
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
@@ -10,6 +19,7 @@ import {
 import {
   animationGraphGuidsFromScene,
   applyPlayHudInstance,
+  applyPlayHudVisibility,
   asUiDocument,
   behaviourTreeGuidsFromScene,
   blackboardGuidsFromScene,
@@ -19,9 +29,15 @@ import {
   collectPlayScriptDocuments,
   mergePlayAnimGraphs,
   collectAnimGraphCompileDocuments,
+  parsePlayHudControlId,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
+  playHudVisibilityKey,
   playLoadTilemapsControl,
+  playUserInterfaceRuntimeDocuments,
+  preferOpenPlayUiContent,
+  dispatchMountedPlayUiWidgetEvent,
+  setPlayUiWidgetEventSink,
   readPlayNavmeshBytes,
   playSpritePayloadsFromGuids,
   playUiLibraryFromAssets,
@@ -76,11 +92,33 @@ describe("Play HUD instances", () => {
     );
   });
 
-  it("applies and removes instances by reference", () => {
+  it("applies and removes instances by reference and keeps classId", () => {
     const hud = createDefaultPlayHud("HUD");
     const library = { "hud-guid": hud };
-    let instances = applyPlayHudInstance([], "ui-1", "hud-guid");
-    instances = applyPlayHudInstance(instances, "ui-2", "hud-guid");
+    let instances = applyPlayHudInstance(
+      [],
+      "ui-1",
+      "hud-guid",
+      "UserInterface:hud-guid",
+    );
+    instances = applyPlayHudInstance(
+      instances,
+      "ui-2",
+      "hud-guid",
+      "UserInterface:hud-guid",
+    );
+    expect(instances).toEqual([
+      {
+        instanceId: "ui-1",
+        assetGuid: "hud-guid",
+        classId: "UserInterface:hud-guid",
+      },
+      {
+        instanceId: "ui-2",
+        assetGuid: "hud-guid",
+        classId: "UserInterface:hud-guid",
+      },
+    ]);
     expect(resolvePlayHudDocuments(instances, library)).toEqual([
       { instanceId: "ui-1", document: hud },
       { instanceId: "ui-2", document: hud },
@@ -91,10 +129,126 @@ describe("Play HUD instances", () => {
     );
   });
 
+  it("derives classId from the asset guid when the apply command omits it", () => {
+    expect(applyPlayHudInstance([], "ui-1", "hud-guid")).toEqual([
+      {
+        instanceId: "ui-1",
+        assetGuid: "hud-guid",
+        classId: "UserInterface:hud-guid",
+      },
+    ]);
+  });
+
   it("skips instances whose asset is missing from the library", () => {
     expect(
-      resolvePlayHudDocuments([{ instanceId: "ui-1", assetGuid: "missing" }], {}),
+      resolvePlayHudDocuments(
+        [{ instanceId: "ui-1", assetGuid: "missing", classId: "UserInterface:missing" }],
+        {},
+      ),
     ).toEqual([]);
+  });
+
+  it("scopes widget visibility to the owning instance", () => {
+    let hidden = new Set<string>();
+    hidden = applyPlayHudVisibility(hidden, "ui-1", "play-btn", false);
+    hidden = applyPlayHudVisibility(hidden, "ui-2", "play-btn", false);
+    expect(hidden.has(playHudVisibilityKey("ui-1", "play-btn"))).toBe(true);
+    expect(hidden.has(playHudVisibilityKey("ui-2", "play-btn"))).toBe(true);
+    hidden = applyPlayHudVisibility(hidden, "ui-1", "play-btn", true);
+    expect(hidden.has(playHudVisibilityKey("ui-1", "play-btn"))).toBe(false);
+    expect(hidden.has(playHudVisibilityKey("ui-2", "play-btn"))).toBe(true);
+  });
+});
+
+describe("playUserInterfaceRuntimeDocuments", () => {
+  it("builds slim widget metadata for every widget id/kind/name", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const button = createWidget("play-btn", "Button", "Play");
+    const image = createWidget("logo", "Image", "Logo");
+    hud.widgets.canvas!.children = ["play-btn", "logo"];
+    hud.widgets["play-btn"] = button;
+    hud.widgets.logo = image;
+    expect(playUserInterfaceRuntimeDocuments({ "hud-guid": hud })).toEqual([
+      {
+        guid: "hud-guid",
+        widgets: expect.arrayContaining([
+          { id: "canvas", kind: "Canvas", name: "Canvas" },
+          { id: "play-btn", kind: "Button", name: "Play" },
+          { id: "logo", kind: "Image", name: "Logo" },
+        ]),
+      },
+    ]);
+  });
+
+  it("does not invent an apply command or mount instances", () => {
+    const library = { "hud-guid": createDefaultUserInterface("HUD") };
+    expect(playUserInterfaceRuntimeDocuments(library)[0]?.guid).toBe("hud-guid");
+    expect(resolvePlayHudDocuments([], library)).toEqual([]);
+  });
+});
+
+describe("preferOpenPlayUiContent", () => {
+  it("lets an open in-memory document win over disk bytes", () => {
+    const open = createDefaultUserInterface("Open");
+    open.widgets.canvas!.name = "Live Canvas";
+    const disk = createDefaultUserInterface("Disk");
+    expect(preferOpenPlayUiContent(open, disk)).toBe(open);
+    expect(preferOpenPlayUiContent(null, disk)).toBe(disk);
+    expect(preferOpenPlayUiContent(undefined, null)).toBeNull();
+  });
+});
+
+describe("mounted Play UI widget event sink", () => {
+  it("forwards events after the test host object is replaced", () => {
+    const sink = vi.fn(() => true);
+    setPlayUiWidgetEventSink(sink);
+    const host: {
+      dispatchPlayUiWidgetEvent?: (event: {
+        instanceId: string;
+        widgetId: string;
+        kind: "click";
+      }) => boolean;
+    } = {};
+    host.dispatchPlayUiWidgetEvent = (event) =>
+      dispatchMountedPlayUiWidgetEvent(event);
+    const replaced: typeof host = {};
+    replaced.dispatchPlayUiWidgetEvent = (event) =>
+      dispatchMountedPlayUiWidgetEvent(event);
+    expect(
+      replaced.dispatchPlayUiWidgetEvent({
+        instanceId: "ui-1",
+        widgetId: "play-btn",
+        kind: "click",
+      }),
+    ).toBe(true);
+    expect(sink).toHaveBeenCalledWith({
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "click",
+    });
+    setPlayUiWidgetEventSink(null);
+    expect(
+      replaced.dispatchPlayUiWidgetEvent({
+        instanceId: "ui-1",
+        widgetId: "play-btn",
+        kind: "click",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("parsePlayHudControlId", () => {
+  it("strips the instance prefix and keeps nested widget ids", () => {
+    expect(parsePlayHudControlId("ui-1:play-btn")).toEqual({
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+    });
+    expect(parsePlayHudControlId("ui-2:host/nested-btn")).toEqual({
+      instanceId: "ui-2",
+      widgetId: "host/nested-btn",
+    });
+    expect(parsePlayHudControlId("play-btn")).toBeNull();
+    expect(parsePlayHudControlId(":only-widget")).toBeNull();
   });
 });
 
@@ -529,6 +683,12 @@ describe("scene-referenced Play content", () => {
   });
 });
 
+describe("UI widget class mapping", () => {
+  it("keeps engine widget kinds aligned with the UserInterface payload kinds", () => {
+    expect([...ENGINE_WIDGET_KINDS]).toEqual([...WIDGET_KINDS]);
+  });
+});
+
 describe("UI logic Play compile", () => {
   it("extracts a UserInterface payload.logic graph for Play", () => {
     const logic = {
@@ -656,6 +816,42 @@ describe("UI logic Play compile", () => {
       "assets/HUD.ui.babasset",
     ]);
     expect(collected[0]?.parentClassId).toBe("Actor");
+  });
+
+  it("identifies UserInterface scripts by asset guid, not the file stem", () => {
+    const collected = collectPlayScriptDocuments(
+      [],
+      [
+        {
+          path: "assets/HUD.ui.babasset",
+          guid: "hud-guid",
+          payload: {
+            logic: {
+              nodes: [
+                {
+                  id: "begin",
+                  type: "flow.event.beginPlay",
+                  position: { x: 0, y: 0 },
+                  data: {},
+                },
+              ],
+              edges: [],
+            },
+          },
+        },
+      ],
+      {
+        "assets/HUD.ui.babasset": { type: "UserInterface", parentClass: null },
+      },
+      () => null,
+    );
+    expect(collected).toEqual([
+      expect.objectContaining({
+        path: "assets/HUD.ui.babasset",
+        classId: "UserInterface:hud-guid",
+        parentClassId: "UserInterface",
+      }),
+    ]);
   });
 
   it("strips EditorUtilityInterface logic even if it is merged into the Play list", () => {

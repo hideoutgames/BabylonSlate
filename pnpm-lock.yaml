@@ -295,6 +295,9 @@ importers:
       '@babylonslate/shader-graph':
         specifier: workspace:*
         version: link:../../packages/shader-graph
+      '@babylonslate/ui-runtime':
+        specifier: workspace:*
+        version: link:../../packages/ui-runtime
     devDependencies:
       '@types/node':
         specifier: ^22.13.10
@@ -626,6 +629,9 @@ importers:
 
   packages/scripting-nodes:
     dependencies:
+      '@babylonslate/core':
+        specifier: workspace:*
+        version: link:../core
       '@babylonslate/scripting':
         specifier: workspace:*
         version: link:../scripting

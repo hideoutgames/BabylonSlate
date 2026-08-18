@@ -28,6 +28,7 @@ describe("applyPlayerEngineCommand", () => {
       },
     };
     expect(applyPlayerEngineCommand(handle, { type: "stats" })).toBe(false);
+    expect(applyPlayerEngineCommand(handle, { type: "uiApply" })).toBe(false);
     expect(applied).toEqual([]);
   });
 });

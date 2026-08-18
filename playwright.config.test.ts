@@ -68,6 +68,7 @@ describe("Playwright iPad project filter", () => {
         "global-search.spec.ts",
         "p6-scene-editing.spec.ts",
         "p9-content.spec.ts",
+        "texture-encode-ipad.spec.ts",
       ]),
     );
     for (const file of [
@@ -98,6 +99,7 @@ describe("Playwright iPad project filter", () => {
         "P6 first-playable scene editing › scene panels expose touch-sized toolbar controls",
         "P9 content systems › UserInterface designer on iPad opens a Canvas-only document",
         "P9 content systems › Play overlay stick is reachable on iPad",
+        "Texture encode iPad › import encode settles to compressed or usable source fallback",
       ]),
     );
     expect(ipadTitles).not.toContain(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot, type ContentRoot } from "./content-root";
@@ -186,6 +186,36 @@ describe("AssetRegistry", () => {
     await remounted.mountRoot(projectContentRoot());
     expect(remounted.list({ type: "Texture" }).length).toBeGreaterThanOrEqual(1);
     expect(remounted.list({ type: "Model" }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("passes the pixel chunk MIME into thumbnail generation", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    registry.setThumbnailWriter(async () => undefined);
+    const createImageBitmap = vi.fn<(image: Blob) => Promise<ImageBitmap>>(
+      async () => {
+        throw new Error("stop-after-blob");
+      },
+    );
+    vi.stubGlobal("createImageBitmap", createImageBitmap);
+    try {
+      await registry.importFile(
+        "project",
+        "",
+        "photo.jpg",
+        new Uint8Array([0xff, 0xd8, 0xff]),
+      );
+      expect(createImageBitmap).toHaveBeenCalled();
+      const firstCall = createImageBitmap.mock.calls[0];
+      expect(firstCall).toBeDefined();
+      if (!firstCall) return;
+      const [blob] = firstCall;
+      expect(blob.type).toBe("image/jpeg");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("remaps colliding guids when importing a .babasset", async () => {

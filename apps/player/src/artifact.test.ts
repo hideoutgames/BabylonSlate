@@ -43,4 +43,49 @@ describe("loadGameFromFiles", () => {
     expect(loaded.scenes.get("scene-guid-1")?.name).toBe("Arena");
     expect(loaded.manifest.render.width).toBe(640);
   });
+
+  it("hydrates packed UserInterface documents into a guid-keyed library", async () => {
+    const scene = { ...createDefaultScene(), name: "Arena" };
+    const hud = {
+      name: "HUD",
+      rootId: "canvas",
+      widgets: {
+        canvas: { id: "canvas", kind: "Canvas", name: "Canvas", children: ["play-btn"] },
+        "play-btn": { id: "play-btn", kind: "Button", name: "Play" },
+      },
+    };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode(JSON.stringify(scene)),
+        },
+        {
+          guid: "hud-1",
+          type: "UserInterface",
+          sceneGuid: "scene-1",
+          name: "HUD",
+          bytes: new TextEncoder().encode(JSON.stringify(hud)),
+        },
+        {
+          guid: "eui-1",
+          type: "EditorUtilityInterface",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode(JSON.stringify({ name: "Dock" })),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const loaded = await loadGameFromFiles(packed.value.files);
+    expect(loaded.userInterfaces.get("hud-1")?.name).toBe("HUD");
+    expect(loaded.userInterfaces.get("hud-1")?.widgets["play-btn"]?.kind).toBe("Button");
+    expect(loaded.userInterfaces.has("eui-1")).toBe(false);
+  });
 });

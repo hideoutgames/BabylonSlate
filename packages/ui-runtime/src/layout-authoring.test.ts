@@ -150,6 +150,14 @@ describe("default add layout", () => {
     expect(rect.x + rect.width / 2).toBe(400);
   });
 
+  it("staggers later siblings away from the shared center", () => {
+    const first = defaultAddLayout("Button", 0);
+    const second = defaultAddLayout("CheckBox", 1);
+    expect(first.left).toBe(0);
+    expect(second.left).toBe(48);
+    expect(second.top).toBe(48);
+  });
+
   it("marks box and grid parents as owning child layout", () => {
     expect(parentOwnsChildLayout("HorizontalBox")).toBe(true);
     expect(parentOwnsChildLayout("VerticalBox")).toBe(true);

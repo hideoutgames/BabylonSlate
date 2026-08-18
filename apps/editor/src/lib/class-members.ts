@@ -238,6 +238,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "component.getNamed") {
     return false;
   }
+  if (nodeId === "ui.getWidget") {
+    return false;
+  }
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }

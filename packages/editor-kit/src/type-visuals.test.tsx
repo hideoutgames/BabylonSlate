@@ -107,6 +107,10 @@ describe("resolveTypeVisual", () => {
     expect(engineParentOf("BDebugCommand")).toBe("BObject");
     expect(engineParentOf("EditorUtilityObject")).toBe("BObject");
     expect(engineParentOf("EditorFunctionLibrary")).toBe("FunctionLibrary");
+    expect(engineParentOf("UserInterface")).toBe("BObject");
+    expect(engineParentOf("Widget")).toBe("BObject");
+    expect(engineParentOf("ButtonWidget")).toBe("Widget");
+    expect(engineParentOf("ImageWidget")).toBe("Widget");
   });
 
   it("uses Class color and the parent icon for Class assets", () => {
