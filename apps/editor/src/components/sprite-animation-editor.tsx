@@ -398,7 +398,8 @@ export function SpriteAnimationDetails({
         durationMs: animation.frameDurationMs,
       };
     } else {
-      const { durationMsOverride: _omit, ...rest } = current;
+      const rest = { ...current };
+      delete rest.durationMsOverride;
       frames[selectedFrameIndex] = rest;
     }
     onChange({ ...animation, frames });

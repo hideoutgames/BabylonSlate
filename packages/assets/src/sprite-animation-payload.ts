@@ -76,8 +76,9 @@ function withoutDurationOverride(
   frame: SpriteAnimationFrame,
 ): SpriteAnimationFrame {
   if (frame.durationMsOverride === undefined) return frame;
-  const { durationMsOverride: _omit, ...rest } = frame;
-  return rest;
+  const next = { ...frame };
+  delete next.durationMsOverride;
+  return next;
 }
 
 export function parseSpriteAnimationPayload(
