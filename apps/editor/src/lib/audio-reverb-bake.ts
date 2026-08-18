@@ -38,6 +38,16 @@ function actorsOf(scene: AudioReverbBakeScene): readonly SerializedActor[] {
   return Array.isArray(scene.actors) ? scene.actors : [];
 }
 
+function yieldBakeSlice(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
 function isDynamicRigidBody(actor: SerializedActor): boolean {
   return actor.components.some(
     (component) =>
@@ -86,7 +96,10 @@ export function createAudioReverbBakeController(options: {
   const collect =
     options.collect ??
     ((scene: AudioReverbBakeScene) =>
-      collectStaticAudioGeometry({ actors: actorsOf(scene) }));
+      collectStaticAudioGeometry({
+        actors: actorsOf(scene),
+        yieldSlice: yieldBakeSlice,
+      }));
 
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const inflight = new Map<string, Promise<void>>();
@@ -214,4 +227,17 @@ export function sceneFromDocument(
   const scene = content as Partial<SerializedScene>;
   if (!Array.isArray(scene.actors)) return null;
   return scene as AudioReverbBakeScene;
+}
+
+/** Load Scene documents (open or closed) and keep those with a Scene payload. */
+export async function collectAudioReverbFlushScenes(options: {
+  paths: readonly string[];
+  load: (path: string) => Promise<unknown | null>;
+}): Promise<Array<{ path: string; scene: AudioReverbBakeScene }>> {
+  const scenes: Array<{ path: string; scene: AudioReverbBakeScene }> = [];
+  for (const path of options.paths) {
+    const scene = sceneFromDocument(await options.load(path));
+    if (scene) scenes.push({ path, scene });
+  }
+  return scenes;
 }
