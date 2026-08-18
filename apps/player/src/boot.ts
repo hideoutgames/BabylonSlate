@@ -97,6 +97,12 @@ export function startPlayer(options: {
     audioLibrary: content.audioLibrary,
     particleLibrary: content.particleLibrary,
     audioReverbBytes: content.audioReverbBytes,
+    audioProjectSettings: {
+      occlusionEnabled: manifest.occlusionEnabled !== false,
+      reverbWetScale: manifest.reverbWetScale ?? 1,
+      reverbDecayScale: manifest.reverbDecayScale ?? 1,
+      reverbDampingScale: manifest.reverbDampingScale ?? 1,
+    },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,
@@ -213,9 +219,7 @@ export function startPlayer(options: {
       undefined,
     scenes,
     ...loopGuardLoadFields(manifest),
-    audioAssetGuids: [...game.audioBytes.keys(), ...content.audioLibrary.audio.keys()].filter(
-      (guid, index, all) => all.indexOf(guid) === index,
-    ),
+    audioAssetGuids: [...content.audioLibrary.audio.keys()],
   };
 
   const spawn = playerSpawnListForScripts(game.scripts);

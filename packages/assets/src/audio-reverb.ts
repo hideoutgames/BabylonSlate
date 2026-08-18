@@ -14,7 +14,9 @@ import {
 } from "./audio-payload";
 
 export const AUDIO_REVERB_CHUNK_ID = "audioReverb";
-export const AUDIO_REVERB_VERSION = 1;
+export const AUDIO_REVERB_VERSION = 2;
+export const AUDIO_OCCLUSION_WALLS_TO_SATURATE = 2;
+export const AUDIO_MUFFLE_LOWPASS_HZ = 700;
 
 const MAGIC = new TextEncoder().encode("BSAR");
 const FLAG_DRY = 1;
@@ -30,11 +32,25 @@ export type AudioReverbProbe = {
   wet: number;
 };
 
+export type AudioReverbOccupancy = {
+  originX: number;
+  originY: number;
+  originZ: number;
+  voxelX: number;
+  voxelY: number;
+  voxelZ: number;
+  sizeX: number;
+  sizeY: number;
+  sizeZ: number;
+  bits: Uint8Array;
+};
+
 export type AudioReverbField = {
   version: number;
   dryFallback: boolean;
   geometryHash: string;
   probes: AudioReverbProbe[];
+  occupancy?: AudioReverbOccupancy;
 };
 
 export type AudioReverbTriangle = {
@@ -109,10 +125,179 @@ export function extraChunksWithAudioReverb(
   return next;
 }
 
+const OCCUPANCY_HEADER_BYTES = 54;
+
+function occupancyBitCount(sizeX: number, sizeY: number, sizeZ: number): number {
+  return Math.max(0, Math.ceil((sizeX * sizeY * sizeZ) / 8));
+}
+
+function encodeOccupancy(occupancy: AudioReverbOccupancy): Uint8Array {
+  const sizeX = Math.max(1, Math.floor(occupancy.sizeX));
+  const sizeY = Math.max(1, Math.floor(occupancy.sizeY));
+  const sizeZ = Math.max(1, Math.floor(occupancy.sizeZ));
+  const expectedBits = occupancyBitCount(sizeX, sizeY, sizeZ);
+  const bits = new Uint8Array(expectedBits);
+  bits.set(occupancy.bits.subarray(0, Math.min(occupancy.bits.length, expectedBits)));
+  const bytes = new Uint8Array(OCCUPANCY_HEADER_BYTES + expectedBits);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  view.setFloat64(0, occupancy.originX, true);
+  view.setFloat64(8, occupancy.originY, true);
+  view.setFloat64(16, occupancy.originZ, true);
+  view.setFloat64(24, occupancy.voxelX, true);
+  view.setFloat64(32, occupancy.voxelY, true);
+  view.setFloat64(40, occupancy.voxelZ, true);
+  view.setUint16(48, sizeX, true);
+  view.setUint16(50, sizeY, true);
+  view.setUint16(52, sizeZ, true);
+  bytes.set(bits, OCCUPANCY_HEADER_BYTES);
+  return bytes;
+}
+
+function decodeOccupancy(
+  bytes: Uint8Array,
+  offset: number,
+): AudioReverbOccupancy | undefined {
+  if (bytes.byteLength < offset + OCCUPANCY_HEADER_BYTES) {
+    return undefined;
+  }
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const sizeX = view.getUint16(offset + 48, true);
+  const sizeY = view.getUint16(offset + 50, true);
+  const sizeZ = view.getUint16(offset + 52, true);
+  if (sizeX < 1 || sizeY < 1 || sizeZ < 1) {
+    return undefined;
+  }
+  const expectedBits = occupancyBitCount(sizeX, sizeY, sizeZ);
+  if (bytes.byteLength < offset + OCCUPANCY_HEADER_BYTES + expectedBits) {
+    return undefined;
+  }
+  return {
+    originX: view.getFloat64(offset, true),
+    originY: view.getFloat64(offset + 8, true),
+    originZ: view.getFloat64(offset + 16, true),
+    voxelX: view.getFloat64(offset + 24, true),
+    voxelY: view.getFloat64(offset + 32, true),
+    voxelZ: view.getFloat64(offset + 40, true),
+    sizeX,
+    sizeY,
+    sizeZ,
+    bits: bytes.slice(
+      offset + OCCUPANCY_HEADER_BYTES,
+      offset + OCCUPANCY_HEADER_BYTES + expectedBits,
+    ),
+  };
+}
+
+function occupancyCellOccupied(
+  occupancy: AudioReverbOccupancy,
+  ix: number,
+  iy: number,
+  iz: number,
+): boolean {
+  if (
+    ix < 0 ||
+    iy < 0 ||
+    iz < 0 ||
+    ix >= occupancy.sizeX ||
+    iy >= occupancy.sizeY ||
+    iz >= occupancy.sizeZ
+  ) {
+    return false;
+  }
+  const index = ix + occupancy.sizeX * (iy + occupancy.sizeY * iz);
+  const packed = occupancy.bits[index >> 3];
+  if (packed === undefined) return false;
+  return ((packed >> (index & 7)) & 1) === 1;
+}
+
+/** Occupied voxels along the emitter→listener segment, saturated after two walls. */
+export function occlusionFactor(
+  emitter: { x: number; y: number; z: number },
+  listener: { x: number; y: number; z: number },
+  occupancy: AudioReverbOccupancy | null | undefined,
+): number {
+  if (
+    !occupancy ||
+    occupancy.voxelX <= 0 ||
+    occupancy.voxelY <= 0 ||
+    occupancy.voxelZ <= 0
+  ) {
+    return 0;
+  }
+  const startX = (emitter.x - occupancy.originX) / occupancy.voxelX;
+  const startY = (emitter.y - occupancy.originY) / occupancy.voxelY;
+  const startZ = (emitter.z - occupancy.originZ) / occupancy.voxelZ;
+  const endX = (listener.x - occupancy.originX) / occupancy.voxelX;
+  const endY = (listener.y - occupancy.originY) / occupancy.voxelY;
+  const endZ = (listener.z - occupancy.originZ) / occupancy.voxelZ;
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const dz = endZ - startZ;
+  let ix = Math.floor(startX);
+  let iy = Math.floor(startY);
+  let iz = Math.floor(startZ);
+  const endIx = Math.floor(endX);
+  const endIy = Math.floor(endY);
+  const endIz = Math.floor(endZ);
+  const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+  const stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+  const stepZ = dz > 0 ? 1 : dz < 0 ? -1 : 0;
+  const tDeltaX = dx === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / dx);
+  const tDeltaY = dy === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / dy);
+  const tDeltaZ = dz === 0 ? Number.POSITIVE_INFINITY : Math.abs(1 / dz);
+  const firstPlane = (coord: number, step: number): number => {
+    if (step > 0) return Math.floor(coord) + 1 - coord;
+    if (step < 0) return coord - Math.floor(coord);
+    return Number.POSITIVE_INFINITY;
+  };
+  let tMaxX =
+    stepX === 0
+      ? Number.POSITIVE_INFINITY
+      : firstPlane(startX, stepX) * tDeltaX;
+  let tMaxY =
+    stepY === 0
+      ? Number.POSITIVE_INFINITY
+      : firstPlane(startY, stepY) * tDeltaY;
+  let tMaxZ =
+    stepZ === 0
+      ? Number.POSITIVE_INFINITY
+      : firstPlane(startZ, stepZ) * tDeltaZ;
+  const maxSteps = occupancy.sizeX + occupancy.sizeY + occupancy.sizeZ + 8;
+  let walls = 0;
+  let skippedStart = false;
+  for (let step = 0; step < maxSteps; step += 1) {
+    if (skippedStart && occupancyCellOccupied(occupancy, ix, iy, iz)) {
+      walls += 1;
+      if (walls >= AUDIO_OCCLUSION_WALLS_TO_SATURATE) {
+        return 1;
+      }
+    }
+    skippedStart = true;
+    if (ix === endIx && iy === endIy && iz === endIz) {
+      break;
+    }
+    if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+      ix += stepX;
+      tMaxX += tDeltaX;
+    } else if (tMaxY <= tMaxZ) {
+      iy += stepY;
+      tMaxY += tDeltaY;
+    } else {
+      iz += stepZ;
+      tMaxZ += tDeltaZ;
+    }
+  }
+  return Math.min(1, walls / AUDIO_OCCLUSION_WALLS_TO_SATURATE);
+}
+
 export function encodeAudioReverbChunk(field: AudioReverbField): Uint8Array {
   const hashBytes = new TextEncoder().encode(field.geometryHash);
   const header = 4 + 4 + 4 + 2 + hashBytes.byteLength + 2;
-  const bytes = new Uint8Array(header + field.probes.length * 64);
+  const probeBytes = field.probes.length * 64;
+  const occupancyBytes = field.occupancy
+    ? encodeOccupancy(field.occupancy)
+    : new Uint8Array();
+  const bytes = new Uint8Array(header + probeBytes + occupancyBytes.byteLength);
   bytes.set(MAGIC, 0);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   view.setUint32(4, field.version, true);
@@ -132,6 +317,9 @@ export function encodeAudioReverbChunk(field: AudioReverbField): Uint8Array {
     view.setFloat64(offset + 48, probe.damping, true);
     view.setFloat64(offset + 56, probe.wet, true);
     offset += 64;
+  }
+  if (occupancyBytes.byteLength > 0) {
+    bytes.set(occupancyBytes, offset);
   }
   return bytes;
 }
@@ -174,11 +362,13 @@ export function decodeAudioReverbChunk(
     });
     offset += 64;
   }
+  const occupancy = decodeOccupancy(bytes, offset);
   return {
     version,
     dryFallback: (flags & FLAG_DRY) !== 0,
     geometryHash,
     probes,
+    ...(occupancy ? { occupancy } : {}),
   };
 }
 
@@ -396,6 +586,31 @@ type InternalGrid = AudioReverbOccupancyGrid & {
   voxelY: number;
   voxelZ: number;
 };
+
+function occupancyFromGrid(grid: InternalGrid): AudioReverbOccupancy {
+  const sizeX = Math.max(1, Math.floor(grid.sizeX));
+  const sizeY = Math.max(1, Math.floor(grid.sizeY));
+  const sizeZ = Math.max(1, Math.floor(grid.sizeZ));
+  const cellCount = sizeX * sizeY * sizeZ;
+  const bits = new Uint8Array(occupancyBitCount(sizeX, sizeY, sizeZ));
+  for (let i = 0; i < cellCount && i < grid.occupied.length; i += 1) {
+    if (grid.occupied[i] !== 0) {
+      bits[i >> 3] |= 1 << (i & 7);
+    }
+  }
+  return {
+    originX: grid.originX,
+    originY: grid.originY,
+    originZ: grid.originZ,
+    voxelX: grid.voxelX,
+    voxelY: grid.voxelY,
+    voxelZ: grid.voxelZ,
+    sizeX,
+    sizeY,
+    sizeZ,
+    bits,
+  };
+}
 
 function emptyGrid(): InternalGrid {
   return {
@@ -678,6 +893,7 @@ export function bakeAudioReverb(geometry: AudioReverbGeometry): Uint8Array {
     dryFallback: false,
     geometryHash,
     probes,
+    occupancy: occupancyFromGrid(grid),
   });
 }
 

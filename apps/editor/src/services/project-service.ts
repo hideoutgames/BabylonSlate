@@ -41,6 +41,8 @@ import {
   encodeAssetDocument,
   extraChunksFromDecoded,
   extraChunksWithAudioReverb,
+  extraChunksWithAudioClip,
+  extraChunksWithoutAudioClip,
   exportProjectZip,
   isAssetDocumentPath,
   loadPayloadWithMigration,
@@ -1248,6 +1250,68 @@ export class ProjectService {
       },
     );
     await storage.writeBinary(path, encoded);
+  }
+
+  /** Add or replace an imported Audio clip chunk (`source` / `source:N`). */
+  async writeAudioClipChunk(
+    path: string,
+    chunkId: string,
+    bytes: Uint8Array,
+    mime: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const extra = extraChunksWithAudioClip(await this.extraChunksFor(path), {
+      id: chunkId,
+      bytes,
+      mime,
+    });
+    await this.writeAssetDocumentWithExtra(path, payload, extra);
+  }
+
+  /** Drop an extra Audio clip chunk. Never deletes the last `source`. */
+  async removeAudioClipChunk(
+    path: string,
+    chunkId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const extra = extraChunksWithoutAudioClip(
+      await this.extraChunksFor(path),
+      chunkId,
+    );
+    await this.writeAssetDocumentWithExtra(path, payload, extra);
+  }
+
+  private async writeAssetDocumentWithExtra(
+    path: string,
+    payload: Record<string, unknown>,
+    extra: Array<{ id: string; kind: string; mime: string; data: Uint8Array }>,
+  ): Promise<void> {
+    if (isPluginDocumentReadOnly(this.pluginDescriptors, path)) {
+      throw new Error("Engine plugin assets are read-only");
+    }
+    const storage = this.storageForPath(path);
+    const existing = await this.readExistingAssetMeta(path);
+    const type = existing?.type ?? "Audio";
+    const storeInHeader = existing !== null && !existing.hasDocumentChunk;
+    const encoded = await encodeAssetDocument(
+      {
+        type,
+        name: assetName(path),
+        guid: await this.guidForAsset(path),
+        version: this.migrations.currentVersion(type),
+        payload,
+      },
+      {
+        blobs: this.blobsForPath(path),
+        extraChunks: extra,
+        parentClass: existing?.parentClass ?? null,
+        headerPayload: storeInHeader ? payload : undefined,
+        headerMeta: headerMetaForSave(type, payload),
+        dependencies: assetHeaderDependencies(type, payload),
+      },
+    );
+    await storage.writeBinary(path, encoded);
+    await this.assetRegistry?.reindexPath(path);
   }
 
   guidForPath(path: string): string | null {

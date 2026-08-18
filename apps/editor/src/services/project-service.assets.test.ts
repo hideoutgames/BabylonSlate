@@ -482,4 +482,49 @@ describe("project documents as .babasset", () => {
       },
     ]);
   });
+
+  it("writes extra Audio clip chunks and refuses to delete source", async () => {
+    const { storage, service } = await scaffolded();
+    const path = "assets/Jump.babasset";
+    const source = new Uint8Array([1, 2, 3, 4]);
+    await storage.writeBinary(
+      path,
+      await encodeBabasset({
+        header: {
+          guid: "audio-guid",
+          type: "Audio",
+          name: "Jump",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: [],
+          parentClass: null,
+          payload: {},
+        },
+        chunks: [
+          { id: "source", kind: "audio", mime: "audio/wav", data: source },
+        ],
+      }),
+    );
+    await service.remountRegistry();
+    const extra = new Uint8Array([9, 8, 7]);
+    await service.writeAudioClipChunk(
+      path,
+      "source:2",
+      extra,
+      "audio/ogg",
+      { clips: [{ chunkId: "source", weight: 1 }, { chunkId: "source:2", weight: 1 }] },
+    );
+    expect(await service.readAssetChunk(path, "source")).toEqual(source);
+    expect(await service.readAssetChunk(path, "source:2")).toEqual(extra);
+    await service.removeAudioClipChunk(path, "source", {
+      clips: [{ chunkId: "source", weight: 1 }],
+    });
+    expect(await service.readAssetChunk(path, "source")).toEqual(source);
+    await service.removeAudioClipChunk(path, "source:2", {
+      clips: [{ chunkId: "source", weight: 1 }],
+    });
+    expect(await service.readAssetChunk(path, "source:2")).toBeNull();
+    expect(await service.readAssetChunk(path, "source")).toEqual(source);
+  });
 });

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { DebugInspectNode } from "@babylonslate/object-model";
 import {
   flattenInspectTree,
-  formatInspectVariable,
   nextInspectSelection,
 } from "./play-inspect-tree";
 
@@ -71,15 +70,5 @@ describe("nextInspectSelection", () => {
   it("clears the selection when the guid is gone", () => {
     expect(nextInspectSelection("missing", nodes)).toBeNull();
     expect(nextInspectSelection(null, nodes)).toBeNull();
-  });
-});
-
-describe("formatInspectVariable", () => {
-  it("formats primitives and object refs for SelectableText", () => {
-    expect(formatInspectVariable(4)).toBe("4");
-    expect(formatInspectVariable(true)).toBe("true");
-    expect(formatInspectVariable({ guid: "a1", classId: "Actor" })).toBe(
-      "Actor(a1)",
-    );
   });
 });

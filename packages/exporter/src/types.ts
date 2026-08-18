@@ -65,6 +65,10 @@ export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
+  occlusionEnabled?: boolean;
+  reverbWetScale?: number;
+  reverbDecayScale?: number;
+  reverbDampingScale?: number;
   bundleDebugger: boolean;
   mode: ExportMode;
   render: RenderProjectSettings;
@@ -89,6 +93,10 @@ export type ExportGameOptions = {
   startupSceneGuid: string;
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;
+  occlusionEnabled?: boolean;
+  reverbWetScale?: number;
+  reverbDecayScale?: number;
+  reverbDampingScale?: number;
   customResolution: RenderProjectSettings;
   playFrameCap?: number;
   pixelsPerUnit?: number;

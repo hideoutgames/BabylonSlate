@@ -288,6 +288,7 @@ export type CommandMessage =
             scale: [number, number, number];
           };
           variables: Record<string, unknown>;
+          variableTypes?: Record<string, string>;
         }>;
       };
     }
