@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { SerializedGraph } from "@babylonslate/core";
 import { createMeshComponent } from "@babylonslate/core";
 import { InspectorPanel } from "./inspector-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -19,7 +20,9 @@ if (
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const applyGraphChange = vi.hoisted(() =>
+  vi.fn<(id: string, graph: SerializedGraph) => Promise<boolean>>(async () => true),
+);
 const sceneEditing = vi.hoisted(() => ({ viewportMode: "3d" as "2d" | "3d" }));
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -131,9 +134,7 @@ describe("Inspector prefab component details", () => {
       target: { value: "4" },
     });
     expect(applyGraphChange).toHaveBeenCalled();
-    const next = applyGraphChange.mock.calls[0]![1] as {
-      components: Array<{ id: string; transform?: { position: number[] } }>;
-    };
+    const next = applyGraphChange.mock.calls[0]![1];
     const mesh = next.components.find((component) => component.id === "prefab-mesh");
     expect(mesh?.transform?.position[2]).toBe(4);
   });
