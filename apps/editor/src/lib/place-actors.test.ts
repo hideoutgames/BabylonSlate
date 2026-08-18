@@ -25,6 +25,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
         "Empty",
         "Navigation",
         "Audio",
+        "Particles",
       ]),
     );
     expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
@@ -61,6 +62,26 @@ describe("ENGINE_PLACE_ACTORS", () => {
       playOnStart: true,
       loop: false,
       volume: 1,
+    });
+  });
+
+  it("places a Particle actor with a ParticleComponent", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "particle")!;
+    expect(item.category).toBe("Particles");
+    expect(visualForPlaceActor(item).iconKey).toBe("ParticleComponent");
+    const actor = spawnPlacedActor(
+      createDefaultScene(),
+      item,
+      "actor-particle",
+      ORIGIN,
+    );
+    expect(actor.name).toBe("Particle");
+    expect(actor.components[0]?.classId).toBe("ParticleComponent");
+    expect(actor.components[0]?.properties).toEqual({
+      particleSystemGuid: null,
+      playOnStart: true,
+      sortingLayer: "Default",
+      orderInLayer: 0,
     });
   });
 });
@@ -245,14 +266,15 @@ describe("duplicateSceneActor", () => {
 });
 
 describe("projectPlaceActors", () => {
-  it("lists Class, Model, and Audio assets, not textures", () => {
+  it("lists Class, Model, Audio, and Particle System assets, not textures", () => {
     const items = projectPlaceActors([
       { header: { guid: "hero", name: "Hero", type: "Class" } },
       { header: { guid: "mesh", name: "Tree", type: "Model" } },
       { header: { guid: "sfx", name: "Jump", type: "Audio" } },
+      { header: { guid: "fx", name: "Fire", type: "ParticleSystem" } },
       { header: { guid: "tex", name: "Grass", type: "Texture" } },
     ]);
-    expect(items.map((item) => item.title)).toEqual(["Hero", "Tree", "Jump"]);
+    expect(items.map((item) => item.title)).toEqual(["Hero", "Tree", "Jump", "Fire"]);
   });
 
   it("places a project Audio asset with the guid already on AudioComponent", () => {
@@ -273,6 +295,27 @@ describe("projectPlaceActors", () => {
       playOnStart: true,
       loop: false,
       volume: 1,
+    });
+  });
+
+  it("places a project Particle System with the guid already on ParticleComponent", () => {
+    const items = projectPlaceActors([
+      { header: { guid: "fire", name: "Fire", type: "ParticleSystem" } },
+    ]);
+    const item = items[0]!;
+    const actor = spawnPlacedActor(
+      createDefaultScene(),
+      item,
+      "actor-fire",
+      ORIGIN,
+    );
+    expect(actor.name).toBe("Fire");
+    expect(actor.components[0]?.classId).toBe("ParticleComponent");
+    expect(actor.components[0]?.properties).toEqual({
+      particleSystemGuid: "fire",
+      playOnStart: true,
+      sortingLayer: "Default",
+      orderInLayer: 0,
     });
   });
 

@@ -13,6 +13,10 @@ import {
   normalizeAudioMixerPayload,
   normalizeSoundAttenuationPayload,
 } from "./audio-payload";
+import {
+  normalizeParticleEmitterPayload,
+  normalizeParticleSystemPayload,
+} from "./particle-payload";
 
 export type MigrationFn = (
   payload: Record<string, unknown>,
@@ -203,6 +207,14 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     migrations: [
       (payload) => asRecord(normalizeSoundAttenuationPayload(payload)),
     ],
+  });
+  registry.register({
+    type: "ParticleEmitter",
+    migrations: [(payload) => asRecord(normalizeParticleEmitterPayload(payload))],
+  });
+  registry.register({
+    type: "ParticleSystem",
+    migrations: [(payload) => asRecord(normalizeParticleSystemPayload(payload))],
   });
   return registry;
 }

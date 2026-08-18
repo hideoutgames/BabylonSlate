@@ -565,6 +565,7 @@ class InProcessRuntime implements RuntimeDriver {
       destroyActor: (actor) => {
         if (!actor) return;
         this.emitAudioStops(actor);
+        this.emitParticleStops(actor);
         this.world.destroyActor(actor.guid);
       },
       addComponent: (actor, classId) => {
@@ -679,6 +680,13 @@ class InProcessRuntime implements RuntimeDriver {
           emitterActorGuid: options?.emitterActorGuid ?? null,
           loop: options?.loop,
           voiceId: options?.voiceId,
+        });
+      },
+      setParticlePlaying: (actorGuid, playing) => {
+        this.emit({
+          type: "setParticlePlaying",
+          actorGuid: String(actorGuid ?? ""),
+          playing: Boolean(playing),
         });
       },
       setChannelVolume: (channelGuid, volume) => {
@@ -895,6 +903,7 @@ class InProcessRuntime implements RuntimeDriver {
     for (const actor of [...this.world.getActors()]) {
       const slotId = this.slotByGuid.get(actor.guid);
       this.emitAudioStops(actor);
+      this.emitParticleStops(actor);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
         this.slotByGuid.delete(actor.guid);
@@ -1850,6 +1859,20 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind: "audio",
         parts: [playMeshPartOf(audio)],
       });
+      return;
+    }
+    const particle = actor.components.find(
+      (component) =>
+        component.classId === "ParticleComponent" && !component.destroyed,
+    );
+    if (particle) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "particle",
+        parts: [playMeshPartOf(particle)],
+      });
     }
   }
 
@@ -1857,6 +1880,7 @@ class InProcessRuntime implements RuntimeDriver {
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
     this.emitAudioComponents(actor);
+    this.emitParticleComponents(actor);
     this.world.spawnActorNow(actor);
   }
 
@@ -1886,6 +1910,43 @@ class InProcessRuntime implements RuntimeDriver {
     for (const component of actor.components) {
       if (component.classId !== "AudioComponent") continue;
       this.emit({ type: "stopSound", voiceId: component.guid });
+    }
+  }
+
+  private emitParticleComponents(actor: Actor): void {
+    const slotId = this.slotByGuid.get(actor.guid);
+    if (slotId === undefined) return;
+    for (const component of actor.components) {
+      if (component.destroyed || component.classId !== "ParticleComponent") {
+        continue;
+      }
+      const assetGuid =
+        (typeof component.getVariable("particleSystemGuid") === "string"
+          ? component.getVariable("particleSystemGuid")
+          : null) ?? component.assetGuid;
+      if (typeof assetGuid !== "string" || !assetGuid) continue;
+      this.emit({
+        type: "assignParticle",
+        slotId,
+        actorGuid: actor.guid,
+        componentId: component.guid,
+        particleSystemGuid: assetGuid,
+        play: component.getVariable("playOnStart") !== false,
+      });
+    }
+  }
+
+  private emitParticleStops(actor: Actor): void {
+    const slotId = this.slotByGuid.get(actor.guid) ?? 0;
+    for (const component of actor.components) {
+      if (component.classId !== "ParticleComponent") continue;
+      this.emit({
+        type: "assignParticle",
+        slotId,
+        actorGuid: actor.guid,
+        componentId: component.guid,
+        particleSystemGuid: null,
+      });
     }
   }
 
@@ -2518,6 +2579,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   }
   if (component.classId === "CameraComponent") return "camera";
   if (component.classId === "AudioComponent") return "audio";
+  if (component.classId === "ParticleComponent") return "particle";
   const meshKind = component.getVariable("meshKind");
   return typeof meshKind === "string" ? meshKind : null;
 }

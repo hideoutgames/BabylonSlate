@@ -89,6 +89,26 @@ describe("resolveTypeVisual", () => {
     expect(atten.colorVar).not.toBe(audio.colorVar);
   });
 
+  it("uses Sparkles and Wind glyphs for Particle System and Particle Emitter", () => {
+    const system = resolveTypeVisual({ assetType: "ParticleSystem" });
+    const emitter = resolveTypeVisual({ assetType: "ParticleEmitter" });
+    const material = resolveTypeVisual({ assetType: "Material" });
+    expect(system.family).toBe("material");
+    expect(emitter.family).toBe("material");
+    expect(system.colorVar).toBe(material.colorVar);
+    expect(emitter.colorVar).toBe(material.colorVar);
+    expect(system.iconKey).toBe("ParticleSystem");
+    expect(emitter.iconKey).toBe("ParticleEmitter");
+    expect(system.icon).not.toBe(emitter.icon);
+    const component = resolveTypeVisual({
+      classId: "ParticleComponent",
+      family: "class",
+    });
+    expect(engineParentOf("ParticleComponent")).toBe("ActorComponent");
+    expect(component.iconKey).toBe("ParticleComponent");
+    expect(component.icon).toBe(system.icon);
+  });
+
   it("treats Mesh assets as the model family", () => {
     const mesh = resolveTypeVisual({ assetType: "Mesh" });
     const model = resolveTypeVisual({ assetType: "Model" });

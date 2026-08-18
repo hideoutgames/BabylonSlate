@@ -396,7 +396,7 @@ describe("createPlayMesh", () => {
     ).toEqual([]);
   });
 
-  it("does not show a cube for camera, audio, or empty Play slots", () => {
+  it("does not show a cube for camera, audio, particle, or empty Play slots", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -414,12 +414,18 @@ describe("createPlayMesh", () => {
       meshAssetGuid: null,
       meshKind: "audio",
     });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 3,
+      meshAssetGuid: null,
+      meshKind: "particle",
+    });
     applySnapshotToScene(scene, binding, {
       frameId: 1,
       tickIndex: 1,
       alpha: 1,
-      actorCount: 3,
-      actors: [1, 2, 8].map((slotId) => ({
+      actorCount: 4,
+      actors: [1, 2, 3, 8].map((slotId) => ({
         slotId,
         position: { x: 0, y: 0, z: 0 },
         rotation: { x: 0, y: 0, z: 0, w: 1 },
@@ -427,7 +433,7 @@ describe("createPlayMesh", () => {
         flags: 1,
       })),
     });
-    for (const slotId of [1, 2, 8]) {
+    for (const slotId of [1, 2, 3, 8]) {
       const mesh = binding.meshes.get(slotId);
       expect(mesh, `slot ${slotId}`).toBeDefined();
       expect(

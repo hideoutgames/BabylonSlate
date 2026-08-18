@@ -22,6 +22,12 @@ import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary } from "../lib/play-audio";
+import {
+  emptyPlayParticleLibrary,
+  particleMaterialGuidsFromLibrary,
+  particleTextureGuidsFromLibrary,
+  type PlayParticleLibrary,
+} from "../lib/play-particles";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
 import { PlayOverlay } from "../components/play-overlay";
@@ -271,6 +277,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
+  const [playParticleLibrary, setPlayParticleLibrary] =
+    useState<PlayParticleLibrary>(() => emptyPlayParticleLibrary());
   const [playMaterialDocuments, setPlayMaterialDocuments] = useState<
     Map<string, MaterialDocument>
   >(() => new Map());
@@ -300,6 +308,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTextureBytes,
     collectPlayModelBytes,
     collectPlayAudio,
+    collectPlayParticles,
     collectPlayMaterialLibrary,
     collectPlaySceneLibrary,
     exportGameArtifact,
@@ -822,16 +831,23 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayTilesets(new Map());
         }
         try {
+          const particles = await collectPlayParticles();
+          setPlayParticleLibrary(particles);
           const materials = await collectPlayMaterialLibrary(
             resolvedScene?.scene,
             playLibrary.map((entry) => entry.scene),
+            particleMaterialGuidsFromLibrary(particles),
           );
           setPlayMaterialDocuments(materials.documents);
           setPlayMaterialFunctions(materials.functions);
           textureBytes = await collectPlayTextureBytes(
             sprites,
             tilesets,
-            [...materials.textureGuids, ...skyboxFaceGuidsFromScene(resolvedScene?.scene)],
+            [
+              ...materials.textureGuids,
+              ...particleTextureGuidsFromLibrary(particles),
+              ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
+            ],
             spriteAnimations,
           );
           setPlayTextureBytes(textureBytes);
@@ -841,6 +857,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
+          setPlayParticleLibrary(emptyPlayParticleLibrary());
           try {
             textureBytes = await collectPlayTextureBytes(
               sprites,
@@ -939,6 +956,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTextureBytes,
       collectPlayModelBytes,
       collectPlayAudio,
+      collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       diagnostics,
@@ -1157,6 +1175,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             modelBytes={playModelBytes}
             audioBytes={playAudioBytes}
             audioLibrary={playAudioLibrary}
+            particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
             postProcessingEnabled={postProcessingEnabled}

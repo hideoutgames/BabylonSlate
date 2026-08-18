@@ -33,6 +33,8 @@ const JSON_TYPES = new Set([
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
+  "ParticleEmitter",
+  "ParticleSystem",
 ]);
 
 const encoder = new TextEncoder();

@@ -299,7 +299,11 @@ function validateGraph(
       diagnostics.push({
         code: "material.domainMismatch",
         message: `"${definition.title}" cannot be used in a ${
-          options.domain === "surface" ? "surface" : "post-process"
+          options.domain === "surface"
+            ? "surface"
+            : options.domain === "particle"
+              ? "particle"
+              : "post-process"
         } material`,
         severity: "error",
         nodeId: node.id,
@@ -519,7 +523,11 @@ export function validateMaterialDocument(
     diagnostics.push({
       code: "material.noOutput",
       message: `Material needs a ${
-        doc.domain === "surface" ? "Material Output" : "Post Process Output"
+        doc.domain === "surface"
+          ? "Material Output"
+          : doc.domain === "particle"
+            ? "Particle Output"
+            : "Post Process Output"
       } node`,
       severity: "error",
     });

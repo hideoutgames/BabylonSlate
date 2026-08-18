@@ -19,6 +19,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("ColliderComponent");
     expect(ids).toContain("AudioComponent");
     expect(ids).toContain("SkyboxComponent");
+    expect(ids).toContain("ParticleComponent");
   });
 
   it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
@@ -34,6 +35,7 @@ describe("Add Component catalog", () => {
       "AI",
       "Camera",
       "Audio",
+      "Particles",
       "Physics",
     ]);
     expect(byCategory.get("Rendering")).toEqual([
@@ -51,6 +53,7 @@ describe("Add Component catalog", () => {
     ]);
     expect(byCategory.get("Camera")).toEqual(["CameraComponent"]);
     expect(byCategory.get("Audio")).toEqual(["AudioComponent"]);
+    expect(byCategory.get("Particles")).toEqual(["ParticleComponent"]);
     expect(byCategory.get("Physics")).toEqual([
       "RigidBodyComponent",
       "ColliderComponent",
@@ -90,6 +93,12 @@ describe("Add Component catalog", () => {
       playOnStart: true,
       loop: false,
       volume: 1,
+    });
+    expect(defaultPropertiesFor("ParticleComponent")).toEqual({
+      particleSystemGuid: null,
+      playOnStart: true,
+      sortingLayer: "Default",
+      orderInLayer: 0,
     });
   });
 

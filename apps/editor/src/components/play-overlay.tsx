@@ -42,6 +42,7 @@ import type {
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
+import type { PlayParticleLibrary } from "../lib/play-particles";
 import {
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
@@ -97,6 +98,7 @@ export interface PlayOverlayProps {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: PlayAudioLibrary;
+  particleLibrary?: PlayParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -148,6 +150,7 @@ export function PlayOverlay({
   modelBytes,
   audioBytes,
   audioLibrary,
+  particleLibrary,
   materialDocuments,
   materialFunctions,
   postProcessingEnabled,
@@ -233,6 +236,8 @@ export function PlayOverlay({
   audioBytesRef.current = audioBytes;
   const audioLibraryRef = useRef(audioLibrary);
   audioLibraryRef.current = audioLibrary;
+  const particleLibraryRef = useRef(particleLibrary);
+  particleLibraryRef.current = particleLibrary;
   const materialDocumentsRef = useRef(materialDocuments);
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
@@ -331,6 +336,7 @@ export function PlayOverlay({
       modelBytes: modelBytesRef.current,
       audioBytes: audioBytesRef.current,
       audioLibrary: audioLibraryRef.current,
+      particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,

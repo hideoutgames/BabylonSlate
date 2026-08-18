@@ -523,7 +523,9 @@ export function DocumentWorkspace() {
           doc.ref.kind === "plugin-settings" ||
           doc.ref.kind === "audio-mixer" ||
           doc.ref.kind === "audio-channel" ||
-          doc.ref.kind === "sound-attenuation"
+          doc.ref.kind === "sound-attenuation" ||
+          doc.ref.kind === "particle-emitter" ||
+          doc.ref.kind === "particle-system"
         ) {
           if (!shouldMount) return null;
           return (
