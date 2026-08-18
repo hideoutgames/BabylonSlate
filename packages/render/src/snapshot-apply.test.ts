@@ -1,4 +1,4 @@
-import { Material, PointLight, Quaternion, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Material, PointLight, Quaternion, SpotLight, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -281,6 +281,98 @@ describe("createPlayMesh", () => {
     expect(light!.intensity).toBeCloseTo(3.5);
     expect(light!.diffuse.r).toBeCloseTo(0.2);
     expect(light!.diffuse.b).toBeCloseTo(0.8);
+    const mesh = binding.meshes.get(4);
+    expect(mesh).toBeDefined();
+    expect(
+      [mesh!, ...mesh!.getChildMeshes()].filter((entry) => entry.isVisible),
+    ).toEqual([]);
+  });
+
+  it("does not show a cube for a light part under an origin root", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 3,
+      meshAssetGuid: null,
+      meshKind: "light:spot",
+      light: { color: [1, 1, 1], intensity: 1, enabled: true },
+      parts: [
+        {
+          componentId: "lamp",
+          meshKind: "light:spot",
+          meshAssetGuid: null,
+          parentId: null,
+          position: [0, 1, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+        },
+      ],
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 3,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    expect(binding.lights.get(3)).toBeInstanceOf(SpotLight);
+    const root = binding.meshes.get(3);
+    expect(root).toBeDefined();
+    expect(
+      [root!, ...root!.getChildMeshes()].filter((entry) => entry.isVisible),
+    ).toEqual([]);
+  });
+
+  it("does not show a cube for camera, audio, or empty Play slots", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshAssetGuid: null,
+      meshKind: "camera",
+      camera: { isDefault: false, projectionMode: "perspective" },
+    });
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "audio",
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 3,
+      actors: [1, 2, 8].map((slotId) => ({
+        slotId,
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+        flags: 1,
+      })),
+    });
+    for (const slotId of [1, 2, 8]) {
+      const mesh = binding.meshes.get(slotId);
+      expect(mesh, `slot ${slotId}`).toBeDefined();
+      expect(
+        [mesh!, ...mesh!.getChildMeshes()].filter((entry) => entry.isVisible),
+        `slot ${slotId} visible meshes`,
+      ).toEqual([]);
+    }
   });
 
   it("steals activeCamera only when assignMesh marks the Default Camera", () => {

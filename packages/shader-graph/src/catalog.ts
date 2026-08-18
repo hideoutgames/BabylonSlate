@@ -643,6 +643,12 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
       },
       { id: "opacity", name: "Opacity", type: FLOAT, defaultValue: [1] },
       { id: "alphaClip", name: "Alpha Clip", type: FLOAT },
+      {
+        id: "worldPositionOffset",
+        name: "World Position Offset",
+        type: VEC3,
+        defaultValue: [0, 0, 0],
+      },
     ],
     outputs: [],
   },

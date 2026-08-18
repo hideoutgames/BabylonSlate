@@ -62,6 +62,16 @@ describe("createPlayerUiHost", () => {
     expect(host.resolveImageUrl("tex-logo")).toBe("blob:test/4");
   });
 
+  it("does not treat packed KTX2 bytes as a GUI Image source", () => {
+    const ktx2 = new Uint8Array([
+      0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    const host = createTestHost({
+      textureBytes: new Map([["tex-logo", ktx2]]),
+    });
+    expect(host.resolveImageUrl("tex-logo")).toBeNull();
+  });
+
   it("keeps two instances independent and honors instance-scoped visibility", () => {
     const host = createTestHost();
     host.apply("ui-1", "hud-1");
@@ -96,7 +106,7 @@ describe("createPlayerUiHost", () => {
     let adtDisposed = false;
     const host = createPlayerUiHost({
       library: new Map([["hud-1", hudDocument()]]),
-      textureBytes: new Map([["tex-logo", new Uint8Array([1, 2, 3])]]),
+      textureBytes: new Map([["tex-logo", new Uint8Array([0x89, 0x50, 0x4e, 0x47])]]),
       host: recording,
       viewport: { width: 400, height: 300 },
       createObjectURL: () => "blob:test/logo",
