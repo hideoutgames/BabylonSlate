@@ -164,7 +164,7 @@ describe("scene-loader", () => {
     ).toBe("light");
   });
 
-  it("represents CameraComponent and AudioComponent actors with billboards", () => {
+  it("represents CameraComponent, AudioComponent, and ParticleComponent actors with billboards", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
       scene,
@@ -187,10 +187,22 @@ describe("scene-loader", () => {
             },
           ],
         }),
+        createActor("fx", "Sparks", {
+          components: [
+            {
+              id: "particle",
+              classId: "ParticleComponent",
+              properties: {},
+            },
+          ],
+        }),
       ]),
     );
     const camera = scene.getMeshByName(editorComponentMeshName("cam", "camera"));
     const audio = scene.getMeshByName(editorComponentMeshName("spk", "audio"));
+    const particle = scene.getMeshByName(
+      editorComponentMeshName("fx", "particle"),
+    );
     expect(scene.getMeshByName(editorMeshName("cam"))!.billboardMode).toBe(
       Mesh.BILLBOARDMODE_NONE,
     );
@@ -202,6 +214,10 @@ describe("scene-loader", () => {
     expect(
       (audio!.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("audio");
+    expect(particle!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(
+      (particle!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("particle");
   });
 
   it("parents camera, light, and audio billboards under a non-billboard origin", () => {

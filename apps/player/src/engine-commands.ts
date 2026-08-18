@@ -12,6 +12,8 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "stopSound",
   "setChannelVolume",
   "setGlobalVolume",
+  "assignParticle",
+  "setParticlePlaying",
 ]);
 
 export function applyPlayerEngineCommand(
@@ -30,6 +32,7 @@ export function applyPlayerActiveScene(
     loadScene: (scene: SerializedScene) => void;
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession?: () => void;
+    resetParticleSession?: () => void;
   },
   scenes: ReadonlyMap<string, SerializedScene>,
   command: { type: string; sceneAssetGuid?: unknown },
@@ -42,5 +45,6 @@ export function applyPlayerActiveScene(
   handle.loadScene(scene);
   handle.applySceneEnvironment(scene);
   handle.resetAudioSession?.();
+  handle.resetParticleSession?.();
   return true;
 }

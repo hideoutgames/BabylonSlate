@@ -503,12 +503,17 @@ function MaterialDocumentDetails() {
       options: [
         { value: "surface", label: "Surface" },
         { value: "postProcess", label: "Post Process" },
+        { value: "particle", label: "Particle" },
       ],
       onChange: (value) =>
         commit(
           setMaterialDomain(
             document,
-            value === "postProcess" ? "postProcess" : "surface",
+            value === "postProcess"
+              ? "postProcess"
+              : value === "particle"
+                ? "particle"
+                : "surface",
           ),
         ),
     },

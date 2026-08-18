@@ -36,6 +36,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Behaviour tree", link: "/architecture/behaviour-tree" },
       { text: "Navigation", link: "/architecture/navigation" },
       { text: "Audio", link: "/architecture/audio" },
+      { text: "Particles", link: "/architecture/particles" },
       { text: "Materials", link: "/architecture/shader-graph" },
       { text: "Theming", link: "/architecture/theming" },
       { text: "Components", link: "/architecture/components" },

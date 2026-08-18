@@ -108,6 +108,16 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "sound-attenuation",
     label: "Sound Attenuation",
   },
+  {
+    kind: "particle-emitter",
+    keepKey: "particle-emitter",
+    label: "Particle Emitter",
+  },
+  {
+    kind: "particle-system",
+    keepKey: "particle-system",
+    label: "Particle System",
+  },
 ];
 
 export type EngineSettingsCategoryId =
