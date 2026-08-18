@@ -8,6 +8,7 @@ import {
   openMainScene,
   openTestProject,
 } from "./open-test-project";
+import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 
 const BEEP_WAV = path.join(process.cwd(), "e2e/fixtures/beep.wav");
@@ -156,5 +157,88 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("property-soundAttenuationGuid")).toContainText(
       /Near/i,
     );
+  });
+
+  test("Play unlocks on first gesture, reports spatial distance, and tears down", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await openContentBrowser(page);
+
+    await page.getByTestId("content-browser-import-input").setInputFiles([BEEP_WAV]);
+    await expect(
+      page.locator('[data-asset-path="assets/beep.babasset"]'),
+    ).toBeVisible({ timeout: 30_000 });
+    await createContentBrowserAsset(page, "SoundAttenuation", "Near");
+
+    await openAssetFromBrowser(page, "assets/beep.babasset");
+    const attenGuid = await guidForPath(page, "assets/Near.atten.babasset");
+    expect(attenGuid.length).toBeGreaterThan(0);
+    await page.getByTestId("property-soundAttenuationGuid").click();
+    await pickAsset(page, "audio-attenuation-picker", attenGuid);
+
+    await openMainScene(page);
+    await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-item-audio").click();
+    const audioCard = page.locator("[data-testid^='component-card-']").filter({
+      hasText: "AudioComponent",
+    });
+    await expect(audioCard).toBeVisible();
+    await audioCard.locator('button[data-testid$="-audioAssetGuid"]').click();
+    const beepGuid = await guidForPath(page, "assets/beep.babasset");
+    expect(beepGuid.length).toBeGreaterThan(0);
+    await expect(page.getByTestId("details-asset-picker")).toBeVisible();
+    await page.getByTestId(`search-item-${beepGuid}`).click();
+    await expect(page.getByTestId("details-asset-picker")).toHaveCount(0);
+
+    await saveAllIfEnabled(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-canvas")).toBeVisible();
+    await page.getByTestId("play-canvas").click({ position: { x: 24, y: 24 } });
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          const stats = (
+            window as {
+              __babylonslateAudioStats?: {
+                unlocked: boolean;
+                lastDistance: number | null;
+                voices: number;
+              };
+            }
+          ).__babylonslateAudioStats;
+          return stats ?? null;
+        });
+      }, { timeout: 15_000 })
+      .toEqual(
+        expect.objectContaining({
+          unlocked: true,
+        }),
+      );
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          return (
+            window as {
+              __babylonslateAudioStats?: { lastDistance: number | null };
+            }
+          ).__babylonslateAudioStats?.lastDistance;
+        });
+      }, { timeout: 15_000 })
+      .toEqual(expect.any(Number));
+
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        return page.evaluate(() => {
+          return (
+            window as { __babylonslateAudioStats?: { voices: number } }
+          ).__babylonslateAudioStats?.voices;
+        });
+      }, { timeout: 10_000 })
+      .toBe(0);
   });
 });

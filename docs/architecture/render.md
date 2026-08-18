@@ -68,6 +68,19 @@ Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Co
 
 Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle).
 
+## AudioService (P16)
+
+Main-thread owner shared by overlay Play and `apps/player`. Wraps Babylon 9 AudioV2 behind `AudioPlaybackBackend`. Unit tests use `FakeAudioPlaybackBackend`; `babylon-audio-backend.ts` is coverage-excluded (needs a real audio context).
+
+- Play library + `audioBytes` (BSAU envelope or raw source) load beside `textureBytes`. Scene `audioReverb` extra chunks feed `setReverbField`.
+- Worker emits `playSound` / `stopSound` / `setChannelVolume` / `setGlobalVolume` only (`emitterActorGuid` / `voiceId` identity). Spatial voices follow interpolated snapshot poses; the listener is the active Play camera once per rendered frame.
+- First `pointerdown` / `touchstart` calls `unlockAsync()` and drains a bounded ordered queue (cap 32). Decode / missing-context diagnose without crashing Play.
+- `AudioBufferCache` is a separate 64 MiB guid-keyed PCM LRU with active-voice pins — **not** stuffed into `ResourceCache`.
+- Channels with `environmentReverb.enabled` send to one shared parametric bus; channel-less stays dry. Failed bake → marked dry fallback, wet 0.
+- Test-mode `window.__babylonslateAudioStats` (`audioStats`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes`. Play open/close must return voices/buffers to baseline.
+
+See [audio.md](audio.md).
+
 ## Picking
 
 `skipPointerMovePicking: true` (no hover). Explicit taps use `pickAtCanvas` / `EngineHandle.pickAt`.
