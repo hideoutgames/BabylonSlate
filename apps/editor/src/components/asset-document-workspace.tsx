@@ -11,6 +11,7 @@ import {
 } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   Field,
   FieldGroup,
@@ -28,8 +29,12 @@ import {
   normalizeFontPayload,
   normalizeAudioPayload,
   mimeForAudioBytes,
+  type AudioWaveformPeak,
 } from "@babylonslate/assets";
+import { PlayIcon, RepeatIcon, SquareIcon } from "lucide-react";
 import { BlackboardEditor } from "./blackboard-editor";
+import { IconActionButton } from "./icon-action-button";
+import { AudioPreviewWaveform } from "./audio-preview-waveform";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry, BabylonAudioPlaybackBackend } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
@@ -41,6 +46,7 @@ import {
   TEXTURE_MAX_DIMENSION_OPTIONS,
 } from "../lib/asset-settings";
 import { createAudioPreviewSession } from "../lib/audio-preview";
+import { decodeAudioWaveformPeaks } from "../lib/audio-waveform-decode";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -507,6 +513,8 @@ function AudioSettingsEditor({
   const audio = normalizeAudioPayload(payload);
   const [pick, setPick] = useState<"channel" | "atten" | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [waveformPeaks, setWaveformPeaks] = useState<AudioWaveformPeak[]>([]);
+  const [waveformDuration, setWaveformDuration] = useState<number | null>(null);
   const clipInputRef = useRef<HTMLInputElement | null>(null);
   const previewSessionRef = useRef<ReturnType<
     typeof createAudioPreviewSession
@@ -517,6 +525,7 @@ function AudioSettingsEditor({
   audioRef.current = audio;
   useEffect(() => {
     if (typeof AudioContext === "undefined") return;
+    let cancelled = false;
     let session: ReturnType<typeof createAudioPreviewSession>;
     try {
       session = createAudioPreviewSession({
@@ -526,13 +535,30 @@ function AudioSettingsEditor({
           setPreviewError(error.message);
           setPlaying(false);
         },
+        onEnded: () => setPlaying(false),
       });
     } catch {
       return;
     }
     previewSessionRef.current = session;
-    void session.prefetch(audioRef.current);
+    void (async () => {
+      await session.prefetch(audioRef.current);
+      if (cancelled) return;
+      const clipId = audioRef.current.clips[0]?.chunkId;
+      const bytes = clipId ? session.clipBytes(clipId) : undefined;
+      if (!bytes) return;
+      const waveform = await decodeAudioWaveformPeaks(bytes);
+      if (cancelled) return;
+      if (waveform) {
+        setWaveformPeaks(waveform.peaks);
+        setWaveformDuration(waveform.durationSeconds);
+      } else {
+        setWaveformPeaks([]);
+        setWaveformDuration(null);
+      }
+    })();
     return () => {
+      cancelled = true;
       session.dispose();
       previewSessionRef.current = null;
     };
@@ -577,26 +603,55 @@ function AudioSettingsEditor({
     }
     setPreviewError(null);
     setPlaying(true);
+    const clipId = result.clipChunkId;
+    if (!clipId) return;
+    const bytes = session.clipBytes(clipId);
+    if (!bytes) return;
+    void decodeAudioWaveformPeaks(bytes).then((waveform) => {
+      if (!waveform) return;
+      setWaveformPeaks(waveform.peaks);
+      setWaveformDuration(waveform.durationSeconds);
+    });
   };
 
   return (
     <>
       <div className="flex flex-col gap-3" data-testid="audio-preview">
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-[var(--touch-target,44px)] w-fit"
-          data-testid={playing ? "audio-preview-stop" : "audio-preview-play"}
-          onClick={() => {
-            if (playing) {
-              stopPreview();
-              return;
-            }
-            playPreview();
-          }}
-        >
-          {playing ? "Stop" : "Play"}
-        </Button>
+        <div className="flex min-w-0 items-center gap-1">
+          <IconActionButton
+            type="button"
+            size="touch-icon"
+            label={playing ? "Stop" : "Play"}
+            data-testid={playing ? "audio-preview-stop" : "audio-preview-play"}
+            onClick={() => {
+              if (playing) {
+                stopPreview();
+                return;
+              }
+              playPreview();
+            }}
+          >
+            {playing ? (
+              <SquareIcon className="icon-sm" />
+            ) : (
+              <PlayIcon className="icon-sm" />
+            )}
+          </IconActionButton>
+          <Toggle
+            size="touch"
+            variant="outline"
+            pressed={audio.loop}
+            aria-label="Loop"
+            data-testid="audio-preview-loop"
+            onPressedChange={(loop) => onChange({ ...audio, loop })}
+          >
+            <RepeatIcon className="icon-sm" />
+          </Toggle>
+          <AudioPreviewWaveform
+            peaks={waveformPeaks}
+            durationSeconds={waveformDuration}
+          />
+        </div>
         {previewError ? (
           <Alert data-testid="audio-preview-error">
             <AlertTitle>Preview Failed</AlertTitle>
@@ -613,6 +668,13 @@ function AudioSettingsEditor({
               min: 0,
               max: 1,
               onChange: (volume) => onChange({ ...audio, volume }),
+            },
+            {
+              id: "loop",
+              kind: "boolean",
+              label: "Loop",
+              value: audio.loop,
+              onChange: (loop) => onChange({ ...audio, loop }),
             },
             {
               id: "pitch",
