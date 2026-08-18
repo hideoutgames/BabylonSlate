@@ -5,38 +5,45 @@ import { PrefabViewportPanel } from "./prefab-viewport-panel";
 
 const { createEngineMock, play, dispose } = vi.hoisted(() => {
   const disposeFn = vi.fn();
+  const handle = {
+    engine: { id: "created" },
+    editor: {
+      camera: {
+        importSessionState: vi.fn(),
+        exportSessionState: vi.fn(() => ({})),
+        setPivotAroundCenter: vi.fn(),
+      },
+      setPreviewCanvas: vi.fn(),
+      setViewportMode: vi.fn(),
+      setSelectedActors: vi.fn(),
+      syncSelectionDebug: vi.fn(),
+      gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
+      grid: { setVisible: vi.fn() },
+    },
+    scheduler: {
+      setAlwaysRender: vi.fn(),
+      setPaused: vi.fn(),
+      invalidate: vi.fn(),
+    },
+    scaling: {},
+    setPaused: vi.fn(),
+    setPostProcessingEnabled: vi.fn(),
+    loadScene: vi.fn(),
+    setMaterialDocuments: vi.fn(),
+    setMeshAssets: vi.fn(),
+    resize: vi.fn(),
+    dispose: disposeFn,
+  };
+  const createEngineMock = vi.fn<
+    (
+      canvas?: unknown,
+      options?: { sharedEngine?: unknown; present?: string },
+    ) => typeof handle
+  >();
+  createEngineMock.mockReturnValue(handle);
   return {
     dispose: disposeFn,
-    createEngineMock: vi.fn(
-      (_canvas?: unknown, _options?: { sharedEngine?: unknown; present?: string }) => ({
-      engine: { id: "created" },
-      editor: {
-        camera: {
-          importSessionState: vi.fn(),
-          exportSessionState: vi.fn(() => ({})),
-          setPivotAroundCenter: vi.fn(),
-        },
-        setPreviewCanvas: vi.fn(),
-        setViewportMode: vi.fn(),
-        setSelectedActors: vi.fn(),
-        syncSelectionDebug: vi.fn(),
-        gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
-        grid: { setVisible: vi.fn() },
-      },
-      scheduler: {
-        setAlwaysRender: vi.fn(),
-        setPaused: vi.fn(),
-        invalidate: vi.fn(),
-      },
-      scaling: {},
-      setPaused: vi.fn(),
-      setPostProcessingEnabled: vi.fn(),
-      loadScene: vi.fn(),
-      setMaterialDocuments: vi.fn(),
-      setMeshAssets: vi.fn(),
-      resize: vi.fn(),
-      dispose: disposeFn,
-    })),
+    createEngineMock,
     play: {
       ensureSharedEngine: vi.fn(() => ({ id: "shared-engine" })),
       sharedEngineGeneration: 1,
