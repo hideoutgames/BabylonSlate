@@ -134,6 +134,6 @@ Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/re
 
 ## Out of P16
 
-Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture/Model/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Compact Audio may draw a read-only PCM peak plot; that is not waveform editing.
+Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Compact Audio may draw a read-only PCM peak plot; that is not waveform editing.
 
 See [render.md](render.md), [bridge.md](bridge.md), [scripting.md](scripting.md), [exporter.md](exporter.md). Spec: [engineplan.md](../engineplan.md) §2.6.
