@@ -388,6 +388,7 @@ test.describe("P9 content systems", () => {
       .dblclick();
     await expect(page.getByTestId("document-workspace-sprite-animation")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-preview")).toBeVisible();
+    await expect(page.getByTestId("sprite-animation-play")).toBeVisible();
     await expect(page.getByTestId("sprite-animation-editor")).toBeVisible();
 
     await createAsset(page, "AnimationGraph", "Loco");

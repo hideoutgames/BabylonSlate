@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
 import {
   SpriteAnimationDetails,
@@ -39,6 +39,8 @@ vi.mock("../context/document-context", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("SpriteAnimation editor", () => {
@@ -101,5 +103,98 @@ describe("SpriteAnimation editor", () => {
     expect(screen.getByTestId("sprite-pivot-marker")).toBeTruthy();
     expect(screen.getByTestId("sprite-collision-overlay")).toBeTruthy();
     expect(screen.getByTestId("sprite-animation-frame-0")).toBeTruthy();
+    expect(screen.getByTestId("sprite-animation-play")).toBeTruthy();
+    expect(screen.getByTestId("sprite-animation-loop").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+  });
+
+  it("advances the current frame while playing and stops on pause", () => {
+    let now = 0;
+    const raf = new Map<number, FrameRequestCallback>();
+    let nextId = 1;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = nextId++;
+      raf.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      raf.delete(id);
+    });
+    const flush = (advanceMs: number) => {
+      now += advanceMs;
+      const queued = [...raf.values()];
+      raf.clear();
+      for (const callback of queued) callback(now);
+    };
+
+    const payload = {
+      frames: [
+        {
+          textureGuid: "a",
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+        },
+        {
+          textureGuid: "b",
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+        },
+      ],
+    };
+    render(
+      <SpriteAnimationPreview
+        payload={payload as unknown as Record<string, unknown>}
+      />,
+    );
+    const preview = screen.getByTestId("sprite-animation-preview");
+    expect(preview.getAttribute("data-playing")).toBe("false");
+    expect(preview.getAttribute("data-frame-index")).toBe("0");
+
+    fireEvent.click(screen.getByTestId("sprite-animation-play"));
+    expect(preview.getAttribute("data-playing")).toBe("true");
+    act(() => {
+      flush(150);
+    });
+    expect(preview.getAttribute("data-frame-index")).toBe("1");
+
+    fireEvent.click(screen.getByTestId("sprite-animation-pause"));
+    expect(preview.getAttribute("data-playing")).toBe("false");
+    act(() => {
+      flush(200);
+    });
+    expect(preview.getAttribute("data-frame-index")).toBe("1");
+  });
+
+  it("pauses and seeks when the frame strip is clicked", () => {
+    const payload = {
+      frames: [
+        {
+          textureGuid: "a",
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+        },
+        {
+          textureGuid: "b",
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+        },
+      ],
+    };
+    render(
+      <SpriteAnimationPreview
+        payload={payload as unknown as Record<string, unknown>}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("sprite-animation-play"));
+    fireEvent.click(screen.getByTestId("sprite-animation-frame-1"));
+    const preview = screen.getByTestId("sprite-animation-preview");
+    expect(preview.getAttribute("data-playing")).toBe("false");
+    expect(preview.getAttribute("data-frame-index")).toBe("1");
   });
 });
