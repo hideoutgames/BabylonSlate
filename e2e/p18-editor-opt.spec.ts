@@ -60,11 +60,16 @@ async function openOrCreateAsset(
   assetPath: string,
 ): Promise<void> {
   await openContentBrowser(page);
+  const search = page.getByTestId("content-browser-search");
+  await search.fill(name);
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
   if ((await tile.count()) === 0) {
+    await search.fill("");
     await createContentBrowserAsset(page, type, name);
+    await search.fill(name);
   }
-  await page.locator(`[data-asset-path="${assetPath}"]`).dblclick();
+  await expect(tile).toBeVisible({ timeout: 15_000 });
+  await tile.dblclick();
 }
 
 async function openClassPrefab(page: Page): Promise<void> {
