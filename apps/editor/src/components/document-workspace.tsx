@@ -1,6 +1,6 @@
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useLayoutEffect } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { UiEditingProvider } from "../context/ui-editing-context";
@@ -81,13 +81,21 @@ function RegisteredDockviewShell({
   animEditorMode?: import("../shell/anim-document-layout").AnimEditorMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
-  const { registerDockviewApi, sourceControl } = useDocuments();
+  const { registerDockviewApi, unregisterDockviewApi, captureLayoutForId, sourceControl } =
+    useDocuments();
   const onReady = useCallback(
     (api: DockviewApi) => {
       registerDockviewApi(id, api, surface);
     },
     [id, registerDockviewApi, surface],
   );
+
+  useLayoutEffect(() => {
+    return () => {
+      captureLayoutForId(id);
+      unregisterDockviewApi(id, surface);
+    };
+  }, [id, surface, captureLayoutForId, unregisterDockviewApi]);
 
   return (
     <DockviewShell

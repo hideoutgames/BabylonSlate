@@ -12,6 +12,8 @@ const docs = vi.hoisted(() => ({
   setUiEditorMode: vi.fn(),
   setAnimEditorMode: vi.fn(),
   registerDockviewApi: vi.fn(),
+  captureLayoutForId: vi.fn(),
+  unregisterDockviewApi: vi.fn(),
   sourceControl: { enabled: false },
 }));
 
@@ -40,6 +42,8 @@ afterEach(() => {
   docs.uiEditorMode = "designer";
   docs.animEditorMode = "stateMachine";
   docs.activeDocumentId = "ui:hud";
+  docs.captureLayoutForId.mockClear();
+  docs.unregisterDockviewApi.mockClear();
 });
 
 describe("mode DockView unmount", () => {
@@ -65,6 +69,8 @@ describe("mode DockView unmount", () => {
     );
     expect(screen.queryByTestId("mock-dock-designer")).toBeNull();
     expect(screen.getByTestId("mock-dock-logic")).toBeTruthy();
+    expect(docs.captureLayoutForId).toHaveBeenCalledWith("ui:hud");
+    expect(docs.unregisterDockviewApi).toHaveBeenCalled();
   });
 
   it("mounts only the active Animation Graph DockView", () => {

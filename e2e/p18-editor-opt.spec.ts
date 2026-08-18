@@ -49,6 +49,10 @@ async function advanceIdleClock(page: Page, ms: number): Promise<void> {
   }, ms);
 }
 
+function visibleGraphWorkspace(page: Page) {
+  return page.locator('[data-testid="document-workspace-graph"]:visible');
+}
+
 async function openOrCreateAsset(
   page: Page,
   type: string,
@@ -162,7 +166,7 @@ test.describe("P18 iPad editor optimisation", () => {
         name,
         `assets/${name}.class.babasset`,
       );
-      await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
+      await expect(visibleGraphWorkspace(page)).toBeVisible();
     }
 
     await expect(page.getByTestId("document-workspace-graph")).toHaveCount(3);
@@ -183,6 +187,6 @@ test.describe("P18 iPad editor optimisation", () => {
       .first()
       .getByTestId("document-tab-select")
       .click();
-    await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
+    await expect(visibleGraphWorkspace(page)).toBeVisible();
   });
 });
