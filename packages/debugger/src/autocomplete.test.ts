@@ -21,7 +21,10 @@ describe("suggestConsoleCompletions", () => {
     expect(suggestConsoleCompletions("ch", registry.list())).toEqual([
       "changescene",
     ]);
-    expect(suggestConsoleCompletions("he", registry.list())).toEqual(["heal"]);
+    expect(suggestConsoleCompletions("he", registry.list())).toEqual([
+      "heal",
+      "help",
+    ]);
   });
 
   it("suggests enum values for the current parameter", () => {

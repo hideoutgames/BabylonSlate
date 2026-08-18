@@ -13,6 +13,7 @@ export function createUserCommand(def: UserCommandDef): RegisteredCommand {
   return {
     name: def.name,
     tier: "core",
+    category: def.category,
     description: def.description,
     parameters: def.parameters,
     run: (args) => def.run(args),

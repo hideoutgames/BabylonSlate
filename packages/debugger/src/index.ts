@@ -13,10 +13,11 @@ export {
   createCommandRegistry,
   type CreateCommandRegistryOptions,
 } from "./registry";
-export { CORE_COMMAND_NAMES, DEBUG_COMMAND_NAMES } from "./commands";
+export { CORE_COMMAND_NAMES, DEBUG_COMMAND_NAMES, isReservedConsoleCommandName } from "./commands";
 export { tokenize, parseCommandArgs, matchCommandName } from "./parser";
 export {
   warnDebugTierConsoleCommands,
+  warnReservedConsoleCommandNames,
   type ConsoleCommandDiagnostic,
   type ConsoleCommandGraph,
 } from "./validation";

@@ -520,6 +520,34 @@ describe("validateSerializedGraph", () => {
     expect(diags.some((d) => d.code === "console.debug_tier")).toBe(true);
   });
 
+  it("errors when On Command Run uses a reserved engine name", () => {
+    const diags = validateSerializedGraph(
+      {
+        id: "event-graph",
+        kind: "event",
+        nodes: [
+          {
+            id: "run",
+            typeId: "flow.event.commandRun",
+            position: { x: 0, y: 0 },
+            pins: [],
+            properties: { commandName: "pause" },
+          },
+        ],
+        edges: [],
+      },
+      { assetGuid: "g1", graphId: "event-graph" },
+    );
+    expect(
+      diags.some(
+        (d) =>
+          d.code === "console.reserved_name" &&
+          d.severity === "error" &&
+          d.nodeId === "run",
+      ),
+    ).toBe(true);
+  });
+
   it("flags a stale Call Function when the class symbol table is supplied", () => {
     const diags = validateSerializedGraph(
       {

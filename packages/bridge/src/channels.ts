@@ -359,7 +359,8 @@ export type CommandMessage =
       type: "setRenderResolution";
       width: number;
       height: number;
-    };
+    }
+  | { type: "sessionPaused"; paused: boolean };
 
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }

@@ -146,6 +146,17 @@ describe("Play inspect contract", () => {
   });
 });
 
+describe("Play session commands", () => {
+  it("sessionPaused reports overlay pause chrome", () => {
+    const command = {
+      type: "sessionPaused",
+      paused: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("sessionPaused");
+    expect(command.paused).toBe(true);
+  });
+});
+
 describe("Particle commands", () => {
   it("assignParticle and setParticlePlaying are CommandMessage variants", () => {
     const assign = {

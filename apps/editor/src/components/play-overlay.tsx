@@ -357,6 +357,10 @@ export function PlayOverlay({
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,
+      onSessionPaused: (next) => {
+        userPausedRef.current = next;
+        setPaused(next);
+      },
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {
         setHiddenWidgetIds((prev) =>

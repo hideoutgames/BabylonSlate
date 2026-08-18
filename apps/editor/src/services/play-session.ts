@@ -109,6 +109,16 @@ export type PlayUiCommandHandlers = {
   onUiRemove?: (instanceId: string) => void;
 };
 
+/** Apply worker sessionPaused onto Play overlay chrome. */
+export function applyPlaySessionPausedCommand(
+  command: CommandMessage,
+  onSessionPaused?: (paused: boolean) => void,
+): boolean {
+  if (command.type !== "sessionPaused") return false;
+  onSessionPaused?.(command.paused);
+  return true;
+}
+
 /** Apply worker UI commands onto Play HUD callbacks. */
 export function applyPlayUiCommand(
   command: CommandMessage,
@@ -426,6 +436,7 @@ export function startPlaySession(options: {
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
+  onSessionPaused?: (paused: boolean) => void;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -597,6 +608,7 @@ export function startPlaySession(options: {
       onUiApply: options.onUiApply,
       onUiRemove: options.onUiRemove,
     });
+    applyPlaySessionPausedCommand(command, options.onSessionPaused);
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
     }

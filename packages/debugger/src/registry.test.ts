@@ -3,6 +3,7 @@ import {
   createCommandRegistry,
   type ConsoleCommandHost,
 } from "./registry";
+import { createUserCommand } from "./user-commands";
 
 function recordingHost(): ConsoleCommandHost & { calls: string[] } {
   const calls: string[] = [];
@@ -46,6 +47,9 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     },
     pause: () => {
       calls.push("pause");
+    },
+    resume: () => {
+      calls.push("resume");
     },
     step: () => {
       calls.push("step");
@@ -161,5 +165,76 @@ describe("createCommandRegistry", () => {
         'parameter "level" expects one of off, 512, 1024, 2048, got "low"',
     });
     expect(registry.execute("changescene", recordingHost()).success).toBe(false);
+  });
+
+  it("lists commands with help and details for one name", () => {
+    const registry = createCommandRegistry({ includeDebug: true });
+    registry.register(
+      createUserCommand({
+        name: "heal",
+        description: "Heal the player",
+        category: "game",
+        parameters: [{ name: "amount", type: "float" }],
+        run: () => ({ success: true, output: "" }),
+      }),
+    );
+    const listed = registry.execute("help", recordingHost());
+    expect(listed.success).toBe(true);
+    expect(listed.output).toContain("changescene");
+    expect(listed.output).toContain("heal");
+    expect(listed.output).toContain("pause");
+    const pauseHelp = registry.execute("help pause", recordingHost());
+    expect(pauseHelp.success).toBe(true);
+    expect(pauseHelp.output).toContain("pause");
+    expect(pauseHelp.output.toLowerCase()).toContain("pause");
+  });
+
+  it("reports stripped names from help instead of unknown", () => {
+    const registry = createCommandRegistry({ includeDebug: false });
+    expect(registry.execute("help pause", recordingHost())).toEqual({
+      success: false,
+      output: "debug command 'pause' is not available in this build",
+    });
+  });
+
+  it("runs resume and unpause", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("resume", host)).toEqual({
+      success: true,
+      output: "resumed",
+    });
+    expect(registry.execute("unpause", host)).toEqual({
+      success: true,
+      output: "resumed",
+    });
+    expect(host.calls).toEqual(["resume", "resume"]);
+  });
+
+  it("refuses user commands that overwrite reserved engine names", () => {
+    const registry = createCommandRegistry({ includeDebug: true });
+    registry.register(
+      createUserCommand({
+        name: "pause",
+        description: "User pause",
+        category: "game",
+        parameters: [],
+        run: () => ({ success: true, output: "user" }),
+      }),
+    );
+    expect(registry.get("pause")?.tier).toBe("debug");
+    expect(registry.execute("pause", recordingHost()).output).toBe("paused");
+    const release = createCommandRegistry({ includeDebug: false });
+    release.register(
+      createUserCommand({
+        name: "pause",
+        description: "User pause",
+        category: "game",
+        parameters: [],
+        run: () => ({ success: true, output: "user" }),
+      }),
+    );
+    expect(release.get("pause")).toBeUndefined();
+    expect(release.execute("pause", recordingHost()).success).toBe(false);
   });
 });

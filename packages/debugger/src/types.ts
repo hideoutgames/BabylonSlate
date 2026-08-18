@@ -38,6 +38,7 @@ export type ConsoleCommandHost = {
   setShowBounds?(enabled: boolean): void;
   setWireframe?(enabled: boolean): void;
   pause?(): void;
+  resume?(): void;
   step?(): void;
   setTimeDilation?(rate: number): void;
   dumpLog?(): string;
@@ -49,6 +50,7 @@ export type RegisteredCommand = {
   name: string;
   tier: CommandTier;
   description: string;
+  category?: string;
   parameters: readonly CommandParameter[];
   run(args: Record<string, unknown>, host: ConsoleCommandHost): CommandResult;
 };

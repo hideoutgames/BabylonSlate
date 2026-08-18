@@ -39,7 +39,10 @@ import {
   uiGetWidgetNodeId,
   type BoundWidgetRef,
 } from "@babylonslate/scripting-nodes";
-import { warnDebugTierConsoleCommands } from "@babylonslate/debugger";
+import {
+  warnDebugTierConsoleCommands,
+  warnReservedConsoleCommandNames,
+} from "@babylonslate/debugger";
 import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
   ensureCallParentForEvent,
@@ -1119,6 +1122,7 @@ export function validateSerializedGraph(
     return [
       ...validateGraphs([content], ctx),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
+      ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
     ];
   }
   const eventGraph = materializeLogicGraph(content, options.graphId);
@@ -1135,6 +1139,7 @@ export function validateSerializedGraph(
   return [
     ...validateGraphs(graphs, ctx),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
+    ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];
 }
 

@@ -1716,9 +1716,17 @@ class InProcessRuntime implements RuntimeDriver {
       setWireframe: (enabled) => emitSetting("wireframe", enabled),
       pause: () => {
         this.pause();
+        this.emit({ type: "sessionPaused", paused: true });
+      },
+      resume: () => {
+        this.resume();
+        this.emit({ type: "sessionPaused", paused: false });
       },
       step: () => {
+        const wasPaused = this.paused;
+        this.resume();
         this.tick();
+        if (wasPaused) this.pause();
       },
       setTimeDilation: (rate) => emitSetting("slomo", rate),
       dumpLog: () =>

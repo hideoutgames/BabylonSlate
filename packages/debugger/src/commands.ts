@@ -32,6 +32,7 @@ export const CORE_COMMAND_NAMES = [
   "framecap",
   "volume",
   "quit",
+  "help",
 ] as const;
 
 export const DEBUG_COMMAND_NAMES = [
@@ -44,6 +45,8 @@ export const DEBUG_COMMAND_NAMES = [
   "showbounds",
   "wireframe",
   "pause",
+  "resume",
+  "unpause",
   "step",
   "slomo",
   "dumplog",
@@ -51,14 +54,25 @@ export const DEBUG_COMMAND_NAMES = [
   "snapshot stop",
 ] as const;
 
+export function isReservedConsoleCommandName(name: string): boolean {
+  return RESERVED_COMMAND_NAMES.has(name.trim().toLowerCase());
+}
+
+const RESERVED_COMMAND_NAMES = new Set<string>([
+  ...CORE_COMMAND_NAMES,
+  ...DEBUG_COMMAND_NAMES,
+]);
+
 function flagCommand(
   name: (typeof DEBUG_COMMAND_NAMES)[number],
   apply: (host: ConsoleCommandHost, enabled: boolean) => void,
+  description = name,
 ): RegisteredCommand {
   return {
     name,
     tier: "debug",
-    description: name,
+    category: "engine",
+    description,
     parameters: [FLAG],
     run(args, host) {
       const enabled = Boolean(args.enabled);
@@ -75,6 +89,7 @@ function statCommand(
   return {
     name,
     tier: "debug",
+    category: "engine",
     description: name,
     parameters: [],
     run(_args, host) {
@@ -89,6 +104,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "changescene",
       tier: "core",
+      category: "engine",
       description: "Load a scene by asset guid",
       parameters: [{ name: "scene", type: "string", complete: "scenes" }],
       run(args, host) {
@@ -100,6 +116,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "renderquality",
       tier: "core",
+      category: "engine",
       description: "Set render quality",
       parameters: [QUALITY],
       run(args, host) {
@@ -111,6 +128,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "shadowquality",
       tier: "core",
+      category: "engine",
       description: "Set shadow map size",
       parameters: [SHADOW_QUALITY],
       run(args, host) {
@@ -122,6 +140,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "resolutionscale",
       tier: "core",
+      category: "engine",
       description: "Set resolution scale",
       parameters: [{ name: "scale", type: "float" }],
       run(args, host) {
@@ -133,6 +152,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "framecap",
       tier: "core",
+      category: "engine",
       description: "Set frame cap",
       parameters: [{ name: "fps", type: "int" }],
       run(args, host) {
@@ -144,6 +164,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "volume",
       tier: "core",
+      category: "engine",
       description: "Set master volume",
       parameters: [{ name: "volume", type: "float" }],
       run(args, host) {
@@ -155,6 +176,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "quit",
       tier: "core",
+      category: "engine",
       description: "Stop the session",
       parameters: [],
       run(_args, host) {
@@ -175,6 +197,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "pause",
       tier: "debug",
+      category: "engine",
       description: "Pause simulation",
       parameters: [],
       run(_args, host) {
@@ -183,8 +206,31 @@ export function builtinCommands(): RegisteredCommand[] {
       },
     },
     {
+      name: "resume",
+      tier: "debug",
+      category: "engine",
+      description: "Resume simulation",
+      parameters: [],
+      run(_args, host) {
+        host.resume?.();
+        return ok("resumed");
+      },
+    },
+    {
+      name: "unpause",
+      tier: "debug",
+      category: "engine",
+      description: "Resume simulation",
+      parameters: [],
+      run(_args, host) {
+        host.resume?.();
+        return ok("resumed");
+      },
+    },
+    {
       name: "step",
       tier: "debug",
+      category: "engine",
       description: "Step one tick",
       parameters: [],
       run(_args, host) {
@@ -195,6 +241,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "slomo",
       tier: "debug",
+      category: "engine",
       description: "Set time dilation",
       parameters: [{ name: "rate", type: "float" }],
       run(args, host) {
@@ -206,6 +253,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "dumplog",
       tier: "debug",
+      category: "engine",
       description: "Dump the log ring",
       parameters: [],
       run(_args, host) {
@@ -215,6 +263,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "snapshot start",
       tier: "debug",
+      category: "engine",
       description: "Start the debug snapshot recorder",
       parameters: [],
       run(_args, host) {
@@ -225,6 +274,7 @@ export function builtinCommands(): RegisteredCommand[] {
     {
       name: "snapshot stop",
       tier: "debug",
+      category: "engine",
       description: "Stop the debug snapshot recorder",
       parameters: [],
       run(_args, host) {
@@ -233,4 +283,88 @@ export function builtinCommands(): RegisteredCommand[] {
       },
     },
   ];
+}
+
+function formatParam(param: CommandParameter): string {
+  const type =
+    param.type === "enum" && param.enumValues
+      ? `enum (${param.enumValues.join(", ")})`
+      : param.type;
+  const optional =
+    param.optional || param.defaultValue !== undefined ? ", optional" : "";
+  return `  ${param.name}: ${type}${optional}`;
+}
+
+export function formatCommandHelp(command: RegisteredCommand): string {
+  const header = `${command.name} — ${command.description}`;
+  if (command.parameters.length === 0) return header;
+  return [header, ...command.parameters.map(formatParam)].join("\n");
+}
+
+export function formatCommandList(
+  commands: readonly RegisteredCommand[],
+): string {
+  const groups = new Map<string, RegisteredCommand[]>();
+  for (const command of commands) {
+    const category = command.category?.trim() || "engine";
+    const list = groups.get(category) ?? [];
+    list.push(command);
+    groups.set(category, list);
+  }
+  const keys = [...groups.keys()].sort((a, b) => {
+    if (a === "engine") return -1;
+    if (b === "engine") return 1;
+    return a.localeCompare(b);
+  });
+  const lines: string[] = [];
+  for (const key of keys) {
+    lines.push(`${key}:`);
+    const rows = groups.get(key) ?? [];
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    for (const command of rows) {
+      lines.push(`  ${command.name} — ${command.description}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export function createHelpCommand(
+  list: () => readonly RegisteredCommand[],
+  stripped: ReadonlySet<string>,
+): RegisteredCommand {
+  return {
+    name: "help",
+    tier: "core",
+    category: "engine",
+    description: "List commands or show usage for one name",
+    parameters: [
+      {
+        name: "name",
+        type: "string",
+        optional: true,
+        complete: "commands",
+      },
+    ],
+    run(args) {
+      const query = typeof args.name === "string" ? args.name.trim() : "";
+      if (!query) {
+        return ok(formatCommandList(list()));
+      }
+      const key = query.toLowerCase();
+      if (stripped.has(key)) {
+        return {
+          success: false,
+          output: `debug command '${key}' is not available in this build`,
+        };
+      }
+      const command = list().find((entry) => entry.name.toLowerCase() === key);
+      if (!command) {
+        return {
+          success: false,
+          output: `unknown command: ${query}`,
+        };
+      }
+      return ok(formatCommandHelp(command));
+    },
+  };
 }

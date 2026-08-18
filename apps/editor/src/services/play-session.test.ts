@@ -7,6 +7,7 @@ import {
   applyWorkerPlayStats,
   diagnosticFromCommand,
   applyPlaySessionStep,
+  applyPlaySessionPausedCommand,
   dispatchPlayUiWidgetEvent,
   deliverInspectSnapshot,
   inspectSnapshotFromCommand,
@@ -264,6 +265,43 @@ describe("applyPlayUiCommand", () => {
         {},
       ),
     ).toBe(false);
+  });
+});
+
+describe("applyPlaySessionPausedCommand", () => {
+  it("forwards sessionPaused to overlay chrome", () => {
+    const onSessionPaused = vi.fn();
+    expect(
+      applyPlaySessionPausedCommand(
+        { type: "sessionPaused", paused: true },
+        onSessionPaused,
+      ),
+    ).toBe(true);
+    expect(onSessionPaused).toHaveBeenCalledWith(true);
+    expect(
+      applyPlaySessionPausedCommand(
+        { type: "sessionPaused", paused: false },
+        onSessionPaused,
+      ),
+    ).toBe(true);
+    expect(onSessionPaused).toHaveBeenCalledWith(false);
+  });
+
+  it("ignores other commands", () => {
+    const onSessionPaused = vi.fn();
+    expect(
+      applyPlaySessionPausedCommand(
+        {
+          type: "stats",
+          frameId: 1,
+          tickIndex: 1,
+          scriptMs: 0,
+          physicsMs: 0,
+        },
+        onSessionPaused,
+      ),
+    ).toBe(false);
+    expect(onSessionPaused).not.toHaveBeenCalled();
   });
 });
 

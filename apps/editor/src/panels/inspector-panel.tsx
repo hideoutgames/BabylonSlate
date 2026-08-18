@@ -21,6 +21,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
@@ -58,6 +59,7 @@ import {
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
+import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
   collectEnumMemberNames,
   commandParameterRows,
@@ -855,7 +857,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         {isCommandRun ? (
           <>
             <FieldGroup>
-              <Field>
+              <Field
+                data-invalid={
+                  isReservedConsoleCommandName(
+                    String(selectedNode.data.commandName ?? ""),
+                  ) || undefined
+                }
+              >
                 <FieldLabel htmlFor="command-name">Command Name</FieldLabel>
                 <Input
                   id="command-name"
@@ -866,6 +874,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                     updateNodeData({ commandName: event.target.value })
                   }
                 />
+                {isReservedConsoleCommandName(
+                  String(selectedNode.data.commandName ?? ""),
+                ) ? (
+                  <FieldError data-testid="command-name-reserved">
+                    Command Name '{String(selectedNode.data.commandName ?? "").trim()}' is reserved by the engine
+                  </FieldError>
+                ) : null}
               </Field>
               <Field>
                 <FieldLabel htmlFor="command-description">
