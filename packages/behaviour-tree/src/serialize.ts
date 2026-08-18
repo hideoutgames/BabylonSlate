@@ -44,9 +44,13 @@ export const BT_CHILDREN_PIN: BtPin = {
   type: { kind: "exec" },
 };
 
-export function pinsForBtKind(kind: BtNodeKind): BtPin[] {
-  if (kind === "task") return [BT_PARENT_PIN];
-  return [BT_PARENT_PIN, BT_CHILDREN_PIN];
+export function pinsForBtKind(
+  kind: BtNodeKind,
+  options?: { isRoot?: boolean },
+): BtPin[] {
+  const includeParent = options?.isRoot !== true;
+  if (kind === "task") return includeParent ? [BT_PARENT_PIN] : [];
+  return includeParent ? [BT_PARENT_PIN, BT_CHILDREN_PIN] : [BT_CHILDREN_PIN];
 }
 
 type HierarchyRow = {
@@ -284,7 +288,7 @@ export function behaviourTreeToSerialized(
         properties: node.properties,
         lastResult: overlay?.lastResults[node.id] ?? null,
         running: running.has(node.id),
-        __pins: pinsForBtKind(node.kind),
+        __pins: pinsForBtKind(node.kind, { isRoot: node.id === doc.rootId }),
         __protected: node.id === doc.rootId,
       },
     })),
@@ -384,7 +388,10 @@ export function hydrateBehaviourTreeForEditor(
       const kind = parseKind(data.kind, String(data.classId ?? ""));
       return {
         ...node,
-        data: { ...data, __pins: pinsForBtKind(kind) },
+        data: {
+          ...data,
+          __pins: pinsForBtKind(kind, { isRoot: data.__protected === true }),
+        },
       };
     }),
   };

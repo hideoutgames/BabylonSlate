@@ -178,6 +178,8 @@ export function connectEventPointerId(event: Event | {
   return 1;
 }
 
+export type ConnectEndMode = "default" | "add-node" | "disabled";
+
 export type SecondaryCancelPointer = {
   connectionActive: boolean;
   dragPointerId: number | null;
@@ -196,6 +198,25 @@ export function shouldCancelConnectOnSecondaryPointer({
   return eventPointerId !== dragPointerId;
 }
 
+export type SecondaryAddNodeCancelPointer = {
+  connectionActive: boolean;
+  dragPointerId: number | null;
+  eventPointerId: number;
+  mode: ConnectEndMode;
+};
+
+export function shouldCancelConnectionOnSecondaryPointer({
+  connectionActive,
+  dragPointerId,
+  eventPointerId,
+  mode,
+}: SecondaryAddNodeCancelPointer): boolean {
+  if (mode !== "add-node") return false;
+  if (!connectionActive) return false;
+  if (dragPointerId == null) return false;
+  return eventPointerId !== dragPointerId;
+}
+
 export function shouldOpenAddNodeOnConnectEnd({
   hasTargetHandle,
   pointerOverNode,
@@ -206,8 +227,6 @@ export function shouldOpenAddNodeOnConnectEnd({
   if (hasTargetHandle || pointerOverNode) return false;
   return !safePins.some((pin) => isNearSourcePin(pin, pointer, thresholdPx));
 }
-
-export type ConnectEndMode = "default" | "add-node" | "disabled";
 
 export type ConnectEndAction = "add-node" | "break" | "none";
 

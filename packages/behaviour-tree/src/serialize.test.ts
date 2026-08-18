@@ -13,6 +13,7 @@ import {
   behaviourTreeToSerialized,
   hydrateBehaviourTreeForEditor,
   layoutBehaviourTree,
+  pinsForBtKind,
   reorderSiblingsByPosition,
   serializedToBehaviourTree,
 } from "./serialize";
@@ -60,6 +61,10 @@ describe("behaviour tree serialize", () => {
     expect(sequence?.data.title).toBe("Sequence");
     expect(graph.nodes.find((entry) => entry.id === "root")?.data.__protected).toBe(true);
     expect(Array.isArray(sequence?.data.decorators)).toBe(true);
+    expect(
+      (graph.nodes.find((entry) => entry.id === "root")?.data.__pins as Array<{ id: string }>)
+        ?.map((pin) => pin.id),
+    ).toEqual([BT_CHILDREN_HANDLE]);
   });
 
   it("round-trips a tree with attached decorator rows (not independent nodes)", () => {
@@ -309,7 +314,41 @@ describe("behaviour tree serialize", () => {
       behaviourTreeToSerialized(createDefaultBehaviourTree()),
     );
     const root = graph.nodes.find((entry) => entry.id === "root");
-    const pins = root?.data.__pins as Array<{ id: string }>;
-    expect(pins?.map((pin) => pin.id)).toEqual([BT_PARENT_HANDLE, BT_CHILDREN_HANDLE]);
+    const sequence = graph.nodes.find((entry) => entry.id === "sequence");
+    const rootPins = root?.data.__pins as Array<{ id: string }>;
+    const sequencePins = sequence?.data.__pins as Array<{ id: string }>;
+    expect(rootPins?.map((pin) => pin.id)).toEqual([BT_CHILDREN_HANDLE]);
+    expect(sequencePins?.map((pin) => pin.id)).toEqual([
+      BT_PARENT_HANDLE,
+      BT_CHILDREN_HANDLE,
+    ]);
+  });
+
+  it("omits the parent pin for the root selector", () => {
+    expect(pinsForBtKind("selector").map((pin) => pin.id)).toEqual([
+      BT_PARENT_HANDLE,
+      BT_CHILDREN_HANDLE,
+    ]);
+    expect(pinsForBtKind("selector", { isRoot: true }).map((pin) => pin.id)).toEqual(
+      [BT_CHILDREN_HANDLE],
+    );
+    expect(pinsForBtKind("task", { isRoot: true }).map((pin) => pin.id)).toEqual([]);
+  });
+
+  it("hydrates a missing pin list from __protected", () => {
+    const graph = hydrateBehaviourTreeForEditor({
+      nodes: [
+        {
+          id: "root",
+          type: BT_NODE_TYPE,
+          position: { x: 0, y: 0 },
+          data: { kind: "selector", classId: "bt.composite.selector", __protected: true },
+        },
+      ],
+      edges: [],
+    });
+    expect(
+      (graph.nodes[0]?.data.__pins as Array<{ id: string }>)?.map((pin) => pin.id),
+    ).toEqual([BT_CHILDREN_HANDLE]);
   });
 });
