@@ -84,6 +84,7 @@ type LiveVoice = {
   pitch: number;
   reverbSend: boolean;
   muffleThroughWalls: boolean;
+  loop: boolean;
   previousPose: AudioPose | null;
   clipName: string | null;
   loop: boolean;
@@ -173,6 +174,11 @@ export class AudioService {
     this.onDiagnostic = options.onDiagnostic;
     this.now = options.now ?? (() => performance.now());
     this.random = options.random ?? Math.random;
+    this.backend.onVoiceEnded = (voiceId) => {
+      const voice = this.voices.get(voiceId);
+      if (!voice || voice.loop) return;
+      this.stopVoice(voiceId);
+    };
     this.publishStats();
     void this.backend.warmAsync().catch(() => undefined);
   }
@@ -290,7 +296,7 @@ export class AudioService {
   syncListener(pose: AudioPose): void {
     this.listener = pose;
     this.backend.setListenerPose(pose);
-    this.refreshSpatialVoices(false);
+    if (this.hasSpatialVoices()) this.refreshSpatialVoices(false);
     this.refreshReverbWet();
   }
 
@@ -301,7 +307,14 @@ export class AudioService {
     for (const actor of actors) {
       this.slotPoses.set(actor.slotId, actor.position);
     }
-    this.refreshSpatialVoices(true);
+    if (this.hasSpatialVoices()) this.refreshSpatialVoices(true);
+  }
+
+  hasSpatialVoices(): boolean {
+    for (const voice of this.voices.values()) {
+      if (voice.spatial) return true;
+    }
+    return false;
   }
 
   stats(): AudioStats {
@@ -442,6 +455,7 @@ export class AudioService {
       }
     }
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
+    this.stopVoice(voiceId);
     if (this.voices.size >= AUDIO_MAX_CONCURRENT_VOICES) {
       const oldest = this.voices.keys().next().value;
       if (oldest) this.stopVoice(oldest);
@@ -492,6 +506,7 @@ export class AudioService {
       pitch,
       reverbSend: resolved.environmentReverb,
       muffleThroughWalls: resolved.muffleThroughWalls,
+      loop: request.loop,
       previousPose: null,
       clipName: clip.name.trim() === "" ? null : clip.name,
       loop: request.loop,
@@ -517,9 +532,9 @@ export class AudioService {
   private stopVoice(voiceId: string): void {
     const voice = this.voices.get(voiceId);
     if (!voice) return;
-    this.backend.stop(voiceId);
     this.voices.delete(voiceId);
     this.cache.unpin(voice.cacheKey);
+    this.backend.stop(voiceId);
     this.refreshReverbWet();
     this.publishStats();
   }
@@ -620,7 +635,13 @@ export class AudioService {
   }
 
   private refreshReverbWet(): void {
-    const anySend = [...this.voices.values()].some((voice) => voice.reverbSend);
+    let anySend = false;
+    for (const voice of this.voices.values()) {
+      if (voice.reverbSend) {
+        anySend = true;
+        break;
+      }
+    }
     const profile =
       !anySend || isDryAudioReverbFallback(this.reverbField)
         ? { wet: 0, decay: 0.4, damping: 0.5 }

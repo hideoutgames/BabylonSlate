@@ -2,10 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
+  snapshotFloatCount,
+  writeSnapshotHeader,
+} from "@babylonslate/bridge";
+import {
   applyPlayFpsSample,
   applyPlayInputModeCommand,
   applyPlayUiCommand,
   applyWorkerPlayStats,
+  applyPlaySnapshotTick,
   diagnosticFromCommand,
   applyPlaySessionStep,
   applyPlaySessionPausedCommand,
@@ -173,9 +178,25 @@ describe("playInputStampTick", () => {
     expect(playInputStampTick(3, 99)).toBe(3);
   });
 
-  it("uses the last worker stats tick instead of a wall-clock index", () => {
+  it("uses the last worker snapshot tick instead of a wall-clock index", () => {
     expect(playInputStampTick(undefined, 0)).toBe(0);
     expect(playInputStampTick(undefined, 12)).toBe(12);
+  });
+});
+
+describe("applyPlaySnapshotTick", () => {
+  it("stamps worker input from snapshot tickIndex when stats are sparse", () => {
+    const unpublished = new Float32Array(snapshotFloatCount(1));
+    expect(applyPlaySnapshotTick(4, unpublished)).toBe(4);
+    const published = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(published, {
+      frameId: 9,
+      tickIndex: 12,
+      actorCount: 0,
+      scriptMs: 1,
+      physicsMs: 2,
+    });
+    expect(applyPlaySnapshotTick(4, published)).toBe(12);
   });
 });
 

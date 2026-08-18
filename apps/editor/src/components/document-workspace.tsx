@@ -526,7 +526,8 @@ export function DocumentWorkspace() {
           doc.ref.kind === "audio-channel" ||
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
-          doc.ref.kind === "particle-system"
+          doc.ref.kind === "particle-system" ||
+          doc.ref.kind === "skybox-creator"
         ) {
           if (!shouldMount) return null;
           return (

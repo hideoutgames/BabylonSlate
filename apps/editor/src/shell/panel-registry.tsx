@@ -64,6 +64,10 @@ import {
   ParticleSystemDetailsPanel,
   ParticleSystemPreviewPanel,
 } from "../components/particle-editor";
+import {
+  SkyboxCreatorDetailsPanel,
+  SkyboxCreatorPreviewPanel,
+} from "../components/skybox-creator-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -200,6 +204,12 @@ export const panelComponents = {
   ),
   "particle-system-details": (props: IDockviewPanelProps) => (
     <ParticleSystemDetailsPanel {...props} />
+  ),
+  "skybox-creator-preview": (props: IDockviewPanelProps) => (
+    <SkyboxCreatorPreviewPanel {...props} />
+  ),
+  "skybox-creator-details": (props: IDockviewPanelProps) => (
+    <SkyboxCreatorDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />

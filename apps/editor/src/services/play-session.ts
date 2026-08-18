@@ -35,6 +35,7 @@ import {
 import { encodeInputEvents } from "@babylonslate/input";
 import {
   snapshotFloatCount,
+  snapshotTickIndex,
   type CommandMessage,
   type ControlMessage,
   type ScriptBundleEntry,
@@ -369,13 +370,21 @@ export function resolvePlayFrameCap(fps?: number): number {
 /**
  * Tick stamp for Play canvas events. In-process Play uses World.clock;
  * the worker host has no World on the main thread, so it must use the last
- * `stats.tickIndex` rather than `performance.now() / (1000/60)`.
+ * snapshot `tickIndex` rather than `performance.now() / (1000/60)`.
  */
 export function playInputStampTick(
   inProcessTickIndex: number | undefined,
   lastWorkerTickIndex: number,
 ): number {
   return inProcessTickIndex ?? lastWorkerTickIndex;
+}
+
+/** Worker hosts stamp input from snapshot tickIndex so throttled stats cannot drop sticks. */
+export function applyPlaySnapshotTick(
+  previous: number,
+  buffer: Float32Array,
+): number {
+  return snapshotTickIndex(buffer) ?? previous;
 }
 
 export interface PlayHudStats {
@@ -643,7 +652,6 @@ export function startPlaySession(options: {
       });
     }
     if (command.type === "stats") {
-      lastWorkerTickIndex = command.tickIndex;
       emitHudStats(
         applyWorkerPlayStats(hudStats, {
           fps: command.fps,
@@ -726,7 +734,10 @@ export function startPlaySession(options: {
     worker = createGameWorkerHost();
     runtimeMode = "worker";
     worker.onCommand((cmd) => onCommand(cmd));
-    worker.onSnapshot((buffer) => handle.pushSnapshot(buffer));
+    worker.onSnapshot((buffer) => {
+      lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, buffer);
+      handle.pushSnapshot(buffer);
+    });
     for (const control of playSessionBootControls({
       load: loadControl,
       userInterfaces: options.userInterfaces,
@@ -867,6 +878,7 @@ export function startPlaySession(options: {
     if (runtime) {
       runtime.advance(elapsed);
       if (runtime.copySnapshot(snapBuf)) {
+        lastWorkerTickIndex = applyPlaySnapshotTick(lastWorkerTickIndex, snapBuf);
         handle.pushSnapshot(snapBuf);
       }
     }

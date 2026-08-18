@@ -74,7 +74,7 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 | { type: "setGlobalVolume"; volume: number }
 ```
 
-`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits `playSound` with `emitterActorGuid` = the owning actor. Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies). Missing Actor + attenuation → non-spatial + one diagnostic.
+`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits **once** (`voiceId` = component guid, `emitterActorGuid` = owning actor). Native `loop: true` is **one** Babylon voice — do not retrigger every tick. Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies). Missing Actor + attenuation → non-spatial + one diagnostic. Overlay Play does not log every `playSound` into the chrome log (retriggers must not paint the DOM).
 
 ## Unlock and cache
 
@@ -84,11 +84,11 @@ Asset-document preview **prefetches** clip bytes when the tab opens and starts p
 
 Preview Build’s iframe uses `outline-none` / `focus-visible:outline-none`; the packaged player also sets `canvas:focus { outline: none }` so a click does not draw a browser focus ring. Packing already includes Audio (BSAU); `export-game-inputs` loads documents as kind `audio`.
 
-`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32.
+`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
 
 ## Spatial
 
-Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply), including actor **quaternion** so cones orient. Listener is `scene.activeCamera` after snapshot apply: **possessed camera**, else Scene Default Camera, else the Play fallback named `"camera"`. Pose is world space (`globalPosition` + `absoluteRotation`). No scene listener picker and no second listener actor. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`, composed with authored pitch. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0). Sound Attenuation Details expose cone angles and Doppler next to radii/model/rolloff/spatialisation.
+Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply), including actor **quaternion** so cones orient. The Play render loop reuses a pose scratch array and **skips** `syncSnapshot` / spatial refresh when `AudioService` has no spatial emitter (a non-spatial looping bed is pose-follow free). Listener sync still runs for reverb. Listener is `scene.activeCamera` after snapshot apply: **possessed camera**, else Scene Default Camera, else the Play fallback named `"camera"`. Pose is world space (`globalPosition` + `absoluteRotation`). No scene listener picker and no second listener actor. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`, composed with authored pitch. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0). Sound Attenuation Details expose cone angles and Doppler next to radii/model/rolloff/spatialisation.
 
 ## Reverb bake
 

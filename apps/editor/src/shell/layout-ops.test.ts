@@ -196,6 +196,12 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(FOCUS_PRIMARY_PANEL["particle-emitter"]).toBe(
       "particle-emitter-preview",
     );
+    expect(resolveFocusKeepPanelIds("skybox-creator", [])).toEqual([
+      "skybox-creator-preview",
+    ]);
+    expect(FOCUS_PRIMARY_PANEL["skybox-creator"]).toBe(
+      "skybox-creator-preview",
+    );
   });
 
   it("keeps already-open Editor Utility tabs when the keep list is the default", () => {

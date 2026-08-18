@@ -39,4 +39,9 @@ describe("panelComponents", () => {
     expect(panelComponents["particle-system-preview"]).toBeTypeOf("function");
     expect(panelComponents["particle-system-details"]).toBeTypeOf("function");
   });
+
+  it("registers Skybox Creator Preview and Details docks", () => {
+    expect(panelComponents["skybox-creator-preview"]).toBeTypeOf("function");
+    expect(panelComponents["skybox-creator-details"]).toBeTypeOf("function");
+  });
 });

@@ -20,6 +20,9 @@ export const EDITOR_UTILITY_DOCK_KINDS = [
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
+  "particle-emitter",
+  "particle-system",
+  "skybox-creator",
 ] as const;
 
 export type EditorUtilityDockKind = (typeof EDITOR_UTILITY_DOCK_KINDS)[number];
@@ -45,7 +48,11 @@ export function normalizeEditorUtilityDockKind(
 }
 
 export function isEditorOnlyAssetType(type: string): boolean {
-  return type === "EditorUtilityInterface" || type === "PluginSettings";
+  return (
+    type === "EditorUtilityInterface" ||
+    type === "PluginSettings" ||
+    type === "SkyboxCreator"
+  );
 }
 
 function ancestryIncludes(

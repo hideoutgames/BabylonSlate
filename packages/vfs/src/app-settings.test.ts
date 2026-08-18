@@ -37,6 +37,7 @@ describe("app settings", () => {
       "sound-attenuation": ["sound-attenuation-details"],
       "particle-emitter": ["particle-emitter-preview"],
       "particle-system": ["particle-system-preview"],
+      "skybox-creator": ["skybox-creator-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
@@ -164,6 +165,9 @@ describe("app settings", () => {
     ]);
     expect(parsed.focusKeepPanels["particle-system"]).toEqual([
       "particle-system-preview",
+    ]);
+    expect(parsed.focusKeepPanels["skybox-creator"]).toEqual([
+      "skybox-creator-preview",
     ]);
   });
 

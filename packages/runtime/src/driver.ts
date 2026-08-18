@@ -63,6 +63,7 @@ import {
   isInfiniteLoopError,
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   DEFAULT_INFINITE_LOOP_COUNT,
+  shouldEmitStatsCommand,
   type CommandRegistry,
   type ConsoleCommandHost,
   type InfiniteLoopGuard,
@@ -354,6 +355,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
   private readonly audioAssetGuids = new Set<string>();
+  private lastStatsEmitMs: number | null = null;
+  private readonly lastBtStateJson = new Map<number, string>();
 
   get lastScriptMs(): number {
     return this._lastScriptMs;
@@ -933,6 +936,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.animInitializedBySlot.clear();
     this.pendingAnimJumpBySlot.clear();
     this.btEvalBySlot.clear();
+    this.lastBtStateJson.clear();
     this.clearNavAgents();
     this.playScene = next;
     this.playSceneGuid = this.sceneGuidByKey.get(key) ?? key;
@@ -1043,6 +1047,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   restoreBtFromTrace(states: readonly TraceBtState[]): void {
     this.btEvalBySlot.clear();
+    this.lastBtStateJson.clear();
     for (const row of states) {
       this.btEvalBySlot.set(row.slotId, {
         stack: row.stack.map((frame) => ({ ...frame })),
@@ -1692,6 +1697,15 @@ class InProcessRuntime implements RuntimeDriver {
       this.btEvalBySlot.set(slotId, next);
       this.currentBtNodeId = null;
       this.currentBtAssetGuid = null;
+      const payload = JSON.stringify({
+        status: next.status,
+        btNodeId: next.btNodeId,
+        lastResults: next.lastResults,
+        blackboard: next.blackboard,
+        stack: next.stack,
+      });
+      if (this.lastBtStateJson.get(slotId) === payload) continue;
+      this.lastBtStateJson.set(slotId, payload);
       this.emit({
         type: "btState",
         slotId,
@@ -2276,13 +2290,17 @@ class InProcessRuntime implements RuntimeDriver {
     this.frameId += 1;
     this.publishSnapshot();
     this.emitDebugColliders();
-    this.emit({
-      type: "stats",
-      frameId: this.frameId,
-      tickIndex: this.world.clock.tickIndex,
-      scriptMs: this._lastScriptMs,
-      physicsMs: this._lastPhysicsMs,
-    });
+    const statsNow = nowMs();
+    if (shouldEmitStatsCommand(statsNow, this.lastStatsEmitMs)) {
+      this.lastStatsEmitMs = statsNow;
+      this.emit({
+        type: "stats",
+        frameId: this.frameId,
+        tickIndex: this.world.clock.tickIndex,
+        scriptMs: this._lastScriptMs,
+        physicsMs: this._lastPhysicsMs,
+      });
+    }
     if (this.trace.isRecording) {
       const recordedTick = this.world.clock.tickIndex;
       this.trace.recordFrame({

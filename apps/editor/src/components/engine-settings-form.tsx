@@ -123,6 +123,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "particle-system",
     label: "Particle System",
   },
+  {
+    kind: "skybox-creator",
+    keepKey: "skybox-creator",
+    label: "Skybox Creator",
+  },
 ];
 
 export type EngineSettingsCategoryId =

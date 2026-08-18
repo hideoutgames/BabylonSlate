@@ -202,6 +202,20 @@ describe("listDockWindows", () => {
     });
     expect(primaryDockPanel("particle-emitter")).toBe("particle-emitter-preview");
     expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");
+    expect(listDockWindows("skybox-creator").map((entry) => entry.id)).toEqual([
+      "skybox-creator-preview",
+      "skybox-creator-details",
+    ]);
+    expect(
+      listDockWindows("skybox-creator").find(
+        (entry) => entry.id === "skybox-creator-details",
+      )?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "skybox-creator-preview",
+      direction: "right",
+      initialWidth: 280,
+    });
+    expect(primaryDockPanel("skybox-creator")).toBe("skybox-creator-preview");
     expect(
       listDockWindows("sprite-animation").find(
         (entry) => entry.id === "sprite-animation-details",
@@ -340,6 +354,7 @@ describe("listDockWindows", () => {
       "particle-emitter",
       "particle-system",
       "audio",
+      "skybox-creator",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
         false,
