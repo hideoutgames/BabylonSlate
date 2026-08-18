@@ -3,6 +3,7 @@ import type { ScriptHost } from "@babylonslate/runtime";
 import { classIdForGraphPath } from "../services/script-compiler";
 
 export const EDITOR_UTILITY_EVENTS = {
+  beginPlay: "onEditorBeginPlay",
   startup: "onEditorStartup",
   sceneOpen: "onSceneOpen",
   sceneSaved: "onSceneSaved",
@@ -52,7 +53,10 @@ export function fireEditorUtilityEvent(
 
 /** Events to fire after the in-process host loads registered EUO graphs. */
 export function editorUtilityBootEvents(hasOpenScene: boolean): string[] {
-  const events: string[] = [EDITOR_UTILITY_EVENTS.startup];
+  const events: string[] = [
+    EDITOR_UTILITY_EVENTS.beginPlay,
+    EDITOR_UTILITY_EVENTS.startup,
+  ];
   if (hasOpenScene) events.push(EDITOR_UTILITY_EVENTS.sceneOpen);
   return events;
 }

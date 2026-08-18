@@ -54,6 +54,13 @@ export {
   type WorldSnapshot,
 } from "./snapshot";
 export {
+  createDebugInspectSnapshot,
+  sanitizeInspectValue,
+  type DebugInspectKind,
+  type DebugInspectNode,
+  type DebugInspectSnapshot,
+} from "./inspect-snapshot";
+export {
   BorderWidget,
   ButtonWidget,
   CanvasWidget,

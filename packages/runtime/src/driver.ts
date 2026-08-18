@@ -5,12 +5,14 @@ import {
   type CommandMessage,
   type UiWidgetEventControl,
   type UserInterfaceWidgetMeta,
+  uiWidgetEventExport,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
   World,
   createActorsFromSerializedScene,
   createWorldSnapshot,
+  createDebugInspectSnapshot,
   stringifyWorldSnapshot,
   Actor,
   ActorComponent,
@@ -20,6 +22,7 @@ import {
   createWidgetForKind,
   userInterfaceAssetClassDef,
   type ClassKind,
+  type DebugInspectSnapshot,
   type TickContext,
   type TickPhase,
 } from "@babylonslate/object-model";
@@ -29,6 +32,7 @@ import {
   isUserInterfaceClassId,
   normalizeUserInterfaceClassRef,
   userInterfaceAssetGuidFromClassId,
+  userInterfaceClassId,
   widgetClassIdForKind,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -197,6 +201,7 @@ export interface RuntimeDriver {
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
+  inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
     classId: string,
     event: string,
@@ -317,6 +322,8 @@ class InProcessRuntime implements RuntimeDriver {
   private currentBtAssetGuid: string | null = null;
   private uiInstanceSeq = 0;
   private readonly userInterfaces = new Map<string, UserInterface>();
+  private readonly nestedUserInterfaces = new Map<string, UserInterface>();
+  private readonly uiChildren = new Map<string, string[]>();
   private readonly userInterfaceDocuments = new Map<
     string,
     UserInterfaceWidgetMeta[]
@@ -920,6 +927,10 @@ class InProcessRuntime implements RuntimeDriver {
     return this.commands.execute(command, this.consoleHost());
   }
 
+  inspectWorld(): DebugInspectSnapshot {
+    return createDebugInspectSnapshot(this.world);
+  }
+
   invokeScriptEvent(
     classId: string,
     event: string,
@@ -942,7 +953,10 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   getUserInterface(instanceId: string): UserInterface | undefined {
-    return this.userInterfaces.get(instanceId);
+    return (
+      this.userInterfaces.get(instanceId) ??
+      this.nestedUserInterfaces.get(instanceId)
+    );
   }
 
   listUserInterfaces(): readonly UserInterface[] {
@@ -954,46 +968,14 @@ class InProcessRuntime implements RuntimeDriver {
     if (!classId) return null;
     const assetGuid = userInterfaceAssetGuidFromClassId(classId);
     if (!assetGuid) return null;
-    this.ensureUserInterfaceClass(classId, assetGuid);
-    const hooks = this.scriptHost.hooksFor(classId);
-    const defaults = this.objectDefaults(classId);
     const instanceId = `ui-${++this.uiInstanceSeq}`;
-    const ui = new UserInterface({
+    return this.mountUserInterface({
       classId,
-      guid: instanceId,
       assetGuid,
-      variables: defaults.variables,
-      implementedInterfaces: defaults.implementedInterfaces,
-      hooks: hooks
-        ? {
-            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
-            onTick: (self, ctx) =>
-              this.guardScript(() => hooks.onTick?.(self, ctx)),
-            onDestroyed: (self) =>
-              this.guardScript(() => hooks.onDestroyed?.(self)),
-          }
-        : undefined,
-    });
-    for (const meta of this.userInterfaceDocuments.get(assetGuid) ?? []) {
-      const widget = createWidgetForKind(meta.kind, {
-        classId: widgetClassIdForKind(meta.kind),
-        widgetId: meta.id,
-        guid: `${instanceId}:${meta.id}`,
-        owner: ui,
-      });
-      ui.widgets.push(widget);
-      widget.callOnCreation();
-    }
-    this.scriptHost.bindInterfaceHandlers(ui);
-    this.userInterfaces.set(instanceId, ui);
-    ui.callOnCreation();
-    this.emit({
-      type: "uiApply",
       instanceId,
-      classId,
-      assetGuid,
+      emitCommands: true,
+      seenGuids: new Set(),
     });
-    return ui;
   }
 
   removeUserInterface(
@@ -1013,16 +995,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   dispatchUiWidgetEvent(event: UiWidgetEventControl): void {
-    const ui = this.userInterfaces.get(event.instanceId);
+    const ui = this.getUserInterface(event.instanceId);
     if (!ui || ui.destroyed) return;
-    const widget =
-      ui.widgets.find((entry) => entry.widgetId === event.widgetId) ?? null;
-    const eventName = uiWidgetEventName(event.kind);
-    this.scriptHost.invokeEvent(ui.classId, eventName, ui, {
-      widget,
-      widgetId: event.widgetId,
-      value: event.value,
-    });
+    this.dispatchUiWidgetEventOn(ui, event.widgetId, event);
   }
 
   registerUserCommand(def: UserCommandDef): void {
@@ -2413,8 +2388,118 @@ class InProcessRuntime implements RuntimeDriver {
     });
   }
 
-  private teardownUserInterface(ui: UserInterface): void {
+  private mountUserInterface(options: {
+    classId: string;
+    assetGuid: string;
+    instanceId: string;
+    emitCommands: boolean;
+    seenGuids: Set<string>;
+  }): UserInterface {
+    const { classId, assetGuid, instanceId, emitCommands, seenGuids } = options;
+    const nextSeen = new Set(seenGuids);
+    nextSeen.add(assetGuid);
+    this.ensureUserInterfaceClass(classId, assetGuid);
+    const hooks = this.scriptHost.hooksFor(classId);
+    const defaults = this.objectDefaults(classId);
+    const ui = new UserInterface({
+      classId,
+      guid: instanceId,
+      assetGuid,
+      variables: defaults.variables,
+      implementedInterfaces: defaults.implementedInterfaces,
+      hooks: hooks
+        ? {
+            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+            onTick: (self, ctx) =>
+              this.guardScript(() => hooks.onTick?.(self, ctx)),
+            onDestroyed: (self) =>
+              this.guardScript(() => hooks.onDestroyed?.(self)),
+          }
+        : undefined,
+    });
+    for (const meta of this.userInterfaceDocuments.get(assetGuid) ?? []) {
+      const widget = createWidgetForKind(meta.kind, {
+        classId: widgetClassIdForKind(meta.kind),
+        widgetId: meta.id,
+        guid: `${instanceId}:${meta.id}`,
+        owner: ui,
+      });
+      ui.widgets.push(widget);
+      widget.callOnCreation();
+      const nestedGuid = meta.nestedUiGuid?.trim();
+      if (
+        meta.kind === "UserInterface" &&
+        nestedGuid &&
+        !nextSeen.has(nestedGuid)
+      ) {
+        const nestedClassId = userInterfaceClassId(nestedGuid);
+        const nestedId = `${instanceId}/${meta.id}`;
+        const nested = this.mountUserInterface({
+          classId: nestedClassId,
+          assetGuid: nestedGuid,
+          instanceId: nestedId,
+          emitCommands: false,
+          seenGuids: nextSeen,
+        });
+        this.nestedUserInterfaces.set(nestedId, nested);
+        const kids = this.uiChildren.get(instanceId) ?? [];
+        kids.push(nestedId);
+        this.uiChildren.set(instanceId, kids);
+      }
+    }
+    this.scriptHost.bindInterfaceHandlers(ui);
+    if (emitCommands) {
+      this.userInterfaces.set(instanceId, ui);
+    }
+    ui.callOnCreation();
+    if (emitCommands) {
+      this.emit({
+        type: "uiApply",
+        instanceId,
+        classId,
+        assetGuid,
+      });
+    }
+    return ui;
+  }
+
+  private dispatchUiWidgetEventOn(
+    ui: UserInterface,
+    widgetId: string,
+    event: UiWidgetEventControl,
+  ): void {
+    const slash = widgetId.indexOf("/");
+    if (slash > 0) {
+      const slotId = widgetId.slice(0, slash);
+      const rest = widgetId.slice(slash + 1);
+      const nestedId = `${ui.guid}/${slotId}`;
+      const nested = this.nestedUserInterfaces.get(nestedId);
+      if (nested && !nested.destroyed) {
+        this.dispatchUiWidgetEventOn(nested, rest, event);
+        return;
+      }
+    }
+    const widget =
+      ui.widgets.find((entry) => entry.widgetId === widgetId) ?? null;
+    const eventName = uiWidgetEventName(event.kind);
+    this.scriptHost.invokeEvent(ui.classId, eventName, ui, {
+      widget,
+      widgetId,
+      value: event.value,
+    });
+  }
+
+  private teardownUserInterface(ui: UserInterface, emitCommands = true): void {
+    const children = this.uiChildren.get(ui.guid) ?? [];
+    this.uiChildren.delete(ui.guid);
+    for (const childId of children) {
+      const child = this.nestedUserInterfaces.get(childId);
+      if (child && !child.destroyed) {
+        this.teardownUserInterface(child, false);
+      }
+    }
     this.userInterfaces.delete(ui.guid);
+    this.nestedUserInterfaces.delete(ui.guid);
     for (const widget of [...ui.widgets].reverse()) {
       widget.destroyed = true;
       widget.callOnDestroyed();
@@ -2423,7 +2508,9 @@ class InProcessRuntime implements RuntimeDriver {
     ui.widgets.length = 0;
     ui.destroyed = true;
     ui.callOnDestroyed();
-    this.emit({ type: "uiRemove", instanceId: ui.guid });
+    if (emitCommands) {
+      this.emit({ type: "uiRemove", instanceId: ui.guid });
+    }
   }
 
   private teardownAllUserInterfaces(): void {
@@ -2455,7 +2542,7 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
     };
-    for (const ui of [...this.userInterfaces.values()]) {
+    for (const ui of [...this.userInterfaces.values(), ...this.nestedUserInterfaces.values()]) {
       if (ui.destroyed) continue;
       this.guardScript(() => ui.callOnTick(ctx));
     }
@@ -2464,11 +2551,8 @@ class InProcessRuntime implements RuntimeDriver {
 
 function uiWidgetEventName(
   kind: UiWidgetEventControl["kind"],
-): "onWidgetClick" | "onWidgetValue" | "onWidgetChecked" | "onWidgetText" {
-  if (kind === "value") return "onWidgetValue";
-  if (kind === "checked") return "onWidgetChecked";
-  if (kind === "text") return "onWidgetText";
-  return "onWidgetClick";
+): string {
+  return uiWidgetEventExport(kind);
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {

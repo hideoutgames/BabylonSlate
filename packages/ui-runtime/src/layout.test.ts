@@ -5,6 +5,7 @@ import {
   createDefaultUserInterface,
   createWidget,
   contentDesiredSize,
+  defaultAddLayout,
   insetRect,
   layoutUserInterface,
   normalizeLayout,
@@ -202,6 +203,29 @@ describe("default play HUD", () => {
       width: 200,
       height: 160,
     });
+  });
+
+  it("sizes Desired so a center-aligned staggered widget stays inside the frame", () => {
+    const doc = createDefaultUserInterface("HUD");
+    const button = createWidget(
+      "play",
+      "Button",
+      "Play",
+      defaultAddLayout("Button", 1),
+    );
+    button.props.text = "Play";
+    doc.widgets.canvas!.children = ["play"];
+    doc.widgets.play = button;
+    const size = contentDesiredSize(doc);
+    const laid = layoutUserInterface(doc, size, { designSpace: true });
+    const child = laid.tree?.children[0]?.rect;
+    expect(child).toBeDefined();
+    expect(child!.x).toBeGreaterThanOrEqual(0);
+    expect(child!.y).toBeGreaterThanOrEqual(0);
+    expect(child!.x + child!.width).toBeLessThanOrEqual(size.width + 0.01);
+    expect(child!.y + child!.height).toBeLessThanOrEqual(size.height + 0.01);
+    expect(size.width).toBeGreaterThan(200);
+    expect(size.height).toBeGreaterThan(80);
   });
 });
 

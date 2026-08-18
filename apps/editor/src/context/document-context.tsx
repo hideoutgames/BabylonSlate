@@ -63,7 +63,7 @@ import {
   createNativeHttp,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
-import type { ScriptBundleEntry } from "@babylonslate/bridge";
+import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import {
   DocumentService,
@@ -142,10 +142,12 @@ import {
 } from "../shell/dockview-surface";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
+import { asDevicePresets } from "../lib/engine-ui-presets";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
   editorUtilityLiveTarget,
+  editorUtilityProjectPathsByKind,
   findDockOrUtilityWindow,
 } from "../shell/editor-utility-windows";
 import {
@@ -1451,6 +1453,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           projectService.readAssetChunk(path, chunkId),
       });
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
+      const engineSettings = await settingsStore.load();
       return collectAndExportGame({
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
@@ -1488,9 +1491,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
+        uiDesignerPresets: asDevicePresets(engineSettings.uiDesignerPresets),
       });
     },
-    [projectDocument, projectService],
+    [projectDocument, projectService, settingsStore],
   );
 
   const zipExportedGame = useCallback((artifact: ExportArtifact) => {
@@ -2638,7 +2642,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         dispatchPlayUiWidgetEvent: (event: {
           instanceId: string;
           widgetId: string;
-          kind: "click" | "value" | "checked" | "text";
+          kind: UiWidgetEventKind;
           value?: unknown;
         }) => boolean;
         setMainGraphComponents: (
@@ -3280,17 +3284,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const openLiveEditorUtility = useCallback(
     async (guid: string) => {
-      const project = projectDocumentRef.current;
-      if (!project) return;
+      const listed = projectService.registry?.list() ?? [];
       const assets = editorUtilityAssetsFromIndexed(
-        projectService.registry?.list() ?? [],
+        listed,
         documentService.getOpenDocumentsOrdered(),
       );
       const target = editorUtilityLiveTarget({
         guid,
         assets,
-        scenes: project.scenes,
-        graphs: project.graphs,
+        openDocuments: documentService.getOpenDocumentsOrdered().map((doc) => ({
+          kind: doc.ref.kind,
+          path: doc.ref.path,
+        })),
+        projectPathsByKind: editorUtilityProjectPathsByKind(listed),
       });
       if (!target) return;
       const hostId = documentId({

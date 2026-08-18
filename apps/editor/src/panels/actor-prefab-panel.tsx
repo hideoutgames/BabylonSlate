@@ -11,6 +11,7 @@ import { Badge } from "@babylonslate/ui/components/badge";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
+import { useSceneEditing } from "../context/scene-editing-context";
 import {
   PREFAB_ROOT_ID,
   childrenOfPrefabParent,
@@ -84,6 +85,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     reparentComponent,
   } = usePrefabEditing();
   const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
+  const { frameActor } = useSceneEditing();
   const [addOpen, setAddOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 
@@ -151,6 +153,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
           }
           onReparent={reparentComponent}
           reparentArm="immediate"
+          onActivate={(id) => frameActor(id)}
           emptyLabel="No components"
           data-testid="prefab-tree"
         />

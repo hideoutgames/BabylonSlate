@@ -63,6 +63,9 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("play-overlay-pause")).toContainText("Pause");
     await expect(page.getByTestId("play-overlay-close")).toContainText("Stop");
     await expect(page.getByTestId("play-console-open")).toContainText("Console");
+    await expect(page.getByTestId("play-inspector-toggle")).toContainText(
+      "Inspector",
+    );
     await expect(page.getByTestId("stats-hud")).toBeHidden();
 
     await page.getByTestId("play-overlay-close").click();
@@ -331,5 +334,47 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("setting-render-black-bars")).toBeVisible();
     await page.getByTestId("settings-modal-category-export").click();
     await expect(page.getByTestId("settings-startup-scene")).toBeVisible();
+  });
+
+  test("Play overlay Inspector shows a live tick while the session runs", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-stats-toggle")).toBeVisible();
+    await expect(page.getByTestId("play-console-open")).toBeVisible();
+    await page.getByTestId("play-inspector-toggle").click();
+    await expect(page.getByTestId("debug-inspect")).toBeVisible();
+    const firstTick = Number(
+      await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+    );
+    await expect
+      .poll(
+        async () =>
+          Number(
+            await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+          ),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(firstTick);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("debug-inspect")).toHaveCount(0);
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("turning Debug Stats off hides the overlay Stats control", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openMainScene(page);
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("overlay-stats-toggle").click();
+    await page.keyboard.press("Escape");
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-stats-toggle")).toHaveCount(0);
+    await expect(page.getByTestId("play-console-open")).toBeVisible();
+    await expect(page.getByTestId("play-inspector-toggle")).toBeVisible();
+    await page.getByTestId("play-overlay-close").click();
   });
 });

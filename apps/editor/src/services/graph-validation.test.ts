@@ -448,6 +448,7 @@ describe("createDefaultLogicGraphSerialized", () => {
         .filter((node) => node.type.startsWith("flow.event.") && node.type !== "flow.event.callParent")
         .map((node) => node.type),
     ).toEqual([
+      "flow.event.editorBeginPlay",
       "flow.event.editorStartup",
       "flow.event.sceneOpen",
       "flow.event.sceneSaved",
@@ -470,6 +471,30 @@ describe("createDefaultLogicGraphSerialized", () => {
       parentClass: "BObject",
     });
     expect(graph.nodes).toEqual([]);
+  });
+
+  it("seeds Begin Play and Tick for UserInterface logic with BObject parentClass", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "BObject",
+      assetType: "UserInterface",
+    });
+    expect(
+      graph.nodes
+        .filter((node) => node.type.startsWith("flow.event.") && node.type !== "flow.event.callParent")
+        .map((node) => node.type),
+    ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
+  });
+
+  it("seeds Event Editor On Begin Play for EditorUtilityInterface logic", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "BObject",
+      assetType: "EditorUtilityInterface",
+    });
+    expect(
+      graph.nodes
+        .filter((node) => node.type.startsWith("flow.event.") && node.type !== "flow.event.callParent")
+        .map((node) => node.type),
+    ).toEqual(["flow.event.editorBeginPlay"]);
   });
 });
 
@@ -707,11 +732,15 @@ describe("scriptPaletteNodes", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "EditorUtilityObject",
     });
+    expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
+      true,
+    );
     expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
       true,
     );
     expect(nodes.some((node) => node.id === "flow.event.sceneOpen")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.event.activate")).toBe(false);
     expect(nodes.some((node) => node.id === "bt.finish")).toBe(false);
   });
@@ -722,6 +751,13 @@ describe("scriptPaletteNodes", () => {
       false,
     );
     expect(nodes.some((node) => node.id === "flow.event.editorShutdown")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(
       false,
     );
   });
@@ -772,11 +808,23 @@ describe("scriptPaletteNodes", () => {
   });
 
   it("hides editor lifecycle events on a UserInterface logic host", () => {
-    const nodes = scriptPaletteNodes(registry, { assetType: "UserInterface" });
+    const nodes = scriptPaletteNodes(registry, {
+      assetType: "UserInterface",
+      parentClass: "BObject",
+    });
     expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
       false,
     );
+    expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
+      false,
+    );
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseExit")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mousePress")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseRelease")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
     expect(nodes.some((node) => node.id === "ui.getWidget")).toBe(false);
   });
 
@@ -803,26 +851,33 @@ describe("scriptPaletteNodes", () => {
     });
   });
 
-  it("shows editor lifecycle events and Begin Play on an EditorUtilityInterface logic host", () => {
+  it("shows Event Editor On Begin Play and hides Tick on an EditorUtilityInterface logic host", () => {
     const nodes = scriptPaletteNodes(registry, {
       assetType: "EditorUtilityInterface",
+      parentClass: "BObject",
     });
-    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+    expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
       true,
     );
-    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
   });
 
   it("stamps editorOnly on palette rows for editor-only catalog defs", () => {
     const nodes = scriptPaletteNodes(registry, {
       assetType: "EditorUtilityInterface",
+      parentClass: "BObject",
     });
-    const startup = nodes.find((node) => node.id === "flow.event.editorStartup");
-    expect(startup?.editorOnly).toBe(true);
-    expect(startup?.defaultData?.__editorOnly).toBe(true);
-    const begin = nodes.find((node) => node.id === "flow.event.beginPlay");
-    expect(begin?.editorOnly).toBeFalsy();
-    expect(begin?.defaultData?.__editorOnly).toBeUndefined();
+    const editorBegin = nodes.find(
+      (node) => node.id === "flow.event.editorBeginPlay",
+    );
+    expect(editorBegin?.editorOnly).toBe(true);
+    expect(editorBegin?.defaultData?.__editorOnly).toBe(true);
   });
 
   it("injects Call nodes for the class custom events and other open classes", () => {

@@ -52,6 +52,10 @@ test.describe("Debug menu", () => {
     await expect(page.getByTestId("debug-menu")).toBeEnabled();
     await page.getByTestId("debug-menu").click();
     await expect(page.getByTestId("preview-build-toggle")).toBeVisible();
+    await expect(page.getByTestId("overlay-stats-toggle")).toBeVisible();
+    await expect(page.getByTestId("overlay-console-toggle")).toBeVisible();
+    await expect(page.getByTestId("overlay-inspector-toggle")).toBeVisible();
+    await expect(page.getByTestId("pause-on-play-toggle")).toBeVisible();
     await expect(page.getByTestId("always-render-toggle")).toHaveCount(0);
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
@@ -70,6 +74,10 @@ test.describe("Debug menu", () => {
 
     await page.getByTestId("debug-menu").click();
     await expect(page.getByTestId("preview-build-toggle")).toBeVisible();
+    await expect(page.getByTestId("overlay-stats-toggle")).toBeVisible();
+    await expect(page.getByTestId("overlay-console-toggle")).toBeVisible();
+    await expect(page.getByTestId("overlay-inspector-toggle")).toBeVisible();
+    await expect(page.getByTestId("pause-on-play-toggle")).toBeVisible();
     await expect(page.getByTestId("always-render-toggle")).toHaveCount(0);
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);

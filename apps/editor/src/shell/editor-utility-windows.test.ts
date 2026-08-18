@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { EDITOR_UTILITY_DOCK_KINDS } from "@babylonslate/core";
+import { isDockviewDocumentKind, primaryDockPanel } from "./window-catalog";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
   editorUtilityEmptyLabel,
   editorUtilityGuidFromWindowId,
   editorUtilityHostDocumentKind,
+  editorUtilityProjectPathsByKind,
   editorUtilityWindowId,
   findDockOrUtilityWindow,
   listEditorUtilityMenuWindows,
@@ -26,6 +29,12 @@ const assets = [
     name: "ClassTools",
     type: "EditorUtilityInterface",
     payload: { dockKind: "class" },
+  },
+  {
+    guid: "eui-sprite",
+    name: "SpriteTools",
+    type: "EditorUtilityInterface",
+    payload: { dockKind: "sprite" },
   },
   {
     guid: "hud",
@@ -67,8 +76,14 @@ describe("listEditorUtilityWindows", () => {
   });
 
   it("returns an empty list when no matching utilities exist", () => {
-    expect(listEditorUtilityWindows({ kind: "sprite", assets })).toEqual([]);
+    expect(listEditorUtilityWindows({ kind: "material", assets })).toEqual([]);
     expect(listEditorUtilityWindows()).toEqual([]);
+  });
+
+  it("lists sprite EditorUtilityInterface assets for a Sprite document", () => {
+    const windows = listEditorUtilityWindows({ kind: "sprite", assets });
+    expect(windows.map((entry) => entry.title)).toEqual(["SpriteTools"]);
+    expect(windows[0]?.defaultPosition?.referencePanelId).toBe("sprite-preview");
   });
 
   it("lists every EditorUtilityInterface when the active document is a UI editor", () => {
@@ -76,10 +91,12 @@ describe("listEditorUtilityWindows", () => {
     expect(windows.map((entry) => entry.title)).toEqual([
       "SceneTools",
       "ClassTools",
+      "SpriteTools",
       "LegacyTools",
     ]);
     expect(windows[0]?.defaultPosition?.referencePanelId).toBe("viewport");
     expect(windows[1]?.defaultPosition?.referencePanelId).toBe("graph");
+    expect(windows[2]?.defaultPosition?.referencePanelId).toBe("sprite-preview");
   });
 
   it("keeps Scene listing unchanged through the Windows menu helper", () => {
@@ -209,10 +226,40 @@ describe("closeMismatchedEditorUtilityPanels", () => {
   });
 });
 
+describe("editorUtilityProjectPathsByKind", () => {
+  it("groups project assets by Windows-capable document kind", () => {
+    expect(
+      editorUtilityProjectPathsByKind([
+        { path: "assets/main.scene.babasset", header: { type: "Scene" } },
+        { path: "assets/Hero.sprite.babasset", header: { type: "Sprite" } },
+        { path: "assets/Hero.class.babasset", header: { type: "Class" } },
+        { path: "assets/HUD.ui.babasset", header: { type: "UserInterface" } },
+        { path: "assets/Icon.font.babasset", header: { type: "Font" } },
+      ]),
+    ).toEqual({
+      scene: ["assets/main.scene.babasset"],
+      sprite: ["assets/Hero.sprite.babasset"],
+      graph: ["assets/Hero.class.babasset"],
+      ui: ["assets/HUD.ui.babasset"],
+    });
+  });
+});
+
+describe("EDITOR_UTILITY_DOCK_KINDS", () => {
+  it("covers every Windows-capable Dockview document kind", () => {
+    for (const kind of EDITOR_UTILITY_DOCK_KINDS) {
+      expect(isDockviewDocumentKind(kind)).toBe(true);
+      expect(primaryDockPanel(kind).length).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe("editorUtilityHostDocumentKind", () => {
-  it("maps dockKind class to the Class document and anything else to Scene", () => {
+  it("maps stored class to graph and identity-maps other Dockview kinds", () => {
     expect(editorUtilityHostDocumentKind("class")).toBe("graph");
+    expect(editorUtilityHostDocumentKind("graph")).toBe("graph");
     expect(editorUtilityHostDocumentKind("scene")).toBe("scene");
+    expect(editorUtilityHostDocumentKind("sprite")).toBe("sprite");
     expect(editorUtilityHostDocumentKind(undefined)).toBe("scene");
   });
 });
@@ -267,45 +314,65 @@ describe("editorUtilityEmptyLabel", () => {
 });
 
 describe("resolveEditorUtilityLiveHost", () => {
-  it("picks the first Scene or Class path for the widget dockKind", () => {
+  it("prefers an open document of the widget dockKind", () => {
     expect(
       resolveEditorUtilityLiveHost({
-        dockKind: "scene",
-        scenes: ["assets/main.scene.babasset"],
-        graphs: ["assets/main.class.babasset"],
+        dockKind: "sprite",
+        openDocuments: [
+          { kind: "scene", path: "assets/main.scene.babasset" },
+          { kind: "sprite", path: "assets/Hero.sprite.babasset" },
+        ],
+        projectPathsByKind: {
+          scene: ["assets/main.scene.babasset"],
+          sprite: ["assets/Hero.sprite.babasset"],
+        },
       }),
-    ).toEqual({ kind: "scene", path: "assets/main.scene.babasset" });
+    ).toEqual({ kind: "sprite", path: "assets/Hero.sprite.babasset" });
+  });
+
+  it("opens a project document of that kind when none is already open", () => {
     expect(
       resolveEditorUtilityLiveHost({
         dockKind: "class",
-        scenes: ["assets/main.scene.babasset"],
-        graphs: ["assets/main.class.babasset"],
+        openDocuments: [{ kind: "scene", path: "assets/main.scene.babasset" }],
+        projectPathsByKind: {
+          scene: ["assets/main.scene.babasset"],
+          graph: ["assets/main.class.babasset"],
+        },
       }),
     ).toEqual({ kind: "graph", path: "assets/main.class.babasset" });
   });
 
-  it("returns null when the project has no host document of that kind", () => {
+  it("returns null rather than docking on Scene when no host of that kind exists", () => {
     expect(
       resolveEditorUtilityLiveHost({
-        dockKind: "class",
-        scenes: ["assets/main.scene.babasset"],
-        graphs: [],
+        dockKind: "sprite",
+        openDocuments: [{ kind: "scene", path: "assets/main.scene.babasset" }],
+        projectPathsByKind: {
+          scene: ["assets/main.scene.babasset"],
+        },
       }),
     ).toBeNull();
   });
 });
 
 describe("editorUtilityLiveTarget", () => {
-  const scenes = ["assets/main.scene.babasset"];
-  const graphs = ["assets/main.class.babasset"];
+  const openDocuments = [
+    { kind: "scene", path: "assets/main.scene.babasset" },
+    { kind: "graph", path: "assets/main.class.babasset" },
+  ];
+  const projectPathsByKind = {
+    scene: ["assets/main.scene.babasset"],
+    graph: ["assets/main.class.babasset"],
+  };
 
   it("resolves the Scene host and panel id for a scene EditorUtilityInterface", () => {
     expect(
       editorUtilityLiveTarget({
         guid: "eui-scene",
         assets,
-        scenes,
-        graphs,
+        openDocuments,
+        projectPathsByKind,
       }),
     ).toEqual({
       host: { kind: "scene", path: "assets/main.scene.babasset" },
@@ -318,8 +385,8 @@ describe("editorUtilityLiveTarget", () => {
       editorUtilityLiveTarget({
         guid: "eui-class",
         assets,
-        scenes,
-        graphs,
+        openDocuments,
+        projectPathsByKind,
       }),
     ).toEqual({
       host: { kind: "graph", path: "assets/main.class.babasset" },
@@ -332,16 +399,16 @@ describe("editorUtilityLiveTarget", () => {
       editorUtilityLiveTarget({
         guid: "missing",
         assets,
-        scenes,
-        graphs,
+        openDocuments,
+        projectPathsByKind,
       }),
     ).toBeNull();
     expect(
       editorUtilityLiveTarget({
         guid: "eui-class",
         assets,
-        scenes,
-        graphs: [],
+        openDocuments: [{ kind: "scene", path: "assets/main.scene.babasset" }],
+        projectPathsByKind: { scene: ["assets/main.scene.babasset"] },
       }),
     ).toBeNull();
   });

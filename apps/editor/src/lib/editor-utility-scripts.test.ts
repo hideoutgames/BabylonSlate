@@ -178,9 +178,13 @@ describe("editor utility ScriptHost events", () => {
     expect(logs).toEqual(["editor-up"]);
   });
 
-  it("boots On Editor Startup then On Scene Open when a scene tab is already open", () => {
-    expect(editorUtilityBootEvents(false)).toEqual([EDITOR_UTILITY_EVENTS.startup]);
+  it("boots Editor On Begin Play then On Editor Startup then optional On Scene Open", () => {
+    expect(editorUtilityBootEvents(false)).toEqual([
+      EDITOR_UTILITY_EVENTS.beginPlay,
+      EDITOR_UTILITY_EVENTS.startup,
+    ]);
     expect(editorUtilityBootEvents(true)).toEqual([
+      EDITOR_UTILITY_EVENTS.beginPlay,
       EDITOR_UTILITY_EVENTS.startup,
       EDITOR_UTILITY_EVENTS.sceneOpen,
     ]);

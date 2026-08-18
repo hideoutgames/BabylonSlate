@@ -682,12 +682,36 @@ export function bakeAudioReverb(geometry: AudioReverbGeometry): Uint8Array {
 }
 
 /** Inverse-distance blend of at most two nearest probes. */
+export type InterpolatedAudioReverb = {
+  wet: number;
+  decay: number;
+  damping: number;
+};
+
+const DRY_REVERB_PROFILE: InterpolatedAudioReverb = {
+  wet: 0,
+  decay: 0.4,
+  damping: 0.5,
+};
+
+function blendProbeField(
+  first: number,
+  second: number,
+  weightFirst: number,
+  weightSecond: number,
+): number {
+  return (first * weightFirst + second * weightSecond) / (weightFirst + weightSecond);
+}
+
 export function interpolateAudioReverb(
   listener: { x: number; y: number; z: number },
   probes: readonly AudioReverbProbe[],
-): number {
-  if (probes.length === 0) return 0;
-  if (probes.length === 1) return probes[0]!.wet;
+): InterpolatedAudioReverb {
+  if (probes.length === 0) return { ...DRY_REVERB_PROFILE };
+  if (probes.length === 1) {
+    const probe = probes[0]!;
+    return { wet: probe.wet, decay: probe.decay, damping: probe.damping };
+  }
   let first: AudioReverbProbe | null = null;
   let second: AudioReverbProbe | null = null;
   let firstDist = Infinity;
@@ -708,11 +732,17 @@ export function interpolateAudioReverb(
       secondDist = dist;
     }
   }
-  if (!first) return 0;
-  if (!second || firstDist === 0) return first.wet;
+  if (!first) return { ...DRY_REVERB_PROFILE };
+  if (!second || firstDist === 0) {
+    return { wet: first.wet, decay: first.decay, damping: first.damping };
+  }
   const w1 = 1 / firstDist;
   const w2 = 1 / secondDist;
-  return (first.wet * w1 + second.wet * w2) / (w1 + w2);
+  return {
+    wet: blendProbeField(first.wet, second.wet, w1, w2),
+    decay: blendProbeField(first.decay, second.decay, w1, w2),
+    damping: blendProbeField(first.damping, second.damping, w1, w2),
+  };
 }
 
 export function packAudioReverbTriangles(

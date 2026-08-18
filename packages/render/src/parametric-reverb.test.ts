@@ -89,6 +89,14 @@ describe("parametric reverb topology", () => {
       (node) => node.kind === "gain" && node.gain.value === 0.4,
     );
     expect(wet).toBeDefined();
+    connected.setProfile({ wet: 0.2, decay: 1, damping: 1 });
+    expect(wet?.gain.value).toBe(0.2);
+    const feedback = graph.nodes.filter(
+      (node) => node.kind === "gain" && node.gain.value > 0.8,
+    );
+    expect(feedback.length).toBeGreaterThan(0);
+    const filters = graph.nodes.filter((node) => node.kind === "filter");
+    expect(filters.every((node) => node.frequency.value < 3000)).toBe(true);
     connected.dispose();
   });
 

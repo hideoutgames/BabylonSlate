@@ -55,6 +55,11 @@ import type {
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import { createAppSettingsStore } from "@babylonslate/vfs";
+import {
+  DEFAULT_PLAY_DEBUGGER_OVERLAY,
+  playDebuggerOverlayFromSettings,
+  type PlayDebuggerOverlaySettings,
+} from "../lib/play-debugger-defaults";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { playerPreviewSrc } from "../lib/player-host-url";
 import { canSendPreviewPack } from "../lib/preview-build-handoff";
@@ -148,6 +153,14 @@ interface PlayContextValue {
   canPlay: boolean;
   previewBuild: boolean;
   setPreviewBuild: (value: boolean) => void;
+  overlayStats: boolean;
+  overlayConsole: boolean;
+  overlayInspector: boolean;
+  pauseOnPlay: boolean;
+  setOverlayStats: (value: boolean) => void;
+  setOverlayConsole: (value: boolean) => void;
+  setOverlayInspector: (value: boolean) => void;
+  setPauseOnPlay: (value: boolean) => void;
   launchPlay: (options?: PlayOptions & { scripts?: ScriptBundleEntry[] }) => void;
   resumePlayAfterMigration: () => Promise<void>;
   cancelPlayMigration: () => void;
@@ -197,6 +210,18 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
   const [previewBuild, setPreviewBuildState] = useState(false);
+  const [overlayStats, setOverlayStatsState] = useState(
+    DEFAULT_PLAY_DEBUGGER_OVERLAY.overlayStats,
+  );
+  const [overlayConsole, setOverlayConsoleState] = useState(
+    DEFAULT_PLAY_DEBUGGER_OVERLAY.overlayConsole,
+  );
+  const [overlayInspector, setOverlayInspectorState] = useState(
+    DEFAULT_PLAY_DEBUGGER_OVERLAY.overlayInspector,
+  );
+  const [pauseOnPlay, setPauseOnPlayState] = useState(
+    DEFAULT_PLAY_DEBUGGER_OVERLAY.pauseOnPlay,
+  );
   const [startupAlertOpen, setStartupAlertOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState(() => playerPreviewSrc(0));
@@ -321,13 +346,25 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     : playPhysicsFromOpenDocuments(openDocuments, activeDocumentId);
 
   useEffect(() => {
+    const applyOverlay = (defaults?: Partial<PlayDebuggerOverlaySettings>) => {
+      const overlay = playDebuggerOverlayFromSettings(defaults);
+      setOverlayStatsState(overlay.overlayStats);
+      setOverlayConsoleState(overlay.overlayConsole);
+      setOverlayInspectorState(overlay.overlayInspector);
+      setPauseOnPlayState(overlay.pauseOnPlay);
+    };
     const apply = (settings: {
       postProcessingEnabled?: boolean;
       hardwareScalingLevel?: number;
-      debuggerDefaults?: { previewBuild?: boolean };
+      debuggerDefaults?: {
+        previewBuild?: boolean;
+      } & Partial<PlayDebuggerOverlaySettings>;
     }) => {
       if (typeof settings.debuggerDefaults?.previewBuild === "boolean") {
         setPreviewBuildState(settings.debuggerDefaults.previewBuild);
+      }
+      if (settings.debuggerDefaults) {
+        applyOverlay(settings.debuggerDefaults);
       }
       if (typeof settings.postProcessingEnabled === "boolean") {
         setPostProcessingEnabled(settings.postProcessingEnabled);
@@ -340,6 +377,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       .load()
       .then((settings) => {
         setPreviewBuildState(settings.debuggerDefaults.previewBuild === true);
+        applyOverlay(settings.debuggerDefaults);
         apply(settings);
       });
     const onSettings = (event: Event) => {
@@ -352,20 +390,45 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const setPreviewBuild = useCallback((value: boolean) => {
-    setPreviewBuildState(value);
-    void (async () => {
+  const persistDebuggerDefaults = useCallback(
+    async (patch: Partial<PlayDebuggerOverlaySettings> & { previewBuild?: boolean }) => {
       const store = createAppSettingsStore();
       const settings = await store.load();
       await store.save({
         ...settings,
         debuggerDefaults: {
           ...settings.debuggerDefaults,
-          previewBuild: value,
+          ...patch,
         },
       });
-    })();
-  }, []);
+    },
+    [],
+  );
+
+  const setPreviewBuild = useCallback((value: boolean) => {
+    setPreviewBuildState(value);
+    void persistDebuggerDefaults({ previewBuild: value });
+  }, [persistDebuggerDefaults]);
+
+  const setOverlayStats = useCallback((value: boolean) => {
+    setOverlayStatsState(value);
+    void persistDebuggerDefaults({ overlayStats: value });
+  }, [persistDebuggerDefaults]);
+
+  const setOverlayConsole = useCallback((value: boolean) => {
+    setOverlayConsoleState(value);
+    void persistDebuggerDefaults({ overlayConsole: value });
+  }, [persistDebuggerDefaults]);
+
+  const setOverlayInspector = useCallback((value: boolean) => {
+    setOverlayInspectorState(value);
+    void persistDebuggerDefaults({ overlayInspector: value });
+  }, [persistDebuggerDefaults]);
+
+  const setPauseOnPlay = useCallback((value: boolean) => {
+    setPauseOnPlayState(value);
+    void persistDebuggerDefaults({ pauseOnPlay: value });
+  }, [persistDebuggerDefaults]);
 
   const appendLog = useCallback((line: string) => {
     setLogLines((prev) => [...prev.slice(-500), line]);
@@ -959,6 +1022,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       canPlay,
       previewBuild,
       setPreviewBuild,
+      overlayStats,
+      overlayConsole,
+      overlayInspector,
+      pauseOnPlay,
+      setOverlayStats,
+      setOverlayConsole,
+      setOverlayInspector,
+      setPauseOnPlay,
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
@@ -988,6 +1059,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       canPlay,
       previewBuild,
       setPreviewBuild,
+      overlayStats,
+      overlayConsole,
+      overlayInspector,
+      pauseOnPlay,
+      setOverlayStats,
+      setOverlayConsole,
+      setOverlayInspector,
+      setPauseOnPlay,
       launchPlay,
       resumePlayAfterMigration,
       cancelPlayMigration,
@@ -1099,6 +1178,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             materialFunctions={playMaterialFunctions}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
+            pauseOnPlay={pauseOnPlay}
             navmeshBytes={playNavmeshBytes}
             audioReverbBytes={playAudioReverbBytes}
             pixelsPerUnit={

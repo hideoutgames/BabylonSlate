@@ -1,6 +1,12 @@
-import { normalizeEditorUtilityDockKind } from "@babylonslate/core";
+import {
+  documentKindForAssetType,
+  normalizeEditorUtilityDockKind,
+  type EditorUtilityDockKind,
+} from "@babylonslate/core";
 import {
   findDockWindow,
+  isDockviewDocumentKind,
+  primaryDockPanel,
   type DockWindowDefinition,
   type DockWindowOptions,
   type DockviewDocumentKind,
@@ -18,27 +24,21 @@ export type ListEditorUtilityWindowsOptions = DockWindowOptions & {
   assets?: EditorUtilityAssetRef[];
 };
 
-const DOCK_KIND_FOR_DOCUMENT: Record<string, string> = {
-  scene: "scene",
-  graph: "class",
-};
-
-const DEFAULT_REFERENCE: Record<string, string> = {
-  scene: "viewport",
-  graph: "graph",
-};
-
-export function editorUtilityHostDocumentKind(
-  dockKind: unknown,
-): "scene" | "graph" {
-  return normalizeEditorUtilityDockKind(dockKind) === "class" ? "graph" : "scene";
+function dockKindForDocument(kind: string | undefined): EditorUtilityDockKind | undefined {
+  if (!kind) return undefined;
+  const normalized = kind === "class" ? "graph" : kind;
+  return isDockviewDocumentKind(normalized)
+    ? normalizeEditorUtilityDockKind(normalized)
+    : undefined;
 }
 
 function editorUtilityWindowDefinition(
   asset: EditorUtilityAssetRef,
-  hostKind: "scene" | "graph",
+  hostKind: EditorUtilityDockKind,
 ): DockWindowDefinition {
-  const referencePanelId = DEFAULT_REFERENCE[hostKind];
+  const referencePanelId = isDockviewDocumentKind(hostKind)
+    ? primaryDockPanel(hostKind)
+    : undefined;
   return {
     id: editorUtilityWindowId(asset.guid),
     component: "editor-utility",
@@ -106,9 +106,7 @@ export function mergeEditorUtilityListingPayload(
 export function listEditorUtilityWindows(
   options?: ListEditorUtilityWindowsOptions,
 ): DockWindowDefinition[] {
-  const dockKind = options?.kind
-    ? DOCK_KIND_FOR_DOCUMENT[options.kind]
-    : undefined;
+  const dockKind = dockKindForDocument(options?.kind);
   if (!dockKind || !options?.assets) return [];
   return options.assets
     .filter((asset) => asset.type === "EditorUtilityInterface")
@@ -116,12 +114,7 @@ export function listEditorUtilityWindows(
       (asset) =>
         normalizeEditorUtilityDockKind(asset.payload?.dockKind) === dockKind,
     )
-    .map((asset) =>
-      editorUtilityWindowDefinition(
-        asset,
-        options.kind === "graph" ? "graph" : "scene",
-      ),
-    );
+    .map((asset) => editorUtilityWindowDefinition(asset, dockKind));
 }
 
 /** Windows → Editor Utilities entries, including every EUI while authoring UI. */
@@ -154,24 +147,44 @@ export function editorUtilityEmptyLabel(
   return null;
 }
 
+export function editorUtilityHostDocumentKind(
+  dockKind: unknown,
+): EditorUtilityDockKind {
+  return normalizeEditorUtilityDockKind(dockKind);
+}
+
+export function editorUtilityProjectPathsByKind(
+  assets: ReadonlyArray<{ path: string; header: { type: string } }>,
+): Partial<Record<string, string[]>> {
+  const map: Record<string, string[]> = {};
+  for (const asset of assets) {
+    const kind = documentKindForAssetType(asset.header.type);
+    if (!kind || !isDockviewDocumentKind(kind)) continue;
+    (map[kind] ??= []).push(asset.path);
+  }
+  return map;
+}
+
 export function resolveEditorUtilityLiveHost(options: {
   dockKind: unknown;
-  scenes: readonly string[];
-  graphs: readonly string[];
-}): { kind: "scene" | "graph"; path: string } | null {
-  const kind = editorUtilityHostDocumentKind(options.dockKind);
-  const path = (kind === "scene" ? options.scenes : options.graphs)[0];
-  if (!path) return null;
-  return { kind, path };
+  openDocuments: ReadonlyArray<{ kind: string; path: string }>;
+  projectPathsByKind: Partial<Record<string, readonly string[]>>;
+}): { kind: EditorUtilityDockKind; path: string } | null {
+  const kind = normalizeEditorUtilityDockKind(options.dockKind);
+  const openPath = options.openDocuments.find((doc) => doc.kind === kind)?.path;
+  if (openPath) return { kind, path: openPath };
+  const projectPath = options.projectPathsByKind[kind]?.[0];
+  if (!projectPath) return null;
+  return { kind, path: projectPath };
 }
 
 export function editorUtilityLiveTarget(options: {
   guid: string;
   assets: EditorUtilityAssetRef[];
-  scenes: readonly string[];
-  graphs: readonly string[];
+  openDocuments: ReadonlyArray<{ kind: string; path: string }>;
+  projectPathsByKind: Partial<Record<string, readonly string[]>>;
 }): {
-  host: { kind: "scene" | "graph"; path: string };
+  host: { kind: EditorUtilityDockKind; path: string };
   panelId: string;
 } | null {
   const asset = options.assets.find(
@@ -181,8 +194,8 @@ export function editorUtilityLiveTarget(options: {
   if (!asset) return null;
   const host = resolveEditorUtilityLiveHost({
     dockKind: asset.payload?.dockKind,
-    scenes: options.scenes,
-    graphs: options.graphs,
+    openDocuments: options.openDocuments,
+    projectPathsByKind: options.projectPathsByKind,
   });
   if (!host) return null;
   return { host, panelId: editorUtilityWindowId(asset.guid) };

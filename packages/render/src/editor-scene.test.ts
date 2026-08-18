@@ -123,6 +123,74 @@ describe("editor camera controller", () => {
     expect(controller.camera.position.z).toBeCloseTo(positionBefore.z, 5);
   });
 
+  it("defaults pivotAroundCenter to off", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    expect(controller.pivotAroundCenter).toBe(false);
+  });
+
+  it("orbits around the target in 3D when pivotAroundCenter is on", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.setPivotAroundCenter(true);
+    controller.camera.getViewMatrix();
+    const targetBefore = controller.camera.target.clone();
+    const positionBefore = controller.camera.position.clone();
+    const alphaBefore = controller.camera.alpha;
+
+    controller.look(0.3, 0.1);
+    controller.camera.getViewMatrix();
+
+    expect(controller.pivotAroundCenter).toBe(true);
+    expect(controller.camera.alpha).not.toBeCloseTo(alphaBefore, 5);
+    expect(controller.camera.target.x).toBeCloseTo(targetBefore.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(targetBefore.y, 5);
+    expect(controller.camera.target.z).toBeCloseTo(targetBefore.z, 5);
+    expect(controller.camera.position.x).not.toBeCloseTo(positionBefore.x, 5);
+  });
+
+  it("refuses to orbit in 2D even when pivotAroundCenter is on", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.setPivotAroundCenter(true);
+    const alpha = controller.camera.alpha;
+
+    controller.look(1, 1);
+    expect(controller.camera.alpha).toBeCloseTo(alpha);
+    expect(controller.camera.alpha).toBeCloseTo(TWO_D_ALPHA);
+    expect(controller.camera.beta).toBeCloseTo(TWO_D_BETA);
+  });
+
+  it("keeps the 3D camera eye when framing a new target without a radius", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.camera.getViewMatrix();
+    const eyeBefore = controller.camera.position.clone();
+    const target = new Vector3(3, 4, 5);
+
+    controller.frame(target);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.target.x).toBeCloseTo(3, 5);
+    expect(controller.camera.target.y).toBeCloseTo(4, 5);
+    expect(controller.camera.target.z).toBeCloseTo(5, 5);
+    expect(controller.camera.position.x).toBeCloseTo(eyeBefore.x, 4);
+    expect(controller.camera.position.y).toBeCloseTo(eyeBefore.y, 4);
+    expect(controller.camera.position.z).toBeCloseTo(eyeBefore.z, 4);
+    expect(controller.camera.radius).toBeCloseTo(
+      Vector3.Distance(eyeBefore, target),
+      4,
+    );
+  });
+
+  it("still pans the 2D target when framing", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "2d" });
+    controller.frame(new Vector3(6, -3, 0));
+    expect(controller.camera.target.x).toBeCloseTo(6, 5);
+    expect(controller.camera.target.y).toBeCloseTo(-3, 5);
+  });
+
   it("refuses to look in 2D", () => {
     const { scene } = createHandle();
     const controller = createEditorCamera(scene, { mode: "2d" });

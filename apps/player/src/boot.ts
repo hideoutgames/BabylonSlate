@@ -30,6 +30,7 @@ import {
   type PlayerHudStats,
 } from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
+import { packedFontEntries } from "./fonts";
 import { applyPlayerUiCommand, createPlayerUiHost } from "./player-ui-host";
 import { playerSpawnListForScripts } from "./spawn-list";
 
@@ -162,6 +163,11 @@ export function startPlayer(options: {
       width: Math.max(1, canvas.width || canvas.clientWidth || 1),
       height: Math.max(1, canvas.height || canvas.clientHeight || 1),
     },
+    designerPresets: manifest.uiDesignerPresets,
+    fontEntries: packedFontEntries({
+      fontBytes: game.fontBytes,
+      fontFamilies: game.fontFamilies,
+    }),
     onWidgetEvent: (event) => {
       if (worker) worker.postControl(event);
       else if (runtime) applyUiRuntimeControl(runtime, event);

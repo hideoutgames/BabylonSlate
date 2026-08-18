@@ -48,7 +48,11 @@ export type UiWidgetEvent =
   | { kind: "click"; widgetId: string }
   | { kind: "value"; widgetId: string; value: number }
   | { kind: "checked"; widgetId: string; value: boolean }
-  | { kind: "text"; widgetId: string; value: string };
+  | { kind: "text"; widgetId: string; value: string }
+  | { kind: "pointerEnter"; widgetId: string }
+  | { kind: "pointerExit"; widgetId: string }
+  | { kind: "pointerDown"; widgetId: string }
+  | { kind: "pointerUp"; widgetId: string };
 
 export interface BabylonUiHostOptions {
   interactive: boolean;
@@ -299,6 +303,20 @@ function bindWidgetEvents(
   descriptor: UiControlDescriptor,
   onWidgetEvent: (event: UiWidgetEvent) => void,
 ): void {
+  if (descriptor.kind !== "Canvas") {
+    control.onPointerEnterObservable.add(() => {
+      onWidgetEvent({ kind: "pointerEnter", widgetId: descriptor.id });
+    });
+    control.onPointerOutObservable.add(() => {
+      onWidgetEvent({ kind: "pointerExit", widgetId: descriptor.id });
+    });
+    control.onPointerDownObservable.add(() => {
+      onWidgetEvent({ kind: "pointerDown", widgetId: descriptor.id });
+    });
+    control.onPointerUpObservable.add(() => {
+      onWidgetEvent({ kind: "pointerUp", widgetId: descriptor.id });
+    });
+  }
   if (descriptor.kind === "Button") {
     control.onPointerClickObservable.add(() => {
       onWidgetEvent({ kind: "click", widgetId: descriptor.id });

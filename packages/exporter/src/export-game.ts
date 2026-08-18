@@ -16,10 +16,43 @@ import type {
   ExportGameOptions,
   GameAssetIndexEntry,
   GameManifest,
+  PackedUiDesignerPreset,
 } from "./types";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+function packedUiDesignerPresets(
+  value: unknown,
+): PackedUiDesignerPreset[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const rows: PackedUiDesignerPreset[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const entry = row as Partial<PackedUiDesignerPreset> & {
+      safeArea?: Partial<PackedUiDesignerPreset["safeArea"]>;
+    };
+    const id = typeof entry.id === "string" ? entry.id.trim() : "";
+    const label = typeof entry.label === "string" ? entry.label.trim() : "";
+    const width = Number(entry.width);
+    const height = Number(entry.height);
+    if (!id || !label || !(width >= 1) || !(height >= 1)) continue;
+    const safe = entry.safeArea;
+    rows.push({
+      id,
+      label,
+      width,
+      height,
+      safeArea: {
+        left: Math.max(0, Number(safe?.left) || 0),
+        right: Math.max(0, Number(safe?.right) || 0),
+        top: Math.max(0, Number(safe?.top) || 0),
+        bottom: Math.max(0, Number(safe?.bottom) || 0),
+      },
+    });
+  }
+  return rows.length > 0 ? rows : undefined;
+}
 
 const JSON_TYPES = new Set([
   "Scene",
@@ -212,6 +245,7 @@ export async function exportGame(
 
   inlineCssIntoIndex(files);
 
+  const designerPresets = packedUiDesignerPresets(options.uiDesignerPresets);
   const manifest: GameManifest = {
     startupSceneGuid: options.startupSceneGuid,
     ...(options.gameInstanceClass?.trim()
@@ -233,6 +267,7 @@ export async function exportGame(
     scriptsFile: SCRIPTS_FILE,
     physicsWorld: options.physicsWorld ?? "3d",
     assets: packed.index,
+    ...(designerPresets ? { uiDesignerPresets: designerPresets } : {}),
     ...(options.bundleDebugger
       ? {
           infiniteLoopDetection: options.infiniteLoopDetection !== false,
@@ -285,8 +320,11 @@ export function parseGameManifest(source: string): GameManifest {
       ? parsed.audioMixerGuid.trim()
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
+  const designerPresets = packedUiDesignerPresets(parsed.uiDesignerPresets);
+  const rest = { ...parsed };
+  delete rest.uiDesignerPresets;
   return {
-    ...parsed,
+    ...rest,
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
     bundleDebugger,
@@ -295,6 +333,7 @@ export function parseGameManifest(source: string): GameManifest {
         ? parsed.pixelsPerUnit
         : 100,
     pixelPerfect: parsed.pixelPerfect === true,
+    ...(designerPresets ? { uiDesignerPresets: designerPresets } : {}),
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,

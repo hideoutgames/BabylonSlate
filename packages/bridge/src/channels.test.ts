@@ -90,6 +90,59 @@ describe("UserInterface command and control contracts", () => {
     expect(value.value).toBe(0.4);
     expect(checked.value).toBe(true);
     expect(text.value).toBe("Ada");
+    const enter = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerEnter",
+    } satisfies ControlMessage;
+    const exit = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerExit",
+    } satisfies ControlMessage;
+    const press = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerDown",
+    } satisfies ControlMessage;
+    const release = {
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerUp",
+    } satisfies ControlMessage;
+    expect(enter.kind).toBe("pointerEnter");
+    expect(exit.kind).toBe("pointerExit");
+    expect(press.kind).toBe("pointerDown");
+    expect(release.kind).toBe("pointerUp");
+  });
+});
+
+describe("Play inspect contract", () => {
+  it("inspect control and inspectSnapshot command round-trip a node list", () => {
+    const control = { type: "inspect" } satisfies ControlMessage;
+    expect(controlType(control)).toBe("inspect");
+    const command = {
+      type: "inspectSnapshot",
+      snapshot: {
+        tickIndex: 4,
+        nodes: [
+          {
+            id: "hero",
+            kind: "actor",
+            label: "Hero",
+            classId: "Actor",
+            parentId: null,
+            variables: { health: 10 },
+          },
+        ],
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("inspectSnapshot");
+    expect(command.snapshot.nodes[0]?.label).toBe("Hero");
   });
 });
 

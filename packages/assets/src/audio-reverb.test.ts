@@ -187,7 +187,22 @@ describe("audio reverb bake", () => {
         { x: 40, y: 0, z: 0, volume: 1, openness: 1, decay: 0.1, damping: 0.1, wet: 0.9 },
       ],
     );
-    expect(wet).toBeGreaterThan(0.2);
-    expect(wet).toBeLessThanOrEqual(0.4);
+    expect(wet.wet).toBeGreaterThan(0.2);
+    expect(wet.wet).toBeLessThanOrEqual(0.4);
+    expect(wet.decay).toBe(0.5);
+    expect(wet.damping).toBe(0.5);
+  });
+
+  it("blends decay and damping from the two nearest probes", () => {
+    const profile = interpolateAudioReverb(
+      { x: 1, y: 0, z: 0 },
+      [
+        { x: 0, y: 0, z: 0, volume: 1, openness: 0, decay: 0.2, damping: 0.2, wet: 0.1 },
+        { x: 2, y: 0, z: 0, volume: 1, openness: 0, decay: 0.8, damping: 0.8, wet: 0.5 },
+      ],
+    );
+    expect(profile.decay).toBeCloseTo(0.5, 5);
+    expect(profile.damping).toBeCloseTo(0.5, 5);
+    expect(profile.wet).toBeCloseTo(0.3, 5);
   });
 });

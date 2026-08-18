@@ -10,6 +10,7 @@ import {
   isEditorUtilityObjectClass,
   isFunctionLibraryClass,
   normalizeEditorUtilityDockKind,
+  editorUtilityDockKindLabel,
 } from "./editor-only";
 
 describe("editor-only assets", () => {
@@ -50,11 +51,16 @@ describe("editor-only assets", () => {
     ).toBe(false);
   });
 
-  it("normalizes EditorUtilityInterface dockKind to scene or class", () => {
-    expect(normalizeEditorUtilityDockKind("class")).toBe("class");
+  it("normalizes EditorUtilityInterface dockKind to Dockview document kinds", () => {
+    expect(normalizeEditorUtilityDockKind("class")).toBe("graph");
+    expect(normalizeEditorUtilityDockKind("graph")).toBe("graph");
     expect(normalizeEditorUtilityDockKind("scene")).toBe("scene");
+    expect(normalizeEditorUtilityDockKind("sprite")).toBe("sprite");
+    expect(normalizeEditorUtilityDockKind("tilemap")).toBe("tilemap");
     expect(normalizeEditorUtilityDockKind(undefined)).toBe("scene");
     expect(normalizeEditorUtilityDockKind("viewport")).toBe("scene");
+    expect(editorUtilityDockKindLabel("graph")).toBe("Class");
+    expect(editorUtilityDockKindLabel("sprite-animation")).toBe("Sprite Animation");
   });
 
   it("does not treat FunctionLibrary ancestry as editor-only", () => {

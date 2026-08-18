@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
+  applyViewportJoystickSteer,
   syncEditorPlayState,
   type EngineHandle,
 } from "@babylonslate/render";
@@ -56,6 +57,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     gridVisible,
     saveEditorCameraPose,
     loadEditorCameraPose,
+    pivotAroundCenter,
+    setFrameActorHandler,
   } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
   const setSelectedIdRef = useRef(setSelectedId);
@@ -190,6 +193,17 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   }, [viewportMode]);
 
   useEffect(() => {
+    engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
+  }, [pivotAroundCenter]);
+
+  useEffect(() => {
+    setFrameActorHandler((actorId) => {
+      engineRef.current?.editor?.frameActor(actorId);
+    });
+    return () => setFrameActorHandler(null);
+  }, [setFrameActorHandler]);
+
+  useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);
   }, [gizmoTool]);
 
@@ -279,7 +293,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           <div className="pointer-events-auto">
             <ViewportJoystick
               onFly={(forward, right) => {
-                engineRef.current?.editor?.camera.fly(forward, right);
+                const camera = engineRef.current?.editor?.camera;
+                if (camera) applyViewportJoystickSteer(camera, forward, right);
               }}
               onActiveChange={(active) => {
                 const scheduler = engineRef.current?.scheduler;

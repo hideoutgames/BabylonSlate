@@ -131,6 +131,55 @@ describe("P16 audio acceptance", () => {
     service.dispose();
   });
 
+  it("applies Set Channel / Set Global to voices that are already playing", async () => {
+    const mixer: AudioMixerPayload = {
+      globalVolume: 1,
+      channels: [{ channelGuid: "sfx", volume: 1 }],
+    };
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        mixer,
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "environmentReverb", enabled: false }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    const voiceId = backend.plays[0]?.voiceId;
+    expect(voiceId).toBeTruthy();
+    expect(backend.plays[0]?.gain).toBe(1);
+    service.handleCommand({
+      type: "setChannelVolume",
+      channelGuid: "sfx",
+      volume: 0.5,
+    });
+    service.handleCommand({ type: "setGlobalVolume", volume: 0.5 });
+    await service.flush();
+    expect(backend.gains.get(voiceId!)).toBe(0.25);
+    expect(service.stats().lastGain).toBe(0.25);
+    service.dispose();
+  });
+
   it("bypasses channel gain when Channel is None and still applies mixer global", () => {
     const mixer: AudioMixerPayload = {
       globalVolume: 0.5,

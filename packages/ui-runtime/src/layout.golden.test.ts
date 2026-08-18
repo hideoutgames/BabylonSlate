@@ -70,10 +70,10 @@ describe("layoutUserInterface", () => {
     expect(result.canvas).toEqual({
       x: 0,
       y: 0,
-      width: doc.designResolution.width,
-      height: doc.designResolution.height,
+      width: 1194,
+      height: 834,
     });
-    expect(result.tree?.rect.width).toBe(doc.designResolution.width);
+    expect(result.tree?.rect.width).toBe(1194);
   });
 
   it("is deterministic across device presets", () => {

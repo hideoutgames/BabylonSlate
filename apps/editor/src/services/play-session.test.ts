@@ -5,7 +5,9 @@ import {
   applyPlayUiCommand,
   applyWorkerPlayStats,
   diagnosticFromCommand,
+  applyPlaySessionStep,
   dispatchPlayUiWidgetEvent,
+  inspectSnapshotFromCommand,
   isFatalPlayDiagnostic,
   playInputStampTick,
   playSessionBootControls,
@@ -88,6 +90,50 @@ describe("diagnosticFromCommand", () => {
     expect(isFatalPlayDiagnostic("runtime.uncaught")).toBe(false);
     expect(isFatalPlayDiagnostic("preview")).toBe(false);
     expect(isFatalPlayDiagnostic(undefined)).toBe(false);
+  });
+});
+
+describe("inspectSnapshotFromCommand", () => {
+  it("returns the inspect payload from inspectSnapshot commands", () => {
+    expect(
+      inspectSnapshotFromCommand({
+        type: "stats",
+        frameId: 1,
+        tickIndex: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      }),
+    ).toBeNull();
+    expect(
+      inspectSnapshotFromCommand({
+        type: "inspectSnapshot",
+        snapshot: {
+          tickIndex: 8,
+          nodes: [
+            {
+              id: "hero",
+              kind: "actor",
+              label: "Hero",
+              classId: "Actor",
+              parentId: null,
+              variables: { health: 4 },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      tickIndex: 8,
+      nodes: [
+        {
+          id: "hero",
+          kind: "actor",
+          label: "Hero",
+          classId: "Actor",
+          parentId: null,
+          variables: { health: 4 },
+        },
+      ],
+    });
   });
 });
 
@@ -235,6 +281,42 @@ describe("dispatchPlayUiWidgetEvent", () => {
       kind: "value",
       value: 0.4,
     });
+  });
+});
+
+describe("applyPlaySessionStep", () => {
+  it("steps the in-process runtime when the worker is absent", () => {
+    const resume = vi.fn();
+    const tick = vi.fn();
+    const pause = vi.fn();
+    applyPlaySessionStep({
+      worker: null,
+      runtime: { resume, tick, pause },
+    });
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(tick).toHaveBeenCalledTimes(1);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(resume.mock.invocationCallOrder[0]).toBeLessThan(
+      tick.mock.invocationCallOrder[0]!,
+    );
+    expect(tick.mock.invocationCallOrder[0]).toBeLessThan(
+      pause.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("posts step to the worker when present", () => {
+    const postControl = vi.fn();
+    const resume = vi.fn();
+    const tick = vi.fn();
+    const pause = vi.fn();
+    applyPlaySessionStep({
+      worker: { postControl },
+      runtime: { resume, tick, pause },
+    });
+    expect(postControl).toHaveBeenCalledWith({ type: "step" });
+    expect(resume).not.toHaveBeenCalled();
+    expect(tick).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
   });
 });
 

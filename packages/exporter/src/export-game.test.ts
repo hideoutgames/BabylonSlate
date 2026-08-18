@@ -60,6 +60,39 @@ describe("exportGame", () => {
     expect(unzipped["index.html"]).toBeDefined();
   });
 
+  it("writes Engine Settings designer presets onto game.json", async () => {
+    const phone = {
+      id: "custom-phone",
+      label: "Phone",
+      width: 390,
+      height: 844,
+      safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
+    };
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+      uiDesignerPresets: [phone],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.uiDesignerPresets).toEqual([phone]);
+    const parsed = parseGameManifest(
+      new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)),
+    );
+    expect(parsed.uiDesignerPresets).toEqual([phone]);
+  });
+
   it("defaults to packed mode with a boot pack", async () => {
     const result = await exportGame({
       bundleDebugger: true,

@@ -15,6 +15,7 @@ import {
   collectFolderGuids,
   compressionBadgeLabel,
   contentBrowserMoveFromDrop,
+  contentBrowserTreeDropMoves,
   displayAssetTitle,
   filterAssets,
   sortAssets,
@@ -89,6 +90,52 @@ function asset(
     mtime: overrides.mtime,
   };
 }
+
+const multiMoveTree = {
+  name: "assets",
+  path: "assets",
+  assets: ["hero-guid", "villain-guid"],
+  children: [
+    {
+      name: "textures",
+      path: "assets/textures",
+      assets: ["dirt-guid"],
+      children: [
+        {
+          name: "ui",
+          path: "assets/textures/ui",
+          assets: ["icon-guid"],
+          children: [],
+        },
+      ],
+    },
+    {
+      name: "fx",
+      path: "assets/fx",
+      assets: [],
+      children: [],
+    },
+  ],
+};
+
+const multiMoveAssets = [
+  asset({ guid: "hero-guid", name: "hero", path: "assets/hero.babasset" }),
+  asset({
+    guid: "villain-guid",
+    name: "villain",
+    path: "assets/villain.babasset",
+  }),
+  asset({
+    guid: "dirt-guid",
+    name: "dirt",
+    path: "assets/textures/dirt.babasset",
+  }),
+  asset({
+    guid: "icon-guid",
+    name: "icon",
+    path: "assets/textures/ui/icon.babasset",
+  }),
+];
 
 describe("content-browser-helpers", () => {
   it("filters by search, type, and folder guids", () => {
@@ -505,6 +552,156 @@ describe("content-browser-helpers", () => {
       contentBrowserMoveFromDrop("assets/hero.babasset", null, rows),
     ).toBeNull();
     expect(contentBrowserMoveFromDrop("missing", "assets/textures", rows)).toBeNull();
+  });
+
+  it("moves every selected sibling asset when one of them is dragged", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/hero.babasset",
+        targetId: "assets/textures",
+        rows,
+        selectedGuids: new Set(["hero-guid", "villain-guid"]),
+        selectedFolderPaths: new Set(),
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/villain.babasset",
+        guid: "villain-guid",
+      },
+    ]);
+  });
+
+  it("moves only the folder when a selected child asset is also selected", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(["dirt-guid"]),
+        selectedFolderPaths: new Set(["assets/textures"]),
+      }),
+    ).toEqual([
+      {
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures",
+      },
+    ]);
+  });
+
+  it("collapses nested selected folders to the ancestor on drop", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures/ui",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(),
+        selectedFolderPaths: new Set(["assets/textures", "assets/textures/ui"]),
+      }),
+    ).toEqual([
+      {
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures",
+      },
+    ]);
+  });
+
+  it("moves only the dragged row when it is not in the selection", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures/dirt.babasset",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(["hero-guid"]),
+        selectedFolderPaths: new Set(["assets/textures"]),
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures/dirt.babasset",
+        guid: "dirt-guid",
+      },
+    ]);
+  });
+
+  it("drops onto a selected sibling folder by moving the rest into it", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures",
+        targetId: "assets/fx",
+        rows,
+        selectedGuids: new Set(["hero-guid"]),
+        selectedFolderPaths: new Set(["assets/textures", "assets/fx"]),
+      }),
+    ).toEqual([
+      {
+        kind: "folder",
+        sourcePath: "assets/textures",
+        destinationPath: "assets/fx",
+        id: "assets/textures",
+      },
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/fx",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+    ]);
+  });
+
+  it("rejects dropping a selected folder onto its own descendant", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures",
+        targetId: "assets/textures/ui",
+        rows,
+        selectedGuids: new Set(["hero-guid"]),
+        selectedFolderPaths: new Set(["assets/textures"]),
+      }),
+    ).toEqual([]);
+  });
+
+  it("still moves other selected items when the dragged row is already in the destination", () => {
+    const rows = flattenContentBrowserTree(multiMoveTree, multiMoveAssets);
+    expect(
+      contentBrowserTreeDropMoves({
+        dragId: "assets/textures/dirt.babasset",
+        targetId: "assets/textures",
+        rows,
+        selectedGuids: new Set(["dirt-guid", "hero-guid"]),
+        selectedFolderPaths: new Set(),
+      }),
+    ).toEqual([
+      {
+        kind: "asset",
+        sourcePath: "assets",
+        destinationPath: "assets/textures",
+        id: "assets/hero.babasset",
+        guid: "hero-guid",
+      },
+    ]);
   });
 
   it("flattens a folder tree for the Move picker", () => {

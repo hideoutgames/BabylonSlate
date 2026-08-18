@@ -3,9 +3,12 @@ import { mimeForGuiTextureBytes } from "@babylonslate/assets";
 import type { UiWidgetEventControl } from "@babylonslate/bridge";
 import {
   applyAdtIdeal,
+  applyFontRegistryToHost,
   applyUiControls,
   attachFullscreenGui,
+  FontRegistry,
   RecordingUiHost,
+  type FontAssetEntry,
   type UiApplyHost,
   type UiWidgetEvent,
 } from "@babylonslate/render";
@@ -13,6 +16,7 @@ import {
   describeUiControls,
   devicePresetForViewport,
   layoutUserInterface,
+  type DevicePreset,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 
@@ -43,6 +47,9 @@ export type PlayerUiHostOptions = {
   revokeObjectURL?: (url: string) => void;
   attachGui?: typeof attachFullscreenGui;
   disposeAttached?: () => void;
+  designerPresets?: readonly DevicePreset[];
+  fontEntries?: readonly FontAssetEntry[];
+  applyFonts?: typeof applyFontRegistryToHost;
 };
 
 function documentFromLibrary(
@@ -83,6 +90,8 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
         URL.revokeObjectURL(url);
       }
     });
+  const applyFonts = options.applyFonts ?? applyFontRegistryToHost;
+  const extras = options.designerPresets ?? [];
   let attached: ReturnType<typeof attachFullscreenGui> | null = null;
   let fallbackHost: UiApplyHost | null = options.host ?? null;
   let disposed = false;
@@ -120,7 +129,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       instanceId,
       widgetId,
       kind: event.kind,
-      ...(event.kind === "click" ? {} : { value: event.value }),
+      ...("value" in event ? { value: event.value } : {}),
     });
   };
 
@@ -139,11 +148,21 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
         height: viewport.height,
         designResolution: first?.designResolution ?? viewport,
         scaleRule: first?.scaleRule ?? "shortestSide",
-        safeArea: devicePresetForViewport(viewport.width, viewport.height).safeArea,
+        safeArea: devicePresetForViewport(
+          viewport.width,
+          viewport.height,
+          extras,
+        ).safeArea,
         resolveImageUrl,
         onTouchAxis: options.onTouchAxis,
         onWidgetEvent: handleWidgetEvent,
       });
+      if ((options.fontEntries?.length ?? 0) > 0) {
+        const registry = new FontRegistry();
+        void applyFonts(registry, options.fontEntries!, () => {
+          attached?.adt.markAsDirty();
+        });
+      }
       return attached.host;
     }
     fallbackHost = new RecordingUiHost();
@@ -152,7 +171,11 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
 
   const rebuild = (): void => {
     const host = applyHost();
-    const preset = devicePresetForViewport(viewport.width, viewport.height);
+    const preset = devicePresetForViewport(
+      viewport.width,
+      viewport.height,
+      extras,
+    );
     const first = rows
       .map((row) => documentFromLibrary(options.library, row.assetGuid))
       .find((doc) => doc);

@@ -41,7 +41,7 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 **Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`.
 
-**AudioChannel** has no volume: `parentChannelGuid`, `effects: [{ kind: "environmentReverb", enabled }]`. Parent cycles fail validation; missing/rejected parent routes to master with one diagnostic.
+**AudioChannel** has no volume: `parentChannelGuid`, `effects: [{ kind: "environmentReverb", enabled }]`. Parent cycles fail validation; missing/rejected parent routes to master with one diagnostic. `AudioService.setLibrary` sanitizes the Play library the same way: missing channel/attenuation refs and cyclic parents become `null` with one diagnostic each.
 
 **AudioMixer** is a user asset, not a singleton: `globalVolume` default `1`; `channels: { channelGuid, volume }[]` (duplicate `channelGuid` invalid).
 
@@ -60,7 +60,7 @@ Every factor is clamped `0..1`:
 - No mixer + no channel: `assetVolume × playCallVolume` only.
 - Channel-less sound never takes channel gain or channel effects; a selected mixer still applies `globalGain`.
 - Channel with no mixer: non-gain effects/routing may resolve; no invented channel/master gain.
-- Set Channel / Set Global **replace** session values (do not edit assets). Play stop / scene change reloads mixer defaults. Without a selected mixer, or with a channel absent from the mixer table, the nodes warn (`audio.no_mixer` / `audio.unknown_channel`) and no-op. A channel that exists only in the library is not enough.
+- Set Channel / Set Global **replace** session values (do not edit assets) and apply immediately to voices that are already playing (`setVoiceGain`). Play stop / scene change reloads mixer defaults. Without a selected mixer, or with a channel absent from the mixer table, the nodes warn (`audio.no_mixer` / `audio.unknown_channel`) and no-op. A channel that exists only in the library is not enough.
 
 ## Commands
 
@@ -90,9 +90,9 @@ Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows
 
 Mirrors nav bake: main-thread collect of **static** `MeshComponent` triangles (chunked, 8 actors per yield), worker occupancy + flood-fill + sparse probes, debounce 1_500 ms after the last static geometry edit, cancel, geometry-hash cache, timeout 8_000 ms. Dynamic rigid bodies do not invalidate.
 
-Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). Save/export await the current result or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes).
+Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). Save/export await a current result for **every** Scene asset in the Play library (open or closed), not only open tabs, or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes).
 
-Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-pass bus (`AUDIO_REVERB_COMB_COUNT` = 4, `AUDIO_REVERB_ALLPASS_COUNT` = 2). Comb taps use feedback + damping; all-pass taps are Schroeder (delay + negative feedforward). Listener interpolates ≤2 probes. No per-voice convolver. Channel-less stays dry. Dry fallback → wet 0. AudioV2 keeps the bus→main dry route at unity; the parametric graph is an extra wet send (`dryPassThrough: false`). `setReverbWet` drives that wet gain. If the send cannot attach, wet falls back to scaling the whole bus volume. Do not `disconnect()` AudioV2 private `_outNode` / `_inNode` ports — that hung Play Stop.
+Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-pass bus (`AUDIO_REVERB_COMB_COUNT` = 4, `AUDIO_REVERB_ALLPASS_COUNT` = 2). Comb taps use feedback + damping; all-pass taps are Schroeder (delay + negative feedforward). Listener interpolates ≤2 probes for **wet, decay, and damping**. `setReverbProfile` writes comb feedback from decay and the damping low-pass; `setReverbWet` is a wet-only shortcut (default decay 0.4, damping 0.5). No per-voice convolver. Channel-less stays dry. Dry fallback → wet 0. AudioV2 keeps the bus→main dry route at unity; the parametric graph is an extra wet send (`dryPassThrough: false`). If the send cannot attach, wet falls back to scaling the whole bus volume. Do not `disconnect()` AudioV2 private `_outNode` / `_inNode` ports — that hung Play Stop.
 
 ## A16 budgets
 

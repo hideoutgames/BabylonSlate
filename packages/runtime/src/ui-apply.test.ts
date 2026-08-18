@@ -458,6 +458,134 @@ describe("mounted UserInterface lifecycle", () => {
     runtime.stop();
   });
 
+  it("runs nested UserInterface logic as a child instance and routes prefixed widget events", async () => {
+    const registry = createDefaultNodeRegistry();
+    const CHIP_GUID = "chip-guid";
+    const CHIP_CLASS_ID = userInterfaceClassId(CHIP_GUID);
+    const chipScript: CompiledScript = {
+      assetGuid: CHIP_GUID,
+      classId: CHIP_CLASS_ID,
+      parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
+      source: [
+        "//# sourceURL=babylonslate:///chip-guid.js",
+        "export function onBeginPlay(ctx) { ctx.setVariable('ready', true); }",
+        "export function onWidgetClick(ctx) { ctx.log('log', 'ui', String(ctx.args.widgetId)); }",
+        "",
+      ].join("\n"),
+      anchors: [],
+      entryPoints: [
+        { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+        { name: "onWidgetClick", event: "onWidgetClick", isAsync: false },
+      ],
+      variables: [{ name: "ready", type: "bool", defaultValue: false }],
+    };
+    const hostGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "apply", "ui.applyToViewport", { asset: HUD_GUID }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "apply", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.registerUserInterfaceDocument(HUD_GUID, [
+      { id: "root", kind: "Canvas", name: "Canvas" },
+      { id: "chip", kind: "UserInterface", nestedUiGuid: CHIP_GUID },
+    ]);
+    runtime.registerUserInterfaceDocument(CHIP_GUID, [
+      { id: "root", kind: "Canvas", name: "Canvas" },
+      { id: "inner-btn", kind: "Button", name: "Inner" },
+    ]);
+    await runtime.loadScripts([
+      chipScript,
+      toScript(hostGraph, registry, "HudHost", "hud-host-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "HudHost" });
+    expect(commands.filter((command) => command.type === "uiApply")).toEqual([
+      {
+        type: "uiApply",
+        instanceId: "ui-1",
+        classId: HUD_CLASS_ID,
+        assetGuid: HUD_GUID,
+      },
+    ]);
+    const nested = runtime.getUserInterface("ui-1/chip");
+    expect(nested).toBeInstanceOf(UserInterface);
+    expect(nested?.getVariable("ready")).toBe(true);
+    runtime.dispatchUiWidgetEvent({
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "chip/inner-btn",
+      kind: "click",
+    });
+    const logs = commands.filter((command) => command.type === "log");
+    expect(logs.some((command) => String(command.message).includes("inner-btn"))).toBe(
+      true,
+    );
+    runtime.removeUserInterface("ui-1");
+    expect(nested?.destroyed).toBe(true);
+    expect(commands.filter((command) => command.type === "uiRemove")).toEqual([
+      { type: "uiRemove", instanceId: "ui-1" },
+    ]);
+    runtime.stop();
+  });
+
+  it("dispatches pointer enter onto onMouseEnter on the owning UI", async () => {
+    const registry = createDefaultNodeRegistry();
+    const uiGraph: LogicGraph = {
+      id: "ui-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "enter", "flow.event.mouseEnter"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "enter", "execOut", "log", "execIn"),
+        edge("e2", "enter", "widgetId", "log", "message"),
+      ],
+    };
+    const hostGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "apply", "ui.applyToViewport", { asset: HUD_GUID }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "apply", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.registerUserInterfaceDocument(HUD_GUID, hudWidgets());
+    await runtime.loadScripts([
+      toScript(uiGraph, registry, HUD_CLASS_ID, HUD_GUID, {
+        parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
+      }),
+      toScript(hostGraph, registry, "HudHost", "hud-host-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "HudHost" });
+    runtime.dispatchUiWidgetEvent({
+      type: "uiWidgetEvent",
+      instanceId: "ui-1",
+      widgetId: "play-btn",
+      kind: "pointerEnter",
+    });
+    const logs = commands.filter((command) => command.type === "log");
+    expect(logs.some((command) => String(command.message).includes("play-btn"))).toBe(
+      true,
+    );
+    runtime.stop();
+  });
+
   it("tears down every mounted UI on change-scene and stop", async () => {
     const registry = createDefaultNodeRegistry();
     const hostGraph: LogicGraph = {

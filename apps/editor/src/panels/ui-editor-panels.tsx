@@ -16,15 +16,15 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@babylonslate/ui/components/toggle-group";
-import {
   DESIRED_CANVAS_ID,
   type DesignerCanvasId,
   type ScaleRule,
 } from "@babylonslate/ui-runtime";
-import { normalizeEditorUtilityDockKind } from "@babylonslate/core";
+import {
+  EDITOR_UTILITY_DOCK_KINDS,
+  editorUtilityDockKindLabel,
+  normalizeEditorUtilityDockKind,
+} from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useUiEditing } from "../context/ui-editing-context";
@@ -254,30 +254,44 @@ export function UiSettingsPanel(_props: IDockviewPanelProps) {
       <FieldGroup className="p-3">
         <Field>
           <FieldLabel>Dock Kind</FieldLabel>
-          <ToggleGroup
-            variant="outline"
-            size="sm"
-            spacing={1}
-            value={[dockKind]}
+          <Select
+            value={dockKind}
             disabled={!isEditorUtilityInterface}
-            onValueChange={(value) => {
-              const next = value[0];
+            onValueChange={(next) => {
               if (!next) return;
               commit({
                 ...payload,
                 dockKind: normalizeEditorUtilityDockKind(next),
               });
             }}
-            aria-label="Dock Kind"
-            data-testid="ui-dock-kind"
           >
-            <ToggleGroupItem value="scene" data-testid="ui-dock-kind-scene">
-              Scene
-            </ToggleGroupItem>
-            <ToggleGroupItem value="class" data-testid="ui-dock-kind-class">
-              Class
-            </ToggleGroupItem>
-          </ToggleGroup>
+            <SelectTrigger
+              className="w-56"
+              aria-label="Dock Kind"
+              data-testid="ui-dock-kind"
+            >
+              <SelectValue>
+                {(value: unknown) =>
+                  editorUtilityDockKindLabel(
+                    normalizeEditorUtilityDockKind(value),
+                  )
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {EDITOR_UTILITY_DOCK_KINDS.map((kind) => (
+                  <SelectItem
+                    key={kind}
+                    value={kind}
+                    data-testid={`ui-dock-kind-${kind}`}
+                  >
+                    {editorUtilityDockKindLabel(kind)}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </Field>
       </FieldGroup>
     </PanelFrame>
