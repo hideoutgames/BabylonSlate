@@ -23,6 +23,12 @@ describe("editor utility events", () => {
     expect(eventNameForEntry(entry("flow.event.editorStartup"))).toBe(
       "onEditorStartup",
     );
+    expect(EVENT_BY_TYPE_ID["flow.event.editorBeginPlay"]).toBe(
+      "onEditorBeginPlay",
+    );
+    expect(eventNameForEntry(entry("flow.event.editorBeginPlay"))).toBe(
+      "onEditorBeginPlay",
+    );
   });
 
   it("maps Animation Object lifecycle nodes to ScriptHost events", () => {

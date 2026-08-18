@@ -192,11 +192,15 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       : graphContent;
     return hydrateSerializedGraphForEditor(
       visible ??
-        createDefaultLogicGraphSerialized(registry, { parentClass, parentOf }),
+        createDefaultLogicGraphSerialized(registry, {
+          parentClass,
+          parentOf,
+          assetType: indexed?.header.type,
+        }),
       registry,
       { parentOf },
     );
-  }, [activeFunctionId, graphContent, parentClass, parentOf]);
+  }, [activeFunctionId, graphContent, indexed?.header.type, parentClass, parentOf]);
 
   const assetGuid = doc?.ref.path ?? documentId;
 

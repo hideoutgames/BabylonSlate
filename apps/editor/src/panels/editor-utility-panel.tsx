@@ -274,19 +274,12 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       if (cancelled) return;
       runtime.beginPlay();
     });
-    let frame = 0;
-    const tick = () => {
-      runtime.tick();
-      frame = window.requestAnimationFrame(tick);
-    };
-    if (panelVisible) frame = window.requestAnimationFrame(tick);
     return () => {
       cancelled = true;
-      if (frame) window.cancelAnimationFrame(frame);
       runtime.dispose();
       if (hostRef.current === runtime) hostRef.current = null;
     };
-  }, [asset?.path, payload, panelVisible]);
+  }, [asset?.path, payload]);
 
   return (
     <PanelFrame data-testid="editor-utility-panel">

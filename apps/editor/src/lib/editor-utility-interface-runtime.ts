@@ -61,7 +61,7 @@ export function createEditorUtilityInterfaceHost(
     },
     beginPlay() {
       for (const classId of host.classIds()) {
-        host.invokeEvent(classId, "onBeginPlay");
+        host.invokeEvent(classId, "onEditorBeginPlay");
       }
     },
     tick() {

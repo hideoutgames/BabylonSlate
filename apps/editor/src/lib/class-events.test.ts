@@ -24,6 +24,38 @@ describe("nativeEventStubs", () => {
     expect(nativeEventStubs({ parentClass: "ActorComponent" })).toEqual([]);
   });
 
+  it("lists Begin Play and Tick on UserInterface logic even when parentClass is BObject", () => {
+    expect(
+      nativeEventStubs({
+        assetType: "UserInterface",
+        parentClass: "BObject",
+      }).map((stub) => stub.eventType),
+    ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
+  });
+
+  it("lists Event Editor On Begin Play on EditorUtilityInterface and not Tick or game Begin Play", () => {
+    expect(
+      nativeEventStubs({
+        assetType: "EditorUtilityInterface",
+        parentClass: "BObject",
+      }).map((stub) => stub.eventType),
+    ).toEqual(["flow.event.editorBeginPlay"]);
+  });
+
+  it("lists editor lifecycle events when ancestry includes EditorUtilityObject", () => {
+    const stubs = nativeEventStubs({
+      parentClass: "EditorUtilityObject",
+      parentOf: (id) => (id === "EditorUtilityObject" ? "BObject" : null),
+    });
+    expect(stubs.map((stub) => stub.eventType)).toEqual([
+      "flow.event.editorBeginPlay",
+      "flow.event.editorStartup",
+      "flow.event.sceneOpen",
+      "flow.event.sceneSaved",
+      "flow.event.editorShutdown",
+    ]);
+  });
+
   it("adds On Command Run when ancestry includes BDebugCommand", () => {
     const stubs = nativeEventStubs({
       parentClass: "BDebugCommand",
@@ -35,19 +67,6 @@ describe("nativeEventStubs", () => {
     expect(stubs.some((stub) => stub.eventType === "flow.event.beginPlay")).toBe(
       false,
     );
-  });
-
-  it("lists editor lifecycle events when ancestry includes EditorUtilityObject", () => {
-    const stubs = nativeEventStubs({
-      parentClass: "EditorUtilityObject",
-      parentOf: (id) => (id === "EditorUtilityObject" ? "BObject" : null),
-    });
-    expect(stubs.map((stub) => stub.eventType)).toEqual([
-      "flow.event.editorStartup",
-      "flow.event.sceneOpen",
-      "flow.event.sceneSaved",
-      "flow.event.editorShutdown",
-    ]);
   });
 
   it("lists On Activate, On Tick, and On Abort for BTTask instead of Begin Play", () => {

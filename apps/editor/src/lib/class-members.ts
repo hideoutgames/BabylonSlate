@@ -1,5 +1,4 @@
 import {
-  isEditorGraphHost,
   isFunctionLibraryClass,
   type GraphClassMember,
   type GraphClassMemberKind,
@@ -29,6 +28,7 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.commandRun": "Event On Command Run",
+  "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
   "flow.event.sceneOpen": "Event On Scene Open",
   "flow.event.sceneSaved": "Event On Scene Saved",
@@ -45,6 +45,8 @@ const EDITOR_UTILITY_EVENT_TYPES = [
   "flow.event.sceneSaved",
   "flow.event.editorShutdown",
 ] as const;
+
+const EDITOR_BEGIN_PLAY_EVENT = "flow.event.editorBeginPlay";
 
 const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginPlay",
@@ -114,6 +116,17 @@ function parentLookup(
   return options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
 }
 
+function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
+  return (
+    options?.assetType === "UserInterface" ||
+    ancestryChain(options).includes("UserInterface")
+  );
+}
+
+function isEditorUtilityInterfaceHost(options?: ClassEventOptions): boolean {
+  return options?.assetType === "EditorUtilityInterface";
+}
+
 function isFunctionLibraryHost(options?: ClassEventOptions): boolean {
   return isFunctionLibraryClass(options?.parentClass, parentLookup(options));
 }
@@ -172,7 +185,13 @@ export function nativeEventStubs(
 ): Array<{ eventType: string; name: string }> {
   const chain = ancestryChain(options);
   if (chain.includes("EditorUtilityObject")) {
-    return eventStubsForTypes(EDITOR_UTILITY_EVENT_TYPES);
+    return eventStubsForTypes([
+      EDITOR_BEGIN_PLAY_EVENT,
+      ...EDITOR_UTILITY_EVENT_TYPES,
+    ]);
+  }
+  if (isEditorUtilityInterfaceHost(options)) {
+    return eventStubsForTypes([EDITOR_BEGIN_PLAY_EVENT]);
   }
   if (chain.includes("BTTask")) return eventStubsForTypes(BT_TASK_EVENT_TYPE_IDS);
   if (chain.includes("BTDecorator")) {
@@ -187,6 +206,9 @@ export function nativeEventStubs(
     chain.includes("EditorFunctionLibrary")
   ) {
     return [];
+  }
+  if (isUserInterfaceLogicHost(options)) {
+    return eventStubsForTypes(NATIVE_CLASS_EVENT_TYPES);
   }
   const types: string[] = [];
   if (chain.includes("Actor")) {
@@ -258,14 +280,16 @@ export function isScriptCatalogNodeAllowed(
   const isEditorEvent = (EDITOR_UTILITY_EVENT_TYPES as readonly string[]).includes(
     nodeId,
   );
+  const isEditorBeginPlay = nodeId === EDITOR_BEGIN_PLAY_EVENT;
+  if (isEditorBeginPlay) {
+    return (
+      isEditorUtilityInterfaceHost(options) ||
+      ancestryChain(options).includes("EditorUtilityObject")
+    );
+  }
   if (
     isEditorEvent &&
-    !isEditorGraphHost({
-      parentClass: options?.parentClass,
-      parentOf: options?.parentOf,
-      assetType: options?.assetType,
-      editorGraph: options?.editorGraph,
-    })
+    !ancestryChain(options).includes("EditorUtilityObject")
   ) {
     return false;
   }
@@ -347,7 +371,8 @@ export function isScriptCatalogNodeAllowed(
     );
   }
   if (nodeId === "flow.event.beginPlay" || nodeId === "flow.event.tick") {
-    return chain.includes("Actor");
+    if (isEditorUtilityInterfaceHost(options)) return false;
+    return chain.includes("Actor") || isUserInterfaceLogicHost(options);
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("BDebugCommand");

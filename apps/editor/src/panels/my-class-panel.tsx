@@ -83,6 +83,7 @@ export type MembersForGraphOptions = {
   parentClass?: string | null;
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
+  assetType?: string | null;
   scriptInterfaces?: Array<{
     guid: string;
     name: string;
@@ -261,6 +262,7 @@ export function membersForGraph(
   const stubs = nativeEventStubs({
     parentClass: options?.parentClass,
     parentOf: options?.parentOf,
+    assetType: options?.assetType,
   });
   const events: MyClassMember[] = stubs.map((stub) => {
     const node = graph.nodes.find((entry) => entry.type === stub.eventType);
@@ -873,6 +875,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
       (doc?.ref.kind === "ui" ? "BObject" : null),
     parentOf,
     parentGraphs,
+    assetType: indexed?.header.type,
     scriptInterfaces: collectScriptInterfacesForPalette({
       assets: assetRegistry?.list() ?? [],
       openDocuments,

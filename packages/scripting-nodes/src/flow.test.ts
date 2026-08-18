@@ -68,8 +68,15 @@ describe("flow nodes", () => {
     expect(byId["flow.event.sceneOpen"]?.editorOnly).toBe(true);
     expect(byId["flow.event.sceneSaved"]?.editorOnly).toBe(true);
     expect(byId["flow.event.editorShutdown"]?.editorOnly).toBe(true);
+    expect(byId["flow.event.editorBeginPlay"]?.editorOnly).toBe(true);
     expect(byId["flow.event.beginPlay"]?.editorOnly).toBeFalsy();
     expect(byId["flow.event.tick"]?.editorOnly).toBeFalsy();
+  });
+
+  it("titles Event Editor On Begin Play", () => {
+    expect(
+      flowNodes.find((entry) => entry.id === "flow.event.editorBeginPlay")?.title,
+    ).toBe("Event Editor On Begin Play");
   });
 
   it("maps function Input pins from member inputs as outputs", () => {

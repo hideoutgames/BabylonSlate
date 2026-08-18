@@ -76,10 +76,12 @@ describe("EditorUtilityPanel", () => {
       designAdt: { markAsDirty: vi.fn() },
       gizmoAdt: null,
     });
+    const beginPlay = vi.fn();
+    const tick = vi.fn();
     createHostMock.mockReturnValue({
       loadAll: async () => {},
-      beginPlay: vi.fn(),
-      tick: vi.fn(),
+      beginPlay,
+      tick,
       dispose: vi.fn(),
       host: { classIds: () => [], invokeEvent: vi.fn() },
     });
@@ -105,6 +107,8 @@ describe("EditorUtilityPanel", () => {
     };
     expect(options.interactive).toBe(true);
     expect(typeof options.resolveImageUrl).toBe("function");
+    await waitFor(() => expect(beginPlay).toHaveBeenCalled());
+    expect(tick).not.toHaveBeenCalled();
   });
 
   it("collects nested UserInterface image guids for the live utility surface", async () => {

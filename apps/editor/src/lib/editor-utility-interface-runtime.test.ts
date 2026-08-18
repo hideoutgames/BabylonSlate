@@ -20,7 +20,7 @@ describe("compileEditorUtilityInterfaceLogic", () => {
           nodes: [
             {
               id: "start",
-              type: "flow.event.beginPlay",
+              type: "flow.event.editorBeginPlay",
               position: { x: 0, y: 0 },
               data: {},
             },
@@ -44,11 +44,14 @@ describe("compileEditorUtilityInterfaceLogic", () => {
       },
     );
     expect(scripts).toHaveLength(1);
+    expect(
+      scripts[0]?.entryPoints.some((entry) => entry.event === "onEditorBeginPlay"),
+    ).toBe(true);
   });
 });
 
 describe("createEditorUtilityInterfaceHost", () => {
-  it("loads compiled logic and fires Begin Play", async () => {
+  it("loads compiled logic and fires Editor On Begin Play", async () => {
     const logs: string[] = [];
     const scripts = compileEditorUtilityInterfaceLogic(
       "assets/Tools.eui.babasset",
@@ -57,7 +60,7 @@ describe("createEditorUtilityInterfaceHost", () => {
           nodes: [
             {
               id: "start",
-              type: "flow.event.beginPlay",
+              type: "flow.event.editorBeginPlay",
               position: { x: 0, y: 0 },
               data: {},
             },

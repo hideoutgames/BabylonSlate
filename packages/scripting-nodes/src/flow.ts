@@ -22,6 +22,7 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
   "flow.event.commandRun": "onCommandRun",
+  "flow.event.editorBeginPlay": "onEditorBeginPlay",
   "flow.event.editorStartup": "onEditorStartup",
   "flow.event.sceneOpen": "onSceneOpen",
   "flow.event.sceneSaved": "onSceneSaved",
@@ -213,6 +214,17 @@ export const flowNodes: NodeDefinition[] = [
         if (pinDef.kind === "exec" || pinDef.direction !== "in") continue;
         ctx.emit(`${ctx.output(pinDef.name)} = ${ctx.input(pinDef.name)};`);
       }
+    },
+  },
+  {
+    id: "flow.event.editorBeginPlay",
+    title: "Event Editor On Begin Play",
+    category: "flow",
+    pure: true,
+    editorOnly: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
     },
   },
   {
