@@ -1,5 +1,6 @@
 import { CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { useEffect, useRef, useState } from "react";
+import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 
 /** Inactive chrome tabs stay mounted this long after last being active. */
@@ -76,7 +77,22 @@ export function createIdleClock(now: () => number = () => Date.now()) {
         pausedAt = null;
       }
     },
+    /** Shift idle time forward without waiting on wall clocks (Playwright hatch). */
+    advance(ms: number) {
+      pausedMs -= ms;
+    },
   };
+}
+
+const TEST_IDLE_CLOCK_EVENT = "babylonslate:test-idle-clock";
+
+let testIdleClock: ReturnType<typeof createIdleClock> | null = null;
+
+export function advanceTestIdleClock(ms: number): void {
+  testIdleClock?.advance(ms);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TEST_IDLE_CLOCK_EVENT));
+  }
 }
 
 export function useDocumentWorkingSet(
@@ -84,6 +100,7 @@ export function useDocumentWorkingSet(
   activeId: string | null,
 ): Set<string> {
   const clockRef = useRef(createIdleClock());
+  if (isTestModeEnabled()) testIdleClock = clockRef.current;
   const lastActiveAtRef = useRef(new Map<string, number>());
   const prevActiveRef = useRef<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -108,6 +125,13 @@ export function useDocumentWorkingSet(
       clockRef.current.setPaused(next);
       setPaused(next);
     });
+  }, []);
+
+  useEffect(() => {
+    if (!isTestModeEnabled()) return;
+    const bump = () => setGeneration((current) => current + 1);
+    window.addEventListener(TEST_IDLE_CLOCK_EVENT, bump);
+    return () => window.removeEventListener(TEST_IDLE_CLOCK_EVENT, bump);
   }, []);
 
   useEffect(() => {

@@ -83,6 +83,7 @@ import {
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
+import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
@@ -2689,6 +2690,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+        advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
@@ -2917,6 +2919,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (!openScene) return false;
         return applySceneChange(openScene.id, structuredClone(scene));
+      },
+      advanceIdleClock: (ms: number) => {
+        advanceTestIdleClock(ms);
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
       textureEncodeState: (path: string) => {

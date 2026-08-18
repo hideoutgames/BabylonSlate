@@ -114,7 +114,7 @@ camera post-process. Present goes through `camera.outputRenderTarget` (an RTT)
 and a 2D blit onto `material-preview-canvas`. Do **not** `registerView` or
 default-framebuffer `scene.render()` — those overwrite the Scene viewport and
 Play overlay, which share that Engine. Prefab Preview is on that Engine too
-(`p18-shared-prefab-engine`; today it is still a separate Engine). Orbit / pinch / wheel attach to the preview canvas
+(`p18-shared-prefab-engine`) via RTT + 2D blit. Orbit / pinch / wheel attach to the preview canvas
 only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
 Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
 and in-editor Play freeze present.

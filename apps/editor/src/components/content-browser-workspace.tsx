@@ -159,6 +159,10 @@ type MoveTarget = {
   typeVisual: TypeVisual | null;
 };
 
+type GridItem =
+  | { kind: "folder"; path: string; name: string }
+  | { kind: "asset"; asset: IndexedAsset };
+
 export function ContentBrowserWorkspace({
   hidden = false,
 }: {
@@ -385,10 +389,6 @@ export function ContentBrowserWorkspace({
       : folders;
     return sortChildFolders(matched, sortMode);
   }, [folderTrees, search, selectedFolderPath, sortMode]);
-
-  type GridItem =
-    | { kind: "folder"; path: string; name: string }
-    | { kind: "asset"; asset: IndexedAsset };
 
   const gridItems = useMemo((): GridItem[] => {
     const items: GridItem[] = childFolders.map((folder) => ({
