@@ -202,12 +202,13 @@ test.describe("Skybox Creator helper", () => {
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
     const listed = page.getByTestId("open-listed-project-TestProject");
+    const listedLegacy = page.getByTestId(
+      "open-listed-project-TestProject.babproject",
+    );
     if ((await listed.count()) > 0) {
       await listed.click();
     } else {
-      await page
-        .getByTestId("open-listed-project-TestProject.babproject")
-        .click();
+      await listedLegacy.click();
     }
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
