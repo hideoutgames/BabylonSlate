@@ -37,17 +37,17 @@ function packedUiDesignerPresets(
     const width = Number(entry.width);
     const height = Number(entry.height);
     if (!id || !label || !(width >= 1) || !(height >= 1)) continue;
-    const safe = entry.safeArea ?? {};
+    const safe = entry.safeArea;
     rows.push({
       id,
       label,
       width,
       height,
       safeArea: {
-        left: Math.max(0, Number(safe.left) || 0),
-        right: Math.max(0, Number(safe.right) || 0),
-        top: Math.max(0, Number(safe.top) || 0),
-        bottom: Math.max(0, Number(safe.bottom) || 0),
+        left: Math.max(0, Number(safe?.left) || 0),
+        right: Math.max(0, Number(safe?.right) || 0),
+        top: Math.max(0, Number(safe?.top) || 0),
+        bottom: Math.max(0, Number(safe?.bottom) || 0),
       },
     });
   }
