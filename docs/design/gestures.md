@@ -84,13 +84,15 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 ## Tileset atlas and Tilemap paint
 
-Same pinch contract as the viewport: scale about the midpoint, then apply two-finger translation. Wheel zooms about the cursor. Canvases use `touch-none`.
+Same pinch contract as the viewport: scale about the midpoint, then apply two-finger translation. Wheel zooms about the cursor. Canvases use `touch-none`. **Move** is the default tool in both editors (`applyPointerPan`). Two-finger pinch/pan and wheel zoom stay available in every tool. A second finger drops any in-progress one-finger paint/select stroke so pinch does not paint.
 
 | Gesture | Target | Action |
 | --- | --- | --- |
-| Tap | Tileset Preview cell | Select that tile (and stamp collision when **Paint Collision** is on) |
+| Tap | Tileset Preview cell | Select that tile (and stamp collision when **Paint Collision** is on). In **Move**, a tap is movement < 8px; a drag pans |
+| One-finger drag | Tileset Preview (Move) | Pan the atlas (`data-pan-x` / `data-pan-y`) |
 | Pinch / wheel | Tileset Preview atlas | Pan-zoom the sheet (`AtlasTileGrid`) |
-| One finger | Tilemap Paint canvas | Paint with the current tool |
+| One-finger drag | Tilemap Paint **Move** | Pan the view (`applyPointerPan`) |
+| One finger | Tilemap Paint brush and friends | Paint with the current tool |
 | Two-finger pinch | Tilemap Paint canvas | Zoom about the midpoint; translation pans (`applyPinchView`). Cell size clamped 8–96 CSS px (default 32) |
 | Wheel | Tilemap Paint canvas | Zoom about the cursor (`applyWheelZoom`) |
 

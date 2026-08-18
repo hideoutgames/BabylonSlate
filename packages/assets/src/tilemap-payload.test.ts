@@ -13,17 +13,21 @@ import {
   normalizeTilemapPayload,
   removeTilemapTileset,
   reorderTilemapLayers,
+  resizeTilemap,
   setTile,
   tilemapTilesetGuids,
 } from "./tilemap-payload";
 
 describe("tilemap payload", () => {
-  it("defaults to one collision layer and 32-tile chunks", () => {
+  it("defaults to one collision layer, 32-tile chunks, and a 64×64 map", () => {
     const payload = createDefaultTilemapPayload();
     expect(payload.tilesetGuid).toBeNull();
     expect(payload.tileWidth).toBe(16);
     expect(payload.tileHeight).toBe(16);
+    expect(payload.width).toBe(64);
+    expect(payload.height).toBe(64);
     expect(payload.chunkSize).toBe(32);
+    expect(payload.layers[0]?.chunks).toEqual([]);
     expect(payload.layers).toHaveLength(1);
     expect(payload.layers[0]).toMatchObject({
       id: "layer-1",
@@ -68,6 +72,47 @@ describe("tilemap payload", () => {
     expect(getTile(map, "layer-1", 0, 0)).toBe(0);
     expect(map.layers[0]?.chunks).toHaveLength(1);
     expect(map.layers[0]?.chunks[0]).toMatchObject({ cx: 0, cy: 0 });
+  });
+
+  it("ignores setTile outside the map rectangle", () => {
+    let map = createDefaultTilemapPayload();
+    const before = map;
+    map = setTile(map, "layer-1", 64, 0, 7);
+    map = setTile(map, "layer-1", 0, 64, 7);
+    map = setTile(map, "layer-1", -1, 0, 7);
+    expect(map).toBe(before);
+    expect(getTile(map, "layer-1", 64, 0)).toBe(0);
+    expect(map.layers[0]?.chunks).toEqual([]);
+  });
+
+  it("migrates missing size to max(64, painted AABB + 1)", () => {
+    const empty = normalizeTilemapPayload({ layers: [] });
+    expect(empty.width).toBe(64);
+    expect(empty.height).toBe(64);
+    const tiles = emptyChunkTiles(32);
+    tiles[localIndex(6, 0, 32)] = 3;
+    const painted = normalizeTilemapPayload({
+      chunkSize: 32,
+      layers: [{ id: "layer-1", chunks: [{ cx: 2, cy: 1, tiles }] }],
+    });
+    expect(painted.width).toBe(71);
+    expect(painted.height).toBe(64);
+    expect(getTile(painted, "layer-1", 70, 32)).toBe(3);
+  });
+
+  it("clips tiles and drops empty chunks when the map shrinks", () => {
+    let map = createDefaultTilemapPayload();
+    map = setTile(map, "layer-1", 0, 0, 4);
+    map = setTile(map, "layer-1", 5, 1, 9);
+    map = resizeTilemap(map, 4, 4);
+    expect(map.width).toBe(4);
+    expect(map.height).toBe(4);
+    expect(getTile(map, "layer-1", 0, 0)).toBe(4);
+    expect(getTile(map, "layer-1", 5, 1)).toBe(0);
+    expect(map.layers[0]?.chunks).toHaveLength(1);
+    map = resizeTilemap(map, 0, -3);
+    expect(map.width).toBe(1);
+    expect(map.height).toBe(1);
   });
 
   it("normalizes missing layers and clamps chunk size", () => {

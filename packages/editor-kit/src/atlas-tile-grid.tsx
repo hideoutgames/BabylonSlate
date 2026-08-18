@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  applyPointerPan,
   ensureTilesetTiles,
   tilesetTileRect,
   type TilesetCollision,
@@ -13,6 +14,8 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { cn } from "@babylonslate/ui/lib/utils";
 
+export type AtlasTileGridTool = "move" | "select";
+
 export interface AtlasTileGridProps {
   tileset: TilesetPayload;
   imageUrl: string | null;
@@ -20,12 +23,14 @@ export interface AtlasTileGridProps {
   onSelect: (tileId: number) => void;
   emptyLabel?: string;
   panZoom?: boolean;
+  tool?: AtlasTileGridTool;
   onImageSize?: (width: number, height: number) => void;
   "data-testid"?: string;
 }
 
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 8;
+const TAP_SELECT_PX = 8;
 
 /** Clickable atlas with a pixel-aligned grid, collision overlay, and optional pinch zoom. */
 export function AtlasTileGrid({
@@ -35,10 +40,12 @@ export function AtlasTileGrid({
   onSelect,
   emptyLabel = "No Texture",
   panZoom = false,
+  tool: toolProp,
   onImageSize,
   "data-testid": testId = "atlas-tile-grid",
 }: AtlasTileGridProps) {
   const filled = ensureTilesetTiles(tileset);
+  const tool = toolProp ?? (panZoom ? "move" : "select");
   const surfaceRef = useRef<HTMLDivElement>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({
@@ -49,6 +56,15 @@ export function AtlasTileGrid({
     midX: 0,
     midY: 0,
   });
+  const panDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    panned: boolean;
+  } | null>(null);
+  const didPanRef = useRef(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
 
@@ -71,6 +87,8 @@ export function AtlasTileGrid({
     });
     if (pointersRef.current.size >= 2) {
       event.preventDefault();
+      panDragRef.current = null;
+      didPanRef.current = true;
       const points = [...pointersRef.current.values()];
       const spread = Math.hypot(
         points[0]!.x - points[1]!.x,
@@ -84,6 +102,18 @@ export function AtlasTileGrid({
         midX: (points[0]!.x + points[1]!.x) / 2,
         midY: (points[0]!.y + points[1]!.y) / 2,
       };
+      return;
+    }
+    didPanRef.current = false;
+    if (tool === "move") {
+      panDragRef.current = {
+        pointerId: pointerIdOf(event),
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        panned: false,
+      };
     }
   };
 
@@ -94,40 +124,70 @@ export function AtlasTileGrid({
       x: event.clientX,
       y: event.clientY,
     });
-    if (pointersRef.current.size < 2) return;
-    event.preventDefault();
-    const points = [...pointersRef.current.values()];
-    const spread = Math.hypot(
-      points[0]!.x - points[1]!.x,
-      points[0]!.y - points[1]!.y,
-    );
-    const nextZoom = Math.min(
-      MAX_ZOOM,
-      Math.max(MIN_ZOOM, pinchRef.current.zoom * (spread / pinchRef.current.spread)),
-    );
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    const rect = surface.getBoundingClientRect();
-    const originX = pinchRef.current.midX - rect.left;
-    const originY = pinchRef.current.midY - rect.top;
-    const scale = nextZoom / pinchRef.current.zoom;
-    const midX = (points[0]!.x + points[1]!.x) / 2;
-    const midY = (points[0]!.y + points[1]!.y) / 2;
-    setZoom(nextZoom);
-    setPan({
-      x:
-        originX -
-        (originX - pinchRef.current.panX) * scale +
-        (midX - pinchRef.current.midX),
-      y:
-        originY -
-        (originY - pinchRef.current.panY) * scale +
-        (midY - pinchRef.current.midY),
+    if (pointersRef.current.size >= 2) {
+      event.preventDefault();
+      const points = [...pointersRef.current.values()];
+      const spread = Math.hypot(
+        points[0]!.x - points[1]!.x,
+        points[0]!.y - points[1]!.y,
+      );
+      const nextZoom = Math.min(
+        MAX_ZOOM,
+        Math.max(MIN_ZOOM, pinchRef.current.zoom * (spread / pinchRef.current.spread)),
+      );
+      const surface = surfaceRef.current;
+      if (!surface) return;
+      const rect = surface.getBoundingClientRect();
+      const originX = pinchRef.current.midX - rect.left;
+      const originY = pinchRef.current.midY - rect.top;
+      const scale = nextZoom / pinchRef.current.zoom;
+      const midX = (points[0]!.x + points[1]!.x) / 2;
+      const midY = (points[0]!.y + points[1]!.y) / 2;
+      setZoom(nextZoom);
+      setPan({
+        x:
+          originX -
+          (originX - pinchRef.current.panX) * scale +
+          (midX - pinchRef.current.midX),
+        y:
+          originY -
+          (originY - pinchRef.current.panY) * scale +
+          (midY - pinchRef.current.midY),
+      });
+      return;
+    }
+    const drag = panDragRef.current;
+    if (!drag || drag.pointerId !== pointerId || tool !== "move") return;
+    if (!drag.panned) {
+      const distance = Math.hypot(
+        event.clientX - drag.startX,
+        event.clientY - drag.startY,
+      );
+      if (distance < TAP_SELECT_PX) return;
+      drag.panned = true;
+      didPanRef.current = true;
+    }
+    const dx = event.clientX - drag.lastX;
+    const dy = event.clientY - drag.lastY;
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+    setPan((current) => {
+      const next = applyPointerPan({
+        panX: current.x,
+        panY: current.y,
+        dx,
+        dy,
+      });
+      return { x: next.panX, y: next.panY };
     });
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    pointersRef.current.delete(pointerIdOf(event));
+    const pointerId = pointerIdOf(event);
+    pointersRef.current.delete(pointerId);
+    if (panDragRef.current?.pointerId === pointerId) {
+      panDragRef.current = null;
+    }
   };
 
   const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -164,6 +224,7 @@ export function AtlasTileGrid({
           backgroundSize: "16px 16px",
         }}
         data-testid={`${testId}-surface`}
+        data-tool={tool}
         data-zoom={String(zoom)}
         data-pan-x={String(pan.x)}
         data-pan-y={String(pan.y)}
@@ -235,6 +296,10 @@ export function AtlasTileGrid({
                 aria-pressed={selected}
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (didPanRef.current) {
+                    event.preventDefault();
+                    return;
+                  }
                   onSelect(tile.id);
                 }}
               >

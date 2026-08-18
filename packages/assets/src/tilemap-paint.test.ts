@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createDefaultTilemapPayload, getTile, setTile } from "./tilemap-payload";
 import {
   applyPinchView,
+  applyPointerPan,
   applyTilemapPaint,
   applyWheelZoom,
   cellsAlongSegment,
+  isTilemapPaintStrokeTool,
   MAX_PAINT_CELL_SIZE,
   MIN_PAINT_CELL_SIZE,
   paintCanvasTileAt,
@@ -130,6 +132,23 @@ describe("applyPinchView", () => {
         spreadRatio: 8,
       }).cellSize,
     ).toBe(MAX_PAINT_CELL_SIZE);
+  });
+});
+
+describe("applyPointerPan", () => {
+  it("shifts pan by the pointer delta", () => {
+    expect(applyPointerPan({ panX: 10, panY: 4, dx: 5, dy: -3 })).toEqual({
+      panX: 15,
+      panY: 1,
+    });
+  });
+});
+
+describe("isTilemapPaintStrokeTool", () => {
+  it("does not treat move as a paint stroke", () => {
+    expect(isTilemapPaintStrokeTool("move")).toBe(false);
+    expect(isTilemapPaintStrokeTool("picker")).toBe(false);
+    expect(isTilemapPaintStrokeTool("brush")).toBe(true);
   });
 });
 
@@ -276,6 +295,22 @@ describe("applyTilemapPaint", () => {
     expect(getTile(next, "layer-1", 5, 2)).toBe(2);
     expect(getTile(next, "layer-1", 4, 3)).toBe(3);
     expect(getTile(next, "layer-1", 5, 3)).toBe(4);
+  });
+
+  it("skips cells outside the map rectangle", () => {
+    const next = applyTilemapPaint(createDefaultTilemapPayload(), {
+      tool: "brush",
+      layerId: "layer-1",
+      tileId: 1,
+      start: { x: 64, y: 0 },
+      end: { x: 0, y: 0 },
+      cells: [
+        { x: 64, y: 0 },
+        { x: 0, y: 0 },
+      ],
+    });
+    expect(getTile(next, "layer-1", 64, 0)).toBe(0);
+    expect(getTile(next, "layer-1", 0, 0)).toBe(1);
   });
 });
 
