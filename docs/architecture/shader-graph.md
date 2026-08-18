@@ -21,7 +21,7 @@ and imported `Material` stubs as `material`. Saving rewrites the header to
 renamed, so `.shader.babasset` files keep working and their layout ids,
 references and Git LFS locks stay valid.
 
-`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess`),
+`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess` | `particle`),
 `shadingModel`, `blendMode`, `twoSided`, `alphaCutoff`, `preview` and the graph.
 `MaterialFunctionDocument` (v1) carries typed `inputs` / `outputs` with **stable
 pin ids** plus the graph; renaming a pin does not break callers.
@@ -84,6 +84,14 @@ not author:
 - **Post process**: the `position2d` fullscreen quad, its vertex output, and the
   screen UV remapped from clip space. Babylon still requires a vertex output in
   post-process mode. There is no World Position Offset channel.
+- **Particle**: `NodeMaterialModes.Particle` so `createEffectForParticles` can
+  attach. Vertex program may be empty; the terminal is fragment color/alpha
+  only. **Particle Color** (`input.particleColor`) is the system's
+  `particle_color` attribute (Babylon 9 has no `ParticleColorBlock` class).
+  **Particle Texture** (`input.particleTexture`) is `ParticleTextureBlock`;
+  unwired UV uses `particle_uv`. Live sampling is always
+  `system.particleTexture` — an NME preview texture is ignored. Hide world
+  attributes, WPO, PBR, Normal Map, and post-process buffers.
 
 Babylon reports build failures through `onBuildErrorObservable` rather than
 throwing, so the compiler subscribes and turns them into diagnostics. Blocks

@@ -22,6 +22,14 @@ describe("material validation", () => {
     expect(validateMaterialDocument(doc)).toEqual([]);
   });
 
+  it("accepts the default particle material", () => {
+    expect(
+      validateMaterialDocument(
+        createDefaultMaterialDocument("Sparks", "particle"),
+      ),
+    ).toEqual([]);
+  });
+
   it("flags an unknown node type", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({
@@ -208,6 +216,31 @@ describe("material validation", () => {
       properties: {},
     });
     expect(codes(doc)).toContain("material.domainMismatch");
+  });
+
+  it("flags Particle Color inside a surface material", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "pc",
+      type: "input.particleColor",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    expect(codes(doc)).toContain("material.domainMismatch");
+  });
+
+  it("names the particle domain when a surface node is illegal there", () => {
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    doc.nodes.push({
+      id: "wp",
+      type: "input.worldPosition",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    const diagnostic = validateMaterialDocument(doc).find(
+      (row) => row.code === "material.domainMismatch",
+    );
+    expect(diagnostic?.message).toMatch(/particle/i);
   });
 
   it("flags Scene Normal when the device has no sceneNormal capability", () => {

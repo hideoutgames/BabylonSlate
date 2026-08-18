@@ -51,6 +51,7 @@ import {
 import { CustomBlock } from "@babylonjs/core/Materials/Node/Blocks/customBlock";
 import { SceneDepthBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/sceneDepthBlock";
 import { PrePassTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/prePassTextureBlock";
+import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import type {
   MaterialOperation,
   MaterialValueType,
@@ -511,6 +512,19 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     NodeMaterialBlockConnectionPointTypes.Color4,
     "color",
   ),
+  "input.particleColor": attributeInput(
+    "particle_color",
+    NodeMaterialBlockConnectionPointTypes.Color4,
+    "color",
+  ),
+  "input.particleTexture": ({ name }) => {
+    const block = new ParticleTextureBlock(name);
+    return {
+      blocks: [block],
+      inputs: { uv: block.uv },
+      outputs: { rgba: block.rgba, rgb: block.rgb, a: block.a },
+    };
+  },
   "input.time": ({ name }) => {
     const block = new InputBlock(
       name,

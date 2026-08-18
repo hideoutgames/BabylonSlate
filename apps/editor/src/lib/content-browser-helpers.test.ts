@@ -46,6 +46,8 @@ import {
   materialHeaderMeta,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
+  isParticleMaterialAsset,
+  isParticleMaterialForPicker,
   classIdFromClassAsset,
   classParentLookup,
   addSelectedAssetGuid,
@@ -1449,6 +1451,9 @@ describe("content-browser-helpers", () => {
     expect(materialHeaderMeta("Material", { domain: "postProcess" })).toEqual({
       domain: "postProcess",
     });
+    expect(materialHeaderMeta("Material", { domain: "particle" })).toEqual({
+      domain: "particle",
+    });
     expect(materialHeaderMeta("Material", {})).toEqual({ domain: "surface" });
     expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
   });
@@ -1486,6 +1491,46 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
+  });
+
+  it("recognizes particle-domain Materials from header payload", () => {
+    expect(
+      isParticleMaterialAsset(
+        asset({
+          type: "Material",
+          payload: { domain: "particle" },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isParticleMaterialAsset(
+        asset({ type: "Material", payload: { domain: "surface" } }),
+      ),
+    ).toBe(false);
+    expect(
+      isParticleMaterialAsset(
+        asset({ type: "Material", payload: { domain: "postProcess" } }),
+      ),
+    ).toBe(false);
+  });
+
+  it("prefers an open particle Material document domain over a stale header", () => {
+    const sparks = asset({
+      type: "Material",
+      path: "assets/Sparks.material.babasset",
+      guid: "mat-sparks",
+      name: "Sparks",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isParticleMaterialForPicker(sparks, [
+        {
+          ref: { kind: "material", path: "assets/Sparks.material.babasset" },
+          content: { domain: "particle" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isParticleMaterialForPicker(sparks, [])).toBe(false);
   });
 
   it("lists selected folders and assets for Delete confirm, not flattened contents", () => {

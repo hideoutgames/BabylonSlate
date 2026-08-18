@@ -1400,7 +1400,10 @@ export function materialHeaderMeta(
     return undefined;
   }
   return {
-    domain: payload.domain === "postProcess" ? "postProcess" : "surface",
+    domain:
+      payload.domain === "postProcess" || payload.domain === "particle"
+        ? payload.domain
+        : "surface",
   };
 }
 
@@ -1410,6 +1413,15 @@ export function isPostProcessMaterialAsset(asset: {
   return (
     asset.header.type === "Material" &&
     asset.header.payload?.domain === "postProcess"
+  );
+}
+
+export function isParticleMaterialAsset(asset: {
+  header: { type: string; payload?: Record<string, unknown> };
+}): boolean {
+  return (
+    asset.header.type === "Material" &&
+    asset.header.payload?.domain === "particle"
   );
 }
 
@@ -1431,6 +1443,26 @@ export function isPostProcessMaterialForPicker(
     return (open.content as { domain?: unknown }).domain === "postProcess";
   }
   return isPostProcessMaterialAsset(asset);
+}
+
+export function isParticleMaterialForPicker(
+  asset: {
+    path: string;
+    header: { type: string; payload?: Record<string, unknown> };
+  },
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+): boolean {
+  const open = openDocuments.find(
+    (entry) =>
+      entry.ref.kind === "material" && entry.ref.path === asset.path,
+  );
+  if (open && open.content && typeof open.content === "object") {
+    return (open.content as { domain?: unknown }).domain === "particle";
+  }
+  return isParticleMaterialAsset(asset);
 }
 
 function documentAsset(

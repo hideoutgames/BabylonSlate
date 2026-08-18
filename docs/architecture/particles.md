@@ -35,7 +35,7 @@ Always set `system.particleTexture` from the Emitter Texture guid (ResourceCache
 
 | Node | Kind | Babylon |
 | --- | --- | --- |
-| Particle Color | `input.particleColor` | `ParticleColorBlock` (system `vColor` / color gradients) |
+| Particle Color | `input.particleColor` | `particle_color` attribute (`ParticleColorBlock` in NME; Babylon 9 has no class) |
 | Particle Texture | `input.particleTexture` | `ParticleTextureBlock` (live sample is `system.particleTexture`) |
 
 Shared math / Mix / Combine stay legal. Hide world attributes, WPO, PBR metallic, Normal Map, post-process buffers. Terminal is fragment color/alpha only (no `output.surface`). Emitter AssetPicker filters `domain === "particle"`. Missing material = Babylon default `texture * particleColor`. Particle blend is `IParticleSystem.blendMode`, not MeshComponent `blendMode`.
