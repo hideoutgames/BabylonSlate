@@ -59,7 +59,7 @@ Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/
 
 ## Templates folder
 
-`createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location. Create Project still offers built-in **Empty** and **2D** cards; the Homepage copy does not advertise Engine Settings templates on web. Other hosts show a card per `*.babproject` entry that has a manifest. Entries without a manifest are skipped rather than failing the Homepage.
+`createTemplateStorage(folder)` binds the Engine Settings templates folder in the same tier as projects, so `listTemplates()` reads directory and zip templates through the ordinary project backends. Web has no folder picker for a templates location. Create Project still offers built-in **Empty** and **2D** cards; the Homepage copy does not advertise Engine Settings templates on web. Other hosts show a card per directory or `.zip` / legacy `.babproject` entry that has a `project.json` manifest. Entries without a manifest are skipped rather than failing the Homepage.
 
 ## Write performance decision (§19)
 

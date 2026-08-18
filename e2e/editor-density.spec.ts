@@ -230,7 +230,7 @@ test.describe("Editor density and IA", () => {
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
 
-    const listed = page.getByTestId("open-listed-project-TestProject.babproject");
+    const listed = page.getByTestId("open-listed-project-TestProject");
     await expect(listed).toContainText("TestProject");
     await listed.click({ button: "right" });
     await expect(page.getByTestId("homepage-project-menu")).toBeVisible();

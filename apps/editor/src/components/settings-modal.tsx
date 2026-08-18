@@ -58,6 +58,7 @@ import { useDocuments } from "../context/document-context";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
+import { projectArchiveDownloadName } from "../lib/display-project-name";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
@@ -335,7 +336,7 @@ export function SettingsModal({
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${projectDocument.metadata.name.replace(/\s+/g, "_")}.babproject`;
+    anchor.download = projectArchiveDownloadName(projectDocument.metadata.name);
     anchor.click();
     URL.revokeObjectURL(url);
   };
