@@ -265,6 +265,68 @@ describe("anim graph evaluator", () => {
     );
   });
 
+  it("does not take a both-ways reverse from idle when the forward condition is false", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    const both = setTransitionBidirectional(
+      {
+        ...doc,
+        transitions: [
+          {
+            id: "idle-to-run",
+            fromStateId: "idle",
+            toStateId: "run",
+            condition: "moving",
+            blendSeconds: 0,
+            priority: 0,
+            ruleGraph: createDefaultTransitionRuleGraph(),
+          },
+        ],
+      },
+      "idle-to-run",
+      true,
+    );
+    const fromIdle = evaluateAnimGraph(both, null, 0.016, {
+      conditions: { moving: false },
+    });
+    expect(fromIdle.stateId).toBe("idle");
+    const fromRun = evaluateAnimGraph(
+      both,
+      {
+        stateId: "run",
+        normalisedTime: 0.2,
+        blendWeights: { run: 1 },
+        timeMs: 200,
+        facts: {
+          elapsedSeconds: 0.2,
+          durationSeconds: 1,
+          normalisedTime: 0.2,
+          remainingSeconds: 0.8,
+          remainingRatio: 0.8,
+          looping: true,
+          loopCount: 0,
+          justLooped: false,
+          justFinished: false,
+        },
+        layers: [],
+        blendFromStateId: null,
+        blendFromTimeMs: 0,
+        blendElapsedMs: 0,
+        loopCount: 0,
+      },
+      0.016,
+      { conditions: { moving: false } },
+    );
+    expect(fromRun.stateId).toBe("idle");
+  });
+
   it("drops both directions when the visual edge is removed", () => {
     const doc = createDefaultAnimGraph();
     doc.states.push({

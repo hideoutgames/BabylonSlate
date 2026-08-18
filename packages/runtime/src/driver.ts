@@ -1420,6 +1420,8 @@ class InProcessRuntime implements RuntimeDriver {
           clipName: clip.clipName,
           normalisedTime: next.normalisedTime,
         });
+      } else {
+        this.physicsSync.setActorSpriteClip(actor.guid, null);
       }
       const currentLayer =
         next.layers.find((layer) => layer.stateId === next.stateId) ??

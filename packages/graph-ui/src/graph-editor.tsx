@@ -3,7 +3,6 @@ import {
   BackgroundVariant,
   ConnectionMode,
   Controls,
-  MarkerType,
   ReactFlow,
   ReactFlowProvider,
   applyEdgeChanges,
@@ -45,6 +44,7 @@ import {
   type PaletteNode,
   type SerializedPin,
 } from "./graph-types";
+import { animTransitionEdgeMarkers } from "./anim-transition-markers";
 import { GraphEditorProvider } from "./graph-editor-context";
 import {
   canonicalGraphSignature,
@@ -196,8 +196,6 @@ export interface GraphEditorProps {
 const DOUBLE_TAP_MS = 350;
 const PASTE_OFFSET = 40;
 
-const CLOSED_ARROW = { type: MarkerType.ArrowClosed } as const;
-
 function asConnection(connection: Connection | Edge): Connection {
   return {
     source: connection.source,
@@ -209,8 +207,6 @@ function asConnection(connection: Connection | Edge): Connection {
 
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
   return edges.map((edge) => {
-    const both = edge.type === "animTransitionBoth";
-    const directed = both || edge.type === "animTransition";
     return {
       id: edge.id,
       source: edge.source,
@@ -218,8 +214,7 @@ function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {
       sourceHandle: edge.sourceHandle,
       targetHandle: edge.targetHandle,
       ...(edge.type ? { type: edge.type } : {}),
-      ...(directed ? { markerEnd: CLOSED_ARROW } : {}),
-      ...(both ? { markerStart: CLOSED_ARROW } : {}),
+      ...animTransitionEdgeMarkers(edge.type),
     };
   });
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   applyAnimStateToScene,
   applySpriteAnimFrame,
+  applySpriteAnimationAssetFrame,
   resolvePlaySpriteSlot,
   sceneAnimHostFromBinding,
   seekGameplayAnimation,
@@ -212,6 +213,47 @@ describe("seekGameplayAnimation", () => {
     const pivot = mesh.getPivotPoint();
     expect(pivot.x).toBeCloseTo(-0.5);
     expect(pivot.y).toBeCloseTo(-0.5);
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("sizes the sprite quad from Sprite Animation texture pixels", () => {
+    const animation: SpriteAnimationPayload = {
+      frames: [
+        {
+          textureGuid: "frame-a",
+          durationMs: 100,
+          pivot: { x: 0.5, y: 0.5 },
+          collision: { x: 0, y: 0, width: 1, height: 1 },
+          width: 200,
+          height: 100,
+        },
+      ],
+    };
+    const engine = new NullEngine({
+      renderWidth: 64,
+      renderHeight: 64,
+      textureSize: 4,
+      deterministicLockstep: false,
+      lockstepMaxSteps: 1,
+    });
+    const scene = new Scene(engine);
+    const mesh = createSpriteQuad(scene, "hero", {
+      name: "a",
+      u: 0,
+      v: 0,
+      uSize: 1,
+      vSize: 1,
+      durationMs: 100,
+      pivot: { x: 0.5, y: 0.5 },
+      width: 100,
+      height: 100,
+    });
+    applySpriteAnimationAssetFrame(mesh, animation, 0, { pixelsPerUnit: 100 });
+    mesh.refreshBoundingInfo();
+    const size = mesh.getBoundingInfo().boundingBox.extendSize;
+    expect(size.x).toBeCloseTo(1);
+    expect(size.y).toBeCloseTo(0.5);
     scene.dispose();
     engine.dispose();
   });

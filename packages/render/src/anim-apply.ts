@@ -5,7 +5,7 @@ import {
   spriteAnimationFrameAt,
   spriteClipFrameAt,
 } from "@babylonslate/assets";
-import { applySpriteFrameUvs } from "./sprite-quad";
+import { applySpriteFrameUvs, setSpriteQuadSize } from "./sprite-quad";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
 /**
@@ -73,6 +73,7 @@ export function applySpriteAnimationAssetFrame(
       : 100;
   const worldWidth = (frame.width ?? 100) / ppu;
   const worldHeight = (frame.height ?? 100) / ppu;
+  setSpriteQuadSize(mesh, worldWidth, worldHeight);
   mesh.setPivotPoint(
     new Vector3(
       (frame.pivot.x - 0.5) * worldWidth,
