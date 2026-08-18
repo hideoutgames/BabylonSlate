@@ -10,7 +10,6 @@ import {
   normalizeAudioPayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
-  type AudioPayload,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
 import { AudioBufferCache } from "./audio-buffer-cache";
