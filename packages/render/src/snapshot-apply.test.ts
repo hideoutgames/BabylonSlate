@@ -257,7 +257,7 @@ describe("createPlayMesh", () => {
       slotId: 4,
       meshAssetGuid: null,
       meshKind: "light:point",
-      light: { intensity: 1, enabled: true },
+      light: { color: [1, 1, 1], intensity: 1, enabled: true },
     });
     expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
       AUTHORED_FILL_LIGHT_INTENSITY,
@@ -275,7 +275,7 @@ describe("createPlayMesh", () => {
       slotId: 4,
       meshAssetGuid: null,
       meshKind: "light:point",
-      light: { intensity: 1 },
+      light: { color: [1, 1, 1], intensity: 1, enabled: true },
     });
     applySnapshotToScene(scene, binding, {
       frameId: 1,
