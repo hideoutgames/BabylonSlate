@@ -139,12 +139,20 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setShowBounds",
   "setShowCollision",
   "setShowNav",
+  "setShowAudioDebug",
   "debugColliders",
   "animState",
 ]);
 
 export function shouldForwardPlayEngineCommand(type: string): boolean {
   return PLAY_ENGINE_APPLY_COMMAND_TYPES.has(type as CommandMessage["type"]);
+}
+
+export function overlayLogForCommand(
+  command: CommandMessage,
+): string | null {
+  if (command.type === "playSound") return null;
+  return null;
 }
 
 export function applyPlayHudConsoleCommand(
@@ -692,12 +700,8 @@ export function startPlaySession(options: {
         stack: command.stack,
       });
     }
-    if (command.type === "playSound") {
-      options.onLog?.(
-        `[audio] ${command.assetGuid} vol=${command.volume}`,
-        "log",
-      );
-    }
+    const overlayLog = overlayLogForCommand(command);
+    if (overlayLog) options.onLog?.(overlayLog, "log");
   };
 
   const scripts = options.scripts ?? [];

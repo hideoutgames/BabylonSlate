@@ -315,7 +315,22 @@ describe("shouldForwardPlayEngineCommand", () => {
     expect(shouldForwardPlayEngineCommand("setFreeCam")).toBe(true);
     expect(shouldForwardPlayEngineCommand("debugColliders")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("setShowAudioDebug")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
+  });
+});
+
+describe("overlayLogForCommand", () => {
+  it("does not emit an [audio] overlay line for playSound", async () => {
+    const { overlayLogForCommand } = await import("./play-session");
+    expect(
+      overlayLogForCommand({
+        type: "playSound",
+        assetGuid: "jump",
+        volume: 0.5,
+        frameId: 1,
+      }),
+    ).toBeNull();
   });
 });
 
