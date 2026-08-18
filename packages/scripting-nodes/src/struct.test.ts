@@ -81,15 +81,15 @@ describe("struct nodes", () => {
 
   it("Title Cases engine Rotator, Color, and Transform pin displays", () => {
     const registry = createDefaultNodeRegistry();
-    const rotator = registry.get("struct.makeRotator")!.pins();
+    const rotator = registry.get("struct.makeRotator")!.pins({});
     expect(
       rotator.filter((pin) => pin.direction === "in").map((pin) => pin.name),
     ).toEqual(["Pitch", "Yaw", "Roll"]);
-    const color = registry.get("struct.breakColor")!.pins();
+    const color = registry.get("struct.breakColor")!.pins({});
     expect(
       color.filter((pin) => pin.direction === "out").map((pin) => pin.name),
     ).toEqual(["R", "G", "B", "A"]);
-    const transform = registry.get("struct.makeTransform")!.pins();
+    const transform = registry.get("struct.makeTransform")!.pins({});
     expect(
       transform.filter((pin) => pin.direction === "in").map((pin) => pin.name),
     ).toEqual(["Location", "Rotation", "Scale"]);
