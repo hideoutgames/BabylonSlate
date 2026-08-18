@@ -9,6 +9,10 @@ export {
   NAVMESH_EXPORT_GUID_PREFIX,
   navmeshExportGuid,
   sceneGuidFromNavmeshExport,
+  UI_IMAGE_EXPORT_TYPE,
+  UI_IMAGE_EXPORT_GUID_PREFIX,
+  uiImageExportGuid,
+  textureGuidFromUiImageExport,
 } from "./constants";
 export { collectExportClosure } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";

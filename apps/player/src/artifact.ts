@@ -1,3 +1,4 @@
+import { mimeForGuiTextureBytes } from "@babylonslate/assets";
 import { normalizeScene, type SerializedScene } from "@babylonslate/core";
 import {
   normalizeUserInterfaceDocument,
@@ -12,6 +13,8 @@ import {
   SCRIPTS_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
+  UI_IMAGE_EXPORT_TYPE,
+  textureGuidFromUiImageExport,
   type GameManifest,
   type PackSource,
 } from "@babylonslate/exporter";
@@ -24,6 +27,7 @@ export type LoadedGame = {
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
   textureBytes: Map<string, Uint8Array>;
+  guiImageBytes: Map<string, Uint8Array>;
   modelBytes: Map<string, Uint8Array>;
   fontBytes: Map<string, Uint8Array>;
   fontFamilies: Map<string, string>;
@@ -79,6 +83,7 @@ export async function loadGameFromFiles(
   const scripts = parseScriptRegistry(textFromFiles(files, SCRIPTS_FILE));
   const scenes = new Map<string, SerializedScene>();
   const textureBytes = new Map<string, Uint8Array>();
+  const guiImageBytes = new Map<string, Uint8Array>();
   const modelBytes = new Map<string, Uint8Array>();
   const fontBytes = new Map<string, Uint8Array>();
   const fontFamilies = new Map<string, string>();
@@ -125,6 +130,11 @@ export async function loadGameFromFiles(
       navmeshBytes.set(sceneGuid, bytes);
       continue;
     }
+    if (entry.type === UI_IMAGE_EXPORT_TYPE) {
+      const textureGuid = textureGuidFromUiImageExport(entry.guid) ?? entry.guid;
+      guiImageBytes.set(textureGuid, bytes);
+      continue;
+    }
     if (entry.type === "UserInterface") {
       userInterfaces.set(entry.guid, normalizeUserInterfaceDocument(parseJsonAsset(bytes)));
     }
@@ -135,6 +145,7 @@ export async function loadGameFromFiles(
     scripts,
     scenes,
     textureBytes,
+    guiImageBytes,
     modelBytes,
     fontBytes,
     fontFamilies,
@@ -171,4 +182,18 @@ export async function loadGameFromHttp(
     }
   }
   return loadGameFromFiles(files, { fetchImpl, baseUrl });
+}
+
+/** Browser-decodable texture bytes for Babylon GUI Image widgets. */
+export function guiTextureBytesFromGame(
+  game: LoadedGame,
+): Map<string, Uint8Array> {
+  const map = new Map<string, Uint8Array>();
+  for (const [guid, bytes] of game.textureBytes) {
+    if (mimeForGuiTextureBytes(bytes)) map.set(guid, bytes);
+  }
+  for (const [guid, bytes] of game.guiImageBytes) {
+    map.set(guid, bytes);
+  }
+  return map;
 }

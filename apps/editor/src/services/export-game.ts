@@ -4,7 +4,9 @@ import {
   zipExport,
   MISSING_STARTUP_SCENE_MESSAGE,
   NAVMESH_EXPORT_TYPE,
+  UI_IMAGE_EXPORT_TYPE,
   navmeshExportGuid,
+  uiImageExportGuid,
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
@@ -65,6 +67,7 @@ export type CollectExportGameParams = {
   bytesByGuid: (guid: string) => Uint8Array | null;
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
+  guiImageBytesByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
   pixelsPerUnit?: number;
@@ -211,6 +214,20 @@ export async function collectAndExportGame(
       bytes: nav,
       encoding: "bytes",
       name: `${asset.name} NavMesh`,
+    });
+  }
+  for (const guid of closure.value) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Texture") continue;
+    const gui = params.guiImageBytesByGuid?.(guid);
+    if (!gui || gui.byteLength === 0) continue;
+    exportAssets.push({
+      guid: uiImageExportGuid(guid),
+      type: UI_IMAGE_EXPORT_TYPE,
+      sceneGuid: sceneGuidForAsset(guid, startup, params.assets, params.sceneByGuid),
+      bytes: gui,
+      encoding: "bytes",
+      name: `${asset.name} UI Image`,
     });
   }
 

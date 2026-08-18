@@ -1412,6 +1412,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         graphByGuid: loaded.graphByGuid,
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
+        guiImageBytesByGuid: loaded.guiImageBytesByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         customResolution:
           projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,

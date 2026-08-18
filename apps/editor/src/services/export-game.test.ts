@@ -430,6 +430,61 @@ describe("collectAndExportGame", () => {
     ).toBe(true);
   });
 
+  it("packs Texture pixels as a UiImage sidecar alongside KTX2 GPU bytes", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              id: "mesh-1",
+              classId: "MeshComponent",
+              properties: { textureGuid: "tex-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const ktx2 = new Uint8Array([
+      0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    const pixels = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "tex-1", type: "Texture", name: "Logo" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      bytesByGuid: (guid) => {
+        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "tex-1") return ktx2;
+        return null;
+      },
+      guiImageBytesByGuid: (guid) => (guid === "tex-1" ? pixels : null),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(
+      result.value.manifest.assets.some(
+        (entry) => entry.type === "Texture" && entry.guid === "tex-1",
+      ),
+    ).toBe(true);
+    expect(
+      result.value.manifest.assets.some(
+        (entry) => entry.type === "UiImage" && entry.guid === "uiimage:tex-1",
+      ),
+    ).toBe(true);
+  });
+
   it("Preview Build always bundles the debugger", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

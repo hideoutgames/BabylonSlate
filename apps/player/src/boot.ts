@@ -15,7 +15,7 @@ import { createEngine, type EngineHandle } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
-import type { LoadedGame } from "./artifact";
+import { guiTextureBytesFromGame, type LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 import {
   packedBootControls,
@@ -125,7 +125,7 @@ export function startPlayer(options: {
   const uiHost = createPlayerUiHost({
     scene: handle.scene,
     library: content.userInterfaces,
-    textureBytes: game.textureBytes,
+    textureBytes: guiTextureBytesFromGame(game),
     viewport: {
       width: Math.max(1, canvas.width || canvas.clientWidth || 1),
       height: Math.max(1, canvas.height || canvas.clientHeight || 1),

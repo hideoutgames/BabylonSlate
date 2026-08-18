@@ -70,6 +70,7 @@ describe("loadExportDocuments", () => {
     });
     expect(loaded.sceneByGuid("scene-1")?.name).toBe(scene.name);
     expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([9, 9]));
+    expect(loaded.guiImageBytesByGuid("tex-1")).toEqual(new Uint8Array([1]));
     expect(JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("scene-1")!)).name).toBe(
       scene.name,
     );
