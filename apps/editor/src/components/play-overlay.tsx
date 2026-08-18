@@ -25,6 +25,7 @@ import {
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import { DebugConsole } from "./debug-console";
+import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
@@ -51,6 +52,7 @@ import type {
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { audioStats } from "@babylonslate/render";
+import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
@@ -259,6 +261,12 @@ export function PlayOverlay({
   const initialRenderRef = useRef(render);
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
+  const inspectSnapshot = useInspectWorldPoll(
+    inspectorOpen && overlayInspector,
+    () =>
+      sessionRef.current?.inspectWorld() ??
+      Promise.resolve({ tickIndex: 0, nodes: [] }),
+  );
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -591,6 +599,11 @@ export function PlayOverlay({
           sessionRef.current?.executeConsoleCommand(line) ??
           Promise.resolve({ success: false, output: "not playing" })
         }
+      />
+      <DebugInspectDialog
+        open={inspectorOpen && overlayInspector}
+        onOpenChange={setInspectorOpen}
+        snapshot={inspectSnapshot}
       />
       {trace ? (
         <div
