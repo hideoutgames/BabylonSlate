@@ -15,6 +15,8 @@ export const SCRIPTS_FILE = "scripts.js";
 export const BOOT_PACK_FILE = "boot.babpack";
 export const NAVMESH_EXPORT_TYPE = "NavMesh";
 export const NAVMESH_EXPORT_GUID_PREFIX = "navmesh:";
+export const UI_IMAGE_EXPORT_TYPE = "UiImage";
+export const UI_IMAGE_EXPORT_GUID_PREFIX = "uiimage:";
 export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
 export const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
 
@@ -25,6 +27,16 @@ export function navmeshExportGuid(sceneGuid: string): string {
 export function sceneGuidFromNavmeshExport(guid: string): string | null {
   return guid.startsWith(NAVMESH_EXPORT_GUID_PREFIX)
     ? guid.slice(NAVMESH_EXPORT_GUID_PREFIX.length)
+    : null;
+}
+
+export function uiImageExportGuid(textureGuid: string): string {
+  return `${UI_IMAGE_EXPORT_GUID_PREFIX}${textureGuid}`;
+}
+
+export function textureGuidFromUiImageExport(guid: string): string | null {
+  return guid.startsWith(UI_IMAGE_EXPORT_GUID_PREFIX)
+    ? guid.slice(UI_IMAGE_EXPORT_GUID_PREFIX.length)
     : null;
 }
 
