@@ -53,6 +53,7 @@ export type AudioPayload = {
   pitchRandom: boolean;
   pitchMin: number;
   pitchMax: number;
+  loop: boolean;
 };
 
 export type AudioChannelEffect =
@@ -180,6 +181,7 @@ export function createDefaultAudioPayload(): AudioPayload {
     pitchRandom: false,
     pitchMin: 1,
     pitchMax: 1,
+    loop: false,
   };
 }
 
@@ -227,6 +229,7 @@ export function normalizeAudioPayload(value: unknown): AudioPayload {
     pitchRandom: source.pitchRandom === true,
     pitchMin,
     pitchMax,
+    loop: source.loop === true,
   };
 }
 

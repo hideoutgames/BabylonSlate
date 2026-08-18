@@ -21,7 +21,7 @@ and imported `Material` stubs as `material`. Saving rewrites the header to
 renamed, so `.shader.babasset` files keep working and their layout ids,
 references and Git LFS locks stay valid.
 
-`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess` | `particle`),
+`MaterialDocument` (v2) carries `domain` (`surface` | `postProcess` | `interface` | `particle`),
 `shadingModel`, `blendMode`, `twoSided`, `alphaCutoff`, `preview` and the graph.
 `MaterialFunctionDocument` (v1) carries typed `inputs` / `outputs` with **stable
 pin ids** plus the graph; renaming a pin does not break callers.
@@ -84,6 +84,14 @@ not author:
 - **Post process**: the `position2d` fullscreen quad, its vertex output, and the
   screen UV remapped from clip space. Babylon still requires a vertex output in
   post-process mode. There is no World Position Offset channel.
+- **Interface**: the same PostProcess NodeMaterial mode and fullscreen plumbing
+  as post-process, but unlit 2D. The terminal is `output.interface` (**Color**
+  `vec4` + **Opacity** `float`, default 1). UV / Time / Texture Sample / math
+  and color are legal. World Position/Normal, Vertex Color, Scene Depth/Normal/
+  Color, surface PBR output, and post-process screen samples are not. Material
+  Functions stay domain-neutral; an Interface graph may call a function that
+  does not use restricted nodes. HUD widgets blit this material — they never
+  attach a surface or scene post-process material.
 - **Particle**: `NodeMaterialModes.Particle` so `createEffectForParticles` can
   attach. Vertex program may be empty; the terminal is fragment color/alpha
   only. **Particle Color** (`input.particleColor`) is the system's
@@ -110,7 +118,9 @@ material on screen.
 The preview is a disposable Scene on the **app-lifetime Engine** — never a
 second WebGL context. `createMaterialPreviewScene` builds cube, sphere,
 cylinder, cone, plane, or a custom Model, and applies either the material or a
-camera post-process. Present goes through `camera.outputRenderTarget` (an RTT)
+camera post-process. **Interface** materials use that same post-process / quad
+blit (`applyPostProcess`) as post-process — unlit Color × Opacity, not a PBR
+mesh. Present goes through `camera.outputRenderTarget` (an RTT)
 and a 2D blit onto `material-preview-canvas`. Do **not** `registerView` or
 default-framebuffer `scene.render()` — those overwrite the Scene viewport and
 Play overlay, which share that Engine. Prefab Preview is on that Engine too
@@ -177,7 +187,7 @@ defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
 
-- **No node selected:** Domain, Shading Model, Blend Mode, Two Sided (and Alpha
+- **No node selected:** Domain (Surface / Post Process / Interface / Particle), Shading Model, Blend Mode, Two Sided (and Alpha
   Cutoff when masked) plus the cost line.
 - **A node selected:** those material settings hide; the panel shows only that
   node's properties and unconnected pin-default editors.
@@ -250,7 +260,8 @@ without mutating the scene document. `hardwareScalingLevel` from the same
 settings page is applied to the Engine.
 
 Play and export close over surface materials, stack materials (including
-disabled entries), transitive Material Functions and texture guids. Saving a
+disabled entries), **Interface** materials referenced from HUD `materialGuid`,
+transitive Material Functions and texture guids. Saving a
 Material writes `domain` onto `header.payload` and `materialDependencies().all`
 onto `header.dependencies[]`. The packaged player hydrates those JSON payloads
 into `createEngine` (`materialDocuments`, `materialFunctions`,
@@ -259,9 +270,13 @@ into `createEngine` (`materialDocuments`, `materialFunctions`,
 editor Play and the packaged player call `loadScene` / `applySceneEnvironment`
 so the destination stack and environment replace the previous scene's. Engine Settings
 `postProcessingEnabled` is not applied to exported games — omitted means the
-authored stack runs.
+authored stack runs. HUD Material widgets compile Interface documents through
+the same library and blit to GUI Images ([ui-runtime.md](ui-runtime.md)).
 
 ## Not implemented
 
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.
+- Surface and post-process materials cannot be assigned to HUD Material widgets
+  (Interface domain only). World-space `WidgetComponent` / `CreateForMesh` is
+  still hidden.

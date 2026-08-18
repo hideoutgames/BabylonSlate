@@ -52,9 +52,65 @@ describe("DocumentService", () => {
 
     const state = service.getState();
     expect(state.tabOrder[0]).toBe(CONTENT_BROWSER_ID);
-    expect(state.tabOrder).toContain(sceneId);
-    expect(state.tabOrder).toContain(graphId);
+    expect(state.tabOrder[1]).toBe(sceneId);
+    expect(state.tabOrder[2]).toBe(graphId);
     expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
+  });
+
+  it("pins an open scene immediately after content browser even when other assets were opened first", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    const enumPath = "assets/colors.babasset";
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+
+    await service.openDocument(project, {
+      kind: "graph",
+      path: MAIN_CLASS_FILE,
+      label: "class",
+    });
+    await service.openDocument(project, {
+      kind: "enum",
+      path: enumPath,
+      label: "colors",
+    });
+    await service.openDocument(project, {
+      kind: "scene",
+      path: MAIN_SCENE_FILE,
+      label: "main",
+    });
+
+    const enumId = documentId({ kind: "enum", path: enumPath });
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      sceneId,
+      graphId,
+      enumId,
+    ]);
+    expect(
+      service.getScrollableDocumentsOrdered().map((doc) => doc.id),
+    ).toEqual([graphId, enumId]);
+  });
+
+  it("pins a restored scene after content browser even when saved order listed it last", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const projectService = createMockProjectService();
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+
+    await service.initializeFromProject(projectService, project, {
+      documents: {},
+      tabOrder: [graphId, sceneId],
+      activeDocumentId: graphId,
+    });
+
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      sceneId,
+      graphId,
+    ]);
   });
 
   it("cannot close the content browser tab", async () => {
@@ -91,25 +147,127 @@ describe("DocumentService", () => {
     expect(doc?.dirty).toBe(true);
   });
 
-  it("reorders closable tabs without moving content browser", async () => {
+  it("reorders scrollable tabs without moving content browser or the pinned scene", async () => {
     const service = new DocumentService();
-    const project = createEmptyProject("Test");
-    const projectService = createMockProjectService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
     const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
     const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    const enumPath = "assets/colors.babasset";
+    const enumId = documentId({ kind: "enum", path: enumPath });
 
-    await service.initializeFromProject(projectService, project, {
-      documents: {},
-      tabOrder: [sceneId, graphId],
-      activeDocumentId: sceneId,
+    await service.openDocument(project, {
+      kind: "scene",
+      path: MAIN_SCENE_FILE,
+      label: "main",
+    });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: MAIN_CLASS_FILE,
+      label: "class",
+    });
+    await service.openDocument(project, {
+      kind: "enum",
+      path: enumPath,
+      label: "colors",
     });
 
     service.reorderClosableTabs(0, 1);
 
-    const state = service.getState();
-    expect(state.tabOrder[0]).toBe(CONTENT_BROWSER_ID);
-    expect(state.tabOrder[1]).toBe(graphId);
-    expect(state.tabOrder[2]).toBe(sceneId);
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      sceneId,
+      enumId,
+      graphId,
+    ]);
+  });
+
+  it("does not move a pinned scene when reorderTabs targets its index", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+
+    await service.openDocument(project, {
+      kind: "scene",
+      path: MAIN_SCENE_FILE,
+      label: "main",
+    });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: MAIN_CLASS_FILE,
+      label: "class",
+    });
+
+    service.reorderTabs(1, 2);
+
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      sceneId,
+      graphId,
+    ]);
+  });
+
+  it("keeps the replacement scene pinned after content browser", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const firstId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const secondPath = "assets/level.scene.babasset";
+    const secondId = documentId({ kind: "scene", path: secondPath });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+
+    await service.openDocument(project, {
+      kind: "scene",
+      path: MAIN_SCENE_FILE,
+      label: "main",
+    });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: MAIN_CLASS_FILE,
+      label: "class",
+    });
+    await service.openDocument(project, {
+      kind: "scene",
+      path: secondPath,
+      label: "level",
+    });
+
+    expect(service.getState().openDocuments.has(firstId)).toBe(false);
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      secondId,
+      graphId,
+    ]);
+  });
+
+  it("unpins the scene slot when the scene tab is closed", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+
+    await service.openDocument(project, {
+      kind: "scene",
+      path: MAIN_SCENE_FILE,
+      label: "main",
+    });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: MAIN_CLASS_FILE,
+      label: "class",
+    });
+    service.closeDocument(sceneId);
+
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      graphId,
+    ]);
+    expect(
+      service.getScrollableDocumentsOrdered().map((doc) => doc.id),
+    ).toEqual([graphId]);
   });
 
   it("builds layout map with tab order and active document", async () => {
@@ -218,6 +376,7 @@ describe("DocumentService", () => {
     expect(state.openDocuments.has(secondId)).toBe(true);
     expect(state.openDocuments.has(graphId)).toBe(true);
     expect(state.activeDocumentId).toBe(secondId);
+    expect(state.tabOrder).toEqual([CONTENT_BROWSER_ID, secondId, graphId]);
   });
 
   it("restores at most one scene tab from a saved layout", async () => {
@@ -238,9 +397,7 @@ describe("DocumentService", () => {
     });
 
     const state = service.getState();
-    expect(state.tabOrder).toContain(CONTENT_BROWSER_ID);
-    expect(state.tabOrder).toContain(graphId);
-    expect(state.tabOrder).toContain(secondId);
+    expect(state.tabOrder).toEqual([CONTENT_BROWSER_ID, secondId, graphId]);
     expect(state.tabOrder).not.toContain(firstId);
     expect(state.activeDocumentId).toBe(CONTENT_BROWSER_ID);
   });

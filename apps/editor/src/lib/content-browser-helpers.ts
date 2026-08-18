@@ -32,6 +32,7 @@ import {
   materialDependencies,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
+  parseMaterialDomain,
 } from "@babylonslate/shader-graph";
 import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
 import {
@@ -1560,10 +1561,7 @@ export function materialHeaderMeta(
     return undefined;
   }
   return {
-    domain:
-      payload.domain === "postProcess" || payload.domain === "particle"
-        ? payload.domain
-        : "surface",
+    domain: parseMaterialDomain(payload.domain),
   };
 }
 
@@ -1603,6 +1601,35 @@ export function isPostProcessMaterialForPicker(
     return (open.content as { domain?: unknown }).domain === "postProcess";
   }
   return isPostProcessMaterialAsset(asset);
+}
+
+export function isInterfaceMaterialAsset(asset: {
+  header: { type: string; payload?: Record<string, unknown> };
+}): boolean {
+  return (
+    asset.header.type === "Material" &&
+    asset.header.payload?.domain === "interface"
+  );
+}
+
+export function isInterfaceMaterialForPicker(
+  asset: {
+    path: string;
+    header: { type: string; payload?: Record<string, unknown> };
+  },
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+): boolean {
+  const open = openDocuments.find(
+    (entry) =>
+      entry.ref.kind === "material" && entry.ref.path === asset.path,
+  );
+  if (open && open.content && typeof open.content === "object") {
+    return (open.content as { domain?: unknown }).domain === "interface";
+  }
+  return isInterfaceMaterialAsset(asset);
 }
 
 export function isParticleMaterialForPicker(

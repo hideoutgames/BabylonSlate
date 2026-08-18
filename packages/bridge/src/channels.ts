@@ -349,6 +349,8 @@ export type CommandMessage =
       componentId: string;
       particleSystemGuid: string | null;
       play?: boolean;
+      sortingLayer?: string;
+      orderInLayer?: number;
     }
   | {
       type: "setParticlePlaying";
@@ -360,6 +362,10 @@ export type CommandMessage =
       type: "setRenderResolution";
       width: number;
       height: number;
+    }
+  | {
+      type: "setInputMode";
+      mode: "All" | "Interface" | "Game";
     };
 
 export type BridgeHostMessage =

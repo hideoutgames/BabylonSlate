@@ -108,7 +108,7 @@ import {
   collectImageGuidsFromUiDocuments,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
-import { playUserInterfaceRuntimeDocuments } from "../lib/play-content";
+import { playUserInterfaceRuntimeDocuments, interfaceMaterialGuidsFromUiDocuments } from "../lib/play-content";
 import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
@@ -726,11 +726,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlaySceneLibrary([]);
         }
+        let uiLibrary: Record<string, UserInterfaceDocument> = {};
         try {
-          const library = await collectPlayUiLibrary();
-          setPlayUiLibrary(library);
+          uiLibrary = await collectPlayUiLibrary();
+          setPlayUiLibrary(uiLibrary);
           const urls = await collectUiImageUrls(
-            collectImageGuidsFromUiDocuments(Object.values(library)),
+            collectImageGuidsFromUiDocuments(Object.values(uiLibrary)),
             (assetRegistry?.list() ?? []).map((asset) => ({
               guid: asset.header.guid,
               path: asset.path,
@@ -746,6 +747,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           appendLog(
             `UserInterface library failed: ${error instanceof Error ? error.message : String(error)}`,
           );
+          uiLibrary = {};
           setPlayUiLibrary({});
           revokeUiImageUrls(playImageUrlsRef.current);
           playImageUrlsRef.current = new Map();
@@ -855,6 +857,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             resolvedScene?.scene,
             playLibrary.map((entry) => entry.scene),
             [
+              ...interfaceMaterialGuidsFromUiDocuments(Object.values(uiLibrary)),
               ...particleMaterialGuidsFromLibrary(particles),
               ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
             ],

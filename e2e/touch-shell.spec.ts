@@ -1,6 +1,36 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
+
+async function openClassAndOverflowClosableTabs(page: Page) {
+  await page
+    .locator(
+      '[data-testid="document-tab"][data-document-kind="content-browser"]',
+    )
+    .getByTestId("document-tab-select")
+    .click();
+  await page
+    .locator('[data-asset-path="assets/main.class.babasset"]')
+    .dblclick();
+  const graphTab = page.locator(
+    '[data-testid="document-tab"][data-document-kind="graph"]',
+  );
+  await expect(graphTab).toBeVisible();
+
+  const scroller = page.getByTestId("document-tab-scroll");
+  await expect(scroller).toBeVisible();
+  await scroller.evaluate((el) => {
+    const extra = el.clientWidth + 80;
+    for (const tab of el.querySelectorAll(".chrome-tab-closable")) {
+      (tab as HTMLElement).style.minWidth = `${extra}px`;
+    }
+  });
+  const overflowed = await scroller.evaluate(
+    (el) => el.scrollWidth > el.clientWidth + 1,
+  );
+  expect(overflowed).toBe(true);
+  return scroller;
+}
 
 test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
   test.beforeEach(async ({ page }) => {
@@ -56,44 +86,51 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     expect(styles.scrollbarWidth).toBe("none");
   });
 
-  test("pinned Content Browser tab stays visible when closable tabs scroll", async ({
+  test("pinned Content Browser and Scene tabs stay visible when closable tabs scroll", async ({
     page,
   }) => {
-    const scroller = page.getByTestId("document-tab-scroll");
-    const contentBrowser = page.locator(
+    const scroller = await openClassAndOverflowClosableTabs(page);
+    const pinned = page.getByTestId("document-tab-pinned");
+    const contentBrowser = pinned.locator(
       '[data-testid="document-tab"][data-document-kind="content-browser"]',
     );
-    await expect(scroller).toBeVisible();
-    await expect(contentBrowser).toBeVisible();
-
-    await scroller.evaluate((el) => {
-      const extra = el.clientWidth + 80;
-      for (const tab of el.querySelectorAll(".chrome-tab-closable")) {
-        (tab as HTMLElement).style.minWidth = `${extra}px`;
-      }
-    });
-
-    const overflowed = await scroller.evaluate(
-      (el) => el.scrollWidth > el.clientWidth + 1,
+    const scene = pinned.locator(
+      '[data-testid="document-tab"][data-document-kind="scene"]',
     );
-    expect(overflowed).toBe(true);
+    await expect(contentBrowser).toBeVisible();
+    await expect(scene).toBeVisible();
+    await expect(scene).toHaveAttribute("data-pinned", "true");
+    await expect(scene.getByTestId("document-tab-close")).toBeVisible();
+    await expect(
+      scroller.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
+    ).toHaveCount(0);
 
-    const before = await contentBrowser.boundingBox();
-    expect(before).not.toBeNull();
+    const cbBefore = await contentBrowser.boundingBox();
+    const sceneBefore = await scene.boundingBox();
+    expect(cbBefore).not.toBeNull();
+    expect(sceneBefore).not.toBeNull();
+    expect(sceneBefore!.x).toBeGreaterThan(cbBefore!.x);
 
     await scroller.evaluate((el) => {
       el.scrollLeft = el.scrollWidth;
     });
 
-    const after = await contentBrowser.boundingBox();
-    expect(after).not.toBeNull();
-    expect(after!.x).toBeCloseTo(before!.x, 0);
-    expect(after!.width).toBeGreaterThan(0);
+    const cbAfter = await contentBrowser.boundingBox();
+    const sceneAfter = await scene.boundingBox();
+    expect(cbAfter).not.toBeNull();
+    expect(sceneAfter).not.toBeNull();
+    expect(cbAfter!.x).toBeCloseTo(cbBefore!.x, 0);
+    expect(sceneAfter!.x).toBeCloseTo(sceneBefore!.x, 0);
+    expect(cbAfter!.width).toBeGreaterThan(0);
+    expect(sceneAfter!.width).toBeGreaterThan(0);
 
     const scrollerBox = await scroller.boundingBox();
     expect(scrollerBox).not.toBeNull();
-    expect(after!.x + after!.width).toBeLessThanOrEqual(scrollerBox!.x + 1);
-    expect(after!.x).toBeGreaterThanOrEqual(0);
+    expect(cbAfter!.x).toBeGreaterThanOrEqual(0);
+    expect(cbAfter!.x + cbAfter!.width).toBeLessThanOrEqual(sceneAfter!.x + 1);
+    expect(sceneAfter!.x + sceneAfter!.width).toBeLessThanOrEqual(
+      scrollerBox!.x + 1,
+    );
   });
 
   test("dockview tabs meet pointer-aware height", async ({ page }) => {

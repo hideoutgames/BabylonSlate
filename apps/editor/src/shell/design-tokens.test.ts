@@ -318,6 +318,13 @@ describe("document tab strip", () => {
     expect(tokenValue(tabs, "overflow-x")).not.toBe("scroll");
   });
 
+  it("keeps the pinned tab group from shrinking into the closable scroller", () => {
+    const pinned = cssBlock(chromeCss, ".editor-chrome-tabs-pinned");
+    expect(tokenValue(pinned, "flex-shrink")).toBe("0");
+    expect(tokenValue(pinned, "overflow-x")).not.toBe("auto");
+    expect(tokenValue(pinned, "overflow-x")).not.toBe("scroll");
+  });
+
   it("hides scrollbars on the closable-tab scroller", () => {
     const scroller = cssBlock(chromeCss, ".editor-chrome-tabs-scroll");
     expect(tokenValue(scroller, "overflow-x")).toBe("auto");

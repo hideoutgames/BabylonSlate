@@ -31,6 +31,7 @@ import {
   eulerDegreesToQuaternion,
   isUserInterfaceClassId,
   normalizeUserInterfaceClassRef,
+  parseInputMode,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
   widgetClassIdForKind,
@@ -661,6 +662,12 @@ class InProcessRuntime implements RuntimeDriver {
           type: "setRenderResolution",
           width: nextWidth,
           height: nextHeight,
+        });
+      },
+      setInputMode: (mode) => {
+        this.emit({
+          type: "setInputMode",
+          mode: parseInputMode(mode),
         });
       },
       possessCamera: (target) => {
@@ -1911,6 +1918,8 @@ class InProcessRuntime implements RuntimeDriver {
           ? component.getVariable("particleSystemGuid")
           : null) ?? component.assetGuid;
       if (typeof assetGuid !== "string" || !assetGuid) continue;
+      const sortingLayer = component.getVariable("sortingLayer");
+      const orderInLayer = component.getVariable("orderInLayer");
       this.emit({
         type: "assignParticle",
         slotId,
@@ -1918,6 +1927,14 @@ class InProcessRuntime implements RuntimeDriver {
         componentId: component.guid,
         particleSystemGuid: assetGuid,
         play: component.getVariable("playOnStart") !== false,
+        sortingLayer:
+          typeof sortingLayer === "string" && sortingLayer.trim() !== ""
+            ? sortingLayer
+            : "Default",
+        orderInLayer:
+          typeof orderInLayer === "number" && Number.isFinite(orderInLayer)
+            ? Math.round(orderInLayer)
+            : 0,
       });
     }
   }

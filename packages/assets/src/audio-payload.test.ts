@@ -96,8 +96,16 @@ describe("audio payloads", () => {
       pitchRandom: false,
       pitchMin: 1,
       pitchMax: 1,
+      loop: false,
     });
     expect(normalizeAudioPayload(undefined)).toEqual(createDefaultAudioPayload());
+  });
+
+  it("defaults loop to false and preserves a true flag", () => {
+    expect(createDefaultAudioPayload().loop).toBe(false);
+    expect(normalizeAudioPayload({}).loop).toBe(false);
+    expect(normalizeAudioPayload({ loop: true }).loop).toBe(true);
+    expect(normalizeAudioPayload({ loop: "yes" }).loop).toBe(false);
   });
 
   it("caps clips at eight, defaults equal weights, and swaps inverted pitch range", () => {
@@ -264,6 +272,7 @@ describe("audio payloads", () => {
       pitchRandom: false,
       pitchMin: 1,
       pitchMax: 1,
+      loop: false,
     });
     expect(normalizeAudioPayload({ volume: -2 }).volume).toBe(0);
     expect(normalizeAudioPayload({ audioChannelGuid: "" }).audioChannelGuid).toBe(
@@ -470,6 +479,7 @@ describe("audio payloads", () => {
       pitchRandom: false,
       pitchMin: 1,
       pitchMax: 1,
+      loop: false,
     });
     expect(
       remapAudioPayloadGuids(
@@ -887,5 +897,12 @@ describe("audio asset containers", () => {
     expect(decodePackedAudioAsset(legacy)?.sources).toEqual([
       new Uint8Array([1, 2, 3, 4]),
     ]);
+    expect(decodePackedAudioAsset(legacy)?.payload.loop).toBe(false);
+  });
+
+  it("packs asset loop into the BSAU JSON envelope", () => {
+    const payload = normalizeAudioPayload({ loop: true });
+    const packed = encodePackedAudioAsset(payload, new Uint8Array([1, 2]));
+    expect(decodePackedAudioAsset(packed)?.payload.loop).toBe(true);
   });
 });

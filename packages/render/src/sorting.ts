@@ -79,6 +79,14 @@ export function applySortingToMesh(
   mesh.renderingGroupId = resolution.renderingGroupId;
 }
 
+/** Babylon particle systems expose `renderingGroupId`, not mesh `alphaIndex`. */
+export function applySortingToParticleSystem(
+  system: { renderingGroupId: number },
+  resolution: SortingLayerResolution,
+): void {
+  system.renderingGroupId = resolution.renderingGroupId;
+}
+
 /**
  * Sprites have no `alphaIndex`, so depth within a layer is a tiny Z offset:
  * one sub-pixel step per sort-key unit keeps ordering stable without moving

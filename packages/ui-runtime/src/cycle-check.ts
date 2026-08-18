@@ -1,4 +1,4 @@
-import type { UserInterfaceDocument } from "./types";
+import { createWidget, type UserInterfaceDocument } from "./types";
 
 export function nestedUiGuidsOf(doc: UserInterfaceDocument): string[] {
   const guids: string[] = [];
@@ -21,14 +21,8 @@ function withNestedTrial(
     widgets: {
       ...doc.widgets,
       [trialId]: {
-        id: trialId,
-        name: "Nested",
-        kind: "UserInterface",
-        layout: host.layout,
-        visible: true,
-        children: [],
+        ...createWidget(trialId, "UserInterface", "Nested", host.layout),
         style: host.style,
-        props: {},
         nestedUiGuid: nestedGuid,
       },
       [host.id]: { ...host, children: [...host.children, trialId] },

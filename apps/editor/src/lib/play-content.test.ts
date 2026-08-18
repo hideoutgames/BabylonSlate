@@ -58,6 +58,9 @@ import {
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
   materialGuidsFromScenes,
+  interfaceMaterialGuidsFromUiDocuments,
+  lookupInterfaceMaterialDocument,
+  playMaterialGuidsFromSources,
   playSceneByGuid,
   materialClosureFromGuids,
 } from "./play-content";
@@ -134,6 +137,13 @@ describe("Play HUD instances", () => {
     expect(resolvePlayHudDocuments(instances, library).map((row) => row.instanceId)).toEqual(
       ["ui-2"],
     );
+  });
+
+  it("appends Apply order so a second HUD stays after the first", () => {
+    const first = applyPlayHudInstance([], "ui-1", "hud-a");
+    const stacked = applyPlayHudInstance(first, "ui-2", "hud-b");
+    expect(stacked.map((row) => row.instanceId)).toEqual(["ui-1", "ui-2"]);
+    expect(applyPlayHudInstance(stacked, "ui-1", "hud-a")).toEqual(stacked);
   });
 
   it("derives classId from the asset guid when the apply command omits it", () => {
@@ -792,6 +802,33 @@ describe("scene-referenced Play content", () => {
     const level2 = createDefaultScene();
     level2.settings.postProcessStack = [{ materialGuid: "pp-b", enabled: true }];
     expect(materialGuidsFromScenes([startup, level2])).toEqual(["pp-a", "pp-b"]);
+  });
+
+  it("collects Interface material graphs from applied HUD documents", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const glow = createWidget("glow", "Material", "Glow");
+    glow.props.materialGuid = "mat-glow";
+    hud.widgets.canvas!.children = ["glow"];
+    hud.widgets.glow = glow;
+    expect(interfaceMaterialGuidsFromUiDocuments([hud])).toEqual(["mat-glow"]);
+    const startup = createDefaultScene();
+    startup.settings.postProcessStack = [{ materialGuid: "pp-a", enabled: true }];
+    expect(playMaterialGuidsFromSources([startup], [hud])).toEqual([
+      "pp-a",
+      "mat-glow",
+    ]);
+  });
+
+  it("looks up Interface materials and ignores other domains", () => {
+    const documents = new Map<string, { domain: string; name: string }>([
+      ["mat-glow", { domain: "interface", name: "Glow" }],
+      ["mat-rock", { domain: "surface", name: "Rock" }],
+    ]);
+    expect(lookupInterfaceMaterialDocument("mat-glow", documents)?.name).toBe(
+      "Glow",
+    );
+    expect(lookupInterfaceMaterialDocument("mat-rock", documents)).toBeNull();
+    expect(lookupInterfaceMaterialDocument("missing", documents)).toBeNull();
   });
 
   it("resolves an activeScene guid from the Play library", () => {

@@ -119,6 +119,15 @@ describe("UserInterface command and control contracts", () => {
     expect(press.kind).toBe("pointerDown");
     expect(release.kind).toBe("pointerUp");
   });
+
+  it("setInputMode is a session-scoped Play command", () => {
+    const command = {
+      type: "setInputMode",
+      mode: "Interface",
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setInputMode");
+    expect(command.mode).toBe("Interface");
+  });
 });
 
 describe("Play inspect contract", () => {
@@ -156,6 +165,8 @@ describe("Particle commands", () => {
       componentId: "particle-1",
       particleSystemGuid: "sys-1",
       play: true,
+      sortingLayer: "UI",
+      orderInLayer: 1,
     } satisfies CommandMessage;
     const stop = {
       type: "setParticlePlaying",
@@ -166,6 +177,8 @@ describe("Particle commands", () => {
     expect(commandType(assign)).toBe("assignParticle");
     expect(commandType(stop)).toBe("setParticlePlaying");
     expect(assign.particleSystemGuid).toBe("sys-1");
+    expect(assign.sortingLayer).toBe("UI");
+    expect(assign.orderInLayer).toBe(1);
     expect(stop.playing).toBe(false);
   });
 });
