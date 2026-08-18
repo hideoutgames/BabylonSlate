@@ -26,6 +26,7 @@ export type AudioPreviewPlayResult = {
 export type AudioPreviewSession = {
   prefetch(payload: AudioPayload | Record<string, unknown>): Promise<void>;
   play(payload: AudioPayload | Record<string, unknown>): AudioPreviewPlayResult;
+  clipBytes(chunkId: string): Uint8Array | undefined;
   stop(): void;
   dispose(): void;
 };
@@ -64,6 +65,9 @@ export function createAudioPreviewSession(options: {
         const bytes = await options.readChunk(clip.chunkId);
         if (bytes && bytes.byteLength > 0) cache.set(clip.chunkId, bytes);
       }
+    },
+    clipBytes(chunkId: string) {
+      return cache.get(chunkId);
     },
     play(payload: AudioPayload | Record<string, unknown>): AudioPreviewPlayResult {
       void options.backend.unlockAsync();
