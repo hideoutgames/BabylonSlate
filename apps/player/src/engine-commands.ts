@@ -12,6 +12,9 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "stopSound",
   "setChannelVolume",
   "setGlobalVolume",
+  "setFrameCap",
+  "setRenderQuality",
+  "setResolutionScale",
   "assignParticle",
   "setParticlePlaying",
 ]);

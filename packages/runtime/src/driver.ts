@@ -287,6 +287,11 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
   private paused = false;
+  private renderQuality = "high";
+  private shadowQuality = "1024";
+  private resolutionScale = 1;
+  private frameCap = 60;
+  private volume = 1;
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
@@ -1698,14 +1703,32 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
-      setRenderQuality: (level) => emitSetting("renderquality", level),
-      setShadowQuality: (level) => {
-        emitSetting("shadowquality", level);
-        this.emit({ type: "setShadowQuality", level: String(level) });
+      setRenderQuality: (level) => {
+        this.renderQuality = String(level);
+        this.emit({ type: "setRenderQuality", level: this.renderQuality });
       },
-      setResolutionScale: (scale) => emitSetting("resolutionscale", scale),
-      setFrameCap: (fps) => emitSetting("framecap", fps),
-      setVolume: (volume) => emitSetting("volume", volume),
+      getRenderQuality: () => this.renderQuality,
+      setShadowQuality: (level) => {
+        this.shadowQuality = String(level);
+        emitSetting("shadowquality", this.shadowQuality);
+        this.emit({ type: "setShadowQuality", level: this.shadowQuality });
+      },
+      getShadowQuality: () => this.shadowQuality,
+      setResolutionScale: (scale) => {
+        this.resolutionScale = Number(scale);
+        this.emit({ type: "setResolutionScale", scale: this.resolutionScale });
+      },
+      getResolutionScale: () => this.resolutionScale,
+      setFrameCap: (fps) => {
+        this.frameCap = Number(fps);
+        this.emit({ type: "setFrameCap", fps: this.frameCap });
+      },
+      getFrameCap: () => this.frameCap,
+      setVolume: (volume) => {
+        this.volume = Number(volume);
+        this.emit({ type: "setGlobalVolume", volume: this.volume });
+      },
+      getVolume: () => this.volume,
       quit: () => {
         this.stop();
       },

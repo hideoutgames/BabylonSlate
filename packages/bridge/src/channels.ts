@@ -360,7 +360,10 @@ export type CommandMessage =
       width: number;
       height: number;
     }
-  | { type: "sessionPaused"; paused: boolean };
+  | { type: "sessionPaused"; paused: boolean }
+  | { type: "setRenderQuality"; level: string }
+  | { type: "setResolutionScale"; scale: number }
+  | { type: "setFrameCap"; fps: number };
 
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }

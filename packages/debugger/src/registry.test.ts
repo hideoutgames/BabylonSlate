@@ -27,6 +27,11 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     setVolume: (volume) => {
       calls.push(`volume:${volume}`);
     },
+    getVolume: () => 1,
+    getFrameCap: () => 60,
+    getRenderQuality: () => "high",
+    getResolutionScale: () => 1,
+    getShadowQuality: () => "1024",
     quit: () => {
       calls.push("quit");
     },
@@ -165,6 +170,32 @@ describe("createCommandRegistry", () => {
         'parameter "level" expects one of off, 512, 1024, 2048, got "low"',
     });
     expect(registry.execute("changescene", recordingHost()).success).toBe(false);
+  });
+
+  it("prints current setter values when args are omitted", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: false });
+    expect(registry.execute("volume", host)).toEqual({
+      success: true,
+      output: "volume 1",
+    });
+    expect(registry.execute("framecap", host)).toEqual({
+      success: true,
+      output: "framecap 60",
+    });
+    expect(registry.execute("renderquality", host)).toEqual({
+      success: true,
+      output: "renderquality high",
+    });
+    expect(registry.execute("resolutionscale", host)).toEqual({
+      success: true,
+      output: "resolutionscale 1",
+    });
+    expect(registry.execute("shadowquality", host)).toEqual({
+      success: true,
+      output: "shadowquality 1024",
+    });
+    expect(host.calls).toEqual([]);
   });
 
   it("lists commands with help and details for one name", () => {

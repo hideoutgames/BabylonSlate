@@ -544,6 +544,9 @@ export function startPlaySession(options: {
       command.type === "stopSound" ||
       command.type === "setChannelVolume" ||
       command.type === "setGlobalVolume" ||
+      command.type === "setFrameCap" ||
+      command.type === "setRenderQuality" ||
+      command.type === "setResolutionScale" ||
       command.type === "assignParticle" ||
       command.type === "setParticlePlaying"
     ) {

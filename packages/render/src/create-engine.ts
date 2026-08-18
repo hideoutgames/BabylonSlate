@@ -49,6 +49,7 @@ import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import { ResourceCache } from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
+import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
@@ -913,6 +914,7 @@ export function createEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }

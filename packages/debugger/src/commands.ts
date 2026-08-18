@@ -9,12 +9,14 @@ const QUALITY: CommandParameter = {
   name: "level",
   type: "enum",
   enumValues: ["low", "medium", "high"],
+  optional: true,
 };
 
 const SHADOW_QUALITY: CommandParameter = {
   name: "level",
   type: "enum",
   enumValues: ["off", "512", "1024", "2048"],
+  optional: true,
 };
 
 const FLAG: CommandParameter = {
@@ -120,6 +122,9 @@ export function builtinCommands(): RegisteredCommand[] {
       description: "Set render quality",
       parameters: [QUALITY],
       run(args, host) {
+        if (args.level === undefined) {
+          return ok(`renderquality ${host.getRenderQuality?.() ?? "high"}`);
+        }
         const level = String(args.level);
         host.setRenderQuality(level);
         return ok(`renderquality ${level}`);
@@ -132,6 +137,9 @@ export function builtinCommands(): RegisteredCommand[] {
       description: "Set shadow map size",
       parameters: [SHADOW_QUALITY],
       run(args, host) {
+        if (args.level === undefined) {
+          return ok(`shadowquality ${host.getShadowQuality?.() ?? "1024"}`);
+        }
         const level = String(args.level);
         host.setShadowQuality(level);
         return ok(`shadowquality ${level}`);
@@ -142,8 +150,11 @@ export function builtinCommands(): RegisteredCommand[] {
       tier: "core",
       category: "engine",
       description: "Set resolution scale",
-      parameters: [{ name: "scale", type: "float" }],
+      parameters: [{ name: "scale", type: "float", optional: true }],
       run(args, host) {
+        if (args.scale === undefined) {
+          return ok(`resolutionscale ${host.getResolutionScale?.() ?? 1}`);
+        }
         const scale = Number(args.scale);
         host.setResolutionScale(scale);
         return ok(`resolutionscale ${scale}`);
@@ -154,8 +165,11 @@ export function builtinCommands(): RegisteredCommand[] {
       tier: "core",
       category: "engine",
       description: "Set frame cap",
-      parameters: [{ name: "fps", type: "int" }],
+      parameters: [{ name: "fps", type: "int", optional: true }],
       run(args, host) {
+        if (args.fps === undefined) {
+          return ok(`framecap ${host.getFrameCap?.() ?? 60}`);
+        }
         const fps = Number(args.fps);
         host.setFrameCap(fps);
         return ok(`framecap ${fps}`);
@@ -166,8 +180,11 @@ export function builtinCommands(): RegisteredCommand[] {
       tier: "core",
       category: "engine",
       description: "Set master volume",
-      parameters: [{ name: "volume", type: "float" }],
+      parameters: [{ name: "volume", type: "float", optional: true }],
       run(args, host) {
+        if (args.volume === undefined) {
+          return ok(`volume ${host.getVolume?.() ?? 1}`);
+        }
         const volume = Number(args.volume);
         host.setVolume(volume);
         return ok(`volume ${volume}`);

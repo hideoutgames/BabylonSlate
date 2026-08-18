@@ -31,6 +31,11 @@ export type ConsoleCommandHost = {
   setResolutionScale(scale: number): void;
   setFrameCap(fps: number): void;
   setVolume(volume: number): void;
+  getRenderQuality?(): string;
+  getShadowQuality?(): string;
+  getResolutionScale?(): number;
+  getFrameCap?(): number;
+  getVolume?(): number;
   quit(): void;
   setShowFps?(enabled: boolean): void;
   setStat?(name: string, enabled: boolean): void;

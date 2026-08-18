@@ -87,6 +87,32 @@ describe("applyPlayerEngineCommand", () => {
     ]);
   });
 
+  it("forwards Play hardware scaling and frame cap commands", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setFrameCap", fps: 30 }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setRenderQuality", level: "low" }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "setResolutionScale",
+        scale: 1.5,
+      }),
+    ).toBe(true);
+    expect(applied).toEqual([
+      "setFrameCap",
+      "setRenderQuality",
+      "setResolutionScale",
+    ]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

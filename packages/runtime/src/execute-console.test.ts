@@ -146,4 +146,54 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("pause").output).toBe("paused");
     runtime.stop();
   });
+
+  it("emits apply commands for core setters and prints current with no args", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      includeDebugCommands: false,
+      onCommand: (command) => commands.push(command),
+    });
+    expect(runtime.executeConsoleCommand("volume 0.25")).toEqual({
+      success: true,
+      output: "volume 0.25",
+    });
+    expect(runtime.executeConsoleCommand("framecap 30")).toEqual({
+      success: true,
+      output: "framecap 30",
+    });
+    expect(runtime.executeConsoleCommand("renderquality low")).toEqual({
+      success: true,
+      output: "renderquality low",
+    });
+    expect(runtime.executeConsoleCommand("resolutionscale 1.5")).toEqual({
+      success: true,
+      output: "resolutionscale 1.5",
+    });
+    expect(
+      commands.filter(
+        (command) =>
+          command.type === "setGlobalVolume" ||
+          command.type === "setFrameCap" ||
+          command.type === "setRenderQuality" ||
+          command.type === "setResolutionScale",
+      ),
+    ).toEqual([
+      { type: "setGlobalVolume", volume: 0.25 },
+      { type: "setFrameCap", fps: 30 },
+      { type: "setRenderQuality", level: "low" },
+      { type: "setResolutionScale", scale: 1.5 },
+    ]);
+    expect(runtime.executeConsoleCommand("volume").output).toBe("volume 0.25");
+    expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
+    expect(runtime.executeConsoleCommand("renderquality").output).toBe(
+      "renderquality low",
+    );
+    expect(runtime.executeConsoleCommand("resolutionscale").output).toBe(
+      "resolutionscale 1.5",
+    );
+    runtime.stop();
+  });
 });
