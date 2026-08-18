@@ -81,12 +81,41 @@ async function openLiveUtility(page: Page): Promise<void> {
   await closeWindowsMenu(page);
 }
 
+async function canvasHasPaintedPixels(
+  page: Page,
+  testId: string,
+): Promise<boolean> {
+  return page.getByTestId(testId).evaluate((el) => {
+    const canvas = el as HTMLCanvasElement;
+    if (canvas.width < 1 || canvas.height < 1) return false;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return false;
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i]! > 8) return true;
+    }
+    return false;
+  });
+}
+
 async function interactWithUtilityCanvas(page: Page): Promise<void> {
   const canvas = page.getByTestId("editor-utility-canvas");
   await expect(canvas).toBeVisible();
-  await canvas.click({ position: { x: 24, y: 24 } });
+  await expect
+    .poll(async () => canvasHasPaintedPixels(page, "editor-utility-canvas"), {
+      timeout: 10_000,
+    })
+    .toBe(true);
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
+  await canvas.click({ position: { x: 8, y: 8 } });
+  await expect(page.getByTestId("editor-utility-panel")).toBeVisible();
+  await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+  await expect
+    .poll(async () => canvasHasPaintedPixels(page, "editor-utility-canvas"), {
+      timeout: 5_000,
+    })
+    .toBe(true);
   const startX = box!.x + box!.width / 2;
   const startY = box!.y + box!.height / 2;
   await page.mouse.move(startX, startY);
@@ -95,6 +124,11 @@ async function interactWithUtilityCanvas(page: Page): Promise<void> {
   await page.mouse.up();
   await expect(page.getByTestId("editor-utility-panel")).toBeVisible();
   await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+  await expect
+    .poll(async () => canvasHasPaintedPixels(page, "editor-utility-canvas"), {
+      timeout: 5_000,
+    })
+    .toBe(true);
 }
 
 test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {

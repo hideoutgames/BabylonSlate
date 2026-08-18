@@ -120,6 +120,7 @@ export function createUiSurface(
   });
   const detachPointers = options.interactive
     ? attachAdtCanvasPointers(canvas, designAdt, blitDesign, {
+        isFrozen: () => frozen,
         onPickError: (error) => {
           console.error("ADT pick failed", error);
         },
@@ -224,7 +225,10 @@ export function attachAdtCanvasPointers(
   canvas: HTMLCanvasElement,
   adt: AdvancedDynamicTexture,
   afterPick?: () => void,
-  options?: { onPickError?: (error: unknown) => void },
+  options?: {
+    onPickError?: (error: unknown) => void;
+    isFrozen?: () => boolean;
+  },
 ): () => void {
   canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
   let capturedId: number | null = null;
@@ -240,6 +244,7 @@ export function attachAdtCanvasPointers(
   };
 
   const pickAt = (event: Event, type: string) => {
+    if (options?.isFrozen?.()) return;
     try {
       const pointer = event as PointerEvent;
       const { x, y } = coords(pointer);
@@ -249,7 +254,12 @@ export function attachAdtCanvasPointers(
         x,
         y,
       );
+      // Pick with invalidate-rect on leaves a clipped backing store that the
+      // next clearRect+drawImage copies as an empty frame. Disable that path
+      // and fully redraw after pick before the external blit.
+      prepareAdtForExternalPresent(adt);
       adt.pick(x, y, info);
+      adt._checkUpdate(null);
       afterPick?.();
     } catch (error) {
       options?.onPickError?.(error);
@@ -258,6 +268,7 @@ export function attachAdtCanvasPointers(
 
   const onPointer = (event: PointerEvent) => {
     event.stopPropagation?.();
+    if (options?.isFrozen?.()) return;
     const isPrimary = event.isPrimary !== false;
     if (event.type === "pointerdown") {
       if (!isPrimary) return;
