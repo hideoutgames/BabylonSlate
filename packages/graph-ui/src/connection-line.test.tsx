@@ -113,6 +113,16 @@ describe("GraphConnectionLineView", () => {
     expect(Number(host?.getAttribute("width"))).toBeGreaterThanOrEqual(140);
   });
 
+  it("shows a Tap to Cancel hint in add-node mode", () => {
+    mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
+    const { getByTestId, queryByRole } = renderLine({
+      connectEndMode: "add-node",
+    });
+    const hint = getByTestId("add-node-hint");
+    expect(hint.textContent).toBe("Tap to Cancel");
+    expect(queryByRole("button", { name: "Tap to Cancel" })).toBeNull();
+  });
+
   it("hides the hint near the source pin", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
     const { queryByTestId } = renderLine({
