@@ -93,6 +93,16 @@ describe("project schema", () => {
       actor.components.some((component) => component.classId === "CameraComponent"),
     );
     expect(cube?.name).toBe("Cube");
+    expect(
+      scene.actors.some((actor) => actor.id === "actor-skybox" && actor.locked),
+    ).toBe(true);
+    expect(
+      scene.actors.some(
+        (actor) =>
+          actor.id === "actor-sun" &&
+          actor.components[0]?.properties.lightKind === "directional",
+      ),
+    ).toBe(true);
     expect(camera).toBeDefined();
     const cameraComponent = camera!.components.find(
       (component) => component.classId === "CameraComponent",

@@ -216,6 +216,29 @@ describe("pinDefaultPropertyRows", () => {
     }
   });
 
+  it("Title Cases enumRef pin-default option labels", () => {
+    const rows = pinDefaultPropertyRows(
+      [
+        {
+          pinId: "state",
+          name: "state",
+          type: enumRef("enum-1"),
+          value: "idleState",
+        },
+      ],
+      vi.fn(),
+      { enumMembers: { "enum-1": ["idleState", "onHit"] } },
+    );
+    const state = rows[0];
+    expect(state?.kind).toBe("enum");
+    if (state?.kind === "enum") {
+      expect(state.options).toEqual([
+        { value: "idleState", label: "Idle State" },
+        { value: "onHit", label: "On Hit" },
+      ]);
+    }
+  });
+
   it("maps classRef defaults to class picker rows and skips object refs", () => {
     const onPatch = vi.fn();
     const onPickClass = vi.fn();
@@ -429,6 +452,28 @@ describe("variableDefaultPropertyRows structs and enums", () => {
     expect(rows).toMatchObject([
       { kind: "enum", label: "Default", value: "Blue" },
     ]);
+    const row = rows[0];
+    if (row?.kind === "enum") {
+      expect(row.options).toEqual([
+        { value: "Red", label: "Red" },
+        { value: "Blue", label: "Blue" },
+      ]);
+    }
+  });
+
+  it("Title Cases enum member option labels", () => {
+    const rows = variableDefaultPropertyRows("enum", "idleState", vi.fn(), {
+      typeClassId: "enum-team",
+      enumMembers: { "enum-team": ["idleState", "onHit"] },
+    });
+    const row = rows[0];
+    expect(row?.kind).toBe("enum");
+    if (row?.kind === "enum") {
+      expect(row.options).toEqual([
+        { value: "idleState", label: "Idle State" },
+        { value: "onHit", label: "On Hit" },
+      ]);
+    }
   });
 });
 
@@ -449,6 +494,31 @@ describe("enumNodePropertyRows", () => {
       disabled: true,
       value: "enum-team",
     });
+  });
+
+  it("Title Cases Make Enum Value option labels", () => {
+    const rows = enumNodePropertyRows(
+      "enum.make",
+      { enumGuid: "enum-team", value: "idleState" },
+      vi.fn(),
+      {
+        enums: [
+          {
+            guid: "enum-team",
+            name: "Team",
+            members: [{ name: "idleState" }, { name: "onHit" }],
+          },
+        ],
+      },
+    );
+    const value = rows.find((row) => row.id === "value");
+    expect(value?.kind).toBe("enum");
+    if (value?.kind === "enum") {
+      expect(value.options).toEqual([
+        { value: "idleState", label: "Idle State" },
+        { value: "onHit", label: "On Hit" },
+      ]);
+    }
   });
 });
 

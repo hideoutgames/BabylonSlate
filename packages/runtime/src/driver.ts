@@ -31,6 +31,8 @@ import {
   eulerDegreesToQuaternion,
   isUserInterfaceClassId,
   normalizeUserInterfaceClassRef,
+  parseSkyboxFaces,
+  parseSkyboxSize,
   parseInputMode,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
@@ -1833,7 +1835,8 @@ class InProcessRuntime implements RuntimeDriver {
         !component.destroyed &&
         (component.classId === "MeshComponent" ||
           component.classId === "SpriteComponent" ||
-          component.classId === "TilemapComponent"),
+          component.classId === "TilemapComponent" ||
+          component.classId === "SkyboxComponent"),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
@@ -1855,11 +1858,22 @@ class InProcessRuntime implements RuntimeDriver {
             ),
           )
         : undefined;
+      const skyboxComp = renderables.find(
+        (component) => component.classId === "SkyboxComponent",
+      );
       this.emit({
         type: "assignMesh",
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
+        ...(skyboxComp
+          ? {
+              skybox: {
+                size: parseSkyboxSize(skyboxComp.getVariable("size")),
+                faces: parseSkyboxFaces(skyboxComp.getVariable("faces")),
+              },
+            }
+          : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
@@ -2656,6 +2670,7 @@ function uiWidgetEventName(
 function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
+  if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "LightComponent") {
     const kind = component.getVariable("lightKind");
     return `light:${typeof kind === "string" ? kind : "point"}`;

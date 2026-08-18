@@ -14,6 +14,7 @@ import {
   type ShadowGenerator,
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
+import { emptySkyboxFaces, type SkyboxFaces } from "@babylonslate/core";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
@@ -39,6 +40,7 @@ import {
   worldTileSize,
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
+import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -56,6 +58,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   cameras: Map<number, Camera>;
   lightProps: Map<number, AuthoredLightProperties>;
   cameraProps: Map<number, AuthoredCameraProperties>;
+  skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
@@ -110,6 +113,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     cameras: new Map(),
     lightProps: new Map(),
     cameraProps: new Map(),
+    skyboxProps: new Map(),
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
@@ -306,6 +310,14 @@ export function applyAssignMesh(
     binding.meshParts.delete(command.slotId);
   }
   if (command.light) binding.lightProps.set(command.slotId, command.light);
+  if (command.skybox) {
+    binding.skyboxProps.set(command.slotId, command.skybox);
+  } else if (meshKind === "skybox") {
+    binding.skyboxProps.set(command.slotId, {
+      size: 1000,
+      faces: emptySkyboxFaces(),
+    });
+  }
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
     if (command.camera.isDefault) {
@@ -445,6 +457,7 @@ function disposeSlotVisuals(
   binding.lights.delete(slotId);
   binding.cameras.get(slotId)?.dispose();
   binding.cameras.delete(slotId);
+  binding.skyboxProps.delete(slotId);
   if (binding.shadowOwnerSlot === slotId) {
     binding.shadow?.dispose();
     binding.shadow = null;
@@ -554,6 +567,15 @@ export function createPlayMesh(
       );
       return loaded;
     }
+  }
+  if (meshKind === "skybox") {
+    const props = binding?.skyboxProps.get(slotId);
+    const texture = resolveSkyboxCubeTexture(
+      scene,
+      props?.faces ?? emptySkyboxFaces(),
+      binding,
+    );
+    return createSkyboxMesh(scene, name, texture, props?.size ?? 1000);
   }
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
@@ -666,6 +688,7 @@ export function applySnapshotToScene(
         }
         binding.lightProps.delete(slotId);
         binding.cameraProps.delete(slotId);
+        binding.skyboxProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
         binding.lights.delete(slotId);
         binding.cameras.get(slotId)?.dispose();

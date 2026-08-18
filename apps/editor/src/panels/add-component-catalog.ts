@@ -6,6 +6,7 @@ import type {
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+  emptySkyboxFaces,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -79,6 +80,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "AI",
   ),
   engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
+  engineComponent(
+    "SkyboxComponent",
+    "Skybox",
+    "Cubemap sky surrounding the scene",
+    "Rendering",
+  ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
   engineComponent(
     "AudioComponent",
@@ -150,6 +157,8 @@ export function defaultPropertiesFor(
         enabled: true,
         castShadows: false,
       };
+    case "SkyboxComponent":
+      return { size: 1000, faces: emptySkyboxFaces() };
     case "AudioComponent":
       return {
         audioAssetGuid: null,

@@ -18,6 +18,7 @@ import {
   createDefaultSceneSettings,
   eulerDegreesToQuaternion,
   findActor,
+  patchComponentProperties,
   quaternionToEulerDegrees,
   type SerializedActor,
   type SerializedScene,
@@ -734,10 +735,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                       candidate.id === component.id
                         ? {
                             ...candidate,
-                            properties: {
-                              ...candidate.properties,
-                              [property]: value,
-                            },
+                            properties: patchComponentProperties(
+                              candidate.properties,
+                              property,
+                              value,
+                            ),
                           }
                         : candidate,
                     ),
@@ -788,10 +790,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               candidate.id === componentId
                 ? {
                     ...candidate,
-                    properties: {
-                      ...candidate.properties,
-                      [property]: guid,
-                    },
+                    properties: patchComponentProperties(
+                      candidate.properties,
+                      property,
+                      guid,
+                    ),
                   }
                 : candidate,
             ),

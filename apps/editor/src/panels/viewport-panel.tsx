@@ -36,6 +36,7 @@ import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
+import { skyboxFaceGuidsFromScene } from "../lib/play-content";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -345,7 +346,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
-          materials.textureGuids,
+          [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
         const modelBytes = await collectPlayModelBytes(scene);
         if (cancelled || engineRef.current !== handle) return;
