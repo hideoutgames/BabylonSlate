@@ -66,9 +66,10 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     await expect(scroller).toBeVisible();
     await expect(contentBrowser).toBeVisible();
 
-    await page.locator(".chrome-tab-closable").evaluateAll((tabs) => {
-      for (const tab of tabs) {
-        (tab as HTMLElement).style.minWidth = "480px";
+    await scroller.evaluate((el) => {
+      const extra = el.clientWidth + 80;
+      for (const tab of el.querySelectorAll(".chrome-tab-closable")) {
+        (tab as HTMLElement).style.minWidth = `${extra}px`;
       }
     });
 
