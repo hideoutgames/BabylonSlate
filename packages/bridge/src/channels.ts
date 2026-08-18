@@ -349,6 +349,8 @@ export type CommandMessage =
       componentId: string;
       particleSystemGuid: string | null;
       play?: boolean;
+      sortingLayer?: string;
+      orderInLayer?: number;
     }
   | {
       type: "setParticlePlaying";

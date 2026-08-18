@@ -27,6 +27,8 @@ describe("ParticleComponent play-on-start", () => {
                 properties: {
                   particleSystemGuid: "sys-1",
                   playOnStart: true,
+                  sortingLayer: "Foreground",
+                  orderInLayer: 2,
                 },
               },
             ],
@@ -46,6 +48,8 @@ describe("ParticleComponent play-on-start", () => {
         componentId: "particle-1",
         particleSystemGuid: "sys-1",
         play: true,
+        sortingLayer: "Foreground",
+        orderInLayer: 2,
       },
     ]);
     runtime.stop();

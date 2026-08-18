@@ -313,8 +313,7 @@ export function ParticleEmitterPreview({
           <EmptyHeader>
             <EmptyTitle>No Texture</EmptyTitle>
             <EmptyDescription>
-              Pick a Texture in Details. Babylon billboard quads need
-              particleTexture.
+              Pick a Texture in Details. Billboard quads sample that Texture.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
