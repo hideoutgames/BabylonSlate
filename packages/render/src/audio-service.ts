@@ -84,7 +84,6 @@ type LiveVoice = {
   pitch: number;
   reverbSend: boolean;
   muffleThroughWalls: boolean;
-  loop: boolean;
   previousPose: AudioPose | null;
   clipName: string | null;
   loop: boolean;
@@ -506,7 +505,6 @@ export class AudioService {
       pitch,
       reverbSend: resolved.environmentReverb,
       muffleThroughWalls: resolved.muffleThroughWalls,
-      loop: request.loop,
       previousPose: null,
       clipName: clip.name.trim() === "" ? null : clip.name,
       loop: request.loop,
