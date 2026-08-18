@@ -1,6 +1,6 @@
 # Scene editing (P6)
 
-Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 3`). **One scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). Graphs and Content Browser stay. Idle-unmount (`p17-inactive-documents`) does **not** close the scene tab: JSON and undo stay; overlay Play still uses that open document if the viewport has unmounted.
+Shared-surface design note for viewport, outliner, details, and the edit layer. Authoritative schema: `packages/core/src/scene.ts` (`SCENE_SCHEMA_VERSION = 3`). **One scene document tab at a time** — opening a scene closes the previous (Unsaved: Save / Discard / Cancel). Graphs and Content Browser stay. Idle-unmount (`p18-inactive-documents`) does **not** close the scene tab: JSON and undo stay; overlay Play still uses that open document if the viewport has unmounted.
 
 ## SerializedScene v3
 
