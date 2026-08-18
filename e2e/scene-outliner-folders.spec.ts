@@ -36,7 +36,7 @@ test.describe("Scene Outliner folders", () => {
 
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page.getByTestId("open-listed-project-TestProject.babproject").click();
+    await page.getByTestId("open-listed-project-TestProject").click();
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openMainScene(page);
 

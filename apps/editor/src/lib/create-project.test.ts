@@ -13,21 +13,17 @@ describe("defaultCreateProjectDisplayName", () => {
 });
 
 describe("normalizeProjectFolderName", () => {
-  it("appends .babproject to a display name", () => {
-    expect(normalizeProjectFolderName("MyGame")).toBe("MyGame.babproject");
-    expect(normalizeProjectFolderName("TestProject")).toBe(
-      "TestProject.babproject",
-    );
+  it("uses the display name as the folder name", () => {
+    expect(normalizeProjectFolderName("MyGame")).toBe("MyGame");
+    expect(normalizeProjectFolderName("TestProject")).toBe("TestProject");
   });
 
-  it("does not double the suffix", () => {
-    expect(normalizeProjectFolderName("MyGame.babproject")).toBe(
-      "MyGame.babproject",
-    );
+  it("strips a trailing .babproject suffix", () => {
+    expect(normalizeProjectFolderName("MyGame.babproject")).toBe("MyGame");
   });
 
   it("trims whitespace and rejects a blank name", () => {
-    expect(normalizeProjectFolderName("  Hero  ")).toBe("Hero.babproject");
+    expect(normalizeProjectFolderName("  Hero  ")).toBe("Hero");
     expect(normalizeProjectFolderName("   ")).toBe("");
   });
 });
@@ -35,21 +31,19 @@ describe("normalizeProjectFolderName", () => {
 describe("createProjectNameIssue", () => {
   it("reports Name required when the display name is blank", () => {
     expect(createProjectNameIssue("   ", [])).toBe("Name required.");
-    expect(createProjectNameIssue("", ["MyGame.babproject"])).toBe(
-      "Name required.",
-    );
+    expect(createProjectNameIssue("", ["MyGame"])).toBe("Name required.");
   });
 
-  it("reports Name already exists when the folder name is listed", () => {
+  it("treats a leftover .babproject folder as the same name", () => {
     expect(
       createProjectNameIssue("TestProject", ["TestProject.babproject"]),
     ).toBe("Name already exists.");
     expect(
-      createProjectNameIssue("TestProject.babproject", ["TestProject.babproject"]),
+      createProjectNameIssue("TestProject.babproject", ["TestProject"]),
     ).toBe("Name already exists.");
   });
 
   it("returns null for a free name", () => {
-    expect(createProjectNameIssue("Hero", ["TestProject.babproject"])).toBeNull();
+    expect(createProjectNameIssue("Hero", ["TestProject"])).toBeNull();
   });
 });

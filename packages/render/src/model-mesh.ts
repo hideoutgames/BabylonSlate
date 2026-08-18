@@ -1,4 +1,4 @@
-import { Mesh, Scene, VertexData } from "@babylonjs/core";
+import { Matrix, Mesh, Quaternion, Scene, Vector3, VertexData } from "@babylonjs/core";
 
 const GLB_MAGIC = 0x46546c67;
 const CHUNK_JSON = 0x4e4f534a;
@@ -122,6 +122,99 @@ function accessorIndices(
   return indices;
 }
 
+function asTuple3(
+  value: unknown,
+  fallback: [number, number, number],
+): [number, number, number] {
+  if (!Array.isArray(value) || value.length < 3) return fallback;
+  const [x, y, z] = value;
+  return [
+    typeof x === "number" ? x : fallback[0],
+    typeof y === "number" ? y : fallback[1],
+    typeof z === "number" ? z : fallback[2],
+  ];
+}
+
+function asTuple4(
+  value: unknown,
+  fallback: [number, number, number, number],
+): [number, number, number, number] {
+  if (!Array.isArray(value) || value.length < 4) return fallback;
+  const [x, y, z, w] = value;
+  return [
+    typeof x === "number" ? x : fallback[0],
+    typeof y === "number" ? y : fallback[1],
+    typeof z === "number" ? z : fallback[2],
+    typeof w === "number" ? w : fallback[3],
+  ];
+}
+
+function nodeLocalMatrix(node: Record<string, unknown>): Matrix {
+  if (Array.isArray(node.matrix) && node.matrix.length >= 16) {
+    const values = node.matrix.map((entry) =>
+      typeof entry === "number" ? entry : 0,
+    );
+    return Matrix.FromArray(values);
+  }
+  const translation = asTuple3(node.translation, [0, 0, 0]);
+  const rotation = asTuple4(node.rotation, [0, 0, 0, 1]);
+  const scale = asTuple3(node.scale, [1, 1, 1]);
+  return Matrix.Compose(
+    new Vector3(scale[0], scale[1], scale[2]),
+    new Quaternion(rotation[0], rotation[1], rotation[2], rotation[3]),
+    new Vector3(translation[0], translation[1], translation[2]),
+  );
+}
+
+/** World matrix of the first node that references `meshIndex`, or identity. */
+function meshNodeWorldMatrix(
+  json: Record<string, unknown>,
+  meshIndex: number,
+): Matrix {
+  const nodes = Array.isArray(json.nodes) ? json.nodes : [];
+  const scenes = Array.isArray(json.scenes) ? json.scenes : [];
+  const sceneIndex = typeof json.scene === "number" ? json.scene : 0;
+  const scene = scenes[sceneIndex] as { nodes?: unknown } | undefined;
+  const roots = Array.isArray(scene?.nodes)
+    ? scene.nodes
+    : nodes.map((_, index) => index);
+  let found: Matrix | null = null;
+  const visit = (index: unknown, parent: Matrix) => {
+    if (found || typeof index !== "number" || index < 0 || index >= nodes.length) {
+      return;
+    }
+    const node = nodes[index] as Record<string, unknown> | undefined;
+    if (!node) return;
+    const world = nodeLocalMatrix(node).multiply(parent);
+    if (node.mesh === meshIndex) {
+      found = world;
+      return;
+    }
+    const children = Array.isArray(node.children) ? node.children : [];
+    for (const child of children) visit(child, world);
+  };
+  const identity = Matrix.Identity();
+  for (const root of roots) visit(root, identity);
+  return found ?? identity;
+}
+
+function bakePositions(
+  positions: Float32Array,
+  world: Matrix,
+): Float32Array {
+  if (world.isIdentity()) return positions;
+  const baked = new Float32Array(positions.length);
+  const point = new Vector3();
+  for (let i = 0; i < positions.length; i += 3) {
+    point.set(positions[i]!, positions[i + 1]!, positions[i + 2]!);
+    Vector3.TransformCoordinatesToRef(point, world, point);
+    baked[i] = point.x;
+    baked[i + 1] = point.y;
+    baked[i + 2] = point.z;
+  }
+  return baked;
+}
+
 /** Build a Babylon mesh from the first GLB primitive, or null when unreadable. */
 export function createMeshFromModelBytes(
   scene: Scene,
@@ -140,17 +233,19 @@ export function createMeshFromModelBytes(
   if (typeof attributes.POSITION !== "number") return null;
   const positions = accessorFloats(glb.json, glb.bin, attributes.POSITION);
   if (!positions || positions.length < 9) return null;
+  const baked = bakePositions(positions, meshNodeWorldMatrix(glb.json, 0));
   const vertexData = new VertexData();
-  vertexData.positions = Array.from(positions);
+  vertexData.positions = Array.from(baked);
   if (typeof primitive?.indices === "number") {
     const indices = accessorIndices(glb.json, glb.bin, primitive.indices);
     if (indices) vertexData.indices = indices;
   } else {
-    const count = positions.length / 3;
+    const count = baked.length / 3;
     vertexData.indices = Array.from({ length: count }, (_, i) => i);
   }
   const mesh = new Mesh(name, scene);
   vertexData.applyToMesh(mesh, true);
+  mesh.refreshBoundingInfo();
   return mesh;
 }
 
@@ -195,6 +290,59 @@ function encodeGlb(json: unknown, bin: Uint8Array): Uint8Array {
   view.setUint32(binHeader + 4, CHUNK_BIN, true);
   out.set(bin, binHeader + 8);
   return out;
+}
+
+/** Volume tetrahedron whose first mesh node (and optional parent) is translated. */
+export function encodeTranslatedTetrahedronGlb(
+  translation: [number, number, number],
+  parentTranslation?: [number, number, number],
+): Uint8Array {
+  const positions = new Float32Array([0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5]);
+  const indices = new Uint16Array([0, 1, 2, 0, 1, 3, 0, 2, 3, 1, 2, 3]);
+  const bin = new Uint8Array(positions.byteLength + indices.byteLength);
+  bin.set(new Uint8Array(positions.buffer), 0);
+  bin.set(new Uint8Array(indices.buffer), positions.byteLength);
+  const nodes = parentTranslation
+    ? [
+        { children: [1], translation: parentTranslation },
+        { mesh: 0, translation },
+      ]
+    : [{ mesh: 0, translation }];
+  return encodeGlb(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0] }],
+      nodes,
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: FLOAT,
+          count: 4,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [0.5, 0.5, 0.5],
+        },
+        {
+          bufferView: 1,
+          componentType: UNSIGNED_SHORT,
+          count: 12,
+          type: "SCALAR",
+        },
+      ],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: positions.byteLength },
+        {
+          buffer: 0,
+          byteOffset: positions.byteLength,
+          byteLength: indices.byteLength,
+        },
+      ],
+      buffers: [{ byteLength: bin.byteLength }],
+    },
+    bin,
+  );
 }
 
 /** Minimal one-triangle GLB for NullEngine tests (3 vertices, no indices). */

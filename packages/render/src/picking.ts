@@ -13,6 +13,15 @@ export function pickAtCanvas(
   canvasX: number,
   canvasY: number,
 ): { meshName: string; slotId: number | null; hit: PickingInfo } | null {
+  scene.updateTransformMatrix();
+  const camera = scene.activeCamera;
+  if (camera) {
+    for (const mesh of scene.meshes) {
+      if (mesh.isWorldMatrixCameraDependent()) {
+        mesh.computeWorldMatrix(true, camera);
+      }
+    }
+  }
   const pick = scene.pick(canvasX, canvasY, undefined, false);
   if (!pick?.hit || !pick.pickedMesh) {
     return null;
