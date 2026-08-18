@@ -15,6 +15,7 @@ import {
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 import { Button } from "@babylonslate/ui/components/button";
+import { Input } from "@babylonslate/ui/components/input";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
 import { playJoystickAxesFromPointer } from "../lib/play-hud-joystick";
 import { parsePlayHudControlId } from "../lib/play-content";
@@ -317,6 +318,30 @@ export function PlayHudOverlay({
             </div>
           );
         }
+        if (isText) {
+          return (
+            <Input
+              key={control.id}
+              type="text"
+              data-testid={testId}
+              data-kind={control.kind}
+              data-gui-x={String(Math.round(control.guiRect.x))}
+              data-gui-y={String(Math.round(control.guiRect.y))}
+              className="pointer-events-auto absolute h-auto min-h-0"
+              style={{
+                ...boxStyle,
+                fontFamily: control.style.fontFamily,
+                color: control.style.color,
+                background: control.style.background,
+                opacity: control.style.opacity,
+              }}
+              defaultValue={stringProp(control.props, "text", "")}
+              onChange={(event) =>
+                emitWidget(control.id, "text", event.currentTarget.value)
+              }
+            />
+          );
+        }
         return (
           <Button
             key={control.id}
@@ -439,17 +464,7 @@ export function PlayHudOverlay({
                   : undefined
             }
           >
-            {isText ? (
-              <input
-                className="h-full w-full bg-transparent px-1 text-[11px] outline-none"
-                defaultValue={stringProp(control.props, "text", "")}
-                onChange={(event) =>
-                  emitWidget(control.id, "text", event.currentTarget.value)
-                }
-              />
-            ) : (
-              caption
-            )}
+            {caption}
           </Button>
         );
       })}

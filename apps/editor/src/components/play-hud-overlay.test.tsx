@@ -225,9 +225,11 @@ describe("PlayHudOverlay widget events", () => {
         onWidgetEvent={onWidgetEvent}
       />,
     );
-    const input = getByTestId("play-hud-widget-ui-1:ctrl").querySelector("input");
-    expect(input).not.toBeNull();
-    fireEvent.change(input!, { target: { value: "hello" } });
+    const input = getByTestId(
+      "play-hud-widget-ui-1:ctrl",
+    ) as HTMLInputElement;
+    expect(input.tagName).toBe("INPUT");
+    fireEvent.change(input, { target: { value: "hello" } });
     expect(onWidgetEvent).toHaveBeenCalledWith({
       instanceId: "ui-1",
       widgetId: "ctrl",
