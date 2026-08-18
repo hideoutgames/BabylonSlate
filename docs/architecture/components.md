@@ -32,10 +32,10 @@ Source: [`packages/ui/src/components/`](../../packages/ui/src/components/). Impo
 | **Select** (`SelectTrigger`, `SelectContent`, `SelectItem`, `SelectGroup`, …) | Closed option list. Popup is at least the trigger width (`min-w-(--anchor-width)`), not stretched across the panel. | Engine Settings enums; PropertyGrid enum rows; UserInterface designer canvas preset; Project Settings global font fallback. |
 | **Separator** | Horizontal or vertical rule. | Toolbar strips, search dialog, catalog layout. |
 | **Sheet** (`SheetTitle`, `SheetContent`, `SheetHeader`, …) | Edge drawer. Title required. | Installed; unused in production chrome. Pick lists use SearchDialog / SearchDropdown; console and session report use Dialog. |
-| **Slider** | Bounded numeric track (44px hit area). Accepts a scalar or range array. | PropertyGrid slider rows; Trace playback frame scrubber; gallery. |
+| **Slider** | Bounded numeric track (44px hit area). Accepts a scalar or range array. | PropertyGrid slider rows; Trace playback frame scrubber; Sprite Animation Preview; gallery. |
 | **Switch** | On/off toggle. | Engine / Project Settings booleans (including Viewport **Post-processing**); NodePalette **Context Sensitive**; scene post-process pass Enabled. |
 | **Textarea** | Multi-line text. | Custom GLSL expression body; gallery. Input mappings stay on structured `InputMappingEditor`. |
-| **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools; FlagsField bits. |
+| **Toggle** | Pressed/unpressed tool. Selected = accent fill + primary border + `aria-pressed`. | Viewport tools, Outliner filters, chrome Play-adjacent tools; FlagsField bits; Sprite Animation Preview **Loop**. |
 | **ToggleGroup** (`ToggleGroupItem`) | Exclusive (or multiple) tool set. 44px `touch` size for document tools. | Viewport gizmo mode; Material preview mesh; Tilemap paint tools (**Move** default, then brush/eraser/rect/bucket/stamp/picker); Tileset Preview **Move \| Select**; UserInterface **Designer \| Logic** mode bar; Animation Graph **State Machine \| Animation Object** mode bar; gallery. |
 | **Tooltip** (`TooltipTrigger`, `TooltipContent`, `TooltipProvider`) | Hover/focus hint. `TooltipProvider` wraps the editor in `App`. | Icon chrome, viewport toolbar, `IconActionButton`. |
 

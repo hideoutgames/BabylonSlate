@@ -42,10 +42,10 @@ SpriteAnimationPayload = {
 }
 ```
 
-DockView **Preview** + **Details** (same checklist as Sprite). Preview: token checkerboard, current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box, frame strip. Details: Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` PNG IHDR), duration, pivot, collision numbers. Play and the packaged player fill missing frame sizes from collected Texture bytes (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
+DockView **Preview** (25%) + **Details** (75%). Preview: token checkerboard, current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box, Play / Pause / Loop / scrubber, and a frame strip. Details: Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` PNG IHDR), duration, pivot, collision numbers. Play and the packaged player fill missing frame sizes from collected Texture bytes (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
 
 AnimGraph **Sprite** clip kind picks this asset (not Sprite). Duration for the evaluator is `sum(durationMs)`.
 
 ## Editor
 
-Sprite document workspace is a DockView (**Preview** + **Details**). Details: `AssetPicker` filtered to Texture (`property-texture` / `sprite-texture-picker`) showing icon, name, and **Texture** (not the guid), pixels per unit, first-frame pivot and duration, collision numbers, and the first clip name. Preview (`sprite-preview`) loads the Texture `pixels` chunk, crops the current frame UVs on a checkerboard, overlays a live pivot crosshair, and a dashed AABB (`SpriteCollisionOverlay`: 8 handles, drag to shrink/move). Empty texture shows a muted empty state. Compose from [components.md](components.md).
+Sprite document workspace is a DockView (**Preview** + **Details**). Details: `AssetPicker` filtered to Texture (`property-texture` / `sprite-texture-picker`) showing icon, name, and **Texture** (not the guid), pixels per unit, first-frame pivot and duration, and collision numbers. Atlas `clips` stay on the payload for legacy Play / AnimGraph playback; they are not edited here. Preview (`sprite-preview`) loads the Texture `pixels` chunk, crops the current frame UVs on a checkerboard, overlays a live pivot crosshair, and a dashed AABB (`SpriteCollisionOverlay`: 8 handles, drag to shrink/move). Empty texture shows a muted empty state. Compose from [components.md](components.md).
