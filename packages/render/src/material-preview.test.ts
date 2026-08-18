@@ -421,6 +421,8 @@ describe("material preview presenter", () => {
     expect(render).not.toHaveBeenCalled();
     presenter.present({ force: true });
     expect(render).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    await Promise.resolve();
     now = 1500;
     presenter.present();
     expect(render).toHaveBeenCalledTimes(2);
