@@ -53,13 +53,17 @@ const EDITOR_UTILITY_EVENT_TYPES = [
 
 const EDITOR_BEGIN_PLAY_EVENT = "flow.event.editorBeginPlay";
 
-const WIDGET_POINTER_EVENT_TYPE_IDS = [
+export const WIDGET_POINTER_EVENT_TYPE_IDS = [
   "flow.event.mouseEnter",
   "flow.event.mouseExit",
   "flow.event.mousePress",
   "flow.event.mouseRelease",
   "flow.event.widgetClick",
 ] as const;
+
+export function nativeEventTitle(eventType: string): string {
+  return NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType);
+}
 
 const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginPlay",

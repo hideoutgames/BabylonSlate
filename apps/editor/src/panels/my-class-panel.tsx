@@ -48,7 +48,12 @@ import {
   commitLogicGraph,
   serializedGraphFromDocument,
 } from "../lib/logic-graph-document";
-import { collectOverridableFunctionRows } from "../lib/overridable-functions";
+import {
+  collectOverridableEventRows,
+  collectOverridableFunctionRows,
+  type NestedUiLogicGraph,
+} from "../lib/overridable-functions";
+import { collectNestedUtilityLogicSources } from "../lib/editor-utility-interface-runtime";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -84,6 +89,7 @@ export type MembersForGraphOptions = {
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
+  nestedUis?: readonly NestedUiLogicGraph[];
   scriptInterfaces?: Array<{
     guid: string;
     name: string;
@@ -411,6 +417,7 @@ export function ClassMembersView({
   const [renameMemberId, setRenameMemberId] = useState<string | null>(null);
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [functionDialogOpen, setFunctionDialogOpen] = useState(false);
+  const [eventDialogOpen, setEventDialogOpen] = useState(false);
   const [accessDrop, setAccessDrop] = useState<{
     memberId: string;
     position: { x: number; y: number };
@@ -430,6 +437,10 @@ export function ClassMembersView({
       setFunctionDialogOpen(true);
       return;
     }
+    if (kind === "event" && !local) {
+      setEventDialogOpen(true);
+      return;
+    }
     setMemberPromptLocal(local);
     setMemberPromptKind(kind);
   };
@@ -445,6 +456,19 @@ export function ClassMembersView({
       });
     }
   };
+  const overridableEventRows = useMemo(
+    () =>
+      collectOverridableEventRows({
+        graph: graph ?? undefined,
+        classId,
+        parentClass: membersOptions?.parentClass,
+        parentOf: membersOptions?.parentOf,
+        parentGraphs: membersOptions?.parentGraphs,
+        assetType: membersOptions?.assetType,
+        nestedUis: membersOptions?.nestedUis,
+      }),
+    [classId, graph, membersOptions],
+  );
   const overridableRows = useMemo(
     () =>
       collectOverridableFunctionRows({
@@ -777,6 +801,57 @@ export function ClassMembersView({
           );
         }}
       />
+      <AddFunctionDialog
+        open={eventDialogOpen}
+        onOpenChange={setEventDialogOpen}
+        title="Add Event"
+        description="Create an empty custom event or override a native, inherited, or nested one."
+        emptyLabel="New Empty Event"
+        nameLabel="Event Name"
+        items={overridableEventRows}
+        data-testid="add-event-dialog"
+        onCreateEmpty={(name) => {
+          if (!graph) return;
+          const next = addClassMember(graph, "event", name);
+          onGraphChange(next);
+          const node = next.nodes[next.nodes.length - 1];
+          if (node) {
+            onSelectMember?.(node.id, {
+              kind: "event",
+              name: node.data.name as string,
+              detail: node.id,
+              eventType: "flow.event.custom",
+            });
+          }
+        }}
+        onPick={(id) => {
+          if (!graph) return;
+          const row = overridableEventRows.find((entry) => entry.id === id);
+          if (!row || row.overwritten) return;
+          const next =
+            row.kind === "native"
+              ? ensureEventNodeOnGraph(graph, row.eventType)
+              : ensureEventNodeOnGraph(graph, "flow.event.custom", {
+                  name: row.name,
+                  pins: row.pins,
+                  parentClassId: row.parentClassId,
+                });
+          onGraphChange(next);
+          const node = next.nodes.find((entry) => {
+            if (entry.type !== row.eventType) return false;
+            if (row.eventType !== "flow.event.custom") return true;
+            return entry.data.name === row.name;
+          });
+          if (node) {
+            onSelectMember?.(node.id, {
+              kind: "event",
+              name: row.name,
+              detail: node.id,
+              eventType: row.eventType,
+            });
+          }
+        }}
+      />
       <NamePromptDialog
         open={renameMemberId !== null}
         onOpenChange={(open) => {
@@ -869,6 +944,36 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     openDocuments,
     classIdForPath: classIdForGraphPath,
   });
+  const nestedUis =
+    doc?.ref.kind === "ui" && doc.content
+      ? collectNestedUtilityLogicSources(doc.content, (guid) => {
+          const asset = (assetRegistry?.list() ?? []).find(
+            (entry) => entry.header.guid === guid,
+          );
+          if (!asset) return null;
+          const openDoc = openDocuments.find((entry) => entry.ref.path === asset.path);
+          if (openDoc?.content) {
+            return { path: asset.path, payload: openDoc.content };
+          }
+          if (asset.header.payload) {
+            return { path: asset.path, payload: asset.header.payload };
+          }
+          return null;
+        }).flatMap((entry) => {
+          const graph = serializedGraphFromDocument("ui", entry.payload);
+          if (!graph) return [];
+          const asset = (assetRegistry?.list() ?? []).find(
+            (item) => item.header.guid === entry.guid,
+          );
+          return [
+            {
+              guid: entry.guid,
+              name: asset?.header.name ?? "UserInterface",
+              graph,
+            },
+          ];
+        })
+      : [];
   const membersOptions = {
     parentClass:
       indexed?.header.parentClass ??
@@ -876,6 +981,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     parentOf,
     parentGraphs,
     assetType: indexed?.header.type,
+    nestedUis,
     scriptInterfaces: collectScriptInterfacesForPalette({
       assets: assetRegistry?.list() ?? [],
       openDocuments,

@@ -102,6 +102,34 @@ describe("MyClassPanel name prompt", () => {
     prompt.mockRestore();
   });
 
+  it("adds an event through Add Event dialog instead of window.prompt", () => {
+    const prompt = vi.spyOn(window, "prompt");
+    render(
+      <GraphEditingProvider>
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("class-add-events"));
+    expect(prompt).not.toHaveBeenCalled();
+    expect(screen.getByTestId("add-event-dialog")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("add-event-name"), {
+      target: { value: "On Hit" },
+    });
+    fireEvent.click(screen.getByTestId("add-event-confirm"));
+    expect(applyGraphChange).toHaveBeenCalledWith(
+      "graph:assets/Hero.class.babasset",
+      expect.objectContaining({
+        nodes: expect.arrayContaining([
+          expect.objectContaining({
+            type: "flow.event.custom",
+            data: expect.objectContaining({ name: "On Hit" }),
+          }),
+        ]),
+      }),
+    );
+    prompt.mockRestore();
+  });
+
   it("hides Local Variables on the event graph and shows them on a function graph", () => {
     const { rerender } = render(
       <GraphEditingProvider key="event">

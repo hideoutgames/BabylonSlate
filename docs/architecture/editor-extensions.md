@@ -7,7 +7,7 @@ Editor-only types that never ship in Play or export. Spec: [engineplan.md](../en
 | Type | Kind | File | Play / export |
 | --- | --- | --- | --- |
 | **EditorUtilityObject** | Class parent (`BObject`) | `*.class.babasset` | Stripped. Native events are Event Editor On Begin Play plus On Editor Startup / On Scene Open / On Scene Saved / On Editor Shutdown — not game Begin Play / Tick. Boot: construct → Editor On Begin Play → On Editor Startup → optional On Scene Open. |
-| **EditorUtilityInterface** | Creatable asset | `*.eui.babasset` | Stripped. Payload is a UserInterface document plus `dockKind: "scene" \| "class"`. Live Logic: Event Editor On Begin Play and widget events; no Tick. |
+| **EditorUtilityInterface** | Creatable asset | `*.eui.babasset` | Stripped. Payload is a UserInterface document plus `dockKind: "scene" \| "class"`. Live Logic: Event Editor On Begin Play and widget events; no Tick. Nested UserInterface / EUI widgets compile into the same ScriptHost (editor Begin Play on create, no tick); prefixed widget ids dispatch to the nested graph. |
 | **EditorFunctionLibrary** | Class parent (`FunctionLibrary`) | `*.class.babasset` | Stripped. New Class parent list. Static Call Function rows only on editor graph hosts. |
 
 `isEditorOnlyAsset` / `isEditorUtilityObjectClass` / `isEditorFunctionLibraryClass` / `isEditorGraphClass` / `isEditorGraphHost` in `@babylonslate/core` (`packages/core/src/editor-only.ts`) walk the parent chain. P14 export reuses the same helpers.
