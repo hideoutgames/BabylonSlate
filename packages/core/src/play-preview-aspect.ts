@@ -22,7 +22,11 @@ export function fitContainedRect(
   return { width, height: Math.round(width / target) };
 }
 
-/** Locked custom-resolution size. Present always contains this bitmap; `blackBars` is unused. */
+/**
+ * Locked custom-resolution size for letterbox present.
+ * `blackBars: false` does not cap the buffer — the host fills and cameras
+ * follow the live aspect. A live `setRenderResolution` override still locks.
+ */
 export function playFramebufferSize(
   render?: {
     customResolution: boolean;
@@ -35,7 +39,7 @@ export function playFramebufferSize(
   if (liveSize && liveSize.width > 0 && liveSize.height > 0) {
     return { width: Math.round(liveSize.width), height: Math.round(liveSize.height) };
   }
-  if (!render?.customResolution) return null;
+  if (!render?.customResolution || !render.blackBars) return null;
   const width = render.width > 0 ? Math.round(render.width) : 1920;
   const height = render.height > 0 ? Math.round(render.height) : 1080;
   return { width, height };

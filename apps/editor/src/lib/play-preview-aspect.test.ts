@@ -106,7 +106,7 @@ describe("applyPlayPreviewCanvasLayout", () => {
 });
 
 describe("custom render resolution layout", () => {
-  it("letterboxes a locked framebuffer even when black bars are off", () => {
+  it("fills the overlay without stretching when black bars are off", () => {
     const overlay = document.createElement("div");
     overlay.className = "fixed inset-0 z-50 flex flex-col bg-background";
     const canvas = document.createElement("canvas");
@@ -128,12 +128,44 @@ describe("custom render resolution layout", () => {
       },
     });
 
-    expect(canvas.style.width).toBe("800px");
-    expect(canvas.style.height).toBe("450px");
+    expect(canvas.style.width).toBe("");
+    expect(canvas.style.height).toBe("");
+    expect(canvas.classList.contains("h-full")).toBe(true);
+    expect(canvas.classList.contains("w-full")).toBe(true);
     expect(canvas.style.objectFit).not.toBe("fill");
-    expect(overlay.classList.contains("bg-black")).toBe(true);
-    expect(overlay.classList.contains("items-center")).toBe(true);
-    expect(overlay.classList.contains("justify-center")).toBe(true);
+    expect(overlay.classList.contains("bg-black")).toBe(false);
+    expect(overlay.classList.contains("bg-background")).toBe(true);
+    expect(overlay.classList.contains("items-center")).toBe(false);
+    expect(overlay.classList.contains("justify-center")).toBe(false);
+  });
+
+  it("fills the overlay when black bars are off even if Follow System is off", () => {
+    const overlay = document.createElement("div");
+    overlay.className = "fixed inset-0 z-50 flex flex-col bg-background";
+    const canvas = document.createElement("canvas");
+    overlay.append(canvas);
+    document.body.append(overlay);
+    stubClientSize(overlay, 1600, 1200);
+
+    applyPlayPreviewCanvasLayout({
+      overlay,
+      canvas,
+      followSystem: false,
+      aspectWidth: 16,
+      aspectHeight: 9,
+      render: {
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: false,
+      },
+    });
+
+    expect(canvas.style.width).toBe("");
+    expect(canvas.style.height).toBe("");
+    expect(canvas.classList.contains("h-full")).toBe(true);
+    expect(canvas.classList.contains("w-full")).toBe(true);
+    expect(overlay.classList.contains("bg-black")).toBe(false);
   });
 
   it("letterboxes a custom framebuffer with black bars on", () => {
@@ -204,13 +236,24 @@ describe("playFramebufferSize", () => {
     ).toBeNull();
   });
 
-  it("returns the locked WxH, preferring a live override", () => {
+  it("does not lock WxH when black bars are off", () => {
     expect(
       playFramebufferSize({
         customResolution: true,
         width: 1920,
         height: 1080,
         blackBars: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the locked WxH, preferring a live override", () => {
+    expect(
+      playFramebufferSize({
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: true,
       }),
     ).toEqual({ width: 1920, height: 1080 });
     expect(
