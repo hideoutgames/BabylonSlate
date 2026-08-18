@@ -359,6 +359,53 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("no-ops Set Channel Volume for a library channel absent from the mixer table", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({
+      backend,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+    service.setLibrary(
+      library({
+        mixer: {
+          globalVolume: 1,
+          channels: [],
+        },
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "environmentReverb", enabled: false }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "setChannelVolume",
+      channelGuid: "sfx",
+      volume: 0,
+    });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(backend.plays[0]?.gain).toBe(1);
+    expect(diagnostics.map((entry) => entry.code)).toEqual(["audio.unknown_channel"]);
+    service.dispose();
+  });
+
   it("applies Doppler playbackRate from emitter motion, not a second distance gain", async () => {
     let now = 0;
     const backend = new FakeAudioPlaybackBackend();
