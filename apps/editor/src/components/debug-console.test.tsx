@@ -72,6 +72,24 @@ describe("DebugConsole", () => {
     expect(screen.getByTestId("debug-console-copy")).toBeTruthy();
   });
 
+  it("applies a suggestion chip into the current token", async () => {
+    render(
+      <DebugConsole
+        open
+        onOpenChange={() => {}}
+        commands={createCommandRegistry({ includeDebug: true }).list()}
+        onExecute={async () => ({ success: true, output: "" })}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("debug-console-input"), {
+      target: { value: "renderquality " },
+    });
+    fireEvent.click(screen.getByTestId("debug-console-suggest-high"));
+    expect(
+      (screen.getByTestId("debug-console-input") as HTMLInputElement).value,
+    ).toBe("renderquality high");
+  });
+
   it("clears the transcript and copies it to the clipboard", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });

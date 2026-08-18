@@ -5,6 +5,8 @@ export type {
   CommandResult,
   CommandTier,
   ConsoleCommandHost,
+  ConsoleCompleteKind,
+  ConsoleCompletionContext,
   RegisteredCommand,
 } from "./types";
 export {
@@ -19,7 +21,10 @@ export {
   type ConsoleCommandGraph,
 } from "./validation";
 export { createUserCommand, type UserCommandDef } from "./user-commands";
-export { suggestConsoleCompletions } from "./autocomplete";
+export {
+  applyConsoleCompletion,
+  suggestConsoleCompletions,
+} from "./autocomplete";
 export { TICK_BUDGET_MS, isTickOverBudget } from "./stats";
 export {
   DEFAULT_INFINITE_LOOP_COUNT,

@@ -2,12 +2,21 @@ export type CommandTier = "core" | "debug";
 
 export type CommandParamType = "string" | "float" | "int" | "bool" | "enum";
 
+export type ConsoleCompleteKind = "scenes" | "actors" | "commands";
+
 export type CommandParameter = {
   name: string;
   type: CommandParamType;
   optional?: boolean;
   defaultValue?: unknown;
   enumValues?: readonly string[];
+  complete?: ConsoleCompleteKind;
+};
+
+export type ConsoleCompletionContext = {
+  scenes?: readonly string[];
+  actors?: readonly string[];
+  commands?: readonly string[];
 };
 
 export type CommandResult = {

@@ -29,7 +29,7 @@ import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
-import { playConsoleCommands } from "../lib/play-console";
+import { playConsoleCommands, playConsoleCompletionContext } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
@@ -268,10 +268,21 @@ export function PlayOverlay({
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
   const inspectSnapshot = useInspectWorldPoll(
-    nextPlayInspectorOpen(inspectorOpen, overlayInspector),
+    consoleOpen || nextPlayInspectorOpen(inspectorOpen, overlayInspector),
     () =>
       sessionRef.current?.inspectWorld() ??
       Promise.resolve({ tickIndex: 0, nodes: [] }),
+  );
+  const completionContext = useMemo(
+    () =>
+      playConsoleCompletionContext({
+        commands,
+        sceneAssetGuid,
+        scene,
+        scenes,
+        inspectNodes: inspectSnapshot.nodes,
+      }),
+    [commands, sceneAssetGuid, scene, scenes, inspectSnapshot],
   );
 
   useEffect(() => {
@@ -607,6 +618,7 @@ export function PlayOverlay({
         open={consoleOpen}
         onOpenChange={setConsoleOpen}
         commands={commands}
+        completionContext={completionContext}
         onExecute={(line) =>
           sessionRef.current?.executeConsoleCommand(line) ??
           Promise.resolve({ success: false, output: "not playing" })

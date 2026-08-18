@@ -90,7 +90,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "changescene",
       tier: "core",
       description: "Load a scene by asset guid",
-      parameters: [{ name: "scene", type: "string" }],
+      parameters: [{ name: "scene", type: "string", complete: "scenes" }],
       run(args, host) {
         const scene = String(args.scene);
         host.changeScene(scene);
