@@ -26,7 +26,12 @@ const snapshot: DebugInspectSnapshot = {
         rotation: [0, 0, 0, 1],
         scale: [1, 1, 1],
       },
-      variables: { health: 10, target: { guid: "a1", classId: "Actor" } },
+      variables: {
+        health: 10,
+        alive: true,
+        target: { guid: "a1", classId: "Actor" },
+      },
+      variableTypes: { health: "float", alive: "bool" },
     },
     {
       id: "mesh",
@@ -94,26 +99,62 @@ describe("DebugInspectDialog", () => {
     expect(screen.queryByTestId("tree-row-gi")).toBeNull();
   });
 
-  it("shows identity, transform, and SelectableText variables for the selection", () => {
+  it("shows identity, transform, and disabled typed variable rows", () => {
     render(
       <DebugInspectDialog open onOpenChange={() => {}} snapshot={snapshot} />,
     );
     tapRow("hero");
     expect(screen.queryByTestId("debug-inspect-empty")).toBeNull();
-    const details = screen.getByTestId("debug-inspect-details");
-    expect(details.textContent).toContain("Hero");
-    expect(details.textContent).toContain("hero");
-    expect(details.textContent).toContain("Actor");
+    expect(screen.getByTestId("debug-inspect-details")).toBeTruthy();
+    expect((screen.getByTestId("property-name") as HTMLInputElement).value).toBe(
+      "Hero",
+    );
+    expect((screen.getByTestId("property-class") as HTMLInputElement).value).toBe(
+      "Actor",
+    );
+    expect((screen.getByTestId("property-guid") as HTMLInputElement).value).toBe(
+      "hero",
+    );
+    expect((screen.getByTestId("property-name") as HTMLInputElement).disabled).toBe(
+      true,
+    );
     expect(screen.getByText("GUID")).toBeTruthy();
     expect(screen.queryByText("Guid")).toBeNull();
-    expect(details.textContent).toContain("1, 2, 3");
-    expect(screen.getByTestId("debug-inspect-var-health").textContent).toContain(
-      "10",
+
+    const health = screen.getByTestId("property-health") as HTMLInputElement;
+    expect(screen.getByTestId("debug-inspect-var-health")).toBeTruthy();
+    expect(health.disabled).toBe(true);
+    expect(health.value).toBe("10");
+
+    const aliveRow = screen.getByTestId("debug-inspect-var-alive");
+    expect(aliveRow.getAttribute("data-disabled")).toBe("true");
+    const alive = screen.getByTestId("property-alive");
+    expect(alive.getAttribute("aria-disabled")).toBe("true");
+    expect(alive.getAttribute("data-checked")).not.toBeNull();
+    const checked = alive.getAttribute("data-checked");
+    fireEvent.click(alive);
+    expect(alive.getAttribute("data-checked")).toBe(checked);
+
+    const target = screen.getByTestId("debug-inspect-var-target");
+    expect(target.textContent).toContain("Actor");
+    expect(target.textContent).toContain("a1");
+    expect(target.textContent).not.toContain("Actor(a1)");
+    expect((screen.getByTestId("property-target") as HTMLButtonElement).disabled).toBe(
+      true,
     );
-    expect(screen.getByTestId("debug-inspect-var-target").textContent).toContain(
-      "Actor(a1)",
-    );
-    expect(details.querySelector("input")).toBeNull();
+
+    expect(
+      (screen.getByTestId("property-position-x") as HTMLInputElement).value,
+    ).toBe("1");
+    expect(
+      (screen.getByTestId("property-position-y") as HTMLInputElement).value,
+    ).toBe("2");
+    expect(
+      (screen.getByTestId("property-position-z") as HTMLInputElement).value,
+    ).toBe("3");
+    expect(
+      (screen.getByTestId("property-rotation-w") as HTMLInputElement).value,
+    ).toBe("1");
   });
 
   it("keeps the selection across snapshot updates and clears when the guid is gone", () => {
@@ -139,9 +180,9 @@ describe("DebugInspectDialog", () => {
     expect(screen.getByTestId("debug-inspect-tick").getAttribute("data-tick")).toBe(
       "5",
     );
-    expect(screen.getByTestId("debug-inspect-var-health").textContent).toContain(
-      "11",
-    );
+    const health = screen.getByTestId("property-health") as HTMLInputElement;
+    expect(health.disabled).toBe(true);
+    expect(health.value).toBe("11");
 
     rerender(
       <DebugInspectDialog
