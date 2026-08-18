@@ -10,6 +10,8 @@ import {
 import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  parseSpriteAnimationPayload,
+  type SpritePayload,
 } from "@babylonslate/assets";
 import {
   TransferablePingPong,
@@ -106,6 +108,34 @@ function handleControl(msg: ControlMessage): void {
       rt.registerTileContent({
         tilemaps,
         tilesets,
+        pixelsPerUnit: msg.pixelsPerUnit,
+      });
+      return;
+    }
+    case "loadSprites": {
+      const rt = ensureRuntime();
+      const sprites: Record<string, SpritePayload> = {};
+      const spriteAnimations: Record<
+        string,
+        ReturnType<typeof parseSpriteAnimationPayload>
+      > = {};
+      for (const entry of msg.sprites) {
+        const document = entry.document;
+        if (!document || typeof document !== "object") continue;
+        const record = document as { frames?: unknown; clips?: unknown };
+        if (!Array.isArray(record.frames) || !Array.isArray(record.clips)) {
+          continue;
+        }
+        sprites[entry.guid] = document as SpritePayload;
+      }
+      for (const entry of msg.spriteAnimations) {
+        spriteAnimations[entry.guid] = parseSpriteAnimationPayload(
+          entry.document,
+        );
+      }
+      rt.registerSpriteContent({
+        sprites,
+        spriteAnimations,
         pixelsPerUnit: msg.pixelsPerUnit,
       });
       return;

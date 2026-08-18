@@ -73,6 +73,15 @@ vi.mock("../context/document-context", async () => {
           },
           {
             header: {
+              guid: "walk-anim",
+              name: "WalkClip",
+              type: "SpriteAnimation",
+              payload: { durationMs: 250 },
+            },
+            path: "assets/Walk.spriteanim.babasset",
+          },
+          {
+            header: {
               guid: "model-1",
               name: "HeroModel",
               type: "Model",
@@ -80,6 +89,15 @@ vi.mock("../context/document-context", async () => {
               dependencies: ["anim-1"],
             },
             path: "assets/Hero.model.babasset",
+          },
+          {
+            header: {
+              guid: "model-empty",
+              name: "EmptyModel",
+              type: "Model",
+              payload: { clipNames: [] },
+            },
+            path: "assets/Empty.model.babasset",
           },
           {
             header: {
@@ -98,25 +116,43 @@ vi.mock("../context/document-context", async () => {
         getByGuid: (guid: string) =>
           guid === "spr-1"
             ? { header: { guid: "spr-1", name: "Hero", type: "Sprite" } }
-            : guid === "model-1"
+            : guid === "walk-anim"
               ? {
                   header: {
-                    guid: "model-1",
-                    name: "HeroModel",
-                    type: "Model",
-                    payload: { clipNames: ["Idle", "Walk"] },
+                    guid: "walk-anim",
+                    name: "WalkClip",
+                    type: "SpriteAnimation",
+                    payload: { durationMs: 250 },
                   },
                 }
-              : guid === "anim-1"
+              : guid === "model-1"
                 ? {
                     header: {
-                      guid: "anim-1",
-                      name: "Hero_Walk",
-                      type: "Animation",
-                      payload: { clipName: "Walk" },
+                      guid: "model-1",
+                      name: "HeroModel",
+                      type: "Model",
+                      payload: { clipNames: ["Idle", "Walk"] },
                     },
                   }
-                : undefined,
+                : guid === "model-empty"
+                  ? {
+                      header: {
+                        guid: "model-empty",
+                        name: "EmptyModel",
+                        type: "Model",
+                        payload: { clipNames: [] },
+                      },
+                    }
+                  : guid === "anim-1"
+                    ? {
+                        header: {
+                          guid: "anim-1",
+                          name: "Hero_Walk",
+                          type: "Animation",
+                          payload: { clipName: "Walk" },
+                        },
+                      }
+                    : undefined,
       },
     };
   },
@@ -331,5 +367,60 @@ describe("AnimGraphEditor", () => {
       }),
     );
     expect(screen.getByTestId("property-clipName")).toBeTruthy();
+    expect(screen.getByTestId("property-clipName").tagName).not.toBe("INPUT");
+    fireEvent.click(screen.getByTestId("property-clipName"));
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-Idle")).toBeTruthy();
+    });
+    expect(screen.getByTestId("search-item-Walk")).toBeTruthy();
+  });
+
+  it("shows No Clips when the Model has no clip names instead of a type-in", async () => {
+    renderAnimGraph();
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("property-clipAsset"));
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-model-empty")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("search-item-model-empty"));
+    const clipName = screen.getByTestId("property-clipName");
+    expect((clipName as HTMLButtonElement).disabled).toBe(true);
+    expect(clipName.textContent).toMatch(/No Clips/);
+    expect(clipName.tagName).not.toBe("INPUT");
+  });
+
+  it("picks a Sprite Animation for sprite clip kind and hides Clip Name", async () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "",
+      clipName: "",
+      durationMs: 1000,
+    };
+    renderAnimGraph(doc);
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    expect(screen.queryByTestId("property-clipName")).toBeNull();
+    fireEvent.click(screen.getByTestId("property-clipAsset"));
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-walk-anim")).toBeTruthy();
+    });
+    expect(screen.queryByTestId("search-item-spr-1")).toBeNull();
+    expect(screen.queryByTestId("search-item-model-1")).toBeNull();
+    fireEvent.click(screen.getByTestId("search-item-walk-anim"));
+    expect(lastCommit()).toEqual(
+      expect.objectContaining({
+        clips: expect.arrayContaining([
+          expect.objectContaining({
+            id: "idle-clip",
+            kind: "sprite",
+            assetGuid: "walk-anim",
+            clipName: "",
+            durationMs: 250,
+          }),
+        ]),
+      }),
+    );
+    expect(screen.queryByTestId("property-clipName")).toBeNull();
   });
 });

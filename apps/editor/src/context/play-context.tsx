@@ -76,7 +76,12 @@ import type {
   PlayBlackboardEntry,
 } from "../lib/play-content";
 import { readPlayNavmeshBytes, readPlayAudioReverbBytes } from "../lib/play-content";
-import type { SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type {
+  SpriteAnimationPayload,
+  SpritePayload,
+  TilemapPayload,
+  TilesetPayload,
+} from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
@@ -219,6 +224,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playSpritePayloads, setPlaySpritePayloads] = useState<
     Map<string, SpritePayload>
   >(() => new Map());
+  const [playSpriteAnimationPayloads, setPlaySpriteAnimationPayloads] = useState<
+    Map<string, SpriteAnimationPayload>
+  >(() => new Map());
   const [playTilemaps, setPlayTilemaps] = useState<Map<string, TilemapPayload>>(
     () => new Map(),
   );
@@ -261,6 +269,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayBehaviourTrees,
     collectPlayBlackboards,
     collectPlaySpritePayloads,
+    collectPlaySpriteAnimationPayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayModelBytes,
@@ -683,8 +692,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayFontEntries([]);
         }
+        let playGraphs: typeof playAnimGraphs = [];
         try {
-          setPlayAnimGraphs(await collectPlayAnimGraphs(resolvedScene?.scene));
+          playGraphs = await collectPlayAnimGraphs(resolvedScene?.scene);
+          setPlayAnimGraphs(playGraphs);
         } catch (error) {
           appendLog(
             `AnimationGraph load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -710,15 +721,28 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayBlackboards([]);
         }
         let sprites = new Map<string, SpritePayload>();
+        let spriteAnimations = new Map<string, SpriteAnimationPayload>();
         let tilesets = new Map<string, TilesetPayload>();
         try {
-          sprites = await collectPlaySpritePayloads(resolvedScene?.scene);
+          sprites = await collectPlaySpritePayloads(
+            resolvedScene?.scene,
+            playGraphs,
+          );
           setPlaySpritePayloads(sprites);
         } catch (error) {
           appendLog(
             `Sprite payload load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlaySpritePayloads(new Map());
+        }
+        try {
+          spriteAnimations = await collectPlaySpriteAnimationPayloads(playGraphs);
+          setPlaySpriteAnimationPayloads(spriteAnimations);
+        } catch (error) {
+          appendLog(
+            `Sprite Animation load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlaySpriteAnimationPayloads(new Map());
         }
         try {
           const tileContent = await collectPlayTilemapContent(resolvedScene?.scene);
@@ -744,6 +768,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               sprites,
               tilesets,
               materials.textureGuids,
+              spriteAnimations,
             ),
           );
         } catch (error) {
@@ -753,7 +778,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayMaterialDocuments(new Map());
           setPlayMaterialFunctions(new Map());
           try {
-            setPlayTextureBytes(await collectPlayTextureBytes(sprites, tilesets));
+            setPlayTextureBytes(
+              await collectPlayTextureBytes(
+                sprites,
+                tilesets,
+                [],
+                spriteAnimations,
+              ),
+            );
           } catch (textureError) {
             appendLog(
               `Texture load failed: ${textureError instanceof Error ? textureError.message : String(textureError)}`,
@@ -833,6 +865,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayBehaviourTrees,
       collectPlayBlackboards,
       collectPlaySpritePayloads,
+      collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
@@ -1032,6 +1065,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             behaviourTrees={playBehaviourTrees}
             blackboards={playBlackboards}
             spritePayloads={playSpritePayloads}
+            spriteAnimationPayloads={playSpriteAnimationPayloads}
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}

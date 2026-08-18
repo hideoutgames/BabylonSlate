@@ -28,11 +28,16 @@ import {
   AssetPicker,
   PanelFrame,
   PropertyGrid,
+  SearchDropdown,
   ToolbarStrip,
   assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
+import {
+  Field,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import {
   Select,
@@ -649,6 +654,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   const { selectedId, selectedTransitionId, openTransitionRule } =
     useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
+  const [clipNameOpen, setClipNameOpen] = useState(false);
   const selected = doc.states.find((state) => state.id === selectedId) ?? null;
   const selectedTransition =
     doc.transitions.find((row) => row.id === selectedTransitionId) ?? null;
@@ -670,7 +676,27 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     : selectedTransition
       ? [selectedTransition]
       : [];
-  const stateRows: PropertyRow[] = selected
+  const applyClipAsset = (guid: string) => {
+    if (!selected) return;
+    const entry = catalog.find((row) => row.guid === guid);
+    const names = entry?.clipNames ?? [];
+    const nextName =
+      clipKind === "sprite"
+        ? ""
+        : names.includes(clip?.clipName ?? "")
+          ? clip?.clipName
+          : (names[0] ?? "");
+    commit(
+      upsertStateClip(doc, selected.id, {
+        assetGuid: guid,
+        clipName: nextName,
+        ...(typeof entry?.durationMs === "number"
+          ? { durationMs: entry.durationMs }
+          : {}),
+      }),
+    );
+  };
+  const identityRows: PropertyRow[] = selected
     ? [
         {
           id: "name",
@@ -716,50 +742,26 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           value: clip?.assetGuid || null,
           placeholder: "None",
           onPick: () => setClipPick(true),
-          onChange: (value) => {
-            const guid = value ?? "";
-            const names =
-              catalog.find((entry) => entry.guid === guid)?.clipNames ?? [];
-            const nextName =
-              names.includes(clip?.clipName ?? "")
-                ? clip?.clipName
-                : (names[0] ?? clip?.clipName);
-            commit(
-              upsertStateClip(doc, selected.id, {
-                assetGuid: guid,
-                ...(nextName ? { clipName: nextName } : {}),
-              }),
-            );
-          },
+          onChange: (value) => applyClipAsset(value ?? ""),
           ...assetRowIdentity(
             clip?.assetGuid
               ? (() => {
                   const asset = assetRegistry?.getByGuid(clip.assetGuid);
                   return asset
                     ? { name: asset.header.name, type: asset.header.type }
-                    : { name: clip.assetGuid, type: clipKind === "sprite" ? "Sprite" : "Model" };
+                    : {
+                        name: clip.assetGuid,
+                        type:
+                          clipKind === "sprite" ? "SpriteAnimation" : "Model",
+                      };
                 })()
               : undefined,
           ),
         },
-        clipKind === "sprite" || clipNameOptions.length === 0
-          ? {
-              id: "clipName",
-              kind: "text" as const,
-              label: "Clip Name",
-              value: clip?.clipName ?? "",
-              onChange: (clipName: string) =>
-                commit(upsertStateClip(doc, selected.id, { clipName })),
-            }
-          : {
-              id: "clipName",
-              kind: "enum" as const,
-              label: "Clip Name",
-              value: clip?.clipName ?? clipNameOptions[0]!.value,
-              options: clipNameOptions,
-              onChange: (clipName: string) =>
-                commit(upsertStateClip(doc, selected.id, { clipName })),
-            },
+      ]
+    : [];
+  const playbackRows: PropertyRow[] = selected
+    ? [
         {
           id: "speed",
           kind: "number",
@@ -785,7 +787,58 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     <PanelFrame>
       {selected || selectedTransition ? (
         <div data-testid="anim-graph-details">
-          {stateRows.length > 0 ? <PropertyGrid rows={stateRows} /> : null}
+          {identityRows.length > 0 ? <PropertyGrid rows={identityRows} /> : null}
+          {selected && clipKind === "animation" ? (
+            <Field
+              data-testid="property-row-clipName"
+              data-disabled={clipNameOptions.length === 0 || undefined}
+              className="gap-0.5 border-b border-border/60 px-2 py-1"
+            >
+              <FieldLabel htmlFor="property-clipName">Clip Name</FieldLabel>
+              {clipNameOptions.length > 0 ? (
+                <SearchDropdown
+                  open={clipNameOpen}
+                  onOpenChange={setClipNameOpen}
+                  title="Clip Name"
+                  items={clipNameOptions.map((option) => ({
+                    id: option.value,
+                    label: option.label,
+                  }))}
+                  onSelect={(id) => {
+                    commit(
+                      upsertStateClip(doc, selected.id, { clipName: id }),
+                    );
+                    setClipNameOpen(false);
+                  }}
+                  data-testid="anim-graph-clip-name-menu"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    id="property-clipName"
+                    data-testid="property-clipName"
+                    className="w-full justify-start"
+                  >
+                    {clip?.clipName || "Select Clip"}
+                  </Button>
+                </SearchDropdown>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  id="property-clipName"
+                  data-testid="property-clipName"
+                  disabled
+                  className="w-full justify-start"
+                >
+                  No Clips
+                </Button>
+              )}
+            </Field>
+          ) : null}
+          {playbackRows.length > 0 ? <PropertyGrid rows={playbackRows} /> : null}
           {transitionBlocks.map((block) => (
             <div key={block.openRuleId} className="flex flex-col gap-2 px-3 pb-3">
               <PropertyGrid rows={block.rows} />
@@ -826,25 +879,13 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         open={clipPick}
         onOpenChange={setClipPick}
         assets={assets}
-        allowedTypes={clipKind === "sprite" ? ["Sprite"] : ["Model"]}
-        title={clipKind === "sprite" ? "Pick Sprite" : "Pick Model"}
+        allowedTypes={clipKind === "sprite" ? ["SpriteAnimation"] : ["Model"]}
+        title={
+          clipKind === "sprite" ? "Pick Sprite Animation" : "Pick Model"
+        }
         allowNone
         onPick={(guid) => {
-          if (selected) {
-            const names =
-              catalog.find((entry) => entry.guid === (guid ?? ""))
-                ?.clipNames ?? [];
-            const nextName =
-              names.includes(clip?.clipName ?? "")
-                ? clip?.clipName
-                : (names[0] ?? clip?.clipName);
-            commit(
-              upsertStateClip(doc, selected.id, {
-                assetGuid: guid ?? "",
-                ...(nextName ? { clipName: nextName } : {}),
-              }),
-            );
-          }
+          applyClipAsset(guid ?? "");
           setClipPick(false);
         }}
         data-testid="anim-graph-clip-picker"

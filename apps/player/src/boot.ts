@@ -85,6 +85,7 @@ export function startPlayer(options: {
     maxActors: 256,
     frameCap: manifest.playFrameCap,
     spritePayloads: content.spritePayloads,
+    spriteAnimations: content.spriteAnimationPayloads,
     tilemapPayloads: content.tilemapPayloads,
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
@@ -291,6 +292,16 @@ export function startPlayer(options: {
       inProcess.registerTileContent({
         tilemaps: content.tilemapPayloads,
         tilesets: content.tilesetPayloads,
+        pixelsPerUnit: content.pixelsPerUnit,
+      });
+    }
+    if (
+      content.spritePayloads.size > 0 ||
+      content.spriteAnimationPayloads.size > 0
+    ) {
+      inProcess.registerSpriteContent({
+        sprites: content.spritePayloads,
+        spriteAnimations: content.spriteAnimationPayloads,
         pixelsPerUnit: content.pixelsPerUnit,
       });
     }

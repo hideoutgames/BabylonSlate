@@ -773,4 +773,47 @@ describe("resolveAnimGraphClips", () => {
     };
     expect(resolveAnimGraphClips(doc, catalog).clips[0]?.clipName).toBe("Idle");
   });
+
+  it("fills Sprite Animation clip duration from the catalog", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "walk-anim",
+      clipName: "",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, [
+      {
+        guid: "walk-anim",
+        type: "SpriteAnimation",
+        name: "Walk",
+        durationMs: 250,
+      },
+    ]);
+    expect(resolved.clips[0]).toMatchObject({
+      assetGuid: "walk-anim",
+      durationMs: 250,
+    });
+  });
+
+  it("keeps a legacy Sprite clip duration unchanged", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "sprite",
+      assetGuid: "hero-sprite",
+      clipName: "Idle",
+      durationMs: 400,
+    };
+    expect(
+      resolveAnimGraphClips(doc, [
+        { guid: "hero-sprite", type: "Sprite", name: "HeroSprite" },
+      ]).clips[0],
+    ).toMatchObject({
+      assetGuid: "hero-sprite",
+      clipName: "Idle",
+      durationMs: 400,
+    });
+  });
 });

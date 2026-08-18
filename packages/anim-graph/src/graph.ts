@@ -928,6 +928,8 @@ export interface AnimClipCatalogEntry {
   clipName?: string;
   clipNames?: string[];
   dependencyGuids?: string[];
+  /** Sprite Animation total duration (sum of frame `durationMs`). */
+  durationMs?: number;
 }
 
 function stateNameForClip(
@@ -952,9 +954,21 @@ function resolveOneClip(
   catalog: readonly AnimClipCatalogEntry[],
   stateName?: string,
 ): AnimClipRef {
-  if (clip.kind !== "animation") return clip;
   const byGuid = new Map(catalog.map((entry) => [entry.guid, entry]));
   const entry = byGuid.get(clip.assetGuid);
+  if (clip.kind === "sprite") {
+    if (!entry || entry.type !== "SpriteAnimation") return clip;
+    if (
+      typeof entry.durationMs !== "number" ||
+      !Number.isFinite(entry.durationMs) ||
+      entry.durationMs <= 0 ||
+      entry.durationMs === clip.durationMs
+    ) {
+      return clip;
+    }
+    return { ...clip, durationMs: entry.durationMs };
+  }
+  if (clip.kind !== "animation") return clip;
   if (!entry) return clip;
   if (entry.type === "Model") {
     const names = entry.clipNames ?? [];
