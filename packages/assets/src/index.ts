@@ -13,6 +13,7 @@ export * from "./font-payload";
 export * from "./audio-payload";
 export * from "./audio-waveform";
 export * from "./particle-payload";
+export * from "./skybox-creator-payload";
 export * from "./audio-reverb";
 export * from "./sprite-packer";
 export * from "./sprite-payload";

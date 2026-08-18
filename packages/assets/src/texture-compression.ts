@@ -14,7 +14,8 @@ export type TextureUsage =
   | "sprite"
   | "ui"
   | "font"
-  | "pixelArt";
+  | "pixelArt"
+  | "skybox";
 
 export interface TextureEncodeSettings {
   format: "uastc" | "etc1s";
@@ -36,7 +37,8 @@ export function shouldCompressTexture(usage: TextureUsage | string): boolean {
     usage !== "pixelArt" &&
     usage !== "sprite" &&
     usage !== "ui" &&
-    usage !== "font"
+    usage !== "font" &&
+    usage !== "skybox"
   );
 }
 
