@@ -41,10 +41,10 @@ async function enableImportedAudioLoop(
   await expect(page.getByTestId("document-workspace-audio")).toBeVisible();
   const loop = page.getByTestId("audio-preview-loop");
   await expect(loop).toBeVisible();
-  if ((await loop.getAttribute("data-state")) !== "on") {
+  if ((await loop.getAttribute("aria-pressed")) !== "true") {
     await loop.click();
   }
-  await expect(loop).toHaveAttribute("data-state", "on");
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
   await saveAllIfEnabled(page);
 }
 
