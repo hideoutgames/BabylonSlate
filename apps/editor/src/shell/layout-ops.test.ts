@@ -184,6 +184,15 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("sound-attenuation", [])).toEqual([
       "sound-attenuation-details",
     ]);
+    expect(resolveFocusKeepPanelIds("particle-emitter", [])).toEqual([
+      "particle-emitter-preview",
+    ]);
+    expect(resolveFocusKeepPanelIds("particle-system", [])).toEqual([
+      "particle-system-preview",
+    ]);
+    expect(FOCUS_PRIMARY_PANEL["particle-emitter"]).toBe(
+      "particle-emitter-preview",
+    );
   });
 
   it("keeps already-open Editor Utility tabs when the keep list is the default", () => {

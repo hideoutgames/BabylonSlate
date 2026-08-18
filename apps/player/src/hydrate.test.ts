@@ -14,7 +14,11 @@ import {
   createDefaultBehaviourTree,
   createDefaultBlackboard,
 } from "@babylonslate/behaviour-tree";
-import { createDefaultSpriteAnimationPayload } from "@babylonslate/assets";
+import {
+  createDefaultParticleEmitterPayload,
+  createDefaultParticleSystemPayload,
+  createDefaultSpriteAnimationPayload,
+} from "@babylonslate/assets";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
 import { loadGameFromFiles, guiTextureBytesFromGame } from "./artifact";
@@ -251,6 +255,57 @@ describe("packedContentFromGame", () => {
     expect(content.materialFunctions.get("fn-tint")?.name).toBe("Tint");
     expect(content.postProcessStack.map((entry) => entry.materialGuid)).toEqual([
       "mat-bloom",
+    ]);
+  });
+
+  it("hydrates packed Particle Emitter and Particle System payloads", async () => {
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "em-1",
+          type: "ParticleEmitter",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              ...createDefaultParticleEmitterPayload(),
+              textureGuid: "tex-1",
+              capacity: 64,
+            }),
+          ),
+        },
+        {
+          guid: "sys-1",
+          type: "ParticleSystem",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              ...createDefaultParticleSystemPayload(),
+              emitterGuids: ["em-1"],
+            }),
+          ),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    expect(content.particleLibrary.emitters.get("em-1")?.capacity).toBe(64);
+    expect(content.particleLibrary.emitters.get("em-1")?.textureGuid).toBe(
+      "tex-1",
+    );
+    expect(content.particleLibrary.systems.get("sys-1")?.emitterGuids).toEqual([
+      "em-1",
     ]);
   });
 
