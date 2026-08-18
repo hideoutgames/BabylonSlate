@@ -202,15 +202,32 @@ export function reparentPrefabComponents(
   components: SerializedComponent[],
   dragId: string,
   targetId: string | null,
+  selectedIds: readonly string[] = [],
 ): SerializedComponent[] {
   if (dragId === PREFAB_ROOT_ID) return components;
   const parentId = !targetId || targetId === PREFAB_ROOT_ID ? null : targetId;
-  if (parentId === dragId) return components;
-  if (wouldCreateComponentCycle(components, dragId, parentId)) {
-    return components;
+  const inSelection = selectedIds.includes(dragId);
+  const selected = inSelection
+    ? selectedIds.filter((id) => id !== PREFAB_ROOT_ID)
+    : [dragId];
+  const selectedSet = new Set(selected);
+  const byId = new Map(components.map((component) => [component.id, component]));
+  const roots = selected.filter((id) => {
+    let parent = byId.get(id)?.parentId ?? null;
+    while (parent) {
+      if (selectedSet.has(parent)) return false;
+      parent = byId.get(parent)?.parentId ?? null;
+    }
+    return true;
+  });
+  if (parentId && roots.includes(parentId)) return components;
+  for (const id of roots) {
+    if (parentId === id) return components;
+    if (wouldCreateComponentCycle(components, id, parentId)) return components;
   }
+  const rootSet = new Set(roots);
   return components.map((component) =>
-    component.id === dragId ? { ...component, parentId } : component,
+    rootSet.has(component.id) ? { ...component, parentId } : component,
   );
 }
 
