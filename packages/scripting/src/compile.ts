@@ -144,6 +144,7 @@ function stripExecSuccessors(graph: LogicGraph, node: GraphNode): string[] {
 
 const ENUM_SWITCH_CASE_PREFIX = "case:";
 
+/** Member name from a Switch exec-out pin id (`case:Red`). Display names may Title Case. */
 function enumSwitchMemberName(pinId: string): string | undefined {
   return pinId.startsWith(ENUM_SWITCH_CASE_PREFIX)
     ? pinId.slice(ENUM_SWITCH_CASE_PREFIX.length)
