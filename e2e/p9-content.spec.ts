@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import {
@@ -31,6 +31,10 @@ async function createAsset(
   name: string,
 ): Promise<void> {
   await showContentBrowser(page);
+  const assetsRoot = page.getByTestId("tree-row-assets");
+  if ((await assetsRoot.count()) > 0) {
+    await assetsRoot.click();
+  }
   await page.getByTestId("content-browser-new-asset").click();
   await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
   await page.getByTestId(`new-asset-type-${type}`).click();
@@ -790,9 +794,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
     await createAsset(page, "Material", "Sampled");
-    await page
-      .locator('[data-asset-path="assets/Sampled.material.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/Sampled.material.babasset");
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await addMaterialPaletteNode(page, "Texture Sample", "texture.sample");
     await pickMaterialNodeTexture(page, albedoGuid);
@@ -817,9 +819,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     const albedoGuid = await importAlbedoTexture(page);
     await createAsset(page, "Material", "ParamSample");
-    await page
-      .locator('[data-asset-path="assets/ParamSample.material.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/ParamSample.material.babasset");
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await addMaterialPaletteNode(page, "Texture Parameter", "param.texture");
     await pickMaterialNodeTexture(page, albedoGuid);
