@@ -55,6 +55,9 @@ export const DEBUG_COMMAND_NAMES = [
   "snapshot start",
   "snapshot stop",
   "freecam",
+  "shownav",
+  "dumpactors",
+  "inspect",
 ] as const;
 
 export function isReservedConsoleCommandName(name: string): boolean {
@@ -69,7 +72,7 @@ const RESERVED_COMMAND_NAMES = new Set<string>([
 function flagCommand(
   name: (typeof DEBUG_COMMAND_NAMES)[number],
   apply: (host: ConsoleCommandHost, enabled: boolean) => void,
-  description = name,
+  description: string = name,
 ): RegisteredCommand {
   return {
     name,
@@ -217,6 +220,38 @@ export function builtinCommands(): RegisteredCommand[] {
       (host, enabled) => host.setFreeCam?.(enabled),
       "Detached fly camera; simulation keeps running",
     ),
+    flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled)),
+    {
+      name: "dumpactors",
+      tier: "debug",
+      category: "engine",
+      description: "Print spawned actors",
+      parameters: [],
+      run(_args, host) {
+        return ok(host.dumpActors?.() ?? "");
+      },
+    },
+    {
+      name: "inspect",
+      tier: "debug",
+      category: "engine",
+      description: "Print inspect snapshot for an actor",
+      parameters: [
+        {
+          name: "query",
+          type: "string",
+          optional: true,
+          complete: "actors",
+        },
+      ],
+      run(args, host) {
+        const query =
+          typeof args.query === "string" ? args.query : "";
+        return ok(
+          host.inspectActor?.(query) ?? "inspect <name|guid>",
+        );
+      },
+    },
     {
       name: "pause",
       tier: "debug",

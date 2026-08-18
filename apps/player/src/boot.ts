@@ -102,6 +102,7 @@ export function startPlayer(options: {
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
+    navmeshBytes: content.navmeshBytes,
     ktx2BasePath: ktx2BasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
       diagnostics.push({

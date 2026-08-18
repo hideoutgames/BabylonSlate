@@ -179,6 +179,30 @@ describe("Play session commands", () => {
     expect(commandType(command)).toBe("setFreeCam");
     expect(command.enabled).toBe(true);
   });
+
+  it("visualization console commands are CommandMessage variants", () => {
+    const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
+    const stat = {
+      type: "setStat",
+      name: "unit",
+      enabled: true,
+    } satisfies CommandMessage;
+    const colliders = {
+      type: "debugColliders",
+      colliders: [
+        {
+          id: "c1",
+          shape: "box",
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          halfExtents: { x: 1, y: 1, z: 1 },
+        },
+      ],
+    } satisfies CommandMessage;
+    expect(commandType(fps)).toBe("setShowFps");
+    expect(commandType(stat)).toBe("setStat");
+    expect(commandType(colliders)).toBe("debugColliders");
+  });
 });
 
 describe("Particle commands", () => {

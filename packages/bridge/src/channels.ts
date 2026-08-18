@@ -161,6 +161,16 @@ export type ControlMessage =
   | { type: "console"; line: string }
   | { type: "inspect" };
 
+export type DebugColliderPrimitive = {
+  id: string;
+  shape: "box" | "sphere" | "circle" | "polyline";
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number; w: number };
+  halfExtents?: { x: number; y: number; z: number };
+  radius?: number;
+  points?: Array<{ x: number; y: number; z: number }>;
+};
+
 export type CommandMessage =
   | {
       type: "spawn";
@@ -364,7 +374,17 @@ export type CommandMessage =
   | { type: "setRenderQuality"; level: string }
   | { type: "setResolutionScale"; scale: number }
   | { type: "setFrameCap"; fps: number }
-  | { type: "setFreeCam"; enabled: boolean };
+  | { type: "setFreeCam"; enabled: boolean }
+  | { type: "setShowFps"; enabled: boolean }
+  | { type: "setStat"; name: string; enabled: boolean }
+  | { type: "setWireframe"; enabled: boolean }
+  | { type: "setShowBounds"; enabled: boolean }
+  | { type: "setShowCollision"; enabled: boolean }
+  | { type: "setShowNav"; enabled: boolean }
+  | {
+      type: "debugColliders";
+      colliders: readonly DebugColliderPrimitive[];
+    };
 
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }

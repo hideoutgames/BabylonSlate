@@ -42,8 +42,7 @@ function valueSuggestions(param: CommandParameter): string[] {
   }
   if (
     param.defaultValue !== undefined &&
-    param.defaultValue !== null &&
-    param.type !== "bool"
+    param.defaultValue !== null
   ) {
     return [String(param.defaultValue)];
   }

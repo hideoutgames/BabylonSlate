@@ -14,6 +14,7 @@ export * from "./snapshot-apply";
 export * from "./hardware-scaling";
 export * from "./play-console-apply";
 export * from "./play-free-cam";
+export * from "./play-console-viz";
 export * from "./picking";
 export * from "./editor-camera";
 export * from "./editor-place";

@@ -346,10 +346,17 @@ export function applyAssignMesh(
 
 function playMeshMetadata(
   mesh: Mesh,
-): { playActorOrigin?: boolean; playHelperVisual?: boolean } | null {
+): {
+  playActorOrigin?: boolean;
+  playHelperVisual?: boolean;
+  playDebugOverlay?: boolean;
+  playWireframeRestore?: boolean;
+} | null {
   return (mesh.metadata as {
     playActorOrigin?: boolean;
     playHelperVisual?: boolean;
+    playDebugOverlay?: boolean;
+    playWireframeRestore?: boolean;
   } | null);
 }
 
@@ -360,6 +367,13 @@ function isPlayActorOrigin(mesh: Mesh): boolean {
 function isPlayHelperVisual(mesh: Mesh): boolean {
   const meta = playMeshMetadata(mesh);
   return Boolean(meta?.playHelperVisual || meta?.playActorOrigin);
+}
+
+export function isPlayConsoleVizSkipMesh(mesh: Mesh): boolean {
+  const meta = playMeshMetadata(mesh);
+  return Boolean(
+    meta?.playHelperVisual || meta?.playActorOrigin || meta?.playDebugOverlay,
+  );
 }
 
 export function isPlayHelperMeshKind(

@@ -16,6 +16,11 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setRenderQuality",
   "setResolutionScale",
   "setFreeCam",
+  "setWireframe",
+  "setShowBounds",
+  "setShowCollision",
+  "setShowNav",
+  "debugColliders",
   "assignParticle",
   "setParticlePlaying",
 ]);

@@ -174,11 +174,11 @@ describe("attachPlayFreeCamInput", () => {
       Vector3.Distance(scene.activeCamera!.position, start),
     ).toBeCloseTo(DEFAULT_FLY_SPEED * 0.05, 3);
 
-    const beforeLook = scene.activeCamera!.rotationQuaternion?.clone();
+    const beforeLook = (scene.activeCamera as UniversalCamera).rotationQuaternion?.clone();
     canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
     canvas.emit("pointermove", { pointerId: 1, clientX: 160, clientY: 80 });
     expect(
-      scene.activeCamera!.rotationQuaternion?.equalsWithEpsilon(
+      (scene.activeCamera as UniversalCamera).rotationQuaternion?.equalsWithEpsilon(
         beforeLook!,
         1e-6,
       ),

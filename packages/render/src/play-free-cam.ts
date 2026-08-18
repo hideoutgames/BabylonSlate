@@ -6,6 +6,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
+import type { CommandMessage } from "@babylonslate/bridge";
 import {
   attachViewportFlyKeys,
   DEFAULT_FLY_SPEED,
@@ -102,12 +103,12 @@ export function createPlayFreeCamController(
         camera.position.y += forward;
         return;
       }
-      camera.computeWorldMatrix(true);
+      camera.computeWorldMatrix();
       const lookDir = camera.getDirection(Vector3.Forward());
       const rightDir = camera.getDirection(Vector3.Right());
       camera.position.addInPlace(lookDir.scale(forward));
       camera.position.addInPlace(rightDir.scale(right));
-      camera.computeWorldMatrix(true);
+      camera.computeWorldMatrix();
     },
     look(deltaYaw, deltaPitch) {
       if (!camera || mode === "2d") return;
@@ -120,7 +121,7 @@ export function createPlayFreeCamController(
         .multiply(camera.rotationQuaternion)
         .multiply(pitch);
       camera.rotation.set(0, 0, 0);
-      camera.computeWorldMatrix(true);
+      camera.computeWorldMatrix();
     },
     dispose() {
       detach();
@@ -130,11 +131,11 @@ export function createPlayFreeCamController(
 
 export function applyPlayFreeCamCommand(
   controller: PlayFreeCamController | null | undefined,
-  command: { type: string; enabled?: boolean },
+  command: CommandMessage,
 ): boolean {
   if (!controller) return false;
   if (command.type === "setFreeCam") {
-    controller.setEnabled(Boolean(command.enabled));
+    controller.setEnabled(command.enabled);
     return true;
   }
   if (command.type === "possessCamera") {

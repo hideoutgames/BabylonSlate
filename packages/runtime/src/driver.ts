@@ -96,6 +96,10 @@ import {
 import { ScriptHost, type CompiledScript } from "./script-host";
 import { shouldSpawnScriptedActor } from "./play-load";
 import { PhysicsWorldSync } from "./physics-sync";
+import {
+  formatDumpActors,
+  formatInspectActor,
+} from "./console-inspect";
 import { actorWorldTransforms } from "./actor-world-transform";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
@@ -293,6 +297,7 @@ class InProcessRuntime implements RuntimeDriver {
   private frameCap = 60;
   private volume = 1;
   private timeDilation = 1;
+  private showCollision = false;
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
@@ -1694,6 +1699,14 @@ class InProcessRuntime implements RuntimeDriver {
     return this.dt * this.timeDilation;
   }
 
+  private emitDebugColliders(): void {
+    if (!this.showCollision) return;
+    this.emit({
+      type: "debugColliders",
+      colliders: [...this.physicsSync.getBackend().listDebugColliders()],
+    });
+  }
+
   private consoleHost(): ConsoleCommandHost {
     const emitSetting = (key: string, value: string | number | boolean) => {
       this.emit({
@@ -1737,11 +1750,34 @@ class InProcessRuntime implements RuntimeDriver {
       quit: () => {
         this.stop();
       },
-      setShowFps: (enabled) => emitSetting("showfps", enabled),
-      setStat: (name, enabled) => emitSetting(`stat.${name}`, enabled),
-      setShowCollision: (enabled) => emitSetting("showcollision", enabled),
-      setShowBounds: (enabled) => emitSetting("showbounds", enabled),
-      setWireframe: (enabled) => emitSetting("wireframe", enabled),
+      setShowFps: (enabled) => {
+        this.emit({ type: "setShowFps", enabled: Boolean(enabled) });
+      },
+      setStat: (name, enabled) => {
+        this.emit({ type: "setShowFps", enabled: true });
+        this.emit({ type: "setStat", name, enabled: Boolean(enabled) });
+      },
+      setShowCollision: (enabled) => {
+        this.showCollision = Boolean(enabled);
+        this.emit({
+          type: "setShowCollision",
+          enabled: this.showCollision,
+        });
+        if (this.showCollision) this.emitDebugColliders();
+        else this.emit({ type: "debugColliders", colliders: [] });
+      },
+      setShowBounds: (enabled) => {
+        this.emit({ type: "setShowBounds", enabled: Boolean(enabled) });
+      },
+      setWireframe: (enabled) => {
+        this.emit({ type: "setWireframe", enabled: Boolean(enabled) });
+      },
+      setShowNav: (enabled) => {
+        this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
+      },
+      dumpActors: () => formatDumpActors(this.inspectWorld()),
+      inspectActor: (query) =>
+        formatInspectActor(this.inspectWorld(), query, null),
       setFreeCam: (enabled) => {
         this.emit({ type: "setFreeCam", enabled: Boolean(enabled) });
       },
@@ -2205,6 +2241,7 @@ class InProcessRuntime implements RuntimeDriver {
 
     this.frameId += 1;
     this.publishSnapshot();
+    this.emitDebugColliders();
     this.emit({
       type: "stats",
       frameId: this.frameId,

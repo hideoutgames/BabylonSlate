@@ -8,6 +8,7 @@ import {
   diagnosticFromCommand,
   applyPlaySessionStep,
   applyPlaySessionPausedCommand,
+  applyPlayHudConsoleCommand,
   shouldForwardPlayEngineCommand,
   dispatchPlayUiWidgetEvent,
   deliverInspectSnapshot,
@@ -269,9 +270,32 @@ describe("applyPlayUiCommand", () => {
   });
 });
 
+describe("applyPlayHudConsoleCommand", () => {
+  it("opens Stats HUD and highlights a row", () => {
+    const onShowFps = vi.fn();
+    const onStat = vi.fn();
+    expect(
+      applyPlayHudConsoleCommand(
+        { type: "setShowFps", enabled: true },
+        { onShowFps, onStat },
+      ),
+    ).toBe(true);
+    expect(onShowFps).toHaveBeenCalledWith(true);
+    expect(
+      applyPlayHudConsoleCommand(
+        { type: "setStat", name: "unit", enabled: true },
+        { onShowFps, onStat },
+      ),
+    ).toBe(true);
+    expect(onShowFps).toHaveBeenCalledWith(true);
+    expect(onStat).toHaveBeenCalledWith("unit", true);
+  });
+});
+
 describe("shouldForwardPlayEngineCommand", () => {
   it("forwards setFreeCam onto the Play engine handle", () => {
     expect(shouldForwardPlayEngineCommand("setFreeCam")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("debugColliders")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });

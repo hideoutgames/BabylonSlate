@@ -28,6 +28,7 @@ export {
   type BridgeWorkerMessage,
   type CommandMessage,
   type ControlMessage,
+  type DebugColliderPrimitive,
   type ScriptAnchorPayload,
   type ScriptBundleEntry,
   type ScriptConsoleCommand,

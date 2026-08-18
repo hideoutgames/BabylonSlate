@@ -54,6 +54,12 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     setFreeCam: (enabled) => {
       calls.push(`freecam:${enabled}`);
     },
+    setShowNav: (enabled) => {
+      calls.push(`shownav:${enabled}`);
+    },
+    dumpActors: () => "actor-dump",
+    inspectActor: (query) => `inspect:${query || "(selection)"}`,
+    getInspectSelection: () => null,
     pause: () => {
       calls.push("pause");
     },
@@ -173,6 +179,28 @@ describe("createCommandRegistry", () => {
       output: "freecam off",
     });
     expect(host.calls).toEqual(["freecam:true", "freecam:false"]);
+  });
+
+  it("dumps actors and inspects by query", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("shownav", host)).toEqual({
+      success: true,
+      output: "shownav on",
+    });
+    expect(registry.execute("dumpactors", host)).toEqual({
+      success: true,
+      output: "actor-dump",
+    });
+    expect(registry.execute("inspect Cube", host)).toEqual({
+      success: true,
+      output: "inspect:Cube",
+    });
+    expect(registry.execute("inspect", host)).toEqual({
+      success: true,
+      output: "inspect:(selection)",
+    });
+    expect(host.calls).toEqual(["shownav:true"]);
   });
 
   it("coerces types and rejects bad enum values", () => {

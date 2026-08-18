@@ -58,6 +58,10 @@ import {
   type PlayFreeCamController,
   type PlayFreeCamInputHandle,
 } from "./play-free-cam";
+import {
+  createPlayConsoleViz,
+  type PlayConsoleVizController,
+} from "./play-console-viz";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
@@ -248,6 +252,8 @@ export interface CreateEngineOptions {
     message: string;
     assetGuid?: string;
   }) => void;
+  /** Baked navmesh bytes for Play `shownav`. */
+  navmeshBytes?: Uint8Array | null;
 }
 
 export interface EditorTools {
@@ -460,6 +466,9 @@ export function createEngine(
         mode: options.viewportMode ?? "3d",
       })
     : null;
+  const playViz: PlayConsoleVizController | null = options.playMode
+    ? createPlayConsoleViz(scene, { navmeshBytes: options.navmeshBytes })
+    : null;
 
   const materialDocuments = new Map<string, MaterialDocument>(
     options.materialDocuments ?? [],
@@ -561,6 +570,7 @@ export function createEngine(
     }
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
+      playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
       applySerializedSceneEnvironment(scene, sceneData, {
@@ -809,6 +819,7 @@ export function createEngine(
     if (sampled) {
       const previousCamera = scene.activeCamera;
       applySnapshotToScene(scene, binding, sampled);
+      playViz?.refresh();
       rebuildIfActiveCameraChanged(previousCamera);
       lastPositions = positionsFromSample(sampled);
     }
@@ -900,6 +911,7 @@ export function createEngine(
       engine.stopRenderLoop(renderLoop);
       playFreeCamInput?.dispose();
       playFreeCam?.dispose();
+      playViz?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -941,6 +953,7 @@ export function createEngine(
     applyCommand: (command: CommandMessage) => {
       applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
       applyPlayFreeCamCommand(playFreeCam, command);
+      playViz?.applyCommand(command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }

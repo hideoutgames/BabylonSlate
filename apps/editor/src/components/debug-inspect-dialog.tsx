@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DebugInspectNode, DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   SearchInput,
@@ -38,6 +38,7 @@ export type DebugInspectDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   snapshot: DebugInspectSnapshot;
+  onSelectedIdChange?: (id: string | null) => void;
 };
 
 function inspectTypeVisual(
@@ -84,6 +85,7 @@ export function DebugInspectDialog({
   open,
   onOpenChange,
   snapshot,
+  onSelectedIdChange,
 }: DebugInspectDialogProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
@@ -132,6 +134,10 @@ export function DebugInspectDialog({
 
   const effectiveId = nextInspectSelection(selectedId, snapshot.nodes);
   const selected = snapshot.nodes.find((node) => node.id === effectiveId) ?? null;
+
+  useEffect(() => {
+    onSelectedIdChange?.(effectiveId);
+  }, [effectiveId, onSelectedIdChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

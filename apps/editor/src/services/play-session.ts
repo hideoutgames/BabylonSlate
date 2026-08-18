@@ -135,11 +135,35 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "assignParticle",
   "setParticlePlaying",
   "setFreeCam",
+  "setWireframe",
+  "setShowBounds",
+  "setShowCollision",
+  "setShowNav",
+  "debugColliders",
   "animState",
 ]);
 
 export function shouldForwardPlayEngineCommand(type: string): boolean {
   return PLAY_ENGINE_APPLY_COMMAND_TYPES.has(type as CommandMessage["type"]);
+}
+
+export function applyPlayHudConsoleCommand(
+  command: CommandMessage,
+  handlers: {
+    onShowFps?: (enabled: boolean) => void;
+    onStat?: (name: string, enabled: boolean) => void;
+  },
+): boolean {
+  if (command.type === "setShowFps") {
+    handlers.onShowFps?.(command.enabled);
+    return true;
+  }
+  if (command.type === "setStat") {
+    handlers.onShowFps?.(true);
+    handlers.onStat?.(command.name, command.enabled);
+    return true;
+  }
+  return false;
 }
 
 /** Apply worker UI commands onto Play HUD callbacks. */
@@ -460,6 +484,8 @@ export function startPlaySession(options: {
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
   onSessionPaused?: (paused: boolean) => void;
+  onShowFps?: (enabled: boolean) => void;
+  onStatHighlight?: (name: string, enabled: boolean) => void;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -501,6 +527,7 @@ export function startPlaySession(options: {
     pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
     viewportMode: options.scene?.viewportMode,
+    navmeshBytes: options.navmeshBytes,
     ktx2BasePath: editorKtx2PublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
@@ -618,6 +645,10 @@ export function startPlaySession(options: {
       onUiRemove: options.onUiRemove,
     });
     applyPlaySessionPausedCommand(command, options.onSessionPaused);
+    applyPlayHudConsoleCommand(command, {
+      onShowFps: options.onShowFps,
+      onStat: options.onStatHighlight,
+    });
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
     }

@@ -269,4 +269,70 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(dts.length).toBeGreaterThan(0);
     runtime.stop();
   });
+
+  it("emits visualization commands and formats dumpactors/inspect", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    const actor = runtime.getWorld().createActor({
+      guid: "cube",
+      classId: "Actor",
+      variables: { name: "Cube" },
+    });
+    runtime.getWorld().spawnActorNow(actor);
+    expect(runtime.executeConsoleCommand("showfps")).toEqual({
+      success: true,
+      output: "showfps on",
+    });
+    expect(runtime.executeConsoleCommand("stat unit")).toEqual({
+      success: true,
+      output: "stat unit on",
+    });
+    expect(runtime.executeConsoleCommand("wireframe")).toEqual({
+      success: true,
+      output: "wireframe on",
+    });
+    expect(runtime.executeConsoleCommand("showbounds")).toEqual({
+      success: true,
+      output: "showbounds on",
+    });
+    expect(runtime.executeConsoleCommand("shownav")).toEqual({
+      success: true,
+      output: "shownav on",
+    });
+    expect(runtime.executeConsoleCommand("showcollision")).toEqual({
+      success: true,
+      output: "showcollision on",
+    });
+    expect(
+      commands.filter((command) => command.type === "setShowFps"),
+    ).toEqual([
+      { type: "setShowFps", enabled: true },
+      { type: "setShowFps", enabled: true },
+    ]);
+    expect(
+      commands.some((command) => command.type === "setStat" && command.name === "unit"),
+    ).toBe(true);
+    expect(
+      commands.filter((command) => command.type === "setWireframe"),
+    ).toEqual([{ type: "setWireframe", enabled: true }]);
+    expect(
+      commands.filter((command) => command.type === "debugColliders"),
+    ).toEqual([{ type: "debugColliders", colliders: [] }]);
+    expect(runtime.executeConsoleCommand("dumpactors").output).toContain(
+      "Cube Actor cube",
+    );
+    expect(runtime.executeConsoleCommand("inspect Cube").output).toContain(
+      "Cube Actor cube",
+    );
+    expect(runtime.executeConsoleCommand("inspect").output).toBe(
+      "inspect <name|guid>",
+    );
+    runtime.stop();
+  });
 });
