@@ -58,8 +58,10 @@ export function AtlasTileGrid({
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!panZoom) return;
-    if (typeof event.currentTarget.setPointerCapture === "function") {
-      event.currentTarget.setPointerCapture(pointerIdOf(event));
+    try {
+      event.currentTarget.setPointerCapture?.(pointerIdOf(event));
+    } catch {
+      // Synthetic PointerEvents (Playwright / jsdom) have no active pointer.
     }
     pointersRef.current.set(pointerIdOf(event), {
       x: event.clientX,

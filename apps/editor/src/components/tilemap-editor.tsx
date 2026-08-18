@@ -834,8 +834,10 @@ export function TilemapPaint({
           onPointerDown={(event) => {
             event.preventDefault();
             const pointerId = pointerIdOf(event);
-            if (typeof event.currentTarget.setPointerCapture === "function") {
-              event.currentTarget.setPointerCapture(pointerId);
+            try {
+              event.currentTarget.setPointerCapture?.(pointerId);
+            } catch {
+              // Synthetic PointerEvents (Playwright / jsdom) have no active pointer.
             }
             pointersRef.current.set(pointerId, {
               x: event.clientX,

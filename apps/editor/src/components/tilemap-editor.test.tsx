@@ -254,6 +254,9 @@ describe("TilemapPaint", () => {
       />,
     );
     const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    HTMLElement.prototype.setPointerCapture = () => {
+      throw new DOMException("No active pointer with the given id is found.");
+    };
     canvas.getBoundingClientRect = () =>
       ({
         x: 0,
