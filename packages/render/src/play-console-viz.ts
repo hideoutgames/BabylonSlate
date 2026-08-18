@@ -60,101 +60,144 @@ export function applyPlayShowBounds(scene: Scene, enabled: boolean): void {
   }
 }
 
+function colliderShapeKey(collider: DebugColliderPrimitive): string | null {
+  if (collider.shape === "box" && collider.halfExtents) {
+    const { x, y, z } = collider.halfExtents;
+    return `box:${x}:${y}:${z}`;
+  }
+  if (collider.shape === "sphere" && collider.radius != null) {
+    return `sphere:${collider.radius}`;
+  }
+  if (collider.shape === "circle" && collider.radius != null) {
+    return `circle:${collider.radius}`;
+  }
+  if (collider.shape === "polyline") {
+    const points = collider.points;
+    if (!points || points.length <= 1) return null;
+    return `line:${points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
+  }
+  return null;
+}
+
+function applyColliderPose(
+  mesh: Mesh | LinesMesh,
+  collider: DebugColliderPrimitive,
+): void {
+  mesh.position.set(
+    collider.position.x,
+    collider.position.y,
+    collider.position.z,
+  );
+  if (mesh instanceof Mesh) {
+    mesh.rotationQuaternion ??= new Quaternion();
+    mesh.rotationQuaternion.set(
+      collider.rotation.x,
+      collider.rotation.y,
+      collider.rotation.z,
+      collider.rotation.w,
+    );
+  }
+}
+
 export function createPlayCollisionOverlay(scene: Scene): {
   sync(colliders: readonly DebugColliderPrimitive[]): void;
   dispose(): void;
 } {
-  const meshes: Array<Mesh | LinesMesh> = [];
+  const slots = new Map<string, { mesh: Mesh | LinesMesh; key: string }>();
   const material = new StandardMaterial(`${DEBUG_OVERLAY_PREFIX}collisionMat`, scene);
   material.diffuseColor = new Color3(0.2, 0.95, 0.35);
   material.wireframe = true;
   material.alpha = 0.5;
   material.backFaceCulling = false;
+  const lineColor = new Color3(0.2, 0.95, 0.35);
 
   const clear = () => {
-    for (const mesh of meshes) mesh.dispose();
-    meshes.length = 0;
+    for (const slot of slots.values()) slot.mesh.dispose();
+    slots.clear();
+  };
+
+  const createMesh = (
+    collider: DebugColliderPrimitive,
+  ): Mesh | LinesMesh | null => {
+    const name = `${DEBUG_OVERLAY_PREFIX}${collider.id}`;
+    if (collider.shape === "box" && collider.halfExtents) {
+      const mesh = MeshBuilder.CreateBox(
+        name,
+        {
+          width: collider.halfExtents.x * 2,
+          height: collider.halfExtents.y * 2,
+          depth: collider.halfExtents.z * 2,
+        },
+        scene,
+      );
+      mesh.material = material;
+      markDebugOverlay(mesh);
+      return mesh;
+    }
+    if (collider.shape === "sphere" && collider.radius != null) {
+      const mesh = MeshBuilder.CreateSphere(
+        name,
+        { diameter: collider.radius * 2 },
+        scene,
+      );
+      mesh.material = material;
+      markDebugOverlay(mesh);
+      return mesh;
+    }
+    if (collider.shape === "circle" && collider.radius != null) {
+      const points: Vector3[] = [];
+      const steps = 24;
+      for (let i = 0; i <= steps; i++) {
+        const angle = (i / steps) * Math.PI * 2;
+        points.push(
+          new Vector3(
+            Math.cos(angle) * collider.radius,
+            Math.sin(angle) * collider.radius,
+            0,
+          ),
+        );
+      }
+      const line = MeshBuilder.CreateLines(name, { points }, scene);
+      line.color = lineColor;
+      markDebugOverlay(line);
+      return line;
+    }
+    if (collider.shape === "polyline" && collider.points && collider.points.length > 1) {
+      const points = collider.points.map(
+        (point: { x: number; y: number; z: number }) =>
+          new Vector3(point.x, point.y, point.z),
+      );
+      const line = MeshBuilder.CreateLines(name, { points }, scene);
+      line.color = lineColor;
+      markDebugOverlay(line);
+      return line;
+    }
+    return null;
   };
 
   return {
     sync(colliders) {
-      clear();
+      const seen = new Set<string>();
       for (const collider of colliders) {
-        const name = `${DEBUG_OVERLAY_PREFIX}${collider.id}`;
-        if (collider.shape === "box" && collider.halfExtents) {
-          const mesh = MeshBuilder.CreateBox(
-            name,
-            {
-              width: collider.halfExtents.x * 2,
-              height: collider.halfExtents.y * 2,
-              depth: collider.halfExtents.z * 2,
-            },
-            scene,
-          );
-          mesh.position.set(
-            collider.position.x,
-            collider.position.y,
-            collider.position.z,
-          );
-          mesh.rotationQuaternion = new Quaternion(
-            collider.rotation.x,
-            collider.rotation.y,
-            collider.rotation.z,
-            collider.rotation.w,
-          );
-          mesh.material = material;
-          markDebugOverlay(mesh);
-          meshes.push(mesh);
-          continue;
+        const key = colliderShapeKey(collider);
+        if (!key) continue;
+        seen.add(collider.id);
+        let slot = slots.get(collider.id);
+        if (!slot || slot.key !== key) {
+          slot?.mesh.dispose();
+          const mesh = createMesh(collider);
+          if (!mesh) continue;
+          slot = { mesh, key };
+          slots.set(collider.id, slot);
         }
-        if (
-          (collider.shape === "sphere" || collider.shape === "circle") &&
-          collider.radius != null
-        ) {
-          if (collider.shape === "circle") {
-            const points: Vector3[] = [];
-            const steps = 24;
-            for (let i = 0; i <= steps; i++) {
-              const angle = (i / steps) * Math.PI * 2;
-              points.push(
-                new Vector3(
-                  collider.position.x + Math.cos(angle) * collider.radius,
-                  collider.position.y + Math.sin(angle) * collider.radius,
-                  collider.position.z,
-                ),
-              );
-            }
-            const line = MeshBuilder.CreateLines(name, { points }, scene);
-            line.color = new Color3(0.2, 0.95, 0.35);
-            markDebugOverlay(line);
-            meshes.push(line);
-            continue;
-          }
-          const mesh = MeshBuilder.CreateSphere(
-            name,
-            { diameter: collider.radius * 2 },
-            scene,
-          );
-          mesh.position.set(
-            collider.position.x,
-            collider.position.y,
-            collider.position.z,
-          );
-          mesh.material = material;
-          markDebugOverlay(mesh);
-          meshes.push(mesh);
-          continue;
+        if (collider.shape !== "polyline") {
+          applyColliderPose(slot.mesh, collider);
         }
-        if (collider.shape === "polyline" && collider.points && collider.points.length > 1) {
-          const points = collider.points.map(
-            (point: { x: number; y: number; z: number }) =>
-              new Vector3(point.x, point.y, point.z),
-          );
-          const line = MeshBuilder.CreateLines(name, { points }, scene);
-          line.color = new Color3(0.2, 0.95, 0.35);
-          markDebugOverlay(line);
-          meshes.push(line);
-        }
+      }
+      for (const [id, slot] of slots) {
+        if (seen.has(id)) continue;
+        slot.mesh.dispose();
+        slots.delete(id);
       }
     },
     dispose() {

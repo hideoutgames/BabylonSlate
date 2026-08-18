@@ -1726,7 +1726,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!this.showCollision) return;
     this.emit({
       type: "debugColliders",
-      colliders: [...this.physicsSync.getBackend().listDebugColliders()],
+      colliders: this.physicsSync.getBackend().listDebugColliders(),
     });
   }
 
@@ -2313,7 +2313,10 @@ class InProcessRuntime implements RuntimeDriver {
             message: entry.message,
           })),
         prints: [...this.tickPrints],
-        snapshotText: stringifyWorldSnapshot(createWorldSnapshot(this.world)),
+        snapshotText: stringifyWorldSnapshot({
+          ...createWorldSnapshot(this.world),
+          dt: this.dt,
+        }),
         inputEvents: pending.map((event) => {
           if (event.kind === "key") {
             return {

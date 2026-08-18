@@ -19,6 +19,8 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-slomo | Spec | Trace frame `snapshotText` baked `world.clock.dt` (`dt * rate`) instead of recorded `dt` | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Standards | `showcollision` disposed and rebuilt overlay meshes every tick | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale 8` printed and emitted 8 while Play clamped to 2 | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam | Spec | `help freecam` omitted the pointer/WASD steal vs gamepad-still-forwards split | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Debug collider listing added local translation without rotating by the body quaternion | Resolved |
