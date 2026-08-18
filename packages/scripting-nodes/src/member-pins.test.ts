@@ -13,7 +13,14 @@ import {
   enumRef,
   isAssignable,
 } from "@babylonslate/scripting";
-import { jsIdent, localVariableIdent, objectLiteralKey, pinTypeForMember } from "./member-pins";
+import {
+  jsIdent,
+  localVariableIdent,
+  objectLiteralKey,
+  pinTypeForMember,
+  typeClassIdFromPinType,
+  typeIdFromPinType,
+} from "./member-pins";
 
 describe("pinTypeForMember", () => {
   it("maps picker ids instead of collapsing unknown types to float", () => {
@@ -62,6 +69,15 @@ describe("pinTypeForMember", () => {
         pinTypeForMember("enum", "e1"),
       ),
     ).toBe(true);
+  });
+
+  it("maps pin types back to picker ids and typeClassId", () => {
+    expect(typeIdFromPinType(enumRef("enum-team"))).toBe("enum");
+    expect(typeClassIdFromPinType(enumRef("enum-team"))).toBe("enum-team");
+    expect(typeIdFromPinType(structRef("struct-stats"))).toBe("struct");
+    expect(typeClassIdFromPinType(structRef(""))).toBeUndefined();
+    expect(typeIdFromPinType(VEC4)).toBe("vec4");
+    expect(typeIdFromPinType(objectRef("Hero"))).toBe("object");
   });
 });
 

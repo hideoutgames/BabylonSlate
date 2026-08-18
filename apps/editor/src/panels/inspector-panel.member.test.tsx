@@ -56,6 +56,13 @@ vi.mock("../context/document-context", () => ({
               typeClassId: "Actor",
               defaultValue: "Hero",
             },
+            {
+              id: "var-struct",
+              kind: "variable",
+              name: "Stats",
+              typeId: "struct",
+              typeClassId: "struct-stats",
+            },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             {
               id: "fn-impl",
@@ -157,6 +164,14 @@ describe("Inspector class member details", () => {
       "class",
     );
     expect(screen.queryByTestId("property-default")).toBeNull();
+  });
+
+  it("shows a Structure Type AssetPicker for struct variables", () => {
+    renderMemberInspector("var-struct");
+    const typeAsset = screen.getByTestId("inspector-member-type-asset");
+    expect(typeAsset).toHaveProperty("disabled", false);
+    expect(typeAsset.textContent).toContain("struct-stats");
+    expect(screen.getByText("Structure Type")).toBeTruthy();
   });
 
   it("shows Class Type and Default class pickers for class variables", () => {

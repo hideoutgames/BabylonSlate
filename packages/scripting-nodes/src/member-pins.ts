@@ -4,7 +4,13 @@ import {
   pinTypeForMember,
 } from "@babylonslate/scripting";
 
-export { pinTypeForMember } from "@babylonslate/scripting";
+export {
+  pinTypeForMember,
+  typeIdFromPinType,
+  typeClassIdFromPinType,
+  keepsTypeClassId,
+  isStructOrEnumTypeId,
+} from "@babylonslate/scripting";
 
 export type MemberPinRow = {
   name?: string;

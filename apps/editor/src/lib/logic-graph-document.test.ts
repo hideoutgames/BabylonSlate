@@ -5,6 +5,7 @@ import {
   classGraphFromHeaderPayload,
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
+  collectGraphTypeAssets,
   commitLogicGraph,
   replaceSerializedGraphInDocument,
   serializedGraphFromDocument,
@@ -364,5 +365,68 @@ describe("commitLogicGraph", () => {
       nodes: next.nodes,
       edges: next.edges,
     });
+  });
+});
+
+describe("collectGraphTypeAssets", () => {
+  it("merges Structure and Enum assets with open documents", () => {
+    const catalog = collectGraphTypeAssets({
+      assets: [
+        {
+          header: {
+            type: "Structure",
+            guid: "struct-stats",
+            name: "Stats",
+            payload: {
+              guid: "struct-stats",
+              name: "Stats",
+              fields: [{ name: "Health", typeId: "int" }],
+            },
+          },
+        },
+        {
+          header: {
+            type: "Enum",
+            guid: "enum-team",
+            name: "Team",
+            payload: {
+              guid: "enum-team",
+              members: [{ name: "None", value: 0 }],
+            },
+          },
+        },
+      ],
+      openDocuments: [
+        {
+          ref: { kind: "enum" },
+          content: {
+            kind: "enum",
+            guid: "enum-team",
+            name: "Team",
+            members: [
+              { name: "Red", value: 1 },
+              { name: "Blue", value: 2 },
+            ],
+          },
+        },
+      ],
+    });
+    expect(catalog.structures).toEqual([
+      {
+        guid: "struct-stats",
+        name: "Stats",
+        fields: [{ name: "Health", typeId: "int" }],
+      },
+    ]);
+    expect(catalog.enums).toEqual([
+      {
+        guid: "enum-team",
+        name: "Team",
+        members: [
+          { name: "Red", value: 1 },
+          { name: "Blue", value: 2 },
+        ],
+      },
+    ]);
   });
 });

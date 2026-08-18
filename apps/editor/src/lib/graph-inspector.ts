@@ -3,15 +3,21 @@ import type {
   ParameterValueType,
   PropertyRow,
 } from "@babylonslate/editor-kit";
-import { classRowIdentity, assetRowIdentity } from "@babylonslate/editor-kit";
+import {
+  classRowIdentity,
+  assetRowIdentity,
+  humanizePropertyLabel,
+} from "@babylonslate/editor-kit";
 import type { GraphPin, LiteralPinDefault, PinType } from "@babylonslate/scripting";
 import {
   BOOL,
+  ENGINE_ENUMS,
   FLOAT,
   INT,
   STRING,
   colorRgbToPinDefault,
   defaultJsValue,
+  hydrateStructInstance,
   isDevelopmentOnlyNode,
   listUnconnectedLiteralPinDefaults,
   pinDefaultAsBoolean,
@@ -21,10 +27,11 @@ import {
   pinDefaultAsVec4Tuple,
   pinDefaultColorRgb,
   pinDefaultPropertyKey,
+  pinTypeForMember,
   vec3TupleToObject,
   vec4TupleToObject,
+  type TypeSchemas,
 } from "@babylonslate/scripting";
-import { pinTypeForMember } from "@babylonslate/scripting-nodes";
 import {
   normalizeUserInterfaceClassRef,
   USER_INTERFACE_ENGINE_CLASS_ID,
@@ -99,7 +106,77 @@ export function collectEnumMemberNames(
     const names = memberNamesFromUnknown(record.members);
     if (names) result[record.guid] = names;
   }
+  for (const entry of ENGINE_ENUMS) {
+    if (!result[entry.id]) {
+      result[entry.id] = entry.members.map((member) => member.name);
+    }
+  }
   return result;
+}
+
+type PinDefaultMapping = NonNullable<
+  Parameters<typeof pinDefaultPropertyRows>[2]
+>;
+
+function flattenStructFieldRows(
+  fields: ReadonlyArray<{
+    name: string;
+    typeId: string;
+    typeClassId?: string;
+    defaultValue?: unknown;
+  }>,
+  value: unknown,
+  onChange: (next: Record<string, unknown>) => void,
+  mapping: PinDefaultMapping | undefined,
+  labelPrefix: string,
+): PropertyRow[] {
+  const schemas = mapping?.schemas;
+  const instance = hydrateStructInstance(fields, value, schemas);
+  const rows: PropertyRow[] = [];
+  for (const field of fields) {
+    if (!field.name) continue;
+    const type = pinTypeForMember(field.typeId, field.typeClassId);
+    const label = labelPrefix
+      ? `${labelPrefix} ${humanizePropertyLabel(field.name)}`
+      : humanizePropertyLabel(field.name);
+    const fieldValue = instance[field.name];
+    if (type.kind === "structRef") {
+      const nested = type.guid ? schemas?.structs[type.guid] : undefined;
+      if (nested) {
+        rows.push(
+          ...flattenStructFieldRows(
+            nested.fields,
+            fieldValue,
+            (nestedValue) =>
+              onChange({ ...instance, [field.name]: nestedValue }),
+            mapping,
+            label,
+          ),
+        );
+        continue;
+      }
+    }
+    rows.push(
+      ...pinDefaultPropertyRows(
+        [
+          {
+            pinId: `${labelPrefix}:${field.name}`,
+            name: label,
+            type,
+            value: fieldValue,
+          },
+        ],
+        (patch) => {
+          const key = pinDefaultPropertyKey(label);
+          if (key in patch) {
+            onChange({ ...instance, [field.name]: patch[key] });
+          }
+        },
+        mapping,
+      ),
+    );
+  }
+  return rows;
 }
 
 export function pinDefaultPropertyRows(
@@ -113,6 +190,7 @@ export function pinDefaultPropertyRows(
     onPickClass?: (pinId: string, constraintClassId: string) => void;
     assetEntries?: ReadonlyArray<{ id: string; name: string; type: string }>;
     onPickAsset?: (pinId: string, assetType: string) => void;
+    schemas?: TypeSchemas;
   },
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
@@ -318,6 +396,23 @@ export function pinDefaultPropertyRows(
         });
         break;
       }
+      case "structRef": {
+        const schema = entry.type.guid
+          ? mappingNames?.schemas?.structs[entry.type.guid]
+          : undefined;
+        if (!schema) break;
+        const key = pinDefaultPropertyKey(entry.name);
+        rows.push(
+          ...flattenStructFieldRows(
+            schema.fields,
+            entry.value,
+            (next) => onPatch({ [key]: next }),
+            mappingNames,
+            entry.name === "Default" ? "" : humanizePropertyLabel(entry.name),
+          ),
+        );
+        break;
+      }
       default:
         break;
     }
@@ -329,16 +424,139 @@ export function variableDefaultPropertyRows(
   typeId: string,
   value: unknown,
   onChange: (value: unknown) => void,
+  options?: {
+    typeClassId?: string;
+    schemas?: TypeSchemas;
+    enumMembers?: Record<string, readonly string[]>;
+  },
 ): PropertyRow[] {
   if (typeId === "object" || typeId === "class") return [];
-  const type = pinTypeForMember(typeId);
+  const type = pinTypeForMember(typeId, options?.typeClassId);
+  const mapping = {
+    enumMembers: options?.enumMembers,
+    schemas: options?.schemas,
+  };
+  if (type.kind === "structRef") {
+    const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
+    if (!schema) return [];
+    return flattenStructFieldRows(
+      schema.fields,
+      value,
+      (next) => onChange(next),
+      mapping,
+      "",
+    );
+  }
   const resolved = value === undefined ? defaultJsValue(type) : value;
   return pinDefaultPropertyRows(
     [{ pinId: "default", name: "Default", type, value: resolved }],
     (patch) => {
       if ("default:Default" in patch) onChange(patch["default:Default"]);
     },
+    mapping,
   );
+}
+
+export function enumNodePropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+  options: {
+    enums: ReadonlyArray<{ guid: string; name: string; members: Array<{ name: string }> }>;
+    typeSelectDisabled?: boolean;
+  },
+): PropertyRow[] {
+  const guid = typeof data.enumGuid === "string" ? data.enumGuid : "";
+  const selected = options.enums.find((entry) => entry.guid === guid);
+  const rows: PropertyRow[] = [
+    {
+      kind: "enum",
+      id: "enumGuid",
+      label: "Enum Type",
+      value: guid,
+      defaultValue: "",
+      disabled: options.typeSelectDisabled === true,
+      options: options.enums.map((entry) => ({
+        value: entry.guid,
+        label: entry.name,
+      })),
+      onChange: (nextGuid) => {
+        const next = options.enums.find((entry) => entry.guid === nextGuid);
+        const title = next
+          ? typeId === "enum.make"
+            ? `Make ${next.name}`
+            : typeId === "enum.switch"
+              ? `Switch on ${next.name}`
+              : typeId === "enum.equals"
+                ? `Equal ${next.name}`
+                : typeId === "enum.notEquals"
+                  ? `Not Equal ${next.name}`
+                  : typeId === "enum.toString"
+                    ? `${next.name} to String`
+                    : undefined
+          : undefined;
+        onPatch({
+          enumGuid: nextGuid,
+          members: next?.members ?? [],
+          ...(typeId === "enum.make"
+            ? { value: next?.members[0]?.name ?? "" }
+            : {}),
+          ...(title ? { title } : {}),
+        });
+      },
+    },
+  ];
+  if (typeId === "enum.make") {
+    const members = selected?.members.map((member) => member.name) ?? [];
+    const current = typeof data.value === "string" ? data.value : members[0] ?? "";
+    rows.push({
+      kind: "enum",
+      id: "value",
+      label: "Value",
+      value: current,
+      defaultValue: members[0] ?? "",
+      options: members.map((name) => ({ value: name, label: name })),
+      onChange: (value) => onPatch({ value }),
+    });
+  }
+  return rows;
+}
+
+export function connectedEnumGuidFromSerialized(
+  graph: {
+    nodes: ReadonlyArray<{
+      id: string;
+      data: Record<string, unknown>;
+    }>;
+    edges: ReadonlyArray<{
+      source: string;
+      target: string;
+      sourceHandle?: string;
+      targetHandle?: string;
+    }>;
+  },
+  nodeId: string,
+): string | undefined {
+  const handles = new Set(["value", "a", "b", "in"]);
+  for (const edge of graph.edges) {
+    if (edge.target !== nodeId || !edge.targetHandle) continue;
+    if (!handles.has(edge.targetHandle)) continue;
+    const source = graph.nodes.find((node) => node.id === edge.source);
+    if (!source) continue;
+    const pins = pinsFromNodeData(source.data);
+    const pin = pins.find(
+      (entry) => entry.id === edge.sourceHandle || entry.name === edge.sourceHandle,
+    );
+    if (
+      pin?.type &&
+      typeof pin.type === "object" &&
+      pin.type.kind === "enumRef" &&
+      pin.type.guid.trim()
+    ) {
+      return pin.type.guid.trim();
+    }
+  }
+  return undefined;
 }
 
 export function logNodePropertyRows(

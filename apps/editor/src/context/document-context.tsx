@@ -108,7 +108,7 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
@@ -2047,16 +2047,27 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   > => {
     const documents = await loadProjectGraphDocuments();
     const animDocuments = await loadProjectAnimGraphDocuments();
+    const typeSchemas = typeSchemasFromGraphAssets(
+      collectGraphTypeAssets({
+        assets: projectService.registry?.list() ?? [],
+        openDocuments: [...documentService.getState().openDocuments.values()],
+      }),
+    );
     const bundles = [
-      ...compileGraphDocuments(documents),
+      ...compileGraphDocuments(documents, {
+        enums: typeSchemas.enums,
+        structs: typeSchemas.structs,
+      }),
       ...compileAnimGraphScripts(animDocuments),
     ];
     markScriptsCurrent();
     return bundles;
   }, [
+    documentService,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
     markScriptsCurrent,
+    projectService,
   ]);
 
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
@@ -2074,6 +2085,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const doc of documents) {
       classGraphs[classIdForGraphPath(doc.path)] = doc.content;
     }
+    const typeSchemas = typeSchemasFromGraphAssets(
+      collectGraphTypeAssets({
+        assets: projectService.registry?.list() ?? [],
+        openDocuments: [...documentService.getState().openDocuments.values()],
+      }),
+    );
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
@@ -2082,10 +2099,15 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         hierarchy: classHierarchyFromParentOf(parentOf),
         members: classMemberSymbolsFromGraphs(classGraphs),
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
+        enums: typeSchemas.enums,
+        structs: typeSchemas.structs,
       }),
     );
     const bundles = [
-      ...compileGraphDocuments(documents),
+      ...compileGraphDocuments(documents, {
+        enums: typeSchemas.enums,
+        structs: typeSchemas.structs,
+      }),
       ...compileAnimGraphScripts(animDocuments),
     ];
     markScriptsCurrent();

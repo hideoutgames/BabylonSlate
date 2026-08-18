@@ -15,6 +15,7 @@ import {
   isAssignable,
   isActorClassId,
   isLogicGraphPayload,
+  knownGuidsFromSchemas,
   type ClassHierarchy,
   type ClassMemberSymbol,
   type Diagnostic,
@@ -24,6 +25,7 @@ import {
   type NodeRegistry,
   type GraphPin,
   type PinType,
+  type TypeSchemas,
 } from "@babylonslate/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
@@ -48,6 +50,10 @@ import {
   nativeEventStubs,
   type ClassEventOptions,
 } from "../lib/class-members";
+import type {
+  GraphEnumEntry,
+  GraphStructureEntry,
+} from "../lib/logic-graph-document";
 
 const registry = createDefaultNodeRegistry();
 
@@ -75,6 +81,13 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "variables.set" ||
     typeId === "component.getNamed" ||
     typeId === "casting.cast" ||
+    typeId === "struct.make" ||
+    typeId === "struct.break" ||
+    typeId === "enum.make" ||
+    typeId === "enum.equals" ||
+    typeId === "enum.notEquals" ||
+    typeId === "enum.toString" ||
+    typeId === "enum.switch" ||
     typeId === uiGetWidgetNodeId
   );
 }
@@ -97,6 +110,65 @@ function resultKindForClass(
   })
     ? "actorRef"
     : "objectRef";
+}
+
+function pinGuid(type: unknown, kind: "structRef" | "enumRef"): string | undefined {
+  if (!type || typeof type !== "object") return undefined;
+  const record = type as { kind?: unknown; guid?: unknown };
+  if (record.kind !== kind) return undefined;
+  return typeof record.guid === "string" && record.guid.trim()
+    ? record.guid.trim()
+    : undefined;
+}
+
+function connectedDataPinType(
+  graph: SerializedGraph,
+  nodeId: string,
+  targetHandle: string,
+  nodeRegistry: NodeRegistry,
+): PinType | undefined {
+  const edge = graph.edges.find(
+    (entry) => entry.target === nodeId && entry.targetHandle === targetHandle,
+  );
+  if (!edge) return undefined;
+  const source = graph.nodes.find((node) => node.id === edge.source);
+  if (!source) return undefined;
+  const rawData = { ...(source.data as Record<string, unknown>) };
+  const typeId = catalogTypeId({ type: source.type, data: rawData });
+  const def = nodeRegistry.get(typeId);
+  const properties = { ...rawData };
+  delete properties.__pins;
+  delete properties.__nodeType;
+  delete properties.title;
+  const pins = def ? def.pins(properties) : [];
+  const sourcePin = pins.find(
+    (pin) => pin.id === edge.sourceHandle || pin.name === edge.sourceHandle,
+  );
+  return sourcePin?.type;
+}
+
+function connectedEnumGuid(
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+): string | undefined {
+  const node = graph.nodes.find((entry) => entry.id === nodeId);
+  if (!node) return undefined;
+  const rawData = { ...(node.data as Record<string, unknown>) };
+  const typeId = catalogTypeId({ type: node.type, data: rawData });
+  const def = nodeRegistry.get(typeId);
+  const properties = { ...rawData };
+  delete properties.__pins;
+  delete properties.__nodeType;
+  delete properties.title;
+  const pins = def ? def.pins(properties) : [];
+  for (const pin of pins) {
+    if (pin.kind !== "data" || pin.direction !== "in") continue;
+    const type = connectedDataPinType(graph, nodeId, pin.id, nodeRegistry);
+    const guid = pinGuid(type, "enumRef");
+    if (guid) return guid;
+  }
+  return undefined;
 }
 
 function pinClassId(type: unknown): string | undefined {
@@ -130,8 +202,97 @@ function connectedCastClassId(
   return pinClassId(sourcePin?.type) ?? "BObject";
 }
 
+function isEnumCatalogType(typeId: string): boolean {
+  return (
+    typeId === "enum.make" ||
+    typeId === "enum.equals" ||
+    typeId === "enum.notEquals" ||
+    typeId === "enum.toString" ||
+    typeId === "enum.switch"
+  );
+}
+
+function enumNodeTitle(typeId: string, enumName: string): string {
+  switch (typeId) {
+    case "enum.make":
+      return `Make ${enumName}`;
+    case "enum.equals":
+      return `Equal ${enumName}`;
+    case "enum.notEquals":
+      return `Not Equal ${enumName}`;
+    case "enum.toString":
+      return `${enumName} to String`;
+    case "enum.switch":
+      return `Switch on ${enumName}`;
+    default:
+      return enumName;
+  }
+}
+
+function applyStructEnumSchema(
+  typeId: string,
+  properties: Record<string, unknown>,
+  graph: SerializedGraph,
+  nodeId: string,
+  nodeRegistry: NodeRegistry,
+  options?: HydrateGraphOptions,
+): void {
+  if (typeId === "struct.make" || typeId === "struct.break") {
+    const guid =
+      typeof properties.structGuid === "string"
+        ? properties.structGuid.trim()
+        : "";
+    const schema = guid ? options?.structs?.[guid] : undefined;
+    if (schema) {
+      properties.fields = schema.fields;
+      properties.title = `${typeId === "struct.make" ? "Make" : "Break"} ${schema.name}`;
+    }
+  }
+  if (isEnumCatalogType(typeId)) {
+    const wiredGuid = connectedEnumGuid(graph, nodeId, nodeRegistry);
+    if (wiredGuid) properties.enumGuid = wiredGuid;
+    const guid =
+      typeof properties.enumGuid === "string"
+        ? properties.enumGuid.trim()
+        : "";
+    const schema = guid ? options?.enums?.[guid] : undefined;
+    if (schema) {
+      properties.members = schema.members;
+      properties.title = enumNodeTitle(typeId, schema.name);
+      if (typeId === "enum.make") {
+        const current =
+          typeof properties.value === "string" ? properties.value : "";
+        if (!schema.members.some((member) => member.name === current)) {
+          properties.value = schema.members[0]?.name ?? "";
+        }
+      }
+    }
+  }
+}
+
+function hydratedNodeTitle(
+  typeId: string,
+  properties: Record<string, unknown>,
+  authoredTitle: string | undefined,
+  defTitle: string,
+): string {
+  if (
+    typeof properties.title === "string" &&
+    (typeId === "flow.event.call" ||
+      typeId === "flow.event.callParent" ||
+      typeId === "struct.make" ||
+      typeId === "struct.break" ||
+      isEnumCatalogType(typeId))
+  ) {
+    return properties.title;
+  }
+  return authoredTitle ?? defTitle;
+}
+
 export type HydrateGraphOptions = {
   parentOf?: (id: string) => string | null | undefined;
+  structs?: TypeSchemas["structs"];
+  enums?: TypeSchemas["enums"];
 };
 
 /**
@@ -214,6 +375,8 @@ export function hydrateSerializedGraphForEditor(
         };
       }
 
+      applyStructEnumSchema(typeId, properties, graph, node.id, nodeRegistry, options);
+
       if (typeId === "flow.event.call") {
         const rawName =
           typeof properties.name === "string" ? properties.name : "";
@@ -260,12 +423,12 @@ export function hydrateSerializedGraphForEditor(
             ...properties,
             ...(def
               ? {
-                  title:
-                    (typeId === "flow.event.call" ||
-                      typeId === "flow.event.callParent") &&
-                    typeof properties.title === "string"
-                      ? properties.title
-                      : (authoredTitle ?? def.title),
+                  title: hydratedNodeTitle(
+                    typeId,
+                    properties,
+                    authoredTitle,
+                    def.title,
+                  ),
                 }
               : authoredTitle
                 ? { title: authoredTitle }
@@ -446,6 +609,8 @@ export type ScriptPaletteOptions = ClassEventOptions & {
     name: string;
     methods: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
   }>;
+  structures?: readonly GraphStructureEntry[];
+  enums?: readonly GraphEnumEntry[];
 };
 
 function otherClassAllowedOnHost(
@@ -727,6 +892,7 @@ type VariableRow = {
   id: string;
   name: string;
   typeId: string;
+  typeClassId?: string;
   scope: "member" | "local";
   functionId?: string;
 };
@@ -741,6 +907,7 @@ function classVariableRows(graph?: SerializedGraph): VariableRow[] {
       id: member.id,
       name: member.name,
       typeId: member.typeId ?? "float",
+      ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
       scope: "member",
     });
   }
@@ -765,6 +932,7 @@ function localVariableRows(
       id: member.id,
       name: member.name,
       typeId: member.typeId ?? "float",
+      ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
       scope: "local",
       functionId,
     });
@@ -827,6 +995,7 @@ function variableAccessPaletteNodes(
         title: `${access === "get" ? "Get" : "Set"} ${variable.name}`,
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
+      if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
       injected.push({
         id: `variables.${access}:${classId}:${variable.name}`,
         nodeType: `variables.${access}`,
@@ -876,6 +1045,116 @@ function castPaletteNodes(
       defaultData,
     };
   });
+}
+
+function structPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const makeDef = nodeRegistry.get("struct.make");
+  const breakDef = nodeRegistry.get("struct.break");
+  if (!makeDef || !breakDef) return [];
+  const rows: PaletteNode[] = [];
+  for (const structure of options?.structures ?? []) {
+    const defaultData: Record<string, unknown> = {
+      structGuid: structure.guid,
+      fields: structure.fields,
+    };
+    rows.push({
+      id: `struct.make:${structure.guid}`,
+      nodeType: "struct.make",
+      title: `Make ${structure.name}`,
+      category: makeDef.category,
+      pins: makeDef.pins(defaultData),
+      pure: makeDef.pure,
+      latent: makeDef.latent,
+      defaultData: { ...defaultData, title: `Make ${structure.name}` },
+    });
+    rows.push({
+      id: `struct.break:${structure.guid}`,
+      nodeType: "struct.break",
+      title: `Break ${structure.name}`,
+      category: breakDef.category,
+      pins: breakDef.pins(defaultData),
+      pure: breakDef.pure,
+      latent: breakDef.latent,
+      defaultData: { ...defaultData, title: `Break ${structure.name}` },
+    });
+  }
+  return rows;
+}
+
+function enumPaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const makeDef = nodeRegistry.get("enum.make");
+  const equalDef = nodeRegistry.get("enum.equals");
+  const notEqualDef = nodeRegistry.get("enum.notEquals");
+  const toStringDef = nodeRegistry.get("enum.toString");
+  const switchDef = nodeRegistry.get("enum.switch");
+  if (!makeDef || !equalDef || !notEqualDef || !toStringDef || !switchDef) {
+    return [];
+  }
+  const rows: PaletteNode[] = [];
+  for (const entry of options?.enums ?? []) {
+    const defaultData: Record<string, unknown> = {
+      enumGuid: entry.guid,
+      members: entry.members,
+      value: entry.members[0]?.name ?? "",
+    };
+    rows.push({
+      id: `enum.make:${entry.guid}`,
+      nodeType: "enum.make",
+      title: `Make ${entry.name}`,
+      category: makeDef.category,
+      pins: makeDef.pins(defaultData),
+      pure: makeDef.pure,
+      latent: makeDef.latent,
+      defaultData: { ...defaultData, title: `Make ${entry.name}` },
+    });
+    rows.push({
+      id: `enum.equals:${entry.guid}`,
+      nodeType: "enum.equals",
+      title: `Equal ${entry.name}`,
+      category: equalDef.category,
+      pins: equalDef.pins(defaultData),
+      pure: equalDef.pure,
+      latent: equalDef.latent,
+      defaultData: { ...defaultData, title: `Equal ${entry.name}` },
+    });
+    rows.push({
+      id: `enum.notEquals:${entry.guid}`,
+      nodeType: "enum.notEquals",
+      title: `Not Equal ${entry.name}`,
+      category: notEqualDef.category,
+      pins: notEqualDef.pins(defaultData),
+      pure: notEqualDef.pure,
+      latent: notEqualDef.latent,
+      defaultData: { ...defaultData, title: `Not Equal ${entry.name}` },
+    });
+    rows.push({
+      id: `enum.toString:${entry.guid}`,
+      nodeType: "enum.toString",
+      title: `${entry.name} to String`,
+      category: toStringDef.category,
+      pins: toStringDef.pins(defaultData),
+      pure: toStringDef.pure,
+      latent: toStringDef.latent,
+      defaultData: { ...defaultData, title: `${entry.name} to String` },
+    });
+    rows.push({
+      id: `enum.switch:${entry.guid}`,
+      nodeType: "enum.switch",
+      title: `Switch on ${entry.name}`,
+      category: switchDef.category,
+      pins: switchDef.pins(defaultData),
+      pure: switchDef.pure,
+      latent: switchDef.latent,
+      defaultData: { ...defaultData, title: `Switch on ${entry.name}` },
+    });
+  }
+  return rows;
 }
 
 /** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
@@ -940,6 +1219,8 @@ export function scriptPaletteNodes(
           ...callInterfacePaletteNodes(nodeRegistry, options),
           ...variableAccessPaletteNodes(nodeRegistry, options),
           ...castPaletteNodes(nodeRegistry, options),
+          ...structPaletteNodes(nodeRegistry, options),
+          ...enumPaletteNodes(nodeRegistry, options),
           ...getWidgetPaletteNodes(nodeRegistry, options),
         ];
   return [...catalog, ...injected];
@@ -976,28 +1257,47 @@ export function materializeLogicGraph(
   content: SerializedGraph | LogicGraph,
   graphId: string,
   kind: LogicGraph["kind"] = "event",
+  options?: HydrateGraphOptions,
 ): LogicGraph {
   if (isLogicGraphPayload(content)) return content;
   const logic = fromSerializedGraph(content, graphId, kind);
-  // Overlay __pins when present.
   for (let i = 0; i < logic.nodes.length; i++) {
     const data = content.nodes[i]?.data as
       | { __pins?: LogicGraph["nodes"][0]["pins"]; __nodeType?: string }
       | undefined;
-    if (data?.__pins) {
+    const typeId = data?.__nodeType ?? logic.nodes[i]!.typeId;
+    const properties = { ...logic.nodes[i]!.properties };
+    applyStructEnumSchema(
+      typeId,
+      properties,
+      content,
+      logic.nodes[i]!.id,
+      registry,
+      options,
+    );
+    const regenerate = shouldRegeneratePins(typeId);
+    const def = registry.get(typeId);
+    if (data?.__pins && !regenerate) {
       logic.nodes[i] = {
         ...logic.nodes[i]!,
         pins: data.__pins,
-        typeId: data.__nodeType ?? logic.nodes[i]!.typeId,
+        typeId,
+        properties,
       };
-    } else {
-      const def = registry.get(logic.nodes[i]!.typeId);
-      if (def) {
-        logic.nodes[i] = {
-          ...logic.nodes[i]!,
-          pins: def.pins(logic.nodes[i]!.properties),
-        };
-      }
+    } else if (def) {
+      logic.nodes[i] = {
+        ...logic.nodes[i]!,
+        typeId,
+        properties,
+        pins: def.pins(properties),
+      };
+    } else if (data?.__pins) {
+      logic.nodes[i] = {
+        ...logic.nodes[i]!,
+        pins: data.__pins,
+        typeId,
+        properties,
+      };
     }
   }
   // Rebuild edges from handles when present on SerializedGraph.
@@ -1099,6 +1399,9 @@ export type ValidateSerializedGraphOptions = {
   knownClassIds?: ReadonlySet<string>;
   implementedInterfaces?: readonly InterfaceMethodContext[];
   parentFunctionSignatures?: readonly ParentFunctionSignature[];
+  knownGuids?: ReadonlySet<string>;
+  enums?: TypeSchemas["enums"];
+  structs?: TypeSchemas["structs"];
 };
 
 export function validateSerializedGraph(
@@ -1114,6 +1417,16 @@ export function validateSerializedGraph(
     knownClassIds: options.knownClassIds,
     implementedInterfaces: options.implementedInterfaces,
     parentFunctionSignatures: options.parentFunctionSignatures,
+    knownGuids:
+      options.knownGuids ??
+      (options.enums || options.structs
+        ? knownGuidsFromSchemas({
+            enums: options.enums ?? {},
+            structs: options.structs ?? {},
+          })
+        : undefined),
+    enums: options.enums,
+    structs: options.structs,
   };
   if (isLogicGraphPayload(content)) {
     return [
@@ -1121,7 +1434,16 @@ export function validateSerializedGraph(
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
     ];
   }
-  const eventGraph = materializeLogicGraph(content, options.graphId);
+  const typeOptions: HydrateGraphOptions = {
+    enums: options.enums,
+    structs: options.structs,
+  };
+  const eventGraph = materializeLogicGraph(
+    content,
+    options.graphId,
+    "event",
+    typeOptions,
+  );
   const graphs = [eventGraph];
   for (const [memberId, slice] of Object.entries(content.functionGraphs ?? {})) {
     graphs.push(
@@ -1129,6 +1451,7 @@ export function validateSerializedGraph(
         { nodes: slice.nodes, edges: slice.edges },
         memberId,
         "function",
+        typeOptions,
       ),
     );
   }

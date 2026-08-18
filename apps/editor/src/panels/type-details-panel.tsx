@@ -1,14 +1,29 @@
+import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  AssetPicker,
   PanelFrame,
   PinTypePicker,
   PropertyGrid,
+  assetRowIdentity,
+  selectedPickerIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
+import { Button } from "@babylonslate/ui/components/button";
+import { defaultValueForMember, keepsTypeClassId } from "@babylonslate/scripting";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchEnumMember, patchStructureField } from "../lib/asset-settings";
+import {
+  collectEnumMemberNames,
+  variableDefaultPropertyRows,
+} from "../lib/graph-inspector";
+import {
+  collectGraphTypeAssets,
+  typeAssetPickerEntries,
+  typeSchemasFromGraphAssets,
+} from "../lib/logic-graph-document";
 import {
   asEnumAsset,
   asStructureAsset,
@@ -18,12 +33,23 @@ import {
 export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applyAssetDocumentChange } = useDocuments();
+  const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
   const { selectedMemberId } = useTypeAssetEditing();
+  const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
   const selectedIndex = parseMemberIndex(selectedMemberId);
+  const typeCatalog = collectGraphTypeAssets({
+    assets: assetRegistry?.list() ?? [],
+    openDocuments,
+  });
+  const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
+  const typeAssets = typeAssetPickerEntries(typeCatalog);
+  const enumMembers = collectEnumMemberNames(
+    openDocuments,
+    assetRegistry?.list() ?? [],
+  );
 
   const commit = (next: Record<string, unknown>) => {
     void applyAssetDocumentChange(documentId, next);
@@ -82,10 +108,30 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
         </PanelFrame>
       );
     }
-    const defaultText =
-      field.defaultValue === undefined || field.defaultValue === null
-        ? ""
-        : String(field.defaultValue);
+    const isStruct = field.typeId === "struct";
+    const isEnum = field.typeId === "enum";
+    const typeClassId = field.typeClassId?.trim() ?? "";
+    const typeAsset = typeAssets.find((entry) => entry.guid === typeClassId);
+    const typeAssetIdentity = assetRowIdentity(
+      typeAsset
+        ? { name: typeAsset.name, type: typeAsset.type }
+        : typeClassId
+          ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+          : undefined,
+    );
+    const defaultRows = variableDefaultPropertyRows(
+      field.typeId,
+      field.defaultValue,
+      (value) =>
+        commit(
+          patchStructureField(asset, selectedIndex, { defaultValue: value }),
+        ),
+      {
+        typeClassId: field.typeClassId,
+        schemas: typeSchemas,
+        enumMembers,
+      },
+    );
     return (
       <PanelFrame data-testid="structure-details-panel">
         <div className="flex flex-col gap-3 p-2">
@@ -101,30 +147,71 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
                     patchStructureField(asset, selectedIndex, { name: value }),
                   ),
               },
-              {
-                id: "default",
-                kind: "text",
-                label: "Default",
-                value: defaultText,
-                onChange: (value) =>
-                  commit(
-                    patchStructureField(asset, selectedIndex, {
-                      defaultValue: value,
-                    }),
-                  ),
-              },
+              ...defaultRows,
             ]}
           />
           <div className="flex flex-col gap-1">
             <div className="text-sm font-medium">Type</div>
             <PinTypePicker
               value={field.typeId}
-              onChange={(typeId) =>
-                commit(patchStructureField(asset, selectedIndex, { typeId }))
-              }
+              onChange={(typeId) => {
+                const keep = keepsTypeClassId(typeId);
+                commit(
+                  patchStructureField(asset, selectedIndex, {
+                    typeId,
+                    typeClassId: keep ? field.typeClassId : undefined,
+                    defaultValue: defaultValueForMember(
+                      typeId,
+                      keep ? field.typeClassId : undefined,
+                      typeSchemas,
+                    ),
+                  }),
+                );
+              }}
               data-testid="structure-field-type"
             />
           </div>
+          {isStruct || isEnum ? (
+            <div className="flex flex-col gap-1">
+              <div className="text-sm font-medium">
+                {isEnum ? "Enum Type" : "Structure Type"}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto w-full justify-start"
+                data-testid="structure-field-type-asset"
+                onClick={() => setTypeAssetPickerOpen(true)}
+              >
+                {selectedPickerIdentity(
+                  typeAssetIdentity,
+                  typeClassId || "Pick type",
+                )}
+              </Button>
+            </div>
+          ) : null}
+          <AssetPicker
+            open={typeAssetPickerOpen}
+            onOpenChange={setTypeAssetPickerOpen}
+            assets={typeAssets}
+            allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+            allowNone
+            title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+            onPick={(guid) => {
+              commit(
+                patchStructureField(asset, selectedIndex, {
+                  typeClassId: guid ?? undefined,
+                  defaultValue: defaultValueForMember(
+                    field.typeId,
+                    guid ?? undefined,
+                    typeSchemas,
+                  ),
+                }),
+              );
+              setTypeAssetPickerOpen(false);
+            }}
+            data-testid="structure-field-type-asset-picker"
+          />
         </div>
       </PanelFrame>
     );

@@ -81,3 +81,48 @@ export function isStructOrEnumTypeId(typeId: string | undefined): boolean {
 export function isClassConstraintTypeId(typeId: string | undefined): boolean {
   return typeId === "object" || typeId === "class";
 }
+
+/** Map a live pin type back to a PinTypePicker id. */
+export function typeIdFromPinType(type: PinType): string {
+  switch (type.kind) {
+    case "exec":
+      return "exec";
+    case "bool":
+    case "int":
+    case "float":
+    case "string":
+    case "vec2":
+    case "vec3":
+    case "vec4":
+    case "rotator":
+    case "color":
+    case "transform":
+      return type.kind;
+    case "objectRef":
+    case "actorRef":
+      return "object";
+    case "classRef":
+      return "class";
+    case "structRef":
+      return "struct";
+    case "enumRef":
+      return "enum";
+    default:
+      return "float";
+  }
+}
+
+/** Class constraint or Structure/Enum guid stored on `typeClassId`. */
+export function typeClassIdFromPinType(type: PinType): string | undefined {
+  switch (type.kind) {
+    case "objectRef":
+    case "actorRef":
+    case "classRef":
+      return type.classId || undefined;
+    case "structRef":
+    case "enumRef":
+      return type.guid.trim() || undefined;
+    default:
+      return undefined;
+  }
+}

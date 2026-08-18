@@ -287,6 +287,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }
+  if (nodeId === "struct.make" || nodeId === "struct.break") {
+    return false;
+  }
   if (isAnimCatalogNode(nodeId)) {
     return isAnimCatalogNodeAllowed(
       nodeId,
