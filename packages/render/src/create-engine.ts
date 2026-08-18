@@ -66,7 +66,7 @@ import {
   createPlayConsoleViz,
   type PlayConsoleVizController,
 } from "./play-console-viz";
-import { SnapshotInterpolator } from "./snapshot-sync";
+import { SnapshotInterpolator, writeSampledAudioPoses, type SampledAudioPose } from "./snapshot-sync";
 import {
   applySnapshotToScene,
   applyAssignMaterial,
@@ -348,23 +348,34 @@ function positionsFromSample(
       rotation: { x: number; y: number; z: number; w: number };
     }>;
   },
+  out: PlayActorPosition[],
 ): PlayActorPosition[] {
-  const next: PlayActorPosition[] = [];
   const count = sampled.actorCount;
   for (let i = 0; i < count; i++) {
     const actor = sampled.actors[i]!;
-    next.push({
-      slotId: actor.slotId,
-      x: actor.position.x,
-      y: actor.position.y,
-      z: actor.position.z,
-      qx: actor.rotation.x,
-      qy: actor.rotation.y,
-      qz: actor.rotation.z,
-      qw: actor.rotation.w,
-    });
+    const row =
+      out[i] ??
+      (out[i] = {
+        slotId: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+        qx: 0,
+        qy: 0,
+        qz: 0,
+        qw: 1,
+      });
+    row.slotId = actor.slotId;
+    row.x = actor.position.x;
+    row.y = actor.position.y;
+    row.z = actor.position.z;
+    row.qx = actor.rotation.x;
+    row.qy = actor.rotation.y;
+    row.qz = actor.rotation.z;
+    row.qw = actor.rotation.w;
   }
-  return next;
+  out.length = count;
+  return out;
 }
 
 function createPlayAudioBackend(
@@ -827,6 +838,7 @@ export function createEngine(
 
   let interpAlpha = 1;
   let lastPositions: PlayActorPosition[] = [];
+  const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
   const renderLoop = () => {
     if (!scheduler.shouldRender()) {
@@ -838,23 +850,13 @@ export function createEngine(
       applySnapshotToScene(scene, binding, sampled);
       playViz?.refresh();
       rebuildIfActiveCameraChanged(previousCamera);
-      lastPositions = positionsFromSample(sampled);
+      positionsFromSample(sampled, lastPositions);
     }
     if (audioService) {
-      audioService.syncSnapshot(
-        lastPositions.map((actor) => ({
-          slotId: actor.slotId,
-          position: {
-            x: actor.x,
-            y: actor.y,
-            z: actor.z,
-            qx: actor.qx,
-            qy: actor.qy,
-            qz: actor.qz,
-            qw: actor.qw,
-          },
-        })),
-      );
+      if (audioService.hasSpatialVoices() && sampled) {
+        writeSampledAudioPoses(sampled, audioPoses);
+        audioService.syncSnapshot(audioPoses);
+      }
       const camera = scene.activeCamera;
       if (camera) {
         const pos = camera.globalPosition ?? camera.position;
@@ -965,7 +967,7 @@ export function createEngine(
       interpolator.push(buffer);
       interpAlpha = 1;
       const sampled = interpolator.sample(interpAlpha);
-      if (sampled) lastPositions = positionsFromSample(sampled);
+      if (sampled) positionsFromSample(sampled, lastPositions);
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
