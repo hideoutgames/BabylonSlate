@@ -6,6 +6,7 @@ import {
   EXEC,
   STRING,
   enumRef,
+  enumSwitchCasePinId,
 } from "@babylonslate/scripting";
 
 export function enumGuidOf(properties: Record<string, unknown>): string {
@@ -42,17 +43,11 @@ function typedEnum(properties: Record<string, unknown>) {
   return enumRef(enumGuidOf(properties));
 }
 
-export const ENUM_SWITCH_CASE_PREFIX = "case:";
-
-export function enumSwitchCasePinId(memberName: string): string {
-  return `${ENUM_SWITCH_CASE_PREFIX}${memberName}`;
-}
-
-export function enumSwitchMemberNameFromPinId(pinId: string): string | undefined {
-  return pinId.startsWith(ENUM_SWITCH_CASE_PREFIX)
-    ? pinId.slice(ENUM_SWITCH_CASE_PREFIX.length)
-    : undefined;
-}
+export {
+  ENUM_SWITCH_CASE_PREFIX,
+  enumSwitchCasePinId,
+  enumSwitchMemberNameFromPinId,
+} from "@babylonslate/scripting";
 
 /** Display name for a Switch exec pin. Runtime values stay the member name. */
 export function titleCaseEnumMember(name: string): string {

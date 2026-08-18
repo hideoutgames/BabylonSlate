@@ -1,4 +1,4 @@
-export const TEST_PROJECT_NAME = "TestProject.babproject";
+export const TEST_PROJECT_NAME = "TestProject";
 
 function isViteTestModeEnabled(): boolean {
   if (typeof import.meta === "undefined") {

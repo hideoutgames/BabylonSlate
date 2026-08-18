@@ -12,7 +12,7 @@ describe("test mode detection", () => {
   });
 
   it("exposes a stable project name for automated runs", () => {
-    expect(TEST_PROJECT_NAME).toBe("TestProject.babproject");
+    expect(TEST_PROJECT_NAME).toBe("TestProject");
   });
 
   it("is off by default", () => {

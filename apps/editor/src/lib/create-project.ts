@@ -1,14 +1,13 @@
 import { displayProjectName } from "./display-project-name";
 
-/** Display name shown in the Create Project dialog (no `.babproject` suffix). */
+/** Display name shown in the Create Project dialog. */
 export function defaultCreateProjectDisplayName(testMode: boolean): string {
   return testMode ? "TestProject" : "MyGame";
 }
 
 /** Folder name written to storage; empty when the display name is blank. */
 export function normalizeProjectFolderName(displayName: string): string {
-  const base = displayProjectName(displayName.trim());
-  return base ? `${base}.babproject` : "";
+  return displayProjectName(displayName.trim());
 }
 
 export type CreateProjectNameIssue = "Name required." | "Name already exists.";
