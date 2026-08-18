@@ -1,4 +1,4 @@
-import { PBRMaterial, Texture } from "@babylonjs/core";
+import { Mesh, PBRMaterial, Texture } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor, createDefaultScene, createSkyboxComponent } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -31,7 +31,7 @@ describe("editor skybox mesh", () => {
   it("builds an unlit infinite skybox for the default 3D scene", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
-    const mesh = scene.getMeshByName(editorMeshName("actor-skybox"));
+    const mesh = scene.getMeshByName(editorMeshName("actor-skybox")) as Mesh | null;
     expect(mesh).not.toBeNull();
     expect(isSkyboxMesh(mesh!)).toBe(true);
     expect(mesh!.isPickable).toBe(false);
@@ -53,7 +53,7 @@ describe("editor skybox mesh", () => {
     expect(skybox).toBeDefined();
     skybox!.locked = false;
     applySceneToBabylonScene(scene, sceneData);
-    const mesh = scene.getMeshByName(editorMeshName("actor-skybox"))!;
+    const mesh = scene.getMeshByName(editorMeshName("actor-skybox")) as Mesh;
     applyActorTransform(mesh, skybox!);
     expect(mesh.isPickable).toBe(false);
   });

@@ -1,4 +1,4 @@
-import { Material, PointLight, Quaternion, SpotLight, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -861,7 +861,7 @@ describe("createPlayMesh", () => {
         },
       },
     });
-    const mesh = scene.getMeshByName("actor-3");
+    const mesh = scene.getMeshByName("actor-3") as Mesh | null;
     expect(mesh).not.toBeNull();
     expect(mesh!.isVisible).toBe(false);
     expect(mesh!.isPickable).toBe(false);

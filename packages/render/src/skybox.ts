@@ -79,7 +79,7 @@ function defaultSkyboxCubeTexture(
     return createGeometricDaylightCubeTexture(scene, cache);
   }
   const existing = defaultCubeByScene.get(scene);
-  if (existing && !existing.isDisposed) return existing;
+  if (existing && existing.getScene() === scene) return existing;
   const texture = createGeometricDaylightCubeTexture(scene);
   defaultCubeByScene.set(scene, texture);
   return texture;
