@@ -247,7 +247,7 @@ describe("AnimGraphEditor", () => {
   });
 
   it("opens Add State from a far pin-drag release instead of cancelling", async () => {
-    const { container } = renderAnimGraph();
+    renderAnimGraph();
     await waitFor(() => {
       expect(screen.getByTestId("graph-editor")).toBeTruthy();
     });
