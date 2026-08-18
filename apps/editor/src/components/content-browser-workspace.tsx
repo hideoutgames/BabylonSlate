@@ -18,9 +18,11 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import {
   isThumbnailableAssetType,
   newAssetGuid,
+  pickerImportAccept,
   resolvePluginEnabled,
   thumbnailMime,
 } from "@babylonslate/assets";
+import { convertObjImportBatch } from "@babylonslate/render";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -70,6 +72,7 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
+import { useOptionalPlay } from "../context/play-context";
 import {
   applyLockTransfers,
   containedAssetPaths,
@@ -181,6 +184,7 @@ export function ContentBrowserWorkspace() {
     sourceControl,
     activeDocumentId,
   } = useDocuments();
+  const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const { diagnostics } = useValidation();
   const compileErrorGuids = useMemo(() => {
@@ -900,10 +904,20 @@ export function ContentBrowserWorkspace() {
       const incoming = filterBabpluginFiles(files);
       if (incoming.length === 0) return;
       setBusy(true);
+      const { files: prepared, errors: convertErrors } =
+        await convertObjImportBatch(incoming, {
+          engine: play?.ensureSharedEngine() ?? undefined,
+        });
+      errors.push(...convertErrors);
+      if (prepared.length === 0) {
+        setBusy(false);
+        if (errors.length) setImportErrors(errors);
+        return;
+      }
       setImportProgress({
-        total: incoming.length,
+        total: prepared.length,
         done: 0,
-        currentName: incoming[0]!.name,
+        currentName: prepared[0]!.name,
       });
       const createdModels: Array<{
         guid: string;
@@ -912,10 +926,10 @@ export function ContentBrowserWorkspace() {
       }> = [];
       try {
         const folder = selectedRoot.relative;
-        for (let index = 0; index < incoming.length; index += 1) {
-          const file = incoming[index]!;
+        for (let index = 0; index < prepared.length; index += 1) {
+          const file = prepared[index]!;
           setImportProgress({
-            total: incoming.length,
+            total: prepared.length,
             done: index,
             currentName: file.name,
           });
@@ -940,7 +954,7 @@ export function ContentBrowserWorkspace() {
             );
           }
           setImportProgress({
-            total: incoming.length,
+            total: prepared.length,
             done: index + 1,
             currentName: file.name,
           });
@@ -953,7 +967,7 @@ export function ContentBrowserWorkspace() {
       }
       enqueueModelThumbnailJobs(createdModels);
     },
-    [assetRegistry, refreshAssetRegistry, selectedRoot],
+    [assetRegistry, play, refreshAssetRegistry, selectedRoot],
   );
 
   const confirmNameDialog = useCallback(async () => {
@@ -1174,7 +1188,10 @@ export function ContentBrowserWorkspace() {
   const handleImport = useCallback(async () => {
     if (isMobilePlatform()) {
       try {
-        const files = await pickImportFiles({ multiple: true });
+        const files = await pickImportFiles({
+          multiple: true,
+          accept: pickerImportAccept(),
+        });
         await importPickedFiles(files);
       } catch (err) {
         setImportErrors([
@@ -1592,6 +1609,7 @@ export function ContentBrowserWorkspace() {
           multiple
           className="hidden"
           data-testid="content-browser-import-input"
+          accept={pickerImportAccept()}
           onChange={(event) => {
             void handleImportInputChange(event.target.files);
             event.target.value = "";

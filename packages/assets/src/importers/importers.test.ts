@@ -6,6 +6,13 @@ import { importFont } from "./font";
 import { importImage } from "./image";
 import { importModel } from "./model";
 import { remapImportResultGuids } from "./guid-remap";
+import {
+  importByExtension,
+  importerForExtension,
+  registeredImportAccept,
+  pickerImportAccept,
+} from "./index";
+import { buildMinimalGlbFixture } from "./glb-parse";
 
 describe("importers", () => {
   it("imports images as Texture with pending compression state", async () => {
@@ -29,7 +36,7 @@ describe("importers", () => {
   });
 
   it("imports models with material/texture/animation dependents", async () => {
-    const results = await importModel(new Uint8Array([9]), {
+    const results = await importModel(buildMinimalGlbFixture({ animationName: "Walk" }), {
       fileName: "hero.glb",
       existingGuids: new Set(),
     });
@@ -37,10 +44,42 @@ describe("importers", () => {
     expect(types).toContain("Model");
     expect(types).toContain("Material");
     expect(types).toContain("Texture");
-    expect(types).not.toContain("Animation");
+    expect(types).toContain("Animation");
     const model = results.find((result) => result.type === "Model")!;
     expect(model.dependencies.length).toBeGreaterThan(0);
-    expect(model.payload.clipNames).toEqual([]);
+    expect(model.payload.clipNames).toEqual(["Walk"]);
+  });
+
+  it("rejects OBJ, STL, FBX, and invalid GLB bytes", async () => {
+    await expect(
+      importModel(new Uint8Array([1]), { fileName: "mesh.obj", existingGuids: new Set() }),
+    ).rejects.toThrow(/GLB or glTF/i);
+    await expect(
+      importByExtension("mesh.stl", new Uint8Array([1]), {
+        fileName: "mesh.stl",
+        existingGuids: new Set(),
+      }),
+    ).rejects.toThrow(/No importer registered/i);
+    await expect(
+      importByExtension("hero.fbx", new Uint8Array([1]), {
+        fileName: "hero.fbx",
+        existingGuids: new Set(),
+      }),
+    ).rejects.toThrow(/No importer registered/i);
+    await expect(
+      importModel(new Uint8Array([9]), {
+        fileName: "hero.glb",
+        existingGuids: new Set(),
+      }),
+    ).rejects.toThrow(/GLB or glTF/i);
+    expect(importerForExtension("obj")).toBeUndefined();
+    expect(importerForExtension("stl")).toBeUndefined();
+    expect(registeredImportAccept()).toMatch(/\.glb/);
+    expect(registeredImportAccept()).toMatch(/\.gltf/);
+    expect(registeredImportAccept()).not.toMatch(/\.fbx/);
+    expect(registeredImportAccept()).not.toMatch(/\.stl/);
+    expect(pickerImportAccept()).toMatch(/\.obj/);
+    expect(pickerImportAccept()).not.toMatch(/\.fbx/);
   });
 
   it("imports audio", async () => {

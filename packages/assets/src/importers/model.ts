@@ -12,14 +12,15 @@ import {
   type GlbBrowseParse,
 } from "./glb-parse";
 
-export const MODEL_EXTENSIONS = new Set(["glb", "gltf", "obj", "stl"]);
+export const MODEL_EXTENSIONS = new Set(["glb", "gltf"]);
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   glb: "model/gltf-binary",
   gltf: "model/gltf+json",
-  obj: "model/obj",
-  stl: "model/stl",
 };
+
+const UNSUPPORTED_MODEL_FORMAT =
+  "Models must be GLB or glTF. FBX, OBJ, STL, and other DCC formats are not supported.";
 
 /**
  * Models import as a Model asset plus browsable Material / Texture / Animation
@@ -47,21 +48,21 @@ export async function importModel(
   options: ImportOptions,
 ): Promise<ImportResult[]> {
   const extension = extensionOf(options.fileName);
+  if (!MODEL_EXTENSIONS.has(extension)) {
+    throw new Error(UNSUPPORTED_MODEL_FORMAT);
+  }
   const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
   const name = baseName(options.fileName);
 
   const browse =
     extension === "glb"
       ? parseGlbForBrowse(bytes)
-      : extension === "gltf"
-        ? parseGltfJsonForBrowse(new TextDecoder().decode(bytes))
-        : null;
+      : parseGltfJsonForBrowse(new TextDecoder().decode(bytes));
 
-  if (browse && (browse.materials.length > 0 || browse.images.length > 0)) {
-    return importFromBrowse(name, mime, bytes, browse);
+  if (!browse) {
+    throw new Error(UNSUPPORTED_MODEL_FORMAT);
   }
-
-  return importStubDependents(name, mime, bytes);
+  return importFromBrowse(name, mime, bytes, browse);
 }
 
 function importFromBrowse(
@@ -235,54 +236,4 @@ function importFromBrowse(
   });
 
   return results;
-}
-
-function importStubDependents(
-  name: string,
-  mime: string,
-  bytes: Uint8Array,
-): ImportResult[] {
-  const textureGuid = newAssetGuid();
-  const materialGuid = newAssetGuid();
-  const modelGuid = newAssetGuid();
-
-  return [
-    {
-      type: "Model",
-      name,
-      guid: modelGuid,
-      version: 1,
-      dependencies: [materialGuid],
-      parentClass: null,
-      payload: {
-        ...normalizeModelPayload({
-          clipNames: [],
-          materialSlots: [
-            { index: 0, name: "Material", materialGuid },
-          ],
-        }),
-      } as Record<string, unknown>,
-      chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
-    },
-    {
-      type: "Material",
-      name: `${name}_Material`,
-      guid: materialGuid,
-      version: MATERIAL_PAYLOAD_VERSION,
-      dependencies: [textureGuid],
-      parentClass: null,
-      payload: importedMaterialPayload(`${name}_Material`, textureGuid),
-      chunks: [],
-    },
-    {
-      type: "Texture",
-      name: `${name}_Texture`,
-      guid: textureGuid,
-      version: 1,
-      dependencies: [],
-      parentClass: null,
-      payload: { compressionState: "pending", usage: "albedo" },
-      chunks: [],
-    },
-  ];
 }

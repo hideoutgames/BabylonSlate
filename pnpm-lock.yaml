@@ -545,6 +545,9 @@ importers:
       '@babylonjs/loaders':
         specifier: 9.20.0
         version: 9.20.0(@babylonjs/core@9.20.0)(babylonjs-gltf2interface@9.21.2)
+      '@babylonjs/serializers':
+        specifier: 9.20.0
+        version: 9.20.0(@babylonjs/core@9.20.0)(babylonjs-gltf2interface@9.21.2)
       '@babylonslate/assets':
         specifier: workspace:*
         version: link:../assets
@@ -991,6 +994,12 @@ packages:
 
   '@babylonjs/loaders@9.20.0':
     resolution: {integrity: sha512-zGu6SRvN4uzk5KF0exoSjBZbBcvkEz6iteSvgCn4EP4nQD60W2D4WCtF8m2usZ/yALUOQE5EQON6Tuq1I4LWXg==}
+    peerDependencies:
+      '@babylonjs/core': ^9.0.0
+      babylonjs-gltf2interface: ^9.0.0
+
+  '@babylonjs/serializers@9.20.0':
+    resolution: {integrity: sha512-d9+dpkyFFK5IIrS9ZE2rqsuL0t6dVC9M5kY+QtQ46CcgoBpktyDv3P5mjmulvPvRskj1XKBGvg3q63rfUfTu8Q==}
     peerDependencies:
       '@babylonjs/core': ^9.0.0
       babylonjs-gltf2interface: ^9.0.0
@@ -5350,6 +5359,11 @@ snapshots:
       '@babylonjs/core': 9.20.0
 
   '@babylonjs/loaders@9.20.0(@babylonjs/core@9.20.0)(babylonjs-gltf2interface@9.21.2)':
+    dependencies:
+      '@babylonjs/core': 9.20.0
+      babylonjs-gltf2interface: 9.21.2
+
+  '@babylonjs/serializers@9.20.0(@babylonjs/core@9.20.0)(babylonjs-gltf2interface@9.21.2)':
     dependencies:
       '@babylonjs/core': 9.20.0
       babylonjs-gltf2interface: 9.21.2

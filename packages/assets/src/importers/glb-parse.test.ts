@@ -270,21 +270,12 @@ describe("parseGlbForBrowse", () => {
     });
   });
 
-  it("falls back to stub dependents for OBJ", async () => {
-    const results = await importModel(new Uint8Array([1]), {
-      fileName: "mesh.obj",
-      existingGuids: new Set(),
-    });
-    expect(results.map((r) => r.type).sort()).toEqual([
-      "Material",
-      "Model",
-      "Texture",
-    ]);
-    const model = results.find((r) => r.type === "Model")!;
-    expect(model.payload.clipNames).toEqual([]);
-    const material = results.find((r) => r.type === "Material")!;
-    expect(model.payload.materialSlots).toEqual([
-      { index: 0, name: "Material", materialGuid: material.guid },
-    ]);
+  it("rejects OBJ instead of writing stub Model assets", async () => {
+    await expect(
+      importModel(new Uint8Array([1]), {
+        fileName: "mesh.obj",
+        existingGuids: new Set(),
+      }),
+    ).rejects.toThrow(/GLB or glTF/i);
   });
 });
