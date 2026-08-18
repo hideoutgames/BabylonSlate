@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { CommandMessage, UiWidgetEventControl } from "@babylonslate/bridge";
 import {
   createDefaultUserInterface,
@@ -124,6 +124,74 @@ describe("createPlayerUiHost", () => {
     expect(recording.controls).toEqual([]);
     expect(adtDisposed).toBe(true);
     expect(host.instances()).toEqual([]);
+  });
+
+  it("uses packed designer presets for Safe Area when the viewport matches", () => {
+    const phone = {
+      id: "custom-phone",
+      label: "Phone",
+      width: 390,
+      height: 844,
+      safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
+    };
+    const without = createTestHost({
+      viewport: { width: 390, height: 844 },
+    });
+    without.apply("ui-1", "hud-1");
+    const logoWithout = without.recording.controls.find(
+      (control) => control.id === "ui-1:logo",
+    );
+    const withPreset = createTestHost({
+      viewport: { width: 390, height: 844 },
+      designerPresets: [phone],
+    });
+    withPreset.apply("ui-1", "hud-1");
+    const logoWith = withPreset.recording.controls.find(
+      (control) => control.id === "ui-1:logo",
+    );
+    expect(logoWithout?.guiRect.y).toBeDefined();
+    expect(logoWith?.guiRect.y).toBeGreaterThan(logoWithout!.guiRect.y);
+  });
+
+  it("dirties the HUD ADT after packed fonts register", async () => {
+    const markAsDirty = vi.fn();
+    const applyFonts = vi.fn(
+      async (
+        _registry: unknown,
+        entries: readonly { family: string }[],
+        dirty: () => void,
+      ) => {
+        expect(entries.map((entry) => entry.family)).toEqual(["Display Face"]);
+        dirty();
+      },
+    );
+    const attachGui = vi.fn(() => ({
+      adt: { markAsDirty },
+      host: new RecordingUiHost(),
+      dispose: vi.fn(),
+    }));
+    const host = createPlayerUiHost({
+      library: new Map([["hud-1", hudDocument()]]),
+      scene: {} as never,
+      attachGui: attachGui as never,
+      applyFonts,
+      fontEntries: [
+        {
+          guid: "font-1",
+          family: "Display Face",
+          bytes: new Uint8Array([1, 2, 3]),
+        },
+      ],
+      viewport: { width: 800, height: 600 },
+    });
+    host.apply("ui-1", "hud-1");
+    await vi.waitFor(() => expect(applyFonts).toHaveBeenCalledTimes(1));
+    expect(markAsDirty).toHaveBeenCalled();
+    const firstCall = attachGui.mock.calls[0] as unknown[] | undefined;
+    expect(firstCall?.[1]).toMatchObject({
+      interactive: true,
+      designResolution: hudDocument().designResolution,
+    });
   });
 });
 

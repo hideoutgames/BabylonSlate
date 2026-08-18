@@ -126,13 +126,12 @@ describe("ui-design-gestures", () => {
 
   it("covers the complete device frame when the root has no live measure", () => {
     const viewport = { width: 400, height: 300 };
-    const bitmapScale = Math.min(400 / 1920, 300 / 1080);
     expect(
       designerControlHitRect(
-        { id: "canvas", kind: "Canvas", guiRect: { x: 0, y: 0, width: 1920, height: 1080 } },
+        { id: "canvas", kind: "Canvas", guiRect: { x: 0, y: 0, width: 400, height: 300 } },
         undefined,
         viewport,
-        bitmapScale,
+        1,
         "canvas",
       ),
     ).toEqual({ x: 0, y: 0, width: 400, height: 300 });

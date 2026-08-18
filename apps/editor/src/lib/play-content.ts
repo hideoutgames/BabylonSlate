@@ -173,6 +173,7 @@ export function playUserInterfaceRuntimeDocuments(
       id: widget.id,
       kind: widget.kind,
       ...(widget.name ? { name: widget.name } : {}),
+      ...(widget.nestedUiGuid ? { nestedUiGuid: widget.nestedUiGuid } : {}),
     })),
   }));
 }

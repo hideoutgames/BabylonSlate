@@ -27,6 +27,7 @@ import {
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
+import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
 import { asUiDocument } from "../lib/play-content";
 import {
@@ -37,15 +38,21 @@ import { loadLatest } from "../lib/load-latest";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 import {
   bindEditorUtilityWidgetEvent,
+  collectNestedUtilityLogicSources,
   compileEditorUtilityInterfaceLogic,
   createEditorUtilityInterfaceHost,
+  nestedUtilitySlots,
 } from "../lib/editor-utility-interface-runtime";
 import { editorUtilityGuidFromWindowId } from "../shell/editor-utility-windows";
 
 export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const guid = editorUtilityGuidFromWindowId(props.api.id);
-  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk } =
+  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk, activeDocumentId } =
     useDocuments();
+  const workspace = useOptionalDocumentWorkspace();
+  const documentActive = workspace
+    ? activeDocumentId === workspace.documentId
+    : true;
   const play = useOptionalPlay();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
@@ -53,6 +60,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const hostRef = useRef<ReturnType<typeof createEditorUtilityInterfaceHost> | null>(
     null,
   );
+  const nestedSlotsRef = useRef<ReturnType<typeof nestedUtilitySlots>>([]);
   const [payload, setPayload] = useState<unknown>(null);
   const [panelVisible, setPanelVisible] = useState(props.api.isVisible);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -109,6 +117,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     () => (payload ? asUiDocument(payload) : null),
     [payload],
   );
+  const uiReady = Boolean(ui);
 
   useEffect(() => {
     if (!ui) {
@@ -175,7 +184,11 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
         onWidgetEvent: (event) => {
           const runtime = hostRef.current;
           if (!runtime) return;
-          bindEditorUtilityWidgetEvent(runtime.host, event);
+          bindEditorUtilityWidgetEvent(
+            runtime.host,
+            event,
+            nestedSlotsRef.current,
+          );
         },
         resolveImageUrl,
       });
@@ -190,8 +203,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     setPreviewError(null);
     freezeLiveUiSurface(surface, {
       panelVisible,
-      documentActive: true,
-      requireDocumentActive: false,
+      documentActive,
     });
     const paintScheduler = paintSchedulerRef.current;
     return () => {
@@ -199,24 +211,24 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       surface?.dispose();
       surfaceRef.current = null;
     };
-    // Recreate only when the shared Engine or utility asset identity changes.
+    // Recreate when Engine identity or payload readiness changes. Viewport,
+    // scale rule, and design resolution go through resizeDesign on paint.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- freeze on create; next effect tracks visibility
-  }, [guid, play, play?.sharedEngineGeneration]);
+  }, [guid, play, play?.sharedEngineGeneration, uiReady]);
 
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, {
       panelVisible,
-      documentActive: true,
-      requireDocumentActive: false,
+      documentActive,
     });
-  }, [panelVisible]);
+  }, [documentActive, panelVisible]);
 
   useEffect(() => {
     const surface = surfaceRef.current;
     const canvas = canvasRef.current;
     if (!surface || !ui || !canvas) return;
     const paint = () => {
-      const frozen = !panelVisible;
+      const frozen = !panelVisible || !documentActive;
       const width = Math.max(1, canvas.clientWidth || ui.designResolution.width);
       const height = Math.max(
         1,
@@ -227,8 +239,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       surface.resizeDesign(width, height, ui.scaleRule, ui.designResolution);
       presentLiveUiIfVisible({
         panelVisible,
-        documentActive: true,
-        requireDocumentActive: false,
+        documentActive,
         present: () => {
           try {
             surface.present();
@@ -256,7 +267,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       paintScheduler.cancel();
       observer.disconnect();
     };
-  }, [imageUrls, panelVisible, ui]);
+  }, [documentActive, imageUrls, panelVisible, ui]);
 
   useEffect(() => {
     if (!asset?.path || !payload) return;
@@ -269,24 +280,32 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     });
     hostRef.current = runtime;
     let cancelled = false;
-    const scripts = compileEditorUtilityInterfaceLogic(asset.path, payload);
+    const listed = assetRegistry?.list() ?? [];
+    const nested = collectNestedUtilityLogicSources(payload, (nestedGuid) => {
+      const nestedAsset = listed.find((entry) => entry.header.guid === nestedGuid);
+      if (!nestedAsset) return null;
+      const openDoc = openDocuments.find((doc) => doc.ref.path === nestedAsset.path);
+      if (openDoc?.content) {
+        return { path: nestedAsset.path, payload: openDoc.content };
+      }
+      if (nestedAsset.header.payload) {
+        return { path: nestedAsset.path, payload: nestedAsset.header.payload };
+      }
+      return null;
+    });
+    nestedSlotsRef.current = nestedUtilitySlots(nested);
+    const scripts = compileEditorUtilityInterfaceLogic(asset.path, payload, nested);
     void runtime.loadAll(scripts).then(() => {
       if (cancelled) return;
       runtime.beginPlay();
     });
-    let frame = 0;
-    const tick = () => {
-      runtime.tick();
-      frame = window.requestAnimationFrame(tick);
-    };
-    if (panelVisible) frame = window.requestAnimationFrame(tick);
     return () => {
       cancelled = true;
-      if (frame) window.cancelAnimationFrame(frame);
       runtime.dispose();
       if (hostRef.current === runtime) hostRef.current = null;
+      nestedSlotsRef.current = [];
     };
-  }, [asset?.path, payload, panelVisible]);
+  }, [asset?.path, assetRegistry, openDocuments, payload]);
 
   return (
     <PanelFrame data-testid="editor-utility-panel">

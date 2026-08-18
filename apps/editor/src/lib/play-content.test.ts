@@ -186,6 +186,24 @@ describe("playUserInterfaceRuntimeDocuments", () => {
     ]);
   });
 
+  it("copies nestedUiGuid onto UserInterface widget metadata", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const chip = createWidget("chip", "UserInterface", "Chip");
+    chip.nestedUiGuid = "chip-guid";
+    hud.widgets.canvas!.children = ["chip"];
+    hud.widgets.chip = chip;
+    expect(
+      playUserInterfaceRuntimeDocuments({ "hud-guid": hud })[0]?.widgets.find(
+        (widget) => widget.id === "chip",
+      ),
+    ).toEqual({
+      id: "chip",
+      kind: "UserInterface",
+      name: "Chip",
+      nestedUiGuid: "chip-guid",
+    });
+  });
+
   it("does not invent an apply command or mount instances", () => {
     const library = { "hud-guid": createDefaultUserInterface("HUD") };
     expect(playUserInterfaceRuntimeDocuments(library)[0]?.guid).toBe("hud-guid");

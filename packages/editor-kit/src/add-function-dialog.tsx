@@ -18,7 +18,7 @@ export type AddFunctionDialogItem = {
   name: string;
   description: string;
   overwritten: boolean;
-  kind: "interface" | "function";
+  kind: string;
 };
 
 export interface AddFunctionDialogProps {
@@ -27,7 +27,15 @@ export interface AddFunctionDialogProps {
   items: AddFunctionDialogItem[];
   onCreateEmpty: (name: string) => void;
   onPick: (id: string) => void;
+  title?: string;
+  description?: string;
+  emptyLabel?: string;
+  nameLabel?: string;
   "data-testid"?: string;
+}
+
+function testIdPrefix(testId: string): string {
+  return testId.replace(/-dialog$/, "");
 }
 
 /** Larger Add Function picker: empty function plus overridable/interface rows. */
@@ -37,10 +45,15 @@ export function AddFunctionDialog({
   items,
   onCreateEmpty,
   onPick,
+  title = "Add Function",
+  description = "Create an empty function or implement an overridable one.",
+  emptyLabel = "New Empty Function",
+  nameLabel = "Function Name",
   "data-testid": testId = "add-function-dialog",
 }: AddFunctionDialogProps) {
   const [mode, setMode] = useState<"empty" | "pick">("empty");
   const [draft, setDraft] = useState("");
+  const prefix = testIdPrefix(testId);
 
   useEffect(() => {
     if (open) {
@@ -63,23 +76,21 @@ export function AddFunctionDialog({
         data-testid={testId}
       >
         <DialogHeader>
-          <DialogTitle>Add Function</DialogTitle>
-          <DialogDescription>
-            Create an empty function or implement an overridable one.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <Button
           type="button"
           variant={mode === "empty" ? "secondary" : "ghost"}
           size="touch"
           className="w-full justify-start"
-          data-testid="add-function-empty"
+          data-testid={`${prefix}-empty`}
           onClick={() => setMode("empty")}
         >
-          New Empty Function
+          {emptyLabel}
         </Button>
         <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-1" data-testid="add-function-list">
+          <div className="flex flex-col gap-1" data-testid={`${prefix}-list`}>
             {items.map((item) => (
               <Button
                 key={item.id}
@@ -90,7 +101,7 @@ export function AddFunctionDialog({
                   item.overwritten ? "text-muted-foreground" : ""
                 }`}
                 disabled={item.overwritten}
-                data-testid={`add-function-item-${item.id}`}
+                data-testid={`${prefix}-item-${item.id}`}
                 data-overwritten={item.overwritten ? "true" : "false"}
                 onClick={() => {
                   if (item.overwritten) return;
@@ -112,9 +123,9 @@ export function AddFunctionDialog({
         </ScrollArea>
         {mode === "empty" ? (
           <Field>
-            <FieldLabel htmlFor="add-function-name">Function Name</FieldLabel>
+            <FieldLabel htmlFor={`${prefix}-name`}>{nameLabel}</FieldLabel>
             <Input
-              id="add-function-name"
+              id={`${prefix}-name`}
               className="min-h-[var(--touch-target,44px)]"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -124,7 +135,7 @@ export function AddFunctionDialog({
                   submitEmpty();
                 }
               }}
-              data-testid="add-function-name"
+              data-testid={`${prefix}-name`}
             />
           </Field>
         ) : null}
@@ -132,7 +143,7 @@ export function AddFunctionDialog({
           <Button
             type="button"
             variant="outline"
-            data-testid="add-function-cancel"
+            data-testid={`${prefix}-cancel`}
             onClick={() => onOpenChange(false)}
           >
             Cancel
@@ -140,7 +151,7 @@ export function AddFunctionDialog({
           {mode === "empty" ? (
             <Button
               type="button"
-              data-testid="add-function-confirm"
+              data-testid={`${prefix}-confirm`}
               onClick={submitEmpty}
             >
               Add

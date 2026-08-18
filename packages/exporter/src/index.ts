@@ -63,4 +63,5 @@ export type {
   ExportArtifact,
   GameManifest,
   GameAssetIndexEntry,
+  PackedUiDesignerPreset,
 } from "./types";

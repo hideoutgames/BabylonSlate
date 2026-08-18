@@ -92,4 +92,52 @@ describe("AddFunctionDialog", () => {
     );
     expect(onPick).toHaveBeenCalledWith("interface:g:Apply Damage");
   });
+
+  it("renders Add Event copy and event test ids", () => {
+    const onCreateEmpty = vi.fn();
+    render(
+      <AddFunctionDialog
+        open
+        onOpenChange={() => {}}
+        title="Add Event"
+        description="Create an empty custom event or override a native, inherited, or nested one."
+        emptyLabel="New Empty Event"
+        nameLabel="Event Name"
+        items={[
+          {
+            id: "native:flow.event.beginPlay",
+            name: "Event Begin Play",
+            description: "Native",
+            overwritten: true,
+            kind: "native",
+          },
+          {
+            id: "nested:chip-guid:On Chip",
+            name: "On Chip",
+            description: "Nested · Chip",
+            overwritten: false,
+            kind: "nested",
+          },
+        ]}
+        onCreateEmpty={onCreateEmpty}
+        onPick={() => {}}
+        data-testid="add-event-dialog"
+      />,
+    );
+    expect(screen.getByTestId("add-event-dialog").textContent).toContain(
+      "Add Event",
+    );
+    expect(screen.getByTestId("add-event-empty").textContent).toContain(
+      "New Empty Event",
+    );
+    expect(
+      screen.getByTestId("add-event-item-native:flow.event.beginPlay")
+        .textContent,
+    ).toContain("Overwritten");
+    fireEvent.change(screen.getByTestId("add-event-name"), {
+      target: { value: "On Hit" },
+    });
+    fireEvent.click(screen.getByTestId("add-event-confirm"));
+    expect(onCreateEmpty).toHaveBeenCalledWith("On Hit");
+  });
 });

@@ -68,8 +68,18 @@ describe("flow nodes", () => {
     expect(byId["flow.event.sceneOpen"]?.editorOnly).toBe(true);
     expect(byId["flow.event.sceneSaved"]?.editorOnly).toBe(true);
     expect(byId["flow.event.editorShutdown"]?.editorOnly).toBe(true);
+    expect(byId["flow.event.editorBeginPlay"]?.editorOnly).toBe(true);
     expect(byId["flow.event.beginPlay"]?.editorOnly).toBeFalsy();
     expect(byId["flow.event.tick"]?.editorOnly).toBeFalsy();
+  });
+
+  it("titles widget pointer events", () => {
+    const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
+    expect(byId["flow.event.mouseEnter"]?.title).toBe("Event On Mouse Enter");
+    expect(byId["flow.event.mouseExit"]?.title).toBe("Event On Mouse Exit");
+    expect(byId["flow.event.mousePress"]?.title).toBe("Event On Mouse Press");
+    expect(byId["flow.event.mouseRelease"]?.title).toBe("Event On Mouse Release");
+    expect(byId["flow.event.widgetClick"]?.title).toBe("Event On Widget Click");
   });
 
   it("maps function Input pins from member inputs as outputs", () => {

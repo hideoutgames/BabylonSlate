@@ -120,6 +120,7 @@ export function createUiSurface(
   });
   const detachPointers = options.interactive
     ? attachAdtCanvasPointers(canvas, designAdt, blitDesign, {
+        isFrozen: () => frozen,
         onPickError: (error) => {
           console.error("ADT pick failed", error);
         },
@@ -181,13 +182,63 @@ export function attachFullscreenGui(
     onWidgetEvent: options.onWidgetEvent,
     markDirty: () => adt.markAsDirty(),
   });
+  const canvas = scene.getEngine()?.getRenderingCanvas?.() ?? null;
+  const detachMoves = canvas
+    ? attachFullscreenGuiPointerMoves(canvas, adt)
+    : undefined;
   return {
     adt,
     host,
     dispose: () => {
+      detachMoves?.();
       host.clear();
       adt.dispose();
     },
+  };
+}
+
+/**
+ * Layer HUD still needs POINTERMOVE for GUI enter/exit while the Play scene
+ * keeps `skipPointerMovePicking` (mesh hover off). Do not capture or stop
+ * pointerdown — scene GUI must keep Button clicks.
+ */
+export function attachFullscreenGuiPointerMoves(
+  canvas: HTMLCanvasElement,
+  adt: AdvancedDynamicTexture,
+): () => void {
+  const coords = (event: { clientX: number; clientY: number }) => {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    return {
+      x: ((event.clientX - rect.left) / width) * canvas.width,
+      y: ((event.clientY - rect.top) / height) * canvas.height,
+    };
+  };
+
+  const pickMove = (event: Event, offCanvas: boolean) => {
+    try {
+      const pointer = event as PointerEvent;
+      const { x, y } = offCanvas ? { x: -1, y: -1 } : coords(pointer);
+      const info = new PointerInfoPre(
+        PointerEventTypes.POINTERMOVE,
+        pointer as unknown as IMouseEvent,
+        x,
+        y,
+      );
+      adt.pick(x, y, info);
+    } catch {
+      /* Hover is best-effort; clicks stay on the Layer GUI path. */
+    }
+  };
+
+  const onMove = (event: Event) => pickMove(event, false);
+  const onLeave = (event: Event) => pickMove(event, true);
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerleave", onLeave);
+  return () => {
+    canvas.removeEventListener("pointermove", onMove);
+    canvas.removeEventListener("pointerleave", onLeave);
   };
 }
 
@@ -224,7 +275,10 @@ export function attachAdtCanvasPointers(
   canvas: HTMLCanvasElement,
   adt: AdvancedDynamicTexture,
   afterPick?: () => void,
-  options?: { onPickError?: (error: unknown) => void },
+  options?: {
+    onPickError?: (error: unknown) => void;
+    isFrozen?: () => boolean;
+  },
 ): () => void {
   canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
   let capturedId: number | null = null;
@@ -240,6 +294,7 @@ export function attachAdtCanvasPointers(
   };
 
   const pickAt = (event: Event, type: string) => {
+    if (options?.isFrozen?.()) return;
     try {
       const pointer = event as PointerEvent;
       const { x, y } = coords(pointer);
@@ -249,7 +304,12 @@ export function attachAdtCanvasPointers(
         x,
         y,
       );
+      // Pick with invalidate-rect on leaves a clipped backing store that the
+      // next clearRect+drawImage copies as an empty frame. Disable that path
+      // and fully redraw after pick before the external blit.
+      prepareAdtForExternalPresent(adt);
       adt.pick(x, y, info);
+      adt._checkUpdate(null);
       afterPick?.();
     } catch (error) {
       options?.onPickError?.(error);
@@ -258,6 +318,7 @@ export function attachAdtCanvasPointers(
 
   const onPointer = (event: PointerEvent) => {
     event.stopPropagation?.();
+    if (options?.isFrozen?.()) return;
     const isPrimary = event.isPrimary !== false;
     if (event.type === "pointerdown") {
       if (!isPrimary) return;

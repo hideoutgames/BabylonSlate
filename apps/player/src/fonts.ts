@@ -1,3 +1,14 @@
+export function packedFontEntries(options: {
+  fontBytes: ReadonlyMap<string, Uint8Array>;
+  fontFamilies?: ReadonlyMap<string, string>;
+}): Array<{ guid: string; family: string; bytes: Uint8Array }> {
+  return [...options.fontBytes.entries()].map(([guid, bytes]) => ({
+    guid,
+    family: options.fontFamilies?.get(guid)?.trim() || guid,
+    bytes,
+  }));
+}
+
 /**
  * Packed FontFace from asset bytes (engineplan §15.1). Do not use blob URLs —
  * `FontFace` accepts a BufferSource so the packed payload stays in memory.

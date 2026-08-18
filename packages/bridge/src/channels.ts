@@ -7,6 +7,7 @@ export type UserInterfaceWidgetMeta = {
   id: string;
   name?: string;
   kind: string;
+  nestedUiGuid?: string;
 };
 
 /** UserInterface document metadata shipped on `loadUserInterfaces`. */
@@ -15,7 +16,27 @@ export type UserInterfaceRuntimeDocument = {
   widgets: UserInterfaceWidgetMeta[];
 };
 
-export type UiWidgetEventKind = "click" | "value" | "checked" | "text";
+export type UiWidgetEventKind =
+  | "click"
+  | "value"
+  | "checked"
+  | "text"
+  | "pointerEnter"
+  | "pointerExit"
+  | "pointerDown"
+  | "pointerUp";
+
+/** ScriptHost export invoked for a main-thread widget event. */
+export function uiWidgetEventExport(kind: UiWidgetEventKind): string {
+  if (kind === "pointerEnter") return "onMouseEnter";
+  if (kind === "pointerExit") return "onMouseExit";
+  if (kind === "pointerDown") return "onMousePress";
+  if (kind === "pointerUp") return "onMouseRelease";
+  if (kind === "value") return "onWidgetValue";
+  if (kind === "checked") return "onWidgetChecked";
+  if (kind === "text") return "onWidgetText";
+  return "onWidgetClick";
+}
 
 /** Main-thread widget input routed to the owning UserInterface object. */
 export type UiWidgetEventControl = {

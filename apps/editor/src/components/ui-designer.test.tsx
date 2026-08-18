@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createDefaultPlayHud, createWidget } from "@babylonslate/ui-runtime";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
@@ -457,9 +458,38 @@ describe("UiDesigner", () => {
         editorUtilityInterface
       />,
     );
-    fireEvent.click(screen.getByTestId("ui-dock-kind-class"));
+    expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Scene");
+    fireEvent.click(screen.getByTestId("ui-dock-kind"));
+    const classItem = screen.getByTestId("ui-dock-kind-graph");
+    fireEvent.pointerDown(classItem);
+    fireEvent.click(classItem);
     expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ dockKind: "class" }),
+      expect.objectContaining({ dockKind: "graph" }),
     );
+  });
+
+  it("shows Title Case dock kind labels after a Settings change", () => {
+    function Harness() {
+      const [payload, setPayload] = useState<Record<string, unknown>>({
+        ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
+        dockKind: "scene",
+      });
+      return (
+        <UiDesigner
+          path="assets/SceneTools.eui.babasset"
+          payload={payload}
+          onChange={setPayload}
+          editorUtilityInterface
+        />
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Scene");
+    fireEvent.click(screen.getByTestId("ui-dock-kind"));
+    const classItem = screen.getByTestId("ui-dock-kind-graph");
+    fireEvent.pointerDown(classItem);
+    fireEvent.click(classItem);
+    expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Class");
+    expect(screen.getByTestId("ui-dock-kind").textContent).not.toMatch(/graph/i);
   });
 });

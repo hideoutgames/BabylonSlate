@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
 import {
   attachAdtCanvasPointers,
+  attachFullscreenGuiPointerMoves,
   isHardUiPresentFailure,
   presentAdtToCanvas,
   blitIfUnfrozen,
@@ -97,6 +98,77 @@ describe("presentAdtToCanvas", () => {
     expect(order).toContain("check:full");
   });
 
+  it("does not reset destination bitmap size until the ADT has fully redrawn", () => {
+    let checkCalled = false;
+    let destWidth = 0;
+    let destHeight = 0;
+    const widthSets: number[] = [];
+    const adt = {
+      useInvalidateRectOptimization: false,
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(() => {
+        checkCalled = true;
+      }),
+      getContext: () => ({ canvas: { id: "adt" } }),
+      getSize: () => ({ width: 16, height: 8 }),
+    } as unknown as AdvancedDynamicTexture;
+    const canvas = {
+      get width() {
+        return destWidth;
+      },
+      set width(value: number) {
+        if (!checkCalled) {
+          throw new Error("resized destination before ADT redraw");
+        }
+        widthSets.push(value);
+        destWidth = value;
+      },
+      get height() {
+        return destHeight;
+      },
+      set height(value: number) {
+        if (!checkCalled) {
+          throw new Error("resized destination before ADT redraw");
+        }
+        destHeight = value;
+      },
+      getContext: () => ({
+        clearRect: vi.fn(),
+        drawImage: vi.fn(),
+      }),
+    } as unknown as HTMLCanvasElement;
+    presentAdtToCanvas(adt, canvas);
+    expect(widthSets).toEqual([16]);
+  });
+
+  it("does not reassign matching canvas dimensions (assigning width clears the bitmap)", () => {
+    const adt = fakeAdt({ canvas: { id: "adt" } }, { width: 8, height: 8 });
+    let widthAssigns = 0;
+    let destWidth = 8;
+    let destHeight = 8;
+    const canvas = {
+      get width() {
+        return destWidth;
+      },
+      set width(value: number) {
+        widthAssigns += 1;
+        destWidth = value;
+      },
+      get height() {
+        return destHeight;
+      },
+      set height(value: number) {
+        destHeight = value;
+      },
+      getContext: () => ({
+        clearRect: vi.fn(),
+        drawImage: vi.fn(),
+      }),
+    } as unknown as HTMLCanvasElement;
+    presentAdtToCanvas(adt, canvas);
+    expect(widthAssigns).toBe(0);
+  });
+
   it("skips the blit when the ADT size is 0 instead of throwing", () => {
     const clearRect = vi.fn();
     const drawImage = vi.fn();
@@ -166,7 +238,12 @@ describe("attachAdtCanvasPointers", () => {
   it("captures the primary pointer on down and releases on up", () => {
     const { canvas, listeners } = fakeCanvas();
     const pick = vi.fn();
-    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    const adt = {
+      pick,
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(),
+      useInvalidateRectOptimization: false,
+    } as unknown as AdvancedDynamicTexture;
     const detach = attachAdtCanvasPointers(canvas, adt);
     listeners.pointerdown?.(
       {
@@ -200,6 +277,9 @@ describe("attachAdtCanvasPointers", () => {
       pick: () => {
         throw new Error("control is disposed");
       },
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(),
+      useInvalidateRectOptimization: false,
     } as unknown as AdvancedDynamicTexture;
     attachAdtCanvasPointers(canvas, adt, undefined, { onPickError });
     expect(() =>
@@ -218,7 +298,13 @@ describe("attachAdtCanvasPointers", () => {
     const { canvas, listeners } = fakeCanvas();
     const pick = vi.fn();
     const processKeyboard = vi.fn();
-    const adt = { pick, processKeyboard } as unknown as AdvancedDynamicTexture;
+    const adt = {
+      pick,
+      processKeyboard,
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(),
+      useInvalidateRectOptimization: false,
+    } as unknown as AdvancedDynamicTexture;
     attachAdtCanvasPointers(canvas, adt);
     const preventDefault = vi.fn();
     listeners.wheel?.({
@@ -238,10 +324,117 @@ describe("attachAdtCanvasPointers", () => {
     expect(processKeyboard).toHaveBeenCalled();
   });
 
+  it("prepares a full ADT redraw before pick so empty-area hits do not blit a cleared backing store", () => {
+    const { canvas, listeners } = fakeCanvas();
+    let invalidateRect = true;
+    let clipBroken = false;
+    let backing: { id: string } = { id: "painted" };
+    const order: string[] = [];
+    const adt = {
+      pick: vi.fn(() => {
+        order.push(`pick:${invalidateRect ? "partial" : "full"}`);
+        if (invalidateRect) {
+          clipBroken = true;
+          backing = { id: "empty" };
+        }
+      }),
+      _checkUpdate: vi.fn(() => {
+        order.push(`check:${invalidateRect ? "partial" : "full"}`);
+        if (clipBroken) {
+          backing = { id: "empty" };
+          return;
+        }
+        if (!invalidateRect) backing = { id: "painted" };
+      }),
+      markAsDirty: vi.fn(() => {
+        order.push("dirty");
+      }),
+      getContext: () => ({ canvas: backing }),
+      getSize: () => ({ width: 8, height: 8 }),
+    } as unknown as AdvancedDynamicTexture;
+    Object.defineProperty(adt, "useInvalidateRectOptimization", {
+      get: () => invalidateRect,
+      set: (value: boolean) => {
+        invalidateRect = value;
+        order.push(`opt:${value}`);
+      },
+    });
+    const drawImage = vi.fn();
+    const dest = {
+      getContext: () => ({
+        clearRect: vi.fn(),
+        drawImage,
+      }),
+      width: 8,
+      height: 8,
+    } as unknown as HTMLCanvasElement;
+    attachAdtCanvasPointers(canvas, adt, () => presentAdtToCanvas(adt, dest));
+    listeners.pointerdown?.({
+      type: "pointerdown",
+      pointerId: 1,
+      isPrimary: true,
+      clientX: 2,
+      clientY: 2,
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    const pickAt = order.indexOf("pick:full");
+    expect(pickAt).toBeGreaterThanOrEqual(0);
+    expect(order.slice(0, pickAt)).toContain("opt:false");
+    expect(order.slice(pickAt)).toContain("check:full");
+    expect(drawImage).toHaveBeenCalledWith({ id: "painted" }, 0, 0);
+  });
+
+  it("skips pick and blit when the surface is frozen", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const afterPick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    attachAdtCanvasPointers(canvas, adt, afterPick, { isFrozen: () => true });
+    listeners.pointerdown?.({
+      type: "pointerdown",
+      pointerId: 1,
+      isPrimary: true,
+      clientX: 10,
+      clientY: 10,
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(pick).not.toHaveBeenCalled();
+    expect(afterPick).not.toHaveBeenCalled();
+    expect(canvas.setPointerCapture).not.toHaveBeenCalled();
+  });
+
+  it("stops pointer events from bubbling off the live canvas", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = {
+      pick,
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(),
+      useInvalidateRectOptimization: false,
+    } as unknown as AdvancedDynamicTexture;
+    attachAdtCanvasPointers(canvas, adt);
+    const stopPropagation = vi.fn();
+    listeners.pointerdown?.({
+      type: "pointerdown",
+      pointerId: 1,
+      isPrimary: true,
+      clientX: 10,
+      clientY: 10,
+      preventDefault: vi.fn(),
+      stopPropagation,
+    } as unknown as Event);
+    expect(stopPropagation).toHaveBeenCalled();
+  });
+
   it("ignores non-primary pointerdown and only tracks the captured pointer", () => {
     const { canvas, listeners } = fakeCanvas();
     const pick = vi.fn();
-    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    const adt = {
+      pick,
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(),
+      useInvalidateRectOptimization: false,
+    } as unknown as AdvancedDynamicTexture;
     attachAdtCanvasPointers(canvas, adt);
     listeners.pointerdown?.(
       {
@@ -289,5 +482,56 @@ describe("attachAdtCanvasPointers", () => {
       } as unknown as Event,
     );
     expect(pick).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("attachFullscreenGuiPointerMoves", () => {
+  function fakeCanvas() {
+    const listeners: Record<string, EventListener> = {};
+    const canvas = {
+      width: 100,
+      height: 100,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+      addEventListener: (type: string, handler: EventListener) => {
+        listeners[type] = handler;
+      },
+      removeEventListener: vi.fn(),
+    } as unknown as HTMLCanvasElement;
+    return { canvas, listeners };
+  }
+
+  it("forwards pointermove into the Layer ADT without stopping click", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    const detach = attachFullscreenGuiPointerMoves(canvas, adt);
+    const stopPropagation = vi.fn();
+    listeners.pointermove?.({
+      type: "pointermove",
+      clientX: 40,
+      clientY: 20,
+      stopPropagation,
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(stopPropagation).not.toHaveBeenCalled();
+    expect(listeners.pointerdown).toBeUndefined();
+    detach();
+    expect(canvas.removeEventListener).toHaveBeenCalled();
+  });
+
+  it("picks off-canvas on pointerleave so hover exit still fires", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    attachFullscreenGuiPointerMoves(canvas, adt);
+    listeners.pointerleave?.({
+      type: "pointerleave",
+      clientX: 40,
+      clientY: 20,
+      stopPropagation: vi.fn(),
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(pick).toHaveBeenCalledTimes(1);
   });
 });

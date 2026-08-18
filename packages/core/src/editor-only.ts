@@ -1,11 +1,46 @@
 /** Editor-only assets stripped from Play compile and game export (P12 / P14). */
 
-export type EditorUtilityDockKind = "scene" | "class";
+export const EDITOR_UTILITY_DOCK_KINDS = [
+  "scene",
+  "graph",
+  "enum",
+  "structure",
+  "script-interface",
+  "sprite",
+  "sprite-animation",
+  "tileset",
+  "tilemap",
+  "material",
+  "material-function",
+  "ui",
+  "plugin-settings",
+  "anim-graph",
+  "behaviour-tree",
+  "audio-mixer",
+  "audio-channel",
+  "sound-attenuation",
+] as const;
+
+export type EditorUtilityDockKind = (typeof EDITOR_UTILITY_DOCK_KINDS)[number];
+
+const EDITOR_UTILITY_DOCK_KIND_SET = new Set<string>(EDITOR_UTILITY_DOCK_KINDS);
+
+export function editorUtilityDockKindLabel(kind: EditorUtilityDockKind): string {
+  if (kind === "graph") return "Class";
+  return kind
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 export function normalizeEditorUtilityDockKind(
   value: unknown,
 ): EditorUtilityDockKind {
-  return value === "class" ? "class" : "scene";
+  if (value === "class") return "graph";
+  if (typeof value === "string" && EDITOR_UTILITY_DOCK_KIND_SET.has(value)) {
+    return value as EditorUtilityDockKind;
+  }
+  return "scene";
 }
 
 export function isEditorOnlyAssetType(type: string): boolean {

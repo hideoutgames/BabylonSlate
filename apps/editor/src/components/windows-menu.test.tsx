@@ -130,4 +130,23 @@ describe("WindowsMenu Editor Utilities", () => {
     expect(docs.toggleDockWindow).toHaveBeenCalledWith("eui-eui-scene");
     expect(docs.openLiveEditorUtility).not.toHaveBeenCalled();
   });
+
+  it("lists a sprite-dock Editor Utility on a Sprite document", () => {
+    docs.kind = "sprite";
+    docs.path = "assets/Hero.sprite.babasset";
+    docs.assets = [
+      {
+        path: "assets/SpriteTools.eui.babasset",
+        header: {
+          guid: "eui-sprite",
+          name: "SpriteTools",
+          type: "EditorUtilityInterface",
+          payload: { dockKind: "sprite" },
+        },
+      },
+    ];
+    openEditorUtilitiesMenu();
+    fireEvent.click(screen.getByTestId("windows-menu-eui-eui-sprite"));
+    expect(docs.toggleDockWindow).toHaveBeenCalledWith("eui-eui-sprite");
+  });
 });

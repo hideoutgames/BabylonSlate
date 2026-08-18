@@ -182,10 +182,22 @@ function intrinsicWidgetSize(
   };
 }
 
+/** Minimum parent size so `previewRect` for this alignment stays inside [0, parent]. */
+function minParentAlongAxis(
+  align: "start" | "center" | "end",
+  size: number,
+  offset: number,
+): number {
+  if (align === "center") return size + 2 * Math.abs(offset);
+  if (align === "end") return Math.max(size, size - offset);
+  return Math.max(size, offset + size);
+}
+
 /**
  * Authoring size for Desired mode and nested UserInterface slots.
- * AABB of canvas children from the origin, using px sizes (or preferred
- * size when a side is %). Empty documents keep {@link DEFAULT_DESIRED_SIZE}.
+ * Alignment-aware AABB of canvas children (center + offset stays inside the
+ * frame). Percent sides use the preferred/intrinsic size. Empty documents
+ * keep {@link DEFAULT_DESIRED_SIZE}.
  */
 export function contentDesiredSize(
   doc: UserInterfaceDocument,
@@ -196,8 +208,8 @@ export function contentDesiredSize(
   if (!root || root.children.length === 0) {
     return { ...DEFAULT_DESIRED_SIZE };
   }
-  let maxX = 0;
-  let maxY = 0;
+  let maxW = 0;
+  let maxH = 0;
   for (const id of root.children) {
     const child = doc.widgets[id];
     if (!child) continue;
@@ -208,19 +220,27 @@ export function contentDesiredSize(
       measurer,
       options.resolveNested,
     );
-    maxX = Math.max(
-      maxX,
-      layout.left + layout.padding.left + size.width + layout.padding.right,
-    );
-    maxY = Math.max(
-      maxY,
-      layout.top + layout.padding.top + size.height + layout.padding.bottom,
-    );
+    const width = layout.widthUnit === "px" ? layout.width : size.width;
+    const height = layout.heightUnit === "px" ? layout.height : size.height;
+    const horizontal =
+      layout.horizontalAlignment === "center"
+        ? "center"
+        : layout.horizontalAlignment === "right"
+          ? "end"
+          : "start";
+    const vertical =
+      layout.verticalAlignment === "center"
+        ? "center"
+        : layout.verticalAlignment === "bottom"
+          ? "end"
+          : "start";
+    maxW = Math.max(maxW, minParentAlongAxis(horizontal, width, layout.left));
+    maxH = Math.max(maxH, minParentAlongAxis(vertical, height, layout.top));
   }
-  if (maxX < 1 || maxY < 1) return { ...DEFAULT_DESIRED_SIZE };
+  if (maxW < 1 || maxH < 1) return { ...DEFAULT_DESIRED_SIZE };
   return {
-    width: Math.max(1, Math.ceil(maxX)),
-    height: Math.max(1, Math.ceil(maxY)),
+    width: Math.max(1, Math.ceil(maxW)),
+    height: Math.max(1, Math.ceil(maxH)),
   };
 }
 
@@ -441,19 +461,23 @@ export function layoutUserInterface(
     height: viewport.height,
   };
   const scale = designScale(viewport, doc.designResolution, doc.scaleRule);
-  const designParent: Rect = {
-    x: 0,
-    y: 0,
-    width: doc.designResolution.width,
-    height: doc.designResolution.height,
-  };
+  const designParent: Rect = options.designSpace
+    ? { x: 0, y: 0, width: viewport.width, height: viewport.height }
+    : {
+        x: 0,
+        y: 0,
+        width: doc.designResolution.width,
+        height: doc.designResolution.height,
+      };
   const safeDesign: EdgeInsets = options.safeArea
-    ? {
-        left: options.safeArea.left / scale,
-        right: options.safeArea.right / scale,
-        top: options.safeArea.top / scale,
-        bottom: options.safeArea.bottom / scale,
-      }
+    ? options.designSpace
+      ? { ...options.safeArea }
+      : {
+          left: options.safeArea.left / scale,
+          right: options.safeArea.right / scale,
+          top: options.safeArea.top / scale,
+          bottom: options.safeArea.bottom / scale,
+        }
     : ZERO_INSETS;
   const root = doc.widgets[doc.rootId];
   if (!root) {

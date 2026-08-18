@@ -33,6 +33,7 @@ export {
   type ScriptConsoleCommand,
   type UiWidgetEventControl,
   type UiWidgetEventKind,
+  uiWidgetEventExport,
   type UserInterfaceRuntimeDocument,
   type UserInterfaceWidgetMeta,
 } from "./channels";
