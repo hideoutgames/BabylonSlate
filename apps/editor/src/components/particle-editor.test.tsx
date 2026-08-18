@@ -95,6 +95,20 @@ describe("ParticleEmitterEditor", () => {
     expect(screen.getByTestId("particle-emitter-preview")).toBeTruthy();
     expect(screen.getByText("No Texture")).toBeTruthy();
   });
+
+  it("shows a live preview canvas once a Texture guid is set", () => {
+    render(
+      <ParticleEmitterPreview
+        payload={
+          {
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    expect(screen.getByTestId("particle-emitter-preview-canvas")).toBeTruthy();
+  });
 });
 
 describe("ParticleSystemEditor", () => {

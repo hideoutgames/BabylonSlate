@@ -28,6 +28,12 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
+import {
+  ParticlePreviewCanvas,
+  emitterPreviewLibrary,
+  emittersFromRegistry,
+  systemPreviewLibrary,
+} from "./particle-preview-canvas";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -297,9 +303,11 @@ export function ParticleEmitterPreview({
   return (
     <div className="flex h-full flex-col p-3" data-testid="particle-emitter-preview">
       {emitter.textureGuid ? (
-        <p className="text-sm text-muted-foreground">
-          Billboard quads use the assigned Texture at Play and in Preview.
-        </p>
+        <ParticlePreviewCanvas
+          library={emitterPreviewLibrary(emitter)}
+          systemGuid="preview-sys"
+          testId="particle-emitter-preview-canvas"
+        />
       ) : (
         <Empty>
           <EmptyHeader>
@@ -321,15 +329,18 @@ export function ParticleSystemPreview({
   payload: Record<string, unknown>;
 }) {
   const system = normalizeParticleSystemPayload(payload);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, openDocuments } = useDocuments();
   const assets = assetRegistry?.list() ?? [];
-  const names = system.emitterGuids.map((guid) => {
-    const asset = assets.find((entry) => entry.header.guid === guid);
-    return asset?.header.name ?? guid;
-  });
+  const openPayloads = new Map<string, unknown>();
+  for (const asset of assets) {
+    if (asset.header.type !== "ParticleEmitter") continue;
+    const doc = openDocuments?.find((entry) => entry.ref.path === asset.path);
+    if (doc?.content) openPayloads.set(asset.header.guid, doc.content);
+  }
+  const emitters = emittersFromRegistry(assets, openPayloads);
   return (
     <div className="flex h-full flex-col p-3" data-testid="particle-system-preview">
-      {names.length === 0 ? (
+      {system.emitterGuids.length === 0 ? (
         <Empty>
           <EmptyHeader>
             <EmptyTitle>No Emitters</EmptyTitle>
@@ -340,11 +351,11 @@ export function ParticleSystemPreview({
           </EmptyHeader>
         </Empty>
       ) : (
-        <ul className="flex flex-col gap-1 text-sm">
-          {names.map((name, index) => (
-            <li key={`${name}-${index}`}>{name}</li>
-          ))}
-        </ul>
+        <ParticlePreviewCanvas
+          library={systemPreviewLibrary(system, emitters)}
+          systemGuid="preview-sys"
+          testId="particle-system-preview-canvas"
+        />
       )}
     </div>
   );
