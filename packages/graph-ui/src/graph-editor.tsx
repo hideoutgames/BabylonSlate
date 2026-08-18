@@ -83,7 +83,7 @@ import {
   type ConnectEndMode,
   type PinCompatibilityRule,
   shouldOpenAddNodeOnConnectEnd,
-  shouldOpenAddNodeOnSecondaryPointer,
+  shouldCancelConnectOnSecondaryPointer,
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
 import type { PinDisplayLookup } from "./wildcard-display";
@@ -1250,7 +1250,7 @@ function GraphEditorCanvas({
         ),
       });
       if (
-        !shouldOpenAddNodeOnSecondaryPointer({
+        !shouldCancelConnectOnSecondaryPointer({
           connectionActive: true,
           dragPointerId: session.pointerId,
           eventPointerId,
