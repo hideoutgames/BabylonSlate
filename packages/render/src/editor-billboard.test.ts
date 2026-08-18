@@ -42,6 +42,7 @@ describe("editor billboard", () => {
     expect(mesh.name).toBe("editorActor:lamp");
     expect(mesh.isPickable).toBe(true);
     expect(mesh.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(mesh.getTotalVertices()).toBe(8);
     expect(
       (mesh.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("light");

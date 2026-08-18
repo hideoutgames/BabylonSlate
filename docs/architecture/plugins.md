@@ -11,7 +11,7 @@ plugins/<folder>/<name>.plugin.babasset   # PluginSettings at the plugin root
 plugins/<folder>/assets/                  # content root (own .blobs)
 ```
 
-**`.babplugin` zip** uses the same codec as `.babproject` with `kind: "plugin"` ([containers.md](containers.md)). `plugin.json` is that **container manifest only**, derived from PluginSettings at export. In-project discovery scans for `type: "PluginSettings"`; it does **not** require `plugin.json` on disk.
+**`.babplugin` zip** uses the same project-tree codec as a project folder / `.zip` with `kind: "plugin"` ([containers.md](containers.md)). `plugin.json` is that **container manifest only**, derived from PluginSettings at export. In-project discovery scans for `type: "PluginSettings"`; it does **not** require `plugin.json` on disk.
 
 **Engine plugins** live in repo `engine-plugins/` (directory form in git). Vite packs each folder to `public/engine-plugins/<id>.babplugin` plus `index.json`. The editor fetches the index and unpacks into a **separate** Memory `ProjectStorage` wrapped read-only (`createReadOnlyProjectStorage` — writes throw). **New projects** (empty / 2D scaffold and `createFromTemplate`) copy each engine plugin into `plugins/<folder>/` with the **same guids** so the copy is editable. Copies keep `enabledByDefault: false` so the user still enables them to mount. A project plugin with guid X **shadows** the engine plugin with guid X (one Project Settings row). Opening an existing project does not copy. Deleting the project copy unmasks the engine original again.
 
