@@ -46,6 +46,28 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
+  it("builds a six-face cube in px py pz nx ny nz order", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const files = [
+      "blob:px",
+      "blob:py",
+      "blob:pz",
+      "blob:nx",
+      "blob:ny",
+      "blob:nz",
+    ];
+    const cube = cache.getCubeTextureFromImages("sky-faces", scene, files);
+    expect(cube.isCube).toBe(true);
+    expect(cube._files).toEqual(files);
+    const again = cache.getCubeTextureFromImages("sky-faces", scene, files);
+    expect(again).toBe(cube);
+    cache.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
   it("logs eviction reason when flushing unreferenced", () => {
     const reasons: Array<{ id: string; reason: string }> = [];
     const cache = new ResourceCache({

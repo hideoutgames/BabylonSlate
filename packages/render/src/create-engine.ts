@@ -44,6 +44,7 @@ import {
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
+import { isSkyboxMesh } from "./skybox";
 import { applySceneEnvironment as applySerializedSceneEnvironment } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -683,9 +684,8 @@ export function createEngine(
       },
       frameActor: (actorId: string) => {
         const mesh = editorSync.meshForActor(actorId);
-        if (mesh) {
-          cameraController.frame(mesh.getAbsolutePosition());
-        }
+        if (!mesh || isSkyboxMesh(mesh)) return;
+        cameraController.frame(mesh.getAbsolutePosition());
       },
       selectedActorTransforms,
       attachedActorTransform: () => {

@@ -1,4 +1,4 @@
-import type { AbstractEngine, BaseTexture } from "@babylonjs/core";
+import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
@@ -132,6 +132,47 @@ export class ResourceCache {
         });
     entry.texture = texture;
     entry.samplingKey = key;
+    return texture;
+  }
+
+  /**
+   * Six-face cubemap (`px, py, pz, nx, ny, nz`) for skyboxes. IBL still uses
+   * `getTexture(..., { isCube: true })` with a single DDS/ENV URL.
+   */
+  getCubeTextureFromImages(
+    assetGuid: string,
+    scene: Scene,
+    files: string[],
+    noMipmap = false,
+  ): CubeTexture {
+    const key = ["cube6", noMipmap ? "1" : "0", ...files].join(":");
+    const existing = this.entries.get(assetGuid);
+    if (existing?.texture && existing.samplingKey === key) {
+      existing.refCount += 1;
+      existing.lastUsed = ++this.clock;
+      return existing.texture as CubeTexture;
+    }
+    if (existing?.texture) {
+      existing.texture.dispose();
+      existing.texture = undefined;
+    }
+    const texture = CubeTexture.CreateFromImages(files, scene, noMipmap);
+    if (existing) {
+      existing.texture = texture;
+      existing.samplingKey = key;
+      existing.refCount += 1;
+      existing.lastUsed = ++this.clock;
+      return texture;
+    }
+    this.entries.set(assetGuid, {
+      assetGuid,
+      blobUrl: "",
+      bytes: 0,
+      refCount: 1,
+      lastUsed: ++this.clock,
+      samplingKey: key,
+      texture,
+    });
     return texture;
   }
 

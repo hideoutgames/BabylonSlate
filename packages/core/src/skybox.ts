@@ -21,6 +21,12 @@ export type SkyboxFaces = Record<SkyboxFaceKey, string | null>;
 
 export const DEFAULT_SKYBOX_SIZE = 1000;
 
+export function parseSkyboxSize(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_SKYBOX_SIZE;
+}
+
 export function emptySkyboxFaces(): SkyboxFaces {
   return { px: null, py: null, pz: null, nx: null, ny: null, nz: null };
 }

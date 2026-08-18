@@ -57,6 +57,7 @@ describe("scene-loader", () => {
     applySceneToBabylonScene(scene, createDefaultScene());
     expect(scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
     expect(scene.getMeshByName(editorMeshName("actor-camera"))).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-skybox"))).not.toBeNull();
     expect(countSceneMeshes(scene)).toBeGreaterThan(1);
   });
 

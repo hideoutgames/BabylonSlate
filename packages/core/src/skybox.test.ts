@@ -4,6 +4,7 @@ import {
   createSkyboxComponent,
   emptySkyboxFaces,
   parseSkyboxFaces,
+  parseSkyboxSize,
   patchComponentProperties,
   skyboxFaceGuids,
 } from "./skybox";
@@ -14,6 +15,9 @@ describe("SkyboxComponent helpers", () => {
     const component = createSkyboxComponent("sky-1");
     expect(component.classId).toBe("SkyboxComponent");
     expect(component.properties.size).toBe(1000);
+    expect(parseSkyboxSize(undefined)).toBe(1000);
+    expect(parseSkyboxSize(-4)).toBe(1000);
+    expect(parseSkyboxSize(250)).toBe(250);
     expect(component.properties.faces).toEqual(emptySkyboxFaces());
     expect(SKYBOX_FACE_KEYS).toEqual(["px", "py", "pz", "nx", "ny", "nz"]);
   });

@@ -119,4 +119,26 @@ describe("UserInterface command and control contracts", () => {
     expect(press.kind).toBe("pointerDown");
     expect(release.kind).toBe("pointerUp");
   });
+
+  it("assignMesh can carry a skybox payload", () => {
+    const command = {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "skybox",
+      skybox: {
+        size: 1000,
+        faces: {
+          px: "tex-right",
+          py: null,
+          pz: null,
+          nx: null,
+          ny: null,
+          nz: null,
+        },
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("assignMesh");
+    expect(command.skybox?.faces.px).toBe("tex-right");
+  });
 });
