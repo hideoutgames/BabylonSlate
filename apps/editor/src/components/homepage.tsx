@@ -280,7 +280,7 @@ export function Homepage({
                 variant="ghost"
                 disabled={busy}
                 data-testid="open-project"
-                className="flex h-auto min-h-[var(--touch-target,44px)] w-full flex-col items-stretch gap-0 rounded-xl p-0"
+                className="flex h-auto min-h-[var(--touch-target,44px)] w-full flex-col items-stretch gap-0 whitespace-normal rounded-xl p-0"
                 onClick={() => void run(onOpenExternal)}
               >
                 <TemplateCardWell>
@@ -290,7 +290,7 @@ export function Homepage({
                   <span className="font-heading text-base font-medium leading-snug">
                     Open Folder…
                   </span>
-                  <span className="text-sm font-normal text-muted-foreground">
+                  <span className="whitespace-normal text-sm font-normal text-muted-foreground">
                     Choose an existing project folder.
                   </span>
                 </span>
