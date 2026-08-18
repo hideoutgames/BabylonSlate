@@ -37,6 +37,7 @@ export function createAudioPreviewSession(options: {
   readChunk: (chunkId: string) => Promise<Uint8Array | null | undefined>;
   random?: () => number;
   onError?: (error: { code: string; message: string }) => void;
+  onEnded?: () => void;
 }): AudioPreviewSession {
   const cache = new Map<string, Uint8Array>();
   const random = options.random ?? Math.random;
@@ -44,8 +45,16 @@ export function createAudioPreviewSession(options: {
 
   const stop = () => {
     if (!voiceId) return;
-    options.backend.stop(voiceId);
+    const id = voiceId;
     voiceId = null;
+    options.backend.stop(id);
+  };
+
+  options.backend.onVoiceEnded = (id) => {
+    if (voiceId !== id) return;
+    voiceId = null;
+    options.backend.stop(id);
+    options.onEnded?.();
   };
 
   return {
@@ -76,7 +85,7 @@ export function createAudioPreviewSession(options: {
         assetGuid: "preview",
         source: bytes,
         gain: audio.volume,
-        loop: false,
+        loop: audio.loop,
         spatial: null,
         reverbSend: false,
         clipChunkId: clip.chunkId,

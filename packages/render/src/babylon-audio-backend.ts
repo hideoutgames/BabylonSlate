@@ -60,6 +60,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private readonly muffleSends = new Map<string, GainNode>();
   private muffleFilter: BiquadFilterNode | null = null;
   private unlocked = false;
+  onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   isUnlocked(): boolean {
     return this.unlocked;
@@ -129,6 +130,9 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       engine,
     );
     this.voices.set(request.voiceId, sound);
+    sound.onEndedObservable.addOnce(() => {
+      this.onVoiceEnded?.(request.voiceId);
+    });
     sound.play();
   }
 
