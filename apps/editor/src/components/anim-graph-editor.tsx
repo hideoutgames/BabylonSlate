@@ -8,10 +8,13 @@ import {
   createDefaultAnimGraph,
   defaultAnimStatePosition,
   defaultAnimVariableValue,
+  findReverseTransition,
   hydrateAnimGraphForEditor,
+  normalizeAnimConnection,
   parseAnimGraphDocument,
   resolveAnimGraphClips,
   serializedToAnimGraph,
+  setTransitionBidirectional,
   validateAnimGraph,
   type AnimClipKind,
   type AnimClipRef,
@@ -549,11 +552,19 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}
           edgeTypes={animGraphEdgeTypes}
-          defaultEdgeOptions={{ type: "animTransition" }}
+          defaultEdgeOptions={{
+            type: "animTransition",
+          }}
           diagnostics={graphDiagnostics}
           selectedNodeId={selectedId ?? undefined}
           focusedNodeId={focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
           connectEndMode="disabled"
+          connectionMode="loose"
+          normalizeConnection={(connection) => {
+            const next = normalizeAnimConnection(connection);
+            if (!next) return null;
+            return { ...connection, ...next };
+          }}
           onSelectionChange={(nodeIds) => {
             queueMicrotask(() => setSelectedId(nodeIds[0] ?? null));
           }}
@@ -584,10 +595,15 @@ function transitionPropertyRows(
   doc: AnimGraphDocument,
   transition: AnimTransition,
   commit: (next: AnimGraphDocument) => void,
-): { rows: PropertyRow[]; openRuleId: string } {
+): { rows: PropertyRow[]; openRuleId: string; reverseRuleId: string | null } {
   const target =
     doc.states.find((state) => state.id === transition.toStateId)?.name ??
     transition.toStateId;
+  const reverse = findReverseTransition(
+    doc.transitions,
+    transition.fromStateId,
+    transition.toStateId,
+  );
   return {
     rows: [
       {
@@ -607,8 +623,23 @@ function transitionPropertyRows(
         onChange: (priority) =>
           commit(patchTransition(doc, transition.id, { priority })),
       },
+      {
+        id: `${transition.id}-direction`,
+        kind: "enum",
+        label: "Direction",
+        value: reverse ? "bothWays" : "oneWay",
+        options: [
+          { value: "oneWay", label: "One Way" },
+          { value: "bothWays", label: "Both Ways" },
+        ],
+        onChange: (value) =>
+          commit(
+            setTransitionBidirectional(doc, transition.id, value === "bothWays"),
+          ),
+      },
     ],
     openRuleId: transition.id,
+    reverseRuleId: reverse?.id ?? null,
   };
 }
 
@@ -758,15 +789,28 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           {transitionBlocks.map((block) => (
             <div key={block.openRuleId} className="flex flex-col gap-2 px-3 pb-3">
               <PropertyGrid rows={block.rows} />
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--touch-target,44px)] w-fit"
-                data-testid={`anim-graph-open-rule-${block.openRuleId}`}
-                onClick={() => openTransitionRule(block.openRuleId)}
-              >
-                Open Rule
-              </Button>
+              <div className="flex flex-wrap gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid={`anim-graph-open-rule-${block.openRuleId}`}
+                  onClick={() => openTransitionRule(block.openRuleId)}
+                >
+                  Open Rule
+                </Button>
+                {block.reverseRuleId ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid={`anim-graph-open-rule-${block.reverseRuleId}`}
+                    onClick={() => openTransitionRule(block.reverseRuleId!)}
+                  >
+                    Open Reverse Rule
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>

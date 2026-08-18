@@ -49,6 +49,9 @@ export interface AnimTransition {
   /** Lower numbers win when several transitions pass. */
   priority: number;
   ruleGraph: SerializedGraph;
+  /** Canvas handle ids (`right-out` / `left-in`). Legacy `out` / `in` migrate. */
+  sourceHandle?: string;
+  targetHandle?: string;
   /** Legacy named bool/trigger; kept after migration for evaluator fallback. */
   condition?: string;
   hasExitTime?: boolean;
@@ -879,6 +882,14 @@ export function parseAnimGraphDocument(
           hasExitTime,
           exitTime,
         ),
+        sourceHandle:
+          typeof transition.sourceHandle === "string"
+            ? transition.sourceHandle
+            : undefined,
+        targetHandle:
+          typeof transition.targetHandle === "string"
+            ? transition.targetHandle
+            : undefined,
         condition,
         hasExitTime,
         exitTime,

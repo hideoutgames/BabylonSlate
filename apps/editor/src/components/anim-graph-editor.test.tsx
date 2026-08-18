@@ -187,11 +187,13 @@ function locoGraph(): AnimGraphDocument {
 }
 
 describe("AnimGraphEditor", () => {
-  it("hydrates in/out pins on state nodes", async () => {
+  it("hydrates side handles on state nodes", async () => {
     const { container } = renderAnimGraph();
     await waitFor(() => {
-      expect(container.querySelector('[data-handleid="in"]')).not.toBeNull();
-      expect(container.querySelector('[data-handleid="out"]')).not.toBeNull();
+      expect(container.querySelector('[data-handleid="right-out"]')).not.toBeNull();
+      expect(container.querySelector('[data-handleid="left-in"]')).not.toBeNull();
+      expect(container.querySelector('[data-handleid="in"]')).toBeNull();
+      expect(container.querySelector('[data-handleid="out"]')).toBeNull();
     });
   });
 
@@ -286,6 +288,7 @@ describe("AnimGraphEditor", () => {
     expect(screen.queryByTestId("property-idle-to-run-condition")).toBeNull();
     expect(screen.getByTestId("property-idle-to-run-blendSeconds")).toBeTruthy();
     expect(screen.getByTestId("property-idle-to-run-priority")).toBeTruthy();
+    expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
     expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
   });
 

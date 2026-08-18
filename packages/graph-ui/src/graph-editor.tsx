@@ -175,6 +175,10 @@ export interface GraphEditorProps {
     sourceHandle: string;
     targetHandle: string;
   }) => boolean;
+  /** Rewrite handle ids before validation / connect (Animation Graph sides). */
+  normalizeConnection?: (connection: Connection) => Connection | null;
+  /** React Flow connection mode. Animation Graph uses Loose for side handles. */
+  connectionMode?: "strict" | "loose";
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
   contextMenuItemsForAttachment?: (
     nodeId: string,
@@ -375,6 +379,8 @@ function GraphEditorCanvas({
   emptyPaneDoubleTapAddsNode = true,
   replaceIncomingOnConnect = false,
   canConnect,
+  normalizeConnection,
+  connectionMode,
   contextMenuItemsForNode,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
@@ -678,45 +684,51 @@ function GraphEditorCanvas({
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (readOnly) return;
+      const next = normalizeConnection
+        ? normalizeConnection(connection)
+        : connection;
       if (
-        !connection.source ||
-        !connection.target ||
-        !connection.sourceHandle ||
-        !connection.targetHandle
+        !next?.source ||
+        !next.target ||
+        !next.sourceHandle ||
+        !next.targetHandle
       ) {
         return;
       }
       addEdge(
-        connection.source,
-        connection.sourceHandle,
-        connection.target,
-        connection.targetHandle,
+        next.source,
+        next.sourceHandle,
+        next.target,
+        next.targetHandle,
       );
       setPendingPin(null);
       pendingPinRef.current = null;
     },
-    [addEdge, readOnly],
+    [addEdge, normalizeConnection, readOnly],
   );
 
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
+      const next = normalizeConnection
+        ? normalizeConnection(connection)
+        : connection;
       if (
-        !connection.source ||
-        !connection.target ||
-        !connection.sourceHandle ||
-        !connection.targetHandle
+        !next?.source ||
+        !next.target ||
+        !next.sourceHandle ||
+        !next.targetHandle
       ) {
         return false;
       }
       const sourcePin = pinOnNode(
         graphStateRef.current.nodes,
-        connection.source,
-        connection.sourceHandle,
+        next.source,
+        next.sourceHandle,
       );
       const targetPin = pinOnNode(
         graphStateRef.current.nodes,
-        connection.target,
-        connection.targetHandle,
+        next.target,
+        next.targetHandle,
       );
       if (!sourcePin || !targetPin) return true;
       if (!pinsAreCompatible(sourcePin, targetPin, pinCompatibility)) {
@@ -724,13 +736,13 @@ function GraphEditorCanvas({
       }
       if (!canConnect) return true;
       return canConnect({
-        source: connection.source,
-        target: connection.target,
-        sourceHandle: connection.sourceHandle,
-        targetHandle: connection.targetHandle,
+        source: next.source,
+        target: next.target,
+        sourceHandle: next.sourceHandle,
+        targetHandle: next.targetHandle,
       });
     },
-    [canConnect, pinCompatibility],
+    [canConnect, normalizeConnection, pinCompatibility],
   );
 
   const handleConnectStart = useCallback(
@@ -1518,6 +1530,7 @@ function GraphEditorCanvas({
           connectionLineStyle={connectionLineStyle}
           connectionLineComponent={GraphConnectionLine}
           defaultEdgeOptions={defaultEdgeOptions}
+          connectionMode={connectionMode}
           fitView
           fitViewOptions={graphViewport.fitViewOptions}
           defaultViewport={graphViewport.defaultViewport}
