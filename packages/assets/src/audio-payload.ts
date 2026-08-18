@@ -18,6 +18,10 @@ export const AUDIO_SPEED_OF_SOUND = 343;
 export const AUDIO_PRE_UNLOCK_QUEUE_CAP = 32;
 export const AUDIO_DECODED_PCM_LRU_BYTES = 64 * 1024 * 1024;
 export const AUDIO_MAX_CONCURRENT_VOICES = 32;
+export const AUDIO_MAX_CLIPS = 8;
+export const AUDIO_PITCH_MIN = 0.25;
+export const AUDIO_PITCH_MAX = 4;
+export const AUDIO_DEFAULT_SOURCE_CHUNK = "source";
 
 export const AUDIO_ASSET_TYPES = [
   "Audio",
@@ -34,16 +38,27 @@ export type AudioDiagnostic = {
   guid?: string;
 };
 
+export type AudioClipPayload = {
+  chunkId: string;
+  name: string;
+  weight: number;
+};
+
 export type AudioPayload = {
   volume: number;
   audioChannelGuid: string | null;
   soundAttenuationGuid: string | null;
+  clips: AudioClipPayload[];
+  pitch: number;
+  pitchRandom: boolean;
+  pitchMin: number;
+  pitchMax: number;
+  loop: boolean;
 };
 
-export type AudioChannelEffect = {
-  kind: "environmentReverb";
-  enabled: boolean;
-};
+export type AudioChannelEffect =
+  | { kind: "environmentReverb"; enabled: boolean }
+  | { kind: "muffleThroughWalls"; enabled: boolean };
 
 export type AudioChannelPayload = {
   parentChannelGuid: string | null;
@@ -114,18 +129,69 @@ function nonNegative(value: unknown, fallback: number): number {
   return n < 0 ? 0 : n;
 }
 
+function clampPitch(value: unknown, fallback = 1): number {
+  const n =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  if (n < AUDIO_PITCH_MIN) return AUDIO_PITCH_MIN;
+  if (n > AUDIO_PITCH_MAX) return AUDIO_PITCH_MAX;
+  return n;
+}
+
+function defaultAudioClip(): AudioClipPayload {
+  return { chunkId: AUDIO_DEFAULT_SOURCE_CHUNK, name: "", weight: 1 };
+}
+
+function normalizeAudioClip(value: unknown): AudioClipPayload | null {
+  const source = asRecord(value);
+  const chunkId =
+    typeof source.chunkId === "string" ? source.chunkId.trim() : "";
+  if (!chunkId) return null;
+  const name = typeof source.name === "string" ? source.name : "";
+  const weightRaw =
+    typeof source.weight === "number" && Number.isFinite(source.weight)
+      ? source.weight
+      : 1;
+  return {
+    chunkId,
+    name,
+    weight: weightRaw < 0 ? 0 : weightRaw,
+  };
+}
+
+function normalizeAudioClips(value: unknown): AudioClipPayload[] {
+  const raw = Array.isArray(value)
+    ? value
+        .map(normalizeAudioClip)
+        .filter((clip): clip is AudioClipPayload => clip !== null)
+        .slice(0, AUDIO_MAX_CLIPS)
+    : [];
+  const clips = raw.length > 0 ? raw : [defaultAudioClip()];
+  const total = clips.reduce((sum, clip) => sum + clip.weight, 0);
+  if (total > 0) return clips;
+  return clips.map((clip) => ({ ...clip, weight: 1 }));
+}
+
 export function createDefaultAudioPayload(): AudioPayload {
   return {
     volume: 1,
     audioChannelGuid: null,
     soundAttenuationGuid: null,
+    clips: [defaultAudioClip()],
+    pitch: 1,
+    pitchRandom: false,
+    pitchMin: 1,
+    pitchMax: 1,
+    loop: false,
   };
 }
 
 export function createDefaultAudioChannelPayload(): AudioChannelPayload {
   return {
     parentChannelGuid: null,
-    effects: [{ kind: "environmentReverb", enabled: false }],
+    effects: [
+      { kind: "environmentReverb", enabled: false },
+      { kind: "muffleThroughWalls", enabled: false },
+    ],
   };
 }
 
@@ -147,17 +213,211 @@ export function createDefaultSoundAttenuationPayload(): SoundAttenuationPayload 
 
 export function normalizeAudioPayload(value: unknown): AudioPayload {
   const source = asRecord(value);
+  let pitchMin = clampPitch(source.pitchMin, 1);
+  let pitchMax = clampPitch(source.pitchMax, 1);
+  if (pitchMax < pitchMin) {
+    const swap = pitchMin;
+    pitchMin = pitchMax;
+    pitchMax = swap;
+  }
   return {
     volume: clampAudioGain(source.volume, 1),
     audioChannelGuid: nullableGuid(source.audioChannelGuid),
     soundAttenuationGuid: nullableGuid(source.soundAttenuationGuid),
+    clips: normalizeAudioClips(source.clips),
+    pitch: clampPitch(source.pitch, 1),
+    pitchRandom: source.pitchRandom === true,
+    pitchMin,
+    pitchMax,
+    loop: source.loop === true,
   };
+}
+
+export function pickWeightedAudioClip(
+  clips: readonly AudioClipPayload[],
+  random: () => number = Math.random,
+): AudioClipPayload {
+  const list = clips.length > 0 ? clips : [defaultAudioClip()];
+  const total = list.reduce((sum, clip) => sum + Math.max(0, clip.weight), 0);
+  if (total <= 0) return list[0]!;
+  const sample = Math.min(0.999999, Math.max(0, random())) * total;
+  let cursor = 0;
+  for (const clip of list) {
+    cursor += Math.max(0, clip.weight);
+    if (sample < cursor) return clip;
+  }
+  return list[list.length - 1]!;
+}
+
+export function resolveAudioPitch(
+  payload: Pick<AudioPayload, "pitch" | "pitchRandom" | "pitchMin" | "pitchMax">,
+  random: () => number = Math.random,
+): number {
+  if (!payload.pitchRandom) return clampPitch(payload.pitch, 1);
+  const min = clampPitch(payload.pitchMin, 1);
+  const max = clampPitch(payload.pitchMax, 1);
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  const t = Math.min(1, Math.max(0, random()));
+  return lo + (hi - lo) * t;
+}
+
+export function audioClipCacheKey(assetGuid: string, chunkId: string): string {
+  return `${assetGuid}:${chunkId}`;
+}
+
+export async function collectAudioClipSourceBytes(options: {
+  assetGuid: string;
+  payload: unknown;
+  readChunk: (chunkId: string) => Promise<Uint8Array | null | undefined>;
+}): Promise<Map<string, Uint8Array>> {
+  const audio = normalizeAudioPayload(options.payload);
+  const out = new Map<string, Uint8Array>();
+  for (const clip of audio.clips) {
+    const bytes = await options.readChunk(clip.chunkId);
+    if (!bytes || bytes.byteLength === 0) continue;
+    out.set(audioClipCacheKey(options.assetGuid, clip.chunkId), bytes);
+    if (clip.chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+      out.set(options.assetGuid, bytes);
+    }
+  }
+  return out;
+}
+
+export function mapPackedAudioClipBytes(
+  assetGuid: string,
+  packed: { payload: AudioPayload; source: Uint8Array; sources: Uint8Array[] },
+): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  const sources =
+    packed.sources.length > 0 ? packed.sources : [packed.source];
+  const first = sources[0] ?? packed.source;
+  if (first.byteLength > 0) out.set(assetGuid, first);
+  packed.payload.clips.forEach((clip, index) => {
+    const bytes = sources[index];
+    if (!bytes || bytes.byteLength === 0) return;
+    out.set(audioClipCacheKey(assetGuid, clip.chunkId), bytes);
+  });
+  return out;
+}
+
+export async function collectPackedAudioClipBlobs(options: {
+  payload: unknown;
+  readChunk: (chunkId: string) => Promise<Uint8Array | null | undefined>;
+}): Promise<Uint8Array[] | null> {
+  const audio = normalizeAudioPayload(options.payload);
+  const blobs: Uint8Array[] = [];
+  for (const clip of audio.clips) {
+    const bytes = await options.readChunk(clip.chunkId);
+    blobs.push(bytes && bytes.byteLength > 0 ? bytes : new Uint8Array());
+  }
+  if (blobs.every((blob) => blob.byteLength === 0)) return null;
+  return blobs;
+}
+
+export function allocateAudioClipChunkId(
+  existingChunkIds: readonly string[],
+): string | null {
+  const used = new Set(existingChunkIds);
+  if (!used.has(AUDIO_DEFAULT_SOURCE_CHUNK)) return AUDIO_DEFAULT_SOURCE_CHUNK;
+  const clipCount = [...used].filter(
+    (id) =>
+      id === AUDIO_DEFAULT_SOURCE_CHUNK ||
+      id.startsWith(`${AUDIO_DEFAULT_SOURCE_CHUNK}:`),
+  ).length;
+  if (clipCount >= AUDIO_MAX_CLIPS) return null;
+  for (let n = 2; n <= AUDIO_MAX_CLIPS + 8; n += 1) {
+    const id = `${AUDIO_DEFAULT_SOURCE_CHUNK}:${n}`;
+    if (!used.has(id)) return id;
+  }
+  return null;
+}
+
+type AudioExtraChunkLike = {
+  id: string;
+  kind?: string;
+  mime?: string;
+  data?: Uint8Array;
+};
+
+function keepAudioExtraChunks(
+  extra: Iterable<AudioExtraChunkLike>,
+  skipId?: string,
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  const next: Array<{ id: string; kind: string; mime: string; data: Uint8Array }> =
+    [];
+  for (const chunk of extra) {
+    if (!chunk.data || chunk.id === skipId) continue;
+    next.push({
+      id: chunk.id,
+      kind: chunk.kind ?? "audio",
+      mime: chunk.mime ?? "application/octet-stream",
+      data: chunk.data,
+    });
+  }
+  return next;
+}
+
+export function extraChunksWithAudioClip(
+  extra: Iterable<AudioExtraChunkLike>,
+  clip: { id: string; bytes: Uint8Array; mime: string },
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  const next = keepAudioExtraChunks(extra, clip.id);
+  next.push({
+    id: clip.id,
+    kind: "audio",
+    mime: clip.mime,
+    data: clip.bytes,
+  });
+  return next;
+}
+
+export function extraChunksWithoutAudioClip(
+  extra: Iterable<AudioExtraChunkLike>,
+  chunkId: string,
+): Array<{ id: string; kind: string; mime: string; data: Uint8Array }> {
+  if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+    return keepAudioExtraChunks(extra);
+  }
+  return keepAudioExtraChunks(extra, chunkId);
 }
 
 function normalizeChannelEffect(value: unknown): AudioChannelEffect | null {
   const source = asRecord(value);
-  if (source.kind !== "environmentReverb") return null;
-  return { kind: "environmentReverb", enabled: source.enabled === true };
+  if (source.kind === "environmentReverb" || source.kind === "muffleThroughWalls") {
+    return { kind: source.kind, enabled: source.enabled === true };
+  }
+  return null;
+}
+
+const DEFAULT_CHANNEL_EFFECTS: AudioChannelEffect[] = [
+  { kind: "environmentReverb", enabled: false },
+  { kind: "muffleThroughWalls", enabled: false },
+];
+
+function ensureChannelEffects(effects: AudioChannelEffect[]): AudioChannelEffect[] {
+  const seen = new Set<AudioChannelEffect["kind"]>();
+  const next: AudioChannelEffect[] = [];
+  for (const effect of effects) {
+    if (seen.has(effect.kind)) continue;
+    seen.add(effect.kind);
+    next.push(effect);
+  }
+  for (const fallback of DEFAULT_CHANNEL_EFFECTS) {
+    if (!seen.has(fallback.kind)) next.push(fallback);
+  }
+  return next;
+}
+
+export function setAudioChannelEffect(
+  payload: AudioChannelPayload,
+  kind: AudioChannelEffect["kind"],
+  enabled: boolean,
+): AudioChannelPayload {
+  const effects = ensureChannelEffects(payload.effects).map((effect) =>
+    effect.kind === kind ? { kind, enabled } : effect,
+  );
+  return { ...payload, effects };
 }
 
 export function normalizeAudioChannelPayload(value: unknown): AudioChannelPayload {
@@ -166,13 +426,12 @@ export function normalizeAudioChannelPayload(value: unknown): AudioChannelPayloa
     ? source.effects
         .map(normalizeChannelEffect)
         .filter((entry): entry is AudioChannelEffect => entry !== null)
-    : createDefaultAudioChannelPayload().effects;
+    : DEFAULT_CHANNEL_EFFECTS;
   return {
     parentChannelGuid: nullableGuid(source.parentChannelGuid),
-    effects:
-      effects.length > 0
-        ? effects
-        : [{ kind: "environmentReverb", enabled: false }],
+    effects: ensureChannelEffects(
+      effects.length > 0 ? effects : DEFAULT_CHANNEL_EFFECTS,
+    ),
   };
 }
 
@@ -246,12 +505,13 @@ export function normalizeSoundAttenuationPayload(
 }
 
 export function resolveAudioReferences(
-  payload: AudioPayload,
+  payload: AudioPayload | unknown,
   knownGuids: ReadonlySet<string>,
 ): { payload: AudioPayload; diagnostics: AudioDiagnostic[] } {
+  const audio = normalizeAudioPayload(payload);
   const diagnostics: AudioDiagnostic[] = [];
-  let audioChannelGuid = payload.audioChannelGuid;
-  let soundAttenuationGuid = payload.soundAttenuationGuid;
+  let audioChannelGuid = audio.audioChannelGuid;
+  let soundAttenuationGuid = audio.soundAttenuationGuid;
   if (audioChannelGuid && !knownGuids.has(audioChannelGuid)) {
     diagnostics.push({
       code: "audio.missing_channel",
@@ -269,7 +529,7 @@ export function resolveAudioReferences(
     soundAttenuationGuid = null;
   }
   return {
-    payload: { ...payload, audioChannelGuid, soundAttenuationGuid },
+    payload: { ...audio, audioChannelGuid, soundAttenuationGuid },
     diagnostics,
   };
 }
@@ -342,7 +602,7 @@ export function validateAudioChannelGraph(
 }
 
 export function sanitizeAudioLibrary(input: {
-  audio: ReadonlyMap<string, AudioPayload>;
+  audio: ReadonlyMap<string, AudioPayload | unknown>;
   channels: ReadonlyMap<string, AudioChannelPayload>;
   attenuations: ReadonlyMap<string, SoundAttenuationPayload>;
 }): {
@@ -411,19 +671,22 @@ export type AudioPlaybackResolution = {
   gain: number;
   channelGuids: string[];
   environmentReverb: boolean;
+  muffleThroughWalls: boolean;
 };
 
 export function resolveAudioPlayback(options: {
-  audio: AudioPayload;
+  audio: AudioPayload | unknown;
   playCallVolume: number;
   mixer: AudioMixerPayload | null;
   channels: ReadonlyMap<string, AudioChannelPayload>;
   sessionChannelVolumes?: ReadonlyMap<string, number>;
   sessionGlobalVolume?: number | null;
 }): AudioPlaybackResolution {
+  const audio = normalizeAudioPayload(options.audio);
   const channelGuids: string[] = [];
   let environmentReverb = false;
-  const start = options.audio.audioChannelGuid;
+  let muffleThroughWalls = false;
+  const start = audio.audioChannelGuid;
   if (start) {
     const seen = new Set<string>();
     let current: string | null = start;
@@ -437,6 +700,13 @@ export function resolveAudioPlayback(options: {
         )
       ) {
         environmentReverb = true;
+      }
+      if (
+        channel?.effects.some(
+          (effect) => effect.kind === "muffleThroughWalls" && effect.enabled,
+        )
+      ) {
+        muffleThroughWalls = true;
       }
       current = channel?.parentChannelGuid ?? null;
     }
@@ -463,13 +733,14 @@ export function resolveAudioPlayback(options: {
         : mixer.globalVolume;
   return {
     gain: computeAudioOutputGain({
-      assetVolume: options.audio.volume,
+      assetVolume: audio.volume,
       playCallVolume: options.playCallVolume,
       channelGains: mixer ? channelGains : undefined,
       globalGain,
     }),
     channelGuids,
     environmentReverb,
+    muffleThroughWalls,
   };
 }
 
@@ -599,22 +870,53 @@ const decoder = new TextDecoder();
 
 /** Pack Audio JSON payload with source bytes so export can ship both. */
 export function encodePackedAudioAsset(
-  payload: AudioPayload,
-  source: Uint8Array,
+  payload: AudioPayload | Record<string, unknown>,
+  source: Uint8Array | readonly Uint8Array[],
 ): Uint8Array {
   const json = encoder.encode(JSON.stringify(normalizeAudioPayload(payload)));
-  return concatBytes([
+  const blobs = Array.isArray(source) ? source : [source];
+  if (blobs.length <= 1) {
+    return concatBytes([
+      PACKED_AUDIO_MAGIC,
+      writeU32LE(json.byteLength),
+      json,
+      blobs[0] ?? new Uint8Array(),
+    ]);
+  }
+  const parts: Uint8Array[] = [
     PACKED_AUDIO_MAGIC,
     writeU32LE(json.byteLength),
     json,
-    source,
-  ]);
+    writeU32LE(blobs.length),
+  ];
+  for (const blob of blobs) {
+    parts.push(writeU32LE(blob.byteLength), blob);
+  }
+  return concatBytes(parts);
+}
+
+function decodePackedClipTable(rest: Uint8Array): Uint8Array[] | null {
+  if (rest.byteLength < 4) return null;
+  const count = readU32LE(rest, 0);
+  if (count < 2 || count > AUDIO_MAX_CLIPS) return null;
+  let offset = 4;
+  const clips: Uint8Array[] = [];
+  for (let i = 0; i < count; i++) {
+    if (offset + 4 > rest.byteLength) return null;
+    const len = readU32LE(rest, offset);
+    offset += 4;
+    if (len < 0 || offset + len > rest.byteLength) return null;
+    clips.push(rest.subarray(offset, offset + len));
+    offset += len;
+  }
+  if (offset !== rest.byteLength) return null;
+  return clips;
 }
 
 /** Unwrap a packed Audio envelope; raw WAV/MP3/OGG returns null. */
 export function decodePackedAudioAsset(
   bytes: Uint8Array,
-): { payload: AudioPayload; source: Uint8Array } | null {
+): { payload: AudioPayload; source: Uint8Array; sources: Uint8Array[] } | null {
   if (bytes.byteLength < 8) return null;
   for (let i = 0; i < PACKED_AUDIO_MAGIC.length; i++) {
     if (bytes[i] !== PACKED_AUDIO_MAGIC[i]) return null;
@@ -625,9 +927,14 @@ export function decodePackedAudioAsset(
   if (jsonLen < 0 || jsonEnd > bytes.byteLength) return null;
   try {
     const parsed = JSON.parse(decoder.decode(bytes.subarray(jsonStart, jsonEnd)));
+    const rest = bytes.subarray(jsonEnd);
+    const table = decodePackedClipTable(rest);
+    const sources = table ?? [rest];
+    const source = sources[0] ?? new Uint8Array();
     return {
       payload: normalizeAudioPayload(parsed),
-      source: bytes.subarray(jsonEnd),
+      source,
+      sources,
     };
   } catch {
     return null;

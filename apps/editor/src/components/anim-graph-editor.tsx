@@ -565,6 +565,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           focusedNodeId={focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined}
           connectEndMode="zone-add-node"
           connectionMode="loose"
+          uniqueDirectedPairOnConnect
           normalizeConnection={(connection) => {
             const next = normalizeAnimConnection(connection);
             if (!next) return null;

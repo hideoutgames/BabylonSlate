@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SettingsModal } from "./settings-modal";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -140,6 +140,7 @@ afterEach(() => {
   setShowPluginContent.mockClear();
   sourceControl.saveToken.mockClear();
   sourceControl.clearToken.mockClear();
+  sourceControl.clearToken.mockImplementation(async () => undefined);
   sourceControl.hasToken = false;
   host.platform = "electron";
   host.testMode = true;
@@ -210,6 +211,51 @@ describe("SettingsModal project authoring", () => {
     expect(updateProjectSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         audio: expect.objectContaining({ audioMixerGuid: "mixer-1" }),
+      }),
+    );
+  });
+
+  it("toggles project Audio occlusion", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
+    fireEvent.click(screen.getByTestId("settings-audio-occlusion"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ occlusionEnabled: false }),
+      }),
+    );
+  });
+
+  it("edits Audio reverb wet, decay, and damping scales", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
+    expect(screen.getByTestId("settings-audio-reverb-wet-scale-slider")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("settings-audio-reverb-wet-scale"), {
+      target: { value: "1.5" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ reverbWetScale: 1.5 }),
+      }),
+    );
+    fireEvent.change(screen.getByTestId("settings-audio-reverb-decay-scale"), {
+      target: { value: "0.25" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ reverbDecayScale: 0.25 }),
+      }),
+    );
+    fireEvent.change(screen.getByTestId("settings-audio-reverb-damping-scale"), {
+      target: { value: "2" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ reverbDampingScale: 2 }),
       }),
     );
   });
@@ -369,14 +415,31 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
-  it("shows Title Case token status without revealing the secret", () => {
+  it("explains where to create a GitHub token", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    const help = screen.getByTestId("settings-source-control-token-help");
+    expect(help.textContent).toMatch(/GitHub/);
+    expect(help.textContent).toMatch(/repo/);
+    expect(help.textContent).toMatch(/Contents/);
+    const link = screen.getByRole("link", { name: "GitHub Token Settings" });
+    expect(link.getAttribute("href")).toBe("https://github.com/settings/tokens");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toMatch(/noreferrer/);
+  });
+
+  it("notes that Save Token stores the secret for this project on this device", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
     const copy = screen.getByTestId("settings-source-control-token-copy");
-    expect(copy.textContent).toMatch(/Not written to the project/i);
-    expect(copy.textContent).toMatch(/This browser only/i);
+    expect(copy.textContent).toMatch(/this project on this device/i);
+    expect(copy.textContent).toMatch(/not written into project files/i);
+    expect(copy.textContent).toMatch(/Clear Token/);
+    expect(copy.textContent).not.toMatch(/This browser only/i);
     expect(copy.textContent).not.toMatch(/Not Saved/);
     expect(screen.queryByText("Not Saved")).toBeNull();
     sourceControl.hasToken = true;
@@ -385,8 +448,38 @@ describe("SettingsModal project authoring", () => {
       <SettingsModal open onOpenChange={() => {}} scope="project" />,
     );
     fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
-    expect(screen.getByText(/Token Saved/)).toBeTruthy();
+    expect(screen.getByTestId("settings-source-control-token-copy").textContent).toMatch(
+      /Token Saved/,
+    );
     sourceControl.hasToken = false;
+  });
+
+  it("clears the stored token and the draft field", async () => {
+    sourceControl.hasToken = true;
+    sourceControl.clearToken.mockImplementation(async () => {
+      sourceControl.hasToken = false;
+    });
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-sourceControl"));
+    fireEvent.change(screen.getByTestId("settings-source-control-token"), {
+      target: { value: "ghp_secret" },
+    });
+    expect(screen.getByTestId("settings-source-control-token-copy").textContent).toMatch(
+      /Token Saved/,
+    );
+    fireEvent.click(screen.getByTestId("settings-source-control-clear-token"));
+    expect(sourceControl.clearToken).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId("settings-source-control-token") as HTMLInputElement)
+          .value,
+      ).toBe("");
+    });
+    expect(screen.getByTestId("settings-source-control-token-copy").textContent).not.toMatch(
+      /Token Saved/,
+    );
   });
 
   it("labels the Session category Done instead of Close", () => {

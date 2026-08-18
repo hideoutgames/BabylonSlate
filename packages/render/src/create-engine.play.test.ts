@@ -778,4 +778,54 @@ describe("Play createEngine view", () => {
     handle.loadScene(createDefaultScene());
     expect(handle.isFreeCamEnabled()).toBe(false);
   });
+
+  it("syncs the Fake audio listener to the possessed camera world pose", async () => {
+    const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
+    const backend = new FakeAudioPlaybackBackend();
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      audioBackend: backend,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    const buf = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(buf, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId: 1,
+      position: { x: 10, y: 4, z: -6 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    handle.pushSnapshot(buf);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    const fallback = handle.scene.getCameraByName("camera");
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
+    expect(backend.listener.x).toBeCloseTo(10, 5);
+    expect(backend.listener.y).toBeCloseTo(4, 5);
+    expect(backend.listener.z).toBeCloseTo(-6, 5);
+    expect(fallback?.globalPosition.x ?? 0).not.toBeCloseTo(10, 0);
+    handle.dispose();
+  });
 });

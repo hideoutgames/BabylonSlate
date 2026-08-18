@@ -107,7 +107,7 @@ import {
   collectImageGuidsFromUiDocuments,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
-import { playUserInterfaceRuntimeDocuments } from "../lib/play-content";
+import { playUserInterfaceRuntimeDocuments, interfaceMaterialGuidsFromUiDocuments } from "../lib/play-content";
 import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
@@ -721,11 +721,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlaySceneLibrary([]);
         }
+        let uiLibrary: Record<string, UserInterfaceDocument> = {};
         try {
-          const library = await collectPlayUiLibrary();
-          setPlayUiLibrary(library);
+          uiLibrary = await collectPlayUiLibrary();
+          setPlayUiLibrary(uiLibrary);
           const urls = await collectUiImageUrls(
-            collectImageGuidsFromUiDocuments(Object.values(library)),
+            collectImageGuidsFromUiDocuments(Object.values(uiLibrary)),
             (assetRegistry?.list() ?? []).map((asset) => ({
               guid: asset.header.guid,
               path: asset.path,
@@ -741,6 +742,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           appendLog(
             `UserInterface library failed: ${error instanceof Error ? error.message : String(error)}`,
           );
+          uiLibrary = {};
           setPlayUiLibrary({});
           revokeUiImageUrls(playImageUrlsRef.current);
           playImageUrlsRef.current = new Map();
@@ -836,7 +838,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           const materials = await collectPlayMaterialLibrary(
             resolvedScene?.scene,
             playLibrary.map((entry) => entry.scene),
-            particleMaterialGuidsFromLibrary(particles),
+            [
+              ...interfaceMaterialGuidsFromUiDocuments(Object.values(uiLibrary)),
+              ...particleMaterialGuidsFromLibrary(particles),
+            ],
           );
           setPlayMaterialDocuments(materials.documents);
           setPlayMaterialFunctions(materials.functions);
@@ -1182,6 +1187,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             pauseOnPlay={pauseOnPlay}
             navmeshBytes={playNavmeshBytes}
             audioReverbBytes={playAudioReverbBytes}
+            audioProjectSettings={projectDocument?.settings.audio}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

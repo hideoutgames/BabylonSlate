@@ -25,6 +25,11 @@ const docs = vi.hoisted(() => ({
     rootId: "canvas",
     widgets: { canvas: { id: "canvas", kind: "Canvas", children: [] } },
   })),
+  collectPlayMaterialLibrary: vi.fn(async () => ({
+    documents: new Map(),
+    functions: new Map(),
+    textureGuids: [],
+  })),
 }));
 
 vi.mock("@babylonslate/render", async (importOriginal) => {
@@ -108,9 +113,11 @@ describe("EditorUtilityPanel", () => {
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
       interactive?: boolean;
       resolveImageUrl?: (guid: string) => string | null;
+      resolveInterfaceMaterial?: (guid: string) => unknown;
     };
     expect(options.interactive).toBe(true);
     expect(typeof options.resolveImageUrl).toBe("function");
+    expect(typeof options.resolveInterfaceMaterial).toBe("function");
     await waitFor(() => expect(beginPlay).toHaveBeenCalled());
     expect(tick).not.toHaveBeenCalled();
   });

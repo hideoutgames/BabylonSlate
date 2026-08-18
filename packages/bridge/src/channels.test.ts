@@ -119,6 +119,15 @@ describe("UserInterface command and control contracts", () => {
     expect(press.kind).toBe("pointerDown");
     expect(release.kind).toBe("pointerUp");
   });
+
+  it("setInputMode is a session-scoped Play command", () => {
+    const command = {
+      type: "setInputMode",
+      mode: "Interface",
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setInputMode");
+    expect(command.mode).toBe("Interface");
+  });
 });
 
 describe("Play inspect contract", () => {
@@ -137,6 +146,7 @@ describe("Play inspect contract", () => {
             classId: "Actor",
             parentId: null,
             variables: { health: 10 },
+            variableTypes: { health: "float" },
           },
         ],
       },

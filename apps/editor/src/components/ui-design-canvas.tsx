@@ -63,8 +63,10 @@ import {
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 import { UiImageIssueAlert } from "./ui-image-issue";
 import type { UiImageIssue } from "../lib/play-ui-images";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 
 const defaultResolveImageUrl = (): string | null => null;
+const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
 
 export function UiDesignCanvas({
   ui,
@@ -77,6 +79,8 @@ export function UiDesignCanvas({
   sharedEngine,
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
+  resolveInterfaceMaterial = defaultResolveInterfaceMaterial,
+  materialFunctions,
   imageIssues = [],
   bitmapScale,
   onSelect,
@@ -101,6 +105,8 @@ export function UiDesignCanvas({
   sharedEngine: Engine | null;
   fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
+  resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  materialFunctions?: () => Record<string, MaterialFunctionDocument>;
   imageIssues?: readonly UiImageIssue[];
   onSelect: (id: string) => void;
   onViewChange: (view: DesignView) => void;
@@ -151,6 +157,18 @@ export function UiDesignCanvas({
     (guid: string) => resolveImageUrlRef.current(guid),
     [],
   );
+  const resolveInterfaceMaterialRef = useRef(resolveInterfaceMaterial);
+  resolveInterfaceMaterialRef.current = resolveInterfaceMaterial;
+  const boundResolveInterfaceMaterial = useCallback(
+    (guid: string) => resolveInterfaceMaterialRef.current(guid),
+    [],
+  );
+  const materialFunctionsRef = useRef(materialFunctions);
+  materialFunctionsRef.current = materialFunctions;
+  const boundMaterialFunctions = useCallback(
+    () => materialFunctionsRef.current?.() ?? {},
+    [],
+  );
   latestUiRef.current = ui;
   viewRef.current = view;
   const viewScale = previewScale * view.zoom * bitmapScale;
@@ -197,6 +215,8 @@ export function UiDesignCanvas({
         gizmoCanvas: gizmoCanvas ?? undefined,
         safeArea: viewport.safeArea,
         resolveImageUrl: boundResolveImageUrl,
+        resolveInterfaceMaterial: boundResolveInterfaceMaterial,
+        materialFunctions: boundMaterialFunctions,
       });
     } catch (error) {
       const message =

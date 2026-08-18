@@ -47,6 +47,7 @@ import {
   materialHeaderMeta,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
+  isInterfaceMaterialForPicker,
   isParticleMaterialAsset,
   isParticleMaterialForPicker,
   classIdFromClassAsset,
@@ -1184,7 +1185,10 @@ describe("content-browser-helpers", () => {
     expect(channel.type).toBe("AudioChannel");
     expect(channel.payload).toMatchObject({
       parentChannelGuid: null,
-      effects: [{ kind: "environmentReverb", enabled: false }],
+      effects: [
+        { kind: "environmentReverb", enabled: false },
+        { kind: "muffleThroughWalls", enabled: false },
+      ],
     });
     const atten = buildNewAssetResult({
       type: "SoundAttenuation",
@@ -1696,6 +1700,9 @@ describe("content-browser-helpers", () => {
     expect(materialHeaderMeta("Material", { domain: "postProcess" })).toEqual({
       domain: "postProcess",
     });
+    expect(materialHeaderMeta("Material", { domain: "interface" })).toEqual({
+      domain: "interface",
+    });
     expect(materialHeaderMeta("Material", { domain: "particle" })).toEqual({
       domain: "particle",
     });
@@ -1736,6 +1743,43 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
+  });
+
+  it("recognizes Interface materials for the HUD Material picker", () => {
+    const glow = asset({
+      type: "Material",
+      path: "assets/Glow.material.babasset",
+      guid: "mat-glow",
+      name: "Glow",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isInterfaceMaterialForPicker(glow, [
+        {
+          ref: { kind: "material", path: "assets/Glow.material.babasset" },
+          content: { domain: "interface" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isInterfaceMaterialForPicker(glow, [])).toBe(false);
+    expect(
+      isInterfaceMaterialForPicker(
+        asset({
+          type: "Material",
+          payload: { domain: "interface" },
+        }),
+        [],
+      ),
+    ).toBe(true);
+    expect(
+      isInterfaceMaterialForPicker(
+        asset({
+          type: "Material",
+          payload: { domain: "postProcess" },
+        }),
+        [],
+      ),
+    ).toBe(false);
   });
 
   it("recognizes particle-domain Materials from header payload", () => {

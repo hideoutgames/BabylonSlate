@@ -31,6 +31,7 @@ import {
   eulerDegreesToQuaternion,
   isUserInterfaceClassId,
   normalizeUserInterfaceClassRef,
+  parseInputMode,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
   widgetClassIdForKind,
@@ -672,6 +673,12 @@ class InProcessRuntime implements RuntimeDriver {
           type: "setRenderResolution",
           width: nextWidth,
           height: nextHeight,
+        });
+      },
+      setInputMode: (mode) => {
+        this.emit({
+          type: "setInputMode",
+          mode: parseInputMode(mode),
         });
       },
       possessCamera: (target) => {

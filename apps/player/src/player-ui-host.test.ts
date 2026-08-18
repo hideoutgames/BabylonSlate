@@ -72,6 +72,17 @@ describe("createPlayerUiHost", () => {
     expect(host.resolveImageUrl("tex-logo")).toBeNull();
   });
 
+  it("stacks later Apply instances after earlier ones so they paint and pick on top", () => {
+    const host = createTestHost();
+    host.apply("ui-1", "hud-1");
+    host.apply("ui-2", "hud-1");
+    const ids = host.recording.controls.map((control) => control.id);
+    expect(ids.indexOf("ui-1:canvas")).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf("ui-2:canvas")).toBeGreaterThan(ids.indexOf("ui-1:canvas"));
+    expect(ids.indexOf("ui-2:play-btn")).toBeGreaterThan(ids.indexOf("ui-1:play-btn"));
+    expect(host.instances().map((row) => row.instanceId)).toEqual(["ui-1", "ui-2"]);
+  });
+
   it("keeps two instances independent and honors instance-scoped visibility", () => {
     const host = createTestHost();
     host.apply("ui-1", "hud-1");
@@ -168,6 +179,7 @@ describe("createPlayerUiHost", () => {
     const attachGui = vi.fn(() => ({
       adt: { markAsDirty },
       host: new RecordingUiHost(),
+      setAllowGuiHits: vi.fn(),
       dispose: vi.fn(),
     }));
     const host = createPlayerUiHost({
@@ -191,6 +203,28 @@ describe("createPlayerUiHost", () => {
     expect(firstCall?.[1]).toMatchObject({
       interactive: true,
       designResolution: hudDocument().designResolution,
+    });
+  });
+
+  it("passes Interface material resolvers into the fullscreen GUI host", () => {
+    const resolveInterfaceMaterial = vi.fn(() => null);
+    const attachGui = vi.fn(() => ({
+      adt: { markAsDirty: vi.fn() },
+      host: new RecordingUiHost(),
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    }));
+    const host = createPlayerUiHost({
+      library: new Map([["hud-1", hudDocument()]]),
+      scene: {} as never,
+      attachGui: attachGui as never,
+      resolveInterfaceMaterial,
+      viewport: { width: 800, height: 600 },
+    });
+    host.apply("ui-1", "hud-1");
+    const firstCall = attachGui.mock.calls[0] as unknown[] | undefined;
+    expect(firstCall?.[1]).toMatchObject({
+      resolveInterfaceMaterial,
     });
   });
 });
@@ -218,6 +252,16 @@ describe("applyPlayerUiCommand", () => {
     ).toBe(false);
     applyPlayerUiCommand(host, { type: "uiRemove", instanceId: "ui-1" });
     expect(host.instances()).toEqual([]);
+  });
+
+  it("routes setInputMode onto the HUD host", () => {
+    const host = createTestHost();
+    expect(
+      applyPlayerUiCommand(host, {
+        type: "setInputMode",
+        mode: "Game",
+      } satisfies CommandMessage),
+    ).toBe(true);
   });
 
   it("ignores scene and render commands", () => {

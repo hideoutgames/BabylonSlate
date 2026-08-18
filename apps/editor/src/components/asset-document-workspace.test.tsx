@@ -230,13 +230,20 @@ describe("AssetDocumentWorkspace authoring", () => {
     expect(screen.getByTestId("property-usage")).toBeTruthy();
   });
 
-  it("shows Audio volume, channel, attenuation, and preview controls", () => {
+  it("shows Audio volume, channel, attenuation, pitch, and clip controls", () => {
     render(
       <AssetDocumentWorkspace documentId="asset-settings:assets/Jump.babasset" />,
     );
     expect(screen.getByTestId("audio-preview")).toBeTruthy();
     expect(screen.getByTestId("audio-preview-play")).toBeTruthy();
+    expect(screen.getByTestId("audio-preview-loop")).toBeTruthy();
+    expect(screen.getByTestId("audio-preview-waveform")).toBeTruthy();
     expect(screen.getByTestId("property-volume")).toBeTruthy();
+    expect(screen.getByTestId("property-loop")).toBeTruthy();
+    expect(screen.getByTestId("property-pitch")).toBeTruthy();
+    expect(screen.getByTestId("property-pitchRandom")).toBeTruthy();
+    expect(screen.getByTestId("audio-add-clip")).toBeTruthy();
+    expect(screen.getByTestId("audio-clip-0-weight")).toBeTruthy();
     expect(screen.getByTestId("property-audioChannelGuid")).toBeTruthy();
     expect(screen.getByTestId("property-soundAttenuationGuid")).toBeTruthy();
   });

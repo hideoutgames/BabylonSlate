@@ -27,6 +27,7 @@ export type AudioPlayRequest = {
   loop: boolean;
   spatial?: AudioSpatialPlayOptions | null;
   reverbSend: boolean;
+  clipChunkId?: string;
 };
 
 export interface AudioPlaybackBackend {
@@ -45,7 +46,9 @@ export interface AudioPlaybackBackend {
     decay: number;
     damping: number;
   }): void;
+  setVoiceMuffle(voiceId: string, factor: number): void;
   dispose(): void;
+  onVoiceEnded: ((voiceId: string) => void) | null;
 }
 
 /** In-memory backend for NullEngine unit tests (no Web Audio / AudioV2). */
@@ -56,11 +59,13 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   poses = new Map<string, AudioPose>();
   gains = new Map<string, number>();
   playbackRates = new Map<string, number>();
+  muffles = new Map<string, number>();
   listener: AudioPose = { x: 0, y: 0, z: 0 };
   wet = 0;
   decay = 0.4;
   damping = 0.5;
   disposed = false;
+  onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   isUnlocked(): boolean {
     return this.unlocked;
@@ -112,8 +117,16 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
     this.damping = profile.damping;
   }
 
+  setVoiceMuffle(voiceId: string, factor: number): void {
+    this.muffles.set(voiceId, factor);
+  }
+
   dispose(): void {
     this.disposed = true;
     this.plays = [];
+  }
+
+  finish(voiceId: string): void {
+    this.onVoiceEnded?.(voiceId);
   }
 }

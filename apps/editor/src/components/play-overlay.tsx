@@ -3,8 +3,11 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
+  DEFAULT_INPUT_MODE,
+  type InputMode,
   type PlayPreviewProjectSettings,
   type RenderProjectSettings,
+  type AudioProjectSettings,
   type SerializedScene,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -62,6 +65,7 @@ import { PlayHudOverlay } from "./play-hud-overlay";
 import {
   applyPlayHudInstance,
   applyPlayHudVisibility,
+  lookupInterfaceMaterialDocument,
   playUserInterfaceRuntimeDocuments,
   removePlayHudInstance,
   resolvePlayHudDocuments,
@@ -109,6 +113,15 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
+  >;
   pauseOnPlay?: boolean;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -161,6 +174,7 @@ export function PlayOverlay({
   pixelPerfect,
   navmeshBytes,
   audioReverbBytes,
+  audioProjectSettings,
   pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
@@ -198,6 +212,7 @@ export function PlayOverlay({
     () => new Set(),
   );
   const [hudInstances, setHudInstances] = useState<PlayHudInstance[]>([]);
+  const [inputMode, setInputMode] = useState<InputMode>(DEFAULT_INPUT_MODE);
   const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
     null,
   );
@@ -252,6 +267,8 @@ export function PlayOverlay({
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
   audioReverbBytesRef.current = audioReverbBytes;
+  const audioProjectSettingsRef = useRef(audioProjectSettings);
+  audioProjectSettingsRef.current = audioProjectSettings;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -329,6 +346,7 @@ export function PlayOverlay({
     layoutPlay();
     userPausedRef.current = initialPauseOnPlayRef.current;
     setPaused(initialPauseOnPlayRef.current);
+    setInputMode(DEFAULT_INPUT_MODE);
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -362,6 +380,7 @@ export function PlayOverlay({
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
+      audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,
       onSessionPaused: (next) => {
         userPausedRef.current = next;
@@ -396,6 +415,9 @@ export function PlayOverlay({
       },
       onUiRemove: (instanceId) => {
         setHudInstances((prev) => removePlayHudInstance(prev, instanceId));
+      },
+      onSetInputMode: (mode) => {
+        setInputMode(mode);
       },
       onStats: (stats) => {
         setFps(stats.fps);
@@ -617,10 +639,17 @@ export function PlayOverlay({
         uiLibrary={uiLibrary}
         fontEntries={fontEntries}
         resolveImageUrl={resolveImageUrl}
+        resolveInterfaceMaterial={(guid) =>
+          lookupInterfaceMaterialDocument(guid, materialDocuments)
+        }
+        materialFunctions={() =>
+          Object.fromEntries(materialFunctions ?? [])
+        }
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}
         scene={hudScene}
+        inputMode={inputMode}
         onTouchAxis={(controlId, value) =>
           sessionRef.current?.pushTouchAxis(controlId, value)
         }

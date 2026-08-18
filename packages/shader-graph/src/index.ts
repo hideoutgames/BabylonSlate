@@ -6,6 +6,7 @@ export {
   nodeIsLegalInStage,
   terminalNodeTypeFor,
   type MaterialCapability,
+  parseMaterialDomain,
   type MaterialDomain,
   type MaterialNodeDefinition,
   type MaterialPinDefinition,

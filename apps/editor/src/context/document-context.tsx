@@ -29,6 +29,7 @@ import {
   readThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
+  collectAudioClipSourceBytes,
   type AssetRegistry,
   type MigrationPending,
   type PluginDescriptor,
@@ -204,7 +205,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
-  materialGuidsFromScenes,
+  playMaterialGuidsFromSources,
   materialClosureFromGuids,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
@@ -329,6 +330,18 @@ interface DocumentContextValue {
   ) => Promise<boolean>;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  writeAudioClipChunk: (
+    path: string,
+    chunkId: string,
+    bytes: Uint8Array,
+    mime: string,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
+  removeAudioClipChunk: (
+    path: string,
+    chunkId: string,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
   /** Write Recast bake bytes onto the Scene asset extra chunk. */
   writeSceneNavmeshChunk: (
     path: string,
@@ -433,7 +446,7 @@ interface DocumentContextValue {
     bytes: Map<string, Uint8Array>;
     library: import("../lib/play-audio").PlayAudioLibrary;
   }>;
-  /** Surface and post-process materials plus transitive Material Functions. */
+  /** Surface, post-process, and HUD Interface materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -1458,6 +1471,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
+        occlusionEnabled:
+          projectDocument?.settings.audio.occlusionEnabled !== false,
+        reverbWetScale: projectDocument?.settings.audio.reverbWetScale,
+        reverbDecayScale: projectDocument?.settings.audio.reverbDecayScale,
+        reverbDampingScale: projectDocument?.settings.audio.reverbDampingScale,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,
@@ -1885,6 +1903,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const writeSceneAudioReverbChunk = useCallback(
     (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
       projectService.writeSceneAudioReverbChunk(path, bytes, payload),
+    [projectService],
+  );
+
+  const writeAudioClipChunk = useCallback(
+    (
+      path: string,
+      chunkId: string,
+      bytes: Uint8Array,
+      mime: string,
+      payload: Record<string, unknown>,
+    ) => projectService.writeAudioClipChunk(path, chunkId, bytes, mime, payload),
+    [projectService],
+  );
+
+  const removeAudioClipChunk = useCallback(
+    (path: string, chunkId: string, payload: Record<string, unknown>) =>
+      projectService.removeAudioClipChunk(path, chunkId, payload),
     [projectService],
   );
 
@@ -2453,9 +2488,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payload: content,
       });
       if (asset.header.type === "Audio") {
-        const source = await projectService.readAssetChunk(asset.path, "source");
-        if (source && source.byteLength > 0) {
-          bytes.set(asset.header.guid, source);
+        const mapped = await collectAudioClipSourceBytes({
+          assetGuid: asset.header.guid,
+          payload: content,
+          readChunk: (chunkId) =>
+            projectService.readAssetChunk(asset.path, chunkId),
+        });
+        for (const [key, clipBytes] of mapped) {
+          bytes.set(key, clipBytes);
         }
       }
     }
@@ -2519,10 +2559,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const content = await loadPlayAssetContent(kind, asset.path);
         if (content) loaded.set(guid, content);
       };
-      const needed = new Set([
-        ...materialGuidsFromScenes([scene, ...extraScenes]),
-        ...(extraMaterialGuids ?? []),
-      ]);
+      const needed = new Set(
+        playMaterialGuidsFromSources(
+          [scene, ...extraScenes],
+          [],
+          extraMaterialGuids,
+        ),
+      );
       let grew = true;
       while (grew) {
         grew = false;
@@ -3518,6 +3561,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      writeAudioClipChunk,
+      removeAudioClipChunk,
       writeSceneNavmeshChunk,
       writeSceneAudioReverbChunk,
       updateProjectSettings,
@@ -3700,6 +3745,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      writeAudioClipChunk,
+      removeAudioClipChunk,
       writeSceneNavmeshChunk,
       writeSceneAudioReverbChunk,
       updateProjectSettings,

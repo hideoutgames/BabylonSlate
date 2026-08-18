@@ -18,6 +18,7 @@ import {
 import { useGraphEditorContext } from "./graph-editor-context";
 import { hasSerializedPins } from "./graph-types";
 import { edgeStyleForPin } from "./node-theme";
+import { animTransitionPath } from "./anim-transition-path";
 
 export type GraphConnectionLineViewProps = {
   fromX: number;
@@ -34,6 +35,7 @@ export type GraphConnectionLineViewProps = {
   nodes: Array<{ id: string; data?: Record<string, unknown> }>;
   root?: ParentNode;
   connectEndMode?: ConnectEndMode;
+  connectionLineKind?: "default" | "animTransition";
 };
 
 function pinOnDraggedNode(
@@ -74,17 +76,28 @@ export function GraphConnectionLineView({
   nodes,
   root = document,
   connectEndMode = "default",
+  connectionLineKind = "default",
 }: GraphConnectionLineViewProps) {
   const pin = pinOnDraggedNode(fromNode, fromHandle.id);
   const pinStyle = edgeStyleForPin(pin?.type);
-  const [path] = getBezierPath({
-    sourceX: fromX,
-    sourceY: fromY,
-    sourcePosition: fromPosition,
-    targetX: toX,
-    targetY: toY,
-    targetPosition: toPosition,
-  });
+  const path =
+    connectionLineKind === "animTransition"
+      ? animTransitionPath({
+          sourceX: fromX,
+          sourceY: fromY,
+          sourcePosition: fromPosition,
+          targetX: toX,
+          targetY: toY,
+          targetPosition: toPosition,
+        }).path
+      : getBezierPath({
+          sourceX: fromX,
+          sourceY: fromY,
+          sourcePosition: fromPosition,
+          targetX: toX,
+          targetY: toY,
+          targetPosition: toPosition,
+        })[0];
   const inAddZone = pin
     ? shouldOpenAddNodeOnConnectEnd({
         hasTargetHandle: Boolean(toHandle),
@@ -140,7 +153,7 @@ export function GraphConnectionLineView({
 
 export function GraphConnectionLine(props: ConnectionLineComponentProps) {
   const nodes = useStore((state) => state.nodes);
-  const { connectEndMode } = useGraphEditorContext();
+  const { connectEndMode, connectionLineKind } = useGraphEditorContext();
   const flow = document.querySelector(".react-flow");
   const pointer = flow
     ? containerPointerToClient(props.pointer, flow)
@@ -160,6 +173,7 @@ export function GraphConnectionLine(props: ConnectionLineComponentProps) {
       pointer={pointer}
       nodes={nodes}
       connectEndMode={connectEndMode}
+      connectionLineKind={connectionLineKind}
     />
   );
 }

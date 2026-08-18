@@ -670,4 +670,55 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-tex");
     expect(result.value).not.toContain("eui-1");
   });
+
+  it("includes Interface materials referenced by HUD Material widgets", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("hud", "HUD", {
+          components: [
+            {
+              id: "ui",
+              classId: "UserInterfaceComponent",
+              properties: { assetGuid: "hud-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "hud-1", type: "UserInterface", name: "HUD" }),
+        asset({ guid: "mat-glow", type: "Material", name: "Glow" }),
+        asset({ guid: "mat-unused", type: "Material", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => {
+        if (guid === "hud-1") {
+          return {
+            widgets: {
+              canvas: { id: "canvas", kind: "Canvas", children: ["glow"] },
+              glow: {
+                id: "glow",
+                kind: "Material",
+                props: { materialGuid: "mat-glow" },
+              },
+            },
+          };
+        }
+        return null;
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "hud-1", "mat-glow"]),
+    );
+    expect(result.value).not.toContain("mat-unused");
+  });
 });

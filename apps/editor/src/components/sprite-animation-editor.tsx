@@ -387,6 +387,24 @@ export function SpriteAnimationDetails({
     onChange({ ...animation, frames });
   };
 
+  const setDurationOverride = (override: boolean): void => {
+    const frames = [...animation.frames];
+    const current = frames[selectedFrameIndex];
+    if (!current) return;
+    if (override) {
+      frames[selectedFrameIndex] = {
+        ...current,
+        durationMsOverride: true,
+        durationMs: animation.frameDurationMs,
+      };
+    } else {
+      const rest = { ...current };
+      delete rest.durationMsOverride;
+      frames[selectedFrameIndex] = rest;
+    }
+    onChange({ ...animation, frames });
+  };
+
   const applyTextureGuid = (guid: string | null): void => {
     if (!guid) {
       patchFrame({ textureGuid: "" });
@@ -412,7 +430,19 @@ export function SpriteAnimationDetails({
     })();
   };
 
-  const rows: PropertyRow[] = [
+  const animationRows: PropertyRow[] = [
+    {
+      id: "frame-duration",
+      kind: "number",
+      label: "Frame Duration MS",
+      value: animation.frameDurationMs,
+      min: 1,
+      onChange: (frameDurationMs) =>
+        onChange({ ...animation, frameDurationMs: Math.max(1, frameDurationMs) }),
+    },
+  ];
+
+  const frameRows: PropertyRow[] = [
     {
       id: "texture",
       kind: "asset",
@@ -426,13 +456,24 @@ export function SpriteAnimationDetails({
       ),
     },
     {
-      id: "frame-duration",
+      id: "frame-duration-override",
+      kind: "boolean",
+      label: "Frame Duration MS Override",
+      value: frame?.durationMsOverride === true,
+      onChange: setDurationOverride,
+    },
+  ];
+  if (frame?.durationMsOverride) {
+    frameRows.push({
+      id: "override-frame-duration",
       kind: "number",
       label: "Frame Duration MS",
-      value: frame?.durationMs ?? 100,
+      value: frame.durationMs,
       min: 1,
-      onChange: (durationMs) => patchFrame({ durationMs }),
-    },
+      onChange: (durationMs) => patchFrame({ durationMs: Math.max(1, durationMs) }),
+    });
+  }
+  frameRows.push(
     {
       id: "pivot",
       kind: "vector3",
@@ -452,7 +493,7 @@ export function SpriteAnimationDetails({
           collision: parseSpriteCollision({ x, y, width, height }),
         }),
     },
-  ];
+  );
 
   return (
     <div data-testid="sprite-animation-editor" className="flex flex-col gap-2 p-3">
@@ -465,6 +506,7 @@ export function SpriteAnimationDetails({
           onClick={() => {
             const next = {
               ...createDefaultSpriteAnimationPayload().frames[0]!,
+              durationMs: animation.frameDurationMs,
             };
             onChange({ ...animation, frames: [...animation.frames, next] });
             setSelectedFrameIndex(animation.frames.length);
@@ -485,7 +527,12 @@ export function SpriteAnimationDetails({
               frames:
                 frames.length > 0
                   ? frames
-                  : createDefaultSpriteAnimationPayload().frames,
+                  : [
+                      {
+                        ...createDefaultSpriteAnimationPayload().frames[0]!,
+                        durationMs: animation.frameDurationMs,
+                      },
+                    ],
             });
             setSelectedFrameIndex(Math.max(0, selectedFrameIndex - 1));
           }}
@@ -493,7 +540,8 @@ export function SpriteAnimationDetails({
           <Trash2Icon className="icon-sm" />
         </IconActionButton>
       </div>
-      <PropertyGrid rows={rows} />
+      <PropertyGrid title="Animation" rows={animationRows} />
+      <PropertyGrid title="Selected Frame" rows={frameRows} />
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}

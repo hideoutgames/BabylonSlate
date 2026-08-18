@@ -19,6 +19,11 @@ import {
   type DevicePreset,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
+import {
+  inputModeAllowsGuiHits,
+  parseInputMode,
+} from "@babylonslate/core";
 
 export type PlayerUiInstance = { instanceId: string; assetGuid: string };
 
@@ -26,6 +31,7 @@ export type PlayerUiHost = {
   apply(instanceId: string, assetGuid: string): void;
   remove(instanceId: string): void;
   setVisible(instanceId: string, widgetId: string, visible: boolean): void;
+  setInputMode(mode: string): void;
   handleWidgetEvent(event: UiWidgetEvent): void;
   resolveImageUrl(guid: string): string | null;
   instances(): readonly PlayerUiInstance[];
@@ -50,6 +56,9 @@ export type PlayerUiHostOptions = {
   designerPresets?: readonly DevicePreset[];
   fontEntries?: readonly FontAssetEntry[];
   applyFonts?: typeof applyFontRegistryToHost;
+  resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  materialFunctions?: () => Record<string, MaterialFunctionDocument>;
+  resolveTexture?: (guid: string) => import("@babylonjs/core/Materials/Textures/texture").Texture | null;
 };
 
 function documentFromLibrary(
@@ -95,6 +104,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
   let attached: ReturnType<typeof attachFullscreenGui> | null = null;
   let fallbackHost: UiApplyHost | null = options.host ?? null;
   let disposed = false;
+  let allowGuiHits = true;
 
   const resolveImageUrl = (guid: string): string | null => {
     const id = guid.trim();
@@ -144,6 +154,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       attached = attach(options.scene, {
         name: "player-hud",
         interactive: true,
+        allowGuiHits,
         width: viewport.width,
         height: viewport.height,
         designResolution: first?.designResolution ?? viewport,
@@ -154,6 +165,9 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
           extras,
         ).safeArea,
         resolveImageUrl,
+        resolveInterfaceMaterial: options.resolveInterfaceMaterial,
+        materialFunctions: options.materialFunctions,
+        resolveTexture: options.resolveTexture,
         onTouchAxis: options.onTouchAxis,
         onWidgetEvent: handleWidgetEvent,
       });
@@ -236,6 +250,10 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
     handleWidgetEvent,
     resolveImageUrl,
     instances: () => [...rows],
+    setInputMode(mode) {
+      allowGuiHits = inputModeAllowsGuiHits(parseInputMode(mode));
+      attached?.setAllowGuiHits?.(allowGuiHits);
+    },
     resize(width, height) {
       viewport = { width: Math.max(1, width), height: Math.max(1, height) };
       if (rows.length > 0) rebuild();
@@ -272,6 +290,10 @@ export function applyPlayerUiCommand(
       String(command.widgetId ?? ""),
       command.visible === true,
     );
+    return true;
+  }
+  if (command.type === "setInputMode") {
+    host.setInputMode(String(command.mode ?? "All"));
     return true;
   }
   return false;

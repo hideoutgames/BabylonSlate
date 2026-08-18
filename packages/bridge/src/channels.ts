@@ -287,6 +287,7 @@ export type CommandMessage =
             scale: [number, number, number];
           };
           variables: Record<string, unknown>;
+          variableTypes?: Record<string, string>;
         }>;
       };
     }
@@ -384,6 +385,10 @@ export type CommandMessage =
   | {
       type: "debugColliders";
       colliders: readonly DebugColliderPrimitive[];
+    }
+  | {
+      type: "setInputMode";
+      mode: "All" | "Interface" | "Game";
     };
 
 export type BridgeHostMessage =

@@ -88,10 +88,22 @@ export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
 export interface AudioProjectSettings {
   /** Selected AudioMixer asset, or None. */
   audioMixerGuid: string | null;
+  /** Master for wall muffling. Channel-less sounds stay unmuffled. */
+  occlusionEnabled: boolean;
+  /** Multiplies interpolated environment-reverb wet. */
+  reverbWetScale: number;
+  /** Multiplies interpolated environment-reverb decay. */
+  reverbDecayScale: number;
+  /** Multiplies interpolated environment-reverb damping. */
+  reverbDampingScale: number;
 }
 
 export const DEFAULT_AUDIO_PROJECT_SETTINGS: AudioProjectSettings = {
   audioMixerGuid: null,
+  occlusionEnabled: true,
+  reverbWetScale: 1,
+  reverbDecayScale: 1,
+  reverbDampingScale: 1,
 };
 
 export interface RenderProjectSettings {
@@ -591,7 +603,11 @@ function normalizeProjectInput(value: unknown): ProjectInputSettings {
 }
 
 export function normalizeProjectSettings(
-  settings: Partial<ProjectSettings> | undefined,
+  settings:
+    | (Partial<Omit<ProjectSettings, "audio">> & {
+        audio?: Partial<AudioProjectSettings>;
+      })
+    | undefined,
 ): ProjectSettings {
   const twoD = settings?.twoD;
   return {
@@ -657,6 +673,14 @@ export function normalizeProjectSettings(
   };
 }
 
+function clampAudioScale(value: unknown, fallback = 1): number {
+  const n =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  if (n < 0) return 0;
+  if (n > 2) return 2;
+  return n;
+}
+
 function normalizeAudioSettings(
   value: Partial<AudioProjectSettings> | undefined,
 ): AudioProjectSettings {
@@ -664,6 +688,10 @@ function normalizeAudioSettings(
     typeof value?.audioMixerGuid === "string" ? value.audioMixerGuid.trim() : "";
   return {
     audioMixerGuid: guid === "" ? null : guid,
+    occlusionEnabled: value?.occlusionEnabled !== false,
+    reverbWetScale: clampAudioScale(value?.reverbWetScale, 1),
+    reverbDecayScale: clampAudioScale(value?.reverbDecayScale, 1),
+    reverbDampingScale: clampAudioScale(value?.reverbDampingScale, 1),
   };
 }
 

@@ -123,9 +123,13 @@ export function visualTransitions(
   transitions: readonly AnimTransition[],
 ): AnimTransition[] {
   const skip = new Set<string>();
+  const seenPair = new Set<string>();
   const visual: AnimTransition[] = [];
   for (const row of transitions) {
     if (skip.has(row.id)) continue;
+    const pair = transitionPairKey(row.fromStateId, row.toStateId);
+    if (seenPair.has(pair)) continue;
+    seenPair.add(pair);
     visual.push(row);
     const reverse = findReverseTransition(
       transitions,
@@ -193,7 +197,19 @@ function mergeTransitions(
       row,
     ]),
   );
-  const merged: AnimTransition[] = edges.map((edge) => {
+  const chosen = new Map<string, (typeof edges)[number]>();
+  for (const edge of edges) {
+    const pair = transitionPairKey(edge.source, edge.target);
+    const existing = chosen.get(pair);
+    if (!existing) {
+      chosen.set(pair, edge);
+      continue;
+    }
+    if (byId.has(edge.id) && !byId.has(existing.id)) {
+      chosen.set(pair, edge);
+    }
+  }
+  const merged: AnimTransition[] = [...chosen.values()].map((edge) => {
     const prev =
       byId.get(edge.id) ??
       byPair.get(transitionPairKey(edge.source, edge.target));
