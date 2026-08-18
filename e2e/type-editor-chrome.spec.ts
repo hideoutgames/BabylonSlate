@@ -172,6 +172,28 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(graph.getByText("Get Target")).toBeVisible();
   });
 
+  test("Class variables show Class Type and omit a Default", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await page
+      .locator('[data-asset-path="assets/main.class.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("my-class-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("class-add-variables").click();
+    await page.getByTestId("name-prompt-input").fill("Kind");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(page.getByTestId("inspector-member-type")).toBeVisible();
+    await page.getByTestId("inspector-member-type").click();
+    await page.getByTestId("search-item-class").click();
+    await expect(page.getByTestId("inspector-member-class-type")).toBeVisible();
+    await expect(page.getByTestId("inspector-member-class-default")).toHaveCount(
+      0,
+    );
+  });
+
   test("dragging a Class function onto the graph spawns Call Function", async ({
     page,
   }) => {

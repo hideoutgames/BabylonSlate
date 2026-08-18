@@ -306,6 +306,13 @@ describe("project schema", () => {
           typeClassId: "Actor",
           defaultValue: "Hero",
         },
+        {
+          id: "var-class-open",
+          kind: "variable",
+          name: "OpenKind",
+          typeId: "class",
+          defaultValue: "Hero",
+        },
         { id: "var-plain", kind: "variable", name: "Health", typeId: "object" },
       ]),
     ).toEqual([
@@ -322,7 +329,14 @@ describe("project schema", () => {
         name: "Kind",
         typeId: "class",
         typeClassId: "Actor",
-        defaultValue: "Hero",
+        defaultValue: "Actor",
+      },
+      {
+        id: "var-class-open",
+        kind: "variable",
+        name: "OpenKind",
+        typeId: "class",
+        defaultValue: "BObject",
       },
       { id: "var-plain", kind: "variable", name: "Health", typeId: "object" },
     ]);

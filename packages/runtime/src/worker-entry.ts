@@ -22,6 +22,8 @@ import {
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import { createRuntimeFromLoad, shouldSpawnScriptedActor } from "./play-load";
 import { createPlayBootCoordinator } from "./play-boot";
+import { createPlayPauseGate } from "./play-pause-gate";
+import { applyInspectControl } from "./inspect-control";
 import { applyUiRuntimeControl } from "./worker-control";
 
 let runtime: RuntimeDriver | null = null;
@@ -43,6 +45,11 @@ function ensureRuntime(seed = 1): RuntimeDriver {
   }
   return runtime;
 }
+
+const pauseGate = createPlayPauseGate({
+  pause: () => ensureRuntime().pause(),
+  resume: () => ensureRuntime().resume(),
+});
 
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
@@ -147,13 +154,13 @@ function handleControl(msg: ControlMessage): void {
     }
     case "play": {
       const rt = ensureRuntime();
-      void boot.play(rt).then(() => {
+      void pauseGate.beginPlay(() => boot.play(rt)).then(() => {
         if (lastTick === 0) requestAnimationFrame(pump);
       });
       return;
     }
     case "pause":
-      ensureRuntime().pause();
+      pauseGate.setPaused(true);
       return;
     case "step": {
       const rt = ensureRuntime();
@@ -166,8 +173,7 @@ function handleControl(msg: ControlMessage): void {
       ensureRuntime().stop();
       return;
     case "setPaused":
-      if (msg.paused) ensureRuntime().pause();
-      else ensureRuntime().resume();
+      pauseGate.setPaused(msg.paused);
       return;
     case "console": {
       const result = ensureRuntime().executeConsoleCommand(msg.line);
@@ -178,6 +184,9 @@ function handleControl(msg: ControlMessage): void {
       });
       return;
     }
+    case "inspect":
+      applyInspectControl(ensureRuntime(), msg, onCommand);
+      return;
   }
 }
 

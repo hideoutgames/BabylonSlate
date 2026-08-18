@@ -1,11 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
+import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   applyPlayFpsSample,
   applyPlayUiCommand,
   applyWorkerPlayStats,
   diagnosticFromCommand,
+  applyPlaySessionStep,
   dispatchPlayUiWidgetEvent,
+  deliverInspectSnapshot,
+  inspectSnapshotFromCommand,
   isFatalPlayDiagnostic,
   playInputStampTick,
   playSessionBootControls,
@@ -88,6 +92,75 @@ describe("diagnosticFromCommand", () => {
     expect(isFatalPlayDiagnostic("runtime.uncaught")).toBe(false);
     expect(isFatalPlayDiagnostic("preview")).toBe(false);
     expect(isFatalPlayDiagnostic(undefined)).toBe(false);
+  });
+});
+
+describe("inspectSnapshotFromCommand", () => {
+  it("returns the inspect payload from inspectSnapshot commands", () => {
+    expect(
+      inspectSnapshotFromCommand({
+        type: "stats",
+        frameId: 1,
+        tickIndex: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      }),
+    ).toBeNull();
+    expect(
+      inspectSnapshotFromCommand({
+        type: "inspectSnapshot",
+        snapshot: {
+          tickIndex: 8,
+          nodes: [
+            {
+              id: "hero",
+              kind: "actor",
+              label: "Hero",
+              classId: "Actor",
+              parentId: null,
+              variables: { health: 4 },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      tickIndex: 8,
+      nodes: [
+        {
+          id: "hero",
+          kind: "actor",
+          label: "Hero",
+          classId: "Actor",
+          parentId: null,
+          variables: { health: 4 },
+        },
+      ],
+    });
+  });
+
+  it("delivers inspectSnapshot commands to queued waiters in order", () => {
+    const received: DebugInspectSnapshot[] = [];
+    const waiters: Array<(snapshot: DebugInspectSnapshot) => void> = [
+      (snapshot) => received.push(snapshot),
+    ];
+    expect(
+      deliverInspectSnapshot(waiters, {
+        type: "stats",
+        frameId: 1,
+        tickIndex: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      }),
+    ).toBe(false);
+    expect(waiters).toHaveLength(1);
+    expect(
+      deliverInspectSnapshot(waiters, {
+        type: "inspectSnapshot",
+        snapshot: { tickIndex: 9, nodes: [] },
+      }),
+    ).toBe(true);
+    expect(received).toEqual([{ tickIndex: 9, nodes: [] }]);
+    expect(waiters).toHaveLength(0);
   });
 });
 
@@ -238,6 +311,42 @@ describe("dispatchPlayUiWidgetEvent", () => {
   });
 });
 
+describe("applyPlaySessionStep", () => {
+  it("steps the in-process runtime when the worker is absent", () => {
+    const resume = vi.fn();
+    const tick = vi.fn();
+    const pause = vi.fn();
+    applyPlaySessionStep({
+      worker: null,
+      runtime: { resume, tick, pause },
+    });
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(tick).toHaveBeenCalledTimes(1);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(resume.mock.invocationCallOrder[0]).toBeLessThan(
+      tick.mock.invocationCallOrder[0]!,
+    );
+    expect(tick.mock.invocationCallOrder[0]).toBeLessThan(
+      pause.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("posts step to the worker when present", () => {
+    const postControl = vi.fn();
+    const resume = vi.fn();
+    const tick = vi.fn();
+    const pause = vi.fn();
+    applyPlaySessionStep({
+      worker: { postControl },
+      runtime: { resume, tick, pause },
+    });
+    expect(postControl).toHaveBeenCalledWith({ type: "step" });
+    expect(resume).not.toHaveBeenCalled();
+    expect(tick).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
+  });
+});
+
 describe("playSessionBootControls", () => {
   it("sends loadUserInterfaces before loadScripts so Apply can resolve widgets", () => {
     const controls = playSessionBootControls({
@@ -286,6 +395,19 @@ describe("playSessionBootControls", () => {
     const types = controls.map((control) => control.type);
     expect(types).toEqual(["load", "play"]);
     expect(types).not.toContain("loadUserInterfaces");
+  });
+
+  it("appends setPaused after play when Pause On Play is on", () => {
+    const controls = playSessionBootControls({
+      load: { type: "load", sceneAssetGuid: "play-scene" },
+      pauseOnPlay: true,
+    });
+    expect(controls.map((control) => control.type)).toEqual([
+      "load",
+      "play",
+      "setPaused",
+    ]);
+    expect(controls.at(-1)).toEqual({ type: "setPaused", paused: true });
   });
 
   it("sends loadSprites with Sprite Animation payloads before play", () => {

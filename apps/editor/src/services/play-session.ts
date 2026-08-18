@@ -5,12 +5,14 @@ import {
 } from "@babylonslate/behaviour-tree";
 import {
   createPlayBootCoordinator,
+  createPlayPauseGate,
   createRuntimeFromLoad,
   SessionDiagnosticAggregator,
   type RuntimeDiagnostic,
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
+import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
@@ -78,6 +80,24 @@ export function diagnosticFromCommand(
   };
 }
 
+export function inspectSnapshotFromCommand(
+  command: CommandMessage,
+): DebugInspectSnapshot | null {
+  if (command.type !== "inspectSnapshot") return null;
+  return command.snapshot;
+}
+
+/** Resolve the next inspect waiter from a worker inspectSnapshot command. */
+export function deliverInspectSnapshot(
+  waiters: Array<(snapshot: DebugInspectSnapshot) => void>,
+  command: CommandMessage,
+): boolean {
+  const snapshot = inspectSnapshotFromCommand(command);
+  if (!snapshot) return false;
+  waiters.shift()?.(snapshot);
+  return true;
+}
+
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
 }
@@ -132,6 +152,30 @@ export function dispatchPlayUiWidgetEvent(
   return false;
 }
 
+export type PlaySessionStepTarget = {
+  worker?: { postControl: (message: ControlMessage) => void } | null;
+  runtime?: {
+    resume(): void;
+    tick(): void;
+    pause(): void;
+  } | null;
+};
+
+/** Advance one paused tick: worker `step` control, or in-process resume/tick/pause. */
+export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
+  if (target.worker) {
+    target.worker.postControl({ type: "step" });
+    return true;
+  }
+  if (target.runtime) {
+    target.runtime.resume();
+    target.runtime.tick();
+    target.runtime.pause();
+    return true;
+  }
+  return false;
+}
+
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   userInterfaces?: readonly UserInterfaceRuntimeDocument[];
@@ -143,6 +187,7 @@ export function playSessionBootControls(options: {
   tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
   sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
   navmeshBytes?: Uint8Array | null;
+  pauseOnPlay?: boolean;
 }): ControlMessage[] {
   const controls: ControlMessage[] = [options.load];
   if ((options.userInterfaces?.length ?? 0) > 0) {
@@ -187,6 +232,9 @@ export function playSessionBootControls(options: {
     });
   }
   controls.push({ type: "play" });
+  if (options.pauseOnPlay) {
+    controls.push({ type: "setPaused", paused: true });
+  }
   return controls;
 }
 
@@ -226,6 +274,9 @@ export interface PlaySession {
   executeConsoleCommand: (
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
+  inspectWorld: () => Promise<DebugInspectSnapshot>;
+  /** Advance one simulation tick while paused. */
+  step: () => void;
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
@@ -371,6 +422,8 @@ export function startPlaySession(options: {
   loopCount?: number;
   /** Called when a session-fatal diagnostic (infinite loop) arrives. */
   onFatalDiagnostic?: () => void;
+  /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
+  pauseOnPlay?: boolean;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -427,6 +480,7 @@ export function startPlaySession(options: {
   let worker: GameWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
   let runtimeMode: "worker" | "in-process" = "in-process";
+  let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
   // Aggregates diagnostics received over the command channel (Worker mode).
   // The in-process path already aggregates via `runtime.getDiagnostics()`.
   const workerDiagnostics = new SessionDiagnosticAggregator();
@@ -434,6 +488,7 @@ export function startPlaySession(options: {
   const spawnedActorGuids: string[] = [];
   const consoleWaiters: Array<(result: { success: boolean; output: string }) => void> =
     [];
+  const inspectWaiters: Array<(snapshot: DebugInspectSnapshot) => void> = [];
   let recordedTrace: TracePayload | null = null;
   let commandCount = 0;
   let commandWindowStart = performance.now();
@@ -524,6 +579,7 @@ export function startPlaySession(options: {
       const waiter = consoleWaiters.shift();
       waiter?.({ success: command.success, output: command.output });
     }
+    deliverInspectSnapshot(inspectWaiters, command);
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
     }
@@ -600,6 +656,7 @@ export function startPlaySession(options: {
         options.pixelsPerUnit,
       ),
       navmeshBytes: options.navmeshBytes,
+      pauseOnPlay: options.pauseOnPlay,
     })) {
       worker.postControl(control);
     }
@@ -618,6 +675,10 @@ export function startPlaySession(options: {
     ]);
     const inProcess = runtime;
     const boot = createPlayBootCoordinator();
+    pauseGate = createPlayPauseGate({
+      pause: () => inProcess.pause(),
+      resume: () => inProcess.resume(),
+    });
     if ((options.userInterfaces?.length ?? 0) > 0) {
       applyUiRuntimeControl(inProcess, {
         type: "loadUserInterfaces",
@@ -663,9 +724,12 @@ export function startPlaySession(options: {
     if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(inProcess, options.navmeshBytes);
     }
-    void boot.play(inProcess).catch((error) => {
+    void pauseGate.beginPlay(() => boot.play(inProcess)).catch((error) => {
       inProcess.reportError(error);
     });
+    if (options.pauseOnPlay) {
+      pauseGate.setPaused(true);
+    }
     options.onLog?.(
       `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,
       "warning",
@@ -758,10 +822,7 @@ export function startPlaySession(options: {
     runtimeMode,
     setPaused: (paused: boolean) => {
       handle.setPaused(paused);
-      if (runtime) {
-        if (paused) runtime.pause();
-        else runtime.resume();
-      }
+      pauseGate?.setPaused(paused);
       worker?.postControl({ type: "setPaused", paused });
     },
     lastMoveX: () => {
@@ -794,6 +855,21 @@ export function startPlaySession(options: {
         success: false,
         output: "runtime unavailable",
       });
+    },
+    inspectWorld: () => {
+      if (runtime) {
+        return Promise.resolve(runtime.inspectWorld());
+      }
+      if (worker) {
+        return new Promise((resolve) => {
+          inspectWaiters.push(resolve);
+          worker.postControl({ type: "inspect" });
+        });
+      }
+      return Promise.resolve({ tickIndex: 0, nodes: [] });
+    },
+    step: () => {
+      applyPlaySessionStep({ worker, runtime });
     },
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
