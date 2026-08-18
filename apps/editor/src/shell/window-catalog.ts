@@ -20,6 +20,7 @@ export type DockviewDocumentKind =
   | "plugin-settings"
   | "anim-graph"
   | "behaviour-tree"
+  | "audio"
   | "audio-mixer"
   | "audio-channel"
   | "sound-attenuation"
@@ -44,6 +45,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "plugin-settings",
   "anim-graph",
   "behaviour-tree",
+  "audio",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
@@ -95,6 +97,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "plugin-settings": "plugin-settings-details",
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
+  audio: "audio-preview",
   "audio-mixer": "audio-mixer-details",
   "audio-channel": "audio-channel-details",
   "sound-attenuation": "sound-attenuation-details",
@@ -375,6 +378,30 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "sprite-preview",
       direction: "right",
       initialWidth: 280,
+    },
+  },
+];
+
+const AUDIO_WINDOWS: DockWindowDefinition[] = [
+  { id: "audio-preview", component: "audio-preview", title: "Preview" },
+  {
+    id: "audio-details",
+    component: "audio-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "audio-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+  {
+    id: "audio-clips",
+    component: "audio-clips",
+    title: "Clips",
+    defaultPosition: {
+      referencePanelId: "audio-preview",
+      direction: "below",
+      initialHeight: 220,
     },
   },
 ];
@@ -746,6 +773,7 @@ export function listDockWindows(
     return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
   }
   if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
   }

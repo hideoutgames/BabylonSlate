@@ -74,21 +74,6 @@ vi.mock("../context/document-context", () => ({
         layout: null,
         dirty: false,
       },
-      {
-        id: "asset-settings:assets/Jump.babasset",
-        ref: {
-          kind: "asset-settings",
-          path: "assets/Jump.babasset",
-          label: "Jump",
-        },
-        content: {
-          volume: 0.5,
-          audioChannelGuid: null,
-          soundAttenuationGuid: null,
-        },
-        layout: null,
-        dirty: false,
-      },
     ],
     applyAssetDocumentChange,
     retryTextureEncoding,
@@ -139,28 +124,6 @@ vi.mock("../context/document-context", () => ({
             payload: { usage: "pixelArt" },
           },
           path: "assets/sprite.babasset",
-        },
-        {
-          header: {
-            guid: "audio-1",
-            name: "Jump",
-            type: "Audio",
-            payload: { volume: 1, audioChannelGuid: null, soundAttenuationGuid: null },
-          },
-          path: "assets/Jump.babasset",
-        },
-        {
-          header: { guid: "ch-1", name: "SFX", type: "AudioChannel", payload: {} },
-          path: "assets/SFX.channel.babasset",
-        },
-        {
-          header: {
-            guid: "att-1",
-            name: "Near",
-            type: "SoundAttenuation",
-            payload: {},
-          },
-          path: "assets/Near.atten.babasset",
         },
       ],
       getByGuid: (guid: string) =>
@@ -230,21 +193,4 @@ describe("AssetDocumentWorkspace authoring", () => {
     expect(screen.getByTestId("property-usage")).toBeTruthy();
   });
 
-  it("shows Audio volume, channel, attenuation, pitch, and clip controls", () => {
-    render(
-      <AssetDocumentWorkspace documentId="asset-settings:assets/Jump.babasset" />,
-    );
-    expect(screen.getByTestId("audio-preview")).toBeTruthy();
-    expect(screen.getByTestId("audio-preview-play")).toBeTruthy();
-    expect(screen.getByTestId("audio-preview-loop")).toBeTruthy();
-    expect(screen.getByTestId("audio-preview-waveform")).toBeTruthy();
-    expect(screen.getByTestId("property-volume")).toBeTruthy();
-    expect(screen.getByTestId("property-loop")).toBeTruthy();
-    expect(screen.getByTestId("property-pitch")).toBeTruthy();
-    expect(screen.getByTestId("property-pitchRandom")).toBeTruthy();
-    expect(screen.getByTestId("audio-add-clip")).toBeTruthy();
-    expect(screen.getByTestId("audio-clip-0-weight")).toBeTruthy();
-    expect(screen.getByTestId("property-audioChannelGuid")).toBeTruthy();
-    expect(screen.getByTestId("property-soundAttenuationGuid")).toBeTruthy();
-  });
 });

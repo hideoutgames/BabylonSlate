@@ -15,7 +15,15 @@ import { TypeDetailsPanel } from "../panels/type-details-panel";
 import { InterfaceMethodsPanel } from "../panels/interface-methods-panel";
 import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
 import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
-import { SpritePreviewPanel, SpriteDetailsPanel } from "../components/sprite-editor";
+import {
+  SpritePreviewPanel,
+  SpriteDetailsPanel,
+} from "../components/sprite-editor";
+import {
+  AudioClipsPanel,
+  AudioDetailsPanel,
+  AudioPreviewPanel,
+} from "../components/audio-editor";
 import {
   SpriteAnimationPreviewPanel,
   SpriteAnimationDetailsPanel,
@@ -115,6 +123,15 @@ export const panelComponents = {
   ),
   "sprite-details": (props: IDockviewPanelProps) => (
     <SpriteDetailsPanel {...props} />
+  ),
+  "audio-preview": (props: IDockviewPanelProps) => (
+    <AudioPreviewPanel {...props} />
+  ),
+  "audio-details": (props: IDockviewPanelProps) => (
+    <AudioDetailsPanel {...props} />
+  ),
+  "audio-clips": (props: IDockviewPanelProps) => (
+    <AudioClipsPanel {...props} />
   ),
   "sprite-animation-preview": (props: IDockviewPanelProps) => (
     <SpriteAnimationPreviewPanel {...props} />

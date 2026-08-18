@@ -40,6 +40,14 @@ function library(options?: {
 }
 
 describe("AudioService", () => {
+  it("unlocks without creating the engine on the gesture turn after warm", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    await backend.warmAsync();
+    expect(backend.engineCreateCount).toBe(1);
+    await backend.unlockAsync();
+    expect(backend.engineCreateCount).toBe(1);
+    expect(backend.unlocked).toBe(true);
+  });
   it("accepts a no-config play at asset × playCall gain after unlock", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const diagnostics: Array<{ code: string }> = [];
@@ -1165,6 +1173,127 @@ describe("AudioService", () => {
     await service.flush();
     cache.put("other", new Uint8Array(30), 30);
     expect(evicted.some((guid) => guid.startsWith("jump"))).toBe(true);
+    service.dispose();
+  });
+
+  it("setPaused does not stop live voices", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(library({ audio: { jump: createDefaultAudioPayload() } }));
+    service.setSourceBytes("jump", new Uint8Array([1, 2, 3]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "looping",
+    });
+    await service.flush();
+    expect(backend.plays).toHaveLength(1);
+    service.setPaused(true);
+    expect(backend.stopped).toEqual([]);
+    expect(backend.paused).toBe(true);
+    expect(service.stats().voices).toBe(1);
+    service.setPaused(false);
+    expect(backend.paused).toBe(false);
+    expect(backend.stopped).toEqual([]);
+    service.dispose();
+  });
+
+  it("gates debug voice snapshots behind setShowAudioDebug", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            ...createDefaultAudioPayload(),
+            clips: [{ chunkId: "source", name: "Jump", weight: 1 }],
+            loop: true,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+    });
+    await service.flush();
+    expect(service.stats().debugVoices).toBeUndefined();
+    service.setShowAudioDebug(true);
+    expect(service.stats().debugVoices).toEqual([
+      expect.objectContaining({
+        assetGuid: "jump",
+        clipName: "Jump",
+        loop: true,
+        spatial: false,
+        insideRadius: null,
+      }),
+    ]);
+    service.setShowAudioDebug(false);
+    expect(service.stats().debugVoices).toBeUndefined();
+    service.dispose();
+  });
+
+  it("marks spatial voices inside maxRadius when pose is known", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: null,
+            soundAttenuationGuid: "near",
+            clips: [{ chunkId: "source", name: "Jump", weight: 1 }],
+          },
+        },
+        attenuations: {
+          near: {
+            innerRadius: 1,
+            maxRadius: 50,
+            distanceModel: "linear",
+            rolloff: 1,
+            spatialisation: "equalPower",
+            cone: null,
+            doppler: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.noteActorSlot("speaker", 1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "v1",
+      emitterActorGuid: "speaker",
+    });
+    await service.flush();
+    service.setShowAudioDebug(true);
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    service.syncSnapshot([{ slotId: 1, position: { x: 10, y: 0, z: 0 } }]);
+    expect(service.stats().debugVoices?.[0]).toMatchObject({
+      spatial: true,
+      distance: 10,
+      innerRadius: 1,
+      maxRadius: 50,
+      insideRadius: true,
+    });
+    service.syncSnapshot([{ slotId: 1, position: { x: 80, y: 0, z: 0 } }]);
+    expect(service.stats().debugVoices?.[0]).toMatchObject({
+      distance: 80,
+      insideRadius: false,
+    });
     service.dispose();
   });
 });

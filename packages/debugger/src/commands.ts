@@ -56,6 +56,7 @@ export const DEBUG_COMMAND_NAMES = [
   "snapshot stop",
   "freecam",
   "shownav",
+  "showaudiodebug",
   "dumpactors",
   "inspect",
 ] as const;
@@ -221,6 +222,9 @@ export function builtinCommands(): RegisteredCommand[] {
       "Detached fly camera; simulation keeps running",
     ),
     flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled)),
+    flagCommand("showaudiodebug", (host, enabled) =>
+      host.setShowAudioDebug?.(enabled),
+    ),
     {
       name: "dumpactors",
       tier: "debug",

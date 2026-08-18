@@ -201,9 +201,14 @@ test.describe("Skybox Creator helper", () => {
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page
-      .getByTestId("open-listed-project-TestProject.babproject")
-      .click();
+    const listed = page.getByTestId("open-listed-project-TestProject");
+    if ((await listed.count()) > 0) {
+      await listed.click();
+    } else {
+      await page
+        .getByTestId("open-listed-project-TestProject.babproject")
+        .click();
+    }
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
     await expect(page.locator(`[data-asset-path="${HELPER_PATH}"]`)).toBeVisible();
