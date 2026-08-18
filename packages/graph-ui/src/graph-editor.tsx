@@ -1072,7 +1072,7 @@ function GraphEditorCanvas({
   }, []);
 
   const handlePaneClick = useCallback(
-    (event: { clientX: number; clientY: number }) => {
+    () => {
       if (skipPaneClickRef.current) {
         skipPaneClickRef.current = false;
         return;
