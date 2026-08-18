@@ -197,7 +197,7 @@ Design notes: [object-model.md](../architecture/object-model.md).
 
 Design notes: [bridge.md](../architecture/bridge.md), [render.md](../architecture/render.md).
 
-Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below are **not** implied done.
+Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below are **not** implied done. §2.4 editor idle freezes + scene-load shader warm moved to **P20** (`p20-editor-scene-freeze`).
 
 ### P4 follow-ups / open deferrals
 
@@ -211,7 +211,6 @@ Appendix A `p4-*` checkboxes are landed as a vertical Play path. Leftovers below
 | WKWebView `Error.stack` parse | `p1-device-spikes` | V8 + WebKit-shaped strings unit-tested; hardware WKWebView unconfirmed |
 | Capacitor app-state pause | later polish (`vfs`) | Editor listens for `babylonslate:appstate`; no vfs emitter yet. `visibilitychange` works |
 | `renderquality` / Engine Settings `hardwareScalingLevel` → Engine | Done (`cursor/material-shader-improvements-fa96`) | Engine Settings `hardwareScalingLevel` is applied at viewport/Play start and on change. Console `renderquality` still logs. |
-| §2.4 editor idle freezes + scene-load shader warm | later polish (`render`) | No `freezeActiveMeshes` / `material.freeze` / `useGeometryUniqueIdsMap`; `forceCompilationAsync` is shader-graph only |
 | Context-loss user notify | later polish (`render`, editor) | Restore drops a quality tier and flushes LRU; no one-shot toast |
 | Mesh live-object assert on Play close | later polish (`play-session`) | Texture-cache growth is logged; mesh counts are captured unused |
 | Snapshot interpolation α in the live loop | documented | `SnapshotInterpolator` can lerp; Play samples α=1 (latest) while render and tick share the 60 Hz cap. Time-based α waits on a render/tick mismatch |
@@ -578,11 +577,11 @@ Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-
 | Play Particles / Stop Particles | Done (`p17-particle-nodes`) | `scripting`, `scripting-nodes`, `runtime` | runtime |
 | Architecture doc + Playwright + verify | Done (`p17-particle-acceptance`) | unit + e2e | all P17 slices |
 
-**P17 is Done.** Overlay Play and the packed player share `ParticleService`. GPU `stop()` still draws leftovers; teardown must `dispose()`. Out of scope: mesh particles / SPS / NPE / fluid renderer / bursts / sub-emitters / sprite-sheet flipbooks; P18 iPad optimisation; P19 BT/nav leftovers.
+**P17 is Done.** Overlay Play and the packed player share `ParticleService`. GPU `stop()` still draws leftovers; teardown must `dispose()`. Out of scope: mesh particles / SPS / NPE / fluid renderer / bursts / sub-emitters / sprite-sheet flipbooks; P18 iPad optimisation; P19 BT/nav leftovers; P20 editor/runtime follow-on.
 
 ## P18 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **Next phase.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Collapse-inactive-subtree / cap-auto-layout stay parked.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **Next phase.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -592,18 +591,33 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`.
 | Windowed Content Browser grid + revoke off-screen thumbs | `p18-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |
 | Prefab Preview on the app-lifetime Engine | `p18-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
 
-Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers; pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
+Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers; **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
 
 ## P19 Behaviour tree hosts and navigation leftovers
 
-Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P18 is marked Done.
+Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P18 is marked Done. **P20** may run in parallel (editor/runtime perf, not a P19 reopen).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | RotateToFace + PlayAnimation runtime hosts | `p19-bt-task-hosts` | `behaviour-tree`, `runtime`, `apps/editor` | P11 hosts; P18 Done |
 | Auto-bake-on-save, bake bounds, cost volumes | `p19-nav-leftovers` | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P18 Done |
 
-Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; reopening P11 evaluator/abort matrix; `p1-device-spikes`. Crowd MoveTo is already live.
+Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; reopening P11 evaluator/abort matrix; `p1-device-spikes`; P20 editor/runtime follow-on. Crowd MoveTo is already live.
+
+## P20 Editor/runtime follow-on optimisation
+
+Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. Do **not** start until P18 is marked Done. May parallel P19 (different packages). No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
+
+| Slice | Checklist | Packages | Depends on |
+| --- | --- | --- | --- |
+| One `ResourceCache` per Engine lifetime | `p20-shared-resource-cache` | `render`, Play/Prefab/Material/UI hosts | P18 Done (`p18-shared-prefab-engine` for Prefab) |
+| Editor idle freezes + scene-load shader warm | `p20-editor-scene-freeze` | `render`, editor viewport | P18 Done (moved from P4 follow-up) |
+| Play compile hash cache + lazy Audio source bytes | `p20-play-compile-audio` | `apps/editor` (Play prepare), `apps/player`, audio service | P18 Done; P16 Audio |
+| Defer/memoize `scriptPaletteNodes` injectors | `p20-palette-generate` | `apps/editor` (`graph-panel`, `graph-validation`) | P18 Done; distinct from `p18-add-node-virtualize` |
+| Windowed Output Log + Compiler Results | `p20-log-virtualize` | `apps/editor` panels; optional `editor-kit` `SearchDialog` | P18 Done (TreeView arithmetic) |
+| Global Search rebuild on dialog initiate | `p20-search-on-demand` | `packages/assets` (`ProjectSearchIndex`), `apps/editor` | P18 Done; `p6-global-search` |
+
+Out of scope: expanding P18; pin flash; BT collapse-inactive-subtree; Place Actors / Add Component / Add Widget / Settings catalogs; dirty-skip of a **visible** editor viewport; sprite thin-instance / alpha-test fill-rate; `p1-device-spikes`; SAB live path; on-disk search cache. Do not implement `p20-*` until this phase is assigned.
 
 
 
