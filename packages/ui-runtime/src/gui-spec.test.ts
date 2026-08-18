@@ -165,6 +165,25 @@ describe("guiSpecFromDescriptor", () => {
     expect(spec.isPointerBlocker).toBe(false);
   });
 
+  it("forces GUI hits off in Game input mode even for Buttons", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("center", "center", 160, 40),
+    );
+    doc.widgets.canvas!.children = ["btn"];
+    doc.widgets.btn = button;
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    const spec = guiSpecFromDescriptor(
+      describeUiControls(doc, layout).find((row) => row.id === "btn")!,
+      { interactive: true, allowGuiHits: false },
+    );
+    expect(spec.hitTestVisible).toBe(false);
+    expect(spec.isPointerBlocker).toBe(false);
+  });
+
   it("keeps percent size on Grid children instead of flattening to px", () => {
     const doc = createDefaultUserInterface();
     const grid = createWidget("grid", "Grid", "Grid");

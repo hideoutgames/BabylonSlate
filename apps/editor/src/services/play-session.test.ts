@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
 import {
   applyPlayFpsSample,
+  applyPlayInputModeCommand,
   applyPlayUiCommand,
   applyWorkerPlayStats,
   diagnosticFromCommand,
@@ -176,6 +177,23 @@ describe("applyPlayUiCommand", () => {
       ),
     ).toBe(true);
     expect(onUiRemove).toHaveBeenCalledWith("ui-1");
+  });
+
+  it("forwards setInputMode members onto the Play HUD callback", () => {
+    const onSetInputMode = vi.fn();
+    expect(
+      applyPlayInputModeCommand(
+        { type: "setInputMode", mode: "Game" },
+        onSetInputMode,
+      ),
+    ).toBe(true);
+    expect(onSetInputMode).toHaveBeenCalledWith("Game");
+    expect(
+      applyPlayInputModeCommand(
+        { type: "stats", frameId: 1, tickIndex: 1, scriptMs: 0, physicsMs: 0 },
+        onSetInputMode,
+      ),
+    ).toBe(false);
   });
 
   it("ignores non-UI commands", () => {

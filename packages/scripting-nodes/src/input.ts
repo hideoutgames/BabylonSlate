@@ -1,3 +1,4 @@
+import { ENGINE_INPUT_MODE_ENUM_ID } from "@babylonslate/core";
 import {
   pin,
   type NodeDefinition,
@@ -7,6 +8,7 @@ import {
   STRING,
   EXEC,
   INT,
+  enumRef,
 } from "@babylonslate/scripting";
 
 /** Input category: mappings resolve through the runtime ctx (engineplan §11). */
@@ -97,6 +99,19 @@ export const inputNodes: NodeDefinition[] = [
       ctx.emit(
         `ctx.setGamepadRumble?.(${ctx.input("index")}, ${ctx.input("intensity")}, ${ctx.input("durationMs")});`,
       );
+    },
+  },
+  {
+    id: "input.setInputMode",
+    title: "Set Input Mode",
+    category: "input",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("mode", "mode", "in", enumRef(ENGINE_INPUT_MODE_ENUM_ID)),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.setInputMode(${ctx.input("mode")});`);
     },
   },
 ];

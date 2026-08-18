@@ -119,11 +119,12 @@ function boolProp(
 
 export function guiSpecFromDescriptor(
   control: UiControlDescriptor,
-  options: { interactive: boolean },
+  options: { interactive: boolean; allowGuiHits?: boolean },
 ): GuiControlSpec {
   const interactive = options.interactive && control.visible;
   const hitTestable =
     control.hitTestable ?? defaultHitTestableFor(control.kind);
+  const allowGuiHits = options.allowGuiHits !== false;
   const imageGuid =
     typeof control.props.imageGuid === "string"
       ? control.props.imageGuid
@@ -166,8 +167,8 @@ export function guiSpecFromDescriptor(
     spacing: numberProp(control.props, "gap", 0),
     gridColumns: numberProp(control.props, "columns", 2),
     gridRows: numberProp(control.props, "rows", 2),
-    hitTestVisible: interactive && hitTestable,
-    isPointerBlocker: interactive && hitTestable,
+    hitTestVisible: interactive && hitTestable && allowGuiHits,
+    isPointerBlocker: interactive && hitTestable && allowGuiHits,
     imageGuid,
     sliderValue: numberProp(control.props, "value", 0),
     sliderMin: numberProp(control.props, "min", 0),

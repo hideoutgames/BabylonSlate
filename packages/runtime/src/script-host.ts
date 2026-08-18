@@ -104,6 +104,7 @@ export interface ScriptHostServices {
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
+  setInputMode?(mode: string): void;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
   findPathTo?(
@@ -231,6 +232,7 @@ export interface ScriptContext {
   removeUserInterface(instance: UserInterface | string | null | undefined): void;
   changeScene(scene: string): void;
   setRenderResolution(width: number, height: number): void;
+  setInputMode(mode: string): void;
   possessCamera(target: unknown): void;
   getCameraFieldOfView(target: unknown): number;
   setCameraFieldOfView(target: unknown, fov: number): void;
@@ -757,6 +759,9 @@ export class ScriptHost {
       },
       setRenderResolution: (width, height) => {
         services.setRenderResolution?.(Number(width), Number(height));
+      },
+      setInputMode: (mode) => {
+        services.setInputMode?.(String(mode ?? ""));
       },
       possessCamera: (target) => {
         services.possessCamera?.(target);

@@ -231,6 +231,9 @@ export function startPlayer(options: {
     applyPlayerEngineCommand(handle, command);
     applyPlayerActiveScene(handle, game.scenes, command);
     applyPlayerUiCommand(uiHost, command);
+    if (command.type === "setInputMode") {
+      input?.setInputMode(String(command.mode ?? "All"));
+    }
     if (command.type === "stats") {
       ticks = Number(command.tickIndex ?? ticks + 1);
       lastWorkerTickIndex = ticks;

@@ -83,6 +83,21 @@ describe("PlayHudOverlay input", () => {
     expect(onTouchAxis).toHaveBeenCalledWith("Jump", 0);
   });
 
+  it("does not feed touch axes in Game input mode", () => {
+    const onTouchAxis = vi.fn();
+    const { getByTestId } = render(
+      <PlayHudOverlay
+        width={400}
+        height={300}
+        inputMode="Game"
+        instances={[{ instanceId: "hud", document: hudWith("TouchButton") }]}
+        onTouchAxis={onTouchAxis}
+      />,
+    );
+    fireEvent.pointerDown(getByTestId("play-hud-widget-hud:ctrl"));
+    expect(onTouchAxis).not.toHaveBeenCalled();
+  });
+
   it("TouchDPad pointer feeds dpad-x / dpad-y", () => {
     const onTouchAxis = vi.fn();
     const { getByTestId } = render(
@@ -242,6 +257,7 @@ describe("PlayHudOverlay widget events", () => {
     attachFullscreenGuiMock.mockReturnValue({
       adt: { markAsDirty: vi.fn() },
       host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
       dispose: vi.fn(),
     });
     const onWidgetEvent = vi.fn();
@@ -289,6 +305,7 @@ describe("PlayHudOverlay images", () => {
     attachFullscreenGuiMock.mockReturnValue({
       adt: { markAsDirty: vi.fn() },
       host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
       dispose: vi.fn(),
     });
     const resolveImageUrl = (guid: string) =>
@@ -347,6 +364,7 @@ describe("PlayHudOverlay fullscreen GUI persistence", () => {
         markAsDirty: vi.fn(),
         reconcile,
       },
+      setAllowGuiHits: vi.fn(),
       dispose,
     };
     attachFullscreenGuiMock.mockReturnValue(attached);

@@ -56,6 +56,8 @@ export type UiWidgetEvent =
 
 export interface BabylonUiHostOptions {
   interactive: boolean;
+  /** When false (Game input mode), GUI still paints but does not pick. */
+  allowGuiHits?: boolean;
   resolveImageUrl?: (guid: string) => string | null;
   onTouchAxis?: (controlId: string, value: number) => void;
   onWidgetEvent?: (event: UiWidgetEvent) => void;
@@ -65,6 +67,7 @@ export interface BabylonUiHostOptions {
 export class BabylonUiApplyHost implements UiApplyHost {
   readonly visibility = new Map<string, boolean>();
   private handles: GuiControlHandle[] = [];
+  private descriptors: UiControlDescriptor[] = [];
   private readonly factory: GuiControlFactory;
   private readonly options: BabylonUiHostOptions;
 
@@ -73,18 +76,31 @@ export class BabylonUiApplyHost implements UiApplyHost {
     this.options = options;
   }
 
+  private specOptions(): { interactive: boolean; allowGuiHits: boolean } {
+    return {
+      interactive: this.options.interactive,
+      allowGuiHits: this.options.allowGuiHits !== false,
+    };
+  }
+
+  setAllowGuiHits(allow: boolean): void {
+    if (this.options.allowGuiHits === allow) return;
+    this.options.allowGuiHits = allow;
+    if (this.descriptors.length > 0) this.reconcile(this.descriptors);
+  }
+
   clear(): void {
     this.handles = [];
+    this.descriptors = [];
     this.visibility.clear();
     this.factory.clear();
   }
 
   reconcile(descriptors: readonly UiControlDescriptor[]): void {
+    this.descriptors = [...descriptors];
     const next = descriptors.map((descriptor) => ({
       descriptor,
-      spec: guiSpecFromDescriptor(descriptor, {
-        interactive: this.options.interactive,
-      }),
+      spec: guiSpecFromDescriptor(descriptor, this.specOptions()),
     }));
     const nextIds = new Set(next.map((row) => row.spec.id));
     for (const handle of this.handles) {
@@ -124,9 +140,8 @@ export class BabylonUiApplyHost implements UiApplyHost {
   }
 
   addControl(descriptor: UiControlDescriptor): void {
-    const spec = guiSpecFromDescriptor(descriptor, {
-      interactive: this.options.interactive,
-    });
+    this.descriptors.push(descriptor);
+    const spec = guiSpecFromDescriptor(descriptor, this.specOptions());
     if (this.visibility.get(descriptor.id) === false) {
       spec.hitTestVisible = false;
     }

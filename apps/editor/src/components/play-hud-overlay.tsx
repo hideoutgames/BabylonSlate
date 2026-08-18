@@ -15,6 +15,11 @@ import {
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 import type { UiWidgetEventKind } from "@babylonslate/bridge";
+import {
+  DEFAULT_INPUT_MODE,
+  inputModeAllowsGuiHits,
+  type InputMode,
+} from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
@@ -43,6 +48,8 @@ export interface PlayHudOverlayProps {
   }) => void;
   /** Play scene; when set, widgets render through Babylon GUI. */
   scene?: Scene | null;
+  /** Play input mode; Game paints HUD but skips GUI hits. */
+  inputMode?: InputMode;
   fontEntries?: readonly FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
 }
@@ -99,6 +106,7 @@ export function PlayHudOverlay({
   onTouchAxis,
   onWidgetEvent,
   scene = null,
+  inputMode = DEFAULT_INPUT_MODE,
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
 }: PlayHudOverlayProps) {
@@ -205,6 +213,10 @@ export function PlayHudOverlay({
   }, [scene, boundResolveImageUrl]);
 
   useEffect(() => {
+    attachedRef.current?.setAllowGuiHits?.(inputModeAllowsGuiHits(inputMode));
+  }, [inputMode, guiReady, scene]);
+
+  useEffect(() => {
     const attached = attachedRef.current;
     if (!attached) return;
     const first = instances[0]?.document;
@@ -266,7 +278,7 @@ export function PlayHudOverlay({
     [onWidgetEvent],
   );
 
-  const useDomHits = !guiReady;
+  const useDomHits = !guiReady && inputModeAllowsGuiHits(inputMode);
 
   return (
     <div

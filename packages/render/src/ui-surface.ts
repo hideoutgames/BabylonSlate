@@ -166,7 +166,7 @@ export function attachFullscreenGui(
     width: number;
     height: number;
   },
-): { adt: AdvancedDynamicTexture; host: BabylonUiApplyHost; dispose: () => void } {
+): { adt: AdvancedDynamicTexture; host: BabylonUiApplyHost; setAllowGuiHits: (allow: boolean) => void; dispose: () => void } {
   const adt = AdvancedDynamicTexture.CreateFullscreenUI(options.name, true, scene);
   applyAdtIdeal(adt, options.designResolution, options.scaleRule);
   const factory = createAdtControlFactory(adt, {
@@ -177,6 +177,7 @@ export function attachFullscreenGui(
   });
   const host = new BabylonUiApplyHost(factory, {
     interactive: options.interactive,
+    allowGuiHits: options.allowGuiHits,
     resolveImageUrl: options.resolveImageUrl,
     onTouchAxis: options.onTouchAxis,
     onWidgetEvent: options.onWidgetEvent,
@@ -186,9 +187,15 @@ export function attachFullscreenGui(
   const detachMoves = canvas
     ? attachFullscreenGuiPointerMoves(canvas, adt)
     : undefined;
+  const setAllowGuiHits = (allow: boolean) => {
+    host.setAllowGuiHits(allow);
+    adt.disablePicking = !allow;
+  };
+  if (options.allowGuiHits === false) adt.disablePicking = true;
   return {
     adt,
     host,
+    setAllowGuiHits,
     dispose: () => {
       detachMoves?.();
       host.clear();
@@ -217,6 +224,7 @@ export function attachFullscreenGuiPointerMoves(
   };
 
   const pickMove = (event: Event, offCanvas: boolean) => {
+    if (adt.disablePicking) return;
     try {
       const pointer = event as PointerEvent;
       const { x, y } = offCanvas ? { x: -1, y: -1 } : coords(pointer);

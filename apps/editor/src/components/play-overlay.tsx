@@ -3,6 +3,8 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
+  DEFAULT_INPUT_MODE,
+  type InputMode,
   type PlayPreviewProjectSettings,
   type RenderProjectSettings,
   type SerializedScene,
@@ -182,6 +184,7 @@ export function PlayOverlay({
     () => new Set(),
   );
   const [hudInstances, setHudInstances] = useState<PlayHudInstance[]>([]);
+  const [inputMode, setInputMode] = useState<InputMode>(DEFAULT_INPUT_MODE);
   const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
     null,
   );
@@ -289,6 +292,7 @@ export function PlayOverlay({
     layoutPlay();
     userPausedRef.current = false;
     setPaused(false);
+    setInputMode(DEFAULT_INPUT_MODE);
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -334,6 +338,9 @@ export function PlayOverlay({
       },
       onUiRemove: (instanceId) => {
         setHudInstances((prev) => removePlayHudInstance(prev, instanceId));
+      },
+      onSetInputMode: (mode) => {
+        setInputMode(mode);
       },
       onStats: (stats) => {
         setFps(stats.fps);
@@ -549,6 +556,7 @@ export function PlayOverlay({
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}
         scene={hudScene}
+        inputMode={inputMode}
         onTouchAxis={(controlId, value) =>
           sessionRef.current?.pushTouchAxis(controlId, value)
         }

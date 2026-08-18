@@ -789,6 +789,30 @@ describe("BabylonUiApplyHost", () => {
     expect(canvas.isPointerBlocker).toBe(false);
     host.clear();
   });
+
+  it("clears Button hit flags when GUI hits are disabled", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 40, 0, 0),
+    );
+    doc.widgets.canvas!.children = ["btn"];
+    doc.widgets.btn = button;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: true });
+    applyUiControls(
+      host,
+      describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+    );
+    expect(named(root, "btn")!.isHitTestVisible).toBe(true);
+    host.setAllowGuiHits(false);
+    expect(named(root, "btn")!.isHitTestVisible).toBe(false);
+    expect(named(root, "btn")!.isPointerBlocker).toBe(false);
+    host.clear();
+  });
 });
 
 function applyInteractiveOverlap(

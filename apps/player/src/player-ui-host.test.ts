@@ -179,6 +179,7 @@ describe("createPlayerUiHost", () => {
     const attachGui = vi.fn(() => ({
       adt: { markAsDirty },
       host: new RecordingUiHost(),
+      setAllowGuiHits: vi.fn(),
       dispose: vi.fn(),
     }));
     const host = createPlayerUiHost({
@@ -229,6 +230,16 @@ describe("applyPlayerUiCommand", () => {
     ).toBe(false);
     applyPlayerUiCommand(host, { type: "uiRemove", instanceId: "ui-1" });
     expect(host.instances()).toEqual([]);
+  });
+
+  it("routes setInputMode onto the HUD host", () => {
+    const host = createTestHost();
+    expect(
+      applyPlayerUiCommand(host, {
+        type: "setInputMode",
+        mode: "Game",
+      } satisfies CommandMessage),
+    ).toBe(true);
   });
 
   it("ignores scene and render commands", () => {
