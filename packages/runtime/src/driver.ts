@@ -1742,7 +1742,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       getShadowQuality: () => this.shadowQuality,
       setResolutionScale: (scale) => {
-        this.resolutionScale = Number(scale);
+        this.resolutionScale = Math.min(2, Math.max(1, Number(scale)));
         this.emit({ type: "setResolutionScale", scale: this.resolutionScale });
       },
       getResolutionScale: () => this.resolutionScale,

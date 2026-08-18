@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale 8` printed and emitted 8 while Play clamped to 2 | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam | Spec | `help freecam` omitted the pointer/WASD steal vs gamepad-still-forwards split | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Debug collider listing added local translation without rotating by the body quaternion | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-hud | Spec | `stat threads` highlights fps (main) plus script/physics (worker); HUD has no separate render-ms row | Accepted |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam / p8-console-apply / p8-console-viz | Spec | 2D `freecam` panned per finger instead of pinch-zooming ortho | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `setRenderQuality` applied on the editor viewport `HardwareScalingController`, not Play-only | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale` followed Play valve max 4 instead of clamping 1..2 | Resolved |
