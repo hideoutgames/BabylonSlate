@@ -7,7 +7,7 @@
  *
  * v3 adds `settings.physicsWorld` (`"3d"` | `"2d"`). Older documents default
  * from `viewportMode` on normalize. `editorJoystickEnabled` is additive on v3
- * (missing keys normalize to false). `grid.showGrid` is additive (missing keys
+ * (missing keys normalize to true). `grid.showGrid` is additive (missing keys
  * normalize to true so older scenes keep the editor grid). Fog color/start/end,
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
@@ -167,7 +167,7 @@ export function createDefaultSceneSettings(
       showGrid: true,
     },
     cameraBounds2D: { width: 16, height: 9 },
-    editorJoystickEnabled: false,
+    editorJoystickEnabled: true,
     postProcessStack: [],
   };
 }
@@ -441,7 +441,7 @@ export function normalizeSceneSettings(
           ? bounds.height
           : defaults.cameraBounds2D.height,
     },
-    editorJoystickEnabled: source.editorJoystickEnabled === true,
+    editorJoystickEnabled: source.editorJoystickEnabled !== false,
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
   };
 }

@@ -16,7 +16,7 @@ Each **actor**: `id`, `name`, `classId`, `parentId`, `transform` (position / qua
 
 Each **component**: `id`, `classId`, `properties` (typed per class in the object-model registry), optional `parentId`, optional `transform` (local position / quaternion / scale relative to the parent component, or the **actor origin** when `parentId` is null). Missing `transform` normalizes to identity — no `SCENE_SCHEMA_VERSION` bump.
 
-**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`, `showGrid`), `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay, and `editorJoystickEnabled` (optional on-screen stick that flies/pans the **editor** camera). `grid.showGrid` is additive (missing keys normalize to true). A scene never mixes physics worlds — see [physics.md](physics.md). Details and Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent` (defaults from `parseRigidBodyProperties` / `parseColliderProperties`).
+**Scene settings** include `physicsWorld` (`"3d"` \| `"2d"`, defaults from `viewportMode`), `grid` (`snapEnabled`, translate/rotate/scale snap, `tileSize`, `tileSubdivisions`, `showGrid`), `cameraBounds2D` (`width`, `height`) for the 2D game-camera frame overlay, and `editorJoystickEnabled` (on-screen stick that flies/pans the **editor** camera; default true, missing keys normalize to true, explicit `false` stays off). `grid.showGrid` is additive (missing keys normalize to true). A scene never mixes physics worlds — see [physics.md](physics.md). Details and Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent` (defaults from `parseRigidBodyProperties` / `parseColliderProperties`).
 
 **Actor ids are unique after normalize.** A repeated `id` collapsed the pair into one editor mesh and one Play snapshot slot, so the duplicate silently vanished. `normalizeScene` renames later occurrences (`dupe` → `dupe-2`); the first owner keeps the id, so existing `parentId` references still resolve.
 
@@ -47,7 +47,7 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 - `dragSelectActive` / `setDragSelectActive` — one-shot Drag Select; unpresses after the next tap or marquee
 - `snapEnabled` / `setSnapEnabled` — live viewport settings; persisted via `settings.grid.snapEnabled`
 - `gridVisible` / `setGridVisible` — live viewport settings; persisted via `settings.grid.showGrid` (default true)
-- `joystickEnabled` / `setJoystickEnabled` — live viewport settings; persisted via `settings.editorJoystickEnabled`
+- `joystickEnabled` / `setJoystickEnabled` — live viewport settings; persisted via `settings.editorJoystickEnabled` (default true)
 - `viewportMode` / `setViewportMode` — live mode synced from `documentViewportMode` so undo/redo of `SetViewportModeCommand` restores the camera, not only the serialized field
 
 Panels never mutate selection independently — they consume `useSceneEditing()`.

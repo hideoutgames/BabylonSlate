@@ -121,7 +121,7 @@ export function SceneEditingProvider({
     documentSnapEnabled ?? false,
   );
   const [joystickEnabled, setJoystickEnabled] = useState(
-    documentJoystickEnabled ?? false,
+    documentJoystickEnabled ?? true,
   );
   const [gridVisible, setGridVisible] = useState(
     documentGridVisible ?? true,
