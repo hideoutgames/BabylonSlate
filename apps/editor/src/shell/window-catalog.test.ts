@@ -175,6 +175,23 @@ describe("listDockWindows", () => {
     });
     expect(primaryDockPanel("particle-emitter")).toBe("particle-emitter-preview");
     expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");
+    expect(listDockWindows("model").map((entry) => entry.id)).toEqual([
+      "model-preview",
+      "model-details",
+    ]);
+    expect(listDockWindows("model").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+    ]);
+    expect(
+      listDockWindows("model").find((entry) => entry.id === "model-details")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "model-preview",
+      direction: "right",
+      initialWidth: 280,
+    });
+    expect(primaryDockPanel("model")).toBe("model-preview");
     expect(
       listDockWindows("sprite-animation").find(
         (entry) => entry.id === "sprite-animation-details",
@@ -312,6 +329,7 @@ describe("listDockWindows", () => {
       "sound-attenuation",
       "particle-emitter",
       "particle-system",
+      "model",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
         false,

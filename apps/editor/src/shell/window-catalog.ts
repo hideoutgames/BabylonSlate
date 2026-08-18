@@ -24,7 +24,8 @@ export type DockviewDocumentKind =
   | "audio-channel"
   | "sound-attenuation"
   | "particle-emitter"
-  | "particle-system";
+  | "particle-system"
+  | "model";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -48,6 +49,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "model",
 ]);
 
 export function isDockviewDocumentKind(
@@ -98,6 +100,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "sound-attenuation": "sound-attenuation-details",
   "particle-emitter": "particle-emitter-preview",
   "particle-system": "particle-system-preview",
+  model: "model-preview",
 };
 
 export function primaryDockPanel(
@@ -356,6 +359,20 @@ const SCRIPT_INTERFACE_WINDOWS: DockWindowDefinition[] = [
     title: "Details",
     defaultPosition: {
       referencePanelId: "script-interface-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const MODEL_WINDOWS: DockWindowDefinition[] = [
+  { id: "model-preview", component: "model-preview", title: "Preview" },
+  {
+    id: "model-details",
+    component: "model-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "model-preview",
       direction: "right",
       initialWidth: 280,
     },
@@ -725,6 +742,7 @@ export function listDockWindows(
     return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
   }
   if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "model") return withOptionalLocks(kind, MODEL_WINDOWS, options);
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
   }

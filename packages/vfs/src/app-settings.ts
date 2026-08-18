@@ -28,6 +28,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "sound-attenuation": ["sound-attenuation-details"],
   "particle-emitter": ["particle-emitter-preview"],
   "particle-system": ["particle-system-preview"],
+  model: ["model-preview"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -138,6 +139,7 @@ export const engineSettingsSchema = z.object({
       "particle-system": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["particle-system"],
       ),
+      model: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.model),
     })
     .default(mutableFocusKeepPanels),
   uiDesignerPresets: z

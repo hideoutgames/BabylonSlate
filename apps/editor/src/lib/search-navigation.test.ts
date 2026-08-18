@@ -81,6 +81,14 @@ describe("documentOpenForTarget", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
+        path: "assets/hero.babasset",
+        guid: "mesh-1",
+        assetType: "Model",
+      }),
+    ).toEqual({ kind: "model", path: "assets/hero.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
         path: "assets/colors.babasset",
         guid: "enum-1",
         assetType: "Enum",

@@ -118,6 +118,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "particle-system",
     label: "Particle System",
   },
+  { kind: "model", keepKey: "model", label: "Model" },
 ];
 
 export type EngineSettingsCategoryId =

@@ -36,6 +36,7 @@ describe("app settings", () => {
       "sound-attenuation": ["sound-attenuation-details"],
       "particle-emitter": ["particle-emitter-preview"],
       "particle-system": ["particle-system-preview"],
+      model: ["model-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
@@ -164,6 +165,7 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels["particle-system"]).toEqual([
       "particle-system-preview",
     ]);
+    expect(parsed.focusKeepPanels.model).toEqual(["model-preview"]);
   });
 
   it("fills new focus keep-list keys when saved JSON only has scene and graph", () => {

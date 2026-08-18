@@ -124,8 +124,22 @@ describe("Class and settings documents", () => {
     ).toBe("Hero Class");
   });
 
+  it("opens Model as a DockView document", () => {
+    expect(documentKindForAssetType("Model")).toBe("model");
+    expect(assetTypeForDocumentKind("model")).toBe("Model");
+    expect(documentKindLabel("model")).toBe("Model");
+    expect(isAssetDocumentKind("model")).toBe(true);
+    expect(parseDocumentId("model:assets/hero.babasset")).toEqual({
+      kind: "model",
+      path: "assets/hero.babasset",
+    });
+    expect(
+      createDocumentRef("model", "assets/hero.babasset", { name: "Hero" }).label,
+    ).toBe("Hero Model");
+  });
+
   it("opens import assets as settings tabs", () => {
-    for (const type of ["Texture", "Model", "Audio", "Animation"]) {
+    for (const type of ["Texture", "Audio", "Animation"]) {
       expect(documentKindForAssetType(type)).toBe("asset-settings");
     }
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");

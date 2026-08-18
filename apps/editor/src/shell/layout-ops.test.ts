@@ -46,6 +46,7 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("sprite-animation")).toBe(true);
     expect(canFocusLayout("anim-graph")).toBe(true);
     expect(canFocusLayout("behaviour-tree")).toBe(true);
+    expect(canFocusLayout("model")).toBe(true);
   });
 
   it("is disabled on Content Browser and compact asset tabs", () => {
@@ -193,6 +194,8 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(FOCUS_PRIMARY_PANEL["particle-emitter"]).toBe(
       "particle-emitter-preview",
     );
+    expect(resolveFocusKeepPanelIds("model", [])).toEqual(["model-preview"]);
+    expect(FOCUS_PRIMARY_PANEL.model).toBe("model-preview");
   });
 
   it("keeps already-open Editor Utility tabs when the keep list is the default", () => {
