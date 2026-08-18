@@ -19,6 +19,7 @@ describe("normalizeModelPayload", () => {
         { index: 0, name: "HeroMat", materialGuid: "mat-1" },
         { index: 1, name: "Slot 2", materialGuid: "mat-2" },
       ],
+      skeletonGuid: null,
     });
     expect("materialCount" in payload).toBe(false);
     expect("textureCount" in payload).toBe(false);
@@ -57,5 +58,24 @@ describe("normalizeModelPayload", () => {
     expect(remapped.materialSlots).toEqual([
       { index: 0, name: "Body", materialGuid: "mat-new" },
     ]);
+    expect(remapped.skeletonGuid).toBeNull();
+  });
+
+  it("keeps skeletonGuid and remaps it", () => {
+    const payload = normalizeModelPayload({
+      clipNames: ["Idle"],
+      skeletonGuid: "  skel-1  ",
+    });
+    expect(payload.skeletonGuid).toBe("skel-1");
+    const remapped = remapModelPayloadGuids(
+      "Model",
+      payload,
+      new Map([["skel-1", "skel-2"]]),
+    );
+    expect(remapped.skeletonGuid).toBe("skel-2");
+  });
+
+  it("coerces missing skeletonGuid to null", () => {
+    expect(normalizeModelPayload({ clipNames: [] }).skeletonGuid).toBeNull();
   });
 });

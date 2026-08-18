@@ -18,12 +18,17 @@ export interface GlbBrowseMaterial {
 
 export interface GlbBrowseAnimation {
   name: string;
+  durationMs?: number;
 }
+
+export type GlbRigKind = "skin" | "hierarchy" | "none";
 
 export interface GlbBrowseParse {
   materials: GlbBrowseMaterial[];
   images: GlbBrowseImage[];
   animations: GlbBrowseAnimation[];
+  rigKind: GlbRigKind;
+  boneNames: string[];
 }
 
 const GLB_MAGIC = 0x46546c67;
@@ -160,16 +165,120 @@ function browseFromGltfJson(
     return { name, albedoImageIndex };
   });
 
+  const accessorsJson = Array.isArray(json.accessors) ? json.accessors : [];
+  const nodesJson = Array.isArray(json.nodes) ? json.nodes : [];
+  const skinsJson = Array.isArray(json.skins) ? json.skins : [];
+
   const animations: GlbBrowseAnimation[] = animationsJson.map((entry, i) => {
     const animation = entry as Record<string, unknown>;
     const name =
       typeof animation.name === "string" && animation.name.length > 0
         ? animation.name
         : `Animation_${i}`;
-    return { name };
+    const durationMs = clipDurationMs(animation, accessorsJson);
+    return durationMs !== undefined ? { name, durationMs } : { name };
   });
 
-  return { materials, images: images_out, animations };
+  const { rigKind, boneNames } = classifyGltfRig(
+    nodesJson,
+    skinsJson,
+    animationsJson,
+  );
+
+  return { materials, images: images_out, animations, rigKind, boneNames };
+}
+
+function nodeName(nodes: unknown[], index: number): string {
+  const node = nodes[index] as Record<string, unknown> | undefined;
+  if (typeof node?.name === "string" && node.name.length > 0) return node.name;
+  return `Node_${index}`;
+}
+
+function clipDurationMs(
+  animation: Record<string, unknown>,
+  accessors: unknown[],
+): number | undefined {
+  const samplers = Array.isArray(animation.samplers) ? animation.samplers : [];
+  let maxSeconds = 0;
+  let found = false;
+  for (const sampler of samplers) {
+    const row = sampler as Record<string, unknown>;
+    if (typeof row.input !== "number") continue;
+    const accessor = accessors[row.input] as Record<string, unknown> | undefined;
+    const max = Array.isArray(accessor?.max) ? accessor.max : [];
+    const seconds = typeof max[0] === "number" ? max[0] : NaN;
+    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+    found = true;
+    if (seconds > maxSeconds) maxSeconds = seconds;
+  }
+  if (!found) return undefined;
+  return maxSeconds * 1000;
+}
+
+function classifyGltfRig(
+  nodes: unknown[],
+  skins: unknown[],
+  animations: unknown[],
+): { rigKind: GlbRigKind; boneNames: string[] } {
+  if (skins.length > 0) {
+    const boneNames: string[] = [];
+    const seen = new Set<string>();
+    for (const skin of skins) {
+      const joints = Array.isArray((skin as Record<string, unknown>).joints)
+        ? ((skin as Record<string, unknown>).joints as unknown[])
+        : [];
+      for (const joint of joints) {
+        if (typeof joint !== "number") continue;
+        const name = nodeName(nodes, joint);
+        if (seen.has(name)) continue;
+        seen.add(name);
+        boneNames.push(name);
+      }
+    }
+    return { rigKind: "skin", boneNames };
+  }
+
+  const targeted = new Set<number>();
+  for (const animation of animations) {
+    const channels = Array.isArray((animation as Record<string, unknown>).channels)
+      ? ((animation as Record<string, unknown>).channels as unknown[])
+      : [];
+    for (const channel of channels) {
+      const target = (channel as Record<string, unknown>).target as
+        | Record<string, unknown>
+        | undefined;
+      if (typeof target?.node === "number") targeted.add(target.node);
+    }
+  }
+
+  const treeNames = hierarchyBoneNames(nodes);
+  const targetsTree =
+    targeted.size >= 2 ||
+    [...targeted].some((index) => {
+      const node = nodes[index] as Record<string, unknown> | undefined;
+      return Array.isArray(node?.children) && node.children.length > 0;
+    });
+  if (treeNames.length > 0 && targeted.size > 0 && targetsTree) {
+    return { rigKind: "hierarchy", boneNames: treeNames };
+  }
+  return { rigKind: "none", boneNames: [] };
+}
+
+function hierarchyBoneNames(nodes: unknown[]): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i] as Record<string, unknown> | undefined;
+    if (!node) continue;
+    const hasMesh = typeof node.mesh === "number";
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (!hasMesh && !hasChildren) continue;
+    const name = nodeName(nodes, i);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 function decodeDataUri(

@@ -7,6 +7,7 @@ export interface ModelMaterialSlot {
 export interface ModelPayload {
   materialSlots: ModelMaterialSlot[];
   clipNames: string[];
+  skeletonGuid: string | null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -34,6 +35,12 @@ function stringList(value: unknown): string[] {
   );
 }
 
+function nullableGuid(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const guid = value.trim();
+  return guid.length > 0 ? guid : null;
+}
+
 /** Drop importer count fields; coerce slot guids; keep filled legacy guids. */
 export function normalizeModelPayload(value: unknown): ModelPayload {
   const record = asRecord(value);
@@ -55,6 +62,7 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
   return {
     materialSlots,
     clipNames: stringList(record.clipNames),
+    skeletonGuid: nullableGuid(record.skeletonGuid),
   };
 }
 
@@ -73,6 +81,9 @@ export function remapModelPayloadGuids(
         ? (remap.get(slot.materialGuid) ?? slot.materialGuid)
         : null,
     })),
+    skeletonGuid: model.skeletonGuid
+      ? (remap.get(model.skeletonGuid) ?? model.skeletonGuid)
+      : null,
   };
 }
 
@@ -82,5 +93,13 @@ export function modelMaterialGuids(payload: unknown): string[] {
   for (const slot of normalizeModelPayload(payload).materialSlots) {
     if (slot.materialGuid) guids.add(slot.materialGuid);
   }
+  return [...guids].sort();
+}
+
+/** Skeleton + slot Material guids on a Model header. */
+export function modelAssetGuids(payload: unknown): string[] {
+  const model = normalizeModelPayload(payload);
+  const guids = new Set<string>(modelMaterialGuids(model));
+  if (model.skeletonGuid) guids.add(model.skeletonGuid);
   return [...guids].sort();
 }

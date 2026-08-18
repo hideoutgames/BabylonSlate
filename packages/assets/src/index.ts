@@ -14,6 +14,8 @@ export * from "./audio-payload";
 export * from "./audio-waveform";
 export * from "./particle-payload";
 export * from "./model-payload";
+export * from "./skeleton-payload";
+export * from "./animation-payload";
 export * from "./audio-reverb";
 export * from "./sprite-packer";
 export * from "./sprite-payload";

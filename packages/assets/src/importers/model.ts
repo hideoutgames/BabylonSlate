@@ -1,7 +1,9 @@
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
+import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
 import { normalizeModelPayload } from "../model-payload";
+import { normalizeSkeletonPayload } from "../skeleton-payload";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import {
@@ -157,6 +159,27 @@ function importFromBrowse(
     }
   }
 
+  const modelGuid = newAssetGuid();
+  const skeletonGuid = browse.rigKind === "none" ? null : newAssetGuid();
+  if (skeletonGuid) {
+    results.push({
+      type: "Skeleton",
+      name: `${name}_Skeleton`,
+      guid: skeletonGuid,
+      version: 1,
+      dependencies: [modelGuid],
+      parentClass: null,
+      payload: {
+        ...normalizeSkeletonPayload({
+          modelGuid,
+          kind: browse.rigKind,
+          boneNames: browse.boneNames,
+        }),
+      },
+      chunks: [],
+    });
+  }
+
   const animationGuids: string[] = [];
   const animations = browse.animations;
   for (const animation of animations) {
@@ -167,9 +190,16 @@ function importFromBrowse(
       name: `${name}_${animation.name}`,
       guid,
       version: 1,
-      dependencies: [],
+      dependencies: [modelGuid, ...(skeletonGuid ? [skeletonGuid] : [])],
       parentClass: null,
-      payload: { clipName: animation.name },
+      payload: {
+        ...normalizeAnimationPayload({
+          clipName: animation.name,
+          modelGuid,
+          skeletonGuid,
+          durationMs: animation.durationMs,
+        }),
+      },
       chunks: [],
     });
   }
@@ -179,13 +209,16 @@ function importFromBrowse(
       ? browse.materials.map((material) => material.name)
       : materialGuids.map(() => "Material");
 
-  const modelGuid = newAssetGuid();
   results.unshift({
     type: "Model",
     name,
     guid: modelGuid,
     version: 1,
-    dependencies: [...materialGuids, ...animationGuids],
+    dependencies: [
+      ...materialGuids,
+      ...animationGuids,
+      ...(skeletonGuid ? [skeletonGuid] : []),
+    ],
     parentClass: null,
     payload: {
       ...normalizeModelPayload({
@@ -195,6 +228,7 @@ function importFromBrowse(
           name: slotNames[index],
           materialGuid: guid,
         })),
+        skeletonGuid,
       }),
     } as Record<string, unknown>,
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],

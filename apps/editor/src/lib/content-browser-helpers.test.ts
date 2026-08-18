@@ -1697,13 +1697,29 @@ describe("content-browser-helpers", () => {
     expect(
       assetHeaderDependencies("Model", {
         clipNames: ["Walk"],
+        skeletonGuid: "skel-hero",
         materialSlots: [
           { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
           { index: 1, name: "Eyes", materialGuid: null },
           { index: 2, name: "Alt", materialGuid: "mat-alt" },
         ],
       }),
-    ).toEqual(["mat-alt", "mat-hero"]);
+    ).toEqual(["mat-alt", "mat-hero", "skel-hero"]);
+    expect(
+      assetHeaderDependencies("Skeleton", {
+        modelGuid: "model-1",
+        kind: "hierarchy",
+        boneNames: ["root"],
+      }),
+    ).toEqual(["model-1"]);
+    expect(
+      assetHeaderDependencies("Animation", {
+        clipName: "Walk",
+        modelGuid: "model-1",
+        skeletonGuid: "skel-1",
+        sourceAnimationGuid: "anim-src",
+      }),
+    ).toEqual(["anim-src", "model-1", "skel-1"]);
   });
 
   it("stores Material domain on the scanned header", () => {
