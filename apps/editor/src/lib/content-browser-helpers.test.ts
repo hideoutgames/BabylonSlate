@@ -17,6 +17,8 @@ import {
   contentBrowserMoveFromDrop,
   displayAssetTitle,
   filterAssets,
+  sortAssets,
+  sortChildFolders,
   flattenContentBrowserTree,
   flattenFolderTree,
   filterFolderTreeRows,
@@ -64,6 +66,7 @@ function asset(
     guid?: string;
     type?: string;
     name?: string;
+    mtime?: number | null;
   },
 ): IndexedAsset {
   return {
@@ -81,6 +84,7 @@ function asset(
       payload: overrides.payload ?? {},
       chunks: [],
     },
+    mtime: overrides.mtime,
   };
 }
 
@@ -137,6 +141,104 @@ describe("content-browser-helpers", () => {
     expect(matchesAssetSearch(item, "model")).toBe(true);
     expect(matchesAssetSearch(item, "crate")).toBe(true);
     expect(matchesAssetSearch(item, "missing")).toBe(false);
+  });
+
+  it("sorts assets by display name case-insensitively", () => {
+    const zebra = asset({ guid: "z", name: "Zebra.Texture" });
+    const alpha = asset({ guid: "a", name: "alpha" });
+    const beta = asset({ guid: "b", name: "Beta" });
+    const items = [zebra, alpha, beta];
+
+    expect(sortAssets(items, "name-asc").map((item) => item.header.guid)).toEqual([
+      "a",
+      "b",
+      "z",
+    ]);
+    expect(sortAssets(items, "name-desc").map((item) => item.header.guid)).toEqual([
+      "z",
+      "b",
+      "a",
+    ]);
+    expect(items.map((item) => item.header.guid)).toEqual(["z", "a", "b"]);
+  });
+
+  it("sorts assets by type then name", () => {
+    const sceneB = asset({ guid: "sb", name: "Beta", type: "Scene" });
+    const texture = asset({ guid: "t", name: "Alpha", type: "Texture" });
+    const sceneA = asset({ guid: "sa", name: "Alpha", type: "Scene" });
+
+    expect(
+      sortAssets([sceneB, texture, sceneA], "type-asc").map((item) => item.header.guid),
+    ).toEqual(["sa", "sb", "t"]);
+    expect(
+      sortAssets([sceneB, texture, sceneA], "type-desc").map((item) => item.header.guid),
+    ).toEqual(["t", "sa", "sb"]);
+  });
+
+  it("sorts assets by mtime and treats missing mtime as oldest", () => {
+    const newest = asset({ guid: "n", name: "New", mtime: 300 });
+    const older = asset({ guid: "o", name: "Old", mtime: 100 });
+    const unknown = asset({ guid: "u", name: "Unknown", mtime: null });
+    const missing = asset({ guid: "m", name: "Missing" });
+
+    expect(
+      sortAssets([newest, unknown, older, missing], "date-desc").map(
+        (item) => item.header.guid,
+      ),
+    ).toEqual(["n", "o", "m", "u"]);
+    expect(
+      sortAssets([newest, unknown, older, missing], "date-asc").map(
+        (item) => item.header.guid,
+      ),
+    ).toEqual(["m", "u", "o", "n"]);
+  });
+
+  it("breaks remaining sort ties with guid", () => {
+    const first = asset({ guid: "aaa", name: "Same", type: "Scene", mtime: 10 });
+    const second = asset({ guid: "zzz", name: "Same", type: "Scene", mtime: 10 });
+
+    expect(sortAssets([second, first], "name-asc").map((item) => item.header.guid)).toEqual([
+      "aaa",
+      "zzz",
+    ]);
+    expect(sortAssets([second, first], "type-asc").map((item) => item.header.guid)).toEqual([
+      "aaa",
+      "zzz",
+    ]);
+    expect(sortAssets([second, first], "date-asc").map((item) => item.header.guid)).toEqual([
+      "aaa",
+      "zzz",
+    ]);
+  });
+
+  it("sorts folder tiles by name only in name modes", () => {
+    const folders = [
+      { name: "Zed", path: "assets/Zed" },
+      { name: "alpha", path: "assets/alpha" },
+      { name: "Beta", path: "assets/Beta" },
+    ];
+
+    expect(sortChildFolders(folders, "name-asc").map((folder) => folder.name)).toEqual([
+      "alpha",
+      "Beta",
+      "Zed",
+    ]);
+    expect(sortChildFolders(folders, "name-desc").map((folder) => folder.name)).toEqual([
+      "Zed",
+      "Beta",
+      "alpha",
+    ]);
+    expect(sortChildFolders(folders, "type-desc").map((folder) => folder.name)).toEqual([
+      "alpha",
+      "Beta",
+      "Zed",
+    ]);
+    expect(sortChildFolders(folders, "date-desc").map((folder) => folder.name)).toEqual([
+      "alpha",
+      "Beta",
+      "Zed",
+    ]);
+    expect(folders.map((folder) => folder.name)).toEqual(["Zed", "alpha", "Beta"]);
   });
 
   it("reads texture compression badges", () => {

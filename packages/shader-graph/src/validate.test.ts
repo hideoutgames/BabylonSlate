@@ -413,4 +413,164 @@ describe("material validation", () => {
     );
     expect(diagnostic?.nodeId).toBe("bogus");
   });
+
+  it("flags a fragment-only node wired into World Position Offset", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      {
+        id: "ddx",
+        type: "derivative.ddx",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "combine",
+        type: "vector.combine",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges.push(
+      {
+        id: "e-uv-ddx",
+        sourceNodeId: "uv",
+        sourcePinId: "uv",
+        targetNodeId: "ddx",
+        targetPinId: "value",
+      },
+      {
+        id: "e-ddx-combine",
+        sourceNodeId: "ddx",
+        sourcePinId: "out",
+        targetNodeId: "combine",
+        targetPinId: "x",
+      },
+      {
+        id: "e-combine-wpo",
+        sourceNodeId: "combine",
+        sourcePinId: "xyz",
+        targetNodeId: "output",
+        targetPinId: "worldPositionOffset",
+      },
+    );
+    const diagnostic = validateMaterialDocument(doc).find(
+      (row) => row.code === "material.stageMismatch",
+    );
+    expect(diagnostic?.nodeId).toBe("ddx");
+    expect(diagnostic?.message).toMatch(/World Position Offset/i);
+  });
+
+  it("allows Time and Sine to drive World Position Offset", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} },
+      { id: "sin", type: "math.sin", position: { x: 0, y: 0 }, properties: {} },
+      {
+        id: "combine",
+        type: "vector.combine",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges.push(
+      {
+        id: "e-time-sin",
+        sourceNodeId: "time",
+        sourcePinId: "time",
+        targetNodeId: "sin",
+        targetPinId: "value",
+      },
+      {
+        id: "e-sin-combine",
+        sourceNodeId: "sin",
+        sourcePinId: "out",
+        targetNodeId: "combine",
+        targetPinId: "y",
+      },
+      {
+        id: "e-combine-wpo",
+        sourceNodeId: "combine",
+        sourcePinId: "xyz",
+        targetNodeId: "output",
+        targetPinId: "worldPositionOffset",
+      },
+    );
+    expect(codes(doc)).not.toContain("material.stageMismatch");
+  });
+
+  it("does not flag a fragment-only node that only feeds Base Color", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "uv", type: "input.uv", position: { x: 0, y: 0 }, properties: {} },
+      {
+        id: "ddx",
+        type: "derivative.ddx",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-uv-ddx",
+        sourceNodeId: "uv",
+        sourcePinId: "uv",
+        targetNodeId: "ddx",
+        targetPinId: "value",
+      },
+      {
+        id: "e-ddx-color",
+        sourceNodeId: "ddx",
+        sourcePinId: "out",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    expect(codes(doc)).not.toContain("material.stageMismatch");
+  });
+
+  it("flags a fragment-only node inside a function that feeds World Position Offset", () => {
+    const fn = createDefaultMaterialFunctionDocument("Wave");
+    fn.nodes.push({
+      id: "ddx",
+      type: "derivative.ddx",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    fn.edges = [
+      {
+        id: "e-in-ddx",
+        sourceNodeId: "inputs",
+        sourcePinId: "in_value",
+        targetNodeId: "ddx",
+        targetPinId: "value",
+      },
+      {
+        id: "e-ddx-out",
+        sourceNodeId: "ddx",
+        sourcePinId: "out",
+        targetNodeId: "outputs",
+        targetPinId: "out_value",
+      },
+    ];
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "call",
+      type: "function.call",
+      position: { x: 0, y: 0 },
+      properties: { functionGuid: "fn-wave" },
+    });
+    doc.edges.push({
+      id: "e-call-wpo",
+      sourceNodeId: "call",
+      sourcePinId: "out_value",
+      targetNodeId: "output",
+      targetPinId: "worldPositionOffset",
+    });
+    const diagnostic = validateMaterialDocument(doc, {
+      functions: { "fn-wave": fn },
+    }).find((row) => row.code === "material.stageMismatch");
+    expect(diagnostic?.nodeId).toBe("call/ddx");
+  });
 });

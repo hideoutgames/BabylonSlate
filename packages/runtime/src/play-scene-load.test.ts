@@ -619,6 +619,71 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("emits light:* on assignMesh parts and audio as meshKind audio", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/helpers.scene.babasset",
+        scene: {
+          name: "Helpers",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("lamp", "Lamp", {
+              components: [
+                {
+                  id: "light-comp",
+                  classId: "LightComponent",
+                  properties: {
+                    lightKind: "spot",
+                    color: [1, 1, 1],
+                    intensity: 1,
+                  },
+                  transform: {
+                    position: [0, 1, 0],
+                    rotation: [0, 0, 0, 1],
+                    scale: [1, 1, 1],
+                  },
+                },
+              ],
+            }),
+            createActor("spk", "Speaker", {
+              components: [
+                {
+                  id: "audio-comp",
+                  classId: "AudioComponent",
+                  properties: {},
+                },
+              ],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    const assigns = commands.filter((c) => c.type === "assignMesh");
+    expect(assigns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          meshKind: "light:spot",
+          parts: [
+            expect.objectContaining({
+              componentId: "light-comp",
+              meshKind: "light:spot",
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          meshKind: "audio",
+        }),
+      ]),
+    );
+    runtime.stop();
+  });
+
   it("emits assignMaterial when a MeshComponent stores a materialGuid", () => {
     const commands: CommandMessage[] = [];
     const mesh = createMeshComponent("component-1", "sphere");

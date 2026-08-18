@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import {
+  ArrowUpDownIcon,
   FolderIcon,
   FolderPlusIcon,
   ListFilterIcon,
@@ -34,6 +35,8 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { Input } from "@babylonslate/ui/components/input";
@@ -87,6 +90,7 @@ import {
   contentBrowserMovePreviewName,
   lastSceneClassDeleteLines,
   defaultParentClassForType,
+  CONTENT_BROWSER_SORT_OPTIONS,
   displayAssetTitle,
   filterAssets,
   flattenContentBrowserForest,
@@ -103,9 +107,12 @@ import {
   parentFolderPath,
   remapPathAfterFolderMove,
   rootSelectedFolderPaths,
+  sortAssets,
+  sortChildFolders,
   uniqueAssetTypes,
   visualForIndexedAsset,
   type ContentBrowserContextAction,
+  type ContentBrowserSortMode,
   type CreatableAssetType,
 } from "../lib/content-browser-helpers";
 import {
@@ -185,6 +192,7 @@ export function ContentBrowserWorkspace() {
   const [selectedFolderPath, setSelectedFolderPath] = useState(ASSETS_ROOT);
   const [search, setSearch] = useState("");
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<ContentBrowserSortMode>("name-asc");
   const [selectedGuids, setSelectedGuids] = useState<Set<string>>(new Set());
   const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(
     () => new Set(),
@@ -349,23 +357,26 @@ export function ContentBrowserWorkspace() {
 
   const visibleAssets = useMemo(
     () =>
-      filterAssets(allAssets, {
-        folderGuids,
-        typeFilters,
-        search,
-      }),
-    [allAssets, folderGuids, search, typeFilters],
+      sortAssets(
+        filterAssets(allAssets, {
+          folderGuids,
+          typeFilters,
+          search,
+        }),
+        sortMode,
+      ),
+    [allAssets, folderGuids, search, sortMode, typeFilters],
   );
 
   const childFolders = useMemo(() => {
     if (folderTrees.length === 0) return [];
     const folders = listChildFoldersFromTrees(folderTrees, selectedFolderPath);
     const needle = search.trim().toLowerCase();
-    if (!needle) return folders;
-    return folders.filter((folder) =>
-      folder.name.toLowerCase().includes(needle),
-    );
-  }, [folderTrees, search, selectedFolderPath]);
+    const matched = needle
+      ? folders.filter((folder) => folder.name.toLowerCase().includes(needle))
+      : folders;
+    return sortChildFolders(matched, sortMode);
+  }, [folderTrees, search, selectedFolderPath, sortMode]);
 
   const browserRows = useMemo(() => {
     if (folderTrees.length === 0) return [];
@@ -1504,6 +1515,50 @@ export function ContentBrowserWorkspace() {
                   {type}
                 </DropdownMenuCheckboxItem>
               ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="content-browser-sort"
+                aria-label="Sort"
+              />
+            }
+          >
+            <ArrowUpDownIcon data-icon="inline-start" />
+            Sort
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-44"
+            data-testid="content-browser-sort-menu"
+          >
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={sortMode}
+                onValueChange={(value) => {
+                  const next = CONTENT_BROWSER_SORT_OPTIONS.find(
+                    (option) => option.mode === value,
+                  );
+                  if (next) setSortMode(next.mode);
+                }}
+              >
+                {CONTENT_BROWSER_SORT_OPTIONS.map((option) => (
+                  <DropdownMenuRadioItem
+                    key={option.mode}
+                    value={option.mode}
+                    data-testid={`content-browser-sort-${option.mode}`}
+                  >
+                    {option.label}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>

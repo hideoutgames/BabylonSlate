@@ -1460,6 +1460,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         graphByGuid: loaded.graphByGuid,
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
+        guiImageBytesByGuid: loaded.guiImageBytesByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
         customResolution:
