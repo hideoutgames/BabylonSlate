@@ -35,6 +35,7 @@ export {
   createDefaultPlayHud,
   createDefaultUserInterface,
   createWidget,
+  defaultHitTestableFor,
   defaultPropsFor,
   defaultStyleFor,
   defaultWidgetLayout,
@@ -117,3 +118,4 @@ export {
   widgetParentId,
 } from "./widget-tree";
 export { collectImageGuidsFromUiDocuments } from "./image-guids";
+export { collectMaterialGuidsFromUiDocuments } from "./material-guids";

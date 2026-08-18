@@ -83,6 +83,21 @@ describe("PlayHudOverlay input", () => {
     expect(onTouchAxis).toHaveBeenCalledWith("Jump", 0);
   });
 
+  it("does not feed touch axes in Game input mode", () => {
+    const onTouchAxis = vi.fn();
+    const { getByTestId } = render(
+      <PlayHudOverlay
+        width={400}
+        height={300}
+        inputMode="Game"
+        instances={[{ instanceId: "hud", document: hudWith("TouchButton") }]}
+        onTouchAxis={onTouchAxis}
+      />,
+    );
+    fireEvent.pointerDown(getByTestId("play-hud-widget-hud:ctrl"));
+    expect(onTouchAxis).not.toHaveBeenCalled();
+  });
+
   it("TouchDPad pointer feeds dpad-x / dpad-y", () => {
     const onTouchAxis = vi.fn();
     const { getByTestId } = render(
@@ -242,6 +257,7 @@ describe("PlayHudOverlay widget events", () => {
     attachFullscreenGuiMock.mockReturnValue({
       adt: { markAsDirty: vi.fn() },
       host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
       dispose: vi.fn(),
     });
     const onWidgetEvent = vi.fn();
@@ -289,6 +305,7 @@ describe("PlayHudOverlay images", () => {
     attachFullscreenGuiMock.mockReturnValue({
       adt: { markAsDirty: vi.fn() },
       host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
       dispose: vi.fn(),
     });
     const resolveImageUrl = (guid: string) =>
@@ -311,6 +328,34 @@ describe("PlayHudOverlay images", () => {
     expect(options.interactive).toBe(true);
     expect(options.resolveImageUrl?.("tex-1")).toBe("blob:tex-1");
     expect(options.resolveImageUrl?.("missing")).toBeNull();
+  });
+
+  it("passes resolveInterfaceMaterial into the fullscreen GUI host", () => {
+    attachFullscreenGuiMock.mockReturnValue({
+      adt: { markAsDirty: vi.fn() },
+      host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    });
+    const resolveInterfaceMaterial = (guid: string) =>
+      guid === "mat-glow" ? ({ domain: "interface" } as never) : null;
+    render(
+      <PlayHudOverlay
+        scene={{} as never}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "hud", document: hudWith("TouchButton") }]}
+        onTouchAxis={() => {}}
+        resolveInterfaceMaterial={resolveInterfaceMaterial}
+      />,
+    );
+    const options = attachFullscreenGuiMock.mock.calls[0]?.[1] as {
+      resolveInterfaceMaterial?: (guid: string) => unknown;
+    };
+    expect(options.resolveInterfaceMaterial?.("mat-glow")).toEqual({
+      domain: "interface",
+    });
+    expect(options.resolveInterfaceMaterial?.("missing")).toBeNull();
   });
 
   it("keeps Image and Button widgets in the applied HUD", () => {
@@ -347,6 +392,7 @@ describe("PlayHudOverlay fullscreen GUI persistence", () => {
         markAsDirty: vi.fn(),
         reconcile,
       },
+      setAllowGuiHits: vi.fn(),
       dispose,
     };
     attachFullscreenGuiMock.mockReturnValue(attached);
@@ -384,6 +430,28 @@ describe("PlayHudOverlay fullscreen GUI persistence", () => {
     expect(controls.map((control) => control.id)).toEqual(
       expect.arrayContaining(["ui-1:ctrl"]),
     );
+  });
+
+  it("reconciles later applied HUDs after earlier ones", () => {
+    const attached = mockAttachedGui();
+    const scene = {} as never;
+    render(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[
+          { instanceId: "ui-1", document: hudWith("Button") },
+          { instanceId: "ui-2", document: hudWith("Button") },
+        ]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    const controls = attached.host.reconcile.mock.calls.at(-1)?.[0] as Array<{
+      id: string;
+    }>;
+    const ids = controls.map((control) => control.id);
+    expect(ids.indexOf("ui-2:ctrl")).toBeGreaterThan(ids.indexOf("ui-1:ctrl"));
   });
 
   it("resizes the existing HUD ADT instead of remounting", () => {

@@ -29,7 +29,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
-import { asUiDocument } from "../lib/play-content";
+import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument } from "../lib/play-content";
 import {
   freezeLiveUiSurface,
   presentLiveUiIfVisible,
@@ -43,11 +43,12 @@ import {
   createEditorUtilityInterfaceHost,
   nestedUtilitySlots,
 } from "../lib/editor-utility-interface-runtime";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import { editorUtilityGuidFromWindowId } from "../shell/editor-utility-windows";
 
 export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const guid = editorUtilityGuidFromWindowId(props.api.id);
-  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk, activeDocumentId } =
+  const { assetRegistry, openDocuments, loadAssetDocument, readAssetChunk, activeDocumentId, collectPlayMaterialLibrary } =
     useDocuments();
   const workspace = useOptionalDocumentWorkspace();
   const documentActive = workspace
@@ -72,6 +73,24 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   imageUrlsRef.current = imageUrls;
   const resolveImageUrl = useCallback(
     (guid: string) => imageUrlsRef.current.get(guid) ?? null,
+    [],
+  );
+  const [interfaceMaterials, setInterfaceMaterials] = useState<{
+    documents: Map<string, MaterialDocument>;
+    functions: Map<string, MaterialFunctionDocument>;
+  }>(() => ({ documents: new Map(), functions: new Map() }));
+  const interfaceMaterialsRef = useRef(interfaceMaterials);
+  interfaceMaterialsRef.current = interfaceMaterials;
+  const resolveInterfaceMaterial = useCallback(
+    (guid: string) =>
+      lookupInterfaceMaterialDocument(
+        guid,
+        interfaceMaterialsRef.current.documents,
+      ),
+    [],
+  );
+  const materialFunctions = useCallback(
+    () => Object.fromEntries(interfaceMaterialsRef.current.functions),
     [],
   );
 
@@ -163,6 +182,56 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     };
   }, [assetRegistry, openDocuments, readAssetChunk, ui]);
 
+  useEffect(() => {
+    if (!ui) {
+      setInterfaceMaterials((prev) =>
+        prev.documents.size === 0 && prev.functions.size === 0
+          ? prev
+          : { documents: new Map(), functions: new Map() },
+      );
+      return;
+    }
+    let cancelled = false;
+    const listed = assetRegistry?.list() ?? [];
+    const resolveNested = (nestedGuid: string) => {
+      const nestedAsset = listed.find((entry) => entry.header.guid === nestedGuid);
+      if (!nestedAsset) return null;
+      const openDoc = openDocuments.find((doc) => doc.ref.path === nestedAsset.path);
+      if (openDoc?.content) return asUiDocument(openDoc.content);
+      if (nestedAsset.header.payload) return asUiDocument(nestedAsset.header.payload);
+      return null;
+    };
+    const guids = interfaceMaterialGuidsFromUiDocuments([ui], resolveNested);
+    if (guids.length === 0) {
+      setInterfaceMaterials((prev) =>
+        prev.documents.size === 0 && prev.functions.size === 0
+          ? prev
+          : { documents: new Map(), functions: new Map() },
+      );
+      return;
+    }
+    void collectPlayMaterialLibrary(null, [], guids)
+      .then((loaded) => {
+        if (cancelled) return;
+        setInterfaceMaterials({
+          documents: loaded.documents,
+          functions: loaded.functions,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInterfaceMaterials((prev) =>
+            prev.documents.size === 0 && prev.functions.size === 0
+              ? prev
+              : { documents: new Map(), functions: new Map() },
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetRegistry, collectPlayMaterialLibrary, openDocuments, ui]);
+
   useEffect(
     () => () => {
       revokeUiImageUrls(imageUrlsRef.current);
@@ -191,6 +260,8 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
           );
         },
         resolveImageUrl,
+        resolveInterfaceMaterial,
+        materialFunctions,
       });
     } catch (error) {
       console.error("Editor utility surface failed", error);
@@ -267,7 +338,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       paintScheduler.cancel();
       observer.disconnect();
     };
-  }, [documentActive, imageUrls, panelVisible, ui]);
+  }, [documentActive, imageUrls, interfaceMaterials, panelVisible, ui]);
 
   useEffect(() => {
     if (!asset?.path || !payload) return;

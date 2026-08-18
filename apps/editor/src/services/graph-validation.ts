@@ -917,6 +917,9 @@ export function scriptPaletteNodes(
     ) {
       defaultData["default:volume"] = 1;
     }
+    if (def.id === "input.setInputMode") {
+      defaultData.mode = "All";
+    }
     const pins = def.pins(defaultData);
     if (def.editorOnly) defaultData.__editorOnly = true;
     return {

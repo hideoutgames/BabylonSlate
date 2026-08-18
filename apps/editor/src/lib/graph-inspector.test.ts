@@ -355,7 +355,16 @@ describe("collectEnumMemberNames", () => {
     ).toEqual({
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
+      "engine:InputMode": ["All", "Interface", "Game"],
     });
+  });
+
+  it("merges built-in engine:InputMode members", () => {
+    expect(collectEnumMemberNames([], [])["engine:InputMode"]).toEqual([
+      "All",
+      "Interface",
+      "Game",
+    ]);
   });
 });
 

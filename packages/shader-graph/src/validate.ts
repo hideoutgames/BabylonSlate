@@ -8,6 +8,20 @@ import {
   type MaterialNodeDefinition,
   type MaterialPinDefinition,
 } from "./catalog";
+
+function materialDomainLabel(domain: MaterialDomain): string {
+  if (domain === "postProcess") return "post-process";
+  if (domain === "interface") return "interface";
+  if (domain === "particle") return "particle";
+  return "surface";
+}
+
+function materialTerminalTitle(domain: MaterialDomain): string {
+  if (domain === "postProcess") return "Post Process Output";
+  if (domain === "interface") return "Interface Output";
+  if (domain === "particle") return "Particle Output";
+  return "Material Output";
+}
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
@@ -298,13 +312,9 @@ function validateGraph(
     ) {
       diagnostics.push({
         code: "material.domainMismatch",
-        message: `"${definition.title}" cannot be used in a ${
-          options.domain === "surface"
-            ? "surface"
-            : options.domain === "particle"
-              ? "particle"
-              : "post-process"
-        } material`,
+        message: `"${definition.title}" cannot be used in a ${materialDomainLabel(
+          options.domain,
+        )} material`,
         severity: "error",
         nodeId: node.id,
       });
@@ -522,13 +532,7 @@ export function validateMaterialDocument(
   if (terminals.length === 0) {
     diagnostics.push({
       code: "material.noOutput",
-      message: `Material needs a ${
-        doc.domain === "surface"
-          ? "Material Output"
-          : doc.domain === "particle"
-            ? "Particle Output"
-            : "Post Process Output"
-      } node`,
+      message: `Material needs a ${materialTerminalTitle(doc.domain)} node`,
       severity: "error",
     });
   } else if (terminals.length > 1) {

@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -127,6 +127,16 @@ export function applyPlayUiCommand(
     return true;
   }
   return false;
+}
+
+/** Apply worker `setInputMode` onto Play capture and HUD callbacks. */
+export function applyPlayInputModeCommand(
+  command: CommandMessage,
+  onSetInputMode?: (mode: InputMode) => void,
+): boolean {
+  if (command.type !== "setInputMode") return false;
+  onSetInputMode?.(parseInputMode(command.mode));
+  return true;
 }
 
 export type PlayUiWidgetEventTarget = {
@@ -391,6 +401,7 @@ export function startPlaySession(options: {
   onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
   onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
   onUiRemove?: (instanceId: string) => void;
+  onSetInputMode?: (mode: InputMode) => void;
   /** Slim UserInterface metadata; posted before `loadScripts`. */
   userInterfaces?: readonly UserInterfaceRuntimeDocument[];
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
@@ -511,6 +522,7 @@ export function startPlaySession(options: {
   let bridgeRate = 0;
   let hudStats: PlayHudStats | undefined;
   let lastWorkerTickIndex = 0;
+  let input: InputCaptureHandle | null = null;
 
   const emitHudStats = (next: PlayHudStats) => {
     hudStats = next;
@@ -607,6 +619,14 @@ export function startPlaySession(options: {
       onUiApply: options.onUiApply,
       onUiRemove: options.onUiRemove,
     });
+    if (
+      applyPlayInputModeCommand(command, (mode) => {
+        input?.setInputMode(mode);
+        options.onSetInputMode?.(mode);
+      })
+    ) {
+      return;
+    }
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
     }
@@ -750,7 +770,7 @@ export function startPlaySession(options: {
     );
   }
 
-  const input: InputCaptureHandle = attachInputCapture(canvas);
+  input = attachInputCapture(canvas);
 
   const unlock = () => {
     void handle.unlockAudio();
@@ -847,7 +867,7 @@ export function startPlaySession(options: {
     },
     lastActorPositions: () => handle.lastActorPositions(),
     pushTouchAxis: (controlId: string, value: number) => {
-      input.pushTouchAxis(controlId, value);
+      input?.pushTouchAxis(controlId, value);
     },
     dispatchUiWidgetEvent: (event) =>
       dispatchPlayUiWidgetEvent({ worker, runtime }, event),
