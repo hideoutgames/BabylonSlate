@@ -332,3 +332,108 @@ describe("PlayHudOverlay images", () => {
     );
   });
 });
+
+describe("PlayHudOverlay fullscreen GUI persistence", () => {
+  function mockAttachedGui() {
+    const dispose = vi.fn();
+    const reconcile = vi.fn();
+    const attached = {
+      adt: { markAsDirty: vi.fn(), idealWidth: 0, idealHeight: 0, useSmallestIdeal: false },
+      host: {
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+        reconcile,
+      },
+      dispose,
+    };
+    attachFullscreenGuiMock.mockReturnValue(attached);
+    return attached;
+  }
+
+  it("keeps the same HUD ADT when Apply adds an instance", () => {
+    const attached = mockAttachedGui();
+    const scene = {} as never;
+    const { rerender } = render(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(attachFullscreenGuiMock).toHaveBeenCalledTimes(1);
+    rerender(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "ui-1", document: hudWith("Button") }]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(attachFullscreenGuiMock).toHaveBeenCalledTimes(1);
+    expect(attached.dispose).not.toHaveBeenCalled();
+    expect(attached.host.reconcile).toHaveBeenCalled();
+    const controls = attached.host.reconcile.mock.calls.at(-1)?.[0] as Array<{
+      id: string;
+    }>;
+    expect(controls.map((control) => control.id)).toEqual(
+      expect.arrayContaining(["ui-1:ctrl"]),
+    );
+  });
+
+  it("resizes the existing HUD ADT instead of remounting", () => {
+    const attached = mockAttachedGui();
+    const scene = {} as never;
+    const { rerender } = render(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "ui-1", document: hudWith("Button") }]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    rerender(
+      <PlayHudOverlay
+        scene={scene}
+        width={800}
+        height={600}
+        instances={[{ instanceId: "ui-1", document: hudWith("Button") }]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(attachFullscreenGuiMock).toHaveBeenCalledTimes(1);
+    expect(attached.dispose).not.toHaveBeenCalled();
+    expect(attached.adt.idealWidth).toBeGreaterThan(0);
+  });
+
+  it("clears applied widgets on Remove without disposing the HUD ADT", () => {
+    const attached = mockAttachedGui();
+    const scene = {} as never;
+    const { rerender } = render(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "ui-1", document: hudWith("Button") }]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    rerender(
+      <PlayHudOverlay
+        scene={scene}
+        width={400}
+        height={300}
+        instances={[]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(attachFullscreenGuiMock).toHaveBeenCalledTimes(1);
+    expect(attached.dispose).not.toHaveBeenCalled();
+    const controls = attached.host.reconcile.mock.calls.at(-1)?.[0] as unknown[];
+    expect(controls).toEqual([]);
+  });
+});

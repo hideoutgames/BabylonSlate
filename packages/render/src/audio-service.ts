@@ -2,7 +2,7 @@ import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
   clampAudioGain,
-  computeAttenuationGain,
+  computeDopplerPlaybackRate,
   createDefaultAudioPayload,
   decodeAudioReverbChunk,
   interpolateAudioReverb,
@@ -73,6 +73,7 @@ type LiveVoice = {
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
   reverbSend: boolean;
+  previousPose: AudioPose | null;
 };
 
 function emptyLibrary(): AudioLibrary {
@@ -121,16 +122,20 @@ export class AudioService {
   private voiceSeq = 0;
   private listener: AudioPose = { x: 0, y: 0, z: 0 };
   private reverbField: AudioReverbField | null = null;
+  private readonly now: () => number;
+  private lastSnapshotAt: number | null = null;
 
   constructor(options: {
     backend: AudioPlaybackBackend;
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
+    now?: () => number;
   }) {
     this.backend = options.backend;
     this.ownedCache = !options.cache;
     this.cache = options.cache ?? new AudioBufferCache();
     this.onDiagnostic = options.onDiagnostic;
+    this.now = options.now ?? (() => performance.now());
     this.publishStats();
   }
 
@@ -191,7 +196,7 @@ export class AudioService {
   syncListener(pose: AudioPose): void {
     this.listener = pose;
     this.backend.setListenerPose(pose);
-    this.refreshSpatialVoices();
+    this.refreshSpatialVoices(false);
     this.refreshReverbWet();
   }
 
@@ -202,7 +207,7 @@ export class AudioService {
     for (const actor of actors) {
       this.slotPoses.set(actor.slotId, actor.position);
     }
-    this.refreshSpatialVoices();
+    this.refreshSpatialVoices(true);
   }
 
   stats(): AudioStats {
@@ -216,6 +221,7 @@ export class AudioService {
     this.sessionChannelVolumes.clear();
     this.sessionGlobalVolume = null;
     this.queue = [];
+    this.lastSnapshotAt = null;
     this.lastGain = null;
     this.lastDistance = null;
     this.wet = 0;
@@ -240,11 +246,31 @@ export class AudioService {
     this.lastDistance = null;
     this.wet = 0;
     this.reverbField = null;
+    this.lastSnapshotAt = null;
     this.publishStats();
   }
 
   private async dispatch(command: QueuedCommand): Promise<void> {
     if (command.type === "setChannelVolume") {
+      const mixer = this.activeMixer();
+      if (!mixer) {
+        this.onDiagnostic?.({
+          code: "audio.no_mixer",
+          message: "Set Channel Volume has no selected mixer.",
+        });
+        return;
+      }
+      const known =
+        mixer.channels.some((entry) => entry.channelGuid === command.channelGuid) ||
+        this.library.channels.has(command.channelGuid);
+      if (!known) {
+        this.onDiagnostic?.({
+          code: "audio.unknown_channel",
+          message: "Set Channel Volume skipped an unknown channel.",
+          assetGuid: command.channelGuid,
+        });
+        return;
+      }
       this.sessionChannelVolumes.set(
         command.channelGuid,
         clampAudioGain(command.volume),
@@ -252,6 +278,13 @@ export class AudioService {
       return;
     }
     if (command.type === "setGlobalVolume") {
+      if (!this.activeMixer()) {
+        this.onDiagnostic?.({
+          code: "audio.no_mixer",
+          message: "Set Global Volume has no selected mixer.",
+        });
+        return;
+      }
       this.sessionGlobalVolume = clampAudioGain(command.volume);
       return;
     }
@@ -350,6 +383,7 @@ export class AudioService {
       spatial,
       gain: resolved.gain,
       reverbSend: resolved.environmentReverb,
+      previousPose: null,
     });
     this.lastGain = resolved.gain;
     try {
@@ -363,7 +397,7 @@ export class AudioService {
       });
       return;
     }
-    this.refreshSpatialVoices();
+    this.refreshSpatialVoices(false);
     this.refreshReverbWet();
     this.publishStats();
   }
@@ -378,7 +412,18 @@ export class AudioService {
     this.publishStats();
   }
 
-  private refreshSpatialVoices(): void {
+  private activeMixer(): AudioMixerPayload | null {
+    if (!this.library.mixerGuid) return null;
+    return this.library.mixers.get(this.library.mixerGuid) ?? null;
+  }
+
+  private refreshSpatialVoices(fromSnapshot: boolean): void {
+    const now = this.now();
+    const dt =
+      fromSnapshot && this.lastSnapshotAt !== null
+        ? Math.max(0, (now - this.lastSnapshotAt) / 1000)
+        : 0;
+    if (fromSnapshot) this.lastSnapshotAt = now;
     for (const voice of this.voices.values()) {
       if (!voice.spatial) continue;
       const slotId =
@@ -396,14 +441,22 @@ export class AudioService {
       const dy = pose.y - this.listener.y;
       const dz = pose.z - this.listener.z;
       this.lastDistance = Math.hypot(dx, dy, dz);
-      const attenuation = this.library.audio.get(voice.assetGuid);
-      const attenGuid = attenuation?.soundAttenuationGuid;
-      const settings = attenGuid
-        ? this.library.attenuations.get(attenGuid)
-        : undefined;
-      if (settings) {
-        const spatialGain = computeAttenuationGain(this.lastDistance, settings);
-        this.backend.setVoiceGain(voice.voiceId, voice.gain * spatialGain);
+      const doppler = voice.spatial.doppler;
+      // Doppler uses snapshot dt only. The production render loop calls
+      // syncListener after syncSnapshot; a listener refresh must not write
+      // playbackRate 1 (dt === 0) over the snapshot result.
+      if (doppler?.enabled && fromSnapshot) {
+        const rate = computeDopplerPlaybackRate({
+          previousEmitter: voice.previousPose,
+          emitter: pose,
+          listener: this.listener,
+          dt,
+          factor: doppler.factor,
+        });
+        this.backend.setVoicePlaybackRate(voice.voiceId, rate);
+      }
+      if (fromSnapshot) {
+        voice.previousPose = { x: pose.x, y: pose.y, z: pose.z };
       }
     }
     this.publishStats();

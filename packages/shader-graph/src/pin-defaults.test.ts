@@ -37,6 +37,11 @@ describe("material pin defaults", () => {
       colorHint: true,
       value: [0, 0, 0],
     });
+    expect(byId.worldPositionOffset).toMatchObject({
+      name: "World Position Offset",
+      type: "vec3",
+      value: [0, 0, 0],
+    });
     expect(byId.normal).toBeUndefined();
   });
 

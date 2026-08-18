@@ -1731,6 +1731,20 @@ class InProcessRuntime implements RuntimeDriver {
         },
         parts: [playMeshPartOf(camera)],
       });
+      return;
+    }
+    const audio = actor.components.find(
+      (component) =>
+        component.classId === "AudioComponent" && !component.destroyed,
+    );
+    if (audio) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "audio",
+        parts: [playMeshPartOf(audio)],
+      });
     }
   }
 
@@ -2283,6 +2297,12 @@ function uiWidgetEventName(
 function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
+  if (component.classId === "LightComponent") {
+    const kind = component.getVariable("lightKind");
+    return `light:${typeof kind === "string" ? kind : "point"}`;
+  }
+  if (component.classId === "CameraComponent") return "camera";
+  if (component.classId === "AudioComponent") return "audio";
   const meshKind = component.getVariable("meshKind");
   return typeof meshKind === "string" ? meshKind : null;
 }

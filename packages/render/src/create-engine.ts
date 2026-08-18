@@ -736,7 +736,16 @@ export function createEngine(
       const camera = scene.activeCamera;
       if (camera) {
         const pos = camera.globalPosition ?? camera.position;
-        audioService.syncListener({ x: pos.x, y: pos.y, z: pos.z });
+        const rot = camera.absoluteRotation;
+        audioService.syncListener({
+          x: pos.x,
+          y: pos.y,
+          z: pos.z,
+          qx: rot.x,
+          qy: rot.y,
+          qz: rot.z,
+          qw: rot.w,
+        });
       }
     }
     // Measure render cost only, not wall-clock gap since the previous

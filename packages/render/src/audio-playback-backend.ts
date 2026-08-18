@@ -37,6 +37,7 @@ export interface AudioPlaybackBackend {
   stop(voiceId: string): void;
   setVoiceGain(voiceId: string, gain: number): void;
   setVoicePose(voiceId: string, pose: AudioPose): void;
+  setVoicePlaybackRate(voiceId: string, rate: number): void;
   setListenerPose(pose: AudioPose): void;
   setReverbWet(wet: number): void;
   dispose(): void;
@@ -49,6 +50,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   stopped: string[] = [];
   poses = new Map<string, AudioPose>();
   gains = new Map<string, number>();
+  playbackRates = new Map<string, number>();
   listener: AudioPose = { x: 0, y: 0, z: 0 };
   wet = 0;
   disposed = false;
@@ -79,6 +81,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setVoicePose(voiceId: string, pose: AudioPose): void {
     this.poses.set(voiceId, pose);
+  }
+
+  setVoicePlaybackRate(voiceId: string, rate: number): void {
+    this.playbackRates.set(voiceId, rate);
   }
 
   setListenerPose(pose: AudioPose): void {

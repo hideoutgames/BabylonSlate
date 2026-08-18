@@ -152,6 +152,11 @@ describe("material lowering", () => {
       type: "float",
       value: [0.5],
     });
+    expect(result.plan.outputs.worldPositionOffset).toEqual({
+      kind: "constant",
+      type: "vec3",
+      value: [0, 0, 0],
+    });
   });
 
   it("prefers an authored default:pinId over the catalog default", () => {

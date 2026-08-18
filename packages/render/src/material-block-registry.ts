@@ -86,6 +86,8 @@ export interface MaterialPlumbing {
   viewDirection?: NodeMaterialConnectionPoint;
   uv?: NodeMaterialConnectionPoint;
   screenUv?: NodeMaterialConnectionPoint;
+  /** Clip-space transform vector input; connected after World Position Offset. */
+  clipPosition?: NodeMaterialConnectionPoint;
 }
 
 export interface BlockAdapterContext {

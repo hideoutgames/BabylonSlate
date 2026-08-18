@@ -15,7 +15,8 @@ import {
   createDefaultBlackboard,
 } from "@babylonslate/behaviour-tree";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
-import { loadGameFromFiles } from "./artifact";
+import { resolveAudioPlayback } from "@babylonslate/assets";
+import { loadGameFromFiles, guiTextureBytesFromGame } from "./artifact";
 import {
   packedBootControls,
   packedContentFromGame,
@@ -276,6 +277,14 @@ describe("packedContentFromGame", () => {
     expect(content.audioLibrary.audio.get("jump")?.volume).toBe(0.5);
     expect(content.audioLibrary.channels.has("sfx")).toBe(true);
     expect(content.audioLibrary.attenuations.get("near")?.innerRadius).toBe(2);
+    expect(
+      resolveAudioPlayback({
+        audio: content.audioLibrary.audio.get("jump")!,
+        playCallVolume: 0.5,
+        mixer: content.audioLibrary.mixers.get("mixer-1") ?? null,
+        channels: content.audioLibrary.channels,
+      }).gain,
+    ).toBe(0.25);
   });
 
   it("hydrates a packed audioReverb sidecar for the startup scene", async () => {
@@ -396,5 +405,45 @@ describe("packedContentFromGame", () => {
     expect(scripts && scripts.type === "loadScripts" ? scripts.spawn : undefined).toEqual([
       { classId: "HudHost" },
     ]);
+  });
+
+  it("maps UiImage sidecar bytes onto the original texture guid for GUI", async () => {
+    const scene = { ...createDefaultScene(), name: "Arena" };
+    const ktx2 = new Uint8Array([
+      0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    const pixels = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(scene)),
+        },
+        {
+          guid: "tex-1",
+          type: "Texture",
+          sceneGuid: "scene-1",
+          bytes: ktx2,
+        },
+        {
+          guid: "uiimage:tex-1",
+          type: "UiImage",
+          sceneGuid: "scene-1",
+          bytes: pixels,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    expect(game.textureBytes.get("tex-1")).toEqual(ktx2);
+    expect(game.guiImageBytes.get("tex-1")).toEqual(pixels);
+    expect(guiTextureBytesFromGame(game).get("tex-1")).toEqual(pixels);
   });
 });
