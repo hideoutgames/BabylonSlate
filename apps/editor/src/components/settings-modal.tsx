@@ -44,6 +44,7 @@ import {
   SelectValue,
 } from "@babylonslate/ui/components/select";
 import { Switch } from "@babylonslate/ui/components/switch";
+import { Slider } from "@babylonslate/ui/components/slider";
 import {
   createAppSettingsStore,
   defaultEngineSettings,
@@ -774,6 +775,64 @@ export function SettingsModal({
             <FieldDescription>
               Muffles spatial sounds through baked occupancy walls when a
               channel enables Muffle Through Walls. Channel-less stays clear.
+            </FieldDescription>
+            {(
+              [
+                ["settings-audio-reverb-wet-scale", "Reverb Wet Scale", "reverbWetScale"],
+                ["settings-audio-reverb-decay-scale", "Reverb Decay Scale", "reverbDecayScale"],
+                [
+                  "settings-audio-reverb-damping-scale",
+                  "Reverb Damping Scale",
+                  "reverbDampingScale",
+                ],
+              ] as const
+            ).map(([id, label, key]) => (
+              <Field key={id}>
+                <FieldLabel htmlFor={id}>{label}</FieldLabel>
+                <div className="flex min-w-0 items-center gap-2">
+                  <Slider
+                    className="min-w-0 flex-1"
+                    min={0}
+                    max={2}
+                    step={0.05}
+                    value={projectDocument.settings.audio[key]}
+                    onValueChange={(next) => {
+                      const scale = Array.isArray(next) ? next[0] : next;
+                      if (typeof scale !== "number") return;
+                      updateProjectSettings({
+                        audio: {
+                          ...projectDocument.settings.audio,
+                          [key]: scale,
+                        },
+                      });
+                    }}
+                    data-testid={`${id}-slider`}
+                  />
+                  <div className="w-20 shrink-0">
+                    <NumberField
+                      id={id}
+                      min={0}
+                      max={2}
+                      step={0.05}
+                      className="min-h-[var(--touch-target,44px)]"
+                      value={projectDocument.settings.audio[key]}
+                      onChange={(scale) =>
+                        updateProjectSettings({
+                          audio: {
+                            ...projectDocument.settings.audio,
+                            [key]: scale,
+                          },
+                        })
+                      }
+                      data-testid={id}
+                    />
+                  </div>
+                </div>
+              </Field>
+            ))}
+            <FieldDescription>
+              Multiplies baked environment-reverb wet, decay, and damping
+              (0–2). Channel-less stays dry.
             </FieldDescription>
           </FieldSet>
         </FieldGroup>

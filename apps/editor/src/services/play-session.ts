@@ -359,7 +359,13 @@ export function startPlaySession(options: {
   audioLibrary?: AudioLibrary;
   /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
   audioReverbBytes?: Uint8Array | null;
-  audioProjectSettings?: Pick<AudioProjectSettings, "occlusionEnabled">;
+  audioProjectSettings?: Pick<
+    AudioProjectSettings,
+    | "occlusionEnabled"
+    | "reverbWetScale"
+    | "reverbDecayScale"
+    | "reverbDampingScale"
+  >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;

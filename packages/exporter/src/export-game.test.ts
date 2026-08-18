@@ -529,6 +529,51 @@ describe("exportGame", () => {
     ).toBe(false);
   });
 
+  it("writes Audio reverb scales into game.json", async () => {
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      reverbWetScale: 1.5,
+      reverbDecayScale: 0.25,
+      reverbDampingScale: 2,
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.reverbWetScale).toBe(1.5);
+    expect(result.value.manifest.reverbDecayScale).toBe(0.25);
+    expect(result.value.manifest.reverbDampingScale).toBe(2);
+    expect(
+      parseGameManifest(
+        JSON.stringify({
+          startupSceneGuid: "scene-1",
+          bundleDebugger: false,
+          mode: "packed",
+          render: DEFAULT_RENDER_PROJECT_SETTINGS,
+          playFrameCap: 60,
+          packs: [],
+          scriptsFile: "scripts.js",
+          physicsWorld: "3d",
+          assets: [],
+        }),
+      ),
+    ).toMatchObject({
+      reverbWetScale: 1,
+      reverbDecayScale: 1,
+      reverbDampingScale: 1,
+    });
+  });
+
   it("defaults bundled debugger loop settings when game.json omits them", () => {
     const manifest = parseGameManifest(
       JSON.stringify({

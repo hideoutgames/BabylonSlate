@@ -758,6 +758,69 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("scales interpolated reverb wet, decay, and damping from project settings", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        channels: {
+          sfx: {
+            parentChannelGuid: null,
+            effects: [{ kind: "environmentReverb", enabled: true }],
+          },
+        },
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "sfx",
+            soundAttenuationGuid: null,
+          },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setReverbField(
+      encodeAudioReverbChunk({
+        version: AUDIO_REVERB_VERSION,
+        dryFallback: false,
+        geometryHash: "h",
+        probes: [
+          {
+            x: 0,
+            y: 0,
+            z: 0,
+            volume: 1,
+            openness: 0,
+            decay: 0.4,
+            damping: 0.5,
+            wet: 0.4,
+          },
+        ],
+      }),
+    );
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    expect(backend.wet).toBeCloseTo(0.4);
+    expect(backend.decay).toBeCloseTo(0.4);
+    expect(backend.damping).toBeCloseTo(0.5);
+    service.setProjectAudioSettings({
+      reverbWetScale: 2,
+      reverbDecayScale: 0.5,
+      reverbDampingScale: 0,
+    });
+    expect(backend.wet).toBeCloseTo(0.8);
+    expect(backend.decay).toBeCloseTo(0.2);
+    expect(backend.damping).toBe(0);
+    service.dispose();
+  });
+
   it("stays dry when the baked field is a marked fallback", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });

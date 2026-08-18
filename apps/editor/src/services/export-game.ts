@@ -62,6 +62,9 @@ export type CollectExportGameParams = {
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;
   occlusionEnabled?: boolean;
+  reverbWetScale?: number;
+  reverbDecayScale?: number;
+  reverbDampingScale?: number;
   assets: ExportIndexedAsset[];
   plugins: readonly ExportPluginDescriptor[];
   projectPluginOverrides: Record<string, { enabled: boolean }>;
@@ -270,6 +273,9 @@ export async function collectAndExportGame(
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
     occlusionEnabled: params.occlusionEnabled,
+    reverbWetScale: params.reverbWetScale,
+    reverbDecayScale: params.reverbDecayScale,
+    reverbDampingScale: params.reverbDampingScale,
     customResolution: params.customResolution,
     playFrameCap: params.playFrameCap,
     pixelsPerUnit: params.pixelsPerUnit,

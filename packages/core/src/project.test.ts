@@ -59,6 +59,9 @@ describe("project schema", () => {
     expect(project.settings.audio).toEqual({
       audioMixerGuid: null,
       occlusionEnabled: true,
+      reverbWetScale: 1,
+      reverbDecayScale: 1,
+      reverbDampingScale: 1,
     });
     expect(project.settings.startupSceneGuid).toBeNull();
     expect(project.settings.gameInstanceClass).toBeNull();
@@ -495,6 +498,23 @@ describe("project schema", () => {
       normalizeProjectSettings({ audio: { occlusionEnabled: false } }).audio
         .occlusionEnabled,
     ).toBe(false);
+  });
+
+  it("defaults Audio reverb scales to 1 and clamps them to 0..2", () => {
+    expect(normalizeProjectSettings(undefined).audio).toMatchObject({
+      reverbWetScale: 1,
+      reverbDecayScale: 1,
+      reverbDampingScale: 1,
+    });
+    expect(
+      normalizeProjectSettings({
+        audio: { reverbWetScale: 3, reverbDecayScale: -1, reverbDampingScale: 0.5 },
+      }).audio,
+    ).toMatchObject({
+      reverbWetScale: 2,
+      reverbDecayScale: 0,
+      reverbDampingScale: 0.5,
+    });
   });
 
   it("normalizes a missing Game Instance class to null and keeps a stored id", () => {

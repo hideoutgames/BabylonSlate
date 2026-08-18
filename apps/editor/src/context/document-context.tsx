@@ -1466,6 +1466,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
           projectDocument?.settings.audio.occlusionEnabled !== false,
+        reverbWetScale: projectDocument?.settings.audio.reverbWetScale,
+        reverbDecayScale: projectDocument?.settings.audio.reverbDecayScale,
+        reverbDampingScale: projectDocument?.settings.audio.reverbDampingScale,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,

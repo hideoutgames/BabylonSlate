@@ -104,6 +104,20 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
   );
 }
 
+function clampAudioScale(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  if (value < 0) return 0;
+  if (value > 2) return 2;
+  return value;
+}
+
+function scaleReverbAmount(value: number, scale: number): number {
+  const scaled = value * scale;
+  if (scaled < 0) return 0;
+  if (scaled > 1) return 1;
+  return scaled;
+}
+
 /**
  * Main-thread AudioV2 owner shared by overlay Play and the exported player.
  * Unit tests inject {@link FakeAudioPlaybackBackend}; browsers use the real
@@ -136,6 +150,9 @@ export class AudioService {
   private readonly random: () => number;
   private projectAudio = {
     occlusionEnabled: true,
+    reverbWetScale: 1,
+    reverbDecayScale: 1,
+    reverbDampingScale: 1,
   };
 
   constructor(options: {
@@ -186,9 +203,27 @@ export class AudioService {
     this.refreshSpatialVoices(false);
   }
 
-  setProjectAudioSettings(settings: { occlusionEnabled?: boolean }): void {
+  setProjectAudioSettings(settings: {
+    occlusionEnabled?: boolean;
+    reverbWetScale?: number;
+    reverbDecayScale?: number;
+    reverbDampingScale?: number;
+  }): void {
     if (settings.occlusionEnabled !== undefined) {
       this.projectAudio.occlusionEnabled = settings.occlusionEnabled === true;
+    }
+    if (settings.reverbWetScale !== undefined) {
+      this.projectAudio.reverbWetScale = clampAudioScale(settings.reverbWetScale);
+    }
+    if (settings.reverbDecayScale !== undefined) {
+      this.projectAudio.reverbDecayScale = clampAudioScale(
+        settings.reverbDecayScale,
+      );
+    }
+    if (settings.reverbDampingScale !== undefined) {
+      this.projectAudio.reverbDampingScale = clampAudioScale(
+        settings.reverbDampingScale,
+      );
     }
     this.refreshSpatialVoices(false);
     this.refreshReverbWet();
@@ -568,8 +603,16 @@ export class AudioService {
       !anySend || isDryAudioReverbFallback(this.reverbField)
         ? { wet: 0, decay: 0.4, damping: 0.5 }
         : interpolateAudioReverb(this.listener, this.reverbField?.probes ?? []);
-    this.wet = profile.wet;
-    this.backend.setReverbProfile(profile);
+    const scaled = {
+      wet: scaleReverbAmount(profile.wet, this.projectAudio.reverbWetScale),
+      decay: scaleReverbAmount(profile.decay, this.projectAudio.reverbDecayScale),
+      damping: scaleReverbAmount(
+        profile.damping,
+        this.projectAudio.reverbDampingScale,
+      ),
+    };
+    this.wet = scaled.wet;
+    this.backend.setReverbProfile(scaled);
     this.publishStats();
   }
 

@@ -22,6 +22,14 @@ import type {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+function clampAudioScale(value: unknown, fallback = 1): number {
+  const n =
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  if (n < 0) return 0;
+  if (n > 2) return 2;
+  return n;
+}
+
 function packedUiDesignerPresets(
   value: unknown,
 ): PackedUiDesignerPreset[] | undefined {
@@ -253,6 +261,9 @@ export async function exportGame(
       ? { audioMixerGuid: options.audioMixerGuid.trim() }
       : {}),
     occlusionEnabled: options.occlusionEnabled !== false,
+    reverbWetScale: clampAudioScale(options.reverbWetScale, 1),
+    reverbDecayScale: clampAudioScale(options.reverbDecayScale, 1),
+    reverbDampingScale: clampAudioScale(options.reverbDampingScale, 1),
     bundleDebugger: options.bundleDebugger,
     mode,
     render: options.customResolution,
@@ -327,6 +338,9 @@ export function parseGameManifest(source: string): GameManifest {
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
     occlusionEnabled: parsed.occlusionEnabled !== false,
+    reverbWetScale: clampAudioScale(parsed.reverbWetScale, 1),
+    reverbDecayScale: clampAudioScale(parsed.reverbDecayScale, 1),
+    reverbDampingScale: clampAudioScale(parsed.reverbDampingScale, 1),
     bundleDebugger,
     pixelsPerUnit:
       typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0
