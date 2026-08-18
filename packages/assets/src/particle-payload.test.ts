@@ -369,6 +369,30 @@ describe("particle payloads", () => {
     ]);
   });
 
+  it("applies an angular speed gradient instead of min/max when both are authored", () => {
+    const payload = normalizeParticleEmitterPayload({
+      minAngularSpeed: 2,
+      maxAngularSpeed: 4,
+      angularSpeedGradient: [
+        { t: 0, value: 0 },
+        { t: 1, value: 1 },
+      ],
+    });
+    const target = createFakeParticleApplyTarget();
+    applyParticleEmitterPayload(payload, target, {
+      space: "world",
+      looping: true,
+      duration: 1,
+      gpuSupported: true,
+    });
+    expect(target.minAngularSpeed).toBe(0);
+    expect(target.maxAngularSpeed).toBe(0);
+    expect(target.angularKeys).toEqual([
+      { t: 0, value: 0 },
+      { t: 1, value: 1 },
+    ]);
+  });
+
   it("applies additive blend, point emitters, and looping with no stop duration", () => {
     const payload = createDefaultParticleEmitterPayload();
     const target = createFakeParticleApplyTarget();

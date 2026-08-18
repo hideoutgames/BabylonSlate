@@ -94,6 +94,9 @@ describe("ParticleEmitterEditor", () => {
     );
     expect(screen.getByTestId("particle-emitter-preview")).toBeTruthy();
     expect(screen.getByText("No Texture")).toBeTruthy();
+    expect(
+      screen.getByText(/Billboard quads sample that Texture/i),
+    ).toBeTruthy();
   });
 
   it("shows a live preview canvas once a Texture guid is set", () => {
