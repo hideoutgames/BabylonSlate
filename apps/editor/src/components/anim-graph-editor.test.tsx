@@ -246,6 +246,16 @@ describe("AnimGraphEditor", () => {
     });
   });
 
+  it("opens Add State from a far pin-drag release instead of cancelling", async () => {
+    renderAnimGraph();
+    await waitFor(() => {
+      expect(screen.getByTestId("graph-editor")).toBeTruthy();
+    });
+    expect(screen.getByTestId("graph-editor").getAttribute("data-connect-end-mode")).toBe(
+      "zone-add-node",
+    );
+  });
+
   it("uses compact action-height controls in Variables and States", () => {
     renderAnimGraph();
     fireEvent.click(screen.getByTestId("anim-graph-add-variable"));

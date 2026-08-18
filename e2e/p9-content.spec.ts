@@ -448,13 +448,28 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("anim-graph-add-state").click();
     await expect(page.getByTestId("anim-state-node-idle")).toBeVisible();
     await expect(page.getByTestId("anim-state-node-state-1")).toBeVisible();
+    const idleFlow = page.locator('.react-flow__node[data-id="idle"]');
+    const idleBefore = await idleFlow.evaluate((el) => (el as HTMLElement).style.transform);
+    const idleTitle = page.getByTestId("anim-state-node-idle").locator(".anim-state-node-title");
+    const titleBox = await idleTitle.boundingBox();
+    expect(titleBox).not.toBeNull();
+    const titleX = titleBox!.x + titleBox!.width / 2;
+    const titleY = titleBox!.y + titleBox!.height / 2;
+    await page.mouse.move(titleX, titleY);
+    await page.mouse.down();
+    await page.mouse.move(titleX, titleY + 80, { steps: 8 });
+    await page.mouse.up();
+    await expect
+      .poll(async () => idleFlow.evaluate((el) => (el as HTMLElement).style.transform))
+      .not.toBe(idleBefore);
+    await expect(page.locator('[data-testid^="anim-transition-badge-"]')).toHaveCount(0);
     const idleOut = page
       .getByTestId("anim-state-node-idle")
       .locator('[data-handleid="right-out"]');
     const nextIn = page
       .getByTestId("anim-state-node-state-1")
       .locator('[data-handleid="left-in"]');
-    await idleOut.dragTo(nextIn, { force: true });
+    await idleOut.dragTo(nextIn);
     const badge = page.locator('[data-testid^="anim-transition-badge-"]');
     await expect(badge).toBeVisible();
     await badge.dblclick();

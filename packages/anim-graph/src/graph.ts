@@ -143,7 +143,7 @@ export function animRuleScriptClassId(
 }
 
 export const ANIM_STATE_LAYOUT_ORIGIN = { x: 80, y: 80 };
-export const ANIM_STATE_LAYOUT_GAP_X = 220;
+export const ANIM_STATE_LAYOUT_GAP_X = 280;
 
 export function defaultAnimStatePosition(index: number): { x: number; y: number } {
   return {

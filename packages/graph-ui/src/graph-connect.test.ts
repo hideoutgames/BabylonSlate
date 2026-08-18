@@ -24,6 +24,8 @@ import {
   connectEventPointerId,
   shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
+  firstCompatiblePin,
+  oppositeSideHandleId,
 } from "./graph-connect";
 
 const execOut: SerializedPin = {
@@ -161,6 +163,43 @@ describe("filterPaletteForPin", () => {
     expect(filterPaletteForPin([log, begin], stringOut).map((n) => n.id)).toEqual(
       ["debug.log"],
     );
+  });
+});
+
+describe("oppositeSideHandleId", () => {
+  it("maps a side handle to the facing pin on a spawned node", () => {
+    expect(oppositeSideHandleId("right-out")).toBe("left-in");
+    expect(oppositeSideHandleId("top-out")).toBe("bottom-in");
+    expect(oppositeSideHandleId("left-in")).toBe("right-out");
+    expect(oppositeSideHandleId("bottom-in")).toBe("top-out");
+  });
+
+  it("ignores pins that are not side handles", () => {
+    expect(oppositeSideHandleId("execOut")).toBeUndefined();
+  });
+});
+
+describe("firstCompatiblePin", () => {
+  const sidePins: SerializedPin[] = [
+    { id: "top-in", name: "in", kind: "exec", direction: "in", type: { kind: "exec" } },
+    { id: "top-out", name: "out", kind: "exec", direction: "out", type: { kind: "exec" } },
+    { id: "left-in", name: "in", kind: "exec", direction: "in", type: { kind: "exec" } },
+    { id: "right-out", name: "out", kind: "exec", direction: "out", type: { kind: "exec" } },
+  ];
+
+  it("prefers the opposite side handle when spawning from a state pin", () => {
+    const dragged: SerializedPin = {
+      id: "right-out",
+      name: "out",
+      kind: "exec",
+      direction: "out",
+      type: { kind: "exec" },
+    };
+    expect(firstCompatiblePin(sidePins, dragged)?.id).toBe("left-in");
+  });
+
+  it("falls back to the first compatible pin for ordinary Blueprint handles", () => {
+    expect(firstCompatiblePin([execIn, execOut], execOut)?.id).toBe("execIn");
   });
 });
 
@@ -633,6 +672,17 @@ describe("connectEndAction", () => {
   it("disables connect-end side effects", () => {
     expect(connectEndAction(far, "disabled")).toBe("none");
     expect(connectEndAction(near, "disabled")).toBe("none");
+  });
+
+  it("opens Add Node from a far drop in zone-add-node mode and never breaks wires", () => {
+    expect(connectEndAction(far, "zone-add-node")).toBe("add-node");
+    expect(connectEndAction(near, "zone-add-node")).toBe("none");
+    expect(
+      connectEndAction({ ...far, pointerOverNode: true }, "zone-add-node"),
+    ).toBe("none");
+    expect(
+      connectEndAction({ ...far, hasTargetHandle: true }, "zone-add-node"),
+    ).toBe("none");
   });
 });
 

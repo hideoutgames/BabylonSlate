@@ -125,7 +125,32 @@ export function firstCompatiblePin(
   dragged: SerializedPin,
   rule?: PinCompatibilityRule,
 ): SerializedPin | undefined {
-  return (pins ?? []).find((pin) => pinsAreCompatible(dragged, pin, rule));
+  const list = pins ?? [];
+  const preferredId = oppositeSideHandleId(dragged.id);
+  if (preferredId) {
+    const preferred = list.find(
+      (pin) => pin.id === preferredId && pinsAreCompatible(dragged, pin, rule),
+    );
+    if (preferred) return preferred;
+  }
+  return list.find((pin) => pinsAreCompatible(dragged, pin, rule));
+}
+
+const OPPOSITE_SIDE: Record<string, string> = {
+  top: "bottom",
+  right: "left",
+  bottom: "top",
+  left: "right",
+};
+
+export function oppositeSideHandleId(pinId: string): string | undefined {
+  const match = /^(top|right|bottom|left)-(in|out)$/.exec(pinId);
+  if (!match) return undefined;
+  const side = match[1]!;
+  const direction = match[2]!;
+  const oppositeSide = OPPOSITE_SIDE[side];
+  if (!oppositeSide) return undefined;
+  return `${oppositeSide}-${direction === "out" ? "in" : "out"}`;
 }
 
 export function filterPaletteForPin(
@@ -178,7 +203,11 @@ export function connectEventPointerId(event: Event | {
   return 1;
 }
 
-export type ConnectEndMode = "default" | "add-node" | "disabled";
+export type ConnectEndMode =
+  | "default"
+  | "add-node"
+  | "disabled"
+  | "zone-add-node";
 
 export type SecondaryCancelPointer = {
   connectionActive: boolean;
@@ -239,6 +268,11 @@ export function connectEndAction(
   if (mode === "add-node") {
     if (decision.pointerOverNode) return "none";
     return "add-node";
+  }
+  if (mode === "zone-add-node") {
+    if (decision.pointerOverNode) return "none";
+    if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
+    return "none";
   }
   if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
   if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";

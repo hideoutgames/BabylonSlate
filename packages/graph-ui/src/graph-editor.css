@@ -52,9 +52,9 @@
 
 .anim-state-node {
   position: relative;
-  min-width: 140px;
-  min-height: 48px;
-  padding: 10px 18px;
+  min-width: 200px;
+  min-height: 88px;
+  padding: 14px 28px;
   border-radius: 8px;
   background: #2a2a2a;
   border: 1px solid #6a6a6a;
@@ -87,7 +87,7 @@
 }
 
 .anim-state-handle {
-  opacity: 0;
+  opacity: 1;
   background: transparent;
   border: none;
   border-radius: 0;
@@ -96,65 +96,77 @@
 }
 
 .anim-state-handle-top {
-  width: calc(100% - 8px) !important;
-  height: var(--touch-target, 44px) !important;
-  top: calc(var(--touch-target, 44px) / -2) !important;
-  left: 4px !important;
+  width: calc(100% - 28px) !important;
+  height: 16px !important;
+  top: -8px !important;
+  left: 14px !important;
 }
 
 .anim-state-handle-bottom {
-  width: calc(100% - 8px) !important;
-  height: var(--touch-target, 44px) !important;
-  bottom: calc(var(--touch-target, 44px) / -2) !important;
+  width: calc(100% - 28px) !important;
+  height: 16px !important;
+  bottom: -8px !important;
   top: auto !important;
-  left: 4px !important;
+  left: 14px !important;
 }
 
 .anim-state-handle-left {
-  width: var(--touch-target, 44px) !important;
-  height: calc(100% - 8px) !important;
-  left: calc(var(--touch-target, 44px) / -2) !important;
-  top: 4px !important;
+  width: 16px !important;
+  height: calc(100% - 28px) !important;
+  left: -8px !important;
+  top: 14px !important;
 }
 
 .anim-state-handle-right {
-  width: var(--touch-target, 44px) !important;
-  height: calc(100% - 8px) !important;
-  right: calc(var(--touch-target, 44px) / -2) !important;
+  width: 16px !important;
+  height: calc(100% - 28px) !important;
+  right: -8px !important;
   left: auto !important;
-  top: 4px !important;
+  top: 14px !important;
 }
 
 .anim-state-handle-source.anim-state-handle-top {
-  top: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+  top: -12px !important;
 }
 
 .anim-state-handle-target.anim-state-handle-top {
-  top: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+  top: -4px !important;
 }
 
 .anim-state-handle-source.anim-state-handle-bottom {
-  bottom: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+  bottom: -12px !important;
 }
 
 .anim-state-handle-target.anim-state-handle-bottom {
-  bottom: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+  bottom: -4px !important;
 }
 
 .anim-state-handle-source.anim-state-handle-left {
-  left: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+  left: -12px !important;
 }
 
 .anim-state-handle-target.anim-state-handle-left {
-  left: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+  left: -4px !important;
 }
 
 .anim-state-handle-source.anim-state-handle-right {
-  right: calc(var(--touch-target, 44px) / -2 - 6px) !important;
+  right: -12px !important;
 }
 
 .anim-state-handle-target.anim-state-handle-right {
-  right: calc(var(--touch-target, 44px) / -2 + 6px) !important;
+  right: -4px !important;
+}
+
+.anim-state-handle-source::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: #c8c8c8;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 
 .anim-transition-badge {

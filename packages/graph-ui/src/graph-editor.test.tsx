@@ -854,6 +854,68 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("opens Add Node when a far pin drag is released in zone-add-node mode", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, farDrop);
+      });
+      expect(getByTestId("node-palette-body")).toBeTruthy();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not open Add Node or break wires on a near pin drag in zone-add-node mode", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={graphWithWiredPins()}
+          connectEndMode="zone-add-node"
+          paletteNodes={pinDragPalette}
+          onChange={onChange}
+        />,
+      );
+      const source = mockPinDragLayout(container);
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source, { x: 22, y: 22 }, { x: 80, y: 22 });
+      });
+      expect(queryByTestId("node-palette-body")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not open Add Node from a pin tap plus empty pane in zone-add-node mode", async () => {
+    const { container, queryByTestId } = render(
+      <GraphEditor
+        initialGraph={graphWithPins()}
+        connectEndMode="zone-add-node"
+        paletteNodes={pinDragPalette}
+      />,
+    );
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-handleid="execOut"]'),
+      ).not.toBeNull();
+    });
+    fireEvent.click(container.querySelector('[data-handleid="execOut"]')!);
+    fireEvent.click(container.querySelector(".react-flow__pane")!);
+    expect(queryByTestId("node-palette")).toBeNull();
+  });
+
   it("shows an error badge on nodes referenced by diagnostics", () => {
     const graph = createDefaultGraph();
     const nodeId = graph.nodes[0]?.id ?? "";
