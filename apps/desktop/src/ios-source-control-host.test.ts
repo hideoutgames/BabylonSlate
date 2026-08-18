@@ -18,11 +18,33 @@ describe("iOS source-control host", () => {
     expect(pbxproj).toContain("path = BabylonSlateSecretsPlugin.swift");
   });
 
-  it("registers the Keychain plugin in packageClassList", () => {
-    const config = JSON.parse(
-      readFileSync(join(iosApp, "App/capacitor.config.json"), "utf8"),
-    ) as { packageClassList?: string[] };
-    expect(config.packageClassList).toContain("BabylonSlateSecretsPlugin");
+  it("registers the Keychain plugin from the bridge view controller", () => {
+    const mainViewController = readFileSync(
+      join(iosApp, "App/MainViewController.swift"),
+      "utf8",
+    );
+    expect(mainViewController).toContain(
+      "registerPluginInstance(BabylonSlateSecretsPlugin())",
+    );
+    expect(mainViewController).toContain(
+      "registerPluginInstance(BabylonSlateFolderPlugin())",
+    );
+    const gitignore = readFileSync(join(iosApp, "../.gitignore"), "utf8");
+    expect(gitignore).toContain("App/App/capacitor.config.json");
+  });
+
+  it("locks the native shell to landscape on iPad", () => {
+    const infoPlist = readFileSync(join(iosApp, "App/Info.plist"), "utf8");
+    expect(infoPlist).not.toContain("UIInterfaceOrientationPortrait");
+    expect(infoPlist).toContain("UIInterfaceOrientationLandscapeLeft");
+    expect(infoPlist).toContain("UIInterfaceOrientationLandscapeRight");
+
+    const pbxproj = readFileSync(
+      join(iosApp, "App.xcodeproj/project.pbxproj"),
+      "utf8",
+    );
+    expect(pbxproj.match(/TARGETED_DEVICE_FAMILY = "2";/g)).toHaveLength(2);
+    expect(pbxproj).not.toContain('TARGETED_DEVICE_FAMILY = "1,2";');
   });
 
   it("declares a single applicationDidBecomeActive", () => {

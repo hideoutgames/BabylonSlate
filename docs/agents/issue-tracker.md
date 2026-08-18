@@ -37,6 +37,7 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-16 | cursor/p15-review-fixes-419b | p15-lock-provider | Spec | Electron `secrets:set` stores the PAT unencrypted when `safeStorage.isEncryptionAvailable()` is false (Linux without a keyring) | Accepted |
 | 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Auto-lock still called create after a restart verify already listed the path as ours; skip create when held locally | Resolved |
 | 2026-08-16 | cursor/p15-source-control-gaps-44b6 | p15-lock-ux | Spec | Deleting an asset we held did not unlock the old LFS path | Resolved |
+| 2026-08-16 | cursor/p1-ipad-integration-4f21 | p1-device-spikes | Spec | Capacitor sync discovered no VFS plugins and rewrote local `packageClassList`, leaving iPad storage and Keychain paths unregistered. iOS now owns direct Filesystem/Preferences dependencies and registers first-party local plugins from `MainViewController`; external folders resolve security-scoped bookmarks with coordinated I/O and stable stale errors | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-export / p14-platforms | Spec | Packaged player booted an empty Engine: no sprite/tilemap/navmesh hydrate, no UI-logic compile, no in-process rAF `advance` or canvas input | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-packed-mode | Spec | `game.json` omitted `pixelsPerUnit` / `pixelPerfect`; Font index entries had no authored family `name` | Resolved |
 | 2026-08-15 | cursor/p14-implementation-review-c2d5 | p14-platforms | Spec | Packaged player compiles UserInterface logic and packs UI JSON; Babylon GUI widget mount stays overlay Play (`PlayHudOverlay`) | Accepted |
@@ -573,6 +574,5 @@ Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p18-*`. Additive on Do
 | Auto-bake-on-save, bake bounds, cost volumes | `p18-nav-leftovers` | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P17 Done |
 
 Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; reopening P11 evaluator/abort matrix; `p1-device-spikes`. Crowd MoveTo is already live.
-
 
 

@@ -2,6 +2,8 @@
 
 Binary storage port and platform adapters for P1 (engineplan §§7.1–7.2, 12.4).
 
+The Capacitor 8 iOS host has a 16.4 deployment floor, matching the OffscreenCanvas 2D baseline.
+
 ## ProjectStorage port (`@babylonslate/core`)
 
 Text + binary filesystem over a bound project folder:
@@ -19,7 +21,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 | --- | --- | --- |
 | OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids |
 | Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
-| Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; `openKnownFolder` reopens without picker; Reconnect on staleness |
+| External | iPad opt-in | First-party document picker plugin; security-scoped bookmarks; coordinated reads/writes; `openKnownFolder` resolves and reacquires scope without picker; Reconnect on staleness |
 | Memory | Tests | In-memory tree |
 | Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` throw |
 | Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
@@ -29,7 +31,14 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 ### External tier / Working Copy spike
 
-Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime security scope, and bookmark staleness surfaced as **Reconnect project folder** on the Homepage. Expect a custom Swift plugin; the community scoped-storage plugin is the interim bridge. Device harness notes live with the adapter tests / docs when Mac/iPad is available.
+The first-party `BabylonSlateFolder` Capacitor plugin owns the external-folder contract:
+
+- `pickFolder` presents `UIDocumentPickerViewController` from the bridge view controller and returns a display name plus a base64 security-scoped bookmark.
+- `resolveFolder` resolves the persisted bookmark on cold launch, explicitly reports bookmark staleness, refreshes a usable stale bookmark, and holds the security scope until `releaseFolder` or plugin teardown.
+- `readFile`, `writeFile`, `exists`, `readdir`, `mkdir`, `deleteFile`, `rmdir`, and `stat` coordinate access with `NSFileCoordinator`; replacing writes use the replacing coordination option.
+- Missing bookmarks and scopes reject with the stable `STALE_BOOKMARK` code. The VFS adapter maps that code to `needsReconnect()` and the existing Homepage **Reconnect project folder** flow.
+
+The community scoped-storage dependency is not used. A `BabylonSlateFolderPort` injection keeps native calls inside `packages/vfs`, so adapter tests can exercise cold-launch rebinding, stale recovery, and binary round trips without importing Capacitor in the editor UI.
 
 ## Two storage tiers (Homepage)
 
@@ -55,7 +64,7 @@ Number fields (frame cap, hardware scaling, pointer scale, undo length, graph de
 
 ## iOS public copy (P14)
 
-Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, and `/player/`. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
+Capacitor `webDir` is editor `dist`. `npx cap copy` / Xcode sync fills `ios/App/App/public/` (gitignored) from that dist, including `coi-serviceworker.js`, `havok/`, `ktx2/`, and `/player/`. The native editor shell targets iPad only and is locked to landscape left/right; browser builds remain responsive at arbitrary orientations and sizes. WKWebView needs a first-gesture audio unlock (Play overlay pointerdown + player `pointerdown`/`touchstart`). Do not treat the gitignored iOS `public/` snapshot as source — the copy contract is asserted in `packages/vfs/src/capacitor-ios.test.ts`.
 
 ## Templates folder
 
@@ -83,9 +92,8 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 
 | Host | Backend |
 | --- | --- |
-| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. The Swift plugin is compiled in the iOS App target (`BabylonSlateSecretsPlugin.swift` in Sources) and listed in `ios/App/App/capacitor.config.json` `packageClassList`. Keep that class listed after `npx cap sync`. There is no Android editor shell yet. |
+| iOS / Android | First-party `BabylonSlateSecrets` Capacitor plugin (Keychain / Keystore). **Not** `@capacitor/preferences`. On iOS, `BabylonSlateSecretsPlugin.swift` and `BabylonSlateFolderPlugin.swift` are compiled in the App target and registered by `MainViewController.capacitorDidLoad()` with `registerPluginInstance`; generated `packageClassList` is not a registration contract because `npx cap sync` rewrites it. There is no Android editor shell yet. |
 | Electron | Preload `babylonslate.secrets` → IPC `secrets:get` / `secrets:set` / `secrets:delete` → `safeStorage.encryptString` / `decryptString` when encryption is available. Linux hosts without a keyring fall back to storing the packed string unencrypted (accepted host limit). |
 | Web | `UnavailableSecretStore` (`available: false`) — Source Control UI hidden |
 
 `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.
-

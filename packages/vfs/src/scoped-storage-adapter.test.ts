@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  BabylonSlateFolderPort,
+  FolderIdentity,
+} from "./babylon-slate-folder-port";
 
 const prefs = new Map<string, string>();
 
@@ -16,197 +20,227 @@ vi.mock("@capacitor/preferences", () => ({
   },
 }));
 
-const pickFolder = vi.fn(async () => ({
-  folder: { id: "bookmark-1", name: "Repo.babproject" },
-}));
-const readFile = vi.fn<(opts: unknown) => Promise<{ data: string }>>(
-  async () => ({ data: "hello" }),
-);
-const writeFile = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
-const exists = vi.fn<(opts: unknown) => Promise<{ exists: boolean }>>(
-  async () => ({ exists: true }),
-);
-const readdir = vi.fn<
-  (opts: unknown) => Promise<{
-    entries: Array<{
-      name: string;
-      isDir: boolean;
-      size: number;
-      mtime: number;
-    }>;
-  }>
->(async () => ({
-  entries: [{ name: "project.json", isDir: false, size: 3, mtime: 1 }],
-}));
-const mkdir = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
-
-vi.mock("@daniele-rolli/capacitor-scoped-storage", () => ({
-  ScopedStorage: {
-    pickFolder: () => pickFolder(),
-    readFile: (opts: unknown) => readFile(opts),
-    writeFile: (opts: unknown) => writeFile(opts),
-    exists: (opts: unknown) => exists(opts),
-    readdir: (opts: unknown) => readdir(opts),
-    mkdir: (opts: unknown) => mkdir(opts),
-  },
-}));
-
 const { ScopedStorageAdapter } = await import("./scoped-storage-adapter");
 
-describe("external tier (scoped storage)", () => {
+function createFakeFolderPort() {
+  const files = new Map<string, string>();
+  let folder: FolderIdentity = { id: "bookmark-1", name: "Repo" };
+  let stale = false;
+  const pickFolder = vi.fn(async () => {
+    stale = false;
+    return { folder };
+  });
+  const port: BabylonSlateFolderPort = {
+    pickFolder,
+    resolveFolder: vi.fn(async () => {
+      if (stale) throw { code: "STALE_BOOKMARK" };
+      return { folder };
+    }),
+    releaseFolder: vi.fn(async () => {}),
+    readFile: vi.fn(async ({ path }) => {
+      const value = files.get(path);
+      if (value === undefined) throw new Error("missing");
+      return { data: value };
+    }),
+    writeFile: vi.fn(async ({ path, data }) => {
+      files.set(path, data);
+    }),
+    exists: vi.fn(async ({ path }) => ({ exists: files.has(path) })),
+    readdir: vi.fn(async ({ path }) => {
+      if (
+        path &&
+        ![...files.keys()].some((name) => name.startsWith(`${path}/`))
+      ) {
+        throw new Error(`File not found: ${path}`);
+      }
+      return {
+        entries: [...files.keys()]
+          .filter((name) => name.startsWith(path ? `${path}/` : ""))
+          .map((name) => ({
+            name: name.slice(path ? path.length + 1 : 0),
+            isDir: false,
+            size: files.get(name)!.length,
+            mtime: 1,
+          })),
+      };
+    }),
+    mkdir: vi.fn(async () => {}),
+    deleteFile: vi.fn(async ({ path }) => {
+      files.delete(path);
+    }),
+    rmdir: vi.fn(async () => {}),
+    stat: vi.fn(async ({ path }) => {
+      if (!files.has(path)) throw new Error("missing");
+      return { type: "file", size: files.get(path)!.length, mtime: 1 };
+    }),
+  };
+  return {
+    port,
+    pickFolder,
+    setFolder(next: FolderIdentity) {
+      folder = next;
+    },
+    setStale(value: boolean) {
+      stale = value;
+    },
+  };
+}
+
+describe("external tier (first-party folder port)", () => {
   beforeEach(() => {
     prefs.clear();
-    vi.clearAllMocks();
-    pickFolder.mockResolvedValue({
-      folder: { id: "bookmark-1", name: "Repo.babproject" },
-    });
-    readFile.mockResolvedValue({ data: "hello" });
-    exists.mockResolvedValue({ exists: true });
   });
 
   it("binds a folder through the picker and persists the bookmark", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const handle = await adapter.pickProjectFolder();
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
 
-    expect(handle).toEqual({
+    await expect(adapter.pickProjectFolder()).resolves.toEqual({
       id: "bookmark-1",
-      name: "Repo.babproject",
+      name: "Repo",
       tier: "external",
     });
     expect(prefs.get("babylonslate:scoped-folder")).toContain("bookmark-1");
   });
 
-  it("restores the bookmark on init without showing the picker", async () => {
-    const first = new ScopedStorageAdapter();
-    await first.pickProjectFolder();
+  it("resolves the persisted bookmark on cold launch without opening a picker", async () => {
+    const fake = createFakeFolderPort();
+    await new ScopedStorageAdapter(fake.port).pickProjectFolder();
 
-    const next = new ScopedStorageAdapter();
+    const next = new ScopedStorageAdapter(fake.port);
     await next.init();
-    pickFolder.mockClear();
 
-    expect(next.getCurrentFolder()?.id).toBe("bookmark-1");
-    expect(pickFolder).not.toHaveBeenCalled();
-  });
-
-  it("reopens a listed external project without re-prompting", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const handle = await adapter.pickProjectFolder();
-    pickFolder.mockClear();
-
-    const reopened = await adapter.openKnownFolder(handle);
-    expect(reopened).toEqual(handle);
-    expect(pickFolder).not.toHaveBeenCalled();
-    expect(await adapter.listProjects()).toEqual([handle]);
-  });
-
-  it("rebinds a bookmark from another session without the picker", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const reopened = await adapter.openKnownFolder({
-      id: "bookmark-2",
-      name: "Other.babproject",
-      tier: "external",
+    expect(fake.port.resolveFolder).toHaveBeenCalledWith({
+      bookmark: "bookmark-1",
     });
-    expect(reopened.id).toBe("bookmark-2");
-    expect(pickFolder).not.toHaveBeenCalled();
-    expect(prefs.get("babylonslate:scoped-folder")).toContain("bookmark-2");
+    expect(fake.pickFolder).toHaveBeenCalledTimes(1);
+    expect(next.getCurrentFolder()?.id).toBe("bookmark-1");
   });
 
-  it("refuses tiers it does not own", async () => {
-    const adapter = new ScopedStorageAdapter();
+  it("reopens a listed external project by resolving its bookmark", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
+    const handle = await adapter.pickProjectFolder();
+    fake.pickFolder.mockClear();
+
+    await expect(adapter.openKnownFolder(handle)).resolves.toEqual(handle);
+    expect(fake.port.resolveFolder).toHaveBeenCalledWith({
+      bookmark: "bookmark-1",
+    });
+    expect(fake.pickFolder).not.toHaveBeenCalled();
+  });
+
+  it("persists a refreshed identity returned by resolve", async () => {
+    const fake = createFakeFolderPort();
+    await new ScopedStorageAdapter(fake.port).pickProjectFolder();
+    fake.setFolder({ id: "bookmark-refreshed", name: "Repo renamed" });
+
+    const next = new ScopedStorageAdapter(fake.port);
+    await next.init();
+
+    expect(next.getCurrentFolder()?.id).toBe("bookmark-refreshed");
+    expect(prefs.get("babylonslate:scoped-folder")).toContain(
+      "bookmark-refreshed",
+    );
+  });
+
+  it("surfaces stale resolution as needsReconnect and reconnects through the picker", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
+    const handle = await adapter.pickProjectFolder();
+    fake.setStale(true);
+
+    await expect(adapter.openKnownFolder(handle)).rejects.toThrow(
+      /reconnect required/,
+    );
+    expect(await adapter.needsReconnect()).toBe(true);
+
+    const reconnected = await adapter.reconnectFolder();
+    expect(reconnected.id).toBe("bookmark-1");
+    expect(await adapter.needsReconnect()).toBe(false);
+    expect(fake.pickFolder).toHaveBeenCalledTimes(2);
+  });
+
+  it("round-trips text and binary through the injected coordinated-I/O port", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
+    await adapter.pickProjectFolder();
+
+    await adapter.writeText("project.json", "{}");
+    expect(await adapter.readText("project.json")).toBe("{}");
+    await adapter.writeBinary("blob.bin", new Uint8Array([1, 2]));
+    expect(await adapter.readBinary("blob.bin")).toEqual(
+      new Uint8Array([1, 2]),
+    );
+    expect(fake.port.writeFile).toHaveBeenCalledWith({
+      path: "blob.bin",
+      data: "AQI=",
+      encoding: "base64",
+    });
+  });
+
+  it("delegates directory, stat, and delete operations", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
+    await adapter.pickProjectFolder();
+    await adapter.writeText("project.json", "{}");
+
+    expect(await adapter.exists("project.json")).toBe(true);
+    expect(await adapter.readdir("")).toEqual([
+      { name: "project.json", isDir: false, size: 2, mtime: 1 },
+    ]);
+    expect(await adapter.stat("project.json")).toEqual({
+      isDir: false,
+      size: 2,
+      mtime: 1,
+    });
+    await adapter.remove("project.json");
+    expect(await adapter.exists("project.json")).toBe(false);
+  });
+
+  it("reports a missing directory instead of treating it as empty", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
+    await adapter.pickProjectFolder();
+
+    await expect(adapter.readdir("missing")).rejects.toThrow(
+      "File not found: missing",
+    );
+  });
+
+  it("keeps an unresolved persisted folder reconnectable when native is unavailable", async () => {
+    const fake = createFakeFolderPort();
+    await new ScopedStorageAdapter(fake.port).pickProjectFolder();
+    fake.port.resolveFolder = vi.fn(async () => {
+      throw new Error("not implemented");
+    });
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const next = new ScopedStorageAdapter(fake.port);
+    await expect(next.init()).resolves.toBeUndefined();
+
+    expect(await next.needsReconnect()).toBe(true);
+    expect(next.getCurrentFolder()?.id).toBe("bookmark-1");
+    expect(warning).toHaveBeenCalledWith(
+      "Unable to resolve the persisted external folder",
+      expect.any(Error),
+    );
+    warning.mockRestore();
+  });
+
+  it("refuses tiers it does not own and releases native scope", async () => {
+    const fake = createFakeFolderPort();
+    const adapter = new ScopedStorageAdapter(fake.port);
     await expect(
       adapter.openKnownFolder({ id: "x", name: "x", tier: "documents" }),
     ).rejects.toThrow(/cannot open tier/);
     await expect(adapter.openDocumentsProject("x")).rejects.toThrow(
       /DocumentsStorageAdapter/,
     );
-  });
 
-  it("reads and writes text and binary through the plugin", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-
-    expect(await adapter.readText("project.json")).toBe("hello");
-    await adapter.writeText("project.json", "{}");
-    expect(writeFile).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "project.json", encoding: "utf8" }),
-    );
-
-    readFile.mockResolvedValue({ data: btoa("\u0001\u0002") });
-    expect(await adapter.readBinary("blob.bin")).toEqual(
-      new Uint8Array([1, 2]),
-    );
-    await adapter.writeBinary("blob.bin", new Uint8Array([3]));
-    expect(writeFile).toHaveBeenLastCalledWith(
-      expect.objectContaining({ encoding: "base64" }),
-    );
-  });
-
-  it("lists directory entries and stats a file", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-
-    expect(await adapter.readdir("")).toEqual([
-      { name: "project.json", isDir: false, size: 3, mtime: 1 },
-    ]);
-    expect(await adapter.stat("project.json")).toEqual({
-      isDir: false,
-      size: 3,
-      mtime: 1,
-    });
-    await adapter.mkdir("assets");
-    expect(mkdir).toHaveBeenCalled();
-  });
-
-  it("surfaces a stale bookmark as needsReconnect instead of a raw error", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    readFile.mockRejectedValue(new Error("security-scoped bookmark is stale"));
-
-    await expect(adapter.readText("project.json")).rejects.toThrow(
-      /reconnect required/,
-    );
-    expect(await adapter.needsReconnect()).toBe(true);
-    expect(await adapter.listProjects()).toEqual([]);
-  });
-
-  it("refuses reopen while the bookmark is stale, then recovers via Reconnect", async () => {
-    const adapter = new ScopedStorageAdapter();
-    const handle = await adapter.pickProjectFolder();
-    await adapter.markStale();
-
-    await expect(adapter.openKnownFolder(handle)).rejects.toThrow(/stale/);
-
-    const reconnected = await adapter.reconnectFolder();
-    expect(reconnected.id).toBe("bookmark-1");
-    expect(await adapter.needsReconnect()).toBe(false);
-  });
-
-  it("clears the bookmark when the folder is released", async () => {
-    const adapter = new ScopedStorageAdapter();
     await adapter.pickProjectFolder();
     await adapter.releaseFolder();
-
+    expect(fake.port.releaseFolder).toHaveBeenCalled();
     expect(adapter.getCurrentFolder()).toBeNull();
-    expect(prefs.has("babylonslate:scoped-folder")).toBe(false);
-    await expect(adapter.readText("project.json")).rejects.toThrow(
-      /No project folder selected/,
-    );
-  });
-
-  it("reports a missing file from stat", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    exists.mockResolvedValue({ exists: false });
-
-    expect(await adapter.exists("nope.json")).toBe(false);
-    await expect(adapter.stat("nope.json")).rejects.toThrow(/File not found/);
-  });
-
-  it("reports when the plugin cannot delete files", async () => {
-    const adapter = new ScopedStorageAdapter();
-    await adapter.pickProjectFolder();
-    await expect(adapter.remove("project.json")).rejects.toThrow(
-      /not supported by scoped-storage plugin/,
-    );
   });
 });
