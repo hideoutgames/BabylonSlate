@@ -22,7 +22,7 @@ import {
   shouldBreakPinConnectionsOnConnectEnd,
   shouldOpenAddNodeOnConnectEnd,
   connectEventPointerId,
-  shouldOpenAddNodeOnSecondaryPointer,
+  shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
 
@@ -614,8 +614,8 @@ describe("connectEndAction", () => {
     pointer: { x: 40, y: 0 },
   };
 
-  it("does not open Add Node on default connect-end; near drags break wires", () => {
-    expect(connectEndAction(far)).toBe("none");
+  it("opens Add Node on default far connect-end; near drags break wires", () => {
+    expect(connectEndAction(far)).toBe("add-node");
     expect(connectEndAction(near)).toBe("break");
   });
 
@@ -656,7 +656,7 @@ describe("connectEventPointerId", () => {
   });
 });
 
-describe("shouldOpenAddNodeOnSecondaryPointer", () => {
+describe("shouldCancelConnectOnSecondaryPointer", () => {
   const inZone = {
     connectionActive: true,
     dragPointerId: 1,
@@ -664,13 +664,13 @@ describe("shouldOpenAddNodeOnSecondaryPointer", () => {
     inAddNodeZone: true,
   };
 
-  it("opens when a different pointer arrives in the Add Node zone", () => {
-    expect(shouldOpenAddNodeOnSecondaryPointer(inZone)).toBe(true);
+  it("cancels when a different pointer arrives in the Add Node zone", () => {
+    expect(shouldCancelConnectOnSecondaryPointer(inZone)).toBe(true);
   });
 
   it("ignores the drag pointer itself", () => {
     expect(
-      shouldOpenAddNodeOnSecondaryPointer({
+      shouldCancelConnectOnSecondaryPointer({
         ...inZone,
         eventPointerId: 1,
       }),
@@ -679,7 +679,7 @@ describe("shouldOpenAddNodeOnSecondaryPointer", () => {
 
   it("ignores a second pointer outside the Add Node zone", () => {
     expect(
-      shouldOpenAddNodeOnSecondaryPointer({
+      shouldCancelConnectOnSecondaryPointer({
         ...inZone,
         inAddNodeZone: false,
       }),
@@ -688,7 +688,7 @@ describe("shouldOpenAddNodeOnSecondaryPointer", () => {
 
   it("ignores a second pointer when no connection drag is active", () => {
     expect(
-      shouldOpenAddNodeOnSecondaryPointer({
+      shouldCancelConnectOnSecondaryPointer({
         ...inZone,
         connectionActive: false,
       }),
@@ -697,7 +697,7 @@ describe("shouldOpenAddNodeOnSecondaryPointer", () => {
 
   it("ignores a second pointer when the drag pointer id is unknown", () => {
     expect(
-      shouldOpenAddNodeOnSecondaryPointer({
+      shouldCancelConnectOnSecondaryPointer({
         ...inZone,
         dragPointerId: null,
       }),

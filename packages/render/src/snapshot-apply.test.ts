@@ -2,16 +2,17 @@ import { Material, PointLight, Quaternion, SpotLight, StandardMaterial, Universa
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
-import { ResourceCache } from "./resource-cache";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, glbClipNames } from "./model-mesh";
-import { setupDefaultViewport } from "./viewport";
+import { ResourceCache } from "./resource-cache";
+import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
 import {
   applyAssignMesh,
   applyPossessCamera,
+  applySnapshotToScene,
   createPlayMesh,
   createSnapshotSceneBinding,
-  applySnapshotToScene,
 } from "./snapshot-apply";
+import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
 
 describe("createPlayMesh", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -242,6 +243,66 @@ describe("createPlayMesh", () => {
     expect(forward.x).toBeCloseTo(expected.x, 5);
     expect(forward.y).toBeCloseTo(expected.y, 5);
     expect(forward.z).toBeCloseTo(expected.z, 5);
+  });
+
+  it("dims the default hemispheric fill when assignMesh adds an authored light", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    setupDefaultViewport(scene);
+    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "light:point",
+      light: { color: [1, 1, 1], intensity: 1, enabled: true },
+    });
+    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
+      AUTHORED_FILL_LIGHT_INTENSITY,
+    );
+  });
+
+  it("restores the default fill when the last Play light despawns", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    setupDefaultViewport(scene);
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "light:point",
+      light: { color: [1, 1, 1], intensity: 1, enabled: true },
+    });
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 0, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
+      AUTHORED_FILL_LIGHT_INTENSITY,
+    );
+    applySnapshotToScene(scene, binding, {
+      frameId: 2,
+      tickIndex: 2,
+      alpha: 1,
+      actorCount: 0,
+      actors: [],
+    });
+    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
   });
 
   it("applies authored light color and intensity from assignMesh", () => {

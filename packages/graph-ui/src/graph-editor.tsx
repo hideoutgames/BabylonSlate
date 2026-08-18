@@ -85,7 +85,7 @@ import {
   type ConnectEndMode,
   type PinCompatibilityRule,
   shouldOpenAddNodeOnConnectEnd,
-  shouldOpenAddNodeOnSecondaryPointer,
+  shouldCancelConnectOnSecondaryPointer,
   shouldCancelConnectionOnSecondaryPointer,
 } from "./graph-connect";
 import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
@@ -162,9 +162,10 @@ export interface GraphEditorProps {
    */
   nodeDragHandle?: string;
   /**
-   * Connect-end policy. Default keeps the 96px cancel zone and wire-break
-   * fallback. Behaviour trees use `add-node` so a short drag off a handle
-   * opens Add Node and never breaks structural edges.
+   * Connect-end policy. Default opens Add Node on a far empty-canvas drop
+   * and keeps the 96px near-pin wire-break. Behaviour trees use `add-node`
+   * so a short drag off a handle opens Add Node and never breaks structural
+   * edges.
    */
   connectEndMode?: ConnectEndMode;
   /** Double-tap empty pane opens Add Node. Default true. */
@@ -439,11 +440,8 @@ function GraphEditorCanvas({
     pointer: { x: number; y: number };
     nodeId: string;
     pinId: string;
-    openedAddNode: boolean;
-    cancelled: boolean;
+    connectEndHandled: boolean;
   } | null>(null);
-  const suppressPaletteDismissRef = useRef(false);
-  const paletteDismissHoldIdsRef = useRef<Set<number>>(new Set());
   const [marqueeScreen, setMarqueeScreen] = useState<{
     x: number;
     y: number;
@@ -458,7 +456,6 @@ function GraphEditorCanvas({
   const lastPaneTapRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const skipPaneClickRef = useRef(false);
-  const connectCancelledRef = useRef(false);
   const membersRef = useRef(initialGraph.members);
   membersRef.current = initialGraph.members;
   const componentsRef = useRef(initialGraph.components);
@@ -778,24 +775,18 @@ function GraphEditorCanvas({
         pointer: point ?? { x: 0, y: 0 },
         nodeId: params.nodeId,
         pinId: params.handleId,
-        openedAddNode: false,
-        cancelled: false,
+        connectEndHandled: false,
       };
-      connectCancelledRef.current = false;
     },
     [readOnly],
   );
 
   const handleConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
-      const openedAddNode =
-        suppressPaletteDismissRef.current ||
-        connectDragRef.current?.openedAddNode === true;
-      const cancelled =
-        connectCancelledRef.current ||
-        connectDragRef.current?.cancelled === true;
+      const connectEndHandled =
+        connectDragRef.current?.connectEndHandled === true;
       connectDragRef.current = null;
-      if (readOnly || openedAddNode || cancelled) return;
+      if (readOnly || connectEndHandled) return;
       if (state.toHandle) return;
       const fromHandle = state.fromHandle;
       const fromNode = state.fromNode;
@@ -1252,22 +1243,9 @@ function GraphEditorCanvas({
       if (point) session.pointer = point;
     };
 
-    const releasePaletteDismissHold = (event: Event) => {
-      if (!suppressPaletteDismissRef.current) return;
-      paletteDismissHoldIdsRef.current.delete(
-        connectEventPointerId(event as MouseEvent | TouchEvent),
-      );
-      if (paletteDismissHoldIdsRef.current.size > 0) return;
-      queueMicrotask(() => {
-        if (paletteDismissHoldIdsRef.current.size === 0) {
-          suppressPaletteDismissRef.current = false;
-        }
-      });
-    };
-
     const onSecondaryPointerDown = (event: Event) => {
       const session = connectDragRef.current;
-      if (!session || session.openedAddNode || readOnlyRef.current) return;
+      if (!session || session.connectEndHandled || readOnlyRef.current) return;
       const target = event.target;
       if (!(target instanceof Element) || !target.closest(".react-flow")) {
         return;
@@ -1277,6 +1255,13 @@ function GraphEditorCanvas({
       );
       if (eventPointerId === session.pointerId) return;
       event.preventDefault();
+      const cancelRubberBand = () => {
+        session.connectEndHandled = true;
+        skipPaneClickRef.current = true;
+        pendingPinRef.current = null;
+        setPendingPin(null);
+        storeApi.getState().cancelConnection();
+      };
       if (
         shouldCancelConnectionOnSecondaryPointer({
           connectionActive: true,
@@ -1285,12 +1270,7 @@ function GraphEditorCanvas({
           mode: connectEndModeRef.current,
         })
       ) {
-        session.cancelled = true;
-        connectCancelledRef.current = true;
-        skipPaneClickRef.current = true;
-        pendingPinRef.current = null;
-        setPendingPin(null);
-        storeApi.getState().cancelConnection();
+        cancelRubberBand();
         return;
       }
       const pin = pinOnNode(
@@ -1321,7 +1301,7 @@ function GraphEditorCanvas({
         ),
       });
       if (
-        !shouldOpenAddNodeOnSecondaryPointer({
+        !shouldCancelConnectOnSecondaryPointer({
           connectionActive: true,
           dragPointerId: session.pointerId,
           eventPointerId,
@@ -1330,16 +1310,7 @@ function GraphEditorCanvas({
       ) {
         return;
       }
-      const position = screenToFlowPositionRef.current(pointer);
-      session.openedAddNode = true;
-      suppressPaletteDismissRef.current = true;
-      paletteDismissHoldIdsRef.current = new Set([
-        session.pointerId,
-        eventPointerId,
-      ]);
-      setPendingConnect({ pin, nodeId: session.nodeId, position });
-      setPaletteOpen(true);
-      storeApi.getState().cancelConnection();
+      cancelRubberBand();
     };
 
     document.addEventListener("pointermove", onMove, true);
@@ -1350,24 +1321,12 @@ function GraphEditorCanvas({
       capture: true,
       passive: false,
     });
-    document.addEventListener("pointerup", releasePaletteDismissHold, true);
-    document.addEventListener("mouseup", releasePaletteDismissHold, true);
-    document.addEventListener("touchend", releasePaletteDismissHold, true);
-    document.addEventListener("pointercancel", releasePaletteDismissHold, true);
     return () => {
       document.removeEventListener("pointermove", onMove, true);
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("touchmove", onMove, true);
       document.removeEventListener("pointerdown", onSecondaryPointerDown, true);
       document.removeEventListener("touchstart", onSecondaryPointerDown, true);
-      document.removeEventListener("pointerup", releasePaletteDismissHold, true);
-      document.removeEventListener("mouseup", releasePaletteDismissHold, true);
-      document.removeEventListener("touchend", releasePaletteDismissHold, true);
-      document.removeEventListener(
-        "pointercancel",
-        releasePaletteDismissHold,
-        true,
-      );
     };
   }, [storeApi]);
 
@@ -1617,7 +1576,6 @@ function GraphEditorCanvas({
         <NodePalette
           open={paletteOpen}
           onOpenChange={(next) => {
-            if (!next && suppressPaletteDismissRef.current) return;
             setPaletteOpen(next);
             if (!next) setPendingConnect(null);
           }}

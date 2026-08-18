@@ -99,8 +99,7 @@ export function GraphConnectionLineView({
         })
     : false;
   const badge = hintOffset(fromX, fromY, toX, toY);
-  const hintLabel =
-    connectEndMode === "add-node" ? "Tap to Cancel" : "Tap to Add Node";
+  const hintLabel = "Tap to Cancel";
 
   return (
     <>
