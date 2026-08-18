@@ -43,7 +43,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 | Layer | Mechanism | Scope |
 | --- | --- | --- |
 | CSS | `overflow: hidden` and `overscroll-behavior: none` on `html`, `body`, `#root`, and app shell roots | All platforms |
-| CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome tab strip, homepage body |
+| CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome closable-tab scroller, homepage body |
 | JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers | iOS Safari / touch fallback |
 | Native | WKWebView `scrollView.bounces = false` | Capacitor iOS app only |
 
@@ -54,7 +54,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 ### Regions that still scroll internally
 
 - Homepage `<main>` — project list and create cards
-- Chrome tab strip — horizontal overflow
+- Chrome closable-tab scroller (`.editor-chrome-tabs-scroll`) — horizontal overflow; pinned Content Browser stays put
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
 - Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog
