@@ -159,6 +159,7 @@ export {
 export {
   AtlasTileGrid,
   type AtlasTileGridProps,
+  type AtlasTileGridTool,
 } from "./atlas-tile-grid";
 export {
   AddFunctionDialog,
