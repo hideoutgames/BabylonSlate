@@ -2330,6 +2330,9 @@ describe("GraphEditor", () => {
       ),
     ).not.toBeNull();
     expect(
+      container.querySelector('[data-id="root"] [data-handleid="parent"]'),
+    ).toBeNull();
+    expect(
       container.querySelector(
         '[data-id="task"] [data-handleid="parent"][data-pin-type="exec"] [data-pin-connected]',
       ),
