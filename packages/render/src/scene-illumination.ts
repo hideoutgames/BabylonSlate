@@ -22,6 +22,7 @@ import {
 } from "@babylonslate/core";
 import { DEFAULT_LIGHT_INTENSITY } from "./viewport";
 import type { MeshAssetContext } from "./mesh-assets";
+import { isSkyboxMesh } from "./skybox";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
@@ -342,6 +343,7 @@ export function updateAuthoredCameraTransform(
 function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {
   for (const mesh of scene.meshes) {
     if (mesh.name.startsWith("__")) continue;
+    if (isSkyboxMesh(mesh)) continue;
     generator.addShadowCaster(mesh, false);
     mesh.receiveShadows = true;
   }

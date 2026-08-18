@@ -11,6 +11,7 @@ import {
   VEC3,
 } from "@babylonslate/scripting";
 import { objectLiteralKey } from "./member-pins";
+import { titleCaseEnumMember } from "./enum";
 
 export function structGuidOf(properties: Record<string, unknown>): string {
   return typeof properties.structGuid === "string" && properties.structGuid.trim()
@@ -48,7 +49,7 @@ function fieldPins(
   return fields.map((field) =>
     pin(
       field.name,
-      field.name,
+      titleCaseEnumMember(field.name),
       direction,
       pinTypeForMember(field.typeId, field.typeClassId),
     ),
@@ -82,7 +83,7 @@ export const structNodes: NodeDefinition[] = [
     pure: true,
     pins: (properties) => [
       ...fieldPins(structFieldsOf(properties), "in"),
-      pin("out", "out", "out", structRef(structGuidOf(properties))),
+      pin("out", "Out", "out", structRef(structGuidOf(properties))),
     ],
     codegen: (ctx) => ({
       out: makeStructLiteral(structFieldsOf(ctx.node.properties), (name) =>
@@ -96,7 +97,7 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: (properties) => [
-      pin("in", "in", "in", structRef(structGuidOf(properties))),
+      pin("in", "In", "in", structRef(structGuidOf(properties))),
       ...fieldPins(structFieldsOf(properties), "out"),
     ],
     codegen: (ctx) => {
@@ -114,10 +115,10 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: () => [
-      pin("pitch", "pitch", "in", FLOAT),
-      pin("yaw", "yaw", "in", FLOAT),
-      pin("roll", "roll", "in", FLOAT),
-      pin("out", "out", "out", ROTATOR),
+      pin("pitch", "Pitch", "in", FLOAT),
+      pin("yaw", "Yaw", "in", FLOAT),
+      pin("roll", "Roll", "in", FLOAT),
+      pin("out", "Out", "out", ROTATOR),
     ],
     codegen: (ctx) => ({
       out: `{ pitch: ${ctx.input("pitch")}, yaw: ${ctx.input("yaw")}, roll: ${ctx.input("roll")} }`,
@@ -129,10 +130,10 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: () => [
-      pin("in", "in", "in", ROTATOR),
-      pin("pitch", "pitch", "out", FLOAT),
-      pin("yaw", "yaw", "out", FLOAT),
-      pin("roll", "roll", "out", FLOAT),
+      pin("in", "In", "in", ROTATOR),
+      pin("pitch", "Pitch", "out", FLOAT),
+      pin("yaw", "Yaw", "out", FLOAT),
+      pin("roll", "Roll", "out", FLOAT),
     ],
     codegen: (ctx) => {
       const v = ctx.input("in");
@@ -149,11 +150,11 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: () => [
-      pin("r", "r", "in", FLOAT),
-      pin("g", "g", "in", FLOAT),
-      pin("b", "b", "in", FLOAT),
-      pin("a", "a", "in", FLOAT),
-      pin("out", "out", "out", COLOR),
+      pin("r", "R", "in", FLOAT),
+      pin("g", "G", "in", FLOAT),
+      pin("b", "B", "in", FLOAT),
+      pin("a", "A", "in", FLOAT),
+      pin("out", "Out", "out", COLOR),
     ],
     codegen: (ctx) => ({
       out: `{ x: ${ctx.input("r")}, y: ${ctx.input("g")}, z: ${ctx.input("b")}, w: ${ctx.input("a")} }`,
@@ -165,11 +166,11 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: () => [
-      pin("in", "in", "in", COLOR),
-      pin("r", "r", "out", FLOAT),
-      pin("g", "g", "out", FLOAT),
-      pin("b", "b", "out", FLOAT),
-      pin("a", "a", "out", FLOAT),
+      pin("in", "In", "in", COLOR),
+      pin("r", "R", "out", FLOAT),
+      pin("g", "G", "out", FLOAT),
+      pin("b", "B", "out", FLOAT),
+      pin("a", "A", "out", FLOAT),
     ],
     codegen: (ctx) => {
       const v = ctx.input("in");
@@ -187,10 +188,10 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: () => [
-      pin("location", "location", "in", VEC3),
-      pin("rotation", "rotation", "in", ROTATOR),
-      pin("scale", "scale", "in", VEC3),
-      pin("out", "out", "out", TRANSFORM),
+      pin("location", "Location", "in", VEC3),
+      pin("rotation", "Rotation", "in", ROTATOR),
+      pin("scale", "Scale", "in", VEC3),
+      pin("out", "Out", "out", TRANSFORM),
     ],
     codegen: (ctx) => ({
       out: `{ position: ${ctx.input("location")}, rotation: ${rotatorToQuatExpr(ctx.input("rotation"))}, scale: ${ctx.input("scale")} }`,
@@ -202,10 +203,10 @@ export const structNodes: NodeDefinition[] = [
     category: "struct",
     pure: true,
     pins: () => [
-      pin("in", "in", "in", TRANSFORM),
-      pin("location", "location", "out", VEC3),
-      pin("rotation", "rotation", "out", ROTATOR),
-      pin("scale", "scale", "out", VEC3),
+      pin("in", "In", "in", TRANSFORM),
+      pin("location", "Location", "out", VEC3),
+      pin("rotation", "Rotation", "out", ROTATOR),
+      pin("scale", "Scale", "out", VEC3),
     ],
     codegen: (ctx) => {
       const t = ctx.input("in");

@@ -144,6 +144,80 @@ async function addMaterialPaletteNode(
   await graph.locator(`.react-flow__node[data-id^="${itemId}-"]`).click();
 }
 
+async function importAlbedoTexture(page: Page): Promise<string> {
+  await showContentBrowser(page);
+  await page
+    .getByTestId("content-browser-import-input")
+    .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
+  await expect(
+    page.locator('[data-asset-path="assets/albedo.babasset"]'),
+  ).toBeVisible({ timeout: 15_000 });
+  const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
+  expect(albedoGuid.length).toBeGreaterThan(0);
+  return albedoGuid;
+}
+
+async function pickMaterialNodeTexture(page: Page, guid: string): Promise<void> {
+  await expect(page.getByTestId("material-details-panel")).toBeVisible();
+  await page.getByTestId("material-node-texture").click();
+  await expect(page.getByTestId("material-node-texture-picker")).toBeVisible();
+  await page.getByTestId(`search-item-${guid}`).click();
+  await expect(page.getByTestId("material-node-texture-picker")).toHaveCount(0);
+  await expect(page.getByTestId("material-node-texture")).toContainText(
+    /albedo/i,
+  );
+}
+
+async function connectMaterialPins(
+  page: Page,
+  sourcePrefix: string,
+  sourcePin: string,
+  targetSelector: string,
+  targetPin: string,
+): Promise<void> {
+  const graph = page.getByTestId("material-graph-editor");
+  const source = graph.locator(
+    `.react-flow__node[data-id^="${sourcePrefix}"] [data-handleid="${sourcePin}"][data-handlepos="right"]`,
+  );
+  const target = graph.locator(
+    `.react-flow__node${targetSelector} [data-handleid="${targetPin}"][data-handlepos="left"]`,
+  );
+  await source.click({ force: true });
+  await target.click({ force: true });
+}
+
+async function dragMaterialNode(
+  page: Page,
+  nodePrefix: string,
+  dx: number,
+  dy: number,
+): Promise<void> {
+  const node = page
+    .getByTestId("material-graph-editor")
+    .locator(`.react-flow__node[data-id^="${nodePrefix}"]`);
+  const title = node.locator("[data-node-role] > div").first();
+  const box = await title.boundingBox();
+  expect(box).not.toBeNull();
+  const x = box!.x + Math.min(20, box!.width / 2);
+  const y = box!.y + box!.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y + dy, { steps: 8 });
+  await page.mouse.up();
+}
+
+async function compileMaterialPreview(page: Page): Promise<void> {
+  const canvas = page.getByTestId("material-preview-canvas");
+  const render = page.getByTestId("material-render");
+  // Force a compile of the wired graph. Auto-compile may already be in
+  // flight (Render disabled); wait it out, then click.
+  await expect(render).toBeEnabled({ timeout: 15_000 });
+  await render.click();
+  await expect(canvas).toHaveAttribute("data-status", "ready", {
+    timeout: 15_000,
+  });
+}
+
 test.describe("P9 content systems", () => {
   test("UserInterface designer switches 4:3, 16:9, and widescreen presets", async ({
     page,
@@ -712,29 +786,69 @@ test.describe("P9 content systems", () => {
   test("Texture Sample node can pick an inline Texture asset", async ({
     page,
   }) => {
+    test.setTimeout(90_000);
     await openTestProject(page);
-    await showContentBrowser(page);
-    await page
-      .getByTestId("content-browser-import-input")
-      .setInputFiles([path.join(process.cwd(), "e2e/fixtures/albedo.png")]);
-    await expect(
-      page.locator('[data-asset-path="assets/albedo.babasset"]'),
-    ).toBeVisible({ timeout: 15_000 });
+    const albedoGuid = await importAlbedoTexture(page);
     await createAsset(page, "Material", "Sampled");
     await page
       .locator('[data-asset-path="assets/Sampled.material.babasset"]')
       .dblclick();
     await expect(page.getByTestId("document-workspace-material")).toBeVisible();
     await addMaterialPaletteNode(page, "Texture Sample", "texture.sample");
-    await page.getByTestId("material-node-texture").click();
-    await expect(page.getByTestId("material-node-texture-picker")).toBeVisible();
-    const albedoGuid = await guidForPath(page, "assets/albedo.babasset");
-    expect(albedoGuid.length).toBeGreaterThan(0);
-    await page.getByTestId(`search-item-${albedoGuid}`).click();
-    await expect(page.getByTestId("material-node-texture-picker")).toHaveCount(0);
-    await expect(page.getByTestId("material-node-texture")).toContainText(
-      /albedo/i,
+    await pickMaterialNodeTexture(page, albedoGuid);
+    const graph = page.getByTestId("material-graph-editor");
+    await connectMaterialPins(
+      page,
+      "texture.sample-",
+      "rgb",
+      '[data-id="output"]',
+      "baseColor",
     );
+    await expect(
+      graph.locator('.react-flow__edge[data-id*=":rgb:output:baseColor"]'),
+    ).toHaveCount(1);
+    await compileMaterialPreview(page);
+  });
+
+  test("Texture Parameter wires into Texture Sample for a ready preview", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openTestProject(page);
+    const albedoGuid = await importAlbedoTexture(page);
+    await createAsset(page, "Material", "ParamSample");
+    await page
+      .locator('[data-asset-path="assets/ParamSample.material.babasset"]')
+      .dblclick();
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await addMaterialPaletteNode(page, "Texture Parameter", "param.texture");
+    await pickMaterialNodeTexture(page, albedoGuid);
+    await dragMaterialNode(page, "param.texture-", -220, -40);
+    await addMaterialPaletteNode(page, "Texture Sample", "texture.sample");
+    const graph = page.getByTestId("material-graph-editor");
+    await connectMaterialPins(
+      page,
+      "param.texture-",
+      "out",
+      '[data-id^="texture.sample-"]',
+      "texture",
+    );
+    await expect(
+      graph.locator(
+        '.react-flow__edge[data-id^="e:param.texture-"][data-id*=":texture"]',
+      ),
+    ).toHaveCount(1);
+    await connectMaterialPins(
+      page,
+      "texture.sample-",
+      "rgb",
+      '[data-id="output"]',
+      "baseColor",
+    );
+    await expect(
+      graph.locator('.react-flow__edge[data-id*=":rgb:output:baseColor"]'),
+    ).toHaveCount(1);
+    await compileMaterialPreview(page);
   });
 
   test("scene post-process stack applies in Play and respects Engine Settings", async ({

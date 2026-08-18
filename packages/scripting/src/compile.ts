@@ -2,9 +2,10 @@ import type { LogicGraph, GraphNode, GraphPin } from "./ir";
 import { findNode, findPin } from "./ir";
 import type { NodeRegistry, CodegenContext, HoistBodyAnchor } from "./node-registry";
 import { defaultValueLiteral } from "./types";
-import { pinRejectsStoredDefault } from "./pin-defaults";
+import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
+import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 
 export type CompileAnchor = {
   line: number;
@@ -142,15 +143,6 @@ function stripExecSuccessors(graph: LogicGraph, node: GraphNode): string[] {
   return [];
 }
 
-const ENUM_SWITCH_CASE_PREFIX = "case:";
-
-/** Member name from a Switch exec-out pin id (`case:Red`). Display names may Title Case. */
-function enumSwitchMemberName(pinId: string): string | undefined {
-  return pinId.startsWith(ENUM_SWITCH_CASE_PREFIX)
-    ? pinId.slice(ENUM_SWITCH_CASE_PREFIX.length)
-    : undefined;
-}
-
 function execSuccessors(
   graph: LogicGraph,
   nodeId: string,
@@ -173,6 +165,17 @@ function execSuccessors(
     }
   }
   return result;
+}
+
+function pinForCodegen(
+  node: GraphNode,
+  pinName: string,
+  direction: "in" | "out",
+): GraphPin | undefined {
+  return (
+    node.pins.find((pin) => pin.direction === direction && pin.id === pinName) ??
+    node.pins.find((pin) => pin.direction === direction && pin.name === pinName)
+  );
 }
 
 function entryNodes(graph: LogicGraph): GraphNode[] {
@@ -265,9 +268,7 @@ export function compileGraph(
         return varName;
       }
     }
-    const prop =
-      node.properties[`default:${dataPin.name}`] ??
-      node.properties[dataPin.name];
+    const prop = readPinDefaultForPin(node.properties, dataPin);
     const lit =
       prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
         ? JSON.stringify(prop)
@@ -282,16 +283,12 @@ export function compileGraph(
       node,
       indent: "  ",
       input(pinName) {
-        const p = node.pins.find(
-          (x) => x.name === pinName && x.direction === "in",
-        );
+        const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
         return pinExpr(node, p);
       },
       output(pinName) {
-        const p = node.pins.find(
-          (x) => x.name === pinName && x.direction === "out",
-        );
+        const p = pinForCodegen(node, pinName, "out");
         const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
         if (p) exprCache.set(`${node.id}:${p.id}`, name);
         return name;
@@ -336,9 +333,7 @@ export function compileGraph(
     const result = def.codegen(makeCtx(node));
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
-        const outPin = node.pins.find(
-          (p) => p.name === name && p.direction === "out",
-        );
+        const outPin = pinForCodegen(node, name, "out");
         if (outPin) exprCache.set(`${node.id}:${outPin.id}`, `(${expr})`);
       }
     }
@@ -404,7 +399,7 @@ export function compileGraph(
           (pin) =>
             pin.kind === "exec" &&
             pin.direction === "out" &&
-            enumSwitchMemberName(pin.id) !== undefined,
+            enumSwitchMemberNameFromPinId(pin.id) !== undefined,
         );
         const wiredCases = cases.filter(
           (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
@@ -416,7 +411,7 @@ export function compileGraph(
         }
         for (let i = 0; i < wiredCases.length; i++) {
           const pin = wiredCases[i]!;
-          const memberName = enumSwitchMemberName(pin.id) ?? pin.name;
+          const memberName = enumSwitchMemberNameFromPinId(pin.id) ?? pin.name;
           const keyword = i === 0 ? "if" : "} else if";
           emitBody(
             `  ${keyword} (${valueExpr} === ${JSON.stringify(memberName)}) {`,
@@ -684,9 +679,7 @@ export function compileTransitionRuleGraph(
         return varName;
       }
     }
-    const prop =
-      node.properties[`default:${dataPin.name}`] ??
-      node.properties[dataPin.name];
+    const prop = readPinDefaultForPin(node.properties, dataPin);
     const lit =
       prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
         ? JSON.stringify(prop)
@@ -701,16 +694,12 @@ export function compileTransitionRuleGraph(
       node,
       indent: "  ",
       input(pinName) {
-        const p = node.pins.find(
-          (x) => x.name === pinName && x.direction === "in",
-        );
+        const p = pinForCodegen(node, pinName, "in");
         if (!p) return "undefined";
         return pinExpr(node, p);
       },
       output(pinName) {
-        const p = node.pins.find(
-          (x) => x.name === pinName && x.direction === "out",
-        );
+        const p = pinForCodegen(node, pinName, "out");
         const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
         if (p) exprCache.set(`${node.id}:${p.id}`, name);
         return name;
@@ -744,9 +733,7 @@ export function compileTransitionRuleGraph(
     const result = def.codegen(makeCtx(node));
     if (result && typeof result === "object") {
       for (const [name, expr] of Object.entries(result)) {
-        const outPin = node.pins.find(
-          (p) => p.name === name && p.direction === "out",
-        );
+        const outPin = pinForCodegen(node, name, "out");
         if (outPin) exprCache.set(`${node.id}:${outPin.id}`, `(${expr})`);
       }
     }

@@ -212,6 +212,17 @@ export type CommandMessage =
         rotation: [number, number, number, number];
         scale: [number, number, number];
       }>;
+      skybox?: {
+        size: number;
+        faces: {
+          px: string | null;
+          py: string | null;
+          pz: string | null;
+          nx: string | null;
+          ny: string | null;
+          nz: string | null;
+        };
+      };
     }
   | { type: "possessCamera"; slotId: number }
   | { type: "setShadowQuality"; level: string }

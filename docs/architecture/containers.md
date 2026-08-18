@@ -58,12 +58,12 @@ Leaving a project (export / share) always produces a self-contained file (inline
 
 Recorded Play sessions reuse the `.babasset` container with `type: "Trace"`. The JSON body is a `TracePayload` (seed, dt, frames with stats/logs/prints/snapshots/input). Files use the `.babtrace` extension; `encodeTraceDocument` / `decodeTraceDocument` wrap `encodeAssetDocument`. Debugger stays free of `@babylonslate/assets`.
 
-## .babproject / .babplugin
+## Project folder / .babplugin
 
 One logical tree, two backends behind one codec, parameterized by **manifest kind** (`project` | `plugin`):
 
 ```
-MyGame.babproject/          (directory)  or  MyGame.babproject (zip)
+MyGame/                     (directory)  or  MyGame.zip
   project.json              # kind=project
   layout.json               # editor dock layout (projects only)
   assets/                   # .babasset tree = Content Browser tree
@@ -75,10 +75,10 @@ MyGame.babproject/          (directory)  or  MyGame.babproject (zip)
 
 `.babplugin` zip (kind=plugin): `plugin.json` + PluginSettings + `assets/` (no `layout.json`). `plugin.json` is the **zip manifest only** — in-project discovery scans for `type: "PluginSettings"`. Detail: [plugins.md](plugins.md).
 
-- **Directory backend** — incremental writes (iPad Documents / external folder / desktop).
-- **Zip backend** — single-file zip (`fflate`); used for web Export Project and interchange.
+- **Directory backend** — incremental writes (OPFS, iPad Documents / external folder, desktop). Folder name is the display name (`MyGame/`), not `MyGame.babproject/`. Existing `*.babproject` folders still open.
+- **Zip backend** — single-file `.zip` (`fflate`); used for Export Project and interchange. Legacy Export Project `.babproject` zips still decode.
 
-Web persists the directory layout into OPFS and offers Export Project as a zip download. **Export Game** (itch zip) is a different artifact — see [exporter.md](exporter.md).
+Web persists the directory layout into OPFS and offers Export Project as a `.zip` download. **Export Game** (itch zip) is a different artifact — see [exporter.md](exporter.md).
 
 ## `.babpack` (packaged games)
 

@@ -335,7 +335,10 @@ export function pinDefaultPropertyRows(
           label: entry.name,
           value: current,
           defaultValue: pinDefaultAsString(typeDefault),
-          options: options.map((name) => ({ value: name, label: name })),
+          options: options.map((name) => ({
+            value: name,
+            label: humanizePropertyLabel(name),
+          })),
           onChange: (value) => onPatch({ [key]: value }),
         });
         break;
@@ -518,7 +521,10 @@ export function enumNodePropertyRows(
       label: "Value",
       value: current,
       defaultValue: members[0] ?? "",
-      options: members.map((name) => ({ value: name, label: name })),
+      options: members.map((name) => ({
+        value: name,
+        label: humanizePropertyLabel(name),
+      })),
       onChange: (value) => onPatch({ value }),
     });
   }

@@ -86,7 +86,12 @@ import type {
   PlayBehaviourTreeEntry,
   PlayBlackboardEntry,
 } from "../lib/play-content";
-import { readPlayNavmeshBytes, readPlayAudioReverbBytes, modelSlotMaterialGuidsFromPayloads } from "../lib/play-content";
+import {
+  readPlayNavmeshBytes,
+  readPlayAudioReverbBytes,
+  modelSlotMaterialGuidsFromPayloads,
+  skyboxFaceGuidsFromScene,
+} from "../lib/play-content";
 import {
   hydrateSpriteAnimationPixelSizes,
   type SpriteAnimationPayload,
@@ -870,6 +875,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             [
               ...materials.textureGuids,
               ...particleTextureGuidsFromLibrary(particles),
+              ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
             ],
             spriteAnimations,
           );
@@ -885,7 +891,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             textureBytes = await collectPlayTextureBytes(
               sprites,
               tilesets,
-              [],
+              skyboxFaceGuidsFromScene(resolvedScene?.scene),
               spriteAnimations,
             );
             setPlayTextureBytes(textureBytes);

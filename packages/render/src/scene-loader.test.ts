@@ -57,6 +57,7 @@ describe("scene-loader", () => {
     applySceneToBabylonScene(scene, createDefaultScene());
     expect(scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
     expect(scene.getMeshByName(editorMeshName("actor-camera"))).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-skybox"))).not.toBeNull();
     expect(countSceneMeshes(scene)).toBeGreaterThan(1);
   });
 
@@ -157,6 +158,12 @@ describe("scene-loader", () => {
     const origin = scene.getMeshByName(editorMeshName("lamp"));
     const mesh = scene.getMeshByName(editorComponentMeshName("lamp", "light"));
     expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    expect(origin!.visibility).toBe(0);
+    expect(origin!.isVisible).toBe(true);
+    expect(origin!.isPickable).toBe(true);
+    expect(
+      (origin!.metadata as { editorPickProxy?: boolean }).editorPickProxy,
+    ).toBe(true);
     expect(mesh).not.toBeNull();
     expect(mesh!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
