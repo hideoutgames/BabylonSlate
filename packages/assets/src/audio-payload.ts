@@ -502,12 +502,13 @@ export function normalizeSoundAttenuationPayload(
 }
 
 export function resolveAudioReferences(
-  payload: AudioPayload,
+  payload: AudioPayload | unknown,
   knownGuids: ReadonlySet<string>,
 ): { payload: AudioPayload; diagnostics: AudioDiagnostic[] } {
+  const audio = normalizeAudioPayload(payload);
   const diagnostics: AudioDiagnostic[] = [];
-  let audioChannelGuid = payload.audioChannelGuid;
-  let soundAttenuationGuid = payload.soundAttenuationGuid;
+  let audioChannelGuid = audio.audioChannelGuid;
+  let soundAttenuationGuid = audio.soundAttenuationGuid;
   if (audioChannelGuid && !knownGuids.has(audioChannelGuid)) {
     diagnostics.push({
       code: "audio.missing_channel",
@@ -525,7 +526,7 @@ export function resolveAudioReferences(
     soundAttenuationGuid = null;
   }
   return {
-    payload: { ...payload, audioChannelGuid, soundAttenuationGuid },
+    payload: { ...audio, audioChannelGuid, soundAttenuationGuid },
     diagnostics,
   };
 }
@@ -598,7 +599,7 @@ export function validateAudioChannelGraph(
 }
 
 export function sanitizeAudioLibrary(input: {
-  audio: ReadonlyMap<string, AudioPayload>;
+  audio: ReadonlyMap<string, AudioPayload | unknown>;
   channels: ReadonlyMap<string, AudioChannelPayload>;
   attenuations: ReadonlyMap<string, SoundAttenuationPayload>;
 }): {
@@ -671,17 +672,18 @@ export type AudioPlaybackResolution = {
 };
 
 export function resolveAudioPlayback(options: {
-  audio: AudioPayload;
+  audio: AudioPayload | unknown;
   playCallVolume: number;
   mixer: AudioMixerPayload | null;
   channels: ReadonlyMap<string, AudioChannelPayload>;
   sessionChannelVolumes?: ReadonlyMap<string, number>;
   sessionGlobalVolume?: number | null;
 }): AudioPlaybackResolution {
+  const audio = normalizeAudioPayload(options.audio);
   const channelGuids: string[] = [];
   let environmentReverb = false;
   let muffleThroughWalls = false;
-  const start = options.audio.audioChannelGuid;
+  const start = audio.audioChannelGuid;
   if (start) {
     const seen = new Set<string>();
     let current: string | null = start;
@@ -728,7 +730,7 @@ export function resolveAudioPlayback(options: {
         : mixer.globalVolume;
   return {
     gain: computeAudioOutputGain({
-      assetVolume: options.audio.volume,
+      assetVolume: audio.volume,
       playCallVolume: options.playCallVolume,
       channelGains: mixer ? channelGains : undefined,
       globalGain,

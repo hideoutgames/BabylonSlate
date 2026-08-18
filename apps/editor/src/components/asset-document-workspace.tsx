@@ -571,7 +571,7 @@ function AudioSettingsEditor({
     }
     const result = session.play(audio);
     if (!result.ok) {
-      setPreviewError(result.message);
+      setPreviewError(result.message ?? "Audio preview failed.");
       setPlaying(false);
       return;
     }

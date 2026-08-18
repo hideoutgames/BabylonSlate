@@ -21,7 +21,7 @@ function library(options?: {
   mixer?: AudioMixerPayload | null;
   mixerGuid?: string | null;
   channels?: Record<string, AudioChannelPayload>;
-  audio?: Record<string, AudioPayload>;
+  audio?: Record<string, unknown>;
   attenuations?: Record<string, SoundAttenuationPayload>;
 }) {
   return {

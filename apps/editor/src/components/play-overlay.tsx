@@ -103,12 +103,14 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
-  audioProjectSettings?: Pick<
-    AudioProjectSettings,
-    | "occlusionEnabled"
-    | "reverbWetScale"
-    | "reverbDecayScale"
-    | "reverbDampingScale"
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
   >;
   onClose: (result: PlaySessionResult) => void;
 }

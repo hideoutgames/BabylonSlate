@@ -14,9 +14,21 @@ export function stopAudioPreviewElement(element: {
   element.currentTime = 0;
 }
 
-export type AudioPreviewPlayResult =
-  | { ok: true; voiceId: string; clipChunkId: string; pitch: number }
-  | { ok: false; code: string; message: string };
+export type AudioPreviewPlayResult = {
+  ok: boolean;
+  voiceId?: string;
+  clipChunkId?: string;
+  pitch?: number;
+  code?: string;
+  message?: string;
+};
+
+export type AudioPreviewSession = {
+  prefetch(payload: AudioPayload | Record<string, unknown>): Promise<void>;
+  play(payload: AudioPayload | Record<string, unknown>): AudioPreviewPlayResult;
+  stop(): void;
+  dispose(): void;
+};
 
 const PREVIEW_VOICE_ID = "preview";
 
@@ -25,7 +37,7 @@ export function createAudioPreviewSession(options: {
   readChunk: (chunkId: string) => Promise<Uint8Array | null | undefined>;
   random?: () => number;
   onError?: (error: { code: string; message: string }) => void;
-}) {
+}): AudioPreviewSession {
   const cache = new Map<string, Uint8Array>();
   const random = options.random ?? Math.random;
   let voiceId: string | null = null;

@@ -222,12 +222,14 @@ export interface CreateEngineOptions {
   /** Scene `audioReverb` chunk; dry when missing. */
   audioReverbBytes?: Uint8Array | null;
   /** Project Settings Audio (occlusion master and reverb scales). */
-  audioProjectSettings?: Pick<
-    AudioProjectSettings,
-    | "occlusionEnabled"
-    | "reverbWetScale"
-    | "reverbDecayScale"
-    | "reverbDampingScale"
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
   >;
   onAudioDiagnostic?: (diagnostic: {
     code: string;

@@ -98,9 +98,9 @@ export function startPlayer(options: {
     audioReverbBytes: content.audioReverbBytes,
     audioProjectSettings: {
       occlusionEnabled: manifest.occlusionEnabled !== false,
-      reverbWetScale: manifest.reverbWetScale,
-      reverbDecayScale: manifest.reverbDecayScale,
-      reverbDampingScale: manifest.reverbDampingScale,
+      reverbWetScale: manifest.reverbWetScale ?? 1,
+      reverbDecayScale: manifest.reverbDecayScale ?? 1,
+      reverbDampingScale: manifest.reverbDampingScale ?? 1,
     },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,

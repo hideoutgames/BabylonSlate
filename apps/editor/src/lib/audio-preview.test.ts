@@ -58,7 +58,6 @@ describe("createAudioPreviewSession", () => {
     });
     const result = session.play(createDefaultAudioPayload());
     expect(result.ok).toBe(false);
-    if (result.ok) return;
     expect(result.code).toBe("audio.preview_missing_source");
     expect(backend.plays).toHaveLength(0);
   });
