@@ -16,6 +16,7 @@ import { GraphEditingProvider } from "../context/graph-editing-context";
 import { MaterialEditingProvider } from "../context/material-editing-context";
 import { TypeAssetEditingProvider } from "../context/type-asset-editing-context";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
+import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { sceneFocusActorId } from "../lib/search-navigation";
@@ -470,9 +471,31 @@ export function DocumentWorkspace() {
           );
         }
 
+        if (doc.ref.kind === "tilemap") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <TilemapEditingProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-tilemap"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="tilemap"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </TilemapEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
         if (
           doc.ref.kind === "sprite" ||
-          doc.ref.kind === "tilemap" ||
           doc.ref.kind === "plugin-settings" ||
           doc.ref.kind === "audio-mixer" ||
           doc.ref.kind === "audio-channel" ||

@@ -23,6 +23,7 @@ import {
 import {
   TilemapPaintPanel,
   TilemapDetailsPanel,
+  TilemapPalettePanel,
 } from "../components/tilemap-editor";
 import {
   UiDesignPanel,
@@ -109,6 +110,9 @@ export const panelComponents = {
   ),
   "tilemap-paint": (props: IDockviewPanelProps) => (
     <TilemapPaintPanel {...props} />
+  ),
+  "tilemap-palette": (props: IDockviewPanelProps) => (
+    <TilemapPalettePanel {...props} />
   ),
   "tilemap-details": (props: IDockviewPanelProps) => (
     <TilemapDetailsPanel {...props} />

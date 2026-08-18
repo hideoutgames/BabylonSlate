@@ -349,6 +349,16 @@ const TILESET_WINDOWS: DockWindowDefinition[] = [
 const TILEMAP_WINDOWS: DockWindowDefinition[] = [
   { id: "tilemap-paint", component: "tilemap-paint", title: "Paint" },
   {
+    id: "tilemap-palette",
+    component: "tilemap-palette",
+    title: "Palette",
+    defaultPosition: {
+      referencePanelId: "tilemap-paint",
+      direction: "left",
+      initialWidth: 280,
+    },
+  },
+  {
     id: "tilemap-details",
     component: "tilemap-details",
     title: "Details",
