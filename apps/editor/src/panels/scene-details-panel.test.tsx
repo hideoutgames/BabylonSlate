@@ -200,6 +200,31 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-scene-fog-end")).toBeTruthy();
   });
 
+  it("shows Position Z in 3D and omits Z-Order", () => {
+    harness.selectedActorIds = ["actor-1"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("property-actor-position-z")).toBeTruthy();
+    expect(screen.queryByTestId("property-actor-z-order")).toBeNull();
+  });
+
+  it("shows Z-Order instead of Position Z in 2D and writes position z", () => {
+    scene().viewportMode = "2d";
+    const actor = scene().actors[0];
+    if (!actor) throw new Error("default scene actor missing");
+    actor.transform.position = [1, 2, 3];
+    harness.selectedActorIds = ["actor-1"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("property-actor-position-z")).toBeNull();
+    expect(screen.getByTestId("property-actor-position-x")).toBeTruthy();
+    expect(screen.getByTestId("property-actor-position-y")).toBeTruthy();
+    const zOrder = screen.getByTestId("property-actor-z-order");
+    expect((zOrder as HTMLInputElement).value).toBe("3");
+    fireEvent.change(zOrder, { target: { value: "7" } });
+    expect(harness.applySceneChange).toHaveBeenCalled();
+    const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
+    expect(next.actors[0]?.transform.position).toEqual([1, 2, 7]);
+  });
+
   it("titles Details with the actor count when more than one actor is selected", () => {
     scene().actors = [
       createActor("actor-1", "Cube"),

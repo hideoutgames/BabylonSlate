@@ -17,7 +17,6 @@ import {
   selectedPickerIdentity,
   type ClassPickerEntry,
   type PinListRow,
-  type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
   Field,
@@ -29,10 +28,8 @@ import { Button } from "@babylonslate/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   DEFAULT_SORTING_LAYERS,
-  eulerDegreesToQuaternion,
   identitySerializedTransform,
   isEditorGraphHost,
-  quaternionToEulerDegrees,
   type GraphClassMember,
   type SerializedComponent,
   type SerializedGraph,
@@ -51,6 +48,7 @@ import {
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
+import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import {
   componentPropertyRows,
   subclassClassEntries,
@@ -351,60 +349,6 @@ function ClassMemberDetails({
   return null;
 }
 
-function prefabComponentTransformRows(
-  component: SerializedComponent,
-  viewportMode: ViewportMode,
-  onUpdateTransform: (transform: SerializedTransform) => void,
-): PropertyRow[] {
-  const transform = component.transform ?? identitySerializedTransform();
-  const twoD = viewportMode === "2d";
-  return [
-    {
-      kind: "vector3",
-      id: `${component.id}-position`,
-      label: "Position",
-      value: transform.position,
-      defaultValue: [0, 0, 0],
-      axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
-      onChange: (position) =>
-        onUpdateTransform({
-          ...transform,
-          position: [position[0], position[1], position[2]],
-        }),
-    },
-    {
-      kind: "vector3",
-      id: `${component.id}-rotation`,
-      label: "Rotation",
-      value: twoD
-        ? [quaternionToEulerDegrees(transform.rotation)[2], 0, 0]
-        : quaternionToEulerDegrees(transform.rotation),
-      defaultValue: [0, 0, 0],
-      axes: twoD ? ["Z"] : ["X", "Y", "Z"],
-      onChange: (next) =>
-        onUpdateTransform({
-          ...transform,
-          rotation: eulerDegreesToQuaternion(
-            twoD ? [0, 0, next[0]] : [next[0], next[1], next[2]],
-          ),
-        }),
-    },
-    {
-      kind: "vector3",
-      id: `${component.id}-scale`,
-      label: "Scale",
-      value: transform.scale,
-      defaultValue: [1, 1, 1],
-      axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
-      onChange: (scale) =>
-        onUpdateTransform({
-          ...transform,
-          scale: [scale[0], scale[1], scale[2]],
-        }),
-    },
-  ];
-}
-
 function PrefabComponentDetails({
   component,
   sortingLayers,
@@ -439,9 +383,10 @@ function PrefabComponentDetails({
     >
       <PropertyGrid
         title="Transform"
-        rows={prefabComponentTransformRows(
-          component,
+        rows={spatialTransformPropertyRows(
+          component.id,
           viewportMode,
+          component.transform ?? identitySerializedTransform(),
           onUpdateTransform,
         )}
         data-testid="prefab-component-transform-grid"

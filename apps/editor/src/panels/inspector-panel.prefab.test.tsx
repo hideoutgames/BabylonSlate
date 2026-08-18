@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { createMeshComponent } from "@babylonslate/core";
 import { InspectorPanel } from "./inspector-panel";
@@ -20,6 +20,7 @@ if (
 }
 
 const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const sceneEditing = vi.hoisted(() => ({ viewportMode: "3d" as "2d" | "3d" }));
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -63,6 +64,10 @@ vi.mock("../context/document-context", () => ({
   }),
 }));
 
+vi.mock("../context/scene-editing-context", () => ({
+  useOptionalSceneEditing: () => ({ viewportMode: sceneEditing.viewportMode }),
+}));
+
 vi.mock("../context/validation-context", () => ({
   useValidation: () => ({
     focusDiagnostic: null,
@@ -96,6 +101,7 @@ function renderInspector(options?: {
 afterEach(() => {
   cleanup();
   applyGraphChange.mockClear();
+  sceneEditing.viewportMode = "3d";
 });
 
 describe("Inspector prefab component details", () => {
@@ -112,6 +118,24 @@ describe("Inspector prefab component details", () => {
     expect(screen.getByTestId("property-vector3-prefab-mesh-position")).toBeTruthy();
     expect(screen.getByTestId("property-vector3-prefab-mesh-rotation")).toBeTruthy();
     expect(screen.getByTestId("property-vector3-prefab-mesh-scale")).toBeTruthy();
+    expect(screen.getByTestId("property-prefab-mesh-position-z")).toBeTruthy();
+    expect(screen.queryByTestId("property-prefab-mesh-z-order")).toBeNull();
+  });
+
+  it("shows Z-Order instead of Position Z in 2D Prefab Inspector", () => {
+    sceneEditing.viewportMode = "2d";
+    renderInspector({ selectedComponentId: "prefab-mesh" });
+    expect(screen.queryByTestId("property-prefab-mesh-position-z")).toBeNull();
+    expect(screen.getByTestId("property-prefab-mesh-position-x")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("property-prefab-mesh-z-order"), {
+      target: { value: "4" },
+    });
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]![1] as {
+      components: Array<{ id: string; transform?: { position: number[] } }>;
+    };
+    const mesh = next.components.find((component) => component.id === "prefab-mesh");
+    expect(mesh?.transform?.position[2]).toBe(4);
   });
 
   it("keeps class member details when Prefab Root is selected", () => {
