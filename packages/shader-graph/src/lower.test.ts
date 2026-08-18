@@ -367,6 +367,36 @@ describe("material lowering", () => {
     expect(result.plan.dependencies.textures).toEqual(["tex-inline"]);
   });
 
+  it("omits unwired Texture Sample UV and texture pins so the compiler can attach plumbing", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-inline" },
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push({
+      id: "e-sample",
+      sourceNodeId: "sample",
+      sourcePinId: "rgb",
+      targetNodeId: "output",
+      targetPinId: "baseColor",
+    });
+    const result = lowerMaterialDocument(doc);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const sample = result.plan.operations.find(
+      (operation) => operation.nodeType === "texture.sample",
+    );
+    expect(sample).toBeDefined();
+    expect(sample?.inputs.uv).toBeUndefined();
+    expect(sample?.inputs.texture).toBeUndefined();
+    expect(result.plan.textures).toEqual([
+      { operationId: "sample", textureGuid: "tex-inline" },
+    ]);
+  });
+
   it("inlines a material function call with namespaced operation ids", () => {
     const fn = createDefaultMaterialFunctionDocument("Tint");
     fn.nodes.push({
