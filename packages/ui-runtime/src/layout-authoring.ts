@@ -97,6 +97,7 @@ export function preferredWidgetSize(kind: WidgetKind): { width: number; height: 
     case "CheckBox":
       return { width: 28, height: 28 };
     case "Image":
+    case "Material":
       return { width: 128, height: 128 };
     case "ProgressBar":
       return { width: 200, height: 16 };

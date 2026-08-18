@@ -20,6 +20,8 @@ import {
 } from "@babylonslate/ui-runtime";
 import { AnchorPresetPicker } from "./ui-anchor-preset";
 
+export type UiAssetPickKind = "nestedUi" | "image" | "font" | "visualOverride" | "material";
+
 export function UiDesignDetails({
   ui,
   selected,
@@ -39,10 +41,11 @@ export function UiDesignDetails({
     image?: string;
     font?: string;
     visualOverride?: string;
+    material?: string;
   };
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void;
   onPatchLayout: (id: string, next: WidgetLayout) => void;
-  onPickAsset: (kind: "nestedUi" | "image" | "font" | "visualOverride") => void;
+  onPickAsset: (kind: UiAssetPickKind) => void;
 }) {
   const parentId = widgetParentId(ui, selected.id);
   const parent = parentId ? ui.widgets[parentId] : null;
@@ -65,6 +68,18 @@ export function UiDesignDetails({
       label: "Visible",
       value: selected.visible,
       onChange: (value) => onPatchWidget(selected.id, { visible: value }),
+    },
+    {
+      id: "hitTestable",
+      kind: "enum",
+      label: "Hit Testable",
+      value: selected.hitTestable ? "enabled" : "disabled",
+      options: [
+        { value: "enabled", label: "Enabled" },
+        { value: "disabled", label: "Disabled" },
+      ],
+      onChange: (value) =>
+        onPatchWidget(selected.id, { hitTestable: value === "enabled" }),
     },
     ...kindRows(selected, actionNames, assetLabels, onPatchWidget, onPickAsset),
   ];
@@ -305,9 +320,10 @@ function kindRows(
     image?: string;
     font?: string;
     visualOverride?: string;
+    material?: string;
   },
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void,
-  onPickAsset: (kind: "nestedUi" | "image" | "font" | "visualOverride") => void,
+  onPickAsset: (kind: UiAssetPickKind) => void,
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
   if (selected.kind === "UserInterface") {
@@ -380,6 +396,28 @@ function kindRows(
       ...assetRowIdentity(
         assetLabels.image
           ? { name: assetLabels.image, type: "Texture" }
+          : undefined,
+      ),
+    });
+  }
+  if (selected.kind === "Material") {
+    rows.push({
+      id: "material",
+      kind: "asset",
+      label: "Material",
+      value:
+        typeof selected.props.materialGuid === "string"
+          ? selected.props.materialGuid
+          : null,
+      placeholder: "None",
+      onPick: () => onPickAsset("material"),
+      onChange: (value) =>
+        onPatchWidget(selected.id, {
+          props: { ...selected.props, materialGuid: value },
+        }),
+      ...assetRowIdentity(
+        assetLabels.material
+          ? { name: assetLabels.material, type: "Material" }
           : undefined,
       ),
     });

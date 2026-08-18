@@ -33,6 +33,8 @@ import {
   type TypeSchemas,
 } from "@babylonslate/scripting";
 import {
+  ENGINE_INPUT_MODE_ENUM_ID,
+  INPUT_MODE_MEMBERS,
   normalizeUserInterfaceClassRef,
   USER_INTERFACE_ENGINE_CLASS_ID,
 } from "@babylonslate/core";
@@ -111,6 +113,7 @@ export function collectEnumMemberNames(
       result[entry.id] = entry.members.map((member) => member.name);
     }
   }
+  result[ENGINE_INPUT_MODE_ENUM_ID] = [...INPUT_MODE_MEMBERS];
   return result;
 }
 

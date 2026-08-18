@@ -31,3 +31,4 @@ export {
   type GamepadConnectionEvent,
   type ResolvedInputTick,
 } from "./resolver";
+export { shouldPushRawInput } from "./capture-filter";

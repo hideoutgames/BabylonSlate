@@ -1,5 +1,6 @@
 import type { UiControlDescriptor } from "./controls";
 import type { HorizontalAlignment, VerticalAlignment, WidgetKind } from "./types";
+import { defaultHitTestableFor } from "./types";
 import type { EdgeInsets, SizeUnit, Vec2 } from "./types";
 
 export type GuiControlType =
@@ -51,6 +52,7 @@ export interface GuiControlSpec {
     hitTestVisible: boolean;
   isPointerBlocker: boolean;
   imageGuid?: string | null;
+  materialGuid?: string | null;
   sliderValue?: number;
   sliderMin?: number;
   sliderMax?: number;
@@ -87,6 +89,7 @@ export function guiControlType(kind: WidgetKind): GuiControlType {
     case "CheckBox":
       return "Checkbox";
     case "Image":
+    case "Material":
       return "Image";
     case "ProgressBar":
       return "ProgressBar";
@@ -118,13 +121,20 @@ function boolProp(
 
 export function guiSpecFromDescriptor(
   control: UiControlDescriptor,
-  options: { interactive: boolean },
+  options: { interactive: boolean; allowGuiHits?: boolean },
 ): GuiControlSpec {
   const interactive = options.interactive && control.visible;
+  const hitTestable =
+    control.hitTestable ?? defaultHitTestableFor(control.kind);
+  const allowGuiHits = options.allowGuiHits !== false;
   const imageGuid =
     typeof control.props.imageGuid === "string"
       ? control.props.imageGuid
       : (control.style.imageGuid ?? null);
+  const materialGuid =
+    typeof control.props.materialGuid === "string"
+      ? control.props.materialGuid
+      : null;
   const layout = control.layout;
   const slotOwned =
     control.layoutMode === "stack" ||
@@ -163,9 +173,10 @@ export function guiSpecFromDescriptor(
     spacing: numberProp(control.props, "gap", 0),
     gridColumns: numberProp(control.props, "columns", 2),
     gridRows: numberProp(control.props, "rows", 2),
-    hitTestVisible: interactive,
-    isPointerBlocker: interactive,
+    hitTestVisible: interactive && hitTestable && allowGuiHits,
+    isPointerBlocker: interactive && hitTestable && allowGuiHits,
     imageGuid,
+    materialGuid,
     sliderValue: numberProp(control.props, "value", 0),
     sliderMin: numberProp(control.props, "min", 0),
     sliderMax: numberProp(control.props, "max", 1),

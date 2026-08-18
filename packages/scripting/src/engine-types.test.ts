@@ -19,8 +19,13 @@ describe("engine type registry", () => {
     expect(isEngineTypeGuid("asset-guid")).toBe(false);
   });
 
-  it("starts with no engine enum or struct assets (pin-kind math types stay first-class)", () => {
-    expect(ENGINE_ENUMS).toEqual([]);
+  it("registers Input Mode and leaves engine structs empty (pin-kind math stays first-class)", () => {
+    expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual(["engine:InputMode"]);
+    expect(ENGINE_ENUMS[0]?.members.map((member) => member.name)).toEqual([
+      "All",
+      "Interface",
+      "Game",
+    ]);
     expect(ENGINE_STRUCTS).toEqual([]);
   });
 });
