@@ -108,7 +108,8 @@ async function interactWithUtilityCanvas(page: Page): Promise<void> {
     .toBe(true);
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
-  await canvas.click({ position: { x: 8, y: 8 } });
+  // Inset past the Dockview sash hit area (visual sash plus ±10px ::after).
+  await canvas.click({ position: { x: 24, y: 24 } });
   await expect(page.getByTestId("editor-utility-panel")).toBeVisible();
   await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   await expect
