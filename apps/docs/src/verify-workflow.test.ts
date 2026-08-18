@@ -16,10 +16,10 @@ function verifyWorkflow(): string {
 }
 
 function jobBlock(yaml: string, job: "unit" | "e2e"): string {
-  const start = yaml.search(new RegExp(`^  ${job}:`, "m"));
+  const start = yaml.search(new RegExp(`^ {2}${job}:`, "m"));
   expect(start, `${job} job`).toBeGreaterThanOrEqual(0);
   const rest = yaml.slice(start + 1);
-  const next = rest.search(/^  [a-z]/m);
+  const next = rest.search(/^ {2}[a-z]/m);
   return next === -1 ? yaml.slice(start) : yaml.slice(start, start + 1 + next);
 }
 
