@@ -1,12 +1,11 @@
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import type { AbstractMesh, Node, Scene, TransformNode } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
-import {
-  applyAnimStateToScene,
+import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
 } from "./anim-apply";
-import { glbClipNames } from "./model-mesh";
+import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
 function bumpSlotAnimEpoch(
@@ -57,7 +56,7 @@ function replayPendingAnimState(
 
 async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
   return LoadAssetContainerAsync(bytes, scene, {
-    pluginExtension: ".glb",
+    pluginExtension: gltfLoaderExtension(bytes),
     name,
   });
 }
@@ -114,9 +113,10 @@ export function adoptLoadedHierarchy(
 }
 
 /**
- * Load glTF AnimationGroups for a Play slot. Keeps the sync first-primitive
+ * Load the full glTF container for a Play slot. Keeps the sync first-primitive
  * mesh until the container is ready, then registers paused groups and replays
- * the last animState.
+ * the last animState. Runs even when the file has no clips so untextured stubs
+ * are replaced by the authored hierarchy.
  */
 export function beginSlotModelAnimLoad(
   scene: Scene,
@@ -125,8 +125,9 @@ export function beginSlotModelAnimLoad(
   clipAssetGuid: string,
   bytes: Uint8Array,
   placeholder: AbstractMesh,
+  onAdopted?: (placeholder: AbstractMesh) => void,
 ): Promise<void> {
-  if (glbClipNames(bytes).length === 0) {
+  if (!isGltfModelBytes(bytes)) {
     return Promise.resolve();
   }
   const epoch = bumpSlotAnimEpoch(binding, slotId);
@@ -152,6 +153,7 @@ export function beginSlotModelAnimLoad(
         wrapGroup(group, clipAssetGuid),
       );
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
+      onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
     } catch {
       container?.dispose();

@@ -16,6 +16,7 @@ import {
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
+import { applyModelMaterialSlots } from "./model-preview";
 import { createMeshFromModelBytes } from "./model-mesh";
 import { beginSlotModelAnimLoad, invalidateSlotAnimLoad } from "./glb-anim";
 import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
@@ -174,6 +175,21 @@ export function assignedMaterialGuids(
 }
 
 /** Re-apply the recorded assignment after a mesh is created or rebuilt. */
+function applyLoadedModelMaterials(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+  assetGuid: string,
+  root: Mesh,
+): void {
+  const payload = binding.modelPayloads?.get(assetGuid);
+  if (payload) {
+    applyModelMaterialSlots(root, payload.materialSlots, (guid) =>
+      binding.resolveMaterial?.(guid) ?? null,
+    );
+  }
+  applyMaterialToActorMeshes(binding, slotId, root);
+}
+
 export function applyMaterialToActorMeshes(
   binding: SnapshotSceneBinding,
   slotId: number,
@@ -534,6 +550,7 @@ export function createPlayMesh(
         assetGuid,
         binding.modelBytes.get(assetGuid)!,
         loaded,
+        () => applyLoadedModelMaterials(binding, slotId, assetGuid, loaded),
       );
       return loaded;
     }

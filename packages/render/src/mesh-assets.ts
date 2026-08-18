@@ -7,7 +7,7 @@ import {
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload } from "@babylonslate/assets";
 import type { ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
@@ -19,6 +19,7 @@ export interface MeshAssetContext {
   tilemaps?: ReadonlyMap<string, TilemapPayload>;
   tilesets?: ReadonlyMap<string, TilesetPayload>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  modelPayloads?: ReadonlyMap<string, ModelPayload>;
   pixelsPerUnit?: number;
 }
 
@@ -58,6 +59,21 @@ export function meshAssetFingerprint(
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `models:${byteMapFingerprint(assets.modelBytes)}`,
   ].join("|");
+}
+
+export function modelSlotFingerprint(
+  payloads: ReadonlyMap<string, ModelPayload> | undefined,
+): string {
+  if (!payloads || payloads.size === 0) return "";
+  return [...payloads.entries()]
+    .map(([guid, payload]) => {
+      const slots = payload.materialSlots
+        .map((slot) => `${slot.index}=${slot.materialGuid ?? ""}`)
+        .join(",");
+      return `${guid}:${slots}`;
+    })
+    .sort()
+    .join(";");
 }
 
 export function applyAlbedoTexture(

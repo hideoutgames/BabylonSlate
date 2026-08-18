@@ -200,6 +200,8 @@ export interface CreateEngineOptions {
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Model payloads (material slots / clip names) keyed by Model asset guid. */
+  modelPayloads?: ReadonlyMap<string, import("@babylonslate/assets").ModelPayload>;
   /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
   ktx2BasePath?: string;
   /** Compiled Material documents keyed by asset guid. */
@@ -446,6 +448,7 @@ export function createEngine(
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
   binding.modelBytes = options.modelBytes;
+  binding.modelPayloads = options.modelPayloads;
   binding.resourceCache = resourceCache;
   binding.slotAnimReady = () => {
     scheduler.invalidate("snapshot");
@@ -1056,6 +1059,7 @@ export function createEngine(
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
       binding.modelBytes = assets.modelBytes;
+      binding.modelPayloads = assets.modelPayloads;
       binding.spritePayloads = assets.spritePayloads ?? binding.spritePayloads;
       binding.spriteAnimations =
         assets.spriteAnimations ?? binding.spriteAnimations;
