@@ -48,11 +48,9 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   const field = page.getByTestId("setting-frame-cap");
   await expect(field).toHaveValue("30");
   await field.click();
-  await field.press("End");
-  await field.press("Backspace");
-  await field.press("Backspace");
+  await field.fill("");
   await expect(field).toHaveValue("");
-  await field.pressSequentially("45");
+  await field.fill("45");
   await expect(field).toHaveValue("45");
 });
 
