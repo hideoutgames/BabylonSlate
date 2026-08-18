@@ -881,9 +881,11 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Lock Play and packaged builds to a fixed framebuffer. The host
-              letterboxes that bitmap so the image is not stretched. Off keeps
-              Follow System fill. Editor viewports still fill the panel.
+              Lock Play and packaged builds to a design size. Black Bars on
+              letterboxes that WxH framebuffer. Off fills the host at the
+              window size without stretching; the camera stays centered.
+              Follow System applies only when this is off. Editor viewports
+              still fill the panel.
             </FieldDescription>
             <Field>
               <FieldLabel htmlFor="setting-render-width">
@@ -943,9 +945,9 @@ export function SettingsModal({
               </FieldLabel>
             </Field>
             <FieldDescription>
-              A locked framebuffer always letterboxes. Unused overlay space is
-              black. This flag is stored on the project and does not stretch to
-              fill.
+              On letterboxes the locked WxH framebuffer; unused overlay space
+              is black. Off fills the host at the window size without
+              stretching. The camera stays centered.
             </FieldDescription>
             <PlayPreviewSettingsFields
               settings={projectDocument.settings.playPreview}

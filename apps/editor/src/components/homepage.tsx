@@ -514,9 +514,9 @@ export function Homepage({
                 />
               </div>
               <FieldDescription>
-                Play and packaged builds use this framebuffer (default
-                1920×1080). The host letterboxes it so the image is not
-                stretched.
+                Play and packaged builds use this design size (default
+                1920×1080). Black Bars letterboxes that framebuffer; off fills
+                the host without stretching.
               </FieldDescription>
             </Field>
             <Field orientation="horizontal">
@@ -533,9 +533,9 @@ export function Homepage({
               </FieldLabel>
             </Field>
             <FieldDescription>
-              A locked framebuffer always letterboxes. Unused overlay space is
-              black. This flag is stored on the project and does not stretch to
-              fill.
+              On letterboxes the locked WxH framebuffer; unused overlay space
+              is black. Off fills the host at the window size without
+              stretching. The camera stays centered.
             </FieldDescription>
           </FieldGroup>
           <DialogFooter>
