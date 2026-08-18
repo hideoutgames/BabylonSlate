@@ -306,16 +306,14 @@ describe("BehaviourTreeEditor", () => {
     expect(lastCommit().blackboardGuid).toBe("bb-1");
   });
 
-  it("edits blackboard keys through the linked blackboard document", () => {
+  it("lists linked blackboard keys and types without the full editor", () => {
     renderTree(treeWithWait());
-    expect(screen.getByTestId("blackboard-editor")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("blackboard-add-key"));
-    const call = store.applyAssetDocumentChange.mock.calls.find(
-      (entry) => entry[0] === BB_ID,
-    );
-    expect(call).toBeTruthy();
-    const next = call![1] as { keys: Array<{ name: string }> };
-    expect(next.keys.some((key) => key.name === "key")).toBe(true);
+    expect(screen.queryByTestId("blackboard-editor")).toBeNull();
+    expect(screen.queryByTestId("blackboard-add-key")).toBeNull();
+    const alert = screen.getByTestId("bt-blackboard-key-alert");
+    expect(alert.textContent).toMatch(/Alert/i);
+    expect(alert.textContent).toMatch(/Bool/);
+    expect(screen.getByTestId("bt-blackboard-key-hp").textContent).toMatch(/Float/);
   });
 
   it("lists compiler diagnostics and focuses the node when tapped", async () => {

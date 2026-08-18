@@ -37,7 +37,6 @@ import {
   type BtPropertyField,
   type BtResult,
 } from "@babylonslate/behaviour-tree";
-import { documentId } from "@babylonslate/core";
 import {
   AssetPicker,
   CatalogDialog,
@@ -46,8 +45,11 @@ import {
   PanelFrame,
   PropertyGrid,
   SelectableText,
+  TypeColorMark,
   assetRowIdentity,
   humanizePropertyLabel,
+  pinPickerColorVar,
+  pinPickerLabel,
   useCatalogSearchState,
   walkAncestry,
   type NestedMenuItem,
@@ -66,7 +68,6 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
-import { BlackboardEditor } from "./blackboard-editor";
 
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
@@ -487,34 +488,10 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
     assets,
     blackboardAsset,
     blackboardDocument,
-    openDocument,
-    openDocuments,
-    applyAssetDocumentChange,
   } = useBehaviourTreeDocument();
   const [blackboardPick, setBlackboardPick] = useState(false);
   const blackboardWatch = play.liveBtState?.blackboard ?? null;
-  const linked = blackboardAsset
-    ? openDocuments.find(
-        (item) =>
-          item.ref.kind === "blackboard" && item.ref.path === blackboardAsset.path,
-      )
-    : undefined;
-  const payload =
-    (linked?.content as Record<string, unknown> | undefined) ??
-    (blackboardDocument as unknown as Record<string, unknown> | null);
-  const commitBlackboard = (next: Record<string, unknown>) => {
-    if (!blackboardAsset) return;
-    const id = documentId({ kind: "blackboard", path: blackboardAsset.path });
-    if (linked) {
-      void applyAssetDocumentChange(linked.id, next);
-      return;
-    }
-    void openDocument({
-      kind: "blackboard",
-      path: blackboardAsset.path,
-      label: blackboardAsset.header.name,
-    }).then(() => applyAssetDocumentChange(id, next));
-  };
+  const keys = blackboardDocument?.keys ?? [];
 
   return (
     <PanelFrame className="flex-1" data-testid="behaviour-tree-blackboard">
@@ -540,13 +517,38 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
             },
           ]}
         />
-        {doc.blackboardGuid && payload ? (
-          <BlackboardEditor payload={payload} onChange={commitBlackboard} />
+        {doc.blackboardGuid ? (
+          keys.length > 0 ? (
+            <ScrollArea className="min-h-0 flex-1" data-testid="bt-blackboard-keys">
+              <ul className="flex flex-col gap-1">
+                {keys.map((key) => (
+                  <li
+                    key={key.name}
+                    className="flex min-h-11 items-center justify-between gap-2 rounded-md px-2 text-sm"
+                    data-testid={`bt-blackboard-key-${key.name}`}
+                  >
+                    <SelectableText>{key.name}</SelectableText>
+                    <TypeColorMark
+                      colorVar={pinPickerColorVar(key.type.kind)}
+                      label={pinPickerLabel(key.type.kind)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </ScrollArea>
+          ) : (
+            <Empty>
+              <EmptyTitle>No Keys</EmptyTitle>
+              <EmptyDescription>
+                Open the Blackboard document to add keys.
+              </EmptyDescription>
+            </Empty>
+          )
         ) : (
           <Empty>
             <EmptyTitle>No Blackboard</EmptyTitle>
             <EmptyDescription>
-              Link a Blackboard asset to edit keys.
+              Link a Blackboard asset to inspect keys.
             </EmptyDescription>
           </Empty>
         )}
