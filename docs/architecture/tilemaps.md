@@ -29,10 +29,11 @@ Document kind `tilemap` (`.tilemap.babasset`):
 | `tilesets` | Tiled-style list of `{ guid, firstGid, tileCount }`. Chunk cells store **global GIDs** (`firstGid + localId - 1`). Removing a tileset does **not** compact GIDs. |
 | `tilesetGuid` | Writable alias of `tilesets[0]?.guid` (legacy maps migrate to one ref at `firstGid: 1`) |
 | `tileWidth` / `tileHeight` | cell size in pixels (world size = px / `pixelsPerUnit`) |
+| `width` / `height` | map size in tiles, +Y up, origin bottom-left. Default **64×64**. Storage stays sparse chunks — empty cells are not allocated. |
 | `chunkSize` | default **32** |
 | `layers` | ordered layers with visibility, collision opt-in, sorting, parallax, and chunks |
 
-Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local index `ly * chunkSize + lx`, **(0,0) bottom-left**, +Y up, XY plane (same 2D convention as the rest of the engine).
+Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local index `ly * chunkSize + lx`, **(0,0) bottom-left**, +Y up, XY plane (same 2D convention as the rest of the engine). `setTile` / `applyTilemapPaint` no-op outside `[0, width) × [0, height)`. Missing `width`/`height` on load migrate to `max(64, painted AABB + 1)`. `resizeTilemap` clamps to ≥1 and **clips** tiles (then empty chunks) on shrink. Play/render/physics still skip tile 0 and missing chunks — no mesh format change.
 
 ## Chunk geometry
 
@@ -72,15 +73,16 @@ Tileset and Tilemap documents are DockView shells (**Windows** enabled):
 ### Tileset
 
 - Preview fills the panel (`object-contain` atlas, grid from `tileWidth/Height`, `margin`, `spacing` in **texture space** — not a CSS grid of `tiles.length`).
-- Tap a cell to select it (`tileset-preview-cell-{id}`). Toolbar `ToggleGroup` None / Full / Chain writes that tile; **Paint Collision** stamps the current collision onto later taps. Full cells show a hatch; Chain draws the stored polyline on the selected cell.
-- Pinch / wheel pan-zooms large sheets (`touch-none`). `Empty` when no Texture is assigned.
+- Toolbar: **Move** (default, Lucide `HandIcon`) | **Select**, then None / Full / Chain and **Paint Collision**. In Move, one-finger drag pans; a tap (movement < 8px) still selects. In Select, tap a cell as before. Two-finger pinch/pan and wheel zoom stay in both tools. `tileset-preview-cell-{id}`. Full cells show a hatch; Chain draws the stored polyline on the selected cell.
+- `Empty` when no Texture is assigned.
 - Picking a Texture sets `atlasWidth/Height` from `img.naturalWidth/Height` and runs `ensureTilesetTiles`. Atlas size fields in Details are read-only.
 
 ### Tilemap
 
 - **Tilesets** is a `NamedListEditor` (`Add Tileset` opens `AssetPicker`). Rows use `PickerIdentity`. Empty copy: “Add a Tileset to start painting.” Several tilesets share one GID space on the map — not one tileset per layer.
 - **Palette** loads each listed tileset with `loadAssetDocument` (closed tabs included) plus Texture `pixels`. Thumbs are cropped with `tilesetTileRect` and nearest-neighbor, grouped by tileset name. Tap sets the paint GID. `SearchInput` filters large sets. The Paint toolbar shows a 44px selected-tile thumb (`data-gid` / `data-tile`), not a text Palette dropdown.
-- **Paint** fills `PanelFrame` (`ResizeObserver` backing store, `devicePixelRatio`). Blit with `imageSmoothingEnabled = false` and draw the grid **on top** (full cell, no gutters). Tools `ToggleGroup` unchanged. One finger paints; two-finger pinch zooms about the midpoint and translation pans; wheel zooms about the cursor. Cell size is clamped 8–96 CSS px (default 32). `data-cell-size` / `data-zoom` / `data-paint-source` (`atlas` \| `hsl`) are for Playwright. No tilesets → `Empty` instead of a blank square.
+- **Paint** fills `PanelFrame` (`ResizeObserver` backing store, `devicePixelRatio`). Blit with `imageSmoothingEnabled = false` and draw the grid **only inside** the map rectangle (full cell, no gutters) with a high-contrast bounds stroke; outside stays the dark canvas. Empty in-bounds cells stay empty. Default tool is **Move** (`HandIcon`, `data-tool="move"`); switch to Brush to paint. One-finger drag pans in Move. Other tools (brush/eraser/rect/bucket/stamp/picker) still one-finger paint. Two-finger pinch zooms about the midpoint and translation pans in every tool; a second finger drops an in-progress paint stroke (reverts it) so pinch does not leave a stray tile. Wheel zooms about the cursor. Cell size is clamped 8–96 CSS px (default 32). `data-cell-size` / `data-zoom` / `data-pan-x` / `data-pan-y` / `data-paint-source` (`atlas` \| `hsl`) are for Playwright. No tilesets → `Empty` instead of a blank square.
+- Details **Map** group: Map Width / Map Height (`property-mapWidth` / `property-mapHeight`) with Tile Width/Height.
 - **One undo per stroke** via `SetAssetDocumentCommand.mergeKey` (`tilemap-stroke:<id>`). `applyTilemapPaint` is the pure op; `setTile` only rebuilds the touched chunk.
 
 Stamp places a 2×2 of the selected GID. Bucket is 4-connected and stays inside the AABB of existing chunks (plus the click cell).
