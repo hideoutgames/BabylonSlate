@@ -11,7 +11,7 @@ GitHub Free public repos cap concurrent jobs at 20. Agents wait on Verify before
 - **Concurrency.** Verify cancels superseded runs for the same pull request (or `main` ref). Preview already cancels in-progress Pages deploys.
 - **Timeouts.** Each Verify job is 45 minutes (healthy `unit` is ~6–7 min; `e2e` is ~20–25 min). Playwright Chromium download and OS-deps install each time out at 5 minutes so a hung `apt` or browser fetch cannot occupy a runner for six hours.
 - **Playwright cache.** `e2e` restores `~/.cache/ms-playwright` keyed on `pnpm-lock.yaml`, then runs `playwright install chromium` and `playwright install-deps chromium` as separate steps (not `--with-deps`).
-- **Drafts.** Draft pull requests skip both jobs. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate.
+- **Drafts.** Draft pull requests skip both jobs. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate. Agents stay draft until that local gate passes, mark ready **once**, and keep at most ~8 non-draft PRs targeting `main` so the 20-job cap is not filled with e2e. Rule: [`.cursor/rules/github-actions-pr-cadence.mdc`](../../.cursor/rules/github-actions-pr-cadence.mdc).
 
 ## Vitest projects
 
