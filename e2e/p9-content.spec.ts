@@ -1455,15 +1455,23 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "UserInterface", "Panel");
     await page.locator('[data-asset-path="assets/Panel.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-    await page.getByTestId("ui-add-widget").click();
+    const panelWorkspace = page.locator(
+      '[data-testid="document-workspace-ui"]:visible',
+    );
+    await expect(panelWorkspace).toBeVisible();
+    await panelWorkspace.getByTestId("ui-add-widget").click();
     await page.getByTestId("ui-add-widget-Button").click();
-    await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
+    await expect(
+      panelWorkspace.locator('[data-testid^="ui-widget-button-"]'),
+    ).toBeVisible();
 
     await createAsset(page, "UserInterface", "HUD");
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-    await page.getByTestId("ui-add-widget").click();
+    const hudWorkspace = page.locator(
+      '[data-testid="document-workspace-ui"]:visible',
+    );
+    await expect(hudWorkspace).toBeVisible();
+    await hudWorkspace.getByTestId("ui-add-widget").click();
     await page.getByTestId("ui-add-widget-UserInterface").click();
     await page.getByTestId("property-nestedUi").click();
     await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
@@ -1471,7 +1479,10 @@ test.describe("P9 content systems", () => {
       .getByTestId("ui-nested-picker")
       .getByText("Panel", { exact: true })
       .click();
-    await expect(page.locator('[data-testid*="/button-"]')).toBeVisible();
-    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+    await expect(page.getByTestId("ui-nested-picker")).toHaveCount(0);
+    await expect(
+      hudWorkspace.locator('[data-testid*="/button-"]'),
+    ).toBeVisible();
+    await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });
 });
