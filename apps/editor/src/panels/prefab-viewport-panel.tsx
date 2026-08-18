@@ -57,6 +57,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     gridVisible,
     saveEditorCameraPose,
     loadEditorCameraPose,
+    pivotAroundCenter,
+    setFrameActorHandler,
   } = useSceneEditing();
   const { registerScheduler, playing } = usePlay();
   const setSelectedIdRef = useRef(setSelectedId);
@@ -189,6 +191,17 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
   }, [viewportMode]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
+  }, [pivotAroundCenter]);
+
+  useEffect(() => {
+    setFrameActorHandler((actorId) => {
+      engineRef.current?.editor?.frameActor(actorId);
+    });
+    return () => setFrameActorHandler(null);
+  }, [setFrameActorHandler]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);

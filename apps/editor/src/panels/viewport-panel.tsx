@@ -74,6 +74,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     previewGameCamera,
     saveEditorCameraPose,
     loadEditorCameraPose,
+    pivotAroundCenter,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
   const navBake = useOptionalNavBake();
@@ -390,6 +391,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);
   }, [previewGameCamera]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);
+  }, [pivotAroundCenter]);
 
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setTool(gizmoTool);

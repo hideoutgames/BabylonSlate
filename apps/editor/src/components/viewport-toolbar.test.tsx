@@ -28,6 +28,8 @@ const harness = vi.hoisted(() => ({
   setViewportMode: vi.fn(),
   previewGameCamera: false,
   setPreviewGameCamera: vi.fn(),
+  pivotAroundCenter: false,
+  setPivotAroundCenter: vi.fn(),
   scene: null as SerializedScene | null,
   applySceneChange: vi.fn(async () => true),
 }));
@@ -54,6 +56,8 @@ vi.mock("../context/scene-editing-context", () => ({
     setViewportMode: harness.setViewportMode,
     previewGameCamera: harness.previewGameCamera,
     setPreviewGameCamera: harness.setPreviewGameCamera,
+    pivotAroundCenter: harness.pivotAroundCenter,
+    setPivotAroundCenter: harness.setPivotAroundCenter,
   }),
 }));
 
@@ -84,6 +88,7 @@ beforeEach(() => {
   harness.dragSelectActive = false;
   harness.viewportMode = "3d";
   harness.previewGameCamera = false;
+  harness.pivotAroundCenter = false;
   harness.scene = createDefaultScene();
   harness.setGizmoTool.mockClear();
   harness.setSnapEnabled.mockClear();
@@ -92,6 +97,7 @@ beforeEach(() => {
   harness.setDragSelectActive.mockClear();
   harness.setViewportMode.mockClear();
   harness.setPreviewGameCamera.mockClear();
+  harness.setPivotAroundCenter.mockClear();
   harness.applySceneChange.mockClear();
 });
 
@@ -157,13 +163,22 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
-  it("opens a settings menu with Snap, Show Grid, Joystick, and Game Camera", () => {
+  it("opens a settings menu with Snap, Show Grid, Joystick, Pivot Around Center, and Game Camera", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     expect(screen.getByTestId("gizmo-snap-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
     expect(screen.getByTestId("gizmo-joystick-toggle")).toBeTruthy();
+    expect(screen.getByTestId("viewport-pivot-around-center-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-game-camera-toggle")).toBeTruthy();
+  });
+
+  it("toggles Pivot Around Center without writing the scene document", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-pivot-around-center-toggle"));
+    expect(harness.setPivotAroundCenter).toHaveBeenCalledWith(true);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 
   it("arms Drag Select without changing the gizmo tool", () => {

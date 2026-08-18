@@ -57,6 +57,8 @@ export function ViewportToolbar({
     setViewportMode,
     previewGameCamera,
     setPreviewGameCamera,
+    pivotAroundCenter,
+    setPivotAroundCenter,
   } = useSceneEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -133,6 +135,15 @@ export function ViewportToolbar({
       closeOnClick: false,
       testId: `${testIdPrefix}gizmo-joystick-toggle`,
       onCheckedChange: toggleJoystick,
+    },
+    {
+      type: "checkbox",
+      id: "pivot-around-center",
+      label: "Pivot Around Center",
+      checked: pivotAroundCenter,
+      closeOnClick: false,
+      testId: `${testIdPrefix}viewport-pivot-around-center-toggle`,
+      onCheckedChange: setPivotAroundCenter,
     },
     {
       type: "checkbox",
