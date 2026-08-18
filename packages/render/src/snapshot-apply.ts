@@ -378,7 +378,7 @@ function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
     if (!child.name.includes("|")) continue;
     const afterPipe = child.name.slice(child.name.indexOf("|") + 1);
     if (afterPipe.includes(":")) continue;
-    if (isPlayHelperVisual(child)) {
+    if (isMesh(child) && isPlayHelperVisual(child)) {
       child.isVisible = false;
       continue;
     }
