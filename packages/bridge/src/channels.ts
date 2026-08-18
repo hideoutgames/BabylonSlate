@@ -395,6 +395,7 @@ export type CommandMessage =
   | { type: "setShowBounds"; enabled: boolean }
   | { type: "setShowCollision"; enabled: boolean }
   | { type: "setShowNav"; enabled: boolean }
+  | { type: "setShowAudioDebug"; enabled: boolean }
   | {
       type: "debugColliders";
       colliders: readonly DebugColliderPrimitive[];

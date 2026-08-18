@@ -356,7 +356,7 @@ export function startPlayer(options: {
   });
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
-  });
+  }, canvas);
   const snapBuf = new Float32Array(snapshotFloatCount(256));
   let last = performance.now();
   let frames = 0;

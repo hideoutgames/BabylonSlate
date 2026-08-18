@@ -23,6 +23,7 @@ import {
   AUDIO_SPEED_OF_SOUND,
   AUDIO_VOXEL_SIZE,
   audioAssetDependencies,
+  fillEmptySourceClipName,
   remapAudioPayloadGuids,
   computeAttenuationGain,
   computeDopplerPlaybackRate,
@@ -831,21 +832,49 @@ describe("audio asset containers", () => {
     }
   });
 
-  it("imports audio as version 1 with an empty payload and source chunk", async () => {
+  it("imports audio as version 1 with a named source clip and source chunk", async () => {
     const results = await importAudio(new Uint8Array([4, 5, 6]), {
       fileName: "jump.wav",
       existingGuids: new Set(),
     });
-    expect(results[0]!.payload).toEqual({});
+    expect(results[0]!.payload).toEqual({
+      clips: [{ chunkId: "source", name: "jump", weight: 1 }],
+    });
     expect(results[0]!.version).toBe(1);
     expect(results[0]!.chunks[0]).toMatchObject({
       id: "source",
       kind: "audio",
       mime: "audio/wav",
     });
-    expect(normalizeAudioPayload(results[0]!.payload)).toEqual(
-      createDefaultAudioPayload(),
-    );
+    expect(normalizeAudioPayload(results[0]!.payload).clips).toEqual([
+      { chunkId: "source", name: "jump", weight: 1 },
+    ]);
+  });
+
+  it("fills an empty source clip name from the asset name", () => {
+    expect(
+      fillEmptySourceClipName(createDefaultAudioPayload(), "beep").clips[0],
+    ).toEqual({ chunkId: "source", name: "beep", weight: 1 });
+    expect(
+      fillEmptySourceClipName(
+        { clips: [{ chunkId: "source", name: "jump", weight: 1 }] },
+        "beep",
+      ).clips[0]!.name,
+    ).toBe("jump");
+    expect(
+      fillEmptySourceClipName(
+        {
+          clips: [
+            { chunkId: "source", name: "  ", weight: 1 },
+            { chunkId: "source:2", name: "", weight: 2 },
+          ],
+        },
+        "beep",
+      ).clips,
+    ).toEqual([
+      { chunkId: "source", name: "beep", weight: 1 },
+      { chunkId: "source:2", name: "", weight: 2 },
+    ]);
   });
 
   it("packs Audio payload with source bytes and round-trips", () => {

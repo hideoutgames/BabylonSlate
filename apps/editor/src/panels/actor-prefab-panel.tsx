@@ -20,10 +20,16 @@ import {
 import { applyPrefabTreeSelect } from "../lib/prefab-tree-select";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
+import {
+  prefabComponentLabel,
+  projectAddComponentItems,
+} from "./add-component-catalog";
+import { useDocuments } from "../context/document-context";
 
 export function flattenPrefabComponents(
   components: readonly PrefabComponentView[],
   collapsed: ReadonlySet<string>,
+  assetLabel?: (guid: string) => string | undefined,
 ): TreeViewNode[] {
   const rows: TreeViewNode[] = [];
   const roots = childrenOfPrefabParent(components, null);
@@ -43,7 +49,7 @@ export function flattenPrefabComponents(
       const inherited = Boolean(component.inheritedFrom);
       rows.push({
         id: component.id,
-        label: component.classId,
+        label: prefabComponentLabel(component, assetLabel),
         depth,
         hasChildren: kids.length > 0,
         expanded,
@@ -84,14 +90,28 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     removeSelected,
     reparentComponent,
   } = usePrefabEditing();
+  const { assetRegistry } = useDocuments();
   const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
   const { frameActor } = useSceneEditing();
   const [addOpen, setAddOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const listedAssets = assetRegistry?.list() ?? [];
 
   const nodes = useMemo(
-    () => flattenPrefabComponents(components, collapsed),
-    [collapsed, components],
+    () =>
+      flattenPrefabComponents(
+        components,
+        collapsed,
+        (guid) =>
+          listedAssets.find((asset) => asset.header.guid === guid)?.header
+            .name,
+      ),
+    [collapsed, components, listedAssets],
+  );
+
+  const projectItems = useMemo(
+    () => projectAddComponentItems(listedAssets),
+    [listedAssets],
   );
 
   const canRemove = selectedIds.some((id) => {
@@ -162,6 +182,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         open={addOpen}
         onOpenChange={setAddOpen}
         onSelect={addComponent}
+        projectItems={projectItems}
         data-testid="prefab-add-component-catalog"
       />
     </PanelFrame>
