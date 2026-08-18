@@ -46,6 +46,7 @@ export type ConsoleCommandHost = {
   resume?(): void;
   step?(): void;
   setTimeDilation?(rate: number): void;
+  getTimeDilation?(): number;
   dumpLog?(): string;
   startSnapshot?(): void;
   stopSnapshot?(): void;

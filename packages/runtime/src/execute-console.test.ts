@@ -196,4 +196,40 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     );
     runtime.stop();
   });
+
+  it("scales script and physics tick dt by slomo and clamps the rate", () => {
+    const dts: number[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      dt: 1 / 60,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+    });
+    runtime.start();
+    const actor = runtime.getWorld().createActor({
+      guid: "probe",
+      classId: "Actor",
+      hooks: {
+        onTick: (_self, ctx) => {
+          dts.push(ctx.dt);
+        },
+      },
+    });
+    runtime.getWorld().spawnActorNow(actor);
+    runtime.tick();
+    expect(dts.at(-1)).toBeCloseTo(1 / 60);
+    expect(runtime.executeConsoleCommand("slomo 2")).toEqual({
+      success: true,
+      output: "slomo 2",
+    });
+    runtime.tick();
+    expect(dts.at(-1)).toBeCloseTo(2 / 60);
+    expect(runtime.getWorld().clock.dt).toBeCloseTo(2 / 60);
+    expect(runtime.executeConsoleCommand("slomo").output).toBe("slomo 2");
+    expect(runtime.executeConsoleCommand("slomo 99").output).toBe("slomo 8");
+    runtime.tick();
+    expect(dts.at(-1)).toBeCloseTo(8 / 60);
+    expect(runtime.executeConsoleCommand("slomo -1").output).toBe("slomo 0");
+    runtime.stop();
+  });
 });

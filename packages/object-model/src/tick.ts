@@ -18,7 +18,7 @@ export interface TickSchedulerOptions {
 
 export class TickClock {
   tickIndex = 0;
-  readonly dt: number;
+  dt: number;
 
   constructor(dt: number) {
     this.dt = dt;

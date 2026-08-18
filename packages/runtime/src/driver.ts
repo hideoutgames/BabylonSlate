@@ -292,6 +292,7 @@ class InProcessRuntime implements RuntimeDriver {
   private resolutionScale = 1;
   private frameCap = 60;
   private volume = 1;
+  private timeDilation = 1;
   private running = false;
   private frameId = 0;
   private slotByGuid = new Map<string, number>();
@@ -1239,7 +1240,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickCrowd(): void {
     if (!this.nav) return;
-    this.nav.stepCrowd(this.dt);
+    this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);
       if (!actor || actor.destroyed) continue;
@@ -1383,13 +1384,13 @@ class InProcessRuntime implements RuntimeDriver {
         objectClassId,
         "onUpdateAnimation",
         actor,
-        this.dt,
+        this.simulationDt(),
         extras,
       );
       const next = evaluateAnimGraph(
         document,
         this.animEvalBySlot.get(slotId) ?? null,
-        this.dt,
+        this.simulationDt(),
         {
           variables: this.animVariablesFromComponent(component, document),
           ...this.animInputsFromComponent(component),
@@ -1566,7 +1567,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
       this.stopNavAgent(actor.guid);
     }
-    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.dt, {
+    this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.simulationDt(), {
       btFinish: () => undefined,
       btEvaluate: () => undefined,
       getBlackboard: (key) => blackboard[key],
@@ -1583,7 +1584,7 @@ class InProcessRuntime implements RuntimeDriver {
   ): boolean {
     if (!this.scriptHost.hasClass(classId)) return true;
     let result = true;
-    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.dt, {
+    this.scriptHost.invokeBtEvent(classId, "onEvaluate", actor, this.simulationDt(), {
       btFinish: () => undefined,
       btEvaluate: (value) => {
         result = Boolean(value);
@@ -1642,7 +1643,7 @@ class InProcessRuntime implements RuntimeDriver {
       const blackboard: BlackboardValues = previous
         ? { ...previous.blackboard }
         : this.blackboardDefaults(blackboardGuid);
-      const next = evaluateBehaviourTree(document, previous, this.dt, {
+      const next = evaluateBehaviourTree(document, previous, this.simulationDt(), {
         seed: this.seed,
         blackboard,
         host: {
@@ -1687,6 +1688,10 @@ class InProcessRuntime implements RuntimeDriver {
         stack: next.stack,
       });
     }
+  }
+
+  private simulationDt(): number {
+    return this.dt * this.timeDilation;
   }
 
   private consoleHost(): ConsoleCommandHost {
@@ -1751,7 +1756,10 @@ class InProcessRuntime implements RuntimeDriver {
         this.tick();
         if (wasPaused) this.pause();
       },
-      setTimeDilation: (rate) => emitSetting("slomo", rate),
+      setTimeDilation: (rate) => {
+        this.timeDilation = Math.min(8, Math.max(0, Number(rate)));
+      },
+      getTimeDilation: () => this.timeDilation,
       dumpLog: () =>
         this.logs
           .entries()
@@ -2148,6 +2156,8 @@ class InProcessRuntime implements RuntimeDriver {
 
   tick(): void {
     if (!this.running || this.paused) return;
+    const simDt = this.simulationDt();
+    this.world.clock.dt = simDt;
     // Consume every event queued since the last tick. Gating on event.tick
     // dropped Play worker input: the host stamped with a wall-clock index
     // (performance.now()/16.67) while World.clock.tickIndex stayed small,
@@ -2330,7 +2340,7 @@ class InProcessRuntime implements RuntimeDriver {
     const remaining: Array<{ remaining: number; resolve: () => void }> = [];
     const due: Array<() => void> = [];
     for (const waiter of this.delayWaiters) {
-      waiter.remaining -= this.dt;
+      waiter.remaining -= this.simulationDt();
       if (waiter.remaining <= 0) due.push(waiter.resolve);
       else remaining.push(waiter);
     }
@@ -2552,7 +2562,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private tickMountedUserInterfaces(): void {
     const ctx: TickContext = {
-      dt: this.dt,
+      dt: this.simulationDt(),
       tickIndex: this.world.clock.tickIndex,
       world: this.world,
       isActionHeld: (action) => this.resolvedInput.actions[action]?.held ?? false,

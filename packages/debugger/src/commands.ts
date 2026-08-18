@@ -260,11 +260,14 @@ export function builtinCommands(): RegisteredCommand[] {
       tier: "debug",
       category: "engine",
       description: "Set time dilation",
-      parameters: [{ name: "rate", type: "float" }],
+      parameters: [{ name: "rate", type: "float", optional: true }],
       run(args, host) {
+        if (args.rate === undefined) {
+          return ok(`slomo ${host.getTimeDilation?.() ?? 1}`);
+        }
         const rate = Number(args.rate);
         host.setTimeDilation?.(rate);
-        return ok(`slomo ${rate}`);
+        return ok(`slomo ${host.getTimeDilation?.() ?? rate}`);
       },
     },
     {

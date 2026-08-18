@@ -7,6 +7,7 @@ import { createUserCommand } from "./user-commands";
 
 function recordingHost(): ConsoleCommandHost & { calls: string[] } {
   const calls: string[] = [];
+  let dilation = 1;
   return {
     calls,
     changeScene: (scene) => {
@@ -60,8 +61,10 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
       calls.push("step");
     },
     setTimeDilation: (rate) => {
+      dilation = rate;
       calls.push(`slomo:${rate}`);
     },
+    getTimeDilation: () => dilation,
     dumpLog: () => "log-tail",
     startSnapshot: () => {
       calls.push("snapshot:start");
@@ -240,6 +243,23 @@ describe("createCommandRegistry", () => {
       output: "resumed",
     });
     expect(host.calls).toEqual(["resume", "resume"]);
+  });
+
+  it("prints current slomo when the rate is omitted", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("slomo", host)).toEqual({
+      success: true,
+      output: "slomo 1",
+    });
+    expect(registry.execute("slomo 0.25", host)).toEqual({
+      success: true,
+      output: "slomo 0.25",
+    });
+    expect(registry.execute("slomo", host)).toEqual({
+      success: true,
+      output: "slomo 0.25",
+    });
   });
 
   it("refuses user commands that overwrite reserved engine names", () => {
