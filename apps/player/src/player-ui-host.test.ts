@@ -165,13 +165,11 @@ describe("createPlayerUiHost", () => {
         dirty();
       },
     );
-    const attachGui = vi.fn(
-      (_scene: unknown, _options: Record<string, unknown>) => ({
-        adt: { markAsDirty },
-        host: new RecordingUiHost(),
-        dispose: vi.fn(),
-      }),
-    );
+    const attachGui = vi.fn(() => ({
+      adt: { markAsDirty },
+      host: new RecordingUiHost(),
+      dispose: vi.fn(),
+    }));
     const host = createPlayerUiHost({
       library: new Map([["hud-1", hudDocument()]]),
       scene: {} as never,
@@ -189,7 +187,8 @@ describe("createPlayerUiHost", () => {
     host.apply("ui-1", "hud-1");
     await vi.waitFor(() => expect(applyFonts).toHaveBeenCalledTimes(1));
     expect(markAsDirty).toHaveBeenCalled();
-    expect(attachGui.mock.calls[0]?.[1]).toMatchObject({
+    const firstCall = attachGui.mock.calls[0] as unknown[] | undefined;
+    expect(firstCall?.[1]).toMatchObject({
       interactive: true,
       designResolution: hudDocument().designResolution,
     });

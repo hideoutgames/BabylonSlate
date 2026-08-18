@@ -319,7 +319,8 @@ export function parseGameManifest(source: string): GameManifest {
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
   const designerPresets = packedUiDesignerPresets(parsed.uiDesignerPresets);
-  const { uiDesignerPresets: _packedPresets, ...rest } = parsed;
+  const rest = { ...parsed };
+  delete rest.uiDesignerPresets;
   return {
     ...rest,
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
