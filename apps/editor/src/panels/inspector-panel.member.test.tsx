@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import type { SerializedGraph } from "@babylonslate/core";
 import { InspectorPanel } from "./inspector-panel";
 import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -18,7 +19,11 @@ if (
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const applyGraphChange = vi.hoisted(() => vi.fn(async () => true));
+const applyGraphChange = vi.hoisted(() =>
+  vi.fn<(id: string, next: SerializedGraph) => Promise<boolean>>(
+    async () => true,
+  ),
+);
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
@@ -176,14 +181,8 @@ describe("Inspector class member details", () => {
     });
     screen.getByTestId("search-item-GameInstance").click();
     expect(applyGraphChange).toHaveBeenCalled();
-    const next = applyGraphChange.mock.calls[0]?.[1] as {
-      members?: Array<{
-        id: string;
-        typeClassId?: string;
-        defaultValue?: unknown;
-      }>;
-    };
-    expect(next.members?.find((member) => member.id === "var-class")).toEqual(
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.find((member) => member.id === "var-class")).toEqual(
       expect.objectContaining({
         typeClassId: "GameInstance",
         defaultValue: "GameInstance",
