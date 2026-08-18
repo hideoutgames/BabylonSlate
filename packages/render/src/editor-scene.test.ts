@@ -877,6 +877,7 @@ describe("EditorSceneSync", () => {
           "model-1",
           {
             clipNames: [],
+            skeletonGuid: null,
             materialSlots: [
               { index: 0, name: "Hero Mat", materialGuid: "mat-slot" },
             ],

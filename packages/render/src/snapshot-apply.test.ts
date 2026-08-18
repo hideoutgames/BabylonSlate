@@ -81,8 +81,9 @@ describe("createPlayMesh", () => {
       [
         "model-1",
         {
-          clipNames: [],
-          materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
         },
       ],
     ]);
@@ -107,8 +108,9 @@ describe("createPlayMesh", () => {
       [
         "model-1",
         {
-          clipNames: [],
-          materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
         },
       ],
     ]);
