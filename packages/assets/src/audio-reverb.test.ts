@@ -18,6 +18,7 @@ import {
   interpolateAudioReverb,
   isDryAudioReverbFallback,
   occupancyGridForAudioBake,
+  occlusionFactor,
 } from "./audio-reverb";
 import { createActor, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
 
@@ -74,6 +75,61 @@ describe("audio reverb chunk", () => {
     const decoded = decodeAudioReverbChunk(dry);
     expect(decoded?.dryFallback).toBe(true);
     expect(isDryAudioReverbFallback(decoded)).toBe(true);
+  });
+
+  it("persists occupancy in v2 and treats a v1 chunk as unoccluded", () => {
+    const bits = new Uint8Array(1);
+    bits[0] = 0b0000_0110;
+    const occupancy = {
+      originX: 0,
+      originY: 0,
+      originZ: 0,
+      voxelX: 2,
+      voxelY: 2,
+      voxelZ: 2,
+      sizeX: 4,
+      sizeY: 1,
+      sizeZ: 1,
+      bits,
+    };
+    const packed = encodeAudioReverbChunk({
+      version: 2,
+      dryFallback: false,
+      geometryHash: "occ",
+      probes: [],
+      occupancy,
+    });
+    expect(packed.byteLength).toBeLessThanOrEqual(AUDIO_REVERB_CHUNK_MAX_BYTES);
+    const decoded = decodeAudioReverbChunk(packed);
+    expect(decoded?.occupancy).toEqual(occupancy);
+    expect(
+      occlusionFactor(
+        { x: 1, y: 1, z: 1 },
+        { x: 5, y: 1, z: 1 },
+        decoded?.occupancy ?? null,
+      ),
+    ).toBe(1);
+    expect(
+      occlusionFactor(
+        { x: 1, y: 1, z: 1 },
+        { x: 3, y: 1, z: 1 },
+        decoded?.occupancy ?? null,
+      ),
+    ).toBe(0.5);
+    const legacy = encodeAudioReverbChunk({
+      version: 1,
+      dryFallback: false,
+      geometryHash: "occ",
+      probes: [],
+    });
+    expect(decodeAudioReverbChunk(legacy)?.occupancy).toBeUndefined();
+    expect(
+      occlusionFactor(
+        { x: -1, y: 1, z: 1 },
+        { x: 7, y: 1, z: 1 },
+        decodeAudioReverbChunk(legacy)?.occupancy ?? null,
+      ),
+    ).toBe(0);
   });
 
   it("replaces the audioReverb extra chunk and keeps navmesh", () => {
@@ -153,6 +209,11 @@ describe("audio reverb bake", () => {
     expect(grid.sizeX).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_X);
     expect(grid.sizeY).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_Y);
     expect(grid.sizeZ).toBeLessThanOrEqual(AUDIO_OCCUPANCY_GRID_MAX_Z);
+    expect(field!.occupancy).toBeTruthy();
+    expect(field!.occupancy!.bits.byteLength).toBeGreaterThan(0);
+    expect(field!.occupancy!.sizeX).toBe(grid.sizeX);
+    expect(field!.occupancy!.sizeY).toBe(grid.sizeY);
+    expect(field!.occupancy!.sizeZ).toBe(grid.sizeZ);
   });
 
   it("yields every eight static mesh actors while collecting", async () => {
