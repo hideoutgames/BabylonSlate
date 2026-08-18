@@ -333,6 +333,7 @@ Authored lights and cameras already exist. The foundation wave created Babylon `
 
 **P16 completes the command stub instead of introducing a second sound model.** The existing imported `Audio` asset is the sound asset. MP3, WAV and OGG import still writes source bytes as the asset's `audio` chunk; there is no parallel `Sound` asset type. Its structured payload gains:
 - `volume`: normalised float, default `1`, clamped to `0..1`;
+- `loop`: boolean, default `false` (Play Sound / BT inherit it; `AudioComponent.loop` can still force loop);
 - `audioChannelGuid`: `AudioChannel` asset reference or `null`, default `null`;
 - `soundAttenuationGuid`: `SoundAttenuation` asset reference or `null`, default `null`.
 
@@ -370,7 +371,7 @@ Runtime reverb is intentionally parametric. Channels with enabled `environmentRe
 
 The built-in BT **PlaySound** task uses the same command/service and actor-emitter rule; it succeeds when playback is accepted and fails for an invalid/missing Audio reference. Graph execution and behaviour-tree evaluation emit commands only and never touch Babylon directly.
 
-**Out of P16:** streaming music, microphone/input capture, user-authored acoustic zones, per-triangle acoustic materials, **triangle** runtime geometry ray tracing/occlusion, waveform editing, DSP plugin code, and physically exact impulse-response simulation. The routing/effects schemas leave those additive. **Voxel DDA muffling** on the existing occupancy bake (persisted in `audioReverb` v2) is additive on Done P16 — still no triangle rays.
+**Out of P16:** streaming music, microphone/input capture, user-authored acoustic zones, per-triangle acoustic materials, **triangle** runtime geometry ray tracing/occlusion, waveform **editing**, DSP plugin code, and physically exact impulse-response simulation. The routing/effects schemas leave those additive. **Voxel DDA muffling** on the existing occupancy bake (persisted in `audioReverb` v2) is additive on Done P16 — still no triangle rays. A read-only PCM peak plot on compact Audio is not waveform editing.
 
 ### 2.7 Particles
 

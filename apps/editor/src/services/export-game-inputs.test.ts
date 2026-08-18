@@ -256,6 +256,7 @@ describe("loadExportDocuments", () => {
         pitchRandom: false,
         pitchMin: 1,
         pitchMax: 1,
+        loop: false,
       },
       source: new Uint8Array([1, 2, 3, 4]),
       sources: [new Uint8Array([1, 2, 3, 4])],
