@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { InspectorPanel } from "./inspector-panel";
 import { MyClassPanel } from "./my-class-panel";
@@ -159,13 +159,35 @@ describe("Inspector class member details", () => {
     expect(screen.queryByTestId("property-default")).toBeNull();
   });
 
-  it("shows Class Type and Default class pickers for class variables", () => {
+  it("requires a Class Type for class variables and omits a Default", () => {
     renderMemberInspector("var-class");
     const typeButton = screen.getByTestId("inspector-member-class-type");
     expect(typeButton.textContent).toContain("Actor");
     expect(typeButton.textContent).toContain("Class");
-    const defaultButton = screen.getByTestId("inspector-member-class-default");
-    expect(defaultButton.textContent).toContain("Hero");
-    expect(defaultButton.textContent).toContain("Class");
+    expect(screen.queryByTestId("inspector-member-class-default")).toBeNull();
+    expect(screen.queryByTestId("property-default")).toBeNull();
+  });
+
+  it("writes Class Type onto typeClassId and defaultValue for class variables", async () => {
+    renderMemberInspector("var-class");
+    screen.getByTestId("inspector-member-class-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-GameInstance")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-GameInstance").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]?.[1] as {
+      members?: Array<{
+        id: string;
+        typeClassId?: string;
+        defaultValue?: unknown;
+      }>;
+    };
+    expect(next.members?.find((member) => member.id === "var-class")).toEqual(
+      expect.objectContaining({
+        typeClassId: "GameInstance",
+        defaultValue: "GameInstance",
+      }),
+    );
   });
 });
