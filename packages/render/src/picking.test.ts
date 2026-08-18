@@ -11,8 +11,8 @@ import { createEditorCamera } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { encodeTranslatedTetrahedronGlb } from "./model-mesh";
 import { pickAtCanvas } from "./picking";
-import { editorComponentMeshName } from "./scene-loader";
-import { projectToCanvas } from "./two-d";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { meshNamesInCanvasRect, projectToCanvas } from "./two-d";
 
 const WIDTH = 800;
 const HEIGHT = 600;
@@ -110,14 +110,65 @@ describe("editor tap picking", () => {
     expect(pickWorld(sync, visual.getAbsolutePosition())).toBe("spk");
   });
 
-  it("does not pick a locked audio helper, then hits after unlock", () => {
+  it("picks an audio icon when the view is not edge-on to world XY", () => {
+    const position = new Vector3(0, 2, 0);
+    prepareView(position);
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([audioActor("spk")]));
+    const visual = sync.visualMeshesForActor("spk")[0];
+    if (!visual) throw new Error("missing audio visual");
+    visual.computeWorldMatrix(true, scene.activeCamera);
+    expect(pickWorld(sync, visual.getAbsolutePosition())).toBe("spk");
+  });
+
+  it("does not pick a locked origin collider, then hits after unlock", () => {
     const position = new Vector3(0, 2, 0);
     prepareView(position, 0);
     const sync = new EditorSceneSync(scene);
     sync.apply(sceneWith([audioActor("spk", true)]));
+    const lockedIcon = sync.visualMeshesForActor("spk")[0];
+    if (lockedIcon) lockedIcon.isPickable = false;
     expect(pickWorld(sync, position)).toBeNull();
     sync.apply(sceneWith([audioActor("spk", false)]));
+    const unlockedIcon = sync.visualMeshesForActor("spk")[0];
+    if (unlockedIcon) unlockedIcon.isPickable = false;
     expect(pickWorld(sync, position)).toBe("spk");
+  });
+
+  it("refreshes camera-dependent world matrices inside pickAtCanvas", () => {
+    const position = new Vector3(0, 2, 0);
+    prepareView(position, 0);
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([audioActor("spk")]));
+    sync.meshForActor("spk")!.isPickable = false;
+    const projected = projectToCanvas(scene, position, WIDTH, HEIGHT);
+    if (!projected) throw new Error("projection failed");
+    const hit = pickAtCanvas(scene, projected.x, projected.y);
+    expect(hit ? sync.actorForMesh(hit.meshName) : null).toBe("spk");
+  });
+
+  it("marquee-selects an audio helper once, skipping the origin collider", () => {
+    const position = new Vector3(0, 2, 0);
+    prepareView(position);
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([audioActor("spk")]));
+    for (const mesh of scene.meshes) {
+      mesh.computeWorldMatrix(true, scene.activeCamera);
+    }
+    scene.updateTransformMatrix();
+    const projected = projectToCanvas(scene, position, WIDTH, HEIGHT);
+    if (!projected) throw new Error("projection failed");
+    const names = meshNamesInCanvasRect(
+      scene,
+      { x: projected.x - 40, y: projected.y - 40, width: 80, height: 80 },
+      WIDTH,
+      HEIGHT,
+    );
+    expect(names).not.toContain(editorMeshName("spk"));
+    expect(names).toContain(editorComponentMeshName("spk", "audio"));
+    expect(
+      names.map((name) => sync.actorForMesh(name)).filter(Boolean),
+    ).toEqual(["spk"]);
   });
 
   it("picks a model at the visual center when the glTF node is translated", () => {

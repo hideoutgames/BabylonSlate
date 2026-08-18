@@ -118,6 +118,33 @@ describe("reparentPrefabComponents", () => {
     const child = { ...b, parentId: "a" };
     expect(reparentPrefabComponents([a, child], "a", "b")).toEqual([a, child]);
   });
+
+  it("reparents collapsed selection roots when the drag id is selected", () => {
+    const child = { ...createMeshComponent("d", "box"), parentId: "a" };
+    expect(
+      reparentPrefabComponents([a, b, c, child], "a", "c", ["a", "b", "d"]),
+    ).toEqual([
+      { ...a, parentId: "c" },
+      { ...b, parentId: "c" },
+      c,
+      child,
+    ]);
+  });
+
+  it("moves only the dragged component when it is not selected", () => {
+    expect(reparentPrefabComponents([a, b, c], "a", "c", ["b"])).toEqual([
+      { ...a, parentId: "c" },
+      b,
+      c,
+    ]);
+  });
+
+  it("rejects the whole selection when any root would cycle", () => {
+    const nested = { ...b, parentId: "a" };
+    expect(
+      reparentPrefabComponents([a, nested, c], "c", "b", ["a", "c"]),
+    ).toEqual([a, nested, c]);
+  });
 });
 
 describe("componentSubtreeIds", () => {

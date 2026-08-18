@@ -706,9 +706,13 @@ export function createEngine(
           css.width,
           css.height,
         );
-        const actorIds = names
-          .map((name) => editorSync.actorForMesh(name))
-          .filter((id): id is string => id !== null);
+        const actorIds = [
+          ...new Set(
+            names
+              .map((name) => editorSync.actorForMesh(name))
+              .filter((id): id is string => id !== null),
+          ),
+        ];
         options.onMarqueeSelect(actorIds);
       },
     });

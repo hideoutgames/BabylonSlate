@@ -19,6 +19,8 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Spec | Origin collider `isVisible = true` also entered marquee (`meshNamesInCanvasRect`), so Drag Select listed a helper twice (icon + origin) and Details could show "2 Actors" | Resolved |
+| 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Standards | `pickWorld` pre-refreshed camera-dependent matrices, so tests would pass without `pickAtCanvas`'s refresh loop | Resolved |
 | 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Context-sensitive Add Node filtered compatible nodes but did not prefer matching Make/Break/Switch/Equal rows | Resolved |
 | 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Make/Break and Switch hydrate kept stale edges after a field or member rename (`ref.missing_pin`) | Resolved |
 | 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Standards | Structure field and engine Transform/Rotator/Color pin displays were camelCase; enum Select options used raw member names | Resolved |

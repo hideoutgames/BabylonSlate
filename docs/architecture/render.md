@@ -113,7 +113,7 @@ See [particles.md](particles.md).
 
 ## Picking
 
-`skipPointerMovePicking: true` (no hover). Explicit taps use `pickAtCanvas` / `EngineHandle.pickAt`. Before `scene.pick`, tap pick calls `scene.updateTransformMatrix()` and force-refreshes world matrices on camera-dependent meshes (billboards) so the ray uses the same space as the last draw. Origin-root helpers (light / camera / audio / particle) pick against a volumetric origin collider (`visibility = 0`); the billboard child is the drawn icon, not the gizmo attach target. Editor Model meshes from `createMeshFromModelBytes` bake the first mesh node’s glTF translation/rotation/scale (and parent chain) into positions and refresh bounds so a tap on the visible tris maps to the actor pivot. A miss still clears selection.
+`skipPointerMovePicking: true` (no hover). Explicit taps use `pickAtCanvas` / `EngineHandle.pickAt`. Before `scene.pick`, tap pick calls `scene.updateTransformMatrix()` and force-refreshes world matrices on camera-dependent meshes (billboards) so the ray uses the same space as the last draw. Origin-root helpers (light / camera / audio / particle) pick against a volumetric origin collider (`visibility = 0`); the billboard child is the drawn icon, not the gizmo attach target. Marquee / Drag Select skip `visibility === 0` colliders and unique actor ids so a helper is not selected twice. Editor Model meshes from `createMeshFromModelBytes` bake the first mesh node’s glTF translation/rotation/scale (and parent chain) into positions and refresh bounds so a tap on the visible tris maps to the actor pivot. A miss still clears selection.
 
 ## Lifecycle pause
 
