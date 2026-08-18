@@ -83,6 +83,63 @@ test.describe("Editor density and IA", () => {
     ).toBeVisible();
   });
 
+  test("Content Browser Sort menu orders asset tiles", async ({ page }) => {
+    await openTestProject(page);
+    const grid = page.getByTestId("content-browser-asset-grid");
+    const classPath = "assets/main.class.babasset";
+    const scenePath = "assets/main.scene.babasset";
+    await expect(grid.locator(`[data-asset-path="${classPath}"]`)).toBeVisible();
+    await expect(grid.locator(`[data-asset-path="${scenePath}"]`)).toBeVisible();
+
+    async function assetPaths(): Promise<string[]> {
+      return grid.locator("[data-asset-path]").evaluateAll((tiles) =>
+        tiles.map((tile) => tile.getAttribute("data-asset-path") ?? ""),
+      );
+    }
+
+    async function folderTilesStayFirst(): Promise<void> {
+      const kinds = await grid
+        .locator("[data-asset-path], [data-folder-path]")
+        .evaluateAll((tiles) =>
+          tiles.map((tile) =>
+            tile.hasAttribute("data-folder-path") ? "folder" : "asset",
+          ),
+        );
+      const firstAsset = kinds.indexOf("asset");
+      const lastFolder = kinds.lastIndexOf("folder");
+      if (firstAsset >= 0 && lastFolder >= 0) {
+        expect(lastFolder).toBeLessThan(firstAsset);
+      }
+    }
+
+    async function chooseSort(mode: string): Promise<void> {
+      const menu = page.getByTestId("content-browser-sort-menu");
+      if (!(await menu.isVisible())) {
+        await page.getByTestId("content-browser-sort").click();
+        await expect(menu).toBeVisible();
+      }
+      await page.getByTestId(`content-browser-sort-${mode}`).click();
+    }
+
+    await chooseSort("type-asc");
+    await expect
+      .poll(async () => {
+        const order = await assetPaths();
+        return order.indexOf(scenePath) - order.indexOf(classPath);
+      })
+      .toBeGreaterThan(0);
+    await folderTilesStayFirst();
+
+    await chooseSort("type-desc");
+    await expect
+      .poll(async () => {
+        const order = await assetPaths();
+        return order.indexOf(classPath) - order.indexOf(scenePath);
+      })
+      .toBeGreaterThan(0);
+    await folderTilesStayFirst();
+  });
+
   test("Focus hides the Outliner; Place Actors catalog does not focus search", {
     tag: IPAD_TEST_TAG,
   }, async ({
@@ -354,7 +411,11 @@ test.describe("Editor density and IA", () => {
       '[data-asset-path="assets/main.scene.babasset"]',
     );
     await expect(folderTile).toBeVisible({ timeout: 15_000 });
-    await paintSelectContentTiles(page, folderTile, sceneTile);
+    await folderTile.click();
+    await sceneTile.click({ button: "right" });
+    await expect(page.getByTestId("context-menu-panel")).toBeVisible();
+    await page.getByTestId("context-menu-backdrop").dispatchEvent("click");
+    await expect(page.getByTestId("context-menu-panel")).toHaveCount(0);
     const deleteSelected = page.getByTestId("content-browser-delete-selected");
     await expect(deleteSelected).toHaveText(/Delete \(2\)/);
     await deleteSelected.click();
