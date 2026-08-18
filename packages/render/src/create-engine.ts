@@ -837,7 +837,7 @@ export function createEngine(
   };
 
   let interpAlpha = 1;
-  let lastPositions: PlayActorPosition[] = [];
+  const lastPositions: PlayActorPosition[] = [];
   const audioPoses: SampledAudioPose[] = [];
   let lastDrawCalls = 0;
   const renderLoop = () => {
