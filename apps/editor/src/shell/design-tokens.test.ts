@@ -173,9 +173,11 @@ describe("Minimal Neutral theme tokens", () => {
     }
   });
 
-  it("uses a lime hue for Material and gold for folders", () => {
-    expect(oklchHue(tokenValue(root, "--asset-material"))).toBe(120);
-    expect(oklchHue(tokenValue(dark, "--asset-material"))).toBe(120);
+  it("uses the former Audio green for Material, lime for Audio, and gold for folders", () => {
+    expect(oklchHue(tokenValue(root, "--asset-material"))).toBe(145);
+    expect(oklchHue(tokenValue(dark, "--asset-material"))).toBe(145);
+    expect(oklchHue(tokenValue(root, "--asset-audio"))).toBe(120);
+    expect(oklchHue(tokenValue(dark, "--asset-audio"))).toBe(120);
     expect(oklchHue(tokenValue(root, "--asset-folder"))).toBe(70);
     expect(oklchHue(tokenValue(dark, "--asset-folder"))).toBe(70);
   });

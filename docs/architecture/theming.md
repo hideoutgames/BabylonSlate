@@ -102,22 +102,22 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
-| `--asset-scene` | Scene (yellow, Unreal Level) | Scene |
+| `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
 | `--asset-graph` | Graph / UserInterface / EditorUtilityInterface (cyan) | Graph, UserInterface (`PanelTop`), EditorUtilityInterface (widget glyph) |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
-| `--asset-material` | Material, Material Function, Shader (light green / lime) | Material |
+| `--asset-material` | Material, Material Function, Shader (green, former Audio) | Material |
 | `--asset-model` | Model (orange) | Model |
-| `--asset-audio` | Audio (green) | Audio |
+| `--asset-audio` | imported Audio only (lime, former Material) | Audio |
 | `--asset-font` | Font (sky) | Font |
-| `--asset-animation` | Animation, AnimationGraph, Class / Object / Actor / ScriptInterface / BehaviourTree (blue) | Animation (`Film`), AnimationGraph (`Workflow`), Object, Actor, Class, ScriptInterface (`Plug`), BehaviourTree (`ListTree`) |
-| `--asset-class` | Blackboard, Structure (indigo; former Class hue) | Blackboard (`List`), Structure (`Braces`) |
+| `--asset-animation` | Animation, AnimationGraph, Class / Object / Actor / ScriptInterface / BehaviourTree, SoundAttenuation (blue) | Animation (`Film`), AnimationGraph (`Workflow`), Object, Actor, Class, ScriptInterface (`Plug`), BehaviourTree (`ListTree`), SoundAttenuation (`Volume2`) |
+| `--asset-class` | Blackboard, Structure, AudioChannel (indigo; former Class hue) | Blackboard (`List`), Structure (`Braces`), AudioChannel (`Volume2`) |
 | `--asset-script-type` | Enum, PluginSettings (teal) | Enum, PluginSettings (`Puzzle`) |
 | `--asset-component` | Engine components in Details / Add Component (purple) | one icon per `ENGINE_COMPONENT_CLASS_IDS` |
 | `--asset-folder` | Content Browser folders (gold / yellow) | Folder glyph |
 
 Place-actor shapes, lights, and cameras use the matching component **icon** with `--asset-animation` (they spawn as Actors; same token as Class / Object). Unknown types fall back to a file glyph and `--muted-foreground`.
 
-Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type-colored border (`typeColorThumbAccent`). The well is inset 2px (`p-0.5`) with `rounded-t-xl`, and the border uses `calc(var(--radius-xl) - 2px)` on the top corners so the outline sits inside the Card clip instead of being chopped. The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token, Lucide `size={40}`, and `absoluteStrokeWidth` so stroke stays 2 CSS px. **Folder cards** are uncolored (`--card` well, muted folder glyph at the same Lucide size and absolute stroke). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum keeps `--asset-script-type` on tiles; Structure and Blackboard use `--asset-class`; ScriptInterface shares `--asset-animation` with Class. Details type columns use **pin** colors via `PinTypePicker`.
+Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type-colored border (`typeColorThumbAccent`). The well is inset 2px (`p-0.5`) with `rounded-t-xl`, and the border uses `calc(var(--radius-xl) - 2px)` on the top corners so the outline sits inside the Card clip instead of being chopped. The well, `Card` chrome, and text panel stay `--card`. Glyphs still use the raw `--asset-*` token, Lucide `size={40}`, and `absoluteStrokeWidth` so stroke stays 2 CSS px. **Folder cards** are uncolored (`--card` well, muted folder glyph at the same Lucide size and absolute stroke). Selected tiles keep `border-primary` / `ring-primary`. `--asset-*` hues are at least 25° apart so mixed wells stay distinguishable. Enum keeps `--asset-script-type` on tiles; Structure, Blackboard, and AudioChannel use `--asset-class`; ScriptInterface and SoundAttenuation share `--asset-animation` with Class; AudioMixer shares `--asset-scene`. Details type columns use **pin** colors via `PinTypePicker`.
 
 ## Graph sizing tokens
 
