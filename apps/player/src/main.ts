@@ -99,6 +99,11 @@ async function launchLoaded(
       );
     },
   });
+  const layoutObserver =
+    typeof ResizeObserver === "undefined"
+      ? null
+      : new ResizeObserver(() => layoutFromManifest(game.manifest));
+  layoutObserver?.observe(rootEl());
   if (import.meta.env.VITE_TEST_MODE === "true") {
     (
       window as typeof window & {
@@ -126,6 +131,7 @@ async function launchLoaded(
       (event.data as { type?: string }).type === PREVIEW_STOP_MESSAGE
     ) {
       const result = session.stop();
+      layoutObserver?.disconnect();
       if (window.parent !== window && result.diagnostics.length > 0) {
         window.parent.postMessage(
           { type: PREVIEW_DIAGNOSTICS_MESSAGE, diagnostics: result.diagnostics },
