@@ -27,6 +27,7 @@ export type AudioPlayRequest = {
   loop: boolean;
   spatial?: AudioSpatialPlayOptions | null;
   reverbSend: boolean;
+  clipChunkId?: string;
 };
 
 export interface AudioPlaybackBackend {
@@ -45,6 +46,7 @@ export interface AudioPlaybackBackend {
     decay: number;
     damping: number;
   }): void;
+  setVoiceMuffle(voiceId: string, factor: number): void;
   dispose(): void;
 }
 
@@ -56,6 +58,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   poses = new Map<string, AudioPose>();
   gains = new Map<string, number>();
   playbackRates = new Map<string, number>();
+  muffles = new Map<string, number>();
   listener: AudioPose = { x: 0, y: 0, z: 0 };
   wet = 0;
   decay = 0.4;
@@ -110,6 +113,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
     this.wet = profile.wet;
     this.decay = profile.decay;
     this.damping = profile.damping;
+  }
+
+  setVoiceMuffle(voiceId: string, factor: number): void {
+    this.muffles.set(voiceId, factor);
   }
 
   dispose(): void {

@@ -366,6 +366,7 @@ export function isPlayHelperMeshKind(
   return (
     meshKind === "camera" ||
     meshKind === "audio" ||
+    meshKind === "particle" ||
     meshKind.startsWith("light:")
   );
 }

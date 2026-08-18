@@ -18,7 +18,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_WIDGET_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids (including `UserInterface`, `Widget`, and every `*Widget`) cannot be reparented |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
-| `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components). Not a harness golden |
+| `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
@@ -45,7 +45,7 @@ Mid-tick `destroy` and `spawn` enqueue work. Deferred queues flush after the cur
 
 ## Inspect snapshot (Play debugger)
 
-`createDebugInspectSnapshot(world)` is a separate, lossy JSON tree for the overlay inspector: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is `name` else `classId`. Values are JSON-safe (`BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`). See [debugger.md](debugger.md).
+`createDebugInspectSnapshot(world)` is a separate, lossy JSON tree for the overlay inspector: Game Instance if any, then actors parent-before-child (`parentId` variable), then each actor’s components as children. Label is `name` else `classId`. Values are JSON-safe (`BObject` → `{ guid, classId }`; circular / non-cloneable → `formatValue()`). Optional `variableTypes` stamps ClassRegistry `inheritedVariables` types onto keys that exist in `variables`; untyped keys are omitted so the editor infers. See [debugger.md](debugger.md).
 
 ## RNG
 
@@ -55,9 +55,9 @@ The world owns a seeded PRNG from `createSeededRng` in `@babylonslate/core`. Sim
 
 Registered as typed stubs (asset refs + lifecycle hooks) from day one; `RigidBodyComponent` / `ColliderComponent` are synced by `PhysicsWorldSync` in `@babylonslate/runtime`:
 
-`MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`, `NavMeshComponent`, `NavMeshBlockerComponent`.
+`MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `AudioComponent`, `ParticleComponent`, `RigidBodyComponent`, `ColliderComponent`, `WidgetComponent`, `AnimationGraphComponent`, `BehaviourTreeComponent`, `NavAgentComponent`, `NavMeshComponent`, `NavMeshBlockerComponent`.
 
-Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). `BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only (not Add Component). `BTTask` / `BTDecorator` / `BTService` / `BTComposite` plus the built-in Wait / MoveTo / … classes are inheritable engine bases. `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists. `AudioComponent` is addable and searchable (`audioAssetGuid`, play-on-start, loop, component volume); Play-on-start emits `playSound` with the owning actor as emitter. Compiled graphs call `ctx.playSound` / `ctx.setChannelVolume` / `ctx.setGlobalVolume` (see [audio.md](audio.md)).
+Search and Add Component advertise shipped behaviour: `TilemapComponent` is addable (P10 Play loads chunk meshes and Rapier chains). `BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only (not Add Component). `BTTask` / `BTDecorator` / `BTService` / `BTComposite` plus the built-in Wait / MoveTo / … classes are inheritable engine bases. `WidgetComponent` stays registered but is hidden until world-space `CreateForMesh` exists. `AudioComponent` is addable and searchable (`audioAssetGuid`, play-on-start, loop, component volume); Play-on-start emits `playSound` with the owning actor as emitter. Compiled graphs call `ctx.playSound` / `ctx.setChannelVolume` / `ctx.setGlobalVolume` (see [audio.md](audio.md)). `ParticleComponent` is addable and searchable (`particleSystemGuid`, play-on-start, sorting layer/order); Play-on-start emits `assignParticle`. Compiled graphs call `ctx.playParticles` / `ctx.stopParticles` (see [particles.md](particles.md)).
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas and backend sync.
 

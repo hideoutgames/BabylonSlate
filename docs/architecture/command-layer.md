@@ -85,7 +85,7 @@ Closing a dirty document tab (the tab **X**) opens the same Save / Discard / Can
 
 ## Document tab lifecycle
 
-Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan §2.4, `p17-inactive-documents`):
+Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan §2.4, `p18-inactive-documents`):
 
 | State | Chrome tab | `DocumentService` JSON + `EditSession` | DockView / Babylon / GraphEditor |
 | --- | --- | --- | --- |

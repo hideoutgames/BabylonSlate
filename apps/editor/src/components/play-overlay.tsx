@@ -5,6 +5,7 @@ import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
   type PlayPreviewProjectSettings,
   type RenderProjectSettings,
+  type AudioProjectSettings,
   type SerializedScene,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -42,6 +43,7 @@ import type {
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
+import type { PlayParticleLibrary } from "../lib/play-particles";
 import {
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
@@ -97,6 +99,7 @@ export interface PlayOverlayProps {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: PlayAudioLibrary;
+  particleLibrary?: PlayParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -105,6 +108,15 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
+  >;
   pauseOnPlay?: boolean;
   onClose: (result: PlaySessionResult) => void;
 }
@@ -148,6 +160,7 @@ export function PlayOverlay({
   modelBytes,
   audioBytes,
   audioLibrary,
+  particleLibrary,
   materialDocuments,
   materialFunctions,
   postProcessingEnabled,
@@ -156,6 +169,7 @@ export function PlayOverlay({
   pixelPerfect,
   navmeshBytes,
   audioReverbBytes,
+  audioProjectSettings,
   pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
@@ -233,6 +247,8 @@ export function PlayOverlay({
   audioBytesRef.current = audioBytes;
   const audioLibraryRef = useRef(audioLibrary);
   audioLibraryRef.current = audioLibrary;
+  const particleLibraryRef = useRef(particleLibrary);
+  particleLibraryRef.current = particleLibrary;
   const materialDocumentsRef = useRef(materialDocuments);
   materialDocumentsRef.current = materialDocuments;
   const materialFunctionsRef = useRef(materialFunctions);
@@ -241,6 +257,8 @@ export function PlayOverlay({
   navmeshBytesRef.current = navmeshBytes;
   const audioReverbBytesRef = useRef(audioReverbBytes);
   audioReverbBytesRef.current = audioReverbBytes;
+  const audioProjectSettingsRef = useRef(audioProjectSettings);
+  audioProjectSettingsRef.current = audioProjectSettings;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
   const pixelPerfectRef = useRef(pixelPerfect);
@@ -331,6 +349,7 @@ export function PlayOverlay({
       modelBytes: modelBytesRef.current,
       audioBytes: audioBytesRef.current,
       audioLibrary: audioLibraryRef.current,
+      particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,
       postProcessingEnabled,
@@ -339,6 +358,7 @@ export function PlayOverlay({
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
+      audioProjectSettings: audioProjectSettingsRef.current,
       pauseOnPlay: initialPauseOnPlayRef.current,
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {

@@ -7,6 +7,7 @@ import {
   parseSpriteAnimationPayload,
   spriteAnimationDurationMs,
   spriteAnimationFrameAt,
+  spriteAnimationFrameDurationMs,
   spriteAnimationFrameStartMs,
   spriteAnimationPlayhead,
   spriteAnimationTextureGuids,
@@ -27,6 +28,7 @@ function pngIhdr(width: number, height: number): Uint8Array {
 describe("SpriteAnimation payload", () => {
   it("defaults to one empty frame with a centered pivot and full-image collision", () => {
     const payload = createDefaultSpriteAnimationPayload();
+    expect(payload.frameDurationMs).toBe(100);
     expect(payload.frames).toHaveLength(1);
     expect(payload.frames[0]).toEqual({
       textureGuid: "",
@@ -50,6 +52,74 @@ describe("SpriteAnimation payload", () => {
       textureGuid: "",
       durationMs: 40,
     });
+  });
+
+  it("uses payload frameDurationMs for every frame that does not override", () => {
+    const payload = parseSpriteAnimationPayload({
+      frameDurationMs: 40,
+      frames: [{ textureGuid: "a" }, { textureGuid: "b" }],
+    });
+    expect(payload.frameDurationMs).toBe(40);
+    expect(spriteAnimationFrameDurationMs(payload, payload.frames[0]!)).toBe(40);
+    expect(spriteAnimationDurationMs(payload)).toBe(80);
+    expect(spriteAnimationFrameStartMs(payload, 1)).toBe(40);
+    expect(spriteAnimationFrameAt(payload, 0.75)?.textureGuid).toBe("b");
+    expect(spriteAnimationPlayhead(payload, 50, true)).toEqual({
+      index: 1,
+      timeMs: 50,
+      finished: false,
+    });
+  });
+
+  it("uses a frame durationMs only when durationMsOverride is true", () => {
+    const payload = parseSpriteAnimationPayload({
+      frameDurationMs: 40,
+      frames: [
+        { textureGuid: "a" },
+        { textureGuid: "b", durationMsOverride: true, durationMs: 120 },
+      ],
+    });
+    expect(spriteAnimationFrameDurationMs(payload, payload.frames[0]!)).toBe(40);
+    expect(spriteAnimationFrameDurationMs(payload, payload.frames[1]!)).toBe(120);
+    expect(spriteAnimationDurationMs(payload)).toBe(160);
+    expect(spriteAnimationFrameStartMs(payload, 1)).toBe(40);
+    expect(spriteAnimationPlayhead(payload, 50, true).index).toBe(1);
+    expect(spriteAnimationFrameAt(payload, 0.2)?.textureGuid).toBe("a");
+    expect(spriteAnimationFrameAt(payload, 0.5)?.textureGuid).toBe("b");
+  });
+
+  it("promotes a uniform legacy clip to global frameDurationMs without overrides", () => {
+    const parsed = parseSpriteAnimationPayload({
+      frames: [{ durationMs: 40, textureGuid: "a" }, { durationMs: 40, textureGuid: "b" }],
+    });
+    expect(parsed.frameDurationMs).toBe(40);
+    expect(parsed.frames[0]?.durationMsOverride).toBeUndefined();
+    expect(parsed.frames[1]?.durationMsOverride).toBeUndefined();
+    expect(spriteAnimationDurationMs(parsed)).toBe(80);
+  });
+
+  it("marks mixed legacy frame durations as overrides against the first frame", () => {
+    const parsed = parseSpriteAnimationPayload({
+      frames: [{ durationMs: 100, textureGuid: "a" }, { durationMs: 150, textureGuid: "b" }],
+    });
+    expect(parsed.frameDurationMs).toBe(100);
+    expect(parsed.frames[0]?.durationMsOverride).toBeUndefined();
+    expect(parsed.frames[1]).toMatchObject({
+      durationMsOverride: true,
+      durationMs: 150,
+    });
+    expect(spriteAnimationDurationMs(parsed)).toBe(250);
+  });
+
+  it("does not infer overrides when frameDurationMs is already authored", () => {
+    const parsed = parseSpriteAnimationPayload({
+      frameDurationMs: 50,
+      frames: [{ durationMs: 100 }, { durationMs: 150 }],
+    });
+    expect(parsed.frameDurationMs).toBe(50);
+    expect(parsed.frames[0]?.durationMsOverride).toBeUndefined();
+    expect(parsed.frames[1]?.durationMsOverride).toBeUndefined();
+    expect(spriteAnimationDurationMs(parsed)).toBe(100);
   });
 
   it("picks the frame at normalised time and sums clip duration", () => {

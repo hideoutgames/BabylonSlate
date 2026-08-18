@@ -50,6 +50,12 @@ import {
   AudioMixerDetailsPanel,
   SoundAttenuationDetailsPanel,
 } from "../components/audio-asset-editor";
+import {
+  ParticleEmitterDetailsPanel,
+  ParticleEmitterPreviewPanel,
+  ParticleSystemDetailsPanel,
+  ParticleSystemPreviewPanel,
+} from "../components/particle-editor";
 import { LocksPanel } from "../panels/locks-panel";
 import {
   AnimGraphDetailsPanel,
@@ -165,6 +171,18 @@ export const panelComponents = {
   ),
   "sound-attenuation-details": (props: IDockviewPanelProps) => (
     <SoundAttenuationDetailsPanel {...props} />
+  ),
+  "particle-emitter-preview": (props: IDockviewPanelProps) => (
+    <ParticleEmitterPreviewPanel {...props} />
+  ),
+  "particle-emitter-details": (props: IDockviewPanelProps) => (
+    <ParticleEmitterDetailsPanel {...props} />
+  ),
+  "particle-system-preview": (props: IDockviewPanelProps) => (
+    <ParticleSystemPreviewPanel {...props} />
+  ),
+  "particle-system-details": (props: IDockviewPanelProps) => (
+    <ParticleSystemDetailsPanel {...props} />
   ),
   "anim-graph-graph": (props: IDockviewPanelProps) => (
     <AnimGraphGraphPanel {...props} />

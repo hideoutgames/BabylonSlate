@@ -134,6 +134,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "LightComponent",
   "CameraComponent",
   "AudioComponent",
+  "ParticleComponent",
 ]);
 
 function visualComponentsOf(actor: SerializedActor): SerializedComponent[] {
@@ -164,7 +165,8 @@ function isBillboardComponent(component: SerializedComponent): boolean {
   return (
     component.classId === "LightComponent" ||
     component.classId === "CameraComponent" ||
-    component.classId === "AudioComponent"
+    component.classId === "AudioComponent" ||
+    component.classId === "ParticleComponent"
   );
 }
 
@@ -191,6 +193,9 @@ function componentVisualKind(component: SerializedComponent): string {
   if (component.classId === "LightComponent") return editorBillboardKind("light");
   if (component.classId === "CameraComponent") return editorBillboardKind("camera");
   if (component.classId === "AudioComponent") return editorBillboardKind("audio");
+  if (component.classId === "ParticleComponent") {
+    return editorBillboardKind("particle");
+  }
   return component.classId;
 }
 
@@ -277,6 +282,11 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   if (actor.components.some((component) => component.classId === "AudioComponent")) {
     return editorBillboardKind("audio");
   }
+  if (
+    actor.components.some((component) => component.classId === "ParticleComponent")
+  ) {
+    return editorBillboardKind("particle");
+  }
   return null;
 }
 
@@ -304,6 +314,9 @@ export function createMeshForComponent(
   }
   if (component.classId === "AudioComponent") {
     return createEditorBillboard(scene, name, "audio");
+  }
+  if (component.classId === "ParticleComponent") {
+    return createEditorBillboard(scene, name, "particle");
   }
   const assetGuid = stringProp(component.properties.assetGuid);
   if (assetGuid && assets?.modelBytes?.has(assetGuid)) {

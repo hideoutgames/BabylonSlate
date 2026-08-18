@@ -8,6 +8,10 @@ import {
   interpolateAudioReverb,
   isDryAudioReverbFallback,
   normalizeAudioPayload,
+  occlusionFactor,
+  pickWeightedAudioClip,
+  resolveAudioPitch,
+  audioClipCacheKey,
   resolveAudioPlayback,
   sanitizeAudioLibrary,
   type AudioChannelPayload,
@@ -70,11 +74,14 @@ type QueuedCommand = Extract<
 type LiveVoice = {
   voiceId: string;
   assetGuid: string;
+  cacheKey: string;
   playCallVolume: number;
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
+  pitch: number;
   reverbSend: boolean;
+  muffleThroughWalls: boolean;
   previousPose: AudioPose | null;
 };
 
@@ -95,6 +102,20 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
     command.type === "setChannelVolume" ||
     command.type === "setGlobalVolume"
   );
+}
+
+function clampAudioScale(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  if (value < 0) return 0;
+  if (value > 2) return 2;
+  return value;
+}
+
+function scaleReverbAmount(value: number, scale: number): number {
+  const scaled = value * scale;
+  if (scaled < 0) return 0;
+  if (scaled > 1) return 1;
+  return scaled;
 }
 
 /**
@@ -126,18 +147,27 @@ export class AudioService {
   private reverbField: AudioReverbField | null = null;
   private readonly now: () => number;
   private lastSnapshotAt: number | null = null;
+  private readonly random: () => number;
+  private projectAudio = {
+    occlusionEnabled: true,
+    reverbWetScale: 1,
+    reverbDecayScale: 1,
+    reverbDampingScale: 1,
+  };
 
   constructor(options: {
     backend: AudioPlaybackBackend;
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
     now?: () => number;
+    random?: () => number;
   }) {
     this.backend = options.backend;
     this.ownedCache = !options.cache;
     this.cache = options.cache ?? new AudioBufferCache();
     this.onDiagnostic = options.onDiagnostic;
     this.now = options.now ?? (() => performance.now());
+    this.random = options.random ?? Math.random;
     this.publishStats();
   }
 
@@ -169,6 +199,33 @@ export class AudioService {
 
   setReverbField(bytes: Uint8Array | null | undefined): void {
     this.reverbField = bytes ? decodeAudioReverbChunk(bytes) : null;
+    this.refreshReverbWet();
+    this.refreshSpatialVoices(false);
+  }
+
+  setProjectAudioSettings(settings: {
+    occlusionEnabled?: boolean;
+    reverbWetScale?: number;
+    reverbDecayScale?: number;
+    reverbDampingScale?: number;
+  }): void {
+    if (settings.occlusionEnabled !== undefined) {
+      this.projectAudio.occlusionEnabled = settings.occlusionEnabled === true;
+    }
+    if (settings.reverbWetScale !== undefined) {
+      this.projectAudio.reverbWetScale = clampAudioScale(settings.reverbWetScale);
+    }
+    if (settings.reverbDecayScale !== undefined) {
+      this.projectAudio.reverbDecayScale = clampAudioScale(
+        settings.reverbDecayScale,
+      );
+    }
+    if (settings.reverbDampingScale !== undefined) {
+      this.projectAudio.reverbDampingScale = clampAudioScale(
+        settings.reverbDampingScale,
+      );
+    }
+    this.refreshSpatialVoices(false);
     this.refreshReverbWet();
   }
 
@@ -333,7 +390,14 @@ export class AudioService {
       sessionChannelVolumes: this.sessionChannelVolumes,
       sessionGlobalVolume: this.sessionGlobalVolume,
     });
-    const source = this.sourceBytes.get(assetGuid) ?? this.cache.get(assetGuid);
+    const clip = pickWeightedAudioClip(payload.clips, this.random);
+    const pitch = resolveAudioPitch(payload, this.random);
+    const cacheKey = audioClipCacheKey(assetGuid, clip.chunkId);
+    const source =
+      this.sourceBytes.get(cacheKey) ??
+      this.sourceBytes.get(assetGuid) ??
+      this.cache.get(cacheKey) ??
+      this.cache.get(assetGuid);
     if (!source || source.byteLength === 0) {
       this.onDiagnostic?.({
         code: "audio.missing_source",
@@ -342,11 +406,11 @@ export class AudioService {
       });
       return;
     }
-    let decoded = this.cache.get(assetGuid);
+    let decoded = this.cache.get(cacheKey);
     if (!decoded) {
       try {
-        const result = await this.backend.decode(assetGuid, source);
-        this.cache.put(assetGuid, source, result.pcmBytes);
+        const result = await this.backend.decode(cacheKey, source);
+        this.cache.put(cacheKey, source, result.pcmBytes);
         decoded = source;
       } catch {
         this.onDiagnostic?.({
@@ -394,21 +458,26 @@ export class AudioService {
       loop: command.loop === true,
       spatial,
       reverbSend: resolved.environmentReverb,
+      clipChunkId: clip.chunkId,
     };
-    this.cache.pin(assetGuid);
+    this.cache.pin(cacheKey);
     this.voices.set(voiceId, {
       voiceId,
       assetGuid,
+      cacheKey,
       playCallVolume: command.volume,
       emitterActorGuid: emitter,
       spatial,
       gain: resolved.gain,
+      pitch,
       reverbSend: resolved.environmentReverb,
+      muffleThroughWalls: resolved.muffleThroughWalls,
       previousPose: null,
     });
     this.lastGain = resolved.gain;
     try {
       await this.backend.play(request);
+      this.backend.setVoicePlaybackRate(voiceId, pitch);
     } catch {
       this.stopVoice(voiceId);
       this.onDiagnostic?.({
@@ -428,7 +497,7 @@ export class AudioService {
     if (!voice) return;
     this.backend.stop(voiceId);
     this.voices.delete(voiceId);
-    this.cache.unpin(voice.assetGuid);
+    this.cache.unpin(voice.cacheKey);
     this.refreshReverbWet();
     this.publishStats();
   }
@@ -452,6 +521,7 @@ export class AudioService {
       });
       voice.gain = resolved.gain;
       voice.reverbSend = resolved.environmentReverb;
+      voice.muffleThroughWalls = resolved.muffleThroughWalls;
       this.backend.setVoiceGain(voice.voiceId, resolved.gain);
       this.lastGain = resolved.gain;
     }
@@ -467,7 +537,10 @@ export class AudioService {
         : 0;
     if (fromSnapshot) this.lastSnapshotAt = now;
     for (const voice of this.voices.values()) {
-      if (!voice.spatial) continue;
+      if (!voice.spatial) {
+        this.backend.setVoiceMuffle(voice.voiceId, 0);
+        continue;
+      }
       const slotId =
         voice.emitterActorGuid !== null
           ? this.actorSlots.get(voice.emitterActorGuid)
@@ -476,9 +549,11 @@ export class AudioService {
         slotId !== undefined ? this.slotPoses.get(slotId) : undefined;
       if (!pose) {
         this.lastDistance = null;
+        this.backend.setVoiceMuffle(voice.voiceId, 0);
         continue;
       }
       this.backend.setVoicePose(voice.voiceId, pose);
+      this.refreshVoiceMuffle(voice, pose);
       const dx = pose.x - this.listener.x;
       const dy = pose.y - this.listener.y;
       const dz = pose.z - this.listener.z;
@@ -495,7 +570,10 @@ export class AudioService {
           dt,
           factor: doppler.factor,
         });
-        this.backend.setVoicePlaybackRate(voice.voiceId, rate);
+        this.backend.setVoicePlaybackRate(
+          voice.voiceId,
+          voice.pitch * rate,
+        );
       }
       if (fromSnapshot) {
         voice.previousPose = { x: pose.x, y: pose.y, z: pose.z };
@@ -504,14 +582,37 @@ export class AudioService {
     this.publishStats();
   }
 
+  private refreshVoiceMuffle(voice: LiveVoice, pose: AudioPose): void {
+    if (
+      !this.projectAudio.occlusionEnabled ||
+      !voice.muffleThroughWalls ||
+      !voice.spatial
+    ) {
+      this.backend.setVoiceMuffle(voice.voiceId, 0);
+      return;
+    }
+    this.backend.setVoiceMuffle(
+      voice.voiceId,
+      occlusionFactor(pose, this.listener, this.reverbField?.occupancy),
+    );
+  }
+
   private refreshReverbWet(): void {
     const anySend = [...this.voices.values()].some((voice) => voice.reverbSend);
     const profile =
       !anySend || isDryAudioReverbFallback(this.reverbField)
         ? { wet: 0, decay: 0.4, damping: 0.5 }
         : interpolateAudioReverb(this.listener, this.reverbField?.probes ?? []);
-    this.wet = profile.wet;
-    this.backend.setReverbProfile(profile);
+    const scaled = {
+      wet: scaleReverbAmount(profile.wet, this.projectAudio.reverbWetScale),
+      decay: scaleReverbAmount(profile.decay, this.projectAudio.reverbDecayScale),
+      damping: scaleReverbAmount(
+        profile.damping,
+        this.projectAudio.reverbDampingScale,
+      ),
+    };
+    this.wet = scaled.wet;
+    this.backend.setReverbProfile(scaled);
     this.publishStats();
   }
 

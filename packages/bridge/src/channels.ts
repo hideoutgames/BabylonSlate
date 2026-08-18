@@ -277,6 +277,7 @@ export type CommandMessage =
             scale: [number, number, number];
           };
           variables: Record<string, unknown>;
+          variableTypes?: Record<string, string>;
         }>;
       };
     }
@@ -341,6 +342,20 @@ export type CommandMessage =
   | { type: "stopSound"; voiceId: string }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
   | { type: "setGlobalVolume"; volume: number }
+  | {
+      type: "assignParticle";
+      slotId: number;
+      actorGuid: string;
+      componentId: string;
+      particleSystemGuid: string | null;
+      play?: boolean;
+    }
+  | {
+      type: "setParticlePlaying";
+      actorGuid: string;
+      componentId?: string;
+      playing: boolean;
+    }
   | {
       type: "setRenderResolution";
       width: number;

@@ -9,6 +9,7 @@ import {
   AUDIO_CROSSFADING_PROFILES,
   AUDIO_DECODED_PCM_LRU_BYTES,
   AUDIO_GEOMETRY_COLLECT_SLICE,
+  AUDIO_MAX_CLIPS,
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_MAX_PROBES,
   AUDIO_OCCUPANCY_GRID_MAX_X,
@@ -31,6 +32,15 @@ import {
   resolveAudioPlayback,
   encodePackedAudioAsset,
   decodePackedAudioAsset,
+  pickWeightedAudioClip,
+  resolveAudioPitch,
+  audioClipCacheKey,
+  collectAudioClipSourceBytes,
+  mapPackedAudioClipBytes,
+  collectPackedAudioClipBlobs,
+  allocateAudioClipChunkId,
+  extraChunksWithAudioClip,
+  extraChunksWithoutAudioClip,
   createDefaultAudioChannelPayload,
   createDefaultAudioMixerPayload,
   createDefaultAudioPayload,
@@ -39,6 +49,7 @@ import {
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
   normalizeSoundAttenuationPayload,
+  setAudioChannelEffect,
   resolveAudioReferences,
   sanitizeAudioLibrary,
   validateAudioChannelGraph,
@@ -72,6 +83,7 @@ describe("audio payloads", () => {
     expect(AUDIO_PRE_UNLOCK_QUEUE_CAP).toBe(32);
     expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(64 * 1024 * 1024);
     expect(AUDIO_MAX_CONCURRENT_VOICES).toBe(32);
+    expect(AUDIO_MAX_CLIPS).toBe(8);
   });
 
   it("normalizes empty imported Audio without inventing channel or attenuation", () => {
@@ -79,8 +91,161 @@ describe("audio payloads", () => {
       volume: 1,
       audioChannelGuid: null,
       soundAttenuationGuid: null,
+      clips: [{ chunkId: "source", name: "", weight: 1 }],
+      pitch: 1,
+      pitchRandom: false,
+      pitchMin: 1,
+      pitchMax: 1,
     });
     expect(normalizeAudioPayload(undefined)).toEqual(createDefaultAudioPayload());
+  });
+
+  it("caps clips at eight, defaults equal weights, and swaps inverted pitch range", () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      chunkId: i === 0 ? "source" : `source:${i + 1}`,
+      name: `clip-${i}`,
+      weight: 0,
+    }));
+    const normalized = normalizeAudioPayload({
+      clips: many,
+      pitch: 8,
+      pitchRandom: true,
+      pitchMin: 2,
+      pitchMax: 0.5,
+    });
+    expect(normalized.clips).toHaveLength(8);
+    expect(normalized.clips.every((clip) => clip.weight === 1)).toBe(true);
+    expect(normalized.pitch).toBe(4);
+    expect(normalized.pitchMin).toBe(0.5);
+    expect(normalized.pitchMax).toBe(2);
+  });
+
+  it("picks a weighted clip and a random pitch in range", () => {
+    const clips = [
+      { chunkId: "source", name: "a", weight: 1 },
+      { chunkId: "source:2", name: "b", weight: 3 },
+    ];
+    expect(pickWeightedAudioClip(clips, () => 0).chunkId).toBe("source");
+    expect(pickWeightedAudioClip(clips, () => 0.24).chunkId).toBe("source");
+    expect(pickWeightedAudioClip(clips, () => 0.25).chunkId).toBe("source:2");
+    expect(pickWeightedAudioClip(clips, () => 0.99).chunkId).toBe("source:2");
+    expect(
+      resolveAudioPitch(
+        {
+          ...createDefaultAudioPayload(),
+          pitch: 1,
+          pitchRandom: false,
+        },
+        () => 0.5,
+      ),
+    ).toBe(1);
+    expect(
+      resolveAudioPitch(
+        {
+          ...createDefaultAudioPayload(),
+          pitchRandom: true,
+          pitchMin: 0.5,
+          pitchMax: 1.5,
+        },
+        () => 0.5,
+      ),
+    ).toBeCloseTo(1, 5);
+  });
+
+  it("maps clip chunk bytes onto guid and guid:chunk keys", async () => {
+    const chunks = new Map<string, Uint8Array>([
+      ["source", new Uint8Array([1, 2])],
+      ["source:2", new Uint8Array([3, 4, 5])],
+    ]);
+    const mapped = await collectAudioClipSourceBytes({
+      assetGuid: "jump",
+      payload: {
+        clips: [
+          { chunkId: "source", weight: 1 },
+          { chunkId: "source:2", weight: 1 },
+        ],
+      },
+      readChunk: async (chunkId) => chunks.get(chunkId) ?? null,
+    });
+    expect(mapped.get("jump")).toEqual(new Uint8Array([1, 2]));
+    expect(mapped.get(audioClipCacheKey("jump", "source"))).toEqual(
+      new Uint8Array([1, 2]),
+    );
+    expect(mapped.get(audioClipCacheKey("jump", "source:2"))).toEqual(
+      new Uint8Array([3, 4, 5]),
+    );
+  });
+
+  it("maps a packed multi-clip envelope onto guid and guid:chunk keys", () => {
+    const payload = normalizeAudioPayload({
+      clips: [
+        { chunkId: "source", name: "a", weight: 1 },
+        { chunkId: "source:2", name: "b", weight: 1 },
+      ],
+    });
+    const first = new Uint8Array([1, 2]);
+    const second = new Uint8Array([9, 8]);
+    const mapped = mapPackedAudioClipBytes("jump", {
+      payload,
+      source: first,
+      sources: [first, second],
+    });
+    expect(mapped.get("jump")).toEqual(first);
+    expect(mapped.get(audioClipCacheKey("jump", "source"))).toEqual(first);
+    expect(mapped.get(audioClipCacheKey("jump", "source:2"))).toEqual(second);
+  });
+
+  it("allocates source:N clip chunk ids and packs clip blobs in payload order", async () => {
+    expect(allocateAudioClipChunkId([])).toBe("source");
+    expect(allocateAudioClipChunkId(["source"])).toBe("source:2");
+    expect(
+      allocateAudioClipChunkId([
+        "source",
+        "source:2",
+        "source:3",
+        "source:4",
+        "source:5",
+        "source:6",
+        "source:7",
+        "source:8",
+      ]),
+    ).toBeNull();
+    const blobs = await collectPackedAudioClipBlobs({
+      payload: {
+        clips: [
+          { chunkId: "source", weight: 1 },
+          { chunkId: "source:2", weight: 1 },
+        ],
+      },
+      readChunk: async (chunkId) =>
+        chunkId === "source"
+          ? new Uint8Array([1, 2, 3])
+          : chunkId === "source:2"
+            ? new Uint8Array([9, 8])
+            : null,
+    });
+    expect(blobs).toEqual([new Uint8Array([1, 2, 3]), new Uint8Array([9, 8])]);
+  });
+
+  it("adds and removes extra Audio source chunks without deleting source", () => {
+    const source = {
+      id: "source",
+      kind: "audio",
+      mime: "audio/wav",
+      data: new Uint8Array([1]),
+    };
+    const withSecond = extraChunksWithAudioClip([source], {
+      id: "source:2",
+      bytes: new Uint8Array([9, 8]),
+      mime: "audio/ogg",
+    });
+    expect(withSecond.map((chunk) => chunk.id)).toEqual(["source", "source:2"]);
+    expect(withSecond[1]?.data).toEqual(new Uint8Array([9, 8]));
+    const removed = extraChunksWithoutAudioClip(withSecond, "source:2");
+    expect(removed.map((chunk) => chunk.id)).toEqual(["source"]);
+    expect(extraChunksWithoutAudioClip(withSecond, "source").map((chunk) => chunk.id)).toEqual(
+      ["source", "source:2"],
+    );
   });
 
   it("clamps Audio volume to 0..1 and keeps nullable guids", () => {
@@ -94,6 +259,11 @@ describe("audio payloads", () => {
       volume: 1,
       audioChannelGuid: "ch-1",
       soundAttenuationGuid: "att-1",
+      clips: [{ chunkId: "source", name: "", weight: 1 }],
+      pitch: 1,
+      pitchRandom: false,
+      pitchMin: 1,
+      pitchMax: 1,
     });
     expect(normalizeAudioPayload({ volume: -2 }).volume).toBe(0);
     expect(normalizeAudioPayload({ audioChannelGuid: "" }).audioChannelGuid).toBe(
@@ -108,7 +278,10 @@ describe("audio payloads", () => {
     });
     expect(createDefaultAudioChannelPayload()).toEqual({
       parentChannelGuid: null,
-      effects: [{ kind: "environmentReverb", enabled: false }],
+      effects: [
+        { kind: "environmentReverb", enabled: false },
+        { kind: "muffleThroughWalls", enabled: false },
+      ],
     });
     expect(createDefaultSoundAttenuationPayload()).toEqual({
       innerRadius: 1,
@@ -292,6 +465,11 @@ describe("audio payloads", () => {
       volume: 1,
       audioChannelGuid: "ch-new",
       soundAttenuationGuid: "att-new",
+      clips: [{ chunkId: "source", name: "", weight: 1 }],
+      pitch: 1,
+      pitchRandom: false,
+      pitchMin: 1,
+      pitchMax: 1,
     });
     expect(
       remapAudioPayloadGuids(
@@ -384,6 +562,77 @@ describe("audio payloads", () => {
         channels,
       }),
     ).toMatchObject({ gain: 1, environmentReverb: true });
+  });
+
+  it("keeps both channel effects and walks muffle through parents", () => {
+    const payload = createDefaultAudioChannelPayload();
+    expect(
+      setAudioChannelEffect(payload, "muffleThroughWalls", true).effects,
+    ).toEqual([
+      { kind: "environmentReverb", enabled: false },
+      { kind: "muffleThroughWalls", enabled: true },
+    ]);
+    expect(
+      setAudioChannelEffect(
+        { parentChannelGuid: null, effects: [{ kind: "environmentReverb", enabled: true }] },
+        "muffleThroughWalls",
+        true,
+      ).effects,
+    ).toEqual([
+      { kind: "environmentReverb", enabled: true },
+      { kind: "muffleThroughWalls", enabled: true },
+    ]);
+    expect(
+      normalizeAudioChannelPayload({
+        effects: [{ kind: "environmentReverb", enabled: true }],
+      }).effects,
+    ).toEqual([
+      { kind: "environmentReverb", enabled: true },
+      { kind: "muffleThroughWalls", enabled: false },
+    ]);
+    const channels = new Map([
+      [
+        "sfx",
+        {
+          parentChannelGuid: "master",
+          effects: [{ kind: "environmentReverb" as const, enabled: false }],
+        },
+      ],
+      [
+        "master",
+        {
+          parentChannelGuid: null,
+          effects: [
+            { kind: "environmentReverb" as const, enabled: false },
+            { kind: "muffleThroughWalls" as const, enabled: true },
+          ],
+        },
+      ],
+    ]);
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: "sfx",
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer: null,
+        channels,
+      }),
+    ).toMatchObject({ environmentReverb: false, muffleThroughWalls: true });
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: null,
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer: null,
+        channels,
+      }).muffleThroughWalls,
+    ).toBe(false);
   });
 
   it("computes mixer gain as asset × play × channel chain × global", () => {
@@ -590,14 +839,53 @@ describe("audio asset containers", () => {
   });
 
   it("packs Audio payload with source bytes and round-trips", () => {
-    const payload = {
+    const payload = normalizeAudioPayload({
       volume: 0.5,
       audioChannelGuid: "sfx",
       soundAttenuationGuid: "near",
-    };
+    });
     const source = new Uint8Array([1, 2, 3, 4, 5]);
     const packed = encodePackedAudioAsset(payload, source);
     expect(decodePackedAudioAsset(source)).toBeNull();
-    expect(decodePackedAudioAsset(packed)).toEqual({ payload, source });
+    expect(decodePackedAudioAsset(packed)).toEqual({
+      payload,
+      source,
+      sources: [source],
+    });
+  });
+
+  it("packs several clip blobs and still unwraps a legacy single-source envelope", () => {
+    const payload = normalizeAudioPayload({
+      clips: [
+        { chunkId: "source", name: "a", weight: 1 },
+        { chunkId: "source:2", name: "b", weight: 2 },
+      ],
+    });
+    const first = new Uint8Array([1, 2, 3]);
+    const second = new Uint8Array([9, 8, 7, 6]);
+    const packed = encodePackedAudioAsset(payload, [first, second]);
+    expect(decodePackedAudioAsset(packed)).toEqual({
+      payload,
+      source: first,
+      sources: [first, second],
+    });
+    const legacyJson = new TextEncoder().encode(
+      JSON.stringify({
+        volume: 1,
+        audioChannelGuid: null,
+        soundAttenuationGuid: null,
+      }),
+    );
+    const legacy = new Uint8Array(8 + legacyJson.byteLength + 4);
+    legacy.set(new Uint8Array([0x42, 0x53, 0x41, 0x55]), 0);
+    legacy[4] = legacyJson.byteLength;
+    legacy.set(legacyJson, 8);
+    legacy.set([1, 2, 3, 4], 8 + legacyJson.byteLength);
+    expect(decodePackedAudioAsset(legacy)?.source).toEqual(
+      new Uint8Array([1, 2, 3, 4]),
+    );
+    expect(decodePackedAudioAsset(legacy)?.sources).toEqual([
+      new Uint8Array([1, 2, 3, 4]),
+    ]);
   });
 });

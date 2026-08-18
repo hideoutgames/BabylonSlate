@@ -11,7 +11,7 @@ import {
   createRuntimeFromLoad,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
-import { createEngine, audioStats, type EngineHandle } from "@babylonslate/render";
+import { createEngine, audioStats, particleStats, type EngineHandle } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
@@ -95,7 +95,14 @@ export function startPlayer(options: {
     modelBytes: game.modelBytes,
     audioBytes: game.audioBytes,
     audioLibrary: content.audioLibrary,
+    particleLibrary: content.particleLibrary,
     audioReverbBytes: content.audioReverbBytes,
+    audioProjectSettings: {
+      occlusionEnabled: manifest.occlusionEnabled !== false,
+      reverbWetScale: manifest.reverbWetScale ?? 1,
+      reverbDecayScale: manifest.reverbDecayScale ?? 1,
+      reverbDampingScale: manifest.reverbDampingScale ?? 1,
+    },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,
@@ -119,6 +126,15 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onParticleDiagnostic: (diagnostic) => {
+      diagnostics.push({
+        message: diagnostic.message,
+        severity: "warning",
+        code: diagnostic.code,
+        assetGuid: diagnostic.assetGuid,
+      });
+      options.onDiagnostic?.(diagnostics);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -126,6 +142,9 @@ export function startPlayer(options: {
     (
       window as { __babylonslateAudioStats?: typeof audioStats }
     ).__babylonslateAudioStats = audioStats;
+    (
+      window as { __babylonslateParticleStats?: typeof particleStats }
+    ).__babylonslateParticleStats = particleStats;
   }
   const framebuffer = manifest.render.customResolution
     ? {
@@ -200,9 +219,7 @@ export function startPlayer(options: {
       undefined,
     scenes,
     ...loopGuardLoadFields(manifest),
-    audioAssetGuids: [...game.audioBytes.keys(), ...content.audioLibrary.audio.keys()].filter(
-      (guid, index, all) => all.indexOf(guid) === index,
-    ),
+    audioAssetGuids: [...content.audioLibrary.audio.keys()],
   };
 
   const spawn = playerSpawnListForScripts(game.scripts);

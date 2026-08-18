@@ -251,8 +251,74 @@ describe("loadExportDocuments", () => {
         volume: 0.5,
         audioChannelGuid: "sfx",
         soundAttenuationGuid: null,
+        clips: [{ chunkId: "source", name: "", weight: 1 }],
+        pitch: 1,
+        pitchRandom: false,
+        pitchMin: 1,
+        pitchMax: 1,
       },
       source: new Uint8Array([1, 2, 3, 4]),
+      sources: [new Uint8Array([1, 2, 3, 4])],
     });
+  });
+
+  it("packs every Audio clip blob, not only the default source chunk", async () => {
+    const { decodePackedAudioAsset } = await import("@babylonslate/assets");
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Jump.babasset",
+          header: {
+            guid: "jump",
+            type: "Audio",
+            name: "Jump",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {
+              clips: [
+                { chunkId: "source", name: "a", weight: 1 },
+                { chunkId: "source:2", name: "b", weight: 1 },
+              ],
+            },
+            chunks: [
+              {
+                id: "source",
+                kind: "audio",
+                mime: "audio/wav",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 3 } },
+              },
+              {
+                id: "source:2",
+                kind: "audio",
+                mime: "audio/wav",
+                sha256: "bb",
+                locator: { inline: { offset: 0, length: 2 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => ({
+        clips: [
+          { chunkId: "source", name: "a", weight: 1 },
+          { chunkId: "source:2", name: "b", weight: 1 },
+        ],
+      }),
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "source"
+          ? new Uint8Array([1, 2, 3])
+          : chunkId === "source:2"
+            ? new Uint8Array([9, 8])
+            : null,
+    });
+    const packed = loaded.bytesByGuid("jump");
+    expect(decodePackedAudioAsset(packed!)?.sources).toEqual([
+      new Uint8Array([1, 2, 3]),
+      new Uint8Array([9, 8]),
+    ]);
   });
 });

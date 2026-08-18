@@ -28,6 +28,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/input.md](architecture/input.md) | Action/axis mappings |
 | [architecture/physics.md](architecture/physics.md) | Havok 3D and Rapier 2D |
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
+| [architecture/console-commands.md](architecture/console-commands.md) | Builtin catalog, apply-vs-log audit, engine pass slices |
 | [architecture/ui-runtime.md](architecture/ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
@@ -36,6 +37,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/behaviour-tree.md](architecture/behaviour-tree.md) | Behaviour tree IR, blackboard, explicit-stack evaluator |
 | [architecture/navigation.md](architecture/navigation.md) | Navmesh bake/query port, 2D remap, Scene chunk |
 | [architecture/audio.md](architecture/audio.md) | Audio mixer/channel/attenuation, AudioService, spatial, reverb bake |
+| [architecture/particles.md](architecture/particles.md) | Particle Emitter / System, GPUParticleSystem wrap, particle-domain materials |
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |

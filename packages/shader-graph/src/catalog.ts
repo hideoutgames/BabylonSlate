@@ -1,7 +1,7 @@
 import type { MaterialValueType } from "./types";
 
-/** Surface materials shade a mesh; post-process materials shade a camera pass. */
-export type MaterialDomain = "surface" | "postProcess";
+/** Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads. */
+export type MaterialDomain = "surface" | "postProcess" | "particle";
 
 export type MaterialStage = "vertex" | "fragment";
 
@@ -286,6 +286,31 @@ const INPUT_NODES: MaterialNodeDefinition[] = [
     cost: 0,
     inputs: [],
     outputs: [{ id: "size", name: "Size", type: VEC2 }],
+  },
+  {
+    type: "input.particleColor",
+    title: "Particle Color",
+    category: "Input",
+    domains: ["particle"],
+    stages: ["fragment"],
+    cost: 0,
+    inputs: [],
+    outputs: [{ id: "color", name: "Color", type: VEC4, colorHint: true }],
+  },
+  {
+    type: "input.particleTexture",
+    title: "Particle Texture",
+    category: "Input",
+    domains: ["particle"],
+    stages: ["fragment"],
+    cost: 2,
+    samples: 1,
+    inputs: [{ id: "uv", name: "UV", type: VEC2 }],
+    outputs: [
+      { id: "rgba", name: "RGBA", type: VEC4, colorHint: true },
+      { id: "rgb", name: "RGB", type: VEC3, colorHint: true },
+      { id: "a", name: "A", type: FLOAT },
+    ],
   },
 ];
 
@@ -670,6 +695,24 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
     ],
     outputs: [],
   },
+  {
+    type: "output.particle",
+    title: "Particle Output",
+    category: "Output",
+    domains: ["particle"],
+    terminal: "particle",
+    cost: 0,
+    inputs: [
+      {
+        id: "color",
+        name: "Color",
+        type: VEC4,
+        colorHint: true,
+        defaultValue: [1, 1, 1, 1],
+      },
+    ],
+    outputs: [],
+  },
 ];
 
 export const MATERIAL_CATALOG: readonly MaterialNodeDefinition[] = [
@@ -727,5 +770,7 @@ export function materialPaletteEntries(
 }
 
 export function terminalNodeTypeFor(domain: MaterialDomain): string {
-  return domain === "postProcess" ? "output.postProcess" : "output.surface";
+  if (domain === "postProcess") return "output.postProcess";
+  if (domain === "particle") return "output.particle";
+  return "output.surface";
 }

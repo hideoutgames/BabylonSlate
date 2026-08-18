@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -29,6 +29,7 @@ import {
   createEngine,
   type AudioLibrary,
   type EngineHandle,
+  type ParticleLibrary,
   type PlayActorPosition,
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
@@ -408,8 +409,18 @@ export function startPlaySession(options: {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: AudioLibrary;
+  particleLibrary?: ParticleLibrary;
   /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
   audioReverbBytes?: Uint8Array | null;
+  audioProjectSettings?: Partial<
+    Pick<
+      AudioProjectSettings,
+      | "occlusionEnabled"
+      | "reverbWetScale"
+      | "reverbDecayScale"
+      | "reverbDampingScale"
+    >
+  >;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -454,7 +465,9 @@ export function startPlaySession(options: {
     modelBytes: options.modelBytes,
     audioBytes: options.audioBytes,
     audioLibrary: options.audioLibrary,
+    particleLibrary: options.particleLibrary,
     audioReverbBytes: options.audioReverbBytes,
+    audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
     postProcessStack: options.scene?.settings.postProcessStack,
@@ -468,6 +481,9 @@ export function startPlaySession(options: {
       options.onLog?.(diagnostic.message, "warning");
     },
     onAudioDiagnostic: (diagnostic) => {
+      options.onLog?.(diagnostic.message, "warning");
+    },
+    onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },
   });
@@ -526,7 +542,9 @@ export function startPlaySession(options: {
       command.type === "playSound" ||
       command.type === "stopSound" ||
       command.type === "setChannelVolume" ||
-      command.type === "setGlobalVolume"
+      command.type === "setGlobalVolume" ||
+      command.type === "assignParticle" ||
+      command.type === "setParticlePlaying"
     ) {
       handle.applyCommand(command);
     }
@@ -543,6 +561,7 @@ export function startPlaySession(options: {
         handle.loadScene(scene);
         handle.applySceneEnvironment(scene);
         handle.resetAudioSession();
+        handle.resetParticleSession();
       }
     }
     if (command.type === "log") {
@@ -624,12 +643,7 @@ export function startPlaySession(options: {
     scenes: options.scenes,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
-    audioAssetGuids: [
-      ...new Set([
-        ...(options.audioLibrary?.audio.keys() ?? []),
-        ...(options.audioBytes?.keys() ?? []),
-      ]),
-    ],
+    audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
   });
 
   try {

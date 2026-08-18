@@ -46,7 +46,7 @@ Protocol: extra command-channel `animState` (not a snapshot stride bump). See [b
 Drives:
 
 - glTF `Animation` clips via `@babylonjs/loaders` `LoadAssetContainerAsync` (Play `modelBytes` → paused per-slot `AnimationGroup`s).
-- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, pixel size, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of frame `durationMs`.
+- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, pixel size, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of **effective** frame durations (`frameDurationMs`, or per-frame `durationMs` when `durationMsOverride` is true).
 
 ## Render
 
@@ -62,7 +62,7 @@ Play `collectPlayPreviewScripts` and export `collectAndExportGame` merge those b
 
 ## Authoring
 
-DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Chrome **State Machine | Animation Object** `AnimEditorModeBar` (`ToggleGroup`) sits **outside** DockView — same pattern as UserInterface **Designer | Logic**. `documentKind` stays `"anim-graph"`; modes use `animEditorMode` and DockView surfaces `stateMachine` / `animationObject`. `layout.json` stores `{ animEditorMode, stateMachine, animationObject }`; a raw old snapshot migrates to State Machine. Mode switches keep only the active DockView mounted. Idle-unmount of inactive document tabs is **P17** (`p17-inactive-documents`).
+DockView document (`DockviewShell`, kind `anim-graph`), not `AssetDocumentWorkspace`. Chrome **State Machine | Animation Object** `AnimEditorModeBar` (`ToggleGroup`) sits **outside** DockView — same pattern as UserInterface **Designer | Logic**. `documentKind` stays `"anim-graph"`; modes use `animEditorMode` and DockView surfaces `stateMachine` / `animationObject`. `layout.json` stores `{ animEditorMode, stateMachine, animationObject }`; a raw old snapshot migrates to State Machine. Mode switches keep only the active DockView mounted. Idle-unmount of inactive document tabs is **P18** (`p18-inactive-documents`).
 
 | Mode | Catalog (Windows / Focus) | Primary |
 | --- | --- | --- |
