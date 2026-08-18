@@ -182,13 +182,63 @@ export function attachFullscreenGui(
     onWidgetEvent: options.onWidgetEvent,
     markDirty: () => adt.markAsDirty(),
   });
+  const canvas = scene.getEngine()?.getRenderingCanvas?.() ?? null;
+  const detachMoves = canvas
+    ? attachFullscreenGuiPointerMoves(canvas, adt)
+    : undefined;
   return {
     adt,
     host,
     dispose: () => {
+      detachMoves?.();
       host.clear();
       adt.dispose();
     },
+  };
+}
+
+/**
+ * Layer HUD still needs POINTERMOVE for GUI enter/exit while the Play scene
+ * keeps `skipPointerMovePicking` (mesh hover off). Do not capture or stop
+ * pointerdown — scene GUI must keep Button clicks.
+ */
+export function attachFullscreenGuiPointerMoves(
+  canvas: HTMLCanvasElement,
+  adt: AdvancedDynamicTexture,
+): () => void {
+  const coords = (event: { clientX: number; clientY: number }) => {
+    const rect = canvas.getBoundingClientRect();
+    const width = Math.max(1, rect.width);
+    const height = Math.max(1, rect.height);
+    return {
+      x: ((event.clientX - rect.left) / width) * canvas.width,
+      y: ((event.clientY - rect.top) / height) * canvas.height,
+    };
+  };
+
+  const pickMove = (event: Event, offCanvas: boolean) => {
+    try {
+      const pointer = event as PointerEvent;
+      const { x, y } = offCanvas ? { x: -1, y: -1 } : coords(pointer);
+      const info = new PointerInfoPre(
+        PointerEventTypes.POINTERMOVE,
+        pointer as unknown as IMouseEvent,
+        x,
+        y,
+      );
+      adt.pick(x, y, info);
+    } catch {
+      /* Hover is best-effort; clicks stay on the Layer GUI path. */
+    }
+  };
+
+  const onMove = (event: Event) => pickMove(event, false);
+  const onLeave = (event: Event) => pickMove(event, true);
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerleave", onLeave);
+  return () => {
+    canvas.removeEventListener("pointermove", onMove);
+    canvas.removeEventListener("pointerleave", onLeave);
   };
 }
 

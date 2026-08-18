@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
 import {
   attachAdtCanvasPointers,
+  attachFullscreenGuiPointerMoves,
   isHardUiPresentFailure,
   presentAdtToCanvas,
   blitIfUnfrozen,
@@ -481,5 +482,56 @@ describe("attachAdtCanvasPointers", () => {
       } as unknown as Event,
     );
     expect(pick).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("attachFullscreenGuiPointerMoves", () => {
+  function fakeCanvas() {
+    const listeners: Record<string, EventListener> = {};
+    const canvas = {
+      width: 100,
+      height: 100,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+      addEventListener: (type: string, handler: EventListener) => {
+        listeners[type] = handler;
+      },
+      removeEventListener: vi.fn(),
+    } as unknown as HTMLCanvasElement;
+    return { canvas, listeners };
+  }
+
+  it("forwards pointermove into the Layer ADT without stopping click", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    const detach = attachFullscreenGuiPointerMoves(canvas, adt);
+    const stopPropagation = vi.fn();
+    listeners.pointermove?.({
+      type: "pointermove",
+      clientX: 40,
+      clientY: 20,
+      stopPropagation,
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(stopPropagation).not.toHaveBeenCalled();
+    expect(listeners.pointerdown).toBeUndefined();
+    detach();
+    expect(canvas.removeEventListener).toHaveBeenCalled();
+  });
+
+  it("picks off-canvas on pointerleave so hover exit still fires", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick } as unknown as AdvancedDynamicTexture;
+    attachFullscreenGuiPointerMoves(canvas, adt);
+    listeners.pointerleave?.({
+      type: "pointerleave",
+      clientX: 40,
+      clientY: 20,
+      stopPropagation: vi.fn(),
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(pick).toHaveBeenCalledTimes(1);
   });
 });

@@ -12,6 +12,7 @@ import {
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
+  type PackedUiDesignerPreset,
 } from "@babylonslate/exporter";
 import {
   defaultExportPreset,
@@ -83,6 +84,7 @@ export type CollectExportGameParams = {
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
+  uiDesignerPresets?: readonly PackedUiDesignerPreset[];
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
 };
 
@@ -279,6 +281,7 @@ export async function collectAndExportGame(
     extraFiles: params.extraFiles,
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
+    uiDesignerPresets: params.uiDesignerPresets,
   });
 }
 

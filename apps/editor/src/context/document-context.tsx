@@ -1445,6 +1445,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           projectService.readAssetChunk(path, chunkId),
       });
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
+      const engineSettings = await settingsStore.load();
       return collectAndExportGame({
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
@@ -1482,9 +1483,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
+        uiDesignerPresets: engineSettings.uiDesignerPresets,
       });
     },
-    [projectDocument, projectService],
+    [projectDocument, projectService, settingsStore],
   );
 
   const zipExportedGame = useCallback((artifact: ExportArtifact) => {

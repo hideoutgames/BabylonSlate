@@ -48,6 +48,19 @@ export type GameAssetIndexEntry = {
   name?: string;
 };
 
+export type PackedUiDesignerPreset = {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+  safeArea: {
+    left: number;
+    right: number;
+    top: number;
+    bottom: number;
+  };
+};
+
 export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
@@ -66,6 +79,8 @@ export type GameManifest = {
   infiniteLoopDetection?: boolean;
   /** Present only when `bundleDebugger` is true. */
   loopCount?: number;
+  /** Engine Settings `uiDesignerPresets` packed for HUD Safe Area matching. */
+  uiDesignerPresets?: PackedUiDesignerPreset[];
 };
 
 export type ExportGameOptions = {
@@ -87,6 +102,7 @@ export type ExportGameOptions = {
   extraFiles?: ReadonlyMap<string, Uint8Array>;
   fileCountWarn?: number;
   fileCountFail?: number;
+  uiDesignerPresets?: readonly PackedUiDesignerPreset[];
 };
 
 export type ExportArtifact = {

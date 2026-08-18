@@ -306,7 +306,9 @@ describe("PlayHudOverlay images", () => {
     expect(attachFullscreenGuiMock).toHaveBeenCalled();
     const options = attachFullscreenGuiMock.mock.calls[0]?.[1] as {
       resolveImageUrl?: (guid: string) => string | null;
+      interactive?: boolean;
     };
+    expect(options.interactive).toBe(true);
     expect(options.resolveImageUrl?.("tex-1")).toBe("blob:tex-1");
     expect(options.resolveImageUrl?.("missing")).toBeNull();
   });

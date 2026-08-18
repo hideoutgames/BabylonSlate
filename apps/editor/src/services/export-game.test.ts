@@ -106,6 +106,39 @@ describe("collectAndExportGame", () => {
     );
   });
 
+  it("packs Engine Settings designer presets for the player HUD", async () => {
+    const scene = createDefaultScene();
+    const phone = {
+      id: "custom-phone",
+      label: "Phone",
+      width: 390,
+      height: 844,
+      safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
+      plugins: [],
+      projectPluginOverrides: {},
+      preset: defaultExportPreset(),
+      parentOf: () => null,
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: () => null,
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : null,
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+      uiDesignerPresets: [phone],
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.manifest.uiDesignerPresets).toEqual([phone]);
+  });
+
   it("packs a project Game Instance when the startup scene omits one", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
