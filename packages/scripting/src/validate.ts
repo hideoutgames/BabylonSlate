@@ -8,6 +8,10 @@ import {
 } from "./type-context";
 import { isAssignable } from "./types";
 import {
+  isClassConstraintTypeId,
+  isStructOrEnumTypeId,
+} from "./member-pin-type";
+import {
   pinAcceptsLiteralDefault,
   pinRejectsStoredDefault,
   readPinDefault,
@@ -419,6 +423,7 @@ function validateMemberBindings(
     for (const member of members) {
       if (
         member.typeClassId &&
+        isClassConstraintTypeId(member.typeId ?? "object") &&
         !ctx.knownClassIds.has(member.typeClassId)
       ) {
         out.push(
@@ -432,8 +437,13 @@ function validateMemberBindings(
       }
     }
     for (const node of graph.nodes) {
+      const typeId = stringProp(node.properties, "typeId");
       const typeClassId = stringProp(node.properties, "typeClassId");
-      if (typeClassId && !ctx.knownClassIds.has(typeClassId)) {
+      if (
+        typeClassId &&
+        isClassConstraintTypeId(typeId ?? "object") &&
+        !ctx.knownClassIds.has(typeClassId)
+      ) {
         out.push(
           diagnostic({
             code: "member.unknown_class",
@@ -651,6 +661,103 @@ function validateInterfaceAndOverrides(
   return out;
 }
 
+function reportTypeGuid(
+  out: Diagnostic[],
+  ctx: TypeContext,
+  graphId: string,
+  kind: "structRef" | "enumRef",
+  guid: string | undefined,
+  nodeId?: string,
+  pinId?: string,
+): void {
+  const unboundCode =
+    kind === "structRef" ? "type.unbound_struct" : "type.unbound_enum";
+  const label = kind === "structRef" ? "Structure" : "Enum";
+  if (!guid) {
+    out.push(
+      diagnostic({
+        code: unboundCode,
+        message: `${label} type is not selected`,
+        assetGuid: ctx.assetGuid,
+        graphId,
+        nodeId,
+        pinId,
+      }),
+    );
+    return;
+  }
+  if (ctx.knownGuids && !ctx.knownGuids.has(guid)) {
+    out.push(
+      diagnostic({
+        code: "ref.unknown_guid",
+        message: `Unknown ${label.toLowerCase()} "${guid}"`,
+        assetGuid: ctx.assetGuid,
+        graphId,
+        nodeId,
+        pinId,
+      }),
+    );
+  }
+}
+
+function validateTypeRefs(
+  graph: LogicGraph,
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  for (const member of ctx.members ?? []) {
+    if (!isStructOrEnumTypeId(member.typeId)) continue;
+    reportTypeGuid(
+      out,
+      ctx,
+      graph.id,
+      member.typeId === "struct" ? "structRef" : "enumRef",
+      member.typeClassId?.trim() || undefined,
+    );
+  }
+  for (const node of graph.nodes) {
+    const typeId = stringProp(node.properties, "typeId");
+    if (isStructOrEnumTypeId(typeId)) {
+      reportTypeGuid(
+        out,
+        ctx,
+        graph.id,
+        typeId === "struct" ? "structRef" : "enumRef",
+        stringProp(node.properties, "typeClassId"),
+        node.id,
+      );
+    }
+    const structGuid = stringProp(node.properties, "structGuid");
+    if (node.typeId === "struct.make" || node.typeId === "struct.break") {
+      reportTypeGuid(out, ctx, graph.id, "structRef", structGuid, node.id);
+    }
+    const enumGuid = stringProp(node.properties, "enumGuid");
+    if (
+      node.typeId === "enum.make" ||
+      node.typeId === "enum.equals" ||
+      node.typeId === "enum.notEquals" ||
+      node.typeId === "enum.toString" ||
+      node.typeId === "enum.switch"
+    ) {
+      reportTypeGuid(out, ctx, graph.id, "enumRef", enumGuid, node.id);
+    }
+    for (const pin of node.pins) {
+      if (pin.type.kind === "structRef" || pin.type.kind === "enumRef") {
+        reportTypeGuid(
+          out,
+          ctx,
+          graph.id,
+          pin.type.kind,
+          pin.type.guid.trim() || undefined,
+          node.id,
+          pin.id,
+        );
+      }
+    }
+  }
+  return out;
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -662,6 +769,7 @@ export function validateGraphs(
     diagnostics.push(...validatePinTyping(graph, ctx));
     diagnostics.push(...validateExecuteJavaScript(graph, ctx));
     diagnostics.push(...validateMemberBindings(graph, ctx));
+    diagnostics.push(...validateTypeRefs(graph, ctx));
   }
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   for (const rule of listValidationRules()) {

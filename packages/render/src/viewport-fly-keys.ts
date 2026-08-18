@@ -90,7 +90,7 @@ function flyAxis(keys: ReadonlySet<string>): { forward: number; right: number } 
  */
 export function attachViewportFlyKeys(
   target: EventTarget,
-  controller: EditorCameraController,
+  controller: Pick<EditorCameraController, "fly">,
   canvas: Pick<HTMLCanvasElement, "clientWidth">,
   options: ViewportFlyKeyOptions = {},
 ): ViewportFlyKeyHandle {

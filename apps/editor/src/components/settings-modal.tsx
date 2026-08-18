@@ -880,7 +880,8 @@ export function SettingsModal({
               />
             </Field>
             <FieldDescription>
-              Lock Play and packaged builds to a fixed framebuffer. Off keeps
+              Lock Play and packaged builds to a fixed framebuffer. The host
+              letterboxes that bitmap so the image is not stretched. Off keeps
               Follow System fill. Editor viewports still fill the panel.
             </FieldDescription>
             <Field>
@@ -941,8 +942,9 @@ export function SettingsModal({
               </FieldLabel>
             </Field>
             <FieldDescription>
-              Off stretches the framebuffer to fill Play. On letterboxes with
-              unused overlay space black.
+              A locked framebuffer always letterboxes. Unused overlay space is
+              black. This flag is stored on the project and does not stretch to
+              fill.
             </FieldDescription>
             <PlayPreviewSettingsFields
               settings={projectDocument.settings.playPreview}

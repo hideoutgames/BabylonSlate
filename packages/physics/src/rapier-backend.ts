@@ -9,6 +9,7 @@ import type {
   RigidBodyDesc,
   Vec3,
 } from "./types";
+import { listDebugCollidersFromRecords } from "./debug-colliders";
 
 type RapierApi = {
   init(): Promise<void>;
@@ -290,6 +291,12 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.world.removeCollider(record.collider, true);
     if (record.extra) this.world.removeCollider(record.extra, true);
     this.colliders.delete(colliderId);
+  }
+
+  listDebugColliders() {
+    return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
+      this.getBodyTransform(bodyId),
+    );
   }
 
   step(dt: number): void {

@@ -178,6 +178,65 @@ describe("Play inspect contract", () => {
   });
 });
 
+describe("Play session commands", () => {
+  it("sessionPaused reports overlay pause chrome", () => {
+    const command = {
+      type: "sessionPaused",
+      paused: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("sessionPaused");
+    expect(command.paused).toBe(true);
+  });
+
+  it("setRenderQuality, setResolutionScale, and setFrameCap are CommandMessage variants", () => {
+    const quality = {
+      type: "setRenderQuality",
+      level: "low",
+    } satisfies CommandMessage;
+    const scale = {
+      type: "setResolutionScale",
+      scale: 1.5,
+    } satisfies CommandMessage;
+    const cap = { type: "setFrameCap", fps: 30 } satisfies CommandMessage;
+    expect(commandType(quality)).toBe("setRenderQuality");
+    expect(commandType(scale)).toBe("setResolutionScale");
+    expect(commandType(cap)).toBe("setFrameCap");
+  });
+
+  it("setFreeCam is a CommandMessage variant", () => {
+    const command = {
+      type: "setFreeCam",
+      enabled: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setFreeCam");
+    expect(command.enabled).toBe(true);
+  });
+
+  it("visualization console commands are CommandMessage variants", () => {
+    const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
+    const stat = {
+      type: "setStat",
+      name: "unit",
+      enabled: true,
+    } satisfies CommandMessage;
+    const colliders = {
+      type: "debugColliders",
+      colliders: [
+        {
+          id: "c1",
+          shape: "box",
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          halfExtents: { x: 1, y: 1, z: 1 },
+        },
+      ],
+    } satisfies CommandMessage;
+    expect(commandType(fps)).toBe("setShowFps");
+    expect(commandType(stat)).toBe("setStat");
+    expect(commandType(colliders)).toBe("debugColliders");
+  });
+});
+
 describe("Particle commands", () => {
   it("assignParticle and setParticlePlaying are CommandMessage variants", () => {
     const assign = {

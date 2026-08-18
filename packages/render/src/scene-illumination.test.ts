@@ -1,4 +1,5 @@
 import {
+  Camera,
   DirectionalLight,
   PointLight,
   Quaternion,
@@ -8,7 +9,7 @@ import {
   UniversalCamera,
   Vector3,
 } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
@@ -20,6 +21,10 @@ import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_FILL_LIGHT_INTENSITY,
   AUTHORED_LIGHT_PREFIX,
+  applyAuthoredCameraLens,
+  applyAuthoredCameraProperties,
+  cameraRenderAspect,
+  refreshAuthoredCameraLenses,
   shadowMapSizeFromQuality,
   syncAuthoredIllumination,
 } from "./scene-illumination";
@@ -214,10 +219,83 @@ describe("syncAuthoredIllumination", () => {
     ) as UniversalCamera;
     expect(camera).toBeInstanceOf(UniversalCamera);
     expect(camera.getClassName()).toBe("UniversalCamera");
-    expect(camera.mode).toBe(1);
+    expect(camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
     expect(camera.minZ).toBeCloseTo(0.2);
     expect(camera.maxZ).toBeCloseTo(500);
     expect(camera.inputs.attachedToElement).toBeFalsy();
+  });
+
+  it("uses the live render aspect for orthographic extents, not 16:9", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(600);
+    const camera = new UniversalCamera("lens", Vector3.Zero(), scene);
+    applyAuthoredCameraProperties(camera, {
+      projectionMode: "orthographic",
+      orthographicSize: 5,
+    });
+    expect(camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(camera.orthoTop).toBeCloseTo(5);
+    expect(camera.orthoLeft).toBeCloseTo(-5 * (4 / 3));
+    expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
+  });
+
+  it("switches a live camera from perspective to a non-degenerate ortho box", () => {
+    const { scene } = createHandle();
+    const camera = new UniversalCamera("switch", Vector3.Zero(), scene);
+    applyAuthoredCameraLens(
+      camera,
+      { projectionMode: "perspective", fieldOfView: 60 },
+      16 / 9,
+    );
+    applyAuthoredCameraLens(
+      camera,
+      { projectionMode: "orthographic", orthographicSize: 5 },
+      4 / 3,
+    );
+    expect(camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(camera.orthoTop).toBeGreaterThan(0);
+    expect(camera.orthoLeft).toBeCloseTo(-5 * (4 / 3));
+    expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
+    const matrix = camera.getProjectionMatrix(true).m;
+    expect(matrix.every((value) => Number.isFinite(value))).toBe(true);
+  });
+
+  it("refreshes authored ortho extents when the render aspect changes", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(1920);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(1080);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        cameraActor("rig", {
+          projectionMode: "orthographic",
+          orthographicSize: 5,
+        }),
+      ]),
+      { stealActiveCamera: false },
+    );
+    const camera = scene.getCameraByName(
+      `${AUTHORED_CAMERA_PREFIX}rig`,
+    ) as UniversalCamera;
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(600);
+    refreshAuthoredCameraLenses(scene);
+    expect(camera.orthoLeft).toBeCloseTo(-5 * (4 / 3));
+    expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
+  });
+
+  it("falls back to 16:9 when the canvas has no size so ortho extents stay finite", () => {
+    expect(cameraRenderAspect(0, 0)).toBeCloseTo(16 / 9);
+    const { scene } = createHandle();
+    const camera = new UniversalCamera("empty", Vector3.Zero(), scene);
+    applyAuthoredCameraLens(
+      camera,
+      { projectionMode: "orthographic", orthographicSize: 5 },
+      cameraRenderAspect(0, 0),
+    );
+    expect(Number.isFinite(camera.orthoLeft)).toBe(true);
+    expect(camera.orthoLeft).toBeCloseTo(-5 * (16 / 9));
   });
 
   it("aims the UniversalCamera along actor rotation and zeroes Euler", () => {

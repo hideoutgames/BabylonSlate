@@ -288,6 +288,9 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }
+  if (nodeId === "struct.make" || nodeId === "struct.break") {
+    return false;
+  }
   if (nodeId === "input.setInputMode") {
     if (options?.animationGraphHost) return false;
     return !isEditorGraphHost({

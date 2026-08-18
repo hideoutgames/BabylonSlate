@@ -6,13 +6,32 @@ import {
   type BlackboardKey,
 } from "@babylonslate/behaviour-tree";
 import {
+  AssetPicker,
   PanelFrame,
   PinTypePicker,
   PropertyGrid,
+  assetRowIdentity,
+  selectedPickerIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import type { PinType } from "@babylonslate/scripting";
+import {
+  defaultValueForMember,
+  keepsTypeClassId,
+  pinTypeForMember,
+  typeClassIdFromPinType,
+  typeIdFromPinType,
+} from "@babylonslate/scripting";
+import { useDocuments } from "../context/document-context";
+import {
+  collectEnumMemberNames,
+  variableDefaultPropertyRows,
+} from "../lib/graph-inspector";
+import {
+  collectGraphTypeAssets,
+  typeAssetPickerEntries,
+  typeSchemasFromGraphAssets,
+} from "../lib/logic-graph-document";
 
 function asBoard(payload: Record<string, unknown>): BlackboardDocument {
   return parseBlackboardDocument(payload) ?? createDefaultBlackboard();
@@ -26,20 +45,6 @@ function uniqueKeyName(keys: readonly BlackboardKey[]): string {
   return `key${index}`;
 }
 
-function defaultForKind(kind: PinType["kind"]): unknown {
-  switch (kind) {
-    case "bool":
-      return false;
-    case "int":
-    case "float":
-      return 0;
-    case "string":
-      return "";
-    default:
-      return undefined;
-  }
-}
-
 export function BlackboardEditor({
   payload,
   onChange,
@@ -47,13 +52,36 @@ export function BlackboardEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const { openDocuments, assetRegistry } = useDocuments();
   const doc = useMemo(() => asBoard(payload), [payload]);
   const [selected, setSelected] = useState(0);
+  const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
+  const typeCatalog = collectGraphTypeAssets({
+    assets: assetRegistry?.list() ?? [],
+    openDocuments,
+  });
+  const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
+  const typeAssets = typeAssetPickerEntries(typeCatalog);
+  const enumMembers = collectEnumMemberNames(
+    openDocuments,
+    assetRegistry?.list() ?? [],
+  );
   const commit = (next: BlackboardDocument) => {
     onChange(next as unknown as Record<string, unknown>);
   };
   const key = doc.keys[selected];
-  const kind = key?.type.kind ?? "bool";
+  const pickerTypeId = key ? typeIdFromPinType(key.type) : "bool";
+  const typeClassId = key ? typeClassIdFromPinType(key.type) : undefined;
+  const isStruct = pickerTypeId === "struct";
+  const isEnum = pickerTypeId === "enum";
+  const typeAsset = typeAssets.find((entry) => entry.guid === typeClassId);
+  const typeAssetIdentity = assetRowIdentity(
+    typeAsset
+      ? { name: typeAsset.name, type: typeAsset.type }
+      : typeClassId
+        ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
+        : undefined,
+  );
   const rows: PropertyRow[] = key
     ? [
         {
@@ -69,47 +97,22 @@ export function BlackboardEditor({
               ),
             }),
         },
-        kind === "bool"
-          ? {
-              id: "default",
-              kind: "boolean",
-              label: "Default",
-              value: Boolean(key.defaultValue),
-              onChange: (value) =>
-                commit({
-                  ...doc,
-                  keys: doc.keys.map((entry, index) =>
-                    index === selected ? { ...entry, defaultValue: value } : entry,
-                  ),
-                }),
-            }
-          : kind === "int" || kind === "float"
-            ? {
-                id: "default",
-                kind: "number",
-                label: "Default",
-                value: Number(key.defaultValue ?? 0),
-                onChange: (value) =>
-                  commit({
-                    ...doc,
-                    keys: doc.keys.map((entry, index) =>
-                      index === selected ? { ...entry, defaultValue: value } : entry,
-                    ),
-                  }),
-              }
-            : {
-                id: "default",
-                kind: "text",
-                label: "Default",
-                value: key.defaultValue === undefined ? "" : String(key.defaultValue),
-                onChange: (value) =>
-                  commit({
-                    ...doc,
-                    keys: doc.keys.map((entry, index) =>
-                      index === selected ? { ...entry, defaultValue: value } : entry,
-                    ),
-                  }),
-              },
+        ...variableDefaultPropertyRows(
+          pickerTypeId,
+          key.defaultValue,
+          (value) =>
+            commit({
+              ...doc,
+              keys: doc.keys.map((entry, index) =>
+                index === selected ? { ...entry, defaultValue: value } : entry,
+              ),
+            }),
+          {
+            typeClassId,
+            schemas: typeSchemas,
+            enumMembers,
+          },
+        ),
       ]
     : [];
 
@@ -138,7 +141,7 @@ export function BlackboardEditor({
             onClick={() => {
               const next: BlackboardKey = {
                 name: uniqueKeyName(doc.keys),
-                type: { kind: "bool" },
+                type: pinTypeForMember("bool"),
                 defaultValue: false,
               };
               commit({ ...doc, keys: [...doc.keys, next] });
@@ -156,7 +159,7 @@ export function BlackboardEditor({
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">Type</div>
               <PinTypePicker
-                value={key.type.kind}
+                value={pickerTypeId}
                 onChange={(typeId) =>
                   commit({
                     ...doc,
@@ -164,8 +167,15 @@ export function BlackboardEditor({
                       index === selected
                         ? {
                             ...entry,
-                            type: { kind: typeId } as PinType,
-                            defaultValue: defaultForKind(typeId as PinType["kind"]),
+                            type: pinTypeForMember(
+                              typeId,
+                              keepsTypeClassId(typeId) ? typeClassId : undefined,
+                            ),
+                            defaultValue: defaultValueForMember(
+                              typeId,
+                              keepsTypeClassId(typeId) ? typeClassId : undefined,
+                              typeSchemas,
+                            ),
                           }
                         : entry,
                     ),
@@ -174,6 +184,25 @@ export function BlackboardEditor({
                 data-testid="blackboard-key-type"
               />
             </div>
+            {isStruct || isEnum ? (
+              <div className="flex flex-col gap-1">
+                <div className="text-sm font-medium">
+                  {isEnum ? "Enum Type" : "Structure Type"}
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-auto w-full justify-start"
+                  data-testid="blackboard-key-type-asset"
+                  onClick={() => setTypeAssetPickerOpen(true)}
+                >
+                  {selectedPickerIdentity(
+                    typeAssetIdentity,
+                    typeClassId || "Pick type",
+                  )}
+                </Button>
+              </div>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -187,6 +216,34 @@ export function BlackboardEditor({
             >
               Delete Key
             </Button>
+            <AssetPicker
+              open={typeAssetPickerOpen}
+              onOpenChange={setTypeAssetPickerOpen}
+              assets={typeAssets}
+              allowedTypes={isEnum ? ["Enum"] : ["Structure"]}
+              allowNone
+              title={isEnum ? "Pick Enum Type" : "Pick Structure Type"}
+              onPick={(guid) => {
+                commit({
+                  ...doc,
+                  keys: doc.keys.map((entry, index) =>
+                    index === selected
+                      ? {
+                          ...entry,
+                          type: pinTypeForMember(pickerTypeId, guid ?? undefined),
+                          defaultValue: defaultValueForMember(
+                            pickerTypeId,
+                            guid ?? undefined,
+                            typeSchemas,
+                          ),
+                        }
+                      : entry,
+                  ),
+                });
+                setTypeAssetPickerOpen(false);
+              }}
+              data-testid="blackboard-key-type-asset-picker"
+            />
           </div>
         ) : (
           <p className="p-3 text-sm text-muted-foreground">Select a key</p>

@@ -442,6 +442,7 @@ describe("componentPropertyRows", () => {
       value: 60,
       min: 1,
       max: 179,
+      defaultValue: 60,
     });
     expect(
       camera.rows.find((row) => row.id.endsWith("-orthographicSize")),
@@ -450,6 +451,7 @@ describe("componentPropertyRows", () => {
       value: 5,
       min: 0.1,
       max: 50,
+      defaultValue: 5,
     });
     expect(
       camera.rows.find((row) => row.id.endsWith("-projectionMode")),

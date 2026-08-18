@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+} from "@babylonslate/core";
+import {
   ADDABLE_COMPONENT_CLASSES,
   defaultPropertiesFor,
 } from "./add-component-catalog";
@@ -128,8 +132,8 @@ describe("Add Component catalog", () => {
 
   it("seeds camera projection from the scene viewport mode", () => {
     expect(defaultPropertiesFor("CameraComponent", "3d", "3d")).toEqual({
-      fieldOfView: 60,
-      orthographicSize: 5,
+      fieldOfView: DEFAULT_CAMERA_FIELD_OF_VIEW,
+      orthographicSize: DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
       projectionMode: "perspective",
       nearClip: 0.1,
       farClip: 1000,
