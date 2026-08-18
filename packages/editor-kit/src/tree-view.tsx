@@ -11,6 +11,7 @@ import {
   CONTEXT_MENU_MOVE_TOLERANCE_PX,
   DRAG_ARM_MS,
 } from "./use-context-menu";
+import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
 
 /** Row height matches `--chrome-row` (28px). */
 export const TREE_ROW_HEIGHT = 28;
@@ -136,19 +137,15 @@ export function TreeView({
     selectedIds ?? (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
   );
 
-  const overscan = 4;
   // jsdom and first paint report a zero-height client rect; render everything
   // rather than nothing so tests and the first frame both see real rows.
-  const windowed = viewportHeight > 0;
-  const firstIndex = windowed
-    ? Math.max(0, Math.floor(scrollTop / rowHeight) - overscan)
-    : 0;
-  const lastIndex = windowed
-    ? Math.min(
-        nodes.length,
-        Math.ceil((scrollTop + viewportHeight) / rowHeight) + overscan,
-      )
-    : nodes.length;
+  const { firstIndex, lastIndex } = windowedSlice({
+    itemCount: nodes.length,
+    rowHeight,
+    scrollTop,
+    viewportHeight,
+    overscan: WINDOWED_SLICE_OVERSCAN,
+  });
   const visible = nodes.slice(firstIndex, lastIndex);
 
   const measure = useCallback((element: HTMLDivElement | null) => {

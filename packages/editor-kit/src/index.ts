@@ -114,6 +114,12 @@ export {
   type TreeViewProps,
 } from "./tree-view";
 export {
+  WINDOWED_SLICE_OVERSCAN,
+  windowedSlice,
+  type WindowedSlice,
+  type WindowedSliceInput,
+} from "./windowed-slice";
+export {
   PickerIdentity,
   displayPickerTitle,
   assetRowIdentity,
