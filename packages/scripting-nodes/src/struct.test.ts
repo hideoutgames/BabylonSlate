@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  FLOAT,
   INT,
   STRING,
   compileGraph,
-  enumRef,
   structRef,
   type GraphNode,
   type LogicGraph,
@@ -115,7 +113,7 @@ describe("struct nodes", () => {
     });
     const renamed = def.pins({
       structGuid: "s",
-      fields: [{ name: "Health", typeId: "int" }, { name: "Armor", typeId: FLOAT.kind }],
+      fields: [{ name: "Health", typeId: "int" }, { name: "Armor", typeId: "float" }],
     });
     expect(first.some((pin) => pin.id === "Mana")).toBe(true);
     expect(renamed.some((pin) => pin.id === "Mana")).toBe(false);
