@@ -6,6 +6,9 @@ import {
 import {
   ADDABLE_COMPONENT_CLASSES,
   defaultPropertiesFor,
+  physicsWorldFromOpenDocuments,
+  prefabComponentLabel,
+  projectAddComponentItems,
 } from "./add-component-catalog";
 
 describe("Add Component catalog", () => {
@@ -146,5 +149,221 @@ describe("Add Component catalog", () => {
       kind: "box2d",
       halfExtents: { x: 0.5, y: 0.5 },
     });
+  });
+
+  it("describes Mesh as a primitive or Model asset so search finds Model", () => {
+    const mesh = ADDABLE_COMPONENT_CLASSES.find(
+      (entry) => entry.id === "MeshComponent",
+    );
+    expect(mesh?.description).toBe("Primitive or Model asset");
+  });
+});
+
+function asset(header: {
+  guid: string;
+  name: string;
+  type: string;
+  parentClass?: string | null;
+  path?: string;
+}) {
+  return {
+    path: header.path,
+    header: {
+      guid: header.guid,
+      name: header.name,
+      type: header.type,
+      parentClass: header.parentClass,
+    },
+  };
+}
+
+describe("projectAddComponentItems", () => {
+  it("binds a Model asset onto MeshComponent.assetGuid", () => {
+    const items = projectAddComponentItems([
+      asset({ guid: "hero", name: "Hero", type: "Model" }),
+    ]);
+    expect(items).toEqual([
+      {
+        id: "asset-hero",
+        classId: "MeshComponent",
+        label: "Hero",
+        description: "Model",
+        category: "Project",
+        properties: { assetGuid: "hero" },
+      },
+    ]);
+  });
+
+  it("binds Audio, ParticleSystem, Sprite, Tilemap, AnimationGraph, and BehaviourTree", () => {
+    const items = projectAddComponentItems([
+      asset({ guid: "beep", name: "Beep", type: "Audio" }),
+      asset({ guid: "fx", name: "Fire", type: "ParticleSystem" }),
+      asset({ guid: "spr", name: "HeroSprite", type: "Sprite" }),
+      asset({ guid: "map", name: "Dungeon", type: "Tilemap" }),
+      asset({ guid: "anim", name: "Locomotion", type: "AnimationGraph" }),
+      asset({ guid: "bt", name: "Guard", type: "BehaviourTree" }),
+    ]);
+    expect(
+      items.map((item) => ({
+        id: item.id,
+        classId: item.classId,
+        properties: item.properties,
+      })),
+    ).toEqual([
+      {
+        id: "asset-beep",
+        classId: "AudioComponent",
+        properties: { audioAssetGuid: "beep" },
+      },
+      {
+        id: "asset-fx",
+        classId: "ParticleComponent",
+        properties: { particleSystemGuid: "fx" },
+      },
+      {
+        id: "asset-spr",
+        classId: "SpriteComponent",
+        properties: { assetGuid: "spr" },
+      },
+      {
+        id: "asset-map",
+        classId: "TilemapComponent",
+        properties: { assetGuid: "map" },
+      },
+      {
+        id: "asset-anim",
+        classId: "AnimationGraphComponent",
+        properties: { graphGuid: "anim" },
+      },
+      {
+        id: "asset-bt",
+        classId: "BehaviourTreeComponent",
+        properties: { treeGuid: "bt" },
+      },
+    ]);
+  });
+
+  it("binds a legacy Mesh type onto MeshComponent.assetGuid", () => {
+    const items = projectAddComponentItems([
+      asset({ guid: "rock", name: "Rock", type: "Mesh" }),
+    ]);
+    expect(items[0]).toMatchObject({
+      classId: "MeshComponent",
+      properties: { assetGuid: "rock" },
+    });
+  });
+
+  it("includes user ActorComponent classes and excludes Actor classes", () => {
+    const items = projectAddComponentItems([
+      asset({
+        guid: "health",
+        name: "Health",
+        type: "Class",
+        parentClass: "ActorComponent",
+        path: "assets/Health.class.babasset",
+      }),
+      asset({
+        guid: "hero",
+        name: "Hero",
+        type: "Class",
+        parentClass: "Actor",
+        path: "assets/Hero.class.babasset",
+      }),
+      asset({
+        guid: "stats",
+        name: "Stats",
+        type: "Class",
+        parentClass: "BObject",
+        path: "assets/Stats.class.babasset",
+      }),
+    ]);
+    expect(items.map((item) => item.classId)).toEqual(["Health"]);
+    expect(items[0]).toMatchObject({
+      id: "class-Health",
+      label: "Health",
+      description: "Actor Component",
+      category: "Project",
+    });
+  });
+
+  it("includes a nested ActorComponent subclass and skips engine-locked ids", () => {
+    const items = projectAddComponentItems([
+      asset({
+        guid: "base",
+        name: "Health",
+        type: "Class",
+        parentClass: "ActorComponent",
+        path: "assets/Health.class.babasset",
+      }),
+      asset({
+        guid: "child",
+        name: "RegenHealth",
+        type: "Class",
+        parentClass: "Health",
+        path: "assets/RegenHealth.class.babasset",
+      }),
+    ]);
+    expect(items.map((item) => item.classId).sort()).toEqual([
+      "Health",
+      "RegenHealth",
+    ]);
+  });
+
+  it("omits textures and classes whose ancestry is a hidden engine component", () => {
+    const items = projectAddComponentItems([
+      asset({ guid: "tex", name: "Grass", type: "Texture" }),
+      asset({
+        guid: "ui",
+        name: "Hud",
+        type: "Class",
+        parentClass: "WidgetComponent",
+        path: "assets/Hud.class.babasset",
+      }),
+      asset({
+        guid: "nav",
+        name: "RoomNav",
+        type: "Class",
+        parentClass: "NavMeshComponent",
+        path: "assets/RoomNav.class.babasset",
+      }),
+    ]);
+    expect(items.map((item) => item.classId)).toEqual([]);
+  });
+});
+
+describe("prefabComponentLabel", () => {
+  it("uses the catalog Title Case label for engine class ids", () => {
+    expect(
+      prefabComponentLabel({ classId: "MeshComponent", properties: {} }),
+    ).toBe("Mesh");
+  });
+
+  it("appends the bound asset name when a guid property is set", () => {
+    expect(
+      prefabComponentLabel(
+        { classId: "MeshComponent", properties: { assetGuid: "hero" } },
+        (guid) => (guid === "hero" ? "Hero" : undefined),
+      ),
+    ).toBe("Mesh (Hero)");
+  });
+
+  it("title-cases a user ActorComponent class id", () => {
+    expect(prefabComponentLabel({ classId: "RegenHealth", properties: {} })).toBe(
+      "Regen Health",
+    );
+  });
+});
+
+describe("physicsWorldFromOpenDocuments", () => {
+  it("reads 2d from an open scene and otherwise defaults to 3d", () => {
+    expect(physicsWorldFromOpenDocuments([])).toBe("3d");
+    expect(
+      physicsWorldFromOpenDocuments([
+        {
+          ref: { kind: "scene" },
+          content: { settings: { physicsWorld: "2d" } },
+        },
+      ]),
+    ).toBe("2d");
   });
 });

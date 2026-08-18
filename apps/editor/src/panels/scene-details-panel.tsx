@@ -35,7 +35,10 @@ import { useSceneEditing, selectionAfterLockChange } from "../context/scene-edit
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
-import { defaultPropertiesFor } from "./add-component-catalog";
+import {
+  defaultPropertiesFor,
+  projectAddComponentItems,
+} from "./add-component-catalog";
 import {
   componentPropertyRows,
   gameInstanceClassEntries,
@@ -800,19 +803,23 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       <AddComponentDialog
         open={addComponentOpen}
         onOpenChange={setAddComponentOpen}
-        onSelect={(classId) =>
+        projectItems={projectAddComponentItems(assetRegistry?.list() ?? [])}
+        onSelect={(selection) =>
           updateActor((entry) => ({
             ...entry,
             components: [
               ...entry.components,
               {
                 id: `${entry.id}-component-${entry.components.length + 1}`,
-                classId,
-                properties: defaultPropertiesFor(
-                  classId,
-                  scene.settings.physicsWorld,
-                  scene.viewportMode,
-                ),
+                classId: selection.classId,
+                properties: {
+                  ...defaultPropertiesFor(
+                    selection.classId,
+                    scene.settings.physicsWorld,
+                    scene.viewportMode,
+                  ),
+                  ...selection.properties,
+                },
               },
             ],
           }))

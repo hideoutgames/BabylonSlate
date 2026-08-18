@@ -73,9 +73,21 @@ function SelectionProbe() {
       <button
         type="button"
         data-testid="add-second-mesh"
-        onClick={() => addComponent("MeshComponent")}
+        onClick={() => addComponent({ classId: "MeshComponent" })}
       >
         Add
+      </button>
+      <button
+        type="button"
+        data-testid="add-model-mesh"
+        onClick={() =>
+          addComponent({
+            classId: "MeshComponent",
+            properties: { assetGuid: "hero" },
+          })
+        }
+      >
+        Add model
       </button>
       <button type="button" data-testid="remove-selected" onClick={removeSelected}>
         Remove
@@ -212,5 +224,43 @@ describe("PrefabEditingContext selection", () => {
     expect(screen.getByTestId("prefab-primary-id").textContent).toBe(
       PREFAB_ROOT_ID,
     );
+  });
+
+  it("merges assetGuid onto MeshComponent defaults and parents under the selected row", () => {
+    render(
+      <PrefabEditingProvider>
+        <SelectionProbe />
+      </PrefabEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("select-mesh-exclusive"));
+    applyGraphChange.mockClear();
+    fireEvent.click(screen.getByTestId("add-model-mesh"));
+    expect(applyGraphChange).toHaveBeenCalledWith(
+      "graph:assets/Hero.class.babasset",
+      expect.objectContaining({
+        components: expect.arrayContaining([
+          expect.objectContaining({
+            classId: "MeshComponent",
+            parentId: "prefab-mesh",
+            properties: expect.objectContaining({
+              meshKind: "box",
+              assetGuid: "hero",
+            }),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it("selects the component that was just added", () => {
+    render(
+      <PrefabEditingProvider>
+        <SelectionProbe />
+      </PrefabEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("add-model-mesh"));
+    const primary = screen.getByTestId("prefab-primary-id").textContent ?? "";
+    expect(primary).toMatch(/^prefab-component-/);
+    expect(screen.getByTestId("prefab-selected-ids").textContent).toBe(primary);
   });
 });
