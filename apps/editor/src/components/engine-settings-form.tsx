@@ -56,6 +56,11 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     label: "Script Interface",
   },
   { kind: "sprite", keepKey: "sprite", label: "Sprite" },
+  {
+    kind: "sprite-animation",
+    keepKey: "sprite-animation",
+    label: "Sprite Animation",
+  },
   { kind: "tileset", keepKey: "tileset", label: "Tileset" },
   { kind: "tilemap", keepKey: "tilemap", label: "Tilemap" },
   { kind: "material", keepKey: "material", label: "Material" },

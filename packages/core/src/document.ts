@@ -7,6 +7,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "ui",
   "font",
   "sprite",
+  "sprite-animation",
   "anim-graph",
   "behaviour-tree",
   "blackboard",
@@ -62,6 +63,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Font";
     case "sprite":
       return "Sprite";
+    case "sprite-animation":
+      return "SpriteAnimation";
     case "anim-graph":
       return "AnimationGraph";
     case "behaviour-tree":
@@ -134,6 +137,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "font";
     case "Sprite":
       return "sprite";
+    case "SpriteAnimation":
+      return "sprite-animation";
     case "AnimationGraph":
       return "anim-graph";
     case "BehaviourTree":
@@ -190,6 +195,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Font";
     case "sprite":
       return "Sprite";
+    case "sprite-animation":
+      return "Sprite Animation";
     case "anim-graph":
       return "Anim Graph";
     case "behaviour-tree":
@@ -296,7 +303,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|eui|ui|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten)\.(babasset|json)$/i,
+        /\.(scene|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "") ?? path;

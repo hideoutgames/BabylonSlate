@@ -181,6 +181,59 @@ export function parseSpritePivot(value: unknown): { x: number; y: number } {
   };
 }
 
+export type SpriteCollisionHandle =
+  | "n"
+  | "s"
+  | "e"
+  | "w"
+  | "ne"
+  | "nw"
+  | "se"
+  | "sw"
+  | "move";
+
+/** Resize or move a normalized AABB from a pointer in 0–1 frame space. */
+export function resizeSpriteCollision(
+  start: SpriteCollision,
+  handle: SpriteCollisionHandle,
+  pointer: { x: number; y: number },
+  origin: { x: number; y: number },
+): SpriteCollision {
+  const right = start.x + start.width;
+  const bottom = start.y + start.height;
+  if (handle === "move") {
+    const dx = pointer.x - origin.x;
+    const dy = pointer.y - origin.y;
+    const width = start.width;
+    const height = start.height;
+    return {
+      x: Math.min(Math.max(0, start.x + dx), Math.max(0, 1 - width)),
+      y: Math.min(Math.max(0, start.y + dy), Math.max(0, 1 - height)),
+      width,
+      height,
+    };
+  }
+  let x = start.x;
+  let y = start.y;
+  let width = start.width;
+  let height = start.height;
+  if (handle.includes("e")) {
+    width = Math.max(0.001, pointer.x - start.x);
+  }
+  if (handle.includes("w")) {
+    x = Math.min(pointer.x, right - 0.001);
+    width = right - x;
+  }
+  if (handle.includes("s")) {
+    height = Math.max(0.001, pointer.y - start.y);
+  }
+  if (handle.includes("n")) {
+    y = Math.min(pointer.y, bottom - 0.001);
+    height = bottom - y;
+  }
+  return parseSpriteCollision({ x, y, width, height });
+}
+
 /**
  * Map a normalized frame AABB (minus pivot) into a 2D box collider.
  * Y is up: texture v=0 is the top of the image.

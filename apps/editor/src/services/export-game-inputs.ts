@@ -23,6 +23,7 @@ const JSON_TYPES = new Set([
   "Material",
   "MaterialFunction",
   "Sprite",
+  "SpriteAnimation",
   "Tilemap",
   "Tileset",
   "Enum",

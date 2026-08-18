@@ -12,6 +12,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   structure: ["structure-members"],
   "script-interface": ["script-interface-preview"],
   sprite: ["sprite-preview"],
+  "sprite-animation": ["sprite-animation-preview"],
   tileset: ["tileset-preview"],
   tilemap: ["tilemap-paint"],
   material: ["material-graph"],
@@ -87,6 +88,9 @@ export const engineSettingsSchema = z.object({
         DEFAULT_FOCUS_KEEP_PANELS["script-interface"],
       ),
       sprite: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.sprite),
+      "sprite-animation": focusKeepPanelList(
+        DEFAULT_FOCUS_KEEP_PANELS["sprite-animation"],
+      ),
       tileset: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.tileset),
       tilemap: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.tilemap),
       material: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.material),

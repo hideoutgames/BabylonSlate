@@ -4,6 +4,7 @@ import {
   parseSpriteCollision,
   spriteClipFrameAt,
   spriteCollisionToBox2d,
+  resizeSpriteCollision,
 } from "./sprite-payload";
 
 describe("spriteClipFrameAt", () => {
@@ -84,5 +85,16 @@ describe("sprite collision", () => {
     expect(mapped.halfExtents).toEqual({ x: 0.25, y: 0.5 });
     expect(mapped.translation.x).toBeCloseTo(-0.25);
     expect(mapped.translation.y).toBeCloseTo(0);
+  });
+
+  it("resizes an AABB from an east-handle pointer", () => {
+    expect(
+      resizeSpriteCollision(
+        { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+        "e",
+        { x: 0.9, y: 0.5 },
+        { x: 0.75, y: 0.5 },
+      ),
+    ).toMatchObject({ x: 0.25, width: 0.65 });
   });
 });
