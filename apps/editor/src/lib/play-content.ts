@@ -9,6 +9,7 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
+  tilemapTilesetGuids,
 } from "@babylonslate/assets";
 import type {
   UiWidgetEventControl,
@@ -496,10 +497,11 @@ export function tilesetGuidsFromTilemaps(
   const guids: string[] = [];
   const seen = new Set<string>();
   for (const tilemap of tilemaps.values()) {
-    const guid = tilemap.tilesetGuid;
-    if (!guid || seen.has(guid)) continue;
-    seen.add(guid);
-    guids.push(guid);
+    for (const guid of tilemapTilesetGuids(tilemap)) {
+      if (seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
+    }
   }
   return guids;
 }

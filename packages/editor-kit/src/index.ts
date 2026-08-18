@@ -157,6 +157,10 @@ export {
   type NamedListItemRenderArgs,
 } from "./named-list-editor";
 export {
+  AtlasTileGrid,
+  type AtlasTileGridProps,
+} from "./atlas-tile-grid";
+export {
   AddFunctionDialog,
   type AddFunctionDialogItem,
   type AddFunctionDialogProps,

@@ -116,8 +116,21 @@ describe("listDockWindows", () => {
     ]);
     expect(listDockWindows("tilemap").map((entry) => entry.id)).toEqual([
       "tilemap-paint",
+      "tilemap-palette",
       "tilemap-details",
     ]);
+    expect(
+      listDockWindows("tilemap").find((entry) => entry.id === "tilemap-palette"),
+    ).toEqual(
+      expect.objectContaining({
+        title: "Palette",
+        defaultPosition: {
+          referencePanelId: "tilemap-paint",
+          direction: "left",
+          initialWidth: 280,
+        },
+      }),
+    );
     expect(listDockWindows("ui").map((entry) => entry.id)).toEqual([
       "ui-design",
       "ui-hierarchy",

@@ -2,33 +2,44 @@ import { useEffect, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
+  AtlasTileGrid,
   PanelFrame,
   PropertyGrid,
-  SearchDropdown,
   assetRowIdentity,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import { Toggle } from "@babylonslate/ui/components/toggle";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
 import {
   ensureTilesetTiles,
   normalizeTilesetPayload,
-  tilesetAtlasColumns,
   type TilesetCollision,
   type TilesetPayload,
   type TilesetTile,
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import {
+  useOptionalTilesetEditing,
+} from "../context/tileset-editing-context";
 
 export function TilesetPreviewPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments } = useDocuments();
+  const { openDocuments, applyAssetDocumentChange } = useDocuments();
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
     <PanelFrame data-testid="tileset-preview-panel">
-      <TilesetPreview payload={payload} />
+      <TilesetPreview
+        payload={payload}
+        onChange={(next) => {
+          void applyAssetDocumentChange(documentId, next);
+        }}
+      />
     </PanelFrame>
   );
 }
@@ -53,15 +64,24 @@ export function TilesetDetailsPanel(_props: IDockviewPanelProps) {
 
 export function TilesetPreview({
   payload,
+  onChange,
 }: {
   payload: Record<string, unknown>;
+  onChange?: (next: Record<string, unknown>) => void;
 }) {
   const tileset = ensureTilesetTiles(normalizeTilesetPayload(payload));
+  const editing = useOptionalTilesetEditing();
+  const [localSelectedId, setLocalSelectedId] = useState(
+    tileset.tiles[0]?.id ?? 1,
+  );
+  const selectedId = editing?.selectedTileId ?? localSelectedId;
   const { assetRegistry, readAssetChunk } = useDocuments();
   const [url, setUrl] = useState<string | null>(null);
   const texture = (assetRegistry?.list() ?? []).find(
     (asset) => asset.header.guid === tileset.textureGuid,
   );
+  const selected =
+    tileset.tiles.find((tile) => tile.id === selectedId) ?? tileset.tiles[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -82,41 +102,88 @@ export function TilesetPreview({
     };
   }, [readAssetChunk, texture]);
 
-  const columns = tilesetAtlasColumns(tileset);
+  const commit = (next: TilesetPayload) => {
+    onChange?.(ensureTilesetTiles(next) as unknown as Record<string, unknown>);
+  };
+
+  const patchTile = (tileId: number, patch: Partial<TilesetTile>) => {
+    commit({
+      ...tileset,
+      tiles: tileset.tiles.map((tile) =>
+        tile.id === tileId ? { ...tile, ...patch } : tile,
+      ),
+    });
+  };
+
+  const collisionValue = collisionEnum(selected?.collision);
 
   return (
-    <div className="flex flex-col gap-2 p-3" data-testid="tileset-preview">
-      <div
-        className="relative w-full overflow-hidden rounded-md border border-border"
-        style={{
-          aspectRatio: `${Math.max(1, tileset.atlasWidth)} / ${Math.max(1, tileset.atlasHeight)}`,
-          backgroundImage:
-            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
-          backgroundSize: "16px 16px",
-        }}
-      >
-        {url ? (
-          <img src={url} alt="" className="absolute inset-0 size-full" />
-        ) : (
-          <p className="absolute inset-0 flex items-center justify-center p-3 text-center text-sm text-muted-foreground">
-            {tileset.textureGuid ? "Loading texture…" : "No Texture"}
-          </p>
-        )}
-        <div
-          className="pointer-events-none absolute inset-0 grid"
-          style={{
-            gridTemplateColumns: `repeat(${columns}, 1fr)`,
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
+        <ToggleGroup
+          variant="outline"
+          size="sm"
+          spacing={1}
+          value={[collisionValue]}
+          onValueChange={(value) => {
+            const next = value[0];
+            if (!next || !selected) return;
+            patchTile(selected.id, { collision: collisionFromEnum(next) });
           }}
+          aria-label="Tile Collision"
+          data-testid="tileset-collision-tools"
         >
-          {tileset.tiles.map((tile) => (
-            <span
-              key={tile.id}
-              className="border border-border/40 text-[10px] text-foreground/80"
-              data-testid={`tileset-preview-cell-${tile.id}`}
-            />
-          ))}
-        </div>
+          <ToggleGroupItem value="none" data-testid="tileset-collision-none">
+            None
+          </ToggleGroupItem>
+          <ToggleGroupItem value="full" data-testid="tileset-collision-full">
+            Full
+          </ToggleGroupItem>
+          <ToggleGroupItem value="chain" data-testid="tileset-collision-chain">
+            Chain
+          </ToggleGroupItem>
+        </ToggleGroup>
+        <Toggle
+          variant="outline"
+          size="sm"
+          pressed={editing?.paintCollision ?? false}
+          onPressedChange={(pressed) => editing?.setPaintCollision(pressed)}
+          data-testid="tileset-paint-collision"
+        >
+          Paint Collision
+        </Toggle>
       </div>
+      <AtlasTileGrid
+        tileset={tileset}
+        imageUrl={url}
+        selectedId={selectedId}
+        panZoom
+        emptyLabel={tileset.textureGuid ? "Loading texture…" : "No Texture"}
+        data-testid="tileset-preview"
+        onSelect={(id) => {
+          if (editing) editing.setSelectedTileId(id);
+          else setLocalSelectedId(id);
+          if (editing?.paintCollision && selected) {
+            patchTile(id, { collision: selected.collision });
+          }
+        }}
+        onImageSize={(width, height) => {
+          if (
+            width <= 0 ||
+            height <= 0 ||
+            (width === tileset.atlasWidth && height === tileset.atlasHeight)
+          ) {
+            return;
+          }
+          commit(
+            ensureTilesetTiles({
+              ...tileset,
+              atlasWidth: width,
+              atlasHeight: height,
+            }),
+          );
+        }}
+      />
     </div>
   );
 }
@@ -130,8 +197,8 @@ export function TilesetEditor({
 }) {
   const tileset = ensureTilesetTiles(normalizeTilesetPayload(payload));
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [tilePickOpen, setTilePickOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState(tileset.tiles[0]?.id ?? 1);
+  const editing = useOptionalTilesetEditing();
+  const selectedId = editing?.selectedTileId ?? tileset.tiles[0]?.id ?? 1;
   const { assetRegistry } = useDocuments();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
@@ -159,7 +226,7 @@ export function TilesetEditor({
   };
 
   const collisionValue = collisionEnum(selected?.collision);
-  const rows: PropertyRow[] = [
+  const atlasRows: PropertyRow[] = [
     {
       id: "texture",
       kind: "asset",
@@ -205,15 +272,19 @@ export function TilesetEditor({
       kind: "number",
       label: "Atlas Width",
       value: tileset.atlasWidth,
-      onChange: (value) => commit({ ...tileset, atlasWidth: value }),
+      disabled: true,
+      onChange: () => {},
     },
     {
       id: "atlasHeight",
       kind: "number",
       label: "Atlas Height",
       value: tileset.atlasHeight,
-      onChange: (value) => commit({ ...tileset, atlasHeight: value }),
+      disabled: true,
+      onChange: () => {},
     },
+  ];
+  const tileRows: PropertyRow[] = [
     {
       id: "collision",
       kind: "enum",
@@ -253,7 +324,7 @@ export function TilesetEditor({
       selected?.collision && typeof selected.collision === "object"
         ? selected.collision.points
         : [];
-    rows.push({
+    tileRows.push({
       id: "chain-points",
       kind: "text",
       label: "Chain Points",
@@ -270,31 +341,11 @@ export function TilesetEditor({
 
   return (
     <div data-testid="tileset-editor">
-      <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
-        <SearchDropdown
-          open={tilePickOpen}
-          onOpenChange={setTilePickOpen}
-          title="Tile"
-          description="Choose a tile id to edit collision, flags, and animation."
-          items={tileset.tiles.map((tile) => ({
-            id: String(tile.id),
-            label: `Tile ${tile.id}`,
-            description: collisionLabel(tile.collision),
-          }))}
-          onSelect={(id) => setSelectedId(Number(id))}
-          data-testid="tileset-tile-menu"
-        >
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="tileset-tile-open"
-          >
-            Tile {selected?.id ?? 1}
-          </Button>
-        </SearchDropdown>
-      </div>
-      <PropertyGrid rows={rows} />
+      <PropertyGrid title="Atlas" rows={atlasRows} />
+      <p className="px-2 pt-2 text-sm font-medium" data-testid="tileset-selected-label">
+        Selected Tile {selected?.id ?? 1}
+      </p>
+      <PropertyGrid title="Selected Tile" rows={tileRows} />
       <AssetPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -330,12 +381,6 @@ function collisionFromEnum(value: string): TilesetCollision {
     };
   }
   return "none";
-}
-
-function collisionLabel(value: TilesetCollision): string {
-  if (value === "full") return "Full";
-  if (value && typeof value === "object") return "Chain";
-  return "None";
 }
 
 function parseChainPoints(value: string): Array<{ x: number; y: number }> {

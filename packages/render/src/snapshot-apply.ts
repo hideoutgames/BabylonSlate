@@ -15,7 +15,7 @@ import {
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import type { SampledSnapshot } from "./snapshot-sync";
-import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createMeshFromModelBytes } from "./model-mesh";
 import { beginSlotModelAnimLoad, invalidateSlotAnimLoad } from "./glb-anim";
 import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
@@ -475,20 +475,18 @@ export function createPlayMesh(
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
     const tilemap = binding.tilemaps.get(assetGuid);
-    const tileset = tilemap?.tilesetGuid
-      ? binding.tilesets?.get(tilemap.tilesetGuid)
-      : undefined;
-    if (tilemap && tileset) {
+    const tilesets = binding.tilesets ?? new Map();
+    if (tilemap && tilesets.size > 0) {
       const size = worldTileSize(tilemap, binding.pixelsPerUnit ?? 100);
       const mesh = createTilemapMeshes(
         scene,
         name,
         tilemap,
-        tileset,
+        tilesets,
         size.width,
         size.height,
       );
-      applyAlbedoTexture(mesh, scene, tileset.textureGuid, binding);
+      applyTilemapAlbedoTextures(mesh, scene, binding);
       return mesh;
     }
   }
