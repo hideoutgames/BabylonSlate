@@ -146,6 +146,9 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId(`search-item-${textureGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${textureGuid}`).click();
     await expect(page.getByTestId("tileset-preview-cell-1")).toBeVisible();
+    await expect(page.locator('[data-testid^="tileset-preview-cell-"]')).toHaveCount(
+      1,
+    );
     await page.getByTestId("tileset-preview-cell-1").click();
     await page.getByTestId("tileset-collision-full").click();
     await saveAllIfEnabled(page);

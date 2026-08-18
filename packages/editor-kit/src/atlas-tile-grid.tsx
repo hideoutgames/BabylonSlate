@@ -46,6 +46,8 @@ export function AtlasTileGrid({
     panY: 0,
     zoom: 1,
     spread: 1,
+    midX: 0,
+    midY: 0,
   });
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -79,6 +81,8 @@ export function AtlasTileGrid({
         panY: pan.y,
         zoom,
         spread: Math.max(1, spread),
+        midX: (points[0]!.x + points[1]!.x) / 2,
+        midY: (points[0]!.y + points[1]!.y) / 2,
       };
     }
   };
@@ -104,13 +108,21 @@ export function AtlasTileGrid({
     const surface = surfaceRef.current;
     if (!surface) return;
     const rect = surface.getBoundingClientRect();
-    const originX = (points[0]!.x + points[1]!.x) / 2 - rect.left;
-    const originY = (points[0]!.y + points[1]!.y) / 2 - rect.top;
+    const originX = pinchRef.current.midX - rect.left;
+    const originY = pinchRef.current.midY - rect.top;
     const scale = nextZoom / pinchRef.current.zoom;
+    const midX = (points[0]!.x + points[1]!.x) / 2;
+    const midY = (points[0]!.y + points[1]!.y) / 2;
     setZoom(nextZoom);
     setPan({
-      x: originX - (originX - pinchRef.current.panX) * scale,
-      y: originY - (originY - pinchRef.current.panY) * scale,
+      x:
+        originX -
+        (originX - pinchRef.current.panX) * scale +
+        (midX - pinchRef.current.midX),
+      y:
+        originY -
+        (originY - pinchRef.current.panY) * scale +
+        (midY - pinchRef.current.midY),
     });
   };
 
@@ -153,6 +165,8 @@ export function AtlasTileGrid({
         }}
         data-testid={`${testId}-surface`}
         data-zoom={String(zoom)}
+        data-pan-x={String(pan.x)}
+        data-pan-y={String(pan.y)}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -183,7 +197,7 @@ export function AtlasTileGrid({
             <img
               src={imageUrl}
               alt=""
-              className="absolute inset-0 size-full"
+              className="absolute inset-0 size-full object-contain"
               style={{ imageRendering: "pixelated" }}
               onLoad={(event) => {
                 onImageSize?.(
