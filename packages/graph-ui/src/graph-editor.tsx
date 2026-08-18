@@ -79,8 +79,10 @@ import {
   firstCompatiblePin,
   isClientPointOverGraphNode,
   isClientPointOverHandle,
+  nearestSnapConnectPin,
   nodePinLists,
   pinsAreCompatible,
+  screenPinsForSafeRefs,
   screenCentersForSafePins,
   type ConnectEndMode,
   type PinCompatibilityRule,
@@ -173,6 +175,8 @@ export interface GraphEditorProps {
   emptyPaneDoubleTapAddsNode?: boolean;
   /** Replace existing edges into the same target handle (tree parent pin). */
   replaceIncomingOnConnect?: boolean;
+  /** One visual edge per source→target pair (Animation Graph transitions). */
+  uniqueDirectedPairOnConnect?: boolean;
   /** Extra host connection veto after pin compatibility. */
   canConnect?: (connection: {
     source: string;
@@ -395,6 +399,7 @@ function GraphEditorCanvas({
   connectEndMode = "default",
   emptyPaneDoubleTapAddsNode = true,
   replaceIncomingOnConnect = false,
+  uniqueDirectedPairOnConnect = false,
   canConnect,
   normalizeConnection,
   connectionMode,
@@ -656,17 +661,32 @@ function GraphEditorCanvas({
           },
           (nodeId, pinId) =>
             pinOnNode(graphStateRef.current.nodes, nodeId, pinId),
-          { replaceIncoming: replaceIncomingOnConnect },
+          { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect },
         );
         const unchanged =
           next.length === current.length &&
-          next.every((edge, index) => edge.id === current[index]?.id);
+          next.every((edge, index) => {
+            const prev = current[index];
+            return (
+              prev !== undefined &&
+              edge.id === prev.id &&
+              edge.source === prev.source &&
+              edge.target === prev.target &&
+              (edge.sourceHandle ?? "") === (prev.sourceHandle ?? "") &&
+              (edge.targetHandle ?? "") === (prev.targetHandle ?? "")
+            );
+          });
         if (unchanged) return current;
         emitChange(graphStateRef.current.nodes, next);
         return next;
       });
     },
-    [defaultEdgeOptions.type, emitChange, replaceIncomingOnConnect],
+    [
+      defaultEdgeOptions.type,
+      emitChange,
+      replaceIncomingOnConnect,
+      uniqueDirectedPairOnConnect,
+    ],
   );
 
   const onPinTap = useCallback(
@@ -782,23 +802,93 @@ function GraphEditorCanvas({
       const connectEndHandled =
         connectDragRef.current?.connectEndHandled === true;
       connectDragRef.current = null;
-      if (readOnly || connectEndHandled) return;
-      if (state.toHandle) return;
+      const finishGesture = () => {
+        storeApi.getState().cancelConnection();
+        pendingPinRef.current = null;
+        setPendingPin(null);
+      };
+      if (readOnly || connectEndHandled) {
+        if (!connectEndHandled) finishGesture();
+        return;
+      }
       const fromHandle = state.fromHandle;
       const fromNode = state.fromNode;
-      if (!fromHandle?.id || !fromNode) return;
+      if (!fromHandle?.id || !fromNode) {
+        finishGesture();
+        return;
+      }
       const pinId = fromHandle.id;
+      const commitConnection = (
+        source: string,
+        sourceHandle: string,
+        target: string,
+        targetHandle: string,
+      ) => {
+        const incoming = {
+          source,
+          target,
+          sourceHandle,
+          targetHandle,
+        };
+        const next = normalizeConnection
+          ? normalizeConnection(incoming)
+          : incoming;
+        if (
+          !next?.source ||
+          !next.target ||
+          !next.sourceHandle ||
+          !next.targetHandle
+        ) {
+          return false;
+        }
+        if (!isValidConnection(next)) return false;
+        addEdge(
+          next.source,
+          next.sourceHandle,
+          next.target,
+          next.targetHandle,
+        );
+        return true;
+      };
+      const toNodeId = state.toNode?.id ?? state.toHandle?.nodeId;
+      if (state.toHandle?.id && toNodeId) {
+        commitConnection(
+          fromNode.id,
+          pinId,
+          toNodeId,
+          state.toHandle.id,
+        );
+      }
       const point = clientPoint(event);
-      if (!point) return;
+      if (!point) {
+        finishGesture();
+        return;
+      }
       const pin = pinOnNode(
         graphStateRef.current.nodes,
         fromNode.id,
         pinId,
       );
-      if (!pin) return;
+      if (!pin) {
+        finishGesture();
+        return;
+      }
       const root = document;
+      const located = screenPinsForSafeRefs(
+        root,
+        collectSafeConnectPins(
+          nodePinLists(graphStateRef.current.nodes),
+          fromNode.id,
+          pin,
+          pinCompatibility,
+        ),
+      );
+      const snap = nearestSnapConnectPin(point, {
+        nodeId: fromNode.id,
+        pinId,
+      }, located);
       const decision = {
-        hasTargetHandle: false,
+        hasTargetHandle: Boolean(state.toHandle),
         pointerOverNode: isClientPointOverGraphNode(point, root),
         pointerOverSourceHandle: isClientPointOverHandle(
           point,
@@ -807,38 +897,53 @@ function GraphEditorCanvas({
           root,
         ),
         pointer: point,
-        safePins: screenCentersForSafePins(
-          root,
-          collectSafeConnectPins(
-            nodePinLists(graphStateRef.current.nodes),
-            fromNode.id,
-            pin,
-            pinCompatibility,
-          ),
-        ),
+        safePins: located.map((entry) => ({ x: entry.x, y: entry.y })),
+        snapPins: located
+          .filter((entry) => entry.nodeId !== fromNode.id)
+          .map((entry) => ({ x: entry.x, y: entry.y })),
       };
       const action = connectEndAction(decision, connectEndMode);
+      if (action === "connect" && snap) {
+        const sourceIsDragged = pin.direction === "out";
+        commitConnection(
+          sourceIsDragged ? fromNode.id : snap.nodeId,
+          sourceIsDragged ? pinId : snap.pinId,
+          sourceIsDragged ? snap.nodeId : fromNode.id,
+          sourceIsDragged ? snap.pinId : pinId,
+        );
+        finishGesture();
+        return;
+      }
       if (action === "add-node") {
         const position = screenToFlowPosition(point);
         setPendingConnect({ pin, nodeId: fromNode.id, position });
         setPaletteOpen(true);
+        finishGesture();
         return;
       }
-      if (action !== "break") {
-        return;
+      if (action === "break") {
+        setEdges((current) => {
+          const next = current.filter(
+            (edge) => !edgeTouchesPin(edge, fromNode.id, pinId),
+          );
+          if (next.length === current.length) return current;
+          emitChange(graphStateRef.current.nodes, next);
+          return next;
+        });
       }
-      setEdges((current) => {
-        const next = current.filter(
-          (edge) => !edgeTouchesPin(edge, fromNode.id, pinId),
-        );
-        if (next.length === current.length) return current;
-        emitChange(graphStateRef.current.nodes, next);
-        return next;
-      });
-      pendingPinRef.current = null;
-      setPendingPin(null);
+      finishGesture();
     },
-    [connectEndMode, emitChange, pinCompatibility, readOnly, screenToFlowPosition],
+    [
+      addEdge,
+      connectEndMode,
+      emitChange,
+      isValidConnection,
+      normalizeConnection,
+      pinCompatibility,
+      readOnly,
+      screenToFlowPosition,
+      storeApi,
+    ],
   );
 
   const handleAddPaletteNode = useCallback(
@@ -911,7 +1016,7 @@ function GraphEditorCanvas({
                   : {}),
               },
               (nodeId, pinId) => pinOnNode(next, nodeId, pinId),
-              { replaceIncoming: replaceIncomingOnConnect },
+              { replaceIncoming: replaceIncomingOnConnect, uniqueDirectedPair: uniqueDirectedPairOnConnect },
             );
             setEdges(nextEdges);
           }
@@ -929,6 +1034,7 @@ function GraphEditorCanvas({
       pendingConnect,
       pinCompatibility,
       replaceIncomingOnConnect,
+      uniqueDirectedPairOnConnect,
       screenToFlowPosition,
     ],
   );

@@ -316,6 +316,14 @@ function mockPinDragLayout(container: HTMLElement): Element {
       width: 180,
       height: 80,
     });
+    node.querySelectorAll(".react-flow__handle").forEach((handle) => {
+      mockHandleRect(handle, {
+        left: 2000,
+        top: 2000,
+        width: 44,
+        height: 44,
+      });
+    });
   });
   const source = container.querySelector(
     '[data-id="log-a"] [data-handleid="execOut"][data-handlepos="right"]',
@@ -869,6 +877,98 @@ describe("GraphEditor", () => {
         dragHandle(source, { x: 22, y: 22 }, farDrop);
       });
       expect(getByTestId("node-palette-body")).toBeTruthy();
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("snap-connects onto an occupied pin in zone-add-node mode without queuing a second wire", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "log-a",
+                type: "debug.log",
+                position: { x: 0, y: 0 },
+                data: { message: "A", __pins: debugLogPins },
+              },
+              {
+                id: "log-b",
+                type: "debug.log",
+                position: { x: 280, y: 0 },
+                data: { message: "B", __pins: debugLogPins },
+              },
+              {
+                id: "log-c",
+                type: "debug.log",
+                position: { x: 0, y: 160 },
+                data: { message: "C", __pins: debugLogPins },
+              },
+            ],
+            edges: [
+              {
+                id: "occupied-ab",
+                source: "log-a",
+                target: "log-b",
+                sourceHandle: "execOut",
+                targetHandle: "execIn",
+              },
+            ],
+          }}
+          connectEndMode="zone-add-node"
+          onChange={onChange}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      expect(flow).not.toBeNull();
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      const source = container.querySelector(
+        '[data-id="log-c"] [data-handleid="execOut"][data-handlepos="right"]',
+      );
+      const occupied = container.querySelector(
+        '[data-id="log-b"] [data-handleid="execIn"][data-handlepos="left"]',
+      );
+      const open = container.querySelector(
+        '[data-id="log-a"] [data-handleid="execIn"][data-handlepos="left"]',
+      );
+      expect(source).not.toBeNull();
+      expect(occupied).not.toBeNull();
+      expect(open).not.toBeNull();
+      mockHandleRect(source!, { left: 0, top: 160, width: 44, height: 44 });
+      mockHandleRect(occupied!, { left: 280, top: 0, width: 44, height: 44 });
+      mockHandleRect(open!, { left: 0, top: 0, width: 44, height: 44 });
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source!, { x: 22, y: 182 }, { x: 302, y: 22 });
+      });
+      expect(onChange).toHaveBeenCalled();
+      let lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toHaveLength(2);
+      expect(lastGraph.edges).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ source: "log-a", target: "log-b" }),
+          expect.objectContaining({ source: "log-c", target: "log-b" }),
+        ]),
+      );
+      onChange.mockClear();
+      act(() => {
+        dragHandle(source!, { x: 22, y: 182 }, { x: 22, y: 22 });
+      });
+      lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(
+        lastGraph.edges.filter(
+          (edge) => edge.source === "log-c" && edge.target === "log-b",
+        ),
+      ).toHaveLength(1);
+      expect(
+        lastGraph.edges.some(
+          (edge) => edge.source === "log-c" && edge.target === "log-a",
+        ),
+      ).toBe(true);
     } finally {
       restoreLayout();
     }
