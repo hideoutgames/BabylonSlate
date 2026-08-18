@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot, type ContentRoot } from "./content-root";
+import { buildMinimalGlbFixture } from "./importers/glb-parse";
 import { AssetRegistry } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
 
@@ -178,7 +179,7 @@ describe("AssetRegistry", () => {
       "project",
       "models",
       "crate.glb",
-      new Uint8Array([0x67, 0x6c, 0x54, 0x46]),
+      buildMinimalGlbFixture(),
     );
     expect(models.some((asset) => asset.header.type === "Model")).toBe(true);
 
