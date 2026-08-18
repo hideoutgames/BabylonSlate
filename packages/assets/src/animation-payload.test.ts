@@ -4,6 +4,7 @@ import {
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   remapAnimationPayloadGuids,
+  retargetAnimationLoadsFromAnimations,
 } from "./animation-payload";
 
 describe("normalizeAnimationPayload", () => {
@@ -68,8 +69,7 @@ describe("normalizeAnimationPayload", () => {
 
 describe("modelClipAnimationGuidsFromAnimations", () => {
   it("maps native clip names to Animation guids and skips retargeted rows", () => {
-    expect(
-      modelClipAnimationGuidsFromAnimations([
+    expect(modelClipAnimationGuidsFromAnimations([
         {
           guid: "idle",
           payload: normalizeAnimationPayload({
@@ -87,5 +87,52 @@ describe("modelClipAnimationGuidsFromAnimations", () => {
         },
       ]),
     ).toEqual(new Map([["hero-model", new Map([["Idle", "idle"]])]]));
+  });
+});
+
+describe("retargetAnimationLoadsFromAnimations", () => {
+  it("maps retargeted rows onto the target Model and skips native clips", () => {
+    expect(
+      retargetAnimationLoadsFromAnimations([
+        {
+          guid: "native-idle",
+          payload: normalizeAnimationPayload({
+            clipName: "Idle",
+            modelGuid: "hero-model",
+            skeletonGuid: "hero-skel",
+          }),
+        },
+        {
+          guid: "src-idle",
+          payload: normalizeAnimationPayload({
+            clipName: "Idle",
+            modelGuid: "mixamo-model",
+            skeletonGuid: "mixamo-skel",
+          }),
+        },
+        {
+          guid: "retargeted-idle",
+          payload: normalizeAnimationPayload({
+            clipName: "Idle",
+            modelGuid: "hero-model",
+            skeletonGuid: "hero-skel",
+            sourceAnimationGuid: "src-idle",
+          }),
+        },
+      ]),
+    ).toEqual(
+      new Map([
+        [
+          "hero-model",
+          [
+            {
+              animationGuid: "retargeted-idle",
+              clipName: "Idle",
+              sourceModelGuid: "mixamo-model",
+            },
+          ],
+        ],
+      ]),
+    );
   });
 });

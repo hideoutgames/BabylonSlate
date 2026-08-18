@@ -17,6 +17,7 @@ import {
   parseSpriteAnimationPayload,
   skeletonAssetGuids,
   animationAssetGuids,
+  normalizeAnimationPayload,
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
 import {
@@ -744,19 +745,34 @@ export function isValidSelectionMoveDestination(options: {
 export type ContentBrowserContextAction =
   | "duplicate"
   | "rename"
+  | "retarget"
   | "move"
   | "copy"
   | "show-references"
   | "delete";
 
+export function canRetargetSelectedAssets(
+  assets: ReadonlyArray<{ type: string; payload?: unknown }>,
+): boolean {
+  if (assets.length === 0) return false;
+  return assets.every((asset) => {
+    if (asset.type !== "Animation") return false;
+    return Boolean(normalizeAnimationPayload(asset.payload).skeletonGuid);
+  });
+}
+
 export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
+  canRetarget?: boolean;
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
   const actions: ContentBrowserContextAction[] = ["duplicate"];
   if (total === 1) actions.push("rename");
+  if (options.canRetarget && options.assetCount > 0 && options.folderCount === 0) {
+    actions.push("retarget");
+  }
   actions.push("move", "copy");
   if (options.assetCount === 1 && options.folderCount === 0) {
     actions.push("show-references");

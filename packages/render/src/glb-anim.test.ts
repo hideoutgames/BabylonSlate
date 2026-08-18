@@ -1,7 +1,8 @@
 import { MeshBuilder, TransformNode } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
-import { adoptLoadedHierarchy } from "./glb-anim";
+import { adoptLoadedHierarchy, animationRetargetHasMatches } from "./glb-anim";
+import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
 import {
   applySnapshotToScene,
   createSnapshotSceneBinding,
@@ -53,5 +54,49 @@ describe("adoptLoadedHierarchy", () => {
     });
     skinned.computeWorldMatrix(true);
     expect(skinned.getAbsolutePosition().x).toBeCloseTo(10);
+  });
+});
+
+describe("animationRetargetHasMatches", () => {
+  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
+    [];
+
+  afterEach(() => {
+    while (handles.length > 0) {
+      const handle = handles.pop();
+      handle?.scene.dispose();
+      handle?.engine.dispose();
+    }
+  });
+
+  it("keeps channels when two hierarchy clips share node names", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const bytes = encodeParentedAnimatedTriangleGlb("Idle");
+    expect(
+      await animationRetargetHasMatches(handle.scene, bytes, bytes, "Idle"),
+    ).toBe(true);
+  });
+
+  it("returns false when the clip name is missing", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const bytes = encodeParentedAnimatedTriangleGlb("Idle");
+    expect(
+      await animationRetargetHasMatches(handle.scene, bytes, bytes, "Walk"),
+    ).toBe(false);
+  });
+
+  it("returns false when the target GLB has no matching nodes", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    expect(
+      await animationRetargetHasMatches(
+        handle.scene,
+        encodeParentedAnimatedTriangleGlb("Idle"),
+        encodeTriangleGlb(),
+        "Idle",
+      ),
+    ).toBe(false);
   });
 });

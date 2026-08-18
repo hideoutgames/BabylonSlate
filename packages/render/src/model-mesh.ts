@@ -444,7 +444,7 @@ export function encodeParentedAnimatedTriangleGlb(clipName = "Idle"): Uint8Array
       asset: { version: "2.0" },
       scene: 0,
       scenes: [{ nodes: [0] }],
-      nodes: [{ children: [1] }, { mesh: 0 }],
+      nodes: [{ name: "root", children: [1] }, { name: "part", mesh: 0 }],
       meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
       accessors: [
         {

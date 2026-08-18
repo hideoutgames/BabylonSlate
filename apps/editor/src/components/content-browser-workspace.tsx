@@ -18,11 +18,14 @@ import type { IndexedAsset } from "@babylonslate/assets";
 import {
   isThumbnailableAssetType,
   newAssetGuid,
+  normalizeAnimationPayload,
+  normalizeSkeletonPayload,
   pickerImportAccept,
   resolvePluginEnabled,
   thumbnailMime,
 } from "@babylonslate/assets";
-import { convertObjImportBatch } from "@babylonslate/render";
+import { convertObjImportBatch, animationRetargetHasMatches } from "@babylonslate/render";
+import { Scene } from "@babylonjs/core/scene";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -31,6 +34,7 @@ import {
   TypeVisualIcon,
   resolveTypeVisual,
   useContextMenu,
+  AssetPicker,
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
@@ -93,6 +97,7 @@ import {
   classParentLookup,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
+  canRetargetSelectedAssets,
   contentBrowserDeleteListNames,
   contentBrowserDeletingGuids,
   contentBrowserMovePreviewName,
@@ -134,7 +139,7 @@ import {
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { writeRetargetedAnimations } from "../lib/animation-retarget";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
@@ -183,6 +188,7 @@ export function ContentBrowserWorkspace() {
     showPluginContent,
     sourceControl,
     activeDocumentId,
+    readAssetChunk,
   } = useDocuments();
   const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
@@ -240,6 +246,8 @@ export function ContentBrowserWorkspace() {
     currentName: string;
   } | null>(null);
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
+  const [retargetPickerOpen, setRetargetPickerOpen] = useState(false);
+  const [retargetErrors, setRetargetErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const thumbnailUrlsRef = useRef(thumbnailUrls);
@@ -331,6 +339,77 @@ export function ContentBrowserWorkspace() {
       return assetRegistry.list({ rootId: root.id });
     });
   }, [assetRegistry, browserRoots, registryVersion]);
+
+  const handleRetargetSkeleton = useCallback(
+    async (skeletonGuid: string | null) => {
+      setRetargetPickerOpen(false);
+      if (!skeletonGuid || !assetRegistry) return;
+      const skeleton = assetRegistry.getByGuid(skeletonGuid);
+      if (!skeleton || skeleton.header.type !== "Skeleton") return;
+      const skeletonPayload = normalizeSkeletonPayload(skeleton.header.payload);
+      const sources = menuTargetGuidsRef.current.flatMap((guid) => {
+        const asset = assetRegistry.getByGuid(guid);
+        if (!asset || asset.header.type !== "Animation") return [];
+        return [
+          {
+            guid,
+            name: asset.header.name,
+            payload: normalizeAnimationPayload(asset.header.payload),
+          },
+        ];
+      });
+      const engine = play?.ensureSharedEngine();
+      if (!engine) {
+        setRetargetErrors(["Shared editor Engine is not available."]);
+        return;
+      }
+      const scene = new Scene(engine);
+      setBusy(true);
+      try {
+        const result = await writeRetargetedAnimations({
+          sources,
+          targetSkeletonGuid: skeleton.header.guid,
+          targetSkeletonName: skeleton.header.name,
+          targetModelGuid: skeletonPayload.modelGuid,
+          existingNames: allAssets.map((asset) => asset.header.name),
+          folderRelative: selectedRoot.relative,
+          rootId: selectedRoot.rootId,
+          readModelBytes: async (modelGuid) => {
+            const model = assetRegistry.getByGuid(modelGuid);
+            if (!model) return null;
+            return readAssetChunk(model.path, "source");
+          },
+          probeMatches: (sourceBytes, targetBytes, clipName) =>
+            animationRetargetHasMatches(scene, sourceBytes, targetBytes, clipName),
+          createAsset: (rootId, relativePath, importResult) =>
+            assetRegistry.createAsset(rootId, relativePath, importResult),
+        });
+        await refreshAssetRegistry();
+        if (result.skipped.length > 0) {
+          setRetargetErrors(
+            result.skipped.map(
+              (name) => `${name}: no matching bones on ${skeleton.header.name}`,
+            ),
+          );
+        }
+      } catch (error) {
+        setRetargetErrors([
+          error instanceof Error ? error.message : String(error),
+        ]);
+      } finally {
+        scene.dispose();
+        setBusy(false);
+      }
+    },
+    [
+      allAssets,
+      assetRegistry,
+      play,
+      readAssetChunk,
+      refreshAssetRegistry,
+      selectedRoot,
+    ],
+  );
 
   const refuseTheirsAssetPaths = useCallback(
     (paths: string[]): boolean => {
@@ -725,6 +804,12 @@ export function ContentBrowserWorkspace() {
             value: asset.header.name,
           });
         },
+      },
+      {
+        id: "retarget" as const,
+        label: "Retarget…",
+        testId: "content-browser-retarget",
+        onSelect: () => setRetargetPickerOpen(true),
       },
       {
         id: "move" as const,
@@ -1287,6 +1372,13 @@ export function ContentBrowserWorkspace() {
         contentBrowserContextActions({
           assetCount: guids.length,
           folderCount: folders.length,
+          canRetarget: canRetargetSelectedAssets(
+            guids.flatMap((guid) => {
+              const asset = assetRegistry?.getByGuid(guid);
+              if (!asset) return [];
+              return [{ type: asset.header.type, payload: asset.header.payload }];
+            }),
+          ),
         }),
       );
       const items = tileContextItems.filter((item) =>
@@ -1300,6 +1392,7 @@ export function ContentBrowserWorkspace() {
       selectedFolderPaths,
       selectedGuids,
       tileContextItems,
+      assetRegistry,
     ],
   );
 
@@ -2033,6 +2126,57 @@ export function ContentBrowserWorkspace() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      </AlertDialog>
+
+      <AssetPicker
+        open={retargetPickerOpen}
+        onOpenChange={setRetargetPickerOpen}
+        assets={allAssets.map((asset) => ({
+          guid: asset.header.guid,
+          name: asset.header.name,
+          type: asset.header.type,
+          path: asset.path,
+        }))}
+        allowedTypes={["Skeleton"]}
+        title="Pick Skeleton"
+        allowNone={false}
+        onPick={(guid) => {
+          void handleRetargetSkeleton(guid);
+        }}
+        data-testid="content-browser-retarget-picker"
+      />
+
+      <AlertDialog
+        open={retargetErrors !== null}
+        onOpenChange={(open) => {
+          if (!open) setRetargetErrors(null);
+        }}
+      >
+        <AlertDialogContent data-testid="content-browser-retarget-errors">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retarget Failed</AlertDialogTitle>
+            <AlertDialogDescription>
+              No matching bones. The Animation was not created.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+            {retargetErrors?.map((message) => (
+              <li key={message}>
+                <SelectableText>{message}</SelectableText>
+              </li>
+            ))}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="content-browser-retarget-errors-dismiss"
+              onClick={() => setRetargetErrors(null)}
+            >
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={importErrors !== null}

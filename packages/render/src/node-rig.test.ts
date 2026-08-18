@@ -114,6 +114,7 @@ describe("node-rig helpers", () => {
     const group = rotationClip(scene, source.torso, "idle");
     const retargeted = retargetAnimationGroupWithMeshProxy(group, target.root);
     expect(retargeted).not.toBeNull();
+    expect(retargeted!.name).toBe("idle");
     expect(retargeted!.targetedAnimations.length).toBeGreaterThan(0);
     expect(retargeted!.targetedAnimations[0]!.target.name).toBe("torso");
     retargeted!.dispose();

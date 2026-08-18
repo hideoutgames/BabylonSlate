@@ -7,7 +7,7 @@ import {
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload } from "@babylonslate/assets";
+import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
 import type { ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
@@ -22,6 +22,8 @@ export interface MeshAssetContext {
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /** Native clipName → Animation guid, keyed by Model guid. */
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  /** Retargeted Animation loads keyed by the actor (target) Model guid. */
+  retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   pixelsPerUnit?: number;
 }
 

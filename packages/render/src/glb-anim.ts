@@ -6,6 +6,7 @@ import { applyAnimStateToScene,
   type NamedSeekableGroup,
 } from "./anim-apply";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 
 function bumpSlotAnimEpoch(
@@ -147,16 +148,49 @@ export function beginSlotModelAnimLoad(
       adoptLoadedHierarchy(placeholder, container);
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);
+      const retargets = binding.retargetAnimationLoads?.get(clipAssetGuid) ?? [];
       const nativeGuids = new Set<string>([clipAssetGuid]);
       if (clipGuids) {
         for (const guid of clipGuids.values()) nativeGuids.add(guid);
       }
+      for (const row of retargets) nativeGuids.add(row.animationGuid);
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
       );
       const wrapped = container.animationGroups.map((group) =>
         wrapGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
+      for (const row of retargets) {
+        const sourceBytes = binding.modelBytes?.get(row.sourceModelGuid);
+        if (!sourceBytes || !isGltfModelBytes(sourceBytes)) continue;
+        let sourceContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
+        try {
+          sourceContainer = await loadGlbContainer(
+            scene,
+            sourceBytes,
+            `${row.animationGuid}-src.glb`,
+          );
+          if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
+            sourceContainer.dispose();
+            container.dispose();
+            return;
+          }
+          const sourceGroup = sourceContainer.animationGroups.find(
+            (group) => group.name === row.clipName,
+          );
+          if (sourceGroup) {
+            const retargeted = retargetAnimationGroupWithMeshProxy(
+              sourceGroup,
+              placeholder,
+            );
+            if (retargeted) {
+              wrapped.push(wrapGroup(retargeted, row.animationGuid));
+            }
+          }
+        } finally {
+          sourceContainer?.dispose();
+        }
+      }
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
@@ -169,4 +203,40 @@ export function beginSlotModelAnimLoad(
   const chained = previous.then(() => load);
   binding.slotAnimLoads.set(slotId, chained);
   return chained;
+}
+
+/** True when name-match retarget keeps at least one channel. */
+export async function animationRetargetHasMatches(
+  scene: Scene,
+  sourceBytes: Uint8Array,
+  targetBytes: Uint8Array,
+  clipName: string,
+): Promise<boolean> {
+  if (!isGltfModelBytes(sourceBytes) || !isGltfModelBytes(targetBytes)) {
+    return false;
+  }
+  let sourceContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
+  let targetContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
+  try {
+    sourceContainer = await loadGlbContainer(scene, sourceBytes, "retarget-src.glb");
+    targetContainer = await loadGlbContainer(scene, targetBytes, "retarget-dst.glb");
+    targetContainer.addAllToScene();
+    const sourceGroup = sourceContainer.animationGroups.find(
+      (group) => group.name === clipName,
+    );
+    const root =
+      (targetContainer.rootNodes[0] as TransformNode | undefined) ??
+      targetContainer.transformNodes[0] ??
+      targetContainer.meshes[0];
+    if (!sourceGroup || !root) return false;
+    const retargeted = retargetAnimationGroupWithMeshProxy(sourceGroup, root);
+    const matched = retargeted != null;
+    retargeted?.dispose();
+    return matched;
+  } catch {
+    return false;
+  } finally {
+    sourceContainer?.dispose();
+    targetContainer?.dispose();
+  }
 }

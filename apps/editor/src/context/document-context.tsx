@@ -208,6 +208,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  modelGuidsForPlayRetarget,
   playMaterialGuidsFromSources,
   materialClosureFromGuids,
   type PlayAnimGraphEntry,
@@ -2501,7 +2502,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         assets.map((asset) => [asset.header.guid, asset] as const),
       );
       const bytes = new Map<string, Uint8Array>();
-      for (const guid of modelAssetGuidsFromScene(scene)) {
+      const animationRows = assets
+        .filter((asset) => asset.header.type === "Animation")
+        .map((asset) => ({
+          guid: asset.header.guid,
+          payload: asset.header.payload,
+        }));
+      for (const guid of modelGuidsForPlayRetarget(
+        modelAssetGuidsFromScene(scene),
+        animationRows,
+      )) {
         const asset = byGuid.get(guid);
         if (!asset) continue;
         const source = await projectService.readAssetChunk(asset.path, "source");

@@ -7,6 +7,7 @@ import {
   hydrateSpriteAnimationPixelSizes,
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
+  retargetAnimationLoadsFromAnimations,
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
@@ -22,6 +23,7 @@ import {
   type AudioPayload,
   type ParticleEmitterPayload,
   type ParticleSystemPayload,
+  type RetargetAnimationLoad,
   type SoundAttenuationPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -80,6 +82,7 @@ export type PackedGameContent = {
   particleLibrary: PackedParticleLibrary;
   userInterfaces: Map<string, UserInterfaceDocument>;
   modelClipAnimationGuids: Map<string, Map<string, string>>;
+  retargetAnimationLoads: Map<string, RetargetAnimationLoad[]>;
 };
 
 function jsonFromBytes(bytes: Uint8Array): unknown | null {
@@ -283,6 +286,9 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     },
     userInterfaces: new Map(game.userInterfaces ?? []),
     modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(
+      [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
+    ),
+    retargetAnimationLoads: retargetAnimationLoadsFromAnimations(
       [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
     ),
   };

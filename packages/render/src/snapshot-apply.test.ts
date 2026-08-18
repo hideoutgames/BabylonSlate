@@ -160,6 +160,37 @@ describe("createPlayMesh", () => {
     expect(group).toBeDefined();
   });
 
+  it("stamps retargeted AnimationGroups with the retargeted Animation guid", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const glb = encodeParentedAnimatedTriangleGlb("Idle");
+    binding.modelBytes = new Map([
+      ["hero-model", glb],
+      ["mixamo-model", glb],
+    ]);
+    binding.retargetAnimationLoads = new Map([
+      [
+        "hero-model",
+        [
+          {
+            animationGuid: "retargeted-idle",
+            clipName: "Idle",
+            sourceModelGuid: "mixamo-model",
+          },
+        ],
+      ],
+    ]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+      return entry.name === "Idle" && entry.clipAssetGuid === "retargeted-idle";
+    });
+    expect(group).toBeDefined();
+    expect(group?.from).toBeLessThan(group?.to ?? 0);
+  });
+
   it("keeps the slot mesh as the transform root for a parented animated GLB", async () => {
     const handle = createTestEngine();
     handles.push(handle);

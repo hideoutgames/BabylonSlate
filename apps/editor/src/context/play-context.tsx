@@ -99,6 +99,7 @@ import {
   type TilemapPayload,
   type TilesetPayload,
   type ModelPayload,
+  type RetargetAnimationLoad,
 } from "@babylonslate/assets";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
@@ -116,7 +117,7 @@ import {
 import { playUserInterfaceRuntimeDocuments, interfaceMaterialGuidsFromUiDocuments } from "../lib/play-content";
 import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
-import { modelClipAnimationGuidsFromAssets } from "../lib/anim-clip-catalog";
+import { modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
 import {
   collectUiImageUrls,
   revokeUiImageUrls,
@@ -283,6 +284,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   >(() => new Map());
   const [playModelClipAnimationGuids, setPlayModelClipAnimationGuids] = useState<
     Map<string, Map<string, string>>
+  >(() => new Map());
+  const [playRetargetAnimationLoads, setPlayRetargetAnimationLoads] = useState<
+    Map<string, RetargetAnimationLoad[]>
   >(() => new Map());
   const [playAudioBytes, setPlayAudioBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
@@ -854,6 +858,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayModelClipAnimationGuids(
             modelClipAnimationGuidsFromAssets(assetRegistry?.list() ?? []),
           );
+          setPlayRetargetAnimationLoads(
+            retargetAnimationLoadsFromAssets(assetRegistry?.list() ?? []),
+          );
         } catch (error) {
           appendLog(
             `Model load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -861,6 +868,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayModelBytes(new Map());
           setPlayModelPayloads(new Map());
           setPlayModelClipAnimationGuids(new Map());
+          setPlayRetargetAnimationLoads(new Map());
         }
 
         try {
@@ -1205,6 +1213,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             modelBytes={playModelBytes}
             modelPayloads={playModelPayloads}
             modelClipAnimationGuids={playModelClipAnimationGuids}
+            retargetAnimationLoads={playRetargetAnimationLoads}
             audioBytes={playAudioBytes}
             audioLibrary={playAudioLibrary}
             particleLibrary={playParticleLibrary}

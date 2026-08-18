@@ -55,6 +55,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  modelGuidsForPlayRetarget,
   modelSlotMaterialGuidsFromPayloads,
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
@@ -686,6 +687,41 @@ describe("scene-referenced Play content", () => {
       }),
     );
     expect(modelAssetGuidsFromScene(scene)).toEqual(["tree-glb"]);
+  });
+
+  it("adds source Model guids needed to Play retargeted Animation rows", () => {
+    expect(
+      modelGuidsForPlayRetarget(
+        ["hero-model"],
+        [
+          {
+            guid: "native",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "hero-model",
+              skeletonGuid: "hero-skel",
+            },
+          },
+          {
+            guid: "src",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "mixamo-model",
+              skeletonGuid: "mixamo-skel",
+            },
+          },
+          {
+            guid: "retargeted",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "hero-model",
+              skeletonGuid: "hero-skel",
+              sourceAnimationGuid: "src",
+            },
+          },
+        ],
+      ).sort(),
+    ).toEqual(["hero-model", "mixamo-model"]);
   });
 
   it("collects Model slot material guids for Play compile", () => {

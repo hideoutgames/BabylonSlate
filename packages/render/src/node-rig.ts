@@ -177,6 +177,9 @@ export function retargetAnimationGroupWithMeshProxy(
   options?: Parameters<AnimatorAvatar["retargetAnimationGroup"]>[1],
 ): AnimationGroup | null {
   const { group: proxied, dispose } = withTransformNodeAnimationTargets(source);
+  const synthesized = findSkinnedMesh(targetRoot)
+    ? null
+    : createLinkedSkeletonFromNodeRig(targetRoot, { createMesh: true });
   const avatar = new AnimatorAvatar("retarget-avatar", targetRoot, false, false);
   avatar.showWarnings = false;
   try {
@@ -189,10 +192,13 @@ export function retargetAnimationGroupWithMeshProxy(
       retargeted.dispose();
       return null;
     }
+    retargeted.name = source.name;
     return retargeted;
   } finally {
     dispose();
     avatar.dispose();
+    synthesized?.overlay?.dispose();
+    synthesized?.skeleton.dispose();
   }
 }
 

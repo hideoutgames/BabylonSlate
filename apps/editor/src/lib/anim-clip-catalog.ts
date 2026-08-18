@@ -3,6 +3,7 @@ import {
   modelClipAnimationGuidsFromAnimations,
   normalizeAnimationPayload,
   parseSpriteAnimationPayload,
+  retargetAnimationLoadsFromAnimations,
   spriteAnimationDurationMs,
 } from "@babylonslate/assets";
 
@@ -89,6 +90,20 @@ export function modelClipAnimationGuidsFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): Map<string, Map<string, string>> {
   return modelClipAnimationGuidsFromAnimations(
+    assets
+      .filter((asset) => asset.header.type === "Animation")
+      .map((asset) => ({
+        guid: asset.header.guid,
+        payload: normalizeAnimationPayload(asset.header.payload),
+      })),
+  );
+}
+
+/** Retargeted Animation loads keyed by the actor (target) Model guid. */
+export function retargetAnimationLoadsFromAssets(
+  assets: ReadonlyArray<CatalogAsset>,
+): Map<string, import("@babylonslate/assets").RetargetAnimationLoad[]> {
+  return retargetAnimationLoadsFromAnimations(
     assets
       .filter((asset) => asset.header.type === "Animation")
       .map((asset) => ({

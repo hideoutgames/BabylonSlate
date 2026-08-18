@@ -45,6 +45,7 @@ import type {
   TilemapPayload,
   TilesetPayload,
   ModelPayload,
+  RetargetAnimationLoad,
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
@@ -105,6 +106,7 @@ export interface PlayOverlayProps {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: PlayAudioLibrary;
   particleLibrary?: PlayParticleLibrary;
@@ -168,6 +170,7 @@ export function PlayOverlay({
   modelBytes,
   modelPayloads,
   modelClipAnimationGuids,
+  retargetAnimationLoads,
   audioBytes,
   audioLibrary,
   particleLibrary,
@@ -262,6 +265,8 @@ export function PlayOverlay({
   modelPayloadsRef.current = modelPayloads;
   const modelClipAnimationGuidsRef = useRef(modelClipAnimationGuids);
   modelClipAnimationGuidsRef.current = modelClipAnimationGuids;
+  const retargetAnimationLoadsRef = useRef(retargetAnimationLoads);
+  retargetAnimationLoadsRef.current = retargetAnimationLoads;
   const audioBytesRef = useRef(audioBytes);
   audioBytesRef.current = audioBytes;
   const audioLibraryRef = useRef(audioLibrary);
@@ -380,6 +385,7 @@ export function PlayOverlay({
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
+      retargetAnimationLoads: retargetAnimationLoadsRef.current,
       audioBytes: audioBytesRef.current,
       audioLibrary: audioLibraryRef.current,
       particleLibrary: particleLibraryRef.current,

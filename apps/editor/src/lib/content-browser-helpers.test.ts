@@ -32,6 +32,7 @@ import {
   isValidMoveDestination,
   isValidSelectionMoveDestination,
   contentBrowserContextActions,
+  canRetargetSelectedAssets,
   contentBrowserMoveDialogTitle,
   contentBrowserMovePreviewName,
   guidsOutsideSelectedFolders,
@@ -1542,6 +1543,56 @@ describe("content-browser-helpers", () => {
     expect(
       contentBrowserContextActions({ assetCount: 0, folderCount: 0 }),
     ).toEqual([]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 2,
+        folderCount: 0,
+        canRetarget: true,
+      }),
+    ).toEqual(["duplicate", "retarget", "move", "copy", "delete"]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 1,
+        folderCount: 0,
+        canRetarget: true,
+      }),
+    ).toEqual([
+      "duplicate",
+      "rename",
+      "retarget",
+      "move",
+      "copy",
+      "show-references",
+      "delete",
+    ]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 1,
+        folderCount: 1,
+        canRetarget: true,
+      }),
+    ).toEqual(["duplicate", "move", "copy", "delete"]);
+  });
+
+  it("allows Retarget only when every selected asset is an Animation with a skeleton", () => {
+    expect(
+      canRetargetSelectedAssets([
+        { type: "Animation", payload: { skeletonGuid: "skin-skel" } },
+        { type: "Animation", payload: { skeletonGuid: "hier-skel" } },
+      ]),
+    ).toBe(true);
+    expect(
+      canRetargetSelectedAssets([
+        { type: "Animation", payload: { clipName: "Spin", skeletonGuid: null } },
+      ]),
+    ).toBe(false);
+    expect(
+      canRetargetSelectedAssets([
+        { type: "Animation", payload: { skeletonGuid: "skel-1" } },
+        { type: "Model", payload: { skeletonGuid: "skel-1" } },
+      ]),
+    ).toBe(false);
+    expect(canRetargetSelectedAssets([])).toBe(false);
   });
 
   it("rejects a move destination that is any selected folder or a descendant", () => {

@@ -88,3 +88,37 @@ export function modelClipAnimationGuidsFromAnimations(
   }
   return byModel;
 }
+
+export type RetargetAnimationLoad = {
+  animationGuid: string;
+  clipName: string;
+  sourceModelGuid: string;
+};
+
+/** Retargeted clip loads keyed by the actor (target) Model guid. */
+export function retargetAnimationLoadsFromAnimations(
+  animations: ReadonlyArray<{ guid: string; payload: AnimationPayload }>,
+): Map<string, RetargetAnimationLoad[]> {
+  const byGuid = new Map(animations.map((entry) => [entry.guid, entry] as const));
+  const byTarget = new Map<string, RetargetAnimationLoad[]>();
+  for (const animation of animations) {
+    const sourceGuid = animation.payload.sourceAnimationGuid;
+    if (!sourceGuid) continue;
+    const source = byGuid.get(sourceGuid);
+    const sourceModelGuid = source?.payload.modelGuid.trim() ?? "";
+    const targetModelGuid = animation.payload.modelGuid.trim();
+    const clipName = animation.payload.clipName.trim();
+    if (!sourceModelGuid || !targetModelGuid || !clipName) continue;
+    let rows = byTarget.get(targetModelGuid);
+    if (!rows) {
+      rows = [];
+      byTarget.set(targetModelGuid, rows);
+    }
+    rows.push({
+      animationGuid: animation.guid,
+      clipName,
+      sourceModelGuid,
+    });
+  }
+  return byTarget;
+}
