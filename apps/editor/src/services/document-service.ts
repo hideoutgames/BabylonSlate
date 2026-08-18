@@ -67,6 +67,13 @@ export class DocumentService {
     );
   }
 
+  getScrollableDocumentsOrdered(): OpenDocument[] {
+    return this.getOpenDocumentsOrdered().filter(
+      (doc) =>
+        doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
+    );
+  }
+
   getDocument(id: string): OpenDocument | undefined {
     return this.state.openDocuments.get(id);
   }
@@ -78,7 +85,7 @@ export class DocumentService {
 
   ensureContentBrowserTab(): void {
     if (this.state.openDocuments.has(CONTENT_BROWSER_ID)) {
-      this.pinContentBrowserFirst();
+      this.pinStickyTabs();
       return;
     }
 
@@ -92,16 +99,29 @@ export class DocumentService {
 
     this.state.openDocuments.set(CONTENT_BROWSER_ID, entry);
     this.state.tabOrder.unshift(CONTENT_BROWSER_ID);
+    this.pinStickyTabs();
     if (!this.state.activeDocumentId) {
       this.state.activeDocumentId = CONTENT_BROWSER_ID;
     }
   }
 
-  private pinContentBrowserFirst(): void {
+  private pinStickyTabs(): void {
+    const sceneId = [...this.state.openDocuments.values()].find(
+      (doc) => doc.ref.kind === "scene",
+    )?.id;
+    const rest = this.state.tabOrder.filter(
+      (id) => id !== CONTENT_BROWSER_ID && id !== sceneId,
+    );
     this.state.tabOrder = [
       CONTENT_BROWSER_ID,
-      ...this.state.tabOrder.filter((id) => id !== CONTENT_BROWSER_ID),
+      ...(sceneId ? [sceneId] : []),
+      ...rest,
     ];
+  }
+
+  private isPinnedChromeTabId(id: string): boolean {
+    if (isContentBrowserId(id)) return true;
+    return this.state.openDocuments.get(id)?.ref.kind === "scene";
   }
 
   async initializeFromProject(
@@ -138,7 +158,7 @@ export class DocumentService {
       );
     }
 
-    this.pinContentBrowserFirst();
+    this.pinStickyTabs();
 
     // Always land on the Content Browser when opening a project so users
     // don't get dropped into an empty black viewport tab.
@@ -168,6 +188,7 @@ export class DocumentService {
       if (ref.kind === "scene") {
         this.closeOtherSceneDocuments(id);
       }
+      this.pinStickyTabs();
       return id;
     }
 
@@ -184,10 +205,10 @@ export class DocumentService {
 
     this.state.openDocuments.set(id, entry);
     this.state.tabOrder.push(id);
-    this.pinContentBrowserFirst();
     if (ref.kind === "scene") {
       this.closeOtherSceneDocuments(id);
     }
+    this.pinStickyTabs();
     if (setActive) {
       this.state.activeDocumentId = id;
     }
@@ -216,7 +237,7 @@ export class DocumentService {
     if (this.state.activeDocumentId === id) {
       this.state.activeDocumentId = this.state.tabOrder[0] ?? CONTENT_BROWSER_ID;
     }
-    this.pinContentBrowserFirst();
+    this.pinStickyTabs();
   }
 
   /**
@@ -247,6 +268,7 @@ export class DocumentService {
     this.state.tabOrder = this.state.tabOrder.map((id) =>
       id === oldId ? newId : id,
     );
+    this.pinStickyTabs();
     if (this.state.activeDocumentId === oldId) {
       this.state.activeDocumentId = newId;
     }
@@ -264,20 +286,25 @@ export class DocumentService {
   }
 
   reorderClosableTabs(fromClosableIndex: number, toClosableIndex: number): void {
-    const fromIndex = fromClosableIndex + 1;
-    const toIndex = toClosableIndex + 1;
-    this.reorderTabs(fromIndex, toIndex);
+    const scrollable = this.getScrollableDocumentsOrdered();
+    const fromDoc = scrollable[fromClosableIndex];
+    const toDoc = scrollable[toClosableIndex];
+    if (!fromDoc || !toDoc) return;
+    this.reorderTabs(
+      this.state.tabOrder.indexOf(fromDoc.id),
+      this.state.tabOrder.indexOf(toDoc.id),
+    );
   }
 
   reorderTabs(fromIndex: number, toIndex: number): void {
-    if (fromIndex < 1 || toIndex < 1) {
-      return;
-    }
-
+    const fromId = this.state.tabOrder[fromIndex];
+    const toId = this.state.tabOrder[toIndex];
     if (
-      fromIndex >= this.state.tabOrder.length ||
-      toIndex >= this.state.tabOrder.length ||
-      fromIndex === toIndex
+      fromId === undefined ||
+      toId === undefined ||
+      fromIndex === toIndex ||
+      this.isPinnedChromeTabId(fromId) ||
+      this.isPinnedChromeTabId(toId)
     ) {
       return;
     }
@@ -286,7 +313,7 @@ export class DocumentService {
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
     this.state.tabOrder = next;
-    this.pinContentBrowserFirst();
+    this.pinStickyTabs();
   }
 
   updateScene(id: string, scene: SerializedScene): void {

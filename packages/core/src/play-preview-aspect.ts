@@ -22,6 +22,7 @@ export function fitContainedRect(
   return { width, height: Math.round(width / target) };
 }
 
+/** Locked custom-resolution size. Present always contains this bitmap; `blackBars` is unused. */
 export function playFramebufferSize(
   render?: {
     customResolution: boolean;

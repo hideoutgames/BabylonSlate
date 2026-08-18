@@ -7,7 +7,9 @@ import {
   type KeyboardEvent,
 } from "react";
 import {
+  applyConsoleCompletion,
   suggestConsoleCompletions,
+  type ConsoleCompletionContext,
   type RegisteredCommand,
 } from "@babylonslate/debugger";
 import { SelectableText } from "@babylonslate/editor-kit";
@@ -31,6 +33,7 @@ export type DebugConsoleProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   commands: readonly RegisteredCommand[];
+  completionContext?: ConsoleCompletionContext;
   onExecute: (
     line: string,
   ) => ConsoleExecuteResult | Promise<ConsoleExecuteResult>;
@@ -57,6 +60,7 @@ export function DebugConsole({
   open,
   onOpenChange,
   commands,
+  completionContext,
   onExecute,
 }: DebugConsoleProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -66,8 +70,8 @@ export function DebugConsole({
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
 
   const suggestions = useMemo(
-    () => suggestConsoleCompletions(draft, commands),
-    [draft, commands],
+    () => suggestConsoleCompletions(draft, commands, completionContext),
+    [draft, commands, completionContext],
   );
 
   useEffect(() => {
@@ -95,6 +99,14 @@ export function DebugConsole({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Tab" && suggestions[0]) {
+      event.preventDefault();
+      setDraft((current) =>
+        applyConsoleCompletion(current, suggestions[0]!, commands),
+      );
+      setHistoryIndex(null);
+      return;
+    }
     if (event.key === "ArrowUp" && entries.length > 0) {
       event.preventDefault();
       const next =
@@ -120,8 +132,19 @@ export function DebugConsole({
 
   const insert = (token: string) => {
     setDraft((current) =>
-      token === "Tab" ? `${current}${suggestions[0] ?? "  "}` : `${current}${token}`,
+      token === "Tab"
+        ? applyConsoleCompletion(
+            current,
+            suggestions[0] ?? "  ",
+            commands,
+          )
+        : `${current}${token}`,
     );
+  };
+
+  const applySuggestion = (suggestion: string) => {
+    setDraft((current) => applyConsoleCompletion(current, suggestion, commands));
+    setHistoryIndex(null);
   };
 
   const copyTranscript = async () => {
@@ -196,7 +219,7 @@ export function DebugConsole({
                   variant="outline"
                   size="touch"
                   data-testid={`debug-console-suggest-${name}`}
-                  onClick={() => setDraft(name)}
+                  onClick={() => applySuggestion(name)}
                 >
                   {name}
                 </Button>

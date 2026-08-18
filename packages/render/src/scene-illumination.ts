@@ -1,7 +1,9 @@
 import {
+  Camera,
   Color3,
   Color4,
   DirectionalLight,
+  Matrix,
   PointLight,
   Quaternion,
   Scene,
@@ -9,12 +11,15 @@ import {
   SpotLight,
   UniversalCamera,
   Vector3,
-  type Camera,
   type Light,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import type { SerializedActor, SerializedComponent, SerializedScene } from "@babylonslate/core";
-import { identitySerializedTransform } from "@babylonslate/core";
+import {
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+  identitySerializedTransform,
+} from "@babylonslate/core";
 import { DEFAULT_LIGHT_INTENSITY } from "./viewport";
 import type { MeshAssetContext } from "./mesh-assets";
 
@@ -169,23 +174,91 @@ export function applyAuthoredLightProperties(
   }
 }
 
+export const CAMERA_LENS_FALLBACK_ASPECT = 16 / 9;
+
+export function cameraRenderAspect(width: number, height: number): number {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return CAMERA_LENS_FALLBACK_ASPECT;
+  }
+  return width / height;
+}
+
+function lensPropertiesFromCamera(camera: Camera): AuthoredCameraProperties {
+  return {
+    projectionMode:
+      camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? "orthographic" : "perspective",
+    fieldOfView: (camera.fov * 180) / Math.PI,
+    orthographicSize: Math.abs(camera.orthoTop ?? DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE),
+    nearClip: camera.minZ,
+    farClip: camera.maxZ,
+  };
+}
+
+export function applyAuthoredCameraLens(
+  camera: Camera,
+  properties: AuthoredCameraProperties,
+  aspect: number,
+): void {
+  camera.unfreezeProjectionMatrix();
+  camera.minZ = asNumber(properties.nearClip, 0.1);
+  camera.maxZ = Math.max(camera.minZ + 0.01, asNumber(properties.farClip, 1000));
+  const fovDeg = asNumber(properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW);
+  camera.fov = (fovDeg * Math.PI) / 180;
+  const safeAspect =
+    Number.isFinite(aspect) && aspect > 0 ? aspect : CAMERA_LENS_FALLBACK_ASPECT;
+  const ortho = Math.max(
+    asNumber(properties.orthographicSize, DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE) ||
+      DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+    0.01,
+  );
+  if (properties.projectionMode === "orthographic") {
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.orthoTop = ortho;
+    camera.orthoBottom = -ortho;
+    camera.orthoLeft = -ortho * safeAspect;
+    camera.orthoRight = ortho * safeAspect;
+    return;
+  }
+  camera.mode = Camera.PERSPECTIVE_CAMERA;
+  const projection = Matrix.Identity();
+  Matrix.PerspectiveFovLHToRef(
+    camera.fov,
+    safeAspect,
+    camera.minZ,
+    camera.maxZ,
+    projection,
+  );
+  camera.freezeProjectionMatrix(projection);
+}
+
 export function applyAuthoredCameraProperties(
   camera: Camera,
   properties: AuthoredCameraProperties,
 ): void {
-  camera.minZ = asNumber(properties.nearClip, 0.1);
-  camera.maxZ = asNumber(properties.farClip, 1000);
-  const fovDeg = asNumber(properties.fieldOfView, 60);
-  camera.fov = (fovDeg * Math.PI) / 180;
-  const ortho = asNumber(properties.orthographicSize, 5) || 5;
-  if (properties.projectionMode === "orthographic") {
-    camera.mode = 1;
-    camera.orthoTop = ortho;
-    camera.orthoBottom = -ortho;
-    camera.orthoLeft = -ortho * (16 / 9);
-    camera.orthoRight = ortho * (16 / 9);
-  } else {
-    camera.mode = 0;
+  const engine = camera.getEngine();
+  applyAuthoredCameraLens(
+    camera,
+    properties,
+    cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight()),
+  );
+}
+
+export function refreshAuthoredCameraLenses(scene: Scene): void {
+  const engine = scene.getEngine();
+  const aspect = cameraRenderAspect(engine.getRenderWidth(), engine.getRenderHeight());
+  const seen = new Set<Camera>();
+  const state = stateByScene.get(scene);
+  if (state) {
+    for (const camera of state.cameras.values()) {
+      seen.add(camera);
+      applyAuthoredCameraLens(camera, lensPropertiesFromCamera(camera), aspect);
+    }
+  }
+  for (const camera of scene.cameras) {
+    if (seen.has(camera) || !camera.name.startsWith(AUTHORED_CAMERA_PREFIX)) {
+      continue;
+    }
+    applyAuthoredCameraLens(camera, lensPropertiesFromCamera(camera), aspect);
   }
 }
 

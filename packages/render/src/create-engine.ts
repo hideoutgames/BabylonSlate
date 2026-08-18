@@ -44,11 +44,27 @@ import {
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
-import { applySceneEnvironment as applySerializedSceneEnvironment } from "./scene-illumination";
+import {
+  applySceneEnvironment as applySerializedSceneEnvironment,
+  refreshAuthoredCameraLenses,
+} from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import { ResourceCache } from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
+import { applyPlayConsoleRenderCommand } from "./play-console-apply";
+import {
+  applyPlayFreeCamCommand,
+  attachPlayFreeCamInput,
+  createPlayFreeCamController,
+  disablePlayFreeCam,
+  type PlayFreeCamController,
+  type PlayFreeCamInputHandle,
+} from "./play-free-cam";
+import {
+  createPlayConsoleViz,
+  type PlayConsoleVizController,
+} from "./play-console-viz";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
@@ -149,6 +165,8 @@ export interface EngineHandle {
   resetAudioSession: () => void;
   /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
   resetParticleSession: () => void;
+  /** Debug free camera is the Play active camera. */
+  isFreeCamEnabled: () => boolean;
 }
 
 export interface CreateEngineOptions {
@@ -247,6 +265,8 @@ export interface CreateEngineOptions {
     message: string;
     assetGuid?: string;
   }) => void;
+  /** Baked navmesh bytes for Play `shownav`. */
+  navmeshBytes?: Uint8Array | null;
 }
 
 export interface EditorTools {
@@ -451,6 +471,21 @@ export function createEngine(
     scheduler.invalidate("snapshot");
   };
 
+  const playFreeCam: PlayFreeCamController | null = options.playMode
+    ? createPlayFreeCamController(scene, {
+        binding,
+        mode: options.viewportMode ?? "3d",
+      })
+    : null;
+  const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
+    ? attachPlayFreeCamInput(canvas, playFreeCam, {
+        mode: options.viewportMode ?? "3d",
+      })
+    : null;
+  const playViz: PlayConsoleVizController | null = options.playMode
+    ? createPlayConsoleViz(scene, { navmeshBytes: options.navmeshBytes })
+    : null;
+
   const materialDocuments = new Map<string, MaterialDocument>(
     options.materialDocuments ?? [],
   );
@@ -550,6 +585,8 @@ export function createEngine(
       return;
     }
     if (options.playMode) {
+      disablePlayFreeCam(playFreeCam);
+      playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
       applySerializedSceneEnvironment(scene, sceneData, {
@@ -785,6 +822,7 @@ export function createEngine(
       editor?.camera.setCanvasHeight(height);
       editor?.camera.updateOrthoBounds(width / height);
     }
+    refreshAuthoredCameraLenses(scene);
   };
 
   let interpAlpha = 1;
@@ -798,6 +836,7 @@ export function createEngine(
     if (sampled) {
       const previousCamera = scene.activeCamera;
       applySnapshotToScene(scene, binding, sampled);
+      playViz?.refresh();
       rebuildIfActiveCameraChanged(previousCamera);
       lastPositions = positionsFromSample(sampled);
     }
@@ -887,6 +926,9 @@ export function createEngine(
     dispose: () => {
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
+      playFreeCamInput?.dispose();
+      playFreeCam?.dispose();
+      playViz?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -916,6 +958,7 @@ export function createEngine(
     resize,
     setSize: (width: number, height: number) => {
       engine.setSize(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)));
+      refreshAuthoredCameraLenses(scene);
     },
     loadScene,
     pushSnapshot: (buffer: Float32Array) => {
@@ -926,6 +969,9 @@ export function createEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
+      applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+      applyPlayFreeCamCommand(playFreeCam, command);
+      playViz?.applyCommand(command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }
@@ -1120,6 +1166,7 @@ export function createEngine(
     resetParticleSession: () => {
       particleService?.resetSession();
     },
+    isFreeCamEnabled: () => playFreeCam?.enabled() ?? false,
   };
 }
 

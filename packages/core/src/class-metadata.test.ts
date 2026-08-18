@@ -64,8 +64,10 @@ describe("Widget class ids", () => {
   it("maps Button and Image to concrete subclasses", () => {
     expect(widgetClassIdForKind("Button")).toBe("ButtonWidget");
     expect(widgetClassIdForKind("Image")).toBe("ImageWidget");
+    expect(widgetClassIdForKind("Material")).toBe("MaterialWidget");
     expect(widgetKindFromClassId("ButtonWidget")).toBe("Button");
     expect(widgetKindFromClassId("ImageWidget")).toBe("Image");
+    expect(widgetKindFromClassId("MaterialWidget")).toBe("Material");
   });
 
   it("maps every engine widget kind deterministically", () => {

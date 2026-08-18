@@ -9,6 +9,7 @@ import type {
   RigidBodyDesc,
   Vec3,
 } from "./types";
+import type { DebugColliderPrimitive } from "./debug-colliders";
 
 /**
  * Transport-agnostic physics port hosted inside the game worker.
@@ -33,6 +34,9 @@ export interface PhysicsBackend {
 
   createCollider(desc: ColliderDesc): void;
   destroyCollider(colliderId: string): void;
+
+  /** Debug draw primitives for `showcollision` (boxes/spheres/circles/polylines). */
+  listDebugColliders(): readonly DebugColliderPrimitive[];
 
   /** Fixed-step simulation. */
   step(dt: number): void;

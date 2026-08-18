@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -109,6 +109,63 @@ export type PlayUiCommandHandlers = {
   onUiRemove?: (instanceId: string) => void;
 };
 
+/** Apply worker sessionPaused onto Play overlay chrome. */
+export function applyPlaySessionPausedCommand(
+  command: CommandMessage,
+  onSessionPaused?: (paused: boolean) => void,
+): boolean {
+  if (command.type !== "sessionPaused") return false;
+  onSessionPaused?.(command.paused);
+  return true;
+}
+
+export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
+  "assignMesh",
+  "assignMaterial",
+  "possessCamera",
+  "setShadowQuality",
+  "spawn",
+  "playSound",
+  "stopSound",
+  "setChannelVolume",
+  "setGlobalVolume",
+  "setFrameCap",
+  "setRenderQuality",
+  "setResolutionScale",
+  "assignParticle",
+  "setParticlePlaying",
+  "setFreeCam",
+  "setWireframe",
+  "setShowBounds",
+  "setShowCollision",
+  "setShowNav",
+  "debugColliders",
+  "animState",
+]);
+
+export function shouldForwardPlayEngineCommand(type: string): boolean {
+  return PLAY_ENGINE_APPLY_COMMAND_TYPES.has(type as CommandMessage["type"]);
+}
+
+export function applyPlayHudConsoleCommand(
+  command: CommandMessage,
+  handlers: {
+    onShowFps?: (enabled: boolean) => void;
+    onStat?: (name: string, enabled: boolean) => void;
+  },
+): boolean {
+  if (command.type === "setShowFps") {
+    handlers.onShowFps?.(command.enabled);
+    return true;
+  }
+  if (command.type === "setStat") {
+    handlers.onShowFps?.(true);
+    handlers.onStat?.(command.name, command.enabled);
+    return true;
+  }
+  return false;
+}
+
 /** Apply worker UI commands onto Play HUD callbacks. */
 export function applyPlayUiCommand(
   command: CommandMessage,
@@ -127,6 +184,16 @@ export function applyPlayUiCommand(
     return true;
   }
   return false;
+}
+
+/** Apply worker `setInputMode` onto Play capture and HUD callbacks. */
+export function applyPlayInputModeCommand(
+  command: CommandMessage,
+  onSetInputMode?: (mode: InputMode) => void,
+): boolean {
+  if (command.type !== "setInputMode") return false;
+  onSetInputMode?.(parseInputMode(command.mode));
+  return true;
 }
 
 export type PlayUiWidgetEventTarget = {
@@ -391,6 +458,7 @@ export function startPlaySession(options: {
   onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
   onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
   onUiRemove?: (instanceId: string) => void;
+  onSetInputMode?: (mode: InputMode) => void;
   /** Slim UserInterface metadata; posted before `loadScripts`. */
   userInterfaces?: readonly UserInterfaceRuntimeDocument[];
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
@@ -435,6 +503,9 @@ export function startPlaySession(options: {
   onFatalDiagnostic?: () => void;
   /** When true, pause after Play boot so `boot.play`'s resume cannot undo it. */
   pauseOnPlay?: boolean;
+  onSessionPaused?: (paused: boolean) => void;
+  onShowFps?: (enabled: boolean) => void;
+  onStatHighlight?: (name: string, enabled: boolean) => void;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -476,6 +547,8 @@ export function startPlaySession(options: {
     pixelsPerUnit: options.pixelsPerUnit,
     pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
+    viewportMode: options.scene?.viewportMode,
+    navmeshBytes: options.navmeshBytes,
     ktx2BasePath: editorKtx2PublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
@@ -511,6 +584,7 @@ export function startPlaySession(options: {
   let bridgeRate = 0;
   let hudStats: PlayHudStats | undefined;
   let lastWorkerTickIndex = 0;
+  let input: InputCaptureHandle | null = null;
 
   const emitHudStats = (next: PlayHudStats) => {
     hudStats = next;
@@ -533,22 +607,7 @@ export function startPlaySession(options: {
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
-    if (
-      command.type === "assignMesh" ||
-      command.type === "assignMaterial" ||
-      command.type === "possessCamera" ||
-      command.type === "setShadowQuality" ||
-      command.type === "spawn" ||
-      command.type === "playSound" ||
-      command.type === "stopSound" ||
-      command.type === "setChannelVolume" ||
-      command.type === "setGlobalVolume" ||
-      command.type === "assignParticle" ||
-      command.type === "setParticlePlaying"
-    ) {
-      handle.applyCommand(command);
-    }
-    if (command.type === "animState") {
+    if (shouldForwardPlayEngineCommand(command.type)) {
       handle.applyCommand(command);
     }
     if (command.type === "activeScene") {
@@ -607,6 +666,19 @@ export function startPlaySession(options: {
       onUiApply: options.onUiApply,
       onUiRemove: options.onUiRemove,
     });
+    applyPlaySessionPausedCommand(command, options.onSessionPaused);
+    applyPlayHudConsoleCommand(command, {
+      onShowFps: options.onShowFps,
+      onStat: options.onStatHighlight,
+    });
+    if (
+      applyPlayInputModeCommand(command, (mode) => {
+        input?.setInputMode(mode);
+        options.onSetInputMode?.(mode);
+      })
+    ) {
+      return;
+    }
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
     }
@@ -750,7 +822,9 @@ export function startPlaySession(options: {
     );
   }
 
-  const input: InputCaptureHandle = attachInputCapture(canvas);
+  input = attachInputCapture(canvas, {
+    skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+  });
 
   const unlock = () => {
     void handle.unlockAudio();
@@ -847,7 +921,7 @@ export function startPlaySession(options: {
     },
     lastActorPositions: () => handle.lastActorPositions(),
     pushTouchAxis: (controlId: string, value: number) => {
-      input.pushTouchAxis(controlId, value);
+      input?.pushTouchAxis(controlId, value);
     },
     dispatchUiWidgetEvent: (event) =>
       dispatchPlayUiWidgetEvent({ worker, runtime }, event),

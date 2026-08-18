@@ -581,8 +581,6 @@ export function applyParticleEmitterPayload(
   system.gravity = toVec3(payload.gravity);
   system.minSize = payload.minSize;
   system.maxSize = payload.maxSize;
-  system.minAngularSpeed = payload.minAngularSpeed;
-  system.maxAngularSpeed = payload.maxAngularSpeed;
   system.isLocal = options.space === "local";
   system.isBillboardBased = true;
   system.billboardMode = PARTICLE_BILLBOARDMODE_ALL;
@@ -625,9 +623,14 @@ export function applyParticleEmitterPayload(
     system.addSizeGradient(key.t, key.value);
   }
   if (payload.angularSpeedGradient && system.addAngularSpeedGradient) {
+    system.minAngularSpeed = 0;
+    system.maxAngularSpeed = 0;
     for (const key of payload.angularSpeedGradient) {
       system.addAngularSpeedGradient(key.t, key.value);
     }
+  } else {
+    system.minAngularSpeed = payload.minAngularSpeed;
+    system.maxAngularSpeed = payload.maxAngularSpeed;
   }
   if (payload.dragGradient && system.addDragGradient) {
     for (const key of payload.dragGradient) {

@@ -51,6 +51,10 @@ describe("PinTypePicker", () => {
   it("narrows known pin picker types", () => {
     expect(isPinPickerType("bool")).toBe(true);
     expect(isPinPickerType("class")).toBe(true);
+    expect(isPinPickerType("vec4")).toBe(true);
+    expect(isPinPickerType("rotator")).toBe(true);
+    expect(isPinPickerType("color")).toBe(true);
+    expect(isPinPickerType("transform")).toBe(true);
     expect(isPinPickerType("widget")).toBe(false);
   });
 });

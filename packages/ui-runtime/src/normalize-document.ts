@@ -1,5 +1,6 @@
 import {
   WIDGET_KINDS,
+  defaultHitTestableFor,
   createWidget,
   defaultPropsFor,
   defaultWidgetStyle,
@@ -70,6 +71,10 @@ function normalizeWidget(id: string, value: unknown): WidgetNode {
     visualOverrideGuid:
       typeof record.visualOverrideGuid === "string" ? record.visualOverrideGuid : null,
     ignoreSafeArea: record.ignoreSafeArea === true,
+    hitTestable:
+      typeof record.hitTestable === "boolean"
+        ? record.hitTestable
+        : defaultHitTestableFor(kind),
   };
 }
 

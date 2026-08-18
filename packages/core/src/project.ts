@@ -114,7 +114,10 @@ export interface RenderProjectSettings {
   customResolution: boolean;
   width: number;
   height: number;
-  /** When true, letterbox the WxH framebuffer; when false, stretch to fill. */
+  /**
+   * Stored on the project. A locked framebuffer is always letterboxed
+   * (`fitContainedRect`); this flag no longer stretches to fill.
+   */
   blackBars: boolean;
 }
 
@@ -129,7 +132,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   blackBars: false,
 };
 
-/** New projects lock Play/runtime to 1920×1080 and stretch (no black bars). */
+/** New projects lock Play/runtime to 1920×1080 and letterbox the framebuffer. */
 export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   customResolution: true,
   width: DEFAULT_RENDER_WIDTH,
@@ -243,7 +246,7 @@ export interface GraphClassMemberPin {
   name: string;
   typeId: string;
   direction: "in" | "out";
-  /** Object/class pin constraint. Missing means unconstrained BObject at pin conversion. */
+  /** Object/class pin constraint, or Structure/Enum asset guid. Missing means unconstrained BObject at pin conversion. */
   typeClassId?: string;
 }
 
@@ -263,7 +266,7 @@ export interface GraphClassMember {
   name: string;
   /** Variable pin type (bool, float, …). */
   typeId?: string;
-  /** Object/class variable constraint. Missing means unconstrained BObject at pin conversion. */
+  /** Object/class constraint, or Structure/Enum asset guid when typeId is struct/enum. */
   typeClassId?: string;
   defaultValue?: unknown;
   /** Function and custom-event signature pins. */
@@ -759,6 +762,9 @@ const DEFAULT_SCENE_CAMERA_COMPONENT_ID = "component-camera";
 /** Matches the editor ArcRotate radius in `@babylonslate/render` (no render import). */
 const DEFAULT_SCENE_CAMERA_RADIUS = 8;
 
+export const DEFAULT_CAMERA_FIELD_OF_VIEW = 60;
+export const DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE = 5;
+
 function defaultEditorOrbitPosition(): [number, number, number] {
   const alpha = -Math.PI / 2;
   const beta = Math.PI / 2.5;
@@ -786,8 +792,8 @@ function createDefaultCameraActor(viewportMode: ViewportMode): SerializedActor {
         id: DEFAULT_SCENE_CAMERA_COMPONENT_ID,
         classId: "CameraComponent",
         properties: {
-          fieldOfView: 60,
-          orthographicSize: 5,
+          fieldOfView: DEFAULT_CAMERA_FIELD_OF_VIEW,
+          orthographicSize: DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
           projectionMode: viewportMode === "2d" ? "orthographic" : "perspective",
           nearClip: 0.1,
           farClip: 1000,

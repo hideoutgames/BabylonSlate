@@ -58,6 +58,22 @@ describe("material lowering", () => {
     expect(plan.plan.outputs.baseColor).not.toBeNull();
   });
 
+  it("lowers an interface material to Color and Opacity channels", () => {
+    const result = lowerMaterialDocument(
+      createDefaultMaterialDocument("HudGlow", "interface"),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.domain).toBe("interface");
+    expect(result.plan.outputs.color).not.toBeNull();
+    expect(result.plan.outputs.opacity).not.toBeNull();
+    expect(result.plan.bufferRequirements).toEqual({
+      sceneColor: false,
+      sceneDepth: false,
+      sceneNormal: false,
+    });
+  });
+
   it("refuses to lower a graph with errors", () => {
     const doc = createDefaultMaterialDocument();
     doc.nodes.push({

@@ -534,4 +534,19 @@ describe("attachFullscreenGuiPointerMoves", () => {
     } as unknown as Event);
     expect(pick).toHaveBeenCalledTimes(1);
   });
+
+  it("skips pick when the Layer ADT has picking disabled", () => {
+    const { canvas, listeners } = fakeCanvas();
+    const pick = vi.fn();
+    const adt = { pick, disablePicking: true } as unknown as AdvancedDynamicTexture;
+    attachFullscreenGuiPointerMoves(canvas, adt);
+    listeners.pointermove?.({
+      type: "pointermove",
+      clientX: 40,
+      clientY: 20,
+      stopPropagation: vi.fn(),
+      preventDefault: vi.fn(),
+    } as unknown as Event);
+    expect(pick).not.toHaveBeenCalled();
+  });
 });

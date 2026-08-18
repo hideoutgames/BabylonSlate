@@ -25,6 +25,8 @@ import { behaviourTreeNodes } from "./behaviour-tree";
 import { navigationNodes } from "./navigation";
 import { illuminationNodes } from "./illumination";
 import { animationNodes } from "./animation";
+import { structNodes } from "./struct";
+import { enumNodes } from "./enum";
 
 export * from "./flow";
 export * from "./math";
@@ -53,6 +55,8 @@ export * from "./behaviour-tree";
 export * from "./navigation";
 export * from "./illumination";
 export * from "./animation";
+export * from "./struct";
+export * from "./enum";
 
 export const ALL_NODE_CATEGORIES = [
   "flow",
@@ -82,6 +86,8 @@ export const ALL_NODE_CATEGORIES = [
   "camera",
   "light",
   "animation",
+  "struct",
+  "enum",
 ] as const;
 
 export function allNodeDefinitions(): NodeDefinition[] {
@@ -112,6 +118,8 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...navigationNodes,
     ...illuminationNodes,
     ...animationNodes,
+    ...structNodes,
+    ...enumNodes,
   ];
 }
 

@@ -455,7 +455,7 @@ export class AudioService {
       assetGuid,
       source: decoded,
       gain: resolved.gain,
-      loop: command.loop === true,
+      loop: command.loop === true || payload.loop === true,
       spatial,
       reverbSend: resolved.environmentReverb,
       clipChunkId: clip.chunkId,

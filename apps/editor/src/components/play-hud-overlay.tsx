@@ -14,7 +14,13 @@ import {
   layoutUserInterface,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import type { UiWidgetEventKind } from "@babylonslate/bridge";
+import {
+  DEFAULT_INPUT_MODE,
+  inputModeAllowsGuiHits,
+  type InputMode,
+} from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import { Input } from "@babylonslate/ui/components/input";
 import { useEngineUiDesignerPresets } from "../lib/engine-ui-presets";
@@ -24,6 +30,7 @@ import { parsePlayHudControlId } from "../lib/play-content";
 export { parsePlayHudControlId };
 
 const defaultResolveImageUrl = (): string | null => null;
+const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
 
 export interface PlayHudOverlayProps {
   instances?: ReadonlyArray<{
@@ -43,8 +50,12 @@ export interface PlayHudOverlayProps {
   }) => void;
   /** Play scene; when set, widgets render through Babylon GUI. */
   scene?: Scene | null;
+  /** Play input mode; Game paints HUD but skips GUI hits. */
+  inputMode?: InputMode;
   fontEntries?: readonly FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
+  resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  materialFunctions?: () => Record<string, MaterialFunctionDocument>;
 }
 
 function numberProp(
@@ -99,8 +110,11 @@ export function PlayHudOverlay({
   onTouchAxis,
   onWidgetEvent,
   scene = null,
+  inputMode = DEFAULT_INPUT_MODE,
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
+  resolveInterfaceMaterial = defaultResolveInterfaceMaterial,
+  materialFunctions,
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
   const onTouchAxisRef = useRef(onTouchAxis);
@@ -111,6 +125,18 @@ export function PlayHudOverlay({
   resolveImageUrlRef.current = resolveImageUrl;
   const boundResolveImageUrl = useCallback(
     (guid: string) => resolveImageUrlRef.current(guid),
+    [],
+  );
+  const resolveInterfaceMaterialRef = useRef(resolveInterfaceMaterial);
+  resolveInterfaceMaterialRef.current = resolveInterfaceMaterial;
+  const boundResolveInterfaceMaterial = useCallback(
+    (guid: string) => resolveInterfaceMaterialRef.current(guid),
+    [],
+  );
+  const materialFunctionsRef = useRef(materialFunctions);
+  materialFunctionsRef.current = materialFunctions;
+  const boundMaterialFunctions = useCallback(
+    () => materialFunctionsRef.current?.() ?? {},
     [],
   );
   const extras = useEngineUiDesignerPresets();
@@ -179,6 +205,8 @@ export function PlayHudOverlay({
         scaleRule: first?.scaleRule ?? "shortestSide",
         safeArea: safeAreaRef.current,
         resolveImageUrl: boundResolveImageUrl,
+        resolveInterfaceMaterial: boundResolveInterfaceMaterial,
+        materialFunctions: boundMaterialFunctions,
         onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
         onWidgetEvent: (event) => {
           const parsed = parsePlayHudControlId(event.widgetId);
@@ -202,7 +230,11 @@ export function PlayHudOverlay({
       attachedRef.current = null;
       setGuiReady(false);
     }
-  }, [scene, boundResolveImageUrl]);
+  }, [scene, boundResolveImageUrl, boundResolveInterfaceMaterial, boundMaterialFunctions]);
+
+  useEffect(() => {
+    attachedRef.current?.setAllowGuiHits?.(inputModeAllowsGuiHits(inputMode));
+  }, [inputMode, guiReady, scene]);
 
   useEffect(() => {
     const attached = attachedRef.current;
@@ -266,7 +298,7 @@ export function PlayHudOverlay({
     [onWidgetEvent],
   );
 
-  const useDomHits = !guiReady;
+  const useDomHits = !guiReady && inputModeAllowsGuiHits(inputMode);
 
   return (
     <div

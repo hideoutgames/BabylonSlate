@@ -40,7 +40,7 @@ import {
 } from "./document-workspace-context";
 import { useOptionalPlay } from "./play-context";
 import { familyFromAssetPayload } from "../lib/font-preview";
-import { asUiDocument, type PlayUiLibrary } from "../lib/play-content";
+import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument, type PlayUiLibrary } from "../lib/play-content";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
   resolveUiImages,
@@ -50,6 +50,7 @@ import {
   type UiImageIssue,
 } from "../lib/play-ui-images";
 import type { FontAssetEntry } from "@babylonslate/render";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import {
   projectUiAssetCacheKey,
   rememberProjectUiAssets,
@@ -64,6 +65,8 @@ import {
   type DesignView,
 } from "../components/ui-design-gestures";
 import { UiWidgetCatalog } from "../components/ui-widget-catalog";
+import type { UiAssetPickKind } from "../components/ui-design-details";
+import { isInterfaceMaterialForPicker } from "../lib/content-browser-helpers";
 
 export interface UiEditingContextValue {
   path: string;
@@ -89,6 +92,8 @@ export interface UiEditingContextValue {
   sharedEngine: import("@babylonjs/core").Engine | null;
   fontEntries: FontAssetEntry[];
   resolveImageUrl: (guid: string) => string | null;
+  resolveInterfaceMaterial: (guid: string) => MaterialDocument | null;
+  materialFunctions: () => Record<string, MaterialFunctionDocument>;
   imageIssues: readonly UiImageIssue[];
   catalogOpen: boolean;
   setCatalogOpen: (open: boolean) => void;
@@ -98,6 +103,7 @@ export interface UiEditingContextValue {
     image?: string;
     font?: string;
     visualOverride?: string;
+    material?: string;
   };
   commit: (next: Record<string, unknown>, mergeKey?: string) => void;
   patchWidget: (
@@ -106,9 +112,7 @@ export interface UiEditingContextValue {
   ) => void;
   patchLayout: (id: string, nextLayout: WidgetLayout, mergeKey?: string) => void;
   addWidget: (kind: WidgetKind) => void;
-  setAssetPick: (
-    kind: "nestedUi" | "image" | "font" | "visualOverride" | null,
-  ) => void;
+  setAssetPick: (kind: UiAssetPickKind | null) => void;
   fitView: () => void;
 }
 
@@ -130,6 +134,7 @@ export function UiEditingProvider({
     openDocuments,
     assetRegistry,
     collectPlayUiLibrary,
+    collectPlayMaterialLibrary,
     projectDocument,
     projectName,
     readAssetChunk,
@@ -157,15 +162,17 @@ export function UiEditingProvider({
     if (next !== presetId) setPresetId(next);
   }, [presetId, extras]);
   const [selectedId, setSelectedId] = useState(ui.rootId);
-  const [assetPick, setAssetPick] = useState<
-    "nestedUi" | "image" | "font" | "visualOverride" | null
-  >(null);
+  const [assetPick, setAssetPick] = useState<UiAssetPickKind | null>(null);
   const [uiLibrary, setUiLibrary] = useState<PlayUiLibrary>({});
   const [fontEntries, setFontEntries] = useState<FontAssetEntry[]>([]);
   const [imageUrls, setImageUrls] = useState<Map<string, string>>(
     () => new Map(),
   );
   const [imageIssues, setImageIssues] = useState<UiImageIssue[]>([]);
+  const [interfaceMaterials, setInterfaceMaterials] = useState<{
+    documents: Map<string, MaterialDocument>;
+    functions: Map<string, MaterialFunctionDocument>;
+  }>(() => ({ documents: new Map(), functions: new Map() }));
   const imageUrlsRef = useRef(imageUrls);
   imageUrlsRef.current = imageUrls;
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
@@ -274,6 +281,49 @@ export function UiEditingProvider({
       return uiLibrary[guid] ?? null;
     },
     [assetRegistry, openDocuments, selfGuid, ui, uiLibrary],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const guids = interfaceMaterialGuidsFromUiDocuments([ui], resolveNested);
+    if (guids.length === 0) {
+      setInterfaceMaterials((prev) =>
+        prev.documents.size === 0 && prev.functions.size === 0
+          ? prev
+          : { documents: new Map(), functions: new Map() },
+      );
+      return;
+    }
+    void collectPlayMaterialLibrary(null, [], guids)
+      .then((loaded) => {
+        if (cancelled) return;
+        setInterfaceMaterials({
+          documents: loaded.documents,
+          functions: loaded.functions,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInterfaceMaterials((prev) =>
+            prev.documents.size === 0 && prev.functions.size === 0
+              ? prev
+              : { documents: new Map(), functions: new Map() },
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [collectPlayMaterialLibrary, resolveNested, ui]);
+
+  const resolveInterfaceMaterial = useCallback(
+    (guid: string) =>
+      lookupInterfaceMaterialDocument(guid, interfaceMaterials.documents),
+    [interfaceMaterials.documents],
+  );
+  const materialFunctions = useCallback(
+    () => Object.fromEntries(interfaceMaterials.functions),
+    [interfaceMaterials.functions],
   );
 
   const viewport = useMemo(
@@ -427,6 +477,13 @@ export function UiEditingProvider({
     visualOverride: (assetRegistry?.list() ?? []).find(
       (asset) => asset.header.guid === selected?.visualOverrideGuid,
     )?.header.name,
+    material: (assetRegistry?.list() ?? []).find(
+      (asset) =>
+        asset.header.guid ===
+        (typeof selected?.props.materialGuid === "string"
+          ? selected.props.materialGuid
+          : undefined),
+    )?.header.name,
   };
 
   const value = useMemo<UiEditingContextValue>(
@@ -454,6 +511,8 @@ export function UiEditingProvider({
       sharedEngine,
       fontEntries,
       resolveImageUrl,
+      resolveInterfaceMaterial,
+      materialFunctions,
       imageIssues,
       catalogOpen,
       setCatalogOpen,
@@ -479,6 +538,8 @@ export function UiEditingProvider({
       fitView,
       fontEntries,
       resolveImageUrl,
+      resolveInterfaceMaterial,
+      materialFunctions,
       imageIssues,
       isEditorUtilityInterface,
       layout,
@@ -530,14 +591,27 @@ export function UiEditingProvider({
                     type: asset.header.type,
                     path: asset.path,
                   }))
-              : pickerAssets
+              : assetPick === "material"
+                ? (assetRegistry?.list() ?? [])
+                    .filter((asset) =>
+                      isInterfaceMaterialForPicker(asset, openDocuments),
+                    )
+                    .map((asset) => ({
+                      guid: asset.header.guid,
+                      name: asset.header.name,
+                      type: asset.header.type,
+                      path: asset.path,
+                    }))
+                : pickerAssets
         }
         allowedTypes={
           assetPick === "image"
             ? ["Texture"]
             : assetPick === "font"
               ? ["Font"]
-              : ["UserInterface"]
+              : assetPick === "material"
+                ? ["Material"]
+                : ["UserInterface"]
         }
         allowNone
         title={
@@ -547,7 +621,9 @@ export function UiEditingProvider({
               ? "Pick Font"
               : assetPick === "visualOverride"
                 ? "Pick Visual Override"
-                : "Pick User Interface"
+                : assetPick === "material"
+                  ? "Pick Material"
+                  : "Pick User Interface"
         }
         data-testid="ui-nested-picker"
         onPick={(guid) => {
@@ -562,6 +638,10 @@ export function UiEditingProvider({
           } else if (assetPick === "image") {
             patchWidget(selected.id, {
               props: { ...selected.props, imageGuid: guid },
+            });
+          } else if (assetPick === "material") {
+            patchWidget(selected.id, {
+              props: { ...selected.props, materialGuid: guid },
             });
           } else if (assetPick === "font") {
             const family = guid

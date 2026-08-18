@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { COLOR, FLOAT, STRING, VEC2, VEC4, assetRef, classRef, enumRef, objectRef, pin } from "@babylonslate/scripting";
 import {
   collectEnumMemberNames,
+  connectedEnumGuidFromSerialized,
   connectedInputPinIds,
   developmentOnlyPropertyRows,
+  enumNodePropertyRows,
   inspectorLiteralPinDefaults,
   logNodePropertyRows,
   parameterRowsFromPinList,
@@ -355,7 +357,135 @@ describe("collectEnumMemberNames", () => {
     ).toEqual({
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
+      "engine:InputMode": ["All", "Interface", "Game"],
     });
+  });
+
+  it("merges built-in engine:InputMode members", () => {
+    expect(collectEnumMemberNames([], [])["engine:InputMode"]).toEqual([
+      "All",
+      "Interface",
+      "Game",
+    ]);
+  });
+});
+
+describe("variableDefaultPropertyRows structs and enums", () => {
+  it("expands nested Structure fields as Title Case rows", () => {
+    const onChange = vi.fn();
+    const schemas = {
+      enums: {
+        "enum-team": {
+          name: "Team",
+          members: [
+            { name: "Red", value: 1 },
+            { name: "Blue", value: 2 },
+          ],
+        },
+      },
+      structs: {
+        "struct-inner": {
+          name: "Inner",
+          fields: [{ name: "armor", typeId: "int" }],
+        },
+        "struct-stats": {
+          name: "Stats",
+          fields: [
+            { name: "health", typeId: "int" },
+            { name: "team", typeId: "enum", typeClassId: "enum-team" },
+            { name: "inner", typeId: "struct", typeClassId: "struct-inner" },
+          ],
+        },
+      },
+    };
+    const rows = variableDefaultPropertyRows(
+      "struct",
+      { health: 8, team: "Blue", inner: { armor: 3 } },
+      onChange,
+      {
+        typeClassId: "struct-stats",
+        schemas,
+        enumMembers: { "enum-team": ["Red", "Blue"] },
+      },
+    );
+    expect(rows.map((row) => row.label)).toEqual([
+      "Health",
+      "Team",
+      "Inner Armor",
+    ]);
+    const health = rows[0];
+    if (health?.kind === "number") health.onChange(10);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ health: 10, team: "Blue" }),
+    );
+  });
+
+  it("shows an Enum Select for a bound enum variable", () => {
+    const onChange = vi.fn();
+    const rows = variableDefaultPropertyRows("enum", "Blue", onChange, {
+      typeClassId: "enum-team",
+      enumMembers: { "enum-team": ["Red", "Blue"] },
+    });
+    expect(rows).toMatchObject([
+      { kind: "enum", label: "Default", value: "Blue" },
+    ]);
+  });
+});
+
+describe("enumNodePropertyRows", () => {
+  it("disables the type select when a wired guid is present", () => {
+    const onPatch = vi.fn();
+    const rows = enumNodePropertyRows(
+      "enum.switch",
+      { enumGuid: "enum-team" },
+      onPatch,
+      {
+        enums: [{ guid: "enum-team", name: "Team", members: [{ name: "Red" }] }],
+        typeSelectDisabled: true,
+      },
+    );
+    expect(rows[0]).toMatchObject({
+      id: "enumGuid",
+      disabled: true,
+      value: "enum-team",
+    });
+  });
+});
+
+describe("connectedEnumGuidFromSerialized", () => {
+  it("reads the guid from a wired enumRef pin", () => {
+    expect(
+      connectedEnumGuidFromSerialized(
+        {
+          nodes: [
+            {
+              id: "make",
+              data: {
+                __pins: [
+                  {
+                    id: "out",
+                    name: "out",
+                    kind: "data",
+                    direction: "out",
+                    type: { kind: "enumRef", guid: "enum-team" },
+                  },
+                ],
+              },
+            },
+            { id: "sw", data: {} },
+          ],
+          edges: [
+            {
+              source: "make",
+              target: "sw",
+              sourceHandle: "out",
+              targetHandle: "value",
+            },
+          ],
+        },
+        "sw",
+      ),
+    ).toBe("enum-team");
   });
 });
 

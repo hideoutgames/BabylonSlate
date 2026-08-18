@@ -87,7 +87,7 @@ describe("Playwright iPad project filter", () => {
     expect(ipadTitles).toEqual(
       expect.arrayContaining([
         "Touch shell UX › dockview tabs meet pointer-aware height",
-        "Touch shell UX › pinned Content Browser tab stays visible when closable tabs scroll",
+        "Touch shell UX › pinned Content Browser and Scene tabs stay visible when closable tabs scroll",
         "Touch shell UX › opens context menu after long press in viewport panel",
         "Windows menu › restores Outliner and Output Log to their default dock positions",
         "Editor density and IA › chrome is compact, has no Add tab, and Focus is disabled on Content Browser",

@@ -219,6 +219,16 @@ describe("Material details panel", () => {
     expect(select).toBeTruthy();
   });
 
+  it("offers Interface alongside Surface and Post Process", async () => {
+    render(<MaterialDetailsPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("property-domain"));
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Interface" })).toBeTruthy();
+    });
+    expect(screen.getByRole("option", { name: "Post Process" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Surface" })).toBeTruthy();
+  });
+
   it("reports whether the graph renders automatically", () => {
     render(<MaterialDetailsPanel {...panelProps} />);
     expect(

@@ -109,6 +109,12 @@
   background: var(--muted);
 }
 
+.editor-chrome-tabs-pinned {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+}
+
 .editor-chrome-tabs-scroll {
   display: flex;
   min-width: 0;

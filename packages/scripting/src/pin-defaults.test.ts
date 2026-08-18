@@ -20,6 +20,7 @@ import {
   classRef,
   objectRef,
   enumRef,
+  structRef,
 } from "./types";
 import {
   defaultJsValue,
@@ -53,6 +54,7 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(enumRef("e1"))).toBe(true);
     expect(pinAcceptsLiteralDefault(classRef("Actor"))).toBe(true);
     expect(pinAcceptsLiteralDefault(assetRef("Audio"))).toBe(true);
+    expect(pinAcceptsLiteralDefault(structRef("s1"))).toBe(true);
   });
 
   it("rejects exec, object refs, containers, transform, and wildcards", () => {
@@ -89,6 +91,7 @@ describe("defaultJsValue", () => {
     expect(defaultJsValue(COLOR)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
     expect(defaultJsValue(VEC4)).toEqual({ x: 0, y: 0, z: 0, w: 0 });
     expect(defaultJsValue(enumRef("e1"))).toBe("");
+    expect(defaultJsValue(structRef("s1"))).toEqual({});
     expect(defaultJsValue(classRef("Actor"))).toBe("Actor");
     expect(defaultJsValue(assetRef("Audio"))).toBe("");
   });
