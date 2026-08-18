@@ -8,7 +8,6 @@ import {
   TreeView,
   TypeVisualIcon,
   engineParentOf,
-  rangeSelectTreeIds,
   resolveActorTypeVisual,
   walkAncestry,
   type NestedMenuItem,
@@ -18,8 +17,6 @@ import {
 import {
   actorSubtree,
   nextFolderId,
-  wouldCreateCycle,
-  wouldCreateFolderCycle,
   type SerializedActor,
   type SerializedGraph,
   type SerializedOutlinerFolder,
@@ -56,70 +53,22 @@ import {
 } from "../lib/place-actors";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { prefabComponentsFromGraph } from "../lib/prefab-preview";
+import {
+  actorRowId,
+  applyOutlinerDropMoves,
+  applyOutlinerRowSelect,
+  folderRowId,
+  outlinerRowTarget,
+  outlinerTreeDropMoves,
+} from "../lib/outliner-drop";
 
-const FOLDER_ROW_PREFIX = "folder:";
-const ACTOR_ROW_PREFIX = "actor:";
-
-export function folderRowId(folderId: string): string {
-  return `${FOLDER_ROW_PREFIX}${folderId}`;
-}
-
-export function actorRowId(actorId: string): string {
-  return `${ACTOR_ROW_PREFIX}${actorId}`;
-}
-
-export type OutlinerRowTarget =
-  | { kind: "folder"; id: string }
-  | { kind: "actor"; id: string };
-
-/** Rows are namespaced so a folder can never be mistaken for an actor. */
-export function outlinerRowTarget(
-  rowId: string | null,
-): OutlinerRowTarget | null {
-  if (!rowId) return null;
-  if (rowId.startsWith(FOLDER_ROW_PREFIX)) {
-    return { kind: "folder", id: rowId.slice(FOLDER_ROW_PREFIX.length) };
-  }
-  if (rowId.startsWith(ACTOR_ROW_PREFIX)) {
-    return { kind: "actor", id: rowId.slice(ACTOR_ROW_PREFIX.length) };
-  }
-  return null;
-}
-
-export function applyOutlinerRowSelect(
-  rowId: string,
-  options: TreeSelectOptions | undefined,
-  visibleRowIds: readonly string[],
-  selectedActorIds: readonly string[],
-): { folderId: string | null; actorIds: string[] } {
-  const target = outlinerRowTarget(rowId);
-  if (target?.kind === "folder") {
-    return { folderId: target.id, actorIds: [] };
-  }
-  if (target?.kind !== "actor") {
-    return { folderId: null, actorIds: [] };
-  }
-  if (options?.range) {
-    const actorIds = visibleRowIds
-      .map((id) => outlinerRowTarget(id))
-      .filter((row): row is { kind: "actor"; id: string } => row?.kind === "actor")
-      .map((row) => row.id);
-    const from = selectedActorIds[selectedActorIds.length - 1];
-    return {
-      folderId: null,
-      actorIds: rangeSelectTreeIds(actorIds, from, target.id),
-    };
-  }
-  if (options?.additive) {
-    return {
-      folderId: null,
-      actorIds: selectedActorIds.includes(target.id)
-        ? selectedActorIds.filter((id) => id !== target.id)
-        : [...selectedActorIds, target.id],
-    };
-  }
-  return { folderId: null, actorIds: [target.id] };
-}
+export {
+  actorRowId,
+  applyOutlinerRowSelect,
+  folderRowId,
+  outlinerRowTarget,
+  type OutlinerRowTarget,
+} from "../lib/outliner-drop";
 
 /**
  * Depth-first walk so children follow their parent in the flattened list.
@@ -298,7 +247,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
     () => new Map(),
@@ -333,15 +282,16 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [applySceneChange, documentId],
   );
 
-  const selectedRowIds = selectedFolderId
-    ? [folderRowId(selectedFolderId)]
-    : selectedActorIds.map((id) => actorRowId(id));
+  const selectedRowIds = [
+    ...selectedFolderIds.map((id) => folderRowId(id)),
+    ...selectedActorIds.map((id) => actorRowId(id)),
+  ];
   const selectedRowId = selectedRowIds[0] ?? null;
 
   const setSelectedRowId = useCallback(
     (rowId: string | null, options?: TreeSelectOptions) => {
       if (!rowId) {
-        setSelectedFolderId(null);
+        setSelectedFolderIds([]);
         selectActor(null);
         return;
       }
@@ -349,20 +299,20 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         rowId,
         options,
         nodes.map((node) => node.id),
-        selectedActorIds,
+        selectedRowIds,
       );
-      setSelectedFolderId(next.folderId);
-      if (next.folderId) {
+      setSelectedFolderIds(next.folderIds);
+      if (next.actorIds.length === 0) {
         selectActor(null);
         return;
       }
-      if (options?.range || options?.additive) {
+      if (options?.range || options?.additive || next.actorIds.length > 1) {
         setSelectedActorIds(next.actorIds);
         return;
       }
       selectActor(next.actorIds[0] ?? null);
     },
-    [nodes, selectActor, selectedActorIds, setSelectedActorIds],
+    [nodes, selectActor, selectedRowIds, setSelectedActorIds],
   );
 
   const projectItems = useMemo(() => {
@@ -547,54 +497,22 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   /**
    * Drop on a folder groups; drop on an actor attaches; drop on empty space
-   * clears both. Folder membership and transform parenting stay independent,
-   * so an actor is never in two places at once.
+   * clears both. A selected drag moves collapsed roots only so parent+child
+   * picks cannot double-move or duplicate rows.
    */
   const reparentRow = useCallback(
     (dragRowId: string, targetRowId: string | null) => {
       if (!scene) return;
-      const drag = outlinerRowTarget(dragRowId);
-      if (!drag) return;
-      const target = outlinerRowTarget(targetRowId);
-
-      if (drag.kind === "folder") {
-        const parentFolderId = target?.kind === "folder" ? target.id : null;
-        if (parentFolderId === drag.id) return;
-        if (wouldCreateFolderCycle(scene, drag.id, parentFolderId)) return;
-        mutate({
-          ...scene,
-          folders: scene.folders.map((folder) =>
-            folder.id === drag.id ? { ...folder, parentFolderId } : folder,
-          ),
-        });
-        return;
-      }
-
-      if (target?.kind === "folder") {
-        mutate({
-          ...scene,
-          actors: scene.actors.map((actor) =>
-            actor.id === drag.id
-              ? { ...actor, folderId: target.id, parentId: null }
-              : actor,
-          ),
-        });
-        return;
-      }
-
-      const parentId = target?.kind === "actor" ? target.id : null;
-      if (parentId && wouldCreateCycle(scene, drag.id, parentId)) return;
-      const folderId = parentId
-        ? (scene.actors.find((actor) => actor.id === parentId)?.folderId ?? null)
-        : null;
-      mutate({
-        ...scene,
-        actors: scene.actors.map((actor) =>
-          actor.id === drag.id ? { ...actor, parentId, folderId } : actor,
-        ),
+      const moves = outlinerTreeDropMoves({
+        dragRowId,
+        targetRowId,
+        selectedRowIds,
+        scene,
       });
+      if (moves.length === 0) return;
+      mutate(applyOutlinerDropMoves(scene, moves));
     },
-    [mutate, scene],
+    [mutate, scene, selectedRowIds],
   );
 
   const dropActorRow = useCallback(
