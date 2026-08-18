@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AssetPicker,
   NamedListEditor,
@@ -14,6 +14,7 @@ import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
   normalizeFontPayload,
   normalizeAudioPayload,
+  mimeForAudioBytes,
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
@@ -26,6 +27,7 @@ import {
   TEXTURE_USAGE_OPTIONS,
   TEXTURE_MAX_DIMENSION_OPTIONS,
 } from "../lib/asset-settings";
+import { stopAudioPreviewElement } from "../lib/audio-preview";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -487,6 +489,10 @@ function AudioSettingsEditor({
   const audio = normalizeAudioPayload(payload);
   const [pick, setPick] = useState<"channel" | "atten" | null>(null);
   const [playing, setPlaying] = useState(false);
+  const previewRef = useRef<{
+    element: HTMLAudioElement;
+    url: string;
+  } | null>(null);
   const assets = assetRegistry?.list() ?? [];
   const channel = assets.find(
     (asset) => asset.header.guid === audio.audioChannelGuid,
@@ -507,19 +513,31 @@ function AudioSettingsEditor({
       })
     : {};
 
+  const stopPreview = () => {
+    const preview = previewRef.current;
+    if (preview) {
+      stopAudioPreviewElement(preview.element);
+      URL.revokeObjectURL(preview.url);
+      previewRef.current = null;
+    }
+    setPlaying(false);
+  };
+
   const playPreview = async () => {
+    stopPreview();
     const bytes = await readAssetChunk(path, "source");
     if (!bytes || bytes.byteLength === 0) return;
-    const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: mimeForAudioBytes(bytes) }),
+    );
     const element = new Audio(url);
+    previewRef.current = { element, url };
     setPlaying(true);
     element.onended = () => {
-      setPlaying(false);
-      URL.revokeObjectURL(url);
+      stopPreview();
     };
     void element.play().catch(() => {
-      setPlaying(false);
-      URL.revokeObjectURL(url);
+      stopPreview();
     });
   };
 
@@ -533,7 +551,7 @@ function AudioSettingsEditor({
           data-testid={playing ? "audio-preview-stop" : "audio-preview-play"}
           onClick={() => {
             if (playing) {
-              setPlaying(false);
+              stopPreview();
               return;
             }
             void playPreview();

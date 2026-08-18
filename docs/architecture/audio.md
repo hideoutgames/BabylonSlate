@@ -4,6 +4,19 @@ Shared surface for imported Audio, mixer/channel routing, spatial attenuation, o
 
 There is **no second sound type**. Imported `Audio` stays kind `audio` with a `source` chunk. Mixer, channel, and attenuation are user-created assets.
 
+## Author path
+
+- **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so).
+- **Place Actors → Project** tile for that Audio. That binds `audioAssetGuid` with Play On Start. The engine **Audio** speaker stays empty until an asset is picked.
+- **Play**, then **click the game view** to enable audio. Chrome shows **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load.
+- Mixer, channel, and attenuation are optional. Playback is `assetVolume × playCallVolume` with those refs at None.
+
+Also:
+
+- Mixer **Add Channel** opens the AudioChannel picker and commits a row only after a guid. Empty table: Global Volume still applies.
+- **Set Channel Volume** only addresses channels on the selected mixer table (`audio.unknown_channel` otherwise, even if the channel asset exists).
+- Snapshot poses include actor orientation so attenuation cones aim with the emitter.
+
 ## Package
 
 | Package | Owns | Must not |
@@ -21,7 +34,7 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 | Type | Created by | Suffix | Editor |
 | --- | --- | --- | --- |
-| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, preview play/stop, Volume, Channel + Attenuation pickers) |
+| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, preview Play/Stop that pauses and resets, Blob MIME from source bytes, Volume, Channel + Attenuation pickers) |
 | `AudioMixer` | New Asset | `.mixer.babasset` | DockView Details (`audio-mixer`) |
 | `AudioChannel` | New Asset | `.channel.babasset` | DockView Details (`audio-channel`) |
 | `SoundAttenuation` | New Asset | `.atten.babasset` | DockView Details (`sound-attenuation`) with an SVG falloff **plot** (numeric UI, not artwork) |
@@ -47,7 +60,7 @@ Every factor is clamped `0..1`:
 - No mixer + no channel: `assetVolume × playCallVolume` only.
 - Channel-less sound never takes channel gain or channel effects; a selected mixer still applies `globalGain`.
 - Channel with no mixer: non-gain effects/routing may resolve; no invented channel/master gain.
-- Set Channel / Set Global **replace** session values (do not edit assets). Play stop / scene change reloads mixer defaults. Without a selected mixer, or with an unknown channel, the nodes warn (`audio.no_mixer` / `audio.unknown_channel`) and no-op.
+- Set Channel / Set Global **replace** session values (do not edit assets). Play stop / scene change reloads mixer defaults. Without a selected mixer, or with a channel absent from the mixer table, the nodes warn (`audio.no_mixer` / `audio.unknown_channel`) and no-op. A channel that exists only in the library is not enough.
 
 ## Commands
 
@@ -65,13 +78,13 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 
 ## Unlock and cache
 
-First `pointerdown` / `touchstart` on overlay Play and the packaged player calls `audioService.unlockAsync()`. Commands before unlock enqueue (cap 32, ordered) and drain after the gesture. Decode / missing-context → one diagnostic; the game keeps running.
+First `pointerdown` / `touchstart` on overlay Play and the packaged player calls `audioService.unlockAsync()`. Commands before unlock enqueue (cap 32, ordered) and drain after the gesture. Overlay chrome shows **Click the game view to enable audio** (`play-audio-unlock-hint`) while `queued > 0` and still locked. Decode / missing-context → one diagnostic; the game keeps running.
 
 `AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32.
 
 ## Spatial
 
-Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply). Listener is the active Play camera, once per rendered frame (position **and** orientation). No scene listener picker. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0).
+Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply), including actor **quaternion** so cones orient. Listener is the active Play camera, once per rendered frame (position **and** orientation). No scene listener picker. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0). Sound Attenuation Details expose cone angles and Doppler next to radii/model/rolloff/spatialisation.
 
 ## Reverb bake
 
