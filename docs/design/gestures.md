@@ -43,7 +43,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 | Layer | Mechanism | Scope |
 | --- | --- | --- |
 | CSS | `overflow: hidden` and `overscroll-behavior: none` on `html`, `body`, `#root`, and app shell roots | All platforms |
-| CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome tab strip, homepage body |
+| CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome closable-tab scroller, homepage body |
 | JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers | iOS Safari / touch fallback |
 | Native | WKWebView `scrollView.bounces = false` | Capacitor iOS app only |
 
@@ -54,7 +54,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 ### Regions that still scroll internally
 
 - Homepage `<main>` — project list and create cards
-- Chrome tab strip — horizontal overflow
+- Chrome closable-tab scroller (`.editor-chrome-tabs-scroll`) — horizontal overflow; pinned Content Browser stays put
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
 - Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog
@@ -84,13 +84,15 @@ Focusing a text field on iPad raises the keyboard and can cover a centered modal
 
 ## Tileset atlas and Tilemap paint
 
-Same pinch contract as the viewport: scale about the midpoint, then apply two-finger translation. Wheel zooms about the cursor. Canvases use `touch-none`.
+Same pinch contract as the viewport: scale about the midpoint, then apply two-finger translation. Wheel zooms about the cursor. Canvases use `touch-none`. **Move** is the default tool in both editors (`applyPointerPan`). Two-finger pinch/pan and wheel zoom stay available in every tool. A second finger drops any in-progress one-finger paint/select stroke so pinch does not paint.
 
 | Gesture | Target | Action |
 | --- | --- | --- |
-| Tap | Tileset Preview cell | Select that tile (and stamp collision when **Paint Collision** is on) |
+| Tap | Tileset Preview cell | Select that tile (and stamp collision when **Paint Collision** is on). In **Move**, a tap is movement < 8px; a drag pans |
+| One-finger drag | Tileset Preview (Move) | Pan the atlas (`data-pan-x` / `data-pan-y`) |
 | Pinch / wheel | Tileset Preview atlas | Pan-zoom the sheet (`AtlasTileGrid`) |
-| One finger | Tilemap Paint canvas | Paint with the current tool |
+| One-finger drag | Tilemap Paint **Move** | Pan the view (`applyPointerPan`) |
+| One finger | Tilemap Paint brush and friends | Paint with the current tool |
 | Two-finger pinch | Tilemap Paint canvas | Zoom about the midpoint; translation pans (`applyPinchView`). Cell size clamped 8–96 CSS px (default 32) |
 | Wheel | Tilemap Paint canvas | Zoom about the cursor (`applyWheelZoom`) |
 

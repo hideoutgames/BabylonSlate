@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { HandIcon, MousePointerIcon } from "lucide-react";
 import {
   AssetPicker,
   AtlasTileGrid,
   PanelFrame,
   PropertyGrid,
   assetRowIdentity,
+  type AtlasTileGridTool,
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -75,6 +77,7 @@ export function TilesetPreview({
     tileset.tiles[0]?.id ?? 1,
   );
   const selectedId = editing?.selectedTileId ?? localSelectedId;
+  const [previewTool, setPreviewTool] = useState<AtlasTileGridTool>("move");
   const { assetRegistry, readAssetChunk } = useDocuments();
   const [url, setUrl] = useState<string | null>(null);
   const texture = (assetRegistry?.list() ?? []).find(
@@ -122,6 +125,27 @@ export function TilesetPreview({
       <div className="flex flex-wrap items-center gap-2 px-3 pt-2">
         <ToggleGroup
           variant="outline"
+          size="touch"
+          spacing={1}
+          value={[previewTool]}
+          onValueChange={(value) => {
+            const next = value[0] as AtlasTileGridTool | undefined;
+            if (next) setPreviewTool(next);
+          }}
+          aria-label="Tileset preview tool"
+          data-testid="tileset-preview-tools"
+        >
+          <ToggleGroupItem value="move" data-testid="tileset-tool-move">
+            <HandIcon />
+            Move
+          </ToggleGroupItem>
+          <ToggleGroupItem value="select" data-testid="tileset-tool-select">
+            <MousePointerIcon />
+            Select
+          </ToggleGroupItem>
+        </ToggleGroup>
+        <ToggleGroup
+          variant="outline"
           size="sm"
           spacing={1}
           value={[collisionValue]}
@@ -158,6 +182,7 @@ export function TilesetPreview({
         imageUrl={url}
         selectedId={selectedId}
         panZoom
+        tool={previewTool}
         emptyLabel={tileset.textureGuid ? "Loading texture…" : "No Texture"}
         data-testid="tileset-preview"
         onSelect={(id) => {

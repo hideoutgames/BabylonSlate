@@ -6,6 +6,8 @@ import {
 } from "./tileset-payload";
 
 export const DEFAULT_TILEMAP_CHUNK_SIZE = 32;
+export const DEFAULT_TILEMAP_WIDTH = 64;
+export const DEFAULT_TILEMAP_HEIGHT = 64;
 
 export interface TilemapChunk {
   cx: number;
@@ -41,6 +43,9 @@ export interface TilemapPayload {
   tilesets: TilemapTilesetRef[];
   tileWidth: number;
   tileHeight: number;
+  /** Map size in tiles, +Y up, origin bottom-left. Storage stays sparse chunks. */
+  width: number;
+  height: number;
   chunkSize: number;
   layers: TilemapLayer[];
 }
@@ -56,6 +61,8 @@ export function createDefaultTilemapPayload(): TilemapPayload {
     tilesets: [],
     tileWidth: 16,
     tileHeight: 16,
+    width: DEFAULT_TILEMAP_WIDTH,
+    height: DEFAULT_TILEMAP_HEIGHT,
     chunkSize: DEFAULT_TILEMAP_CHUNK_SIZE,
     layers: [createTilemapLayer("layer-1", "Ground")],
   };
@@ -207,13 +214,18 @@ export function normalizeTilemapPayload(value: unknown): TilemapPayload {
   const chunkSize = positiveInt(source.chunkSize, DEFAULT_TILEMAP_CHUNK_SIZE);
   const layers = normalizeLayers(source.layers, chunkSize);
   const tilesets = normalizeTilesetRefs(source.tilesets, source.tilesetGuid);
+  const resolvedLayers =
+    layers.length > 0 ? layers : createDefaultTilemapPayload().layers;
+  const extent = occupiedTileExtent(resolvedLayers, chunkSize);
   return {
     tilesetGuid: tilesets[0]?.guid ?? null,
     tilesets,
     tileWidth: positiveInt(source.tileWidth, 16),
     tileHeight: positiveInt(source.tileHeight, 16),
+    width: normalizeMapSize(source.width, extent.width),
+    height: normalizeMapSize(source.height, extent.height),
     chunkSize,
-    layers: layers.length > 0 ? layers : createDefaultTilemapPayload().layers,
+    layers: resolvedLayers,
   };
 }
 
@@ -262,6 +274,14 @@ export function chunkCoordForTile(
   return { cx, cy, lx, ly };
 }
 
+export function tileInBounds(
+  map: Pick<TilemapPayload, "width" | "height">,
+  gx: number,
+  gy: number,
+): boolean {
+  return gx >= 0 && gy >= 0 && gx < map.width && gy < map.height;
+}
+
 export function getTile(
   map: TilemapPayload,
   layerId: string,
@@ -283,6 +303,7 @@ export function setTile(
   gy: number,
   tileId: number,
 ): TilemapPayload {
+  if (!tileInBounds(map, gx, gy)) return map;
   const id = Number.isInteger(tileId) && tileId > 0 ? tileId : 0;
   return {
     ...map,
@@ -362,6 +383,66 @@ function normalizeChunks(value: unknown, chunkSize: number): TilemapChunk[] {
       tiles,
     };
   });
+}
+
+export function resizeTilemap(
+  map: TilemapPayload,
+  width: number,
+  height: number,
+): TilemapPayload {
+  const nextWidth = Math.max(1, Math.floor(width) || 1);
+  const nextHeight = Math.max(1, Math.floor(height) || 1);
+  const size = Math.max(1, map.chunkSize);
+  const length = size * size;
+  const layers = map.layers.map((layer) => {
+    const chunks: TilemapChunk[] = [];
+    for (const chunk of layer.chunks) {
+      const tiles = [...chunk.tiles];
+      let occupied = false;
+      for (let i = 0; i < length; i++) {
+        const lx = i % size;
+        const ly = Math.floor(i / size);
+        const gx = chunk.cx * size + lx;
+        const gy = chunk.cy * size + ly;
+        if (gx < 0 || gy < 0 || gx >= nextWidth || gy >= nextHeight) {
+          tiles[i] = 0;
+        }
+        if ((tiles[i] ?? 0) > 0) occupied = true;
+      }
+      if (occupied) chunks.push({ ...chunk, tiles });
+    }
+    return { ...layer, chunks };
+  });
+  return { ...map, width: nextWidth, height: nextHeight, layers };
+}
+
+function occupiedTileExtent(
+  layers: readonly TilemapLayer[],
+  chunkSize: number,
+): { width: number; height: number } {
+  const size = Math.max(1, chunkSize);
+  let maxX = -1;
+  let maxY = -1;
+  for (const layer of layers) {
+    for (const chunk of layer.chunks) {
+      for (let ly = 0; ly < size; ly++) {
+        for (let lx = 0; lx < size; lx++) {
+          const id = chunk.tiles[localIndex(lx, ly, size)] ?? 0;
+          if (id <= 0) continue;
+          maxX = Math.max(maxX, chunk.cx * size + lx);
+          maxY = Math.max(maxY, chunk.cy * size + ly);
+        }
+      }
+    }
+  }
+  return { width: maxX + 1, height: maxY + 1 };
+}
+
+function normalizeMapSize(value: unknown, occupied: number): number {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+  return Math.max(DEFAULT_TILEMAP_WIDTH, occupied);
 }
 
 function posMod(n: number, d: number): number {

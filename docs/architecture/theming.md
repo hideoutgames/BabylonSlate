@@ -136,7 +136,7 @@ Project Settings **Input** reuses pin tokens for device accents rather than new 
 
 Dockview tab strips: **18px** tall / **56px** min-width on fine pointers, **26px** tall / **64px** min-width on coarse (`apps/editor/src/shell/dockview-theme.css`). Tab strips use `--card`. Tabs use `--dv-tab-margin: 0 2px` so they have a slight horizontal gap without changing strip height. Tab labels use `--foreground` / `--muted-foreground` (not vendor white) so light chrome stays readable. Each `.dv-content-container` has a 1px inset outline from `color-mix(in oklch, var(--foreground) 18%, transparent)` so panel content bounds stay visible in both schemes without recoloring the tab strip. Tree rows are 28px (`--chrome-row`).
 
-The chrome document tab strip (`.editor-chrome-tabs`) stays horizontally scrollable (`overflow-x: auto`) when tabs overflow and hides native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`).
+The chrome document tab strip keeps pinned Content Browser outside the scroller (`.editor-chrome-tabs`, `overflow: hidden`). Closable tabs pan in `.editor-chrome-tabs-scroll` (`overflow-x: auto`) when they overflow and hide native and iOS overlay scrollbars (`scrollbar-width: none` plus `::-webkit-scrollbar { display: none }`).
 
 ## Axis colors
 

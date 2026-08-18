@@ -177,6 +177,8 @@ test.describe("P10 tilemaps", () => {
 
     const canvas = page.getByTestId("tilemap-paint-canvas");
     await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute("data-tool", "move");
+    await page.getByTestId("tilemap-tool-brush").click();
     await expect(canvas).toHaveAttribute("data-tool", "brush");
     await expect(canvas).toHaveAttribute("data-gid", "1");
     await expect

@@ -5,6 +5,7 @@ export const MAX_PAINT_CELL_SIZE = 96;
 export const DEFAULT_PAINT_CELL_SIZE = 32;
 
 export type TilemapPaintTool =
+  | "move"
   | "brush"
   | "eraser"
   | "rect"
@@ -25,13 +26,19 @@ export interface TileCell {
 }
 
 export interface TilemapPaintStroke {
-  tool: Exclude<TilemapPaintTool, "picker">;
+  tool: Exclude<TilemapPaintTool, "picker" | "move">;
   layerId: string;
   tileId: number;
   start: TileCell;
   end: TileCell;
   cells?: readonly TileCell[];
   stamp?: TileStamp;
+}
+
+export function isTilemapPaintStrokeTool(
+  tool: TilemapPaintTool,
+): tool is TilemapPaintStroke["tool"] {
+  return tool !== "move" && tool !== "picker";
 }
 
 /** Convert a Y-down canvas point into a +Y-up tile cell. */
@@ -108,6 +115,19 @@ export function applyPinchView(options: {
     ...options,
     nextCellSize: cellSize * ratio,
   });
+}
+
+/** One-finger Move pan. `dx`/`dy` are already in pan space. */
+export function applyPointerPan(options: {
+  panX: number;
+  panY: number;
+  dx: number;
+  dy: number;
+}): { panX: number; panY: number } {
+  return {
+    panX: options.panX + options.dx,
+    panY: options.panY + options.dy,
+  };
 }
 
 /** Wheel: zoom about the cursor. Negative deltaY zooms in. */

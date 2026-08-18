@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { createDefaultTilesetPayload } from "@babylonslate/assets";
+import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetEditor, TilesetPreview } from "./tileset-editor";
 
@@ -135,6 +136,46 @@ describe("TilesetPreview", () => {
     expect(screen.getByTestId("tileset-preview")).toBeTruthy();
     expect(screen.getByTestId("tileset-preview-cell-1")).toBeTruthy();
     expect(screen.getByTestId("tileset-preview-cell-2")).toBeTruthy();
+  });
+
+  it("defaults to Move and pans the atlas with one finger", async () => {
+    HTMLElement.prototype.setPointerCapture = () => {};
+    render(
+      <TilesetEditingProvider>
+        <TilesetPreview
+          payload={twoTilePayload() as unknown as Record<string, unknown>}
+        />
+      </TilesetEditingProvider>,
+    );
+    expect(screen.getByTestId("tileset-tool-move")).toBeTruthy();
+    expect(screen.getByTestId("tileset-tool-select")).toBeTruthy();
+    const surface = screen.getByTestId("tileset-preview-surface");
+    expect(surface.getAttribute("data-tool")).toBe("move");
+    surface.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 256,
+        bottom: 256,
+        width: 256,
+        height: 256,
+        toJSON: () => {},
+      }) as DOMRect;
+    dispatchPointerEvent(surface, "pointerdown", {
+      pointerId: 1,
+      clientX: 40,
+      clientY: 40,
+    });
+    dispatchPointerEvent(surface, "pointermove", {
+      pointerId: 1,
+      clientX: 80,
+      clientY: 40,
+    });
+    await waitFor(() => {
+      expect(Number(surface.getAttribute("data-pan-x") ?? "0")).toBe(40);
+    });
   });
 
   it("writes Full collision on the tile selected in the preview", () => {

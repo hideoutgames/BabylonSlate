@@ -326,30 +326,35 @@ export function EditorChromeBar({
             />
           ) : null}
 
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
+          <div
+            className="editor-chrome-tabs-scroll"
+            data-testid="document-tab-scroll"
           >
-            <SortableContext
-              items={closableDocs.map((doc) => doc.id)}
-              strategy={horizontalListSortingStrategy}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
             >
-              {closableDocs.map((doc) => (
-                <SortableDocumentTab
-                  key={doc.id}
-                  doc={doc}
-                  active={doc.id === activeDocumentId}
-                  onSelect={() => setActiveDocument(doc.id)}
-                  onClose={() =>
-                    onCloseDocument
-                      ? onCloseDocument(doc.id)
-                      : closeDocument(doc.id)
-                  }
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
+              <SortableContext
+                items={closableDocs.map((doc) => doc.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {closableDocs.map((doc) => (
+                  <SortableDocumentTab
+                    key={doc.id}
+                    doc={doc}
+                    active={doc.id === activeDocumentId}
+                    onSelect={() => setActiveDocument(doc.id)}
+                    onClose={() =>
+                      onCloseDocument
+                        ? onCloseDocument(doc.id)
+                        : closeDocument(doc.id)
+                    }
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </div>
         </div>
       </header>
 

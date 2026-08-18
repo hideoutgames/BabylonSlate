@@ -127,6 +127,86 @@ describe("AtlasTileGrid", () => {
     expect(Number(surface.getAttribute("data-zoom") ?? "1")).toBe(1);
   });
 
+  it("defaults to Move and pans with one finger", async () => {
+    HTMLElement.prototype.setPointerCapture = () => {
+      throw new DOMException("No active pointer with the given id is found.");
+    };
+    render(
+      <AtlasTileGrid
+        tileset={twoTileSet()}
+        imageUrl="blob:atlas"
+        selectedId={1}
+        onSelect={() => {}}
+        panZoom
+        data-testid="atlas"
+      />,
+    );
+    const surface = screen.getByTestId("atlas-surface");
+    surface.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 256,
+        bottom: 256,
+        width: 256,
+        height: 256,
+        toJSON: () => {},
+      }) as DOMRect;
+    expect(surface.getAttribute("data-tool")).toBe("move");
+    expect(surface.getAttribute("data-pan-x")).toBe("0");
+    dispatchPointerEvent(surface, "pointerdown", {
+      pointerId: 1,
+      clientX: 80,
+      clientY: 80,
+    });
+    dispatchPointerEvent(surface, "pointermove", {
+      pointerId: 1,
+      clientX: 120,
+      clientY: 80,
+    });
+    await waitFor(() => {
+      expect(Number(surface.getAttribute("data-pan-x") ?? "0")).toBe(40);
+    });
+  });
+
+  it("selects a cell on a Move tap and ignores a drag", () => {
+    const onSelect = vi.fn();
+    HTMLElement.prototype.setPointerCapture = () => {};
+    render(
+      <AtlasTileGrid
+        tileset={twoTileSet()}
+        imageUrl="blob:atlas"
+        selectedId={1}
+        onSelect={onSelect}
+        panZoom
+        data-testid="atlas"
+      />,
+    );
+    fireEvent.click(screen.getByTestId("atlas-cell-2"));
+    expect(onSelect).toHaveBeenCalledWith(2);
+    onSelect.mockClear();
+    const surface = screen.getByTestId("atlas-surface");
+    dispatchPointerEvent(surface, "pointerdown", {
+      pointerId: 1,
+      clientX: 80,
+      clientY: 80,
+    });
+    dispatchPointerEvent(surface, "pointermove", {
+      pointerId: 1,
+      clientX: 120,
+      clientY: 80,
+    });
+    dispatchPointerEvent(surface, "pointerup", {
+      pointerId: 1,
+      clientX: 120,
+      clientY: 80,
+    });
+    fireEvent.click(screen.getByTestId("atlas-cell-2"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("contains the atlas image in the preview box", () => {
     render(
       <AtlasTileGrid
