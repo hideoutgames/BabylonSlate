@@ -214,7 +214,10 @@ describe("UiDesignCanvas preview fallback", () => {
     );
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
-    expect(resizeDesign).toHaveBeenCalled();
+    expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
+      width: 800,
+      height: 600,
+    });
   });
 
   it("re-applies when returning from Logic to Designer", () => {

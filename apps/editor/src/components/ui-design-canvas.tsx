@@ -189,8 +189,11 @@ export function UiDesignCanvas({
       surface = createUiSurface(canvas, engine, {
         name: "ui-designer",
         interactive: false,
-        designResolution: ui.designResolution,
-        scaleRule: ui.scaleRule,
+        designResolution: {
+          width: viewport.width,
+          height: viewport.height,
+        },
+        scaleRule: "shortestSide",
         gizmoCanvas: gizmoCanvas ?? undefined,
         safeArea: viewport.safeArea,
         resolveImageUrl: boundResolveImageUrl,
@@ -259,8 +262,8 @@ export function UiDesignCanvas({
         live.resizeDesign(
           viewport.width,
           viewport.height,
-          ui.scaleRule,
-          ui.designResolution,
+          "shortestSide",
+          { width: viewport.width, height: viewport.height },
         );
         applyUiControlsIfUnfrozen(frozen, live.host, displayControls);
         presentLiveUiIfVisible({
@@ -286,7 +289,6 @@ export function UiDesignCanvas({
     documentActive,
     guiLive,
     panelVisible,
-    ui.scaleRule,
     viewport.height,
     viewport.width,
   ]);

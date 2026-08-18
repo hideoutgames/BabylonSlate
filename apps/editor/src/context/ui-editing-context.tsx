@@ -18,7 +18,6 @@ import {
   createWidget,
   defaultAddLayout,
   describeUiControls,
-  designScale,
   designerViewport,
   insertWidget,
   layoutUserInterface,
@@ -295,15 +294,7 @@ export function UiEditingProvider({
       ),
     [resolveNested, ui, viewport.height, viewport.safeArea.bottom, viewport.safeArea.left, viewport.safeArea.right, viewport.safeArea.top, viewport.width],
   );
-  const bitmapScale = useMemo(
-    () =>
-      designScale(
-        { width: viewport.width, height: viewport.height },
-        ui.designResolution,
-        ui.scaleRule,
-      ),
-    [ui.designResolution, ui.scaleRule, viewport.height, viewport.width],
-  );
+  const bitmapScale = 1;
   const controls = useMemo(() => describeUiControls(ui, layout), [layout, ui]);
   const previewScale = useMemo(
     () =>
