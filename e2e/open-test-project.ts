@@ -56,6 +56,20 @@ export async function submitCreateOrOpenListed(
   await page.getByTestId(`open-listed-project-${listedName}.babproject`).click();
 }
 
+/** Click the homepage TestProject row after Close / reload. */
+export async function openListedTestProject(page: Page): Promise<void> {
+  const listed = page.getByTestId("open-listed-project-TestProject");
+  const listedLegacy = page.getByTestId(
+    "open-listed-project-TestProject.babproject",
+  );
+  if ((await listed.count()) > 0) {
+    await listed.click();
+  } else {
+    await listedLegacy.click();
+  }
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
 export async function openContentBrowser(page: Page): Promise<void> {
   const tab = page.locator(
     '[data-testid="document-tab"][data-document-kind="content-browser"]',
@@ -95,7 +109,16 @@ export async function openAssetFromBrowser(
   assetPath: string,
 ): Promise<void> {
   await openContentBrowser(page);
-  await page.locator(`[data-asset-path="${assetPath}"]`).dblclick();
+  const tile = page.locator(`[data-asset-path="${assetPath}"]`);
+  if (!(await tile.isVisible())) {
+    const stem = (assetPath.split("/").pop() ?? assetPath).replace(
+      /\.babasset$/,
+      "",
+    );
+    await page.getByTestId("content-browser-search").fill(stem);
+  }
+  await expect(tile).toBeVisible({ timeout: 15_000 });
+  await tile.dblclick();
 }
 
 export async function openMainScene(page: Page): Promise<void> {
