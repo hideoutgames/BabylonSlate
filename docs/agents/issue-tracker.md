@@ -558,10 +558,11 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p17-*`.
 | --- | --- | --- | --- |
 | Idle-unmount background chrome tabs (2 min grace, cap 3) | `p17-inactive-documents` | `apps/editor` (`document-workspace`, UI/Anim docks) | P16 done |
 | Off-screen node virtualisation for every `GraphEditor` host | `p17-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P16 done (can parallel) |
+| Windowed Add Node catalog body (~1000 nodes) | `p17-add-node-virtualize` | `graph-ui` (`NodePalette`); optional `editor-kit` list helper | P16 done (can parallel) |
 | Windowed Content Browser grid + revoke off-screen thumbs | `p17-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P16 done (can parallel) |
 | Prefab Preview on the app-lifetime Engine | `p17-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P16 done (can parallel) |
 
-Out of scope: collapse-inactive-subtree / cap-auto-layout; P18 BT/nav leftovers; pin flash; bake-collect hitch.
+Out of scope: collapse-inactive-subtree / cap-auto-layout; P18 BT/nav leftovers; pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
 
 ## P18 Behaviour tree hosts and navigation leftovers
 
