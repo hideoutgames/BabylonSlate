@@ -9,6 +9,7 @@ import {
   isDryAudioReverbFallback,
   normalizeAudioPayload,
   resolveAudioPlayback,
+  sanitizeAudioLibrary,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
@@ -69,6 +70,7 @@ type QueuedCommand = Extract<
 type LiveVoice = {
   voiceId: string;
   assetGuid: string;
+  playCallVolume: number;
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
@@ -140,7 +142,23 @@ export class AudioService {
   }
 
   setLibrary(library: AudioLibrary): void {
-    this.library = library;
+    const sanitized = sanitizeAudioLibrary({
+      audio: library.audio,
+      channels: library.channels,
+      attenuations: library.attenuations,
+    });
+    for (const diagnostic of sanitized.diagnostics) {
+      this.onDiagnostic?.({
+        code: diagnostic.code,
+        message: diagnostic.message,
+        assetGuid: diagnostic.guid,
+      });
+    }
+    this.library = {
+      ...library,
+      audio: sanitized.audio,
+      channels: sanitized.channels,
+    };
     this.sessionChannelVolumes.clear();
     this.sessionGlobalVolume = null;
   }
@@ -275,6 +293,7 @@ export class AudioService {
         command.channelGuid,
         clampAudioGain(command.volume),
       );
+      this.refreshVoiceGains();
       return;
     }
     if (command.type === "setGlobalVolume") {
@@ -286,6 +305,7 @@ export class AudioService {
         return;
       }
       this.sessionGlobalVolume = clampAudioGain(command.volume);
+      this.refreshVoiceGains();
       return;
     }
     if (command.type === "stopSound") {
@@ -379,6 +399,7 @@ export class AudioService {
     this.voices.set(voiceId, {
       voiceId,
       assetGuid,
+      playCallVolume: command.volume,
       emitterActorGuid: emitter,
       spatial,
       gain: resolved.gain,
@@ -415,6 +436,27 @@ export class AudioService {
   private activeMixer(): AudioMixerPayload | null {
     if (!this.library.mixerGuid) return null;
     return this.library.mixers.get(this.library.mixerGuid) ?? null;
+  }
+
+  private refreshVoiceGains(): void {
+    for (const voice of this.voices.values()) {
+      const audio =
+        this.library.audio.get(voice.assetGuid) ?? createDefaultAudioPayload();
+      const resolved = resolveAudioPlayback({
+        audio: normalizeAudioPayload(audio),
+        playCallVolume: voice.playCallVolume,
+        mixer: this.activeMixer(),
+        channels: this.library.channels,
+        sessionChannelVolumes: this.sessionChannelVolumes,
+        sessionGlobalVolume: this.sessionGlobalVolume,
+      });
+      voice.gain = resolved.gain;
+      voice.reverbSend = resolved.environmentReverb;
+      this.backend.setVoiceGain(voice.voiceId, resolved.gain);
+      this.lastGain = resolved.gain;
+    }
+    this.refreshReverbWet();
+    this.publishStats();
   }
 
   private refreshSpatialVoices(fromSnapshot: boolean): void {
@@ -464,15 +506,12 @@ export class AudioService {
 
   private refreshReverbWet(): void {
     const anySend = [...this.voices.values()].some((voice) => voice.reverbSend);
-    if (!anySend || isDryAudioReverbFallback(this.reverbField)) {
-      this.wet = 0;
-    } else {
-      this.wet = interpolateAudioReverb(
-        this.listener,
-        this.reverbField?.probes ?? [],
-      );
-    }
-    this.backend.setReverbWet(this.wet);
+    const profile =
+      !anySend || isDryAudioReverbFallback(this.reverbField)
+        ? { wet: 0, decay: 0.4, damping: 0.5 }
+        : interpolateAudioReverb(this.listener, this.reverbField?.probes ?? []);
+    this.wet = profile.wet;
+    this.backend.setReverbProfile(profile);
     this.publishStats();
   }
 

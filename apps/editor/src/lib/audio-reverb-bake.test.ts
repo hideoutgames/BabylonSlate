@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUDIO_BAKE_DEBOUNCE_MS,
   AUDIO_BAKE_WORKER_TIMEOUT_MS,
+  AUDIO_GEOMETRY_COLLECT_SLICE,
   AUDIO_REVERB_VERSION,
   bakeAudioReverb,
   collectStaticAudioGeometry,
@@ -11,6 +12,7 @@ import {
 } from "@babylonslate/assets";
 import { createActor, createMeshComponent, identitySerializedTransform } from "@babylonslate/core";
 import {
+  collectAudioReverbFlushScenes,
   createAudioReverbBakeController,
   staticAudioGeometryFingerprint,
   type AudioReverbBakeWrite,
@@ -156,6 +158,32 @@ describe("audio reverb bake controller", () => {
       true,
     );
   });
+
+  it("yields during default geometry collect so Save stays responsive", async () => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    let yielded = 0;
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      yielded += 1;
+      callback(0);
+      return 1;
+    }) as typeof requestAnimationFrame;
+    try {
+      const actors = Array.from({ length: AUDIO_GEOMETRY_COLLECT_SLICE }, (_, i) =>
+        boxActor(`wall-${i}`, [i * 4, 0, 0]),
+      );
+      const writes: AudioReverbBakeWrite[] = [];
+      const controller = createAudioReverbBakeController({
+        write: async (entry) => {
+          writes.push(entry);
+        },
+      });
+      await controller.flush("assets/Main.scene.babasset", sceneWith(actors));
+      expect(yielded).toBeGreaterThan(0);
+      expect(writes).toHaveLength(1);
+    } finally {
+      globalThis.requestAnimationFrame = originalRaf;
+    }
+  });
 });
 
 describe("collectStaticAudioGeometry used by the bake controller", () => {
@@ -163,6 +191,25 @@ describe("collectStaticAudioGeometry used by the bake controller", () => {
     const actors = [boxActor("wall", [0, 0, 0])];
     const geometry = await collectStaticAudioGeometry({ actors });
     expect(geometryHashForAudioBake(geometry).length).toBeGreaterThan(0);
+  });
+});
+
+describe("collectAudioReverbFlushScenes", () => {
+  it("loads every scene path, including ones that are not open", async () => {
+    const loaded = await collectAudioReverbFlushScenes({
+      paths: ["assets/Open.scene.babasset", "assets/Closed.scene.babasset"],
+      load: async (path) => {
+        if (path.includes("Closed")) {
+          return sceneWith([boxActor("wall", [8, 0, 0])]);
+        }
+        return sceneWith([boxActor("open", [0, 0, 0])]);
+      },
+    });
+    expect(loaded.map((entry) => entry.path)).toEqual([
+      "assets/Open.scene.babasset",
+      "assets/Closed.scene.babasset",
+    ]);
+    expect(loaded[1]?.scene.actors?.[0]?.id).toBe("wall");
   });
 });
 

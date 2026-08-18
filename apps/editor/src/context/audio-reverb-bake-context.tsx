@@ -4,7 +4,9 @@ import {
   type AudioReverbGeometry,
 } from "@babylonslate/assets";
 import { useDocuments } from "./document-context";
+import { playSceneLibraryPaths } from "../lib/plugin-ui";
 import {
+  collectAudioReverbFlushScenes,
   createAudioReverbBakeController,
   registerAudioReverbSaveFlush,
   sceneFromDocument,
@@ -32,15 +34,25 @@ function createBakeFn(workerRef: {
 }
 
 export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
-  const { openDocuments, writeSceneAudioReverbChunk } = useDocuments();
+  const {
+    openDocuments,
+    writeSceneAudioReverbChunk,
+    loadAssetDocument,
+    projectDocument,
+    assetRegistry,
+  } = useDocuments();
   const controllerRef = useRef<AudioReverbBakeController | null>(null);
   const workerRef = useRef<ReturnType<typeof createAudioReverbWorker> | null>(
     null,
   );
   const writeRef = useRef(writeSceneAudioReverbChunk);
   writeRef.current = writeSceneAudioReverbChunk;
-  const documentsRef = useRef(openDocuments);
-  documentsRef.current = openDocuments;
+  const loadAssetDocumentRef = useRef(loadAssetDocument);
+  loadAssetDocumentRef.current = loadAssetDocument;
+  const projectDocumentRef = useRef(projectDocument);
+  projectDocumentRef.current = projectDocument;
+  const assetRegistryRef = useRef(assetRegistry);
+  assetRegistryRef.current = assetRegistry;
 
   const fingerprints = useRef(new Map<string, string>());
 
@@ -53,10 +65,13 @@ export function AudioReverbBakeProvider({ children }: { children: ReactNode }) {
     });
     controllerRef.current = controller;
     registerAudioReverbSaveFlush(async () => {
-      const scenes = documentsRef.current.flatMap((doc) => {
-        if (doc.ref.kind !== "scene") return [];
-        const scene = sceneFromDocument(doc.content);
-        return scene ? [{ path: doc.ref.path, scene }] : [];
+      const paths = playSceneLibraryPaths(
+        projectDocumentRef.current?.scenes ?? [],
+        assetRegistryRef.current?.list() ?? [],
+      );
+      const scenes = await collectAudioReverbFlushScenes({
+        paths,
+        load: (path) => loadAssetDocumentRef.current("scene", path),
       });
       await controller.flushAll(scenes);
     });

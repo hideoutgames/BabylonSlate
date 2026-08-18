@@ -248,7 +248,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Keyed Print HUD polish | P8 / export | Print works; HUD polish deferred |
 | Development Only node flag | Done | Inspector checkbox; Print defaults on; `compileGraphDocumentsForExport` skips the node and continues exec (`then` / Sequence `then_*`). P14 release export must call that helper |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
-| Audio / UI node runtime helpers beyond stubs | P9 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; audio helpers still stubs |
+| Audio / UI node runtime helpers beyond stubs | P9 / P16 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; Play Sound / Set Channel Volume / Set Global Volume emit audio commands (P16 Done) |
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (exec highway / independent chain roots); **hold-to-marquee** (`attachGraphPaneMarquee`).
 

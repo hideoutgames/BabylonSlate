@@ -40,6 +40,11 @@ export interface AudioPlaybackBackend {
   setVoicePlaybackRate(voiceId: string, rate: number): void;
   setListenerPose(pose: AudioPose): void;
   setReverbWet(wet: number): void;
+  setReverbProfile(profile: {
+    wet: number;
+    decay: number;
+    damping: number;
+  }): void;
   dispose(): void;
 }
 
@@ -53,6 +58,8 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   playbackRates = new Map<string, number>();
   listener: AudioPose = { x: 0, y: 0, z: 0 };
   wet = 0;
+  decay = 0.4;
+  damping = 0.5;
   disposed = false;
 
   isUnlocked(): boolean {
@@ -93,6 +100,16 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setReverbWet(wet: number): void {
     this.wet = wet;
+  }
+
+  setReverbProfile(profile: {
+    wet: number;
+    decay: number;
+    damping: number;
+  }): void {
+    this.wet = profile.wet;
+    this.decay = profile.decay;
+    this.damping = profile.damping;
   }
 
   dispose(): void {
