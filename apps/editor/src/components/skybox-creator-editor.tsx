@@ -134,7 +134,7 @@ function SkyboxCreatorAlert({ message }: { message: string }) {
   );
 }
 
-export function useSkyboxCreatorCreate(
+function useSkyboxCreatorCreate(
   payload: Record<string, unknown>,
   helperPath: string,
   onChange: (next: Record<string, unknown>) => void,
