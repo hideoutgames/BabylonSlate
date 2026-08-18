@@ -58,8 +58,15 @@ export function SkeletonPreviewCanvas({
         });
         hostRef.current = host;
         presenterRef.current = presenter;
+        if (showBones) {
+          bonesRef.current?.dispose();
+          bonesRef.current = attachSkeletonPreview(host.mesh, host.scene, kind);
+          setBonesAttached(true);
+        }
         presenter.present({ force: true });
         if (cancelled) {
+          bonesRef.current?.dispose();
+          bonesRef.current = null;
           presenter.dispose();
           gestures.dispose();
           loaded.dispose();
@@ -96,7 +103,7 @@ export function SkeletonPreviewCanvas({
       hostRef.current = null;
       presenterRef.current = null;
     };
-  }, [engine, sourceBytes]);
+  }, [engine, kind, showBones, sourceBytes]);
 
   useEffect(() => {
     const host = hostRef.current;

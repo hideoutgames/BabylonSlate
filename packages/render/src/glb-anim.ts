@@ -1,4 +1,4 @@
-import "@babylonjs/loaders/glTF/2.0/glTFLoader";
+import "./gltf-loader";
 import type { AbstractMesh, Node, Scene, TransformNode } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { applyAnimStateToScene,

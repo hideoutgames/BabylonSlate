@@ -1,12 +1,32 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { MeshBuilder, StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { embedGlbExternalImages } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { encodeTriangleGlb, isGltfModelBytes } from "./model-mesh";
+import { attachSkeletonPreview } from "./node-rig";
 import {
   applyModelMaterialSlots,
   createModelPreviewScene,
   loadModelPreviewSource,
 } from "./model-preview";
+
+const KENNEY_MANNEQUIN_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../engine-content/kenney-assets/Mannequin",
+);
+
+function kenneyMannequinGlb(): Uint8Array {
+  const glb = new Uint8Array(
+    readFileSync(join(KENNEY_MANNEQUIN_DIR, "mannequin.glb")),
+  );
+  const png = new Uint8Array(
+    readFileSync(join(KENNEY_MANNEQUIN_DIR, "mannequin.png")),
+  );
+  return embedGlbExternalImages(glb, { "Textures/texture-d.png": png });
+}
 
 describe("isGltfModelBytes", () => {
   it("accepts GLB bytes and rejects OBJ stubs", () => {
@@ -139,6 +159,23 @@ describe("loadModelPreviewSource", () => {
     expect(loaded).not.toBeNull();
     expect(host.mesh.visibility).toBe(0);
     expect(host.mesh.getChildMeshes().length).toBeGreaterThan(0);
+    loaded?.dispose();
+  });
+
+  it("loads Kenney Mannequin (KHR_materials_unlit) and attaches a hierarchy overlay", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(host, kenneyMannequinGlb());
+    expect(loaded).not.toBeNull();
+    expect(loaded?.animationGroups.some((group) => group.name === "idle")).toBe(
+      true,
+    );
+    const preview = attachSkeletonPreview(host.mesh, host.scene, "hierarchy");
+    expect(
+      host.scene.meshes.some((mesh) => mesh.name.endsWith("_overlay")),
+    ).toBe(true);
+    preview.dispose();
     loaded?.dispose();
   });
 

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildMinimalGlbFixture,
+  embedGlbExternalImages,
+  encodeGlbJsonBin,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
+  splitGlbJsonBin,
 } from "./glb-parse";
 import { importModel } from "./model";
 
@@ -277,5 +280,36 @@ describe("parseGlbForBrowse", () => {
         existingGuids: new Set(),
       }),
     ).rejects.toThrow(/GLB or glTF/i);
+  });
+});
+
+describe("embedGlbExternalImages", () => {
+  it("rewrites an image uri into a bufferView using a sidecar PNG", () => {
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+      0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+      0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
+      0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: 0 }],
+        images: [{ name: "texture-d", uri: "Textures/texture-d.png" }],
+      },
+      new Uint8Array(0),
+    );
+    const embedded = embedGlbExternalImages(glb, {
+      "Textures/texture-d.png": png,
+    });
+    const split = splitGlbJsonBin(embedded);
+    expect(split).not.toBeNull();
+    const image = (split!.json.images as Array<{ uri?: string; bufferView?: number }>)[0];
+    expect(image?.uri).toBeUndefined();
+    expect(image?.bufferView).toBe(0);
+    const browse = parseGlbForBrowse(embedded);
+    expect(browse?.images[0]?.bytes).toEqual(png);
   });
 });

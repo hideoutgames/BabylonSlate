@@ -20,13 +20,10 @@ export default defineConfig({
       publicDir: path.join(rootDir, "public/engine-plugins"),
     }),
     kenneyMannequinVitePlugin({
-      sourceFile: path.join(
-        repoRoot,
-        "engine-content/kenney-assets/Mannequin/mannequin.glb",
-      ),
-      publicFile: path.join(
+      sourceDir: path.join(repoRoot, "engine-content/kenney-assets/Mannequin"),
+      publicDir: path.join(
         rootDir,
-        "public/engine-content/kenney-assets/Mannequin/mannequin.glb",
+        "public/engine-content/kenney-assets/Mannequin",
       ),
     }),
     playerHostVitePlugin(

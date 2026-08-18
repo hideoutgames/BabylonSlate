@@ -1,4 +1,4 @@
-import "@babylonjs/loaders/glTF/2.0/glTFLoader";
+import "./gltf-loader";
 import type { AbstractMesh, AnimationGroup, Material } from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";

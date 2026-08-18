@@ -21,8 +21,9 @@ import {
   newAssetFileName,
 } from "./content-browser-helpers";
 
-export const MANNEQUIN_CLASS_FILE = "Mannequin.class.babasset";
-export const MANNEQUIN_ANIM_GRAPH_FILE = "Mannequin.anim.babasset";
+export const MANNEQUIN_CLASS_FILE = "Mannequin/Mannequin.class.babasset";
+export const MANNEQUIN_ANIM_GRAPH_FILE = "Mannequin/Mannequin.anim.babasset";
+export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
 
@@ -104,7 +105,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
 }): Promise<SerializedScene> {
   const created = await options.registry.importFile(
     "project",
-    "",
+    MANNEQUIN_ASSET_FOLDER,
     "mannequin.glb",
     options.mannequinBytes,
   );
@@ -179,12 +180,12 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
 
   await options.registry.createAsset(
     "project",
-    newAssetFileName("AnimationGraph", MANNEQUIN_CLASS_ID),
+    `${MANNEQUIN_ASSET_FOLDER}/${newAssetFileName("AnimationGraph", MANNEQUIN_CLASS_ID)}`,
     graphResult,
   );
   await options.registry.createAsset(
     "project",
-    newAssetFileName("Class", MANNEQUIN_CLASS_ID),
+    `${MANNEQUIN_ASSET_FOLDER}/${newAssetFileName("Class", MANNEQUIN_CLASS_ID)}`,
     classResult,
   );
 

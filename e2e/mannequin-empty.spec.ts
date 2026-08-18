@@ -18,7 +18,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
       "Cube",
     );
 
-    await openAssetFromBrowser(page, "assets/mannequin_Skeleton.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin/mannequin_Skeleton.babasset");
     await expect(page.getByTestId("document-workspace-skeleton")).toBeVisible();
     await expect(page.getByTestId("skeleton-preview")).toBeVisible();
     await expect(page.getByTestId("skeleton-bone-tree")).toBeVisible();
@@ -29,7 +29,7 @@ test.describe("3D Empty Kenney Mannequin", () => {
       { timeout: 30_000 },
     );
 
-    await openAssetFromBrowser(page, "assets/mannequin_idle.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin/mannequin_idle.babasset");
     await expect(page.getByTestId("document-workspace-animation")).toBeVisible();
     await expect(page.getByTestId("animation-preview")).toBeVisible();
     await expect(page.getByTestId("animation-preview-canvas")).toHaveAttribute(

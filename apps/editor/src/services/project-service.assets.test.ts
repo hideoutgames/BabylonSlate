@@ -204,17 +204,21 @@ describe("project documents as .babasset", () => {
     );
     expect(idle).toBeTruthy();
 
-    expect(await storage.exists("assets/Mannequin.class.babasset")).toBe(true);
-    expect(await storage.exists("assets/Mannequin.anim.babasset")).toBe(true);
+    expect(await storage.exists("assets/Mannequin/Mannequin.class.babasset")).toBe(
+      true,
+    );
+    expect(await storage.exists("assets/Mannequin/Mannequin.anim.babasset")).toBe(
+      true,
+    );
     const classHeader = readAssetDocumentHeader(
-      await storage.readBinary("assets/Mannequin.class.babasset"),
+      await storage.readBinary("assets/Mannequin/Mannequin.class.babasset"),
     );
     expect(classHeader.type).toBe("Class");
     expect(classHeader.parentClass).toBe("Actor");
     expect(classHeader.name).toBe("Mannequin");
 
     const graphDoc = await decodeAssetDocument(
-      await storage.readBinary("assets/Mannequin.anim.babasset"),
+      await storage.readBinary("assets/Mannequin/Mannequin.anim.babasset"),
     );
     expect(graphDoc.type).toBe("AnimationGraph");
     const clips = (graphDoc.payload as { clips?: Array<{ assetGuid?: string }> })

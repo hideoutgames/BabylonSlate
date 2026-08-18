@@ -89,7 +89,7 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 
 ## Models, skeletons, and clips
 
-Canonical Model bytes are always GLB/glTF. Play and preview register only the glTF 2.0 loader — not OBJ/STL/FBX. Editor OBJ import converts first (`convertObjToGlb` on a throwaway Scene, preferably the shared editor Engine so texture export works; unit tests may use `NullEngine` for geometry-only OBJ).
+Canonical Model bytes are always GLB/glTF. Play and preview register the glTF 2.0 loader plus `KHR_materials_unlit` / `KHR_texture_transform` (`gltf-loader.ts`) — not OBJ/STL/FBX. Editor OBJ import converts first (`convertObjToGlb` on a throwaway Scene, preferably the shared editor Engine so texture export works; unit tests may use `NullEngine` for geometry-only OBJ). Kenney Mannequin’s pack GLB requires unlit and points at a missing `Textures/texture-d.png`; `embedGlbExternalImages` writes `mannequin.png` into the stored Model BIN so Play/preview do not fetch sidecars.
 
 glTF character content is two rigs:
 

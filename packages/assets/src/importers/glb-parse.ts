@@ -44,8 +44,14 @@ function decodeJsonChunk(bytes: Uint8Array): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-/** Parse a `.glb` container into browse metadata + embedded image bytes. */
-export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
+function pad4(length: number): number {
+  return (4 - (length % 4)) % 4;
+}
+
+/** Split a GLB into JSON + BIN, or null when the container is invalid. */
+export function splitGlbJsonBin(
+  bytes: Uint8Array,
+): { json: Record<string, unknown>; bin: Uint8Array } | null {
   if (bytes.byteLength < 12) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (readU32(view, 0) !== GLB_MAGIC) return null;
@@ -54,7 +60,7 @@ export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
 
   let offset = 12;
   let json: Record<string, unknown> | null = null;
-  let bin: Uint8Array | null = null;
+  let bin = new Uint8Array(0);
 
   while (offset + 8 <= bytes.byteLength) {
     const chunkLength = readU32(view, offset);
@@ -75,7 +81,133 @@ export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
   }
 
   if (!json) return null;
-  return browseFromGltfJson(json, bin);
+  return { json, bin };
+}
+
+/** Encode glTF JSON + BIN as a GLB. */
+export function encodeGlbJsonBin(
+  json: Record<string, unknown>,
+  bin: Uint8Array,
+): Uint8Array {
+  const jsonText = JSON.stringify(json);
+  const jsonPad = pad4(jsonText.length);
+  const jsonBytes = new TextEncoder().encode(jsonText + " ".repeat(jsonPad));
+  const binPad = pad4(bin.byteLength);
+  const binBytes = new Uint8Array(bin.byteLength + binPad);
+  binBytes.set(bin, 0);
+  const total = 12 + 8 + jsonBytes.byteLength + 8 + binBytes.byteLength;
+  const out = new Uint8Array(total);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, GLB_MAGIC, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, total, true);
+  let o = 12;
+  view.setUint32(o, jsonBytes.byteLength, true);
+  view.setUint32(o + 4, CHUNK_JSON, true);
+  out.set(jsonBytes, o + 8);
+  o += 8 + jsonBytes.byteLength;
+  view.setUint32(o, binBytes.byteLength, true);
+  view.setUint32(o + 4, CHUNK_BIN, true);
+  out.set(binBytes, o + 8);
+  return out;
+}
+
+function sidecarBytesForUri(
+  uri: string,
+  sidecars: ReadonlyMap<string, Uint8Array>,
+): Uint8Array | null {
+  let decoded = uri;
+  try {
+    decoded = decodeURIComponent(uri);
+  } catch {
+    decoded = uri;
+  }
+  const keys = [
+    uri,
+    decoded,
+    uri.replace(/\\/g, "/"),
+    decoded.replace(/\\/g, "/"),
+  ];
+  for (const key of keys) {
+    const exact = sidecars.get(key);
+    if (exact && exact.byteLength > 0) return exact;
+    const base = key.split("/").pop();
+    if (!base) continue;
+    const byBase = sidecars.get(base);
+    if (byBase && byBase.byteLength > 0) return byBase;
+  }
+  return null;
+}
+
+function mimeFromImageUri(uri: string): string {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Rewrite external image `uri`s into BIN bufferViews so the stored Model is a
+ * self-contained GLB. Unmatched URIs are left as-is.
+ */
+export function embedGlbExternalImages(
+  bytes: Uint8Array,
+  sidecars: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>,
+): Uint8Array {
+  const map =
+    sidecars instanceof Map
+      ? sidecars
+      : new Map(Object.entries(sidecars));
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return bytes;
+  const images = Array.isArray(split.json.images)
+    ? (split.json.images as Record<string, unknown>[])
+    : [];
+  const bufferViews = Array.isArray(split.json.bufferViews)
+    ? [...(split.json.bufferViews as Record<string, unknown>[])]
+    : [];
+  let bin = new Uint8Array(split.bin);
+  let changed = false;
+  for (const image of images) {
+    const uri = typeof image.uri === "string" ? image.uri : "";
+    if (!uri || uri.startsWith("data:")) continue;
+    const sidecar = sidecarBytesForUri(uri, map);
+    if (!sidecar) continue;
+    const byteOffset = bin.byteLength;
+    const pad = pad4(sidecar.byteLength);
+    const next = new Uint8Array(byteOffset + sidecar.byteLength + pad);
+    next.set(bin, 0);
+    next.set(sidecar, byteOffset);
+    bin = next;
+    bufferViews.push({
+      buffer: 0,
+      byteOffset,
+      byteLength: sidecar.byteLength,
+    });
+    image.bufferView = bufferViews.length - 1;
+    image.mimeType =
+      typeof image.mimeType === "string" && image.mimeType.length > 0
+        ? image.mimeType
+        : mimeFromImageUri(uri);
+    delete image.uri;
+    changed = true;
+  }
+  if (!changed) return bytes;
+  split.json.bufferViews = bufferViews;
+  split.json.images = images;
+  const buffers = Array.isArray(split.json.buffers)
+    ? [...(split.json.buffers as Record<string, unknown>[])]
+    : [{}];
+  buffers[0] = { ...buffers[0], byteLength: bin.byteLength };
+  split.json.buffers = buffers;
+  return encodeGlbJsonBin(split.json, bin);
+}
+
+/** Parse a `.glb` container into browse metadata + embedded image bytes. */
+export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return null;
+  return browseFromGltfJson(split.json, split.bin);
 }
 
 /** Parse a `.gltf` JSON document (optional external BIN not resolved here). */
@@ -331,29 +463,7 @@ export function buildMinimalGlbFixture(options?: {
     scenes: [{ nodes: [] }],
     scene: 0,
   };
-  const jsonText = JSON.stringify(json);
-  const jsonPad = (4 - (jsonText.length % 4)) % 4;
-  const jsonBytes = new TextEncoder().encode(jsonText + " ".repeat(jsonPad));
-  const binPad = (4 - (png.byteLength % 4)) % 4;
-  const binBytes = new Uint8Array(png.byteLength + binPad);
-  binBytes.set(png, 0);
-
-  const total =
-    12 + 8 + jsonBytes.byteLength + 8 + binBytes.byteLength;
-  const out = new Uint8Array(total);
-  const view = new DataView(out.buffer);
-  view.setUint32(0, GLB_MAGIC, true);
-  view.setUint32(4, 2, true);
-  view.setUint32(8, total, true);
-  let o = 12;
-  view.setUint32(o, jsonBytes.byteLength, true);
-  view.setUint32(o + 4, CHUNK_JSON, true);
-  out.set(jsonBytes, o + 8);
-  o += 8 + jsonBytes.byteLength;
-  view.setUint32(o, binBytes.byteLength, true);
-  view.setUint32(o + 4, CHUNK_BIN, true);
-  out.set(binBytes, o + 8);
-  return out;
+  return encodeGlbJsonBin(json, png);
 }
 
 /** Minimal valid 1×1 PNG (red pixel). */
