@@ -14,6 +14,7 @@ import {
   isPublishedSnapshot,
   readActorSlot,
   readSnapshotHeader,
+  snapshotTickIndex,
   writeActorSlot,
   writeSnapshotHeader,
   type ActorSlot,
@@ -74,6 +75,11 @@ describe("snapshot layout", () => {
     expect(header.scriptMs).toBeCloseTo(1.5);
     expect(header.physicsMs).toBeCloseTo(0.25);
     expect(readActorSlot(buf, 1).position).toEqual({ x: 4, y: 5, z: 6 });
+    expect(snapshotTickIndex(buf)).toBe(9);
+  });
+
+  it("returns null snapshotTickIndex for unpublished buffers", () => {
+    expect(snapshotTickIndex(new Float32Array(snapshotFloatCount(1)))).toBeNull();
   });
 
   it("treats only magic+version headers as published snapshots", () => {

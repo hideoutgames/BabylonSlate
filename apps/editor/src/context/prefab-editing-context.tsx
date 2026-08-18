@@ -215,10 +215,10 @@ export function PrefabEditingProvider({
   const reparentComponent = useCallback(
     (dragId: string, targetId: string | null) => {
       upsertLocalFromViews(
-        reparentPrefabComponents(components, dragId, targetId),
+        reparentPrefabComponents(components, dragId, targetId, selectedIds),
       );
     },
-    [components, upsertLocalFromViews],
+    [components, selectedIds, upsertLocalFromViews],
   );
 
   const updateComponent = useCallback(

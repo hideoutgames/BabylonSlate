@@ -19,6 +19,7 @@ export const TEXTURE_USAGE_OPTIONS = [
   "normal",
   "pixelArt",
   "ui",
+  "skybox",
 ] as const;
 
 export type TextureUsage = (typeof TEXTURE_USAGE_OPTIONS)[number];

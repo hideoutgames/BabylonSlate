@@ -17,6 +17,7 @@ import {
   normalizeParticleEmitterPayload,
   normalizeParticleSystemPayload,
 } from "./particle-payload";
+import { normalizeSkyboxCreatorPayload } from "./skybox-creator-payload";
 
 export type MigrationFn = (
   payload: Record<string, unknown>,
@@ -215,6 +216,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   registry.register({
     type: "ParticleSystem",
     migrations: [(payload) => asRecord(normalizeParticleSystemPayload(payload))],
+  });
+  registry.register({
+    type: "SkyboxCreator",
+    migrations: [(payload) => asRecord(normalizeSkyboxCreatorPayload(payload))],
   });
   return registry;
 }
