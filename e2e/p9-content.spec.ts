@@ -453,7 +453,7 @@ test.describe("P9 content systems", () => {
     const nextIn = page
       .getByTestId("anim-state-node-state-1")
       .locator('[data-handleid="left-in"]');
-    await idleOut.dragTo(nextIn);
+    await idleOut.dragTo(nextIn, { force: true });
     const badge = page.locator('[data-testid^="anim-transition-badge-"]');
     await expect(badge).toBeVisible();
     await badge.dblclick();
