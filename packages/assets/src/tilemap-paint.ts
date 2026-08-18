@@ -1,5 +1,9 @@
 import { getTile, setTile, type TilemapPayload } from "./tilemap-payload";
 
+export const MIN_PAINT_CELL_SIZE = 8;
+export const MAX_PAINT_CELL_SIZE = 96;
+export const DEFAULT_PAINT_CELL_SIZE = 32;
+
 export type TilemapPaintTool =
   | "brush"
   | "eraser"
@@ -46,6 +50,82 @@ export function paintCanvasTileAt(options: {
       (options.canvasHeight - options.localY - options.panY) / size,
     ),
   };
+}
+
+export interface TilemapPaintView {
+  panX: number;
+  panY: number;
+  cellSize: number;
+}
+
+function clampPaintCellSize(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_PAINT_CELL_SIZE;
+  return Math.min(MAX_PAINT_CELL_SIZE, Math.max(MIN_PAINT_CELL_SIZE, value));
+}
+
+function zoomPaintView(options: {
+  panX: number;
+  panY: number;
+  cellSize: number;
+  originX: number;
+  originY: number;
+  canvasHeight: number;
+  nextCellSize: number;
+  translationX?: number;
+  translationY?: number;
+}): TilemapPaintView {
+  const cellSize = options.cellSize > 0 ? options.cellSize : DEFAULT_PAINT_CELL_SIZE;
+  const nextCellSize = clampPaintCellSize(options.nextCellSize);
+  const fracX = (options.originX - options.panX) / cellSize;
+  const fracY =
+    (options.canvasHeight - options.originY - options.panY) / cellSize;
+  return {
+    panX: options.originX - fracX * nextCellSize + (options.translationX ?? 0),
+    panY:
+      options.canvasHeight -
+      options.originY -
+      fracY * nextCellSize +
+      (options.translationY ?? 0),
+    cellSize: nextCellSize,
+  };
+}
+
+/** Pinch: scale about the midpoint, then add two-finger translation. */
+export function applyPinchView(options: {
+  panX: number;
+  panY: number;
+  cellSize: number;
+  originX: number;
+  originY: number;
+  canvasHeight: number;
+  spreadRatio: number;
+  translationX?: number;
+  translationY?: number;
+}): TilemapPaintView {
+  const cellSize = options.cellSize > 0 ? options.cellSize : DEFAULT_PAINT_CELL_SIZE;
+  const ratio = Number.isFinite(options.spreadRatio) ? options.spreadRatio : 1;
+  return zoomPaintView({
+    ...options,
+    nextCellSize: cellSize * ratio,
+  });
+}
+
+/** Wheel: zoom about the cursor. Negative deltaY zooms in. */
+export function applyWheelZoom(options: {
+  panX: number;
+  panY: number;
+  cellSize: number;
+  originX: number;
+  originY: number;
+  canvasHeight: number;
+  deltaY: number;
+}): TilemapPaintView {
+  const cellSize = options.cellSize > 0 ? options.cellSize : DEFAULT_PAINT_CELL_SIZE;
+  const steps = Number.isFinite(options.deltaY) ? -options.deltaY / 120 : 0;
+  return zoomPaintView({
+    ...options,
+    nextCellSize: cellSize * 2 ** steps,
+  });
 }
 
 /** Inclusive Bresenham segment in tile space. */
