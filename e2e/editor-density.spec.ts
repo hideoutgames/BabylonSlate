@@ -83,6 +83,53 @@ test.describe("Editor density and IA", () => {
     ).toBeVisible();
   });
 
+  test("Content Browser Sort menu orders asset tiles", async ({ page }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "Class", "SortZebra");
+    await createContentBrowserAsset(page, "Scene", "SortAlpha");
+
+    const grid = page.getByTestId("content-browser-asset-grid");
+    const alpha = "assets/SortAlpha.scene.babasset";
+    const zebra = "assets/SortZebra.class.babasset";
+    await expect(grid.locator(`[data-asset-path="${alpha}"]`)).toBeVisible();
+    await expect(grid.locator(`[data-asset-path="${zebra}"]`)).toBeVisible();
+
+    async function assetPaths(): Promise<string[]> {
+      return grid.locator("[data-asset-path]").evaluateAll((tiles) =>
+        tiles.map((tile) => tile.getAttribute("data-asset-path") ?? ""),
+      );
+    }
+
+    async function folderTilesStayFirst(): Promise<void> {
+      const kinds = await grid
+        .locator("[data-asset-path], [data-folder-path]")
+        .evaluateAll((tiles) =>
+          tiles.map((tile) =>
+            tile.hasAttribute("data-folder-path") ? "folder" : "asset",
+          ),
+        );
+      const firstAsset = kinds.indexOf("asset");
+      const lastFolder = kinds.lastIndexOf("folder");
+      if (firstAsset >= 0 && lastFolder >= 0) {
+        expect(lastFolder).toBeLessThan(firstAsset);
+      }
+    }
+
+    const nameOrder = await assetPaths();
+    expect(nameOrder.indexOf(alpha)).toBeGreaterThanOrEqual(0);
+    expect(nameOrder.indexOf(zebra)).toBeGreaterThan(nameOrder.indexOf(alpha));
+    await folderTilesStayFirst();
+
+    await page.getByTestId("content-browser-sort").click();
+    await expect(page.getByTestId("content-browser-sort-menu")).toBeVisible();
+    await page.getByTestId("content-browser-sort-type-asc").click();
+
+    const typeOrder = await assetPaths();
+    expect(typeOrder.indexOf(zebra)).toBeGreaterThanOrEqual(0);
+    expect(typeOrder.indexOf(alpha)).toBeGreaterThan(typeOrder.indexOf(zebra));
+    await folderTilesStayFirst();
+  });
+
   test("Focus hides the Outliner; Place Actors catalog does not focus search", {
     tag: IPAD_TEST_TAG,
   }, async ({
