@@ -131,6 +131,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   SliderWidget: "Widget",
   CheckBoxWidget: "Widget",
   ImageWidget: "Widget",
+  MaterialWidget: "Widget",
   ProgressBarWidget: "Widget",
   SpacerWidget: "Widget",
   TouchJoystickWidget: "Widget",

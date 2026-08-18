@@ -48,6 +48,7 @@ export interface AudioPlaybackBackend {
   }): void;
   setVoiceMuffle(voiceId: string, factor: number): void;
   dispose(): void;
+  onVoiceEnded: ((voiceId: string) => void) | null;
 }
 
 /** In-memory backend for NullEngine unit tests (no Web Audio / AudioV2). */
@@ -64,6 +65,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   decay = 0.4;
   damping = 0.5;
   disposed = false;
+  onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   isUnlocked(): boolean {
     return this.unlocked;
@@ -122,5 +124,9 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   dispose(): void {
     this.disposed = true;
     this.plays = [];
+  }
+
+  finish(voiceId: string): void {
+    this.onVoiceEnded?.(voiceId);
   }
 }

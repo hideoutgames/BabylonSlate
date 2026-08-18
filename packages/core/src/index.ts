@@ -12,3 +12,4 @@ export * from "./math-rng";
 export * from "./euler";
 export * from "./format-value";
 export * from "./play-preview-aspect";
+export * from "./input-mode";

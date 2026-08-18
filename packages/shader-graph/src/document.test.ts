@@ -59,6 +59,33 @@ describe("material document", () => {
     );
   });
 
+  it("creates an interface material with Color wired and Opacity defaulted", () => {
+    const doc = createDefaultMaterialDocument("HudGlow", "interface");
+    expect(doc.domain).toBe("interface");
+    expect(doc.shadingModel).toBe("unlit");
+    expect(doc.nodes.some((node) => node.type === "output.interface")).toBe(
+      true,
+    );
+    expect(doc.nodes.some((node) => node.type === "input.uv")).toBe(true);
+    expect(
+      doc.edges.some((edge) => edge.targetPinId === "color"),
+    ).toBe(true);
+  });
+
+  it("keeps an explicit interface domain and its terminal", () => {
+    const doc = normalizeMaterialDocument({
+      schemaVersion: MATERIAL_SCHEMA_VERSION,
+      name: "HudGlow",
+      domain: "interface",
+      nodes: [],
+      edges: [],
+    });
+    expect(doc.domain).toBe("interface");
+    expect(doc.nodes.some((node) => node.type === "output.interface")).toBe(
+      true,
+    );
+  });
+
   it("migrates a legacy Shader payload into a surface material", () => {
     const legacy = {
       name: "Surface",
@@ -276,6 +303,31 @@ describe("switching material domain", () => {
   it("is a no-op when the domain is unchanged", () => {
     const doc = createDefaultMaterialDocument("Rock");
     expect(setMaterialDomain(doc, "surface")).toBe(doc);
+  });
+
+  it("switches a surface material to the interface terminal", () => {
+    const doc = setMaterialDomain(
+      createDefaultMaterialDocument("Rock"),
+      "interface",
+    );
+    expect(doc.domain).toBe("interface");
+    expect(doc.nodes.some((node) => node.type === "output.surface")).toBe(false);
+    expect(doc.nodes.some((node) => node.type === "output.interface")).toBe(
+      true,
+    );
+  });
+
+  it("drops scene samples when switching post-process to interface", () => {
+    const iface = setMaterialDomain(
+      createDefaultMaterialDocument("Blur", "postProcess"),
+      "interface",
+    );
+    expect(iface.nodes.some((node) => node.type === "input.sceneColor")).toBe(
+      false,
+    );
+    expect(iface.nodes.some((node) => node.type === "input.screenUv")).toBe(
+      false,
+    );
   });
 
   it("defaults Custom GLSL nodes to an a + b expression", () => {

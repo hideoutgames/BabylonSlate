@@ -58,8 +58,13 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const { openLiveEditorUtility } = vi.hoisted(() => ({
+const { openLiveEditorUtility, collectPlayMaterialLibrary } = vi.hoisted(() => ({
   openLiveEditorUtility: vi.fn(),
+  collectPlayMaterialLibrary: async () => ({
+    documents: new Map(),
+    functions: new Map(),
+    textureGuids: [] as string[],
+  }),
 }));
 
 vi.mock("../context/document-context", () => ({
@@ -149,6 +154,7 @@ vi.mock("../context/document-context", () => ({
     },
     openDocuments: [],
     collectPlayUiLibrary: async () => ({}),
+    collectPlayMaterialLibrary,
     projectName: "Demo",
     readAssetChunk: async () => null,
     projectDocument: {

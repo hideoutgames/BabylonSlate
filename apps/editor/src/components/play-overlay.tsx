@@ -3,6 +3,8 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
+  DEFAULT_INPUT_MODE,
+  type InputMode,
   type PlayPreviewProjectSettings,
   type RenderProjectSettings,
   type AudioProjectSettings,
@@ -61,6 +63,7 @@ import { PlayHudOverlay } from "./play-hud-overlay";
 import {
   applyPlayHudInstance,
   applyPlayHudVisibility,
+  lookupInterfaceMaterialDocument,
   playUserInterfaceRuntimeDocuments,
   removePlayHudInstance,
   resolvePlayHudDocuments,
@@ -203,6 +206,7 @@ export function PlayOverlay({
     () => new Set(),
   );
   const [hudInstances, setHudInstances] = useState<PlayHudInstance[]>([]);
+  const [inputMode, setInputMode] = useState<InputMode>(DEFAULT_INPUT_MODE);
   const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
     null,
   );
@@ -325,6 +329,7 @@ export function PlayOverlay({
     layoutPlay();
     userPausedRef.current = initialPauseOnPlayRef.current;
     setPaused(initialPauseOnPlayRef.current);
+    setInputMode(DEFAULT_INPUT_MODE);
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -373,6 +378,9 @@ export function PlayOverlay({
       },
       onUiRemove: (instanceId) => {
         setHudInstances((prev) => removePlayHudInstance(prev, instanceId));
+      },
+      onSetInputMode: (mode) => {
+        setInputMode(mode);
       },
       onStats: (stats) => {
         setFps(stats.fps);
@@ -593,10 +601,17 @@ export function PlayOverlay({
         uiLibrary={uiLibrary}
         fontEntries={fontEntries}
         resolveImageUrl={resolveImageUrl}
+        resolveInterfaceMaterial={(guid) =>
+          lookupInterfaceMaterialDocument(guid, materialDocuments)
+        }
+        materialFunctions={() =>
+          Object.fromEntries(materialFunctions ?? [])
+        }
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}
         scene={hudScene}
+        inputMode={inputMode}
         onTouchAxis={(controlId, value) =>
           sessionRef.current?.pushTouchAxis(controlId, value)
         }

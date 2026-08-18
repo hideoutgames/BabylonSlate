@@ -614,6 +614,49 @@ describe("scriptPaletteNodes", () => {
     }
   });
 
+  it("lists Set Input Mode on runtime graphs and hides it on EUO, EFL, and EUI", () => {
+    expect(
+      scriptPaletteNodes(registry, { parentClass: "Actor" }).some(
+        (node) => node.id === "input.setInputMode",
+      ),
+    ).toBe(true);
+    expect(
+      scriptPaletteNodes(registry, { parentClass: "BObject" }).some(
+        (node) => node.id === "input.setInputMode",
+      ),
+    ).toBe(true);
+    expect(
+      scriptPaletteNodes(registry, { parentClass: "GameInstance" }).some(
+        (node) => node.id === "input.setInputMode",
+      ),
+    ).toBe(true);
+    expect(
+      scriptPaletteNodes(registry, { assetType: "UserInterface" }).some(
+        (node) => node.id === "input.setInputMode",
+      ),
+    ).toBe(true);
+    expect(
+      scriptPaletteNodes(registry, { parentClass: "EditorUtilityObject" }).some(
+        (node) => node.id === "input.setInputMode",
+      ),
+    ).toBe(false);
+    expect(
+      scriptPaletteNodes(registry, { parentClass: "EditorFunctionLibrary" }).some(
+        (node) => node.id === "input.setInputMode",
+      ),
+    ).toBe(false);
+    expect(
+      scriptPaletteNodes(registry, {
+        assetType: "EditorUtilityInterface",
+        parentClass: "BObject",
+      }).some((node) => node.id === "input.setInputMode"),
+    ).toBe(false);
+    const actor = scriptPaletteNodes(registry, { parentClass: "Actor" }).find(
+      (node) => node.id === "input.setInputMode",
+    );
+    expect(actor?.defaultData).toMatchObject({ mode: "All" });
+  });
+
   it("injects Call I rows per ScriptInterface method", () => {
     const nodes = scriptPaletteNodes(registry, {
       scriptInterfaces: [
@@ -1480,6 +1523,7 @@ describe("scriptPaletteNodes", () => {
     expect(ids.has("Widget")).toBe(true);
     expect(ids.has("ButtonWidget")).toBe(true);
     expect(ids.has("ImageWidget")).toBe(true);
+    expect(ids.has("MaterialWidget")).toBe(true);
   });
 
   it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {

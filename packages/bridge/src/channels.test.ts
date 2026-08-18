@@ -141,6 +141,15 @@ describe("UserInterface command and control contracts", () => {
     expect(commandType(command)).toBe("assignMesh");
     expect(command.skybox?.faces.px).toBe("tex-right");
   });
+
+  it("setInputMode is a session-scoped Play command", () => {
+    const command = {
+      type: "setInputMode",
+      mode: "Interface",
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setInputMode");
+    expect(command.mode).toBe("Interface");
+  });
 });
 
 describe("Play inspect contract", () => {
