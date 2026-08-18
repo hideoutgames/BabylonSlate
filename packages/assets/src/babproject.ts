@@ -76,7 +76,7 @@ export async function readProjectTree(
 }
 
 /**
- * Zip backend: encode a project tree to a single .babproject zip.
+ * Zip backend: encode a project tree to a zip (Export Project download).
  * Uses a fixed mtime so encoded bytes are golden-stable.
  */
 export function encodeProjectZip(files: ProjectTreeFile[]): Uint8Array {

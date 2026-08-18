@@ -11,6 +11,12 @@ describe("node storage adapter", () => {
     if (dir) await rm(dir, { recursive: true, force: true });
   });
 
+  it("defaults pickProjectFolder to MyGame", async () => {
+    dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
+    const storage = new NodeStorageAdapter(dir);
+    expect((await storage.pickProjectFolder()).name).toBe("MyGame");
+  });
+
   it("round-trips binary files on disk", async () => {
     dir = await mkdtemp(join(tmpdir(), "babylonslate-node-"));
     const storage = new NodeStorageAdapter(dir);

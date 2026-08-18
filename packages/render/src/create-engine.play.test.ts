@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine } from "@babylonjs/core";
+import { Camera, NullEngine, UniversalCamera } from "@babylonjs/core";
 import {
   snapshotFloatCount,
   writeActorSlot,
@@ -926,5 +926,49 @@ describe("Play createEngine view", () => {
     resize.mockClear();
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Default Camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {
+    const engine = sharedEngine();
+    const { handle } = playHandle(engine);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        isDefault: true,
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        orthographicSize: 5,
+      },
+    });
+    const camera = handle.scene.getCameraByName(
+      "authoredCamera:1",
+    ) as UniversalCamera;
+    expect(handle.scene.activeCamera).toBe(camera);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        isDefault: true,
+        projectionMode: "orthographic",
+        fieldOfView: 60,
+        orthographicSize: 5,
+      },
+    });
+    expect(handle.scene.activeCamera).toBe(camera);
+    expect(camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(
+      camera.getProjectionMatrix(true).m.every((value) => Number.isFinite(value)),
+    ).toBe(true);
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(600);
+    handle.setSize(800, 600);
+    expect(camera.orthoLeft).toBeCloseTo(-5 * (4 / 3));
+    expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
+    expect(handle.scene.activeCamera).toBe(camera);
   });
 });

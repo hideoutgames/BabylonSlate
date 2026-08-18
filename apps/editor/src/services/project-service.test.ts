@@ -22,12 +22,20 @@ describe("project round-trip", () => {
     expect(exists).toBe(true);
   });
 
+  it("creates a project folder without a .babproject suffix", async () => {
+    localStorage.clear();
+    const storage = new WebStorageAdapter();
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("MyGame");
+    expect(storage.getCurrentFolder()?.name).toBe("MyGame");
+  });
+
   it("refuses to create over an existing project folder", async () => {
     localStorage.clear();
     const storage = new WebStorageAdapter();
     const service = new ProjectService(storage);
-    await service.createEmptyProject("Taken.babproject");
-    await expect(service.createEmptyProject("Taken.babproject")).rejects.toThrow(
+    await service.createEmptyProject("Taken");
+    await expect(service.createEmptyProject("Taken")).rejects.toThrow(
       "Name already exists.",
     );
   });

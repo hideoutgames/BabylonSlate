@@ -26,6 +26,9 @@ export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
 /** Child visual meshes: `editorActor:<actorId>|<componentId>`. */
 export const EDITOR_COMPONENT_MESH_SEP = "|";
 
+/** Hidden volumetric collider on origin-root actors so tap pick hits a volume, not a thin billboard. */
+export const EDITOR_ORIGIN_PICK_DIAMETER = 0.75;
+
 export function editorMeshName(actorId: string): string {
   return `${EDITOR_ACTOR_MESH_PREFIX}${actorId}`;
 }
@@ -360,9 +363,18 @@ export function createMeshForComponent(
 }
 
 function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
-  const root = MeshBuilder.CreateBox(editorMeshName(actor.id), { size: 0.01 }, scene);
-  root.metadata = { ...(root.metadata ?? {}), editorActorOrigin: true };
-  root.isVisible = false;
+  const root = MeshBuilder.CreateSphere(
+    editorMeshName(actor.id),
+    { diameter: EDITOR_ORIGIN_PICK_DIAMETER },
+    scene,
+  );
+  root.metadata = {
+    ...(root.metadata ?? {}),
+    editorActorOrigin: true,
+    editorPickProxy: true,
+  };
+  root.visibility = 0;
+  root.isVisible = actor.visible;
   root.isPickable = !actor.locked;
   return root;
 }
@@ -498,7 +510,10 @@ export function isEditorActorOrigin(mesh: Mesh): boolean {
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   applySerializedTransform(mesh, actor.transform);
   const origin = isEditorActorOrigin(mesh);
-  mesh.isVisible = origin ? false : actor.visible;
+  if (origin) {
+    mesh.visibility = 0;
+  }
+  mesh.isVisible = actor.visible;
   mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
   if (!origin) return;
   for (const child of childMeshesOf(mesh)) {
@@ -528,9 +543,16 @@ export function applyComponentChildTransforms(
   }
 }
 
+function isEditorPickProxy(mesh: Mesh): boolean {
+  return Boolean(
+    (mesh.metadata as { editorPickProxy?: boolean } | null)?.editorPickProxy,
+  );
+}
+
 export function visualMeshesOfActorRoot(mesh: Mesh): Mesh[] {
   if (!isEditorActorOrigin(mesh)) return [mesh];
   const parts = childMeshesOf(mesh).filter((child) => {
+    if (isEditorPickProxy(child) || isEditorActorOrigin(child)) return false;
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) return false;
     const afterPipe = child.name.slice(
       child.name.indexOf(EDITOR_COMPONENT_MESH_SEP) + 1,
