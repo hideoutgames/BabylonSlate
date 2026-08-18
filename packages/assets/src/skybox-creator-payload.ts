@@ -5,6 +5,7 @@ import {
   type SkyboxFaceKey,
   type SkyboxFaces,
 } from "@babylonslate/core";
+import type { ImportResult } from "./importers/types";
 import { nextCopyName, stripAssetFileSuffix } from "./unique-names";
 
 export const SKYBOX_CREATOR_NET_COLS = 4;

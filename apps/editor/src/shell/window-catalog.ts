@@ -24,7 +24,8 @@ export type DockviewDocumentKind =
   | "audio-channel"
   | "sound-attenuation"
   | "particle-emitter"
-  | "particle-system";
+  | "particle-system"
+  | "skybox-creator";
 export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
@@ -48,6 +49,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "skybox-creator",
 ]);
 
 export function isDockviewDocumentKind(
@@ -98,6 +100,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "sound-attenuation": "sound-attenuation-details",
   "particle-emitter": "particle-emitter-preview",
   "particle-system": "particle-system-preview",
+  "skybox-creator": "skybox-creator-preview",
 };
 
 export function primaryDockPanel(
@@ -406,6 +409,24 @@ const PARTICLE_SYSTEM_WINDOWS: DockWindowDefinition[] = [
     title: "Details",
     defaultPosition: {
       referencePanelId: "particle-system-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const SKYBOX_CREATOR_WINDOWS: DockWindowDefinition[] = [
+  {
+    id: "skybox-creator-preview",
+    component: "skybox-creator-preview",
+    title: "Preview",
+  },
+  {
+    id: "skybox-creator-details",
+    component: "skybox-creator-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "skybox-creator-preview",
       direction: "right",
       initialWidth: 280,
     },
@@ -730,6 +751,9 @@ export function listDockWindows(
   }
   if (kind === "particle-system") {
     return withOptionalLocks(kind, PARTICLE_SYSTEM_WINDOWS, options);
+  }
+  if (kind === "skybox-creator") {
+    return withOptionalLocks(kind, SKYBOX_CREATOR_WINDOWS, options);
   }
   if (kind === "sprite-animation") {
     return withOptionalLocks(kind, SPRITE_ANIMATION_WINDOWS, options);
