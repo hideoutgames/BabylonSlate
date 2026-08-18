@@ -1,6 +1,7 @@
 import {
   createActor,
   createDefaultScene,
+  createDefaultSceneSettings,
   createMeshComponent,
   identitySerializedTransform,
   wouldCreateComponentCycle,
@@ -386,9 +387,14 @@ function prefabRootPreviewActor() {
 export function previewSceneFor(
   components: SerializedComponent[],
 ): SerializedScene {
+  const base = createDefaultScene();
   return {
-    ...createDefaultScene(),
+    ...base,
     name: "Prefab preview",
+    settings: {
+      ...base.settings,
+      environmentColor: createDefaultSceneSettings().environmentColor,
+    },
     actors: [
       prefabRootPreviewActor(),
       ...components.map((component) =>
