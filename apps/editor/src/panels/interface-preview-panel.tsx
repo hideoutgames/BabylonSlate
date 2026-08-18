@@ -6,6 +6,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { interfacePreviewGraph } from "../lib/interface-preview";
+import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
   asScriptInterfaceAsset,
   parseMemberIndex,
@@ -17,6 +18,10 @@ export function InterfacePreviewPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments } = useDocuments();
   const { selectedMemberId, setSelectedPinId } = useTypeAssetEditing();
+  const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
+    documentId,
+    selectedMemberId ?? "preview",
+  );
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const previewGraph = useMemo(() => {
     const index = parseMemberIndex(selectedMemberId);
@@ -38,6 +43,8 @@ export function InterfacePreviewPanel(_props: IDockviewPanelProps) {
           key={selectedMemberId ?? "none"}
           readOnly
           initialGraph={previewGraph}
+          sessionViewport={sessionViewport}
+          onSessionViewportChange={onSessionViewportChange}
           onPinSelect={(_nodeId, pinId) => {
             const index = parseMemberIndex(selectedMemberId);
             if (index === null || !pinId.startsWith("data-")) return;

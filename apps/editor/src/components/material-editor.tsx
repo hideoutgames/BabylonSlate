@@ -26,6 +26,7 @@ import {
 } from "@babylonslate/ui/components/toggle-group";
 import { Textarea } from "@babylonslate/ui/components/textarea";
 import { GraphEditor } from "@babylonslate/graph-ui";
+import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
   MATERIAL_PREVIEW_MESHES,
   classifyMaterialCost,
@@ -223,9 +224,11 @@ function useMaterialFunctionDocument(): {
 
 export function MaterialGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { document, commit } = useMaterialDocument();
+  const { document, documentId, commit } = useMaterialDocument();
   const editing = useMaterialEditing();
   const functions = editing.functions;
+  const { sessionViewport, onSessionViewportChange } =
+    useGraphSessionViewport(documentId);
 
   const diagnostics = useMemo(
     () =>
@@ -259,6 +262,8 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes(document.domain)}
           pinCompatibility={materialPinsAreCompatible}
+          sessionViewport={sessionViewport}
+          onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           focusedNodeId={editing.focusedNodeId ?? undefined}
           commitPositionsOnDragEnd
@@ -278,8 +283,10 @@ export function MaterialGraphPanel(_props: IDockviewPanelProps) {
 
 export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { document, commit } = useMaterialFunctionDocument();
+  const { document, documentId, commit } = useMaterialFunctionDocument();
   const editing = useMaterialEditing();
+  const { sessionViewport, onSessionViewportChange } =
+    useGraphSessionViewport(documentId);
 
   const diagnostics = useMemo(
     () =>
@@ -313,6 +320,8 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
           diagnostics={diagnostics}
           paletteNodes={materialPaletteNodes("surface")}
           pinCompatibility={materialPinsAreCompatible}
+          sessionViewport={sessionViewport}
+          onSessionViewportChange={onSessionViewportChange}
           onSelectionChange={(ids) => editing.setSelectedNodeId(ids[0] ?? null)}
           commitPositionsOnDragEnd
           onChange={(next, meta) =>

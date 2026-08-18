@@ -94,6 +94,7 @@ import { displayPinTypesForGraph, pinTypeKey } from "./wildcard-display";
 import type { PinDisplayLookup } from "./wildcard-display";
 import {
   GRAPH_DEFAULT_ZOOM,
+  resolveGraphMountViewport,
   resolveGraphViewport,
   type GraphViewport,
 } from "./graph-viewport";
@@ -115,6 +116,7 @@ export {
   GRAPH_MAX_ZOOM,
   GRAPH_MIN_ZOOM,
   GRAPH_ZOOM_ON_DOUBLE_CLICK,
+  resolveGraphMountViewport,
 } from "./graph-viewport";
 
 export interface GraphEditorProps {
@@ -143,6 +145,13 @@ export interface GraphEditorProps {
   paletteNodes?: PaletteNode[];
   colorMode?: "light" | "dark";
   defaultZoom?: number;
+  /** Restore pan/zoom after workspace remount; skips the mount `fitView`. */
+  sessionViewport?: { x: number; y: number; zoom: number } | null;
+  onSessionViewportChange?: (viewport: {
+    x: number;
+    y: number;
+    zoom: number;
+  }) => void;
   /** Pan/zoom only: no connect, node drag, palette, or Cut/Paste/Delete/Format. */
   readOnly?: boolean;
   /** Override or extend the default pin/log node components. */
@@ -389,6 +398,8 @@ function GraphEditorCanvas({
   paletteNodes,
   colorMode = "dark",
   defaultZoom = GRAPH_DEFAULT_ZOOM,
+  sessionViewport = null,
+  onSessionViewportChange,
   readOnly = false,
   onPinSelect,
   nodeTypes: nodeTypesProp,
@@ -422,6 +433,10 @@ function GraphEditorCanvas({
   const graphViewport = useMemo(
     () => resolveGraphViewport(defaultZoom),
     [defaultZoom],
+  );
+  const mountViewport = useMemo(
+    () => resolveGraphMountViewport(sessionViewport, graphViewport),
+    [graphViewport, sessionViewport],
   );
   const [nodes, setNodes] = useState<CanvasNode[]>(() =>
     toCanvasNodes(initialGraph.nodes, knownTypes, nodeDragHandle),
@@ -1542,6 +1557,7 @@ function GraphEditorCanvas({
         data-testid="graph-editor"
         data-connect-end-mode={connectEndMode}
         data-focused-node-id={focusedNodeId || undefined}
+        data-restore-viewport={sessionViewport ? "true" : undefined}
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
       >
@@ -1665,9 +1681,14 @@ function GraphEditorCanvas({
                 ? ConnectionMode.Strict
                 : undefined
           }
-          fitView
+          fitView={mountViewport.fitView}
           fitViewOptions={graphViewport.fitViewOptions}
-          defaultViewport={graphViewport.defaultViewport}
+          defaultViewport={mountViewport.defaultViewport}
+          onMoveEnd={
+            onSessionViewportChange
+              ? (_event, viewport) => onSessionViewportChange(viewport)
+              : undefined
+          }
           minZoom={graphViewport.minZoom}
           maxZoom={graphViewport.maxZoom}
           zoomOnDoubleClick={graphViewport.zoomOnDoubleClick}

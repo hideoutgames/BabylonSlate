@@ -21,6 +21,7 @@ import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
+import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
@@ -73,6 +74,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     setFocusDiagnostic,
   } = useValidation();
   const [defaultZoom, setDefaultZoom] = useState(GRAPH_DEFAULT_ZOOM);
+  const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
+    documentId,
+    activeFunctionId ?? "event",
+  );
 
   useEffect(() => {
     const store = createAppSettingsStore();
@@ -337,6 +342,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           initialGraph={graph}
           colorMode="dark"
           defaultZoom={defaultZoom}
+          sessionViewport={sessionViewport}
+          onSessionViewportChange={onSessionViewportChange}
           focusedNodeId={focusId}
           diagnostics={graphDiagnostics}
           paletteNodes={paletteNodes}

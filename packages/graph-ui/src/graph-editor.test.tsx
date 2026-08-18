@@ -356,6 +356,18 @@ describe("GraphEditor", () => {
     ).toBe(graph.nodes.length);
   });
 
+  it("marks a restored session viewport so remount can skip fitView", () => {
+    render(
+      <GraphEditor
+        initialGraph={createDefaultGraph()}
+        sessionViewport={{ x: 24, y: -8, zoom: 0.8 }}
+      />,
+    );
+    expect(screen.getByTestId("graph-editor").getAttribute("data-restore-viewport")).toBe(
+      "true",
+    );
+  });
+
   it("renders the log message body so authors can read it on the canvas", () => {
     const graph = createDefaultGraph();
     const message = String(graph.nodes[0]?.data.message ?? "");

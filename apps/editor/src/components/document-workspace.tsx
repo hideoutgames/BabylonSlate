@@ -1,6 +1,6 @@
 import { CONTENT_BROWSER_ID, isAssetDocumentKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { UiEditingProvider } from "../context/ui-editing-context";
@@ -21,6 +21,7 @@ import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context"
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
 import { sceneFocusActorId } from "../lib/search-navigation";
+import { useDocumentWorkingSet } from "../lib/document-working-set";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
@@ -125,7 +126,7 @@ function DocumentShell({
   );
 }
 
-function UiDocumentDocks({
+export function UiDocumentDocks({
   id,
   layout,
   editorUtilityInterface,
@@ -155,6 +156,7 @@ function UiDocumentDocks({
           data-testid="ui-dock-surface-designer"
           data-active={mode === "designer" ? "true" : "false"}
         >
+          {mode === "designer" ? (
           <RegisteredDockviewShell
             id={id}
             documentKind="ui"
@@ -163,6 +165,7 @@ function UiDocumentDocks({
             uiEditorMode="designer"
             surface="designer"
           />
+          ) : null}
         </div>
         <div
           className={cn(
@@ -174,6 +177,7 @@ function UiDocumentDocks({
           data-testid="ui-dock-surface-logic"
           data-active={mode === "logic" ? "true" : "false"}
         >
+          {mode === "logic" ? (
           <RegisteredDockviewShell
             id={id}
             documentKind="ui"
@@ -182,13 +186,14 @@ function UiDocumentDocks({
             uiEditorMode="logic"
             surface="logic"
           />
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function AnimDocumentDocks({
+export function AnimDocumentDocks({
   id,
   layout,
 }: {
@@ -218,6 +223,7 @@ function AnimDocumentDocks({
           data-testid="anim-dock-surface-state-machine"
           data-active={mode === "stateMachine" ? "true" : "false"}
         >
+          {mode === "stateMachine" ? (
           <RegisteredDockviewShell
             id={id}
             documentKind="anim-graph"
@@ -225,6 +231,7 @@ function AnimDocumentDocks({
             animEditorMode="stateMachine"
             surface="stateMachine"
           />
+          ) : null}
         </div>
         <div
           className={cn(
@@ -238,6 +245,7 @@ function AnimDocumentDocks({
           data-testid="anim-dock-surface-animation-object"
           data-active={mode === "animationObject" ? "true" : "false"}
         >
+          {mode === "animationObject" ? (
           <RegisteredDockviewShell
             id={id}
             documentKind="anim-graph"
@@ -245,6 +253,7 @@ function AnimDocumentDocks({
             animEditorMode="animationObject"
             surface="animationObject"
           />
+          ) : null}
         </div>
       </div>
     </div>
@@ -260,17 +269,7 @@ export function DocumentWorkspace() {
     assetRegistry,
   } = useDocuments();
 
-  const [mountedIds, setMountedIds] = useState<Set<string>>(() => new Set());
-
   const projectKey = projectDocument?.metadata.name ?? null;
-
-  useEffect(() => {
-    if (projectKey) {
-      setMountedIds(new Set([CONTENT_BROWSER_ID]));
-    } else {
-      setMountedIds(new Set());
-    }
-  }, [projectKey]);
 
   const resolvedActiveId =
     tabOrder.length === 0
@@ -279,15 +278,10 @@ export function DocumentWorkspace() {
         ? activeDocumentId
         : (tabOrder.find((id) => id === CONTENT_BROWSER_ID) ?? tabOrder[0]);
 
-  useEffect(() => {
-    if (!resolvedActiveId) return;
-    setMountedIds((prev) => {
-      if (prev.has(resolvedActiveId)) return prev;
-      const next = new Set(prev);
-      next.add(resolvedActiveId);
-      return next;
-    });
-  }, [resolvedActiveId]);
+  const mountedIds = useDocumentWorkingSet(
+    projectKey ? tabOrder : [],
+    projectKey ? resolvedActiveId : null,
+  );
 
   if (tabOrder.length === 0) {
     return (
@@ -585,10 +579,13 @@ export function DocumentWorkspace() {
             assetType: indexed.header.type,
           });
 
+        if (!shouldMount) return null;
+
         return (
           <WorkspaceErrorBoundary key={id}>
             <DocumentWorkspaceProvider documentId={id}>
               <SceneEditingProvider
+                documentId={id}
                 initialViewportMode={sceneContent?.viewportMode ?? "3d"}
                 documentViewportMode={sceneContent?.viewportMode}
                 documentSnapEnabled={sceneContent?.settings?.grid?.snapEnabled}
@@ -608,16 +605,14 @@ export function DocumentWorkspace() {
                 testId={`document-workspace-${doc.ref.kind}`}
                 active={active}
               >
-                {shouldMount ? (
-                  <RegisteredDockviewShell
-                    id={id}
-                    documentKind={
-                      doc.ref.kind === "scene" ? "scene" : "graph"
-                    }
-                    initialLayout={doc.layout}
-                    actorPrefab={actorPrefab}
-                  />
-                ) : null}
+                <RegisteredDockviewShell
+                  id={id}
+                  documentKind={
+                    doc.ref.kind === "scene" ? "scene" : "graph"
+                  }
+                  initialLayout={doc.layout}
+                  actorPrefab={actorPrefab}
+                />
               </DocumentShell>
               </GraphEditingProvider>
               </PrefabEditingProvider>
