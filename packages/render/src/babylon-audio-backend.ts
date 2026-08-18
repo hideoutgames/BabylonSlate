@@ -8,7 +8,7 @@ import {
   type StaticSound,
   type StaticSoundBuffer,
 } from "@babylonjs/core/AudioV2";
-import { AUDIO_SHARED_REVERB_BUSES } from "@babylonslate/assets";
+import { AUDIO_MUFFLE_LOWPASS_HZ, AUDIO_SHARED_REVERB_BUSES } from "@babylonslate/assets";
 import type {
   AudioPlaybackBackend,
   AudioPlayRequest,
@@ -57,6 +57,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private audioContext: AudioContext | null = null;
   private readonly buffers = new Map<string, StaticSoundBuffer>();
   private readonly voices = new Map<string, StaticSound>();
+  private readonly muffleSends = new Map<string, GainNode>();
+  private muffleFilter: BiquadFilterNode | null = null;
   private unlocked = false;
 
   isUnlocked(): boolean {
@@ -84,7 +86,14 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   async play(request: AudioPlayRequest): Promise<void> {
     const engine = await this.ensureEngine();
     this.stop(request.voiceId);
-    let buffer = this.buffers.get(request.assetGuid);
+    let buffer = this.buffers.get(
+      request.clipChunkId
+        ? `${request.assetGuid}:${request.clipChunkId}`
+        : request.assetGuid,
+    );
+    if (!buffer) {
+      buffer = this.buffers.get(request.assetGuid);
+    }
     if (!buffer) {
       buffer = await CreateSoundBufferAsync(
         sourceBuffer(request.source),
@@ -124,6 +133,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   stop(voiceId: string): void {
+    this.disposeMuffleSend(voiceId);
     const sound = this.voices.get(voiceId);
     if (!sound) return;
     sound.stop();
@@ -185,6 +195,24 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     if (this.reverbBus) this.reverbBus.volume = profile.wet;
   }
 
+  setVoiceMuffle(voiceId: string, factor: number): void {
+    const amount = Math.min(1, Math.max(0, factor));
+    const sound = this.voices.get(voiceId);
+    const out = webAudioPort(sound, "_outNode");
+    const filter = this.ensureMuffleFilter();
+    const context = this.audioContext;
+    if (!sound || !out || !filter || !context) return;
+    let send = this.muffleSends.get(voiceId);
+    if (!send) {
+      send = context.createGain();
+      send.gain.value = 0;
+      out.connect(send);
+      send.connect(filter);
+      this.muffleSends.set(voiceId, send);
+    }
+    send.gain.value = amount;
+  }
+
   dispose(): void {
     for (const voiceId of [...this.voices.keys()]) {
       try {
@@ -206,6 +234,15 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       /* keep tearing down */
     }
     this.reverbBus = null;
+    for (const voiceId of [...this.muffleSends.keys()]) {
+      this.disposeMuffleSend(voiceId);
+    }
+    try {
+      this.muffleFilter?.disconnect();
+    } catch {
+      /* keep tearing down */
+    }
+    this.muffleFilter = null;
     try {
       this.engine?.dispose();
     } catch {
@@ -254,5 +291,32 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     } catch {
       this.reverbGraph = null;
     }
+  }
+
+  private ensureMuffleFilter(): BiquadFilterNode | null {
+    if (this.muffleFilter) return this.muffleFilter;
+    const context = this.audioContext;
+    const engine = this.engine;
+    const mainIn =
+      webAudioPort(engine?.mainOut, "_inNode") ??
+      webAudioPort(engine?.defaultMainBus, "_inNode");
+    if (!context || !mainIn) return null;
+    const filter = context.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = AUDIO_MUFFLE_LOWPASS_HZ;
+    filter.connect(mainIn);
+    this.muffleFilter = filter;
+    return filter;
+  }
+
+  private disposeMuffleSend(voiceId: string): void {
+    const send = this.muffleSends.get(voiceId);
+    if (!send) return;
+    try {
+      send.disconnect();
+    } catch {
+      /* voice already gone */
+    }
+    this.muffleSends.delete(voiceId);
   }
 }

@@ -86,6 +86,29 @@ describe("createDebugInspectSnapshot", () => {
     });
   });
 
+  it("stamps variableTypes from ClassRegistry for known class variables", () => {
+    const world = createInspectWorld();
+    expect(
+      world.classRegistry.register({
+        id: "Hero",
+        parentClassId: "Actor",
+        kind: "actor",
+        variables: [{ name: "health", type: "float" }],
+        implementedInterfaces: [],
+      }).ok,
+    ).toBe(true);
+    const actor = world.createActor({
+      guid: "hero",
+      classId: "Hero",
+      variables: { name: "Hero", health: 10 },
+    });
+    world.spawnActorNow(actor);
+    const snapshot = createDebugInspectSnapshot(world);
+    const node = snapshot.nodes.find((entry) => entry.id === "hero");
+    expect(node?.variableTypes?.health).toBe("float");
+    expect(node?.variableTypes?.name).toBeUndefined();
+  });
+
   it("falls back to classId when an actor has no name", () => {
     const world = createInspectWorld();
     const actor = world.createActor({

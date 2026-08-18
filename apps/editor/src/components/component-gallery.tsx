@@ -271,6 +271,34 @@ function GalleryComposites() {
         </PanelFrame>
       </div>
       <div className="rounded-lg border border-border">
+        <PanelFrame
+          title="Property grid (horizontal)"
+          data-testid="gallery-property-grid-horizontal"
+        >
+          <PropertyGrid
+            orientation="horizontal"
+            rows={[
+              {
+                kind: "text",
+                id: "gallery-inspect-name",
+                label: "Name",
+                value: "Hero",
+                disabled: true,
+                onChange: () => {},
+              },
+              {
+                kind: "number",
+                id: "gallery-inspect-health",
+                label: "Health",
+                value: 10,
+                disabled: true,
+                onChange: () => {},
+              },
+            ]}
+          />
+        </PanelFrame>
+      </div>
+      <div className="rounded-lg border border-border">
         <PanelFrame title="Atlas tile grid" data-testid="gallery-atlas-tile-grid">
           <div className="h-48">
             <AtlasTileGrid

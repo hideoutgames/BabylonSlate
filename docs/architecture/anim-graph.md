@@ -46,7 +46,7 @@ Protocol: extra command-channel `animState` (not a snapshot stride bump). See [b
 Drives:
 
 - glTF `Animation` clips via `@babylonjs/loaders` `LoadAssetContainerAsync` (Play `modelBytes` → paused per-slot `AnimationGroup`s).
-- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, pixel size, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of frame `durationMs`.
+- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, pixel size, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of **effective** frame durations (`frameDurationMs`, or per-frame `durationMs` when `durationMsOverride` is true).
 
 ## Render
 

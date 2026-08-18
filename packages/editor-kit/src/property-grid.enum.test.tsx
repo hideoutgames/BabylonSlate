@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { PropertyGrid } from "./property-grid";
 
 afterEach(() => {
@@ -46,5 +46,30 @@ describe("PropertyGrid enum rows", () => {
       />,
     );
     expect(screen.getByTestId("property-kind").textContent).toContain("Legacy");
+  });
+
+  it("does not open options when the enum row is disabled", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            id: "mode",
+            kind: "enum",
+            label: "Mode",
+            value: "a",
+            disabled: true,
+            options: [
+              { value: "a", label: "Alpha" },
+              { value: "b", label: "Beta" },
+            ],
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const trigger = screen.getByTestId("property-mode") as HTMLButtonElement;
+    expect(trigger.disabled).toBe(true);
+    fireEvent.click(trigger);
+    expect(document.querySelector("[data-slot='select-content']")).toBeNull();
   });
 });

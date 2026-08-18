@@ -129,4 +129,27 @@ describe("animClipCatalogFromAssets", () => {
       }),
     ]);
   });
+
+  it("sums Sprite Animation global frameDurationMs when frames do not override", () => {
+    expect(
+      animClipCatalogFromAssets([
+        {
+          header: {
+            guid: "walk-anim",
+            type: "SpriteAnimation",
+            name: "Walk",
+            payload: {
+              frameDurationMs: 40,
+              frames: [{ textureGuid: "a" }, { textureGuid: "b" }],
+            },
+          },
+        },
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        guid: "walk-anim",
+        durationMs: 80,
+      }),
+    ]);
+  });
 });

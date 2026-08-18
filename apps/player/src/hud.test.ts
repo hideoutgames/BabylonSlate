@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPlayerFpsSample, applyWorkerPlayerStats } from "./hud";
+import { applyPlayerFpsSample, applyWorkerPlayerStats, unlockAudioOnFirstGesture } from "./hud";
 
 describe("applyPlayerFpsSample", () => {
   it("sets fps without zeroing worker script and physics ms", () => {
@@ -32,5 +32,27 @@ describe("applyWorkerPlayerStats", () => {
     expect(next.ticks).toBe(13);
     expect(next.scriptMs).toBe(4);
     expect(next.physicsMs).toBe(5);
+  });
+});
+
+describe("unlockAudioOnFirstGesture", () => {
+  it("unlocks on the first pointerdown or touchstart", () => {
+    const listeners = new Map<string, () => void>();
+    const target = {
+      addEventListener: (type: string, fn: EventListenerOrEventListenerObject) => {
+        if (typeof fn === "function") listeners.set(type, fn as () => void);
+      },
+      removeEventListener: (type: string) => {
+        listeners.delete(type);
+      },
+    };
+    const unlocks: string[] = [];
+    const release = unlockAudioOnFirstGesture(() => unlocks.push("unlock"), target);
+    listeners.get("pointerdown")?.();
+    listeners.get("touchstart")?.();
+    expect(unlocks).toEqual(["unlock", "unlock"]);
+    release();
+    expect(listeners.has("pointerdown")).toBe(false);
+    expect(listeners.has("touchstart")).toBe(false);
   });
 });

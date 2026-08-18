@@ -1,5 +1,8 @@
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
-import { spriteAnimationDurationMs } from "@babylonslate/assets";
+import {
+  parseSpriteAnimationPayload,
+  spriteAnimationDurationMs,
+} from "@babylonslate/assets";
 
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -11,23 +14,7 @@ function spriteAnimationCatalogDuration(payload: Record<string, unknown>): numbe
     return Math.max(1, payload.durationMs);
   }
   if (!Array.isArray(payload.frames)) return undefined;
-  return spriteAnimationDurationMs({
-    frames: payload.frames.map((frame) => {
-      const row =
-        frame && typeof frame === "object"
-          ? (frame as { durationMs?: unknown })
-          : {};
-      return {
-        textureGuid: "",
-        durationMs:
-          typeof row.durationMs === "number" && Number.isFinite(row.durationMs)
-            ? row.durationMs
-            : 100,
-        pivot: { x: 0.5, y: 0.5 },
-        collision: { x: 0, y: 0, width: 1, height: 1 },
-      };
-    }),
-  });
+  return spriteAnimationDurationMs(parseSpriteAnimationPayload(payload));
 }
 
 /** Build a clip catalog from Content Browser headers (Model clipNames, Animation clipName). */

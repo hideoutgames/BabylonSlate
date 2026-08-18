@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { DebugInspectNode, DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
+  PropertyGrid,
   SearchInput,
   SelectableText,
   TreeView,
@@ -21,18 +22,16 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import {
-  Field,
-  FieldContent,
-  FieldGroup,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import {
   flattenInspectTree,
-  formatInspectVariable,
   nextInspectSelection,
 } from "../lib/play-inspect-tree";
+import {
+  playInspectIdentityRows,
+  playInspectTransformRows,
+  playInspectVariableRows,
+} from "../lib/play-inspect-rows";
 
 export type DebugInspectDialogProps = {
   open: boolean;
@@ -54,29 +53,6 @@ function inspectTypeVisual(
     });
   }
   return resolveTypeVisual({ classId: node.classId, family: "class" });
-}
-
-function formatTuple(values: readonly number[]): string {
-  return values.join(", ");
-}
-
-function InspectField({
-  label,
-  value,
-  testId,
-}: {
-  label: string;
-  value: string;
-  testId?: string;
-}) {
-  return (
-    <Field orientation="horizontal" data-testid={testId}>
-      <FieldLabel>{label}</FieldLabel>
-      <FieldContent>
-        <SelectableText>{value}</SelectableText>
-      </FieldContent>
-    </Field>
-  );
 }
 
 /** Read-only Play overlay inspector: actor tree plus live variables. */
@@ -186,37 +162,23 @@ export function DebugInspectDialog({
           <ScrollArea className="min-h-0 flex-1">
             {selected ? (
               <div className="flex flex-col gap-4 p-4" data-testid="debug-inspect-details">
-                <FieldGroup>
-                  <InspectField label="Name" value={selected.label} />
-                  <InspectField label="Class" value={selected.classId} />
-                  <InspectField label="GUID" value={selected.id} />
-                </FieldGroup>
+                <PropertyGrid
+                  orientation="horizontal"
+                  rows={playInspectIdentityRows(selected)}
+                />
                 {selected.transform ? (
-                  <FieldGroup>
-                    <InspectField
-                      label="Position"
-                      value={formatTuple(selected.transform.position)}
-                    />
-                    <InspectField
-                      label="Rotation"
-                      value={formatTuple(selected.transform.rotation)}
-                    />
-                    <InspectField
-                      label="Scale"
-                      value={formatTuple(selected.transform.scale)}
-                    />
-                  </FieldGroup>
+                  <PropertyGrid
+                    orientation="horizontal"
+                    rows={playInspectTransformRows(selected.transform)}
+                  />
                 ) : null}
-                <FieldGroup>
-                  {Object.entries(selected.variables).map(([key, value]) => (
-                    <InspectField
-                      key={key}
-                      label={key}
-                      value={formatInspectVariable(value)}
-                      testId={`debug-inspect-var-${key}`}
-                    />
-                  ))}
-                </FieldGroup>
+                <PropertyGrid
+                  orientation="horizontal"
+                  rows={playInspectVariableRows(
+                    selected.variables,
+                    selected.variableTypes,
+                  )}
+                />
               </div>
             ) : (
               <Empty data-testid="debug-inspect-empty">

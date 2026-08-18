@@ -5,6 +5,7 @@ import {
   createDefaultAudioPayload,
   dryAudioReverbFallbackBytes,
   encodeAudioReverbChunk,
+  normalizeAudioPayload,
   resolveAudioPlayback,
   type AudioChannelPayload,
   type AudioMixerPayload,
@@ -17,7 +18,7 @@ function library(options?: {
   mixer?: AudioMixerPayload | null;
   mixerGuid?: string | null;
   channels?: Record<string, AudioChannelPayload>;
-  audio?: Record<string, ReturnType<typeof createDefaultAudioPayload>>;
+  audio?: Record<string, unknown>;
   attenuations?: Record<
     string,
     {
@@ -35,7 +36,12 @@ function library(options?: {
     mixerGuid: options?.mixerGuid ?? (options?.mixer ? "mixer-1" : null),
     mixers: new Map(options?.mixer ? [["mixer-1", options.mixer] as const] : []),
     channels: new Map(Object.entries(options?.channels ?? {})),
-    audio: new Map(Object.entries(options?.audio ?? {})),
+    audio: new Map(
+      Object.entries(options?.audio ?? {}).map(([guid, payload]) => [
+        guid,
+        normalizeAudioPayload(payload),
+      ]),
+    ),
     attenuations: new Map(Object.entries(options?.attenuations ?? {})),
   };
 }

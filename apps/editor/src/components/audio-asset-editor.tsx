@@ -13,6 +13,7 @@ import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
   normalizeSoundAttenuationPayload,
+  setAudioChannelEffect,
   validateAudioMixer,
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
@@ -203,6 +204,7 @@ export function AudioChannelDetailsPanel(_props: IDockviewPanelProps) {
     ? assetRowIdentity({ name: parent.header.name, type: parent.header.type })
     : {};
   const reverb = channel.effects.find((effect) => effect.kind === "environmentReverb");
+  const muffle = channel.effects.find((effect) => effect.kind === "muffleThroughWalls");
   const commit = (next: typeof channel) => {
     void applyAssetDocumentChange(documentId, next as unknown as Record<string, unknown>);
   };
@@ -231,10 +233,15 @@ export function AudioChannelDetailsPanel(_props: IDockviewPanelProps) {
               label: "Environment Reverb",
               value: reverb?.enabled === true,
               onChange: (enabled) =>
-                commit({
-                  ...channel,
-                  effects: [{ kind: "environmentReverb", enabled }],
-                }),
+                commit(setAudioChannelEffect(channel, "environmentReverb", enabled)),
+            },
+            {
+              id: "muffleThroughWalls",
+              kind: "boolean",
+              label: "Muffle Through Walls",
+              value: muffle?.enabled === true,
+              onChange: (enabled) =>
+                commit(setAudioChannelEffect(channel, "muffleThroughWalls", enabled)),
             },
           ]}
         />
