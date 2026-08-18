@@ -74,7 +74,7 @@ export const DEFAULT_INPUT_MAPPINGS: InputMappings = {
       name: "Confirm",
       bindings: [
         { device: "key", code: "Enter" },
-        // Face button B (index 1) — Jump already owns A (0:0).
+        // Face Button Right (index 1) — Jump already owns Face Button Down (0:0).
         { device: "gamepadButton", code: "0:1" },
       ],
     },
@@ -155,12 +155,14 @@ function asDevice(value: unknown): InputDevice | null {
   }
 }
 
-function normalizeActionBinding(value: unknown): ActionBinding | null {
+function normalizeActionBinding(
+  value: unknown,
+  allowIncomplete: boolean,
+): ActionBinding | null {
   const source = (value ?? {}) as Record<string, unknown>;
   const device = asDevice(source.device);
-  if (!device || typeof source.code !== "string" || source.code === "") {
-    return null;
-  }
+  if (!device || typeof source.code !== "string") return null;
+  if (source.code === "" && !allowIncomplete) return null;
   const modifiers = source.modifiers as BindingModifiers | undefined;
   return {
     device,
@@ -169,12 +171,14 @@ function normalizeActionBinding(value: unknown): ActionBinding | null {
   };
 }
 
-function normalizeAxisBinding(value: unknown): AxisBinding | null {
+function normalizeAxisBinding(
+  value: unknown,
+  allowIncomplete: boolean,
+): AxisBinding | null {
   const source = (value ?? {}) as Record<string, unknown>;
   const device = asDevice(source.device);
-  if (!device || typeof source.code !== "string" || source.code === "") {
-    return null;
-  }
+  if (!device || typeof source.code !== "string") return null;
+  if (source.code === "" && !allowIncomplete) return null;
   const binding: AxisBinding = { device, code: source.code };
   if (source.component === "x" || source.component === "y") {
     binding.component = source.component;
@@ -193,8 +197,17 @@ function normalizeAxisBinding(value: unknown): AxisBinding | null {
   return binding;
 }
 
+export interface NormalizeInputMappingsOptions {
+  /** Keep `{ device, code: "" }` drafts for Project Settings authoring. */
+  allowIncomplete?: boolean;
+}
+
 /** Coerce an unknown project.json payload into a valid mapping document. */
-export function normalizeInputMappings(value: unknown): InputMappings {
+export function normalizeInputMappings(
+  value: unknown,
+  options?: NormalizeInputMappingsOptions,
+): InputMappings {
+  const allowIncomplete = options?.allowIncomplete === true;
   const source = (value ?? {}) as Record<string, unknown>;
   const actions: ActionMapping[] = [];
   if (Array.isArray(source.actions)) {
@@ -203,7 +216,7 @@ export function normalizeInputMappings(value: unknown): InputMappings {
       if (typeof row.name !== "string" || row.name.trim() === "") continue;
       const bindings = Array.isArray(row.bindings)
         ? row.bindings
-            .map(normalizeActionBinding)
+            .map((binding) => normalizeActionBinding(binding, allowIncomplete))
             .filter((binding): binding is ActionBinding => binding !== null)
         : [];
       actions.push({ name: row.name.trim(), bindings });
@@ -216,7 +229,7 @@ export function normalizeInputMappings(value: unknown): InputMappings {
       if (typeof row.name !== "string" || row.name.trim() === "") continue;
       const bindings = Array.isArray(row.bindings)
         ? row.bindings
-            .map(normalizeAxisBinding)
+            .map((binding) => normalizeAxisBinding(binding, allowIncomplete))
             .filter((binding): binding is AxisBinding => binding !== null)
         : [];
       axes.push({

@@ -18,6 +18,10 @@ Run one project with `pnpm exec vitest run --config vitest.workspace.ts --projec
 
 The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vitest stubs CSS to an empty string otherwise, which silently made the radius audit pass on empty input.
 
+## Preview parity fixture
+
+`e2e/preview-scene-fixture.ts` is the shared authored scene for Scene viewport, overlay Play, Preview Build, and served export assertions. It includes separated actors plus a parented child. Test-only hosts expose live Babylon visual positions/material names; tests assert the rendered state, not only command records or tick counters. `p9-content.spec.ts` also compares consecutive static Material Preview frames so RTT accumulation fails in browser coverage.
+
 ## Coverage gates
 
 Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
@@ -62,7 +66,7 @@ iPad projects grep `@ipad` so they only rerun tests that depend on touch, coarse
 
 `e2e/p5-scripting.spec.ts` holds the P5 acceptance proofs: a graph scripted in the editor compiles, loads, and ticks in Preview (its `Print` reaches the on-screen overlay), a type mismatch raises the blocking dialog whose rows navigate to the offending node, and chrome undo/redo restores a node added on the Class canvas.
 
-`e2e/p7-physics.spec.ts` places a 2D Rapier rigid body, plays, opens Stats, and asserts the worker HUD `play-physics-ms` `data-ms` is non-zero (the rAF FPS pump must not clobber worker timings).
+`e2e/p6-scene-editing.spec.ts` covers first-playable scene editing (Place Actors at view center, gizmo undo, 2D/3D Play) and dragging an Outliner actor onto `viewport-canvas` (`outliner-drop-hint`, then a `Cube Copy` row). `e2e/p7-physics.spec.ts` places a 2D Rapier rigid body, plays, opens Stats, and asserts the worker HUD `play-physics-ms` `data-ms` is non-zero (the rAF FPS pump must not clobber worker timings).
 
 Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visibility/events and no Actor spawn (`packages/runtime/src/ui-apply.test.ts`, `script-host-bobject.test.ts`); `UserInterface` / `*Widget` objects (`packages/object-model/src/ui-objects.test.ts`); `uiApply` / `loadUserInterfaces` / `uiWidgetEvent` contracts (`packages/bridge/src/channels.test.ts`); Apply `classRef`→`objectRef` and bound Get Widget (`packages/scripting-nodes/src/ui.test.ts`); standalone full-frame present + image-load dirty (`packages/render/src/ui-surface.test.ts`, `babylon-ui-host.test.ts`); new Button `#333333` vs loaded unset (`packages/ui-runtime/src/types.test.ts`); nested image guids (`packages/ui-runtime/src/image-guids.test.ts`); 14px visual / 44px hit + center-move (`apps/editor/src/components/ui-design-gestures.test.ts`); Play HUD instance/visibility (`apps/editor/src/lib/play-content.test.ts`); player hydrate/HUD/event parity (`apps/player/src/hydrate.test.ts`, `player-ui-host.test.ts`); export nested UI/texture/font + EUI strip (`packages/exporter/src/closure.test.ts`); source-first encode + Safari RGBA fallback + `encodeError` (`packages/assets/src/encode-worker-protocol.test.ts`, `worker-encode.test.ts`, `texture-compression.test.ts`).
 

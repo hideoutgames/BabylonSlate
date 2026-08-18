@@ -20,6 +20,7 @@ import {
   LayoutGridIcon,
   PlayIcon,
   Redo2Icon,
+  RefreshCwIcon,
   SaveAllIcon,
   SearchIcon,
   SettingsIcon,
@@ -77,6 +78,7 @@ import { IconActionButton } from "./icon-action-button";
 import { CompilationErrorIndicator } from "./compilation-error-indicator";
 import { WindowsMenu } from "./windows-menu";
 import { displayProjectName } from "../lib/display-project-name";
+import { useMaterialRenderControl } from "../context/material-render-control-context";
 import {
   playChromeLaunchAriaLabel,
   playChromeLaunchLabel,
@@ -223,6 +225,7 @@ export function EditorChromeBar({
     activateDockPanel,
     assetRegistry,
   } = useDocuments();
+  const { control: materialRenderControl } = useMaterialRenderControl();
 
   const {
     requestPlay,
@@ -448,6 +451,24 @@ export function EditorChromeBar({
                 onOpenResults={() => activateDockPanel("compiler-results")}
               />
             </>
+          ) : null}
+          {activeKind === "material" ? (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="material-render"
+              className="chrome-action-button"
+              aria-label="Render"
+              disabled={
+                !projectName ||
+                !materialRenderControl ||
+                materialRenderControl.disabled
+              }
+              onClick={() => materialRenderControl?.requestRender()}
+            >
+              <RefreshCwIcon data-icon="inline-start" />
+              Render
+            </Button>
           ) : null}
         </div>
 

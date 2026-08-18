@@ -50,12 +50,22 @@ describe("bindingCodesForDevice", () => {
       bindingCodesForDevice("gamepadButton").find(
         (entry) => entry.code === "0:0",
       ),
-    ).toMatchObject({ label: "Gamepad 1 A", group: "Gamepad 1" });
+    ).toMatchObject({ label: "Face Button Down", group: "Gamepad 1" });
     expect(
       bindingCodesForDevice("gamepadButton").find(
         (entry) => entry.code === "1:1",
       ),
-    ).toMatchObject({ label: "Gamepad 2 B", group: "Gamepad 2" });
+    ).toMatchObject({ label: "Face Button Right", group: "Gamepad 2" });
+    expect(
+      bindingCodesForDevice("gamepadButton").find(
+        (entry) => entry.code === "0:10",
+      ),
+    ).toMatchObject({ label: "Left Stick Click", group: "Gamepad 1" });
+    expect(
+      bindingCodesForDevice("gamepadButton").find(
+        (entry) => entry.code === "0:12",
+      ),
+    ).toMatchObject({ label: "D-Pad Up", group: "Gamepad 1" });
 
     const axes = codesOf("gamepadAxis");
     expect(axes).toContain("0:0");
@@ -64,7 +74,7 @@ describe("bindingCodesForDevice", () => {
     expect(
       bindingCodesForDevice("gamepadAxis").find((entry) => entry.code === "0:0"),
     ).toMatchObject({
-      label: "Gamepad 1 Left Stick X",
+      label: "Left Stick X",
       group: "Gamepad 1",
     });
   });
@@ -83,8 +93,19 @@ describe("bindingCodeLabel", () => {
     expect(bindingCodeLabel("mouseButton", "0")).toBe("Mouse Left");
     expect(bindingCodeLabel("mouseButton", "2")).toBe("Mouse Right");
     expect(bindingCodeLabel("pointer", "primary")).toBe("Primary Pointer");
-    expect(bindingCodeLabel("gamepadButton", "0:0")).toBe("Gamepad 1 A");
-    expect(bindingCodeLabel("gamepadButton", "1:1")).toBe("Gamepad 2 B");
+    expect(bindingCodeLabel("gamepadButton", "0:0")).toBe(
+      "Gamepad 1 Face Button Down",
+    );
+    expect(bindingCodeLabel("gamepadButton", "1:1")).toBe(
+      "Gamepad 2 Face Button Right",
+    );
+    expect(bindingCodeLabel("gamepadButton", "0:10")).toBe(
+      "Gamepad 1 Left Stick Click",
+    );
+    expect(bindingCodeLabel("gamepadButton", "0:11")).toBe(
+      "Gamepad 1 Right Stick Click",
+    );
+    expect(bindingCodeLabel("gamepadButton", "0:12")).toBe("Gamepad 1 D-Pad Up");
     expect(bindingCodeLabel("gamepadAxis", "0:0")).toBe(
       "Gamepad 1 Left Stick X",
     );

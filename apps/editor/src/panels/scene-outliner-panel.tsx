@@ -33,14 +33,21 @@ import {
   FolderPlusIcon,
   LockIcon,
   MoreHorizontalIcon,
+  UnlockIcon,
   PlusIcon,
 } from "lucide-react";
+import { GraphDropHint, type GraphDropHintState } from "@babylonslate/graph-ui";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
+import {
+  FALLBACK_PLACE_POSITION,
+  useSceneEditing,
+  selectionAfterLockChange,
+} from "../context/scene-editing-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { PlaceActorsDialog } from "../components/place-actors-dialog";
 import {
+  duplicateSceneActor,
   nextActorId,
   prefabComponentsForGuid,
   projectPlaceActors,
@@ -285,13 +292,14 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument } =
     useDocuments();
-  const { selectedActorIds, selectActor, setSelectedActorIds, frameActor } =
+  const { selectedActorIds, selectActor, setSelectedActorIds, frameActor, viewportDropApi } =
     useSceneEditing();
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [search, setSearch] = useState("");
   const [placeOpen, setPlaceOpen] = useState(false);
   const [renameFolderId, setRenameFolderId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
+  const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const [diskGraphs, setDiskGraphs] = useState<Map<string, SerializedGraph>>(
     () => new Map(),
   );
@@ -398,7 +406,16 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         const id = nextActorId(scene);
         mutate({
           ...scene,
-          actors: [...scene.actors, spawnPlacedActor(scene, resolved, id)],
+          actors: [
+            ...scene.actors,
+            spawnPlacedActor(
+              scene,
+              resolved,
+              id,
+              viewportDropApi?.worldPositionAtViewCenter() ??
+                FALLBACK_PLACE_POSITION,
+            ),
+          ],
         });
         selectActor(id);
         setPlaceOpen(false);
@@ -429,7 +446,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       }
       finish(item);
     },
-    [assetRegistry, loadGraphDocument, mutate, scene, selectActor],
+    [assetRegistry, loadGraphDocument, mutate, scene, selectActor, viewportDropApi],
   );
 
   const removeActor = useCallback(
@@ -580,6 +597,48 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
     [mutate, scene],
   );
 
+  const dropActorRow = useCallback(
+    (rowId: string, clientX: number, clientY: number) => {
+      if (!scene) return;
+      const target = outlinerRowTarget(rowId);
+      if (target?.kind !== "actor") return;
+      if (!viewportDropApi?.containsClientPoint(clientX, clientY)) return;
+      const source = scene.actors.find((actor) => actor.id === target.id);
+      if (!source) return;
+      const position = viewportDropApi.worldPositionAtClient(clientX, clientY);
+      if (!position) return;
+      const copy = duplicateSceneActor(scene, source, {
+        position,
+        parentId: null,
+      });
+      mutate({
+        ...scene,
+        actors: [...scene.actors, copy],
+      });
+      selectActor(copy.id);
+    },
+    [mutate, scene, selectActor, viewportDropApi],
+  );
+
+  const moveActorDropHint = useCallback(
+    (rowId: string, clientX: number, clientY: number) => {
+      const target = outlinerRowTarget(rowId);
+      if (target?.kind !== "actor") {
+        setDropHint({ clientX, clientY, allowed: false });
+        return;
+      }
+      const name =
+        scene?.actors.find((actor) => actor.id === target.id)?.name ?? "Actor";
+      setDropHint({
+        clientX,
+        clientY,
+        allowed: Boolean(viewportDropApi?.containsClientPoint(clientX, clientY)),
+        label: name,
+      });
+    },
+    [scene, viewportDropApi],
+  );
+
   const actorMenuItems = useCallback(
     (actorId: string): NestedMenuItem[] => [
       {
@@ -590,15 +649,12 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
           if (!scene) return;
           const source = scene.actors.find((actor) => actor.id === actorId);
           if (!source) return;
-          const id = nextActorId(scene);
+          const copy = duplicateSceneActor(scene, source);
           mutate({
             ...scene,
-            actors: [
-              ...scene.actors,
-              { ...structuredClone(source), id, name: `${source.name} Copy` },
-            ],
+            actors: [...scene.actors, copy],
           });
-          selectActor(id);
+          selectActor(copy.id);
         },
       },
       {
@@ -705,9 +761,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
                       variant="ghost"
                       onClick={() => toggleFlag(actorId, "locked")}
                       data-testid={`outliner-lock-${actorId}`}
+                      aria-pressed={lockedIds.has(actorId)}
                       className={lockedIds.has(actorId) ? "text-primary" : undefined}
                     >
-                      <LockIcon />
+                      {lockedIds.has(actorId) ? <LockIcon /> : <UnlockIcon />}
                     </IconActionButton>
                     <NestedMenu
                       items={actorMenuItems(actorId)}
@@ -743,6 +800,9 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               })
             }
             onReparent={reparentRow}
+            onExternalDrop={dropActorRow}
+            onExternalDragMove={moveActorDropHint}
+            onExternalDragEnd={() => setDropHint(null)}
             reparentArm="immediate"
             emptyLabel={scene ? "No actors yet" : "Open a scene"}
             data-testid="outliner-tree"
@@ -755,6 +815,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         onSelect={addActor}
         projectItems={projectItems}
       />
+      <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
       {renamingFolder ? (
         <NamePromptDialog
           open

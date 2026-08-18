@@ -401,6 +401,30 @@ export function PlayOverlay({
     };
   }, [sharedEngine, injectFixtureThrow, reportBtState]);
 
+  useEffect(() => {
+    if (!isTestModeEnabled()) return;
+    const host = globalThis as {
+      __babylonslatePlayTest?: {
+        actorPositions: () => readonly {
+          slotId: number;
+          x: number;
+          y: number;
+          z: number;
+        }[];
+        visuals: () => ReturnType<PlaySession["handle"]["playVisualStates"]>;
+        liveObjectCounts: () => { meshes: number; textures: number } | null;
+      };
+    };
+    host.__babylonslatePlayTest = {
+      actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
+      visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
+      liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
+    };
+    return () => {
+      delete host.__babylonslatePlayTest;
+    };
+  }, []);
+
   return (
     <div
       ref={overlayRef}

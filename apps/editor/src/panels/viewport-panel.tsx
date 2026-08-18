@@ -22,7 +22,10 @@ import {
 } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import { useSceneEditing } from "../context/scene-editing-context";
+import {
+  FALLBACK_PLACE_POSITION,
+  useSceneEditing,
+} from "../context/scene-editing-context";
 import { usePlay } from "../context/play-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
@@ -66,6 +69,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     dragSelectActive,
     setDragSelectActive,
     setFrameActorHandler,
+    setViewportDropApi,
     previewGameCamera,
     saveEditorCameraPose,
     loadEditorCameraPose,
@@ -296,6 +300,28 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   }, [setFrameActorHandler]);
 
   useEffect(() => {
+    setViewportDropApi({
+      containsClientPoint: (clientX, clientY) => {
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        );
+      },
+      worldPositionAtClient: (clientX, clientY) =>
+        engineRef.current?.editor?.worldPositionAtClient(clientX, clientY) ??
+        null,
+      worldPositionAtViewCenter: () =>
+        engineRef.current?.editor?.worldPositionAtViewCenter() ??
+        FALLBACK_PLACE_POSITION,
+    });
+    return () => setViewportDropApi(null);
+  }, [setViewportDropApi]);
+
+  useEffect(() => {
     if (engineRef.current) {
       syncEditorPlayState(engineRef.current, playing);
     }
@@ -419,6 +445,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         commitGizmoNudge: () => Promise<boolean>;
         commitMultiSelectGizmoNudge: () => Promise<boolean>;
         activeSceneMeshPosition: () => [number, number, number] | null;
+        sceneVisuals: () => Array<{
+          actorId: string;
+          position: [number, number, number];
+          materialName: string | null;
+        }>;
         hardwareScalingLevel: () => number | null;
         postProcessPassCount: () => number | null;
       };
@@ -426,6 +457,22 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const host = globalThis as ViewportTestHost;
 
     host.__babylonslateViewportTest = {
+      sceneVisuals: () => {
+        const sync = engineRef.current?.editor?.sync;
+        const actors = sceneRef.current?.actors ?? [];
+        if (!sync) return [];
+        return actors.flatMap((actor) => {
+          const visual = sync.visualMeshesForActor(actor.id)[0];
+          if (!visual) return [];
+          visual.computeWorldMatrix(true);
+          const position = visual.getAbsolutePosition();
+          return [{
+            actorId: actor.id,
+            position: [position.x, position.y, position.z],
+            materialName: visual.material?.name ?? null,
+          }];
+        });
+      },
       activeSceneMeshPosition: () => {
         const actorId = sceneRef.current?.actors[0]?.id;
         if (!actorId) return null;

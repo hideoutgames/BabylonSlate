@@ -61,6 +61,7 @@ import { PreviewSessionReport } from "../components/preview-session-report";
 import type { PlaySessionResult } from "../services/play-session";
 import { PREVIEW_FIXTURE_NODE_ID } from "../services/play-session";
 import {
+  canonicalPlaySceneGuid,
   playPhysicsFromOpenDocuments,
   playPhysicsFromSceneSettings,
   playSceneFromOpenDocuments,
@@ -274,6 +275,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     documents: openDocuments,
     activeDocumentId,
   });
+  const playSceneGuid = playScene
+    ? canonicalPlaySceneGuid(
+        playScene,
+        (path) =>
+          assetRegistry?.list().find((asset) => asset.path === path)?.header
+            .guid ?? null,
+      )
+    : undefined;
   const canPlay = playIsEnabled(openDocuments, activeDocumentId, {
     previewBuild,
   });
@@ -976,7 +985,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             injectFixtureThrow={injectThrow}
             scripts={scripts}
             physics={playPhysics}
-            sceneAssetGuid={playScene?.sceneAssetGuid}
+            sceneAssetGuid={playSceneGuid}
             scene={playScene?.scene}
             gameInstanceClass={resolveGameInstanceClass(
               projectDocument?.settings,

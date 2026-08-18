@@ -212,9 +212,9 @@ describe("material preview state machine", () => {
     expect(shouldAutoCompile(state, BUDGET)).toBe(false);
   });
 
-  it("disables Render while clean, queued or compiling", () => {
+  it("allows a manual Render while clean but blocks queued or compiling work", () => {
     const clean = createMaterialPreviewState();
-    expect(renderActionEnabled(clean)).toBe(false);
+    expect(renderActionEnabled(clean)).toBe(true);
     const queued = drive(clean, [
       { type: "edit", cost: "expensive" },
       { type: "render" },
@@ -241,13 +241,17 @@ describe("material preview state machine", () => {
     expect(renderActionEnabled(failed)).toBe(true);
   });
 
-  it("disables Render once the newest generation is ready", () => {
+  it("queues a fresh generation when Render is pressed on a ready preview", () => {
     const state = drive(createMaterialPreviewState(), [
       { type: "edit", cost: "cheap" },
       { type: "compileStart", generation: 1 },
       { type: "result", generation: 1, ok: true, durationMs: 4 },
     ]);
-    expect(renderActionEnabled(state)).toBe(false);
+    expect(renderActionEnabled(state)).toBe(true);
+    const refreshed = materialPreviewReducer(state, { type: "render" });
+    expect(refreshed.status).toBe("queued");
+    expect(refreshed.generation).toBe(2);
+    expect(refreshed.queuedGeneration).toBe(2);
   });
 
   it("resets to clean on dispose", () => {

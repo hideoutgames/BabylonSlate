@@ -60,8 +60,8 @@ export function createMaterialPreviewMesh(
         const loaded = createMeshFromModelBytes(scene, name, customMeshBytes);
         if (loaded) return loaded;
       }
-      // Fall back to the sphere so an unresolved pick still previews.
-      return MeshBuilder.CreateSphere(name, { diameter: 1.6 }, scene);
+      // Missing or invalid custom bytes return to the canonical preview shape.
+      return MeshBuilder.CreateBox(name, { size: 1.4 }, scene);
     }
     case "sphere":
     default:
@@ -103,7 +103,9 @@ export function createMaterialPreviewScene(
   const scene = new Scene(engine);
   scene.clearColor = new Color4(0.05, 0.05, 0.07, 1);
   scene.skipPointerMovePicking = true;
-  scene.autoClear = false;
+  // The camera renders into `outputRenderTarget`, so this clears the preview
+  // RTT rather than the shared Engine's default framebuffer.
+  scene.autoClear = true;
 
   const camera = new ArcRotateCamera(
     "materialPreviewCamera",
@@ -136,7 +138,7 @@ export function createMaterialPreviewScene(
 
   let mesh = createMaterialPreviewMesh(
     scene,
-    options.mesh ?? "sphere",
+    options.mesh ?? "cube",
     options.customMeshBytes,
   );
   aimPreviewCameraAtMesh(camera, mesh);
