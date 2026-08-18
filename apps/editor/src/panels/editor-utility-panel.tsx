@@ -117,6 +117,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     () => (payload ? asUiDocument(payload) : null),
     [payload],
   );
+  const uiReady = Boolean(ui);
 
   useEffect(() => {
     if (!ui) {
@@ -210,9 +211,10 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       surface?.dispose();
       surfaceRef.current = null;
     };
-    // Recreate only when the shared Engine or utility asset identity changes.
+    // Recreate when Engine identity or payload readiness changes. Viewport,
+    // scale rule, and design resolution go through resizeDesign on paint.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- freeze on create; next effect tracks visibility
-  }, [guid, play, play?.sharedEngineGeneration]);
+  }, [guid, play, play?.sharedEngineGeneration, uiReady]);
 
   useEffect(() => {
     freezeLiveUiSurface(surfaceRef.current, {

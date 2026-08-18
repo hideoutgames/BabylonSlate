@@ -2,9 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { EditorUtilityPanel } from "./editor-utility-panel";
 
-const { createUiSurfaceMock, createHostMock } = vi.hoisted(() => ({
+const { createUiSurfaceMock, createHostMock, play } = vi.hoisted(() => ({
   createUiSurfaceMock: vi.fn(),
   createHostMock: vi.fn(),
+  play: {
+    ensureSharedEngine: () => ({}),
+    sharedEngineGeneration: 1,
+  },
 }));
 
 const docs = vi.hoisted(() => ({
@@ -36,10 +40,7 @@ vi.mock("../context/document-context", () => ({
 }));
 
 vi.mock("../context/play-context", () => ({
-  useOptionalPlay: () => ({
-    ensureSharedEngine: () => ({}),
-    sharedEngineGeneration: 1,
-  }),
+  useOptionalPlay: () => play,
 }));
 
 vi.mock("../lib/editor-utility-interface-runtime", () => ({
@@ -102,6 +103,7 @@ describe("EditorUtilityPanel", () => {
     );
     expect(await screen.findByTestId("editor-utility-panel")).toBeTruthy();
     expect(screen.getByTestId("editor-utility-canvas")).toBeTruthy();
+    expect(createUiSurfaceMock).not.toHaveBeenCalled();
     await waitFor(() => expect(createUiSurfaceMock).toHaveBeenCalled());
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
       interactive?: boolean;

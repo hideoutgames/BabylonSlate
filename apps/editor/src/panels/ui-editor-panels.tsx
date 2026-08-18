@@ -270,7 +270,13 @@ export function UiSettingsPanel(_props: IDockviewPanelProps) {
               aria-label="Dock Kind"
               data-testid="ui-dock-kind"
             >
-              <SelectValue />
+              <SelectValue>
+                {(value: unknown) =>
+                  editorUtilityDockKindLabel(
+                    normalizeEditorUtilityDockKind(value),
+                  )
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
