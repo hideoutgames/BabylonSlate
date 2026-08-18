@@ -45,7 +45,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "audio")!;
     expect(item.category).toBe("Audio");
     expect(visualForPlaceActor(item).iconKey).toBe("AudioComponent");
-    const actor = spawnPlacedActor(createDefaultScene(), item, "actor-audio");
+    const actor = spawnPlacedActor(createDefaultScene(), item, "actor-audio", ORIGIN);
     expect(actor.name).toBe("Audio");
     expect(actor.components[0]?.classId).toBe("AudioComponent");
     expect(actor.components[0]?.properties).toEqual({

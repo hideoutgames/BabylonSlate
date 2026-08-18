@@ -94,7 +94,6 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
       value: mixer.globalVolume,
       min: 0,
       max: 1,
-      step: 0.01,
       onChange: (globalVolume) =>
         commit({ ...mixer, globalVolume: clampAudioGain(globalVolume) }),
     },
@@ -137,7 +136,6 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
         value: entry.volume,
         min: 0,
         max: 1,
-        step: 0.01,
         onChange: (volume) => {
           const next = mixer.channels.map((row, i) =>
             i === index ? { ...row, volume: clampAudioGain(volume) } : row,

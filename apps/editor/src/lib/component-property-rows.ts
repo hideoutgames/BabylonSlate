@@ -506,7 +506,6 @@ export function componentPropertyRows(
           value: asNumber(component.properties.volume, 1),
           min: 0,
           max: 1,
-          step: 0.01,
           onChange: (next) => update("volume", next),
         },
         ...genericRows(

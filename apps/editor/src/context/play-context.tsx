@@ -24,6 +24,7 @@ import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary } from "../lib/play-audio";
 import { PlayPrepareDialog } from "../components/play-prepare-dialog";
 import { PlayBlockedDialog } from "../components/play-blocked-dialog";
+import { PlayOverlay } from "../components/play-overlay";
 import { PreparingPreviewDialog, type PreviewPreparePhase } from "../components/preparing-preview-dialog";
 import { PreviewBuildOverlay } from "../components/preview-build-overlay";
 import {

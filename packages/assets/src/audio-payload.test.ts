@@ -153,16 +153,16 @@ describe("audio payloads", () => {
       audioChannelHasParentCycle(new Map([["a", "b"], ["b", null]]), "a"),
     ).toBe(false);
     const graph = validateAudioChannelGraph({
-      a: { parentChannelGuid: "missing", effects: [] },
-      b: { parentChannelGuid: "a", effects: [] },
+      a: { parentChannelGuid: "missing" },
+      b: { parentChannelGuid: "a" },
     });
     expect(graph.resolvedParents.a).toBeNull();
     expect(graph.diagnostics.map((row) => row.code)).toEqual(
       expect.arrayContaining(["audio.channel.missing_parent"]),
     );
     const cycle = validateAudioChannelGraph({
-      a: { parentChannelGuid: "b", effects: [] },
-      b: { parentChannelGuid: "a", effects: [] },
+      a: { parentChannelGuid: "b" },
+      b: { parentChannelGuid: "a" },
     });
     expect(cycle.ok).toBe(false);
     expect(cycle.diagnostics.map((row) => row.code)).toContain(
