@@ -25,6 +25,7 @@ describe("guiSpecFromDescriptor", () => {
     expect(guiControlType("TouchButton")).toBe("Rectangle");
     expect(guiControlType("TouchDPad")).toBe("Rectangle");
     expect(guiControlType("UserInterface")).toBe("Rectangle");
+    expect(guiControlType("Material")).toBe("Image");
   });
 
   it("copies Babylon alignment and size from the widget layout", () => {
@@ -123,6 +124,30 @@ describe("guiSpecFromDescriptor", () => {
     expect(image.isPointerBlocker).toBe(false);
     expect(text.hitTestVisible).toBe(false);
     expect(text.isPointerBlocker).toBe(false);
+  });
+
+  it("maps a Material widget onto an Image spec with Hit Testable off by default", () => {
+    const doc = createDefaultUserInterface();
+    const panel = createWidget(
+      "fx",
+      "Material",
+      "Glow",
+      pinLayout("left", "top", 128, 64),
+    );
+    panel.props.materialGuid = "mat-hud";
+    doc.widgets.canvas!.children = ["fx"];
+    doc.widgets.fx = panel;
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    const spec = guiSpecFromDescriptor(
+      describeUiControls(doc, layout).find((row) => row.id === "fx")!,
+      { interactive: true },
+    );
+    expect(spec.type).toBe("Image");
+    expect(spec.kind).toBe("Material");
+    expect(spec.materialGuid).toBe("mat-hud");
+    expect(spec.hitTestVisible).toBe(false);
+    expect(spec.isPointerBlocker).toBe(false);
+    expect(createWidget("fx", "Material").props.materialGuid).toBeNull();
   });
 
   it("lets an Image block hits when Hit Testable is Enabled", () => {

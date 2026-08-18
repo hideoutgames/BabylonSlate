@@ -205,6 +205,27 @@ describe("createPlayerUiHost", () => {
       designResolution: hudDocument().designResolution,
     });
   });
+
+  it("passes Interface material resolvers into the fullscreen GUI host", () => {
+    const resolveInterfaceMaterial = vi.fn(() => null);
+    const attachGui = vi.fn(() => ({
+      adt: { markAsDirty: vi.fn() },
+      host: new RecordingUiHost(),
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    }));
+    const host = createPlayerUiHost({
+      library: new Map([["hud-1", hudDocument()]]),
+      scene: {} as never,
+      attachGui: attachGui as never,
+      resolveInterfaceMaterial,
+      viewport: { width: 800, height: 600 },
+    });
+    host.apply("ui-1", "hud-1");
+    expect(attachGui.mock.calls[0]?.[1]).toMatchObject({
+      resolveInterfaceMaterial,
+    });
+  });
 });
 
 describe("applyPlayerUiCommand", () => {

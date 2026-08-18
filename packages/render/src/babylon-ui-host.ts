@@ -27,7 +27,16 @@ import {
   SAFE_AREA_CONTROL_ID,
   ZERO_INSETS,
 } from "@babylonslate/ui-runtime";
+import type { Scene } from "@babylonjs/core/scene";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import { joystickAxesFromLocal, type UiApplyHost, uiHostStats } from "./ui-apply";
+import {
+  bindInterfaceMaterialImage,
+  createInterfaceMaterialPresenter,
+  type InterfaceMaterialPresenter,
+} from "./interface-material-presenter";
+import type { MaterialLibrary } from "./material-library";
 
 export interface GuiControlHandle {
   id: string;
@@ -42,6 +51,7 @@ export interface GuiControlFactory {
   clear(): void;
   update?(spec: GuiControlSpec, previous?: GuiControlSpec): boolean;
   remove?(id: string): void;
+  presentMaterials?: () => void;
 }
 
 export type UiWidgetEvent =
@@ -59,6 +69,11 @@ export interface BabylonUiHostOptions {
   /** When false (Game input mode), GUI still paints but does not pick. */
   allowGuiHits?: boolean;
   resolveImageUrl?: (guid: string) => string | null;
+  scene?: Scene;
+  resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  materialFunctions?: () => Record<string, MaterialFunctionDocument>;
+  resolveTexture?: (guid: string) => Texture | null;
+  materialLibrary?: MaterialLibrary;
   onTouchAxis?: (controlId: string, value: number) => void;
   onWidgetEvent?: (event: UiWidgetEvent) => void;
   markDirty?: () => void;
@@ -288,6 +303,7 @@ function applyTypeSpecific(
       return;
     }
     case "Image": {
+      if (spec.kind === "Material") return;
       if (control instanceof Image) {
         const url = spec.imageGuid
           ? (resolveImageUrl?.(spec.imageGuid) ?? "")
@@ -473,6 +489,11 @@ export function createBabylonControl(
       return box;
     }
     case "Image": {
+      if (spec.kind === "Material") {
+        const image = new Image(spec.id);
+        applyCommon(image, spec);
+        return image;
+      }
       const url = spec.imageGuid
         ? (options.resolveImageUrl?.(spec.imageGuid) ?? "")
         : "";
@@ -542,7 +563,13 @@ export interface GuiTextureHost {
 
 export interface AdtFactoryOptions extends Pick<
   BabylonUiHostOptions,
-  "resolveImageUrl" | "onTouchAxis"
+  | "resolveImageUrl"
+  | "onTouchAxis"
+  | "scene"
+  | "resolveInterfaceMaterial"
+  | "materialFunctions"
+  | "resolveTexture"
+  | "materialLibrary"
 > {
   safeArea?: EdgeInsets;
   /** Designer blit / host dirty when an Image finishes decoding. */
@@ -556,8 +583,58 @@ export function createAdtControlFactory(
   const byId = new Map<string, Control>();
   const handles: Control[] = [];
   const imageLoadUnbind = new Map<Control, () => void>();
+  const materialPresenters = new Map<
+    string,
+    { guid: string; presenter: InterfaceMaterialPresenter }
+  >();
   let safeArea: Container | null = null;
   let rootCanvas: Container | null = null;
+
+  const disposeMaterialPresenter = (id: string): void => {
+    materialPresenters.get(id)?.presenter.dispose();
+    materialPresenters.delete(id);
+  };
+
+  const bindMaterialPresenter = (spec: GuiControlSpec, control: Control): void => {
+    if (spec.kind !== "Material" || !(control instanceof Image)) {
+      disposeMaterialPresenter(spec.id);
+      return;
+    }
+    const guid =
+      typeof spec.materialGuid === "string" && spec.materialGuid.length > 0
+        ? spec.materialGuid
+        : null;
+    if (!guid || !options.scene || !options.resolveInterfaceMaterial) {
+      disposeMaterialPresenter(spec.id);
+      return;
+    }
+    const document = options.resolveInterfaceMaterial(guid);
+    if (!document || document.domain !== "interface") {
+      disposeMaterialPresenter(spec.id);
+      return;
+    }
+    const existing = materialPresenters.get(spec.id);
+    const width = Math.max(1, spec.width);
+    const height = Math.max(1, spec.height);
+    if (existing && existing.guid === guid) {
+      existing.presenter.resize(width, height);
+      bindInterfaceMaterialImage(control, existing.presenter.canvas);
+      return;
+    }
+    existing?.presenter.dispose();
+    const presenter = createInterfaceMaterialPresenter({
+      scene: options.scene,
+      document,
+      assetGuid: guid,
+      width,
+      height,
+      library: options.materialLibrary,
+      functions: options.materialFunctions?.(),
+      resolveTexture: options.resolveTexture,
+    });
+    materialPresenters.set(spec.id, { guid, presenter });
+    bindInterfaceMaterialImage(control, presenter.canvas);
+  };
 
   const unbindImageLoad = (control: Control): void => {
     imageLoadUnbind.get(control)?.();
@@ -610,6 +687,7 @@ export function createAdtControlFactory(
       byId.set(spec.id, control);
       handles.push(control);
       bindImageLoad(control);
+      bindMaterialPresenter(spec, control);
       if (!spec.parentId) {
         attach(adt, control);
         if (spec.kind === "Canvas" && control instanceof Container) {
@@ -645,18 +723,25 @@ export function createAdtControlFactory(
       applyCommon(control, spec);
       applyTypeSpecific(control, spec, previous, options.resolveImageUrl);
       bindImageLoad(control);
+      bindMaterialPresenter(spec, control);
       return true;
     },
     remove(id) {
       const control = byId.get(id);
       if (!control || id === SAFE_AREA_CONTROL_ID) return;
+      disposeMaterialPresenter(id);
       disposeControl(control);
+    },
+    presentMaterials() {
+      for (const entry of materialPresenters.values()) entry.presenter.present();
     },
     clear() {
       for (const control of handles) {
         unbindImageLoad(control);
         disposeAttached(control);
       }
+      for (const entry of materialPresenters.values()) entry.presenter.dispose();
+      materialPresenters.clear();
       handles.length = 0;
       byId.clear();
       safeArea = null;

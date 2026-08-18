@@ -46,6 +46,7 @@ import {
   materialHeaderMeta,
   isPostProcessMaterialAsset,
   isPostProcessMaterialForPicker,
+  isInterfaceMaterialForPicker,
   classIdFromClassAsset,
   classParentLookup,
   addSelectedAssetGuid,
@@ -1478,6 +1479,43 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
+  });
+
+  it("recognizes Interface materials for the HUD Material picker", () => {
+    const glow = asset({
+      type: "Material",
+      path: "assets/Glow.material.babasset",
+      guid: "mat-glow",
+      name: "Glow",
+      payload: { domain: "surface" },
+    });
+    expect(
+      isInterfaceMaterialForPicker(glow, [
+        {
+          ref: { kind: "material", path: "assets/Glow.material.babasset" },
+          content: { domain: "interface" },
+        },
+      ]),
+    ).toBe(true);
+    expect(isInterfaceMaterialForPicker(glow, [])).toBe(false);
+    expect(
+      isInterfaceMaterialForPicker(
+        asset({
+          type: "Material",
+          payload: { domain: "interface" },
+        }),
+        [],
+      ),
+    ).toBe(true);
+    expect(
+      isInterfaceMaterialForPicker(
+        asset({
+          type: "Material",
+          payload: { domain: "postProcess" },
+        }),
+        [],
+      ),
+    ).toBe(false);
   });
 
   it("lists selected folders and assets for Delete confirm, not flattened contents", () => {

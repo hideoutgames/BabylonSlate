@@ -11,6 +11,7 @@ import {
   createRuntimeFromLoad,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { createEngine, audioStats, type EngineHandle } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
@@ -155,6 +156,17 @@ export function startPlayer(options: {
       fontBytes: game.fontBytes,
       fontFamilies: game.fontFamilies,
     }),
+    resolveInterfaceMaterial: (guid) => {
+      const document = content.materialDocuments.get(guid);
+      return document?.domain === "interface" ? document : null;
+    },
+    materialFunctions: () => Object.fromEntries(content.materialFunctions),
+    resolveTexture: (guid) => {
+      const bytes = game.textureBytes.get(guid);
+      if (!bytes) return null;
+      const texture = handle.resourceCache.getTexture(guid, handle.engine, bytes);
+      return texture instanceof Texture ? texture : null;
+    },
     onWidgetEvent: (event) => {
       if (worker) worker.postControl(event);
       else if (runtime) applyUiRuntimeControl(runtime, event);

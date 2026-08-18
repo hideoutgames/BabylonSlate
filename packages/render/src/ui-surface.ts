@@ -101,13 +101,22 @@ export function createUiSurface(
 
   const factory = createAdtControlFactory(designAdt, {
     resolveImageUrl: options.resolveImageUrl,
+    resolveInterfaceMaterial: options.resolveInterfaceMaterial,
+    materialFunctions: options.materialFunctions,
+    resolveTexture: options.resolveTexture,
+    materialLibrary: options.materialLibrary,
+    scene,
     onTouchAxis: options.onTouchAxis,
     safeArea: options.safeArea,
     onImageReady: () => {
       designAdt.markAsDirty();
-      blitDesign();
+      presentDesign();
     },
   });
+  const presentDesign = () => {
+    factory.presentMaterials?.();
+    blitDesign();
+  };
   const host = new BabylonUiApplyHost(factory, {
     interactive: options.interactive,
     resolveImageUrl: options.resolveImageUrl,
@@ -115,7 +124,7 @@ export function createUiSurface(
     onWidgetEvent: options.onWidgetEvent,
     markDirty: () => {
       designAdt.markAsDirty();
-      blitDesign();
+      presentDesign();
     },
   });
   const detachPointers = options.interactive
@@ -132,7 +141,7 @@ export function createUiSurface(
     designAdt,
     gizmoAdt,
     host,
-    present: blitDesign,
+    present: presentDesign,
     presentGizmos: (state) => {
       if (!gizmoAdt || !gizmoCanvas) return;
       paintDesignerGizmos(gizmoAdt, state);
@@ -171,6 +180,11 @@ export function attachFullscreenGui(
   applyAdtIdeal(adt, options.designResolution, options.scaleRule);
   const factory = createAdtControlFactory(adt, {
     resolveImageUrl: options.resolveImageUrl,
+    resolveInterfaceMaterial: options.resolveInterfaceMaterial,
+    materialFunctions: options.materialFunctions,
+    resolveTexture: options.resolveTexture,
+    materialLibrary: options.materialLibrary,
+    scene,
     onTouchAxis: options.onTouchAxis,
     safeArea: options.safeArea,
     onImageReady: () => adt.markAsDirty(),

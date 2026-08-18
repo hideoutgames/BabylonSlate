@@ -166,6 +166,7 @@ describe("default play HUD", () => {
     expect(WIDGET_KINDS).toContain("TouchJoystick");
     expect(WIDGET_KINDS).toContain("Grid");
     expect(WIDGET_KINDS).toContain("UserInterface");
+    expect(WIDGET_KINDS).toContain("Material");
     const hud = createDefaultPlayHud("HUD");
     expect(hud.viewportLayer).toBe(true);
     expect(hud.widgets.stick?.kind).toBe("TouchJoystick");

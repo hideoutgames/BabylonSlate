@@ -116,13 +116,24 @@ describe("UiDesignCanvas preview fallback", () => {
       designAdt: { markAsDirty: vi.fn() },
       gizmoAdt: null,
     });
-    render(<UiDesignCanvas {...hudCanvasProps()} />);
+    render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        resolveInterfaceMaterial={(guid) =>
+          guid === "mat-glow" ? ({ domain: "interface" } as never) : null
+        }
+      />,
+    );
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
       resolveImageUrl?: (guid: string) => string | null;
+      resolveInterfaceMaterial?: (guid: string) => unknown;
     };
     expect(typeof options.resolveImageUrl).toBe("function");
+    expect(options.resolveInterfaceMaterial?.("mat-glow")).toEqual({
+      domain: "interface",
+    });
   });
 
   it("skips present when the Design dock tab is hidden", () => {

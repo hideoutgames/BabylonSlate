@@ -204,7 +204,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
-  materialGuidsFromScenes,
+  playMaterialGuidsFromSources,
   materialClosureFromGuids,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
@@ -430,10 +430,11 @@ interface DocumentContextValue {
     bytes: Map<string, Uint8Array>;
     library: import("../lib/play-audio").PlayAudioLibrary;
   }>;
-  /** Surface and post-process materials plus transitive Material Functions. */
+  /** Surface, post-process, and HUD Interface materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
+    extraMaterialGuids?: readonly string[],
   ) => Promise<{
     documents: Map<string, MaterialDocument>;
     functions: Map<string, MaterialFunctionDocument>;
@@ -2463,6 +2464,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (
       scene?: SerializedScene | null,
       extraScenes: readonly SerializedScene[] = [],
+      extraMaterialGuids: readonly string[] = [],
     ): Promise<{
       documents: Map<string, MaterialDocument>;
       functions: Map<string, MaterialFunctionDocument>;
@@ -2487,7 +2489,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const content = await loadPlayAssetContent(kind, asset.path);
         if (content) loaded.set(guid, content);
       };
-      const needed = new Set(materialGuidsFromScenes([scene, ...extraScenes]));
+      const needed = new Set(
+        playMaterialGuidsFromSources(
+          [scene, ...extraScenes],
+          [],
+          extraMaterialGuids,
+        ),
+      );
       let grew = true;
       while (grew) {
         grew = false;

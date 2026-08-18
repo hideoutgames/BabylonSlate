@@ -27,6 +27,7 @@ export const WIDGET_KINDS = [
   "Slider",
   "CheckBox",
   "Image",
+  "Material",
   "ProgressBar",
   "Spacer",
   "TouchJoystick",
@@ -247,6 +248,8 @@ export function defaultPropsFor(kind: WidgetKind): Record<string, unknown> {
       return { value: 0 };
     case "Image":
       return { imageGuid: null };
+    case "Material":
+      return { materialGuid: null };
     case "Spacer":
       return { flex: 1 };
     case "SizeBox":

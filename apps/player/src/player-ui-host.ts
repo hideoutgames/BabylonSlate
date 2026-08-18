@@ -19,6 +19,7 @@ import {
   type DevicePreset,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
+import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import {
   inputModeAllowsGuiHits,
   parseInputMode,
@@ -55,6 +56,9 @@ export type PlayerUiHostOptions = {
   designerPresets?: readonly DevicePreset[];
   fontEntries?: readonly FontAssetEntry[];
   applyFonts?: typeof applyFontRegistryToHost;
+  resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  materialFunctions?: () => Record<string, MaterialFunctionDocument>;
+  resolveTexture?: (guid: string) => import("@babylonjs/core/Materials/Textures/texture").Texture | null;
 };
 
 function documentFromLibrary(
@@ -161,6 +165,9 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
           extras,
         ).safeArea,
         resolveImageUrl,
+        resolveInterfaceMaterial: options.resolveInterfaceMaterial,
+        materialFunctions: options.materialFunctions,
+        resolveTexture: options.resolveTexture,
         onTouchAxis: options.onTouchAxis,
         onWidgetEvent: handleWidgetEvent,
       });

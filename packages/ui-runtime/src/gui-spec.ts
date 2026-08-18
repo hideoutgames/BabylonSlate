@@ -52,6 +52,7 @@ export interface GuiControlSpec {
     hitTestVisible: boolean;
   isPointerBlocker: boolean;
   imageGuid?: string | null;
+  materialGuid?: string | null;
   sliderValue?: number;
   sliderMin?: number;
   sliderMax?: number;
@@ -88,6 +89,7 @@ export function guiControlType(kind: WidgetKind): GuiControlType {
     case "CheckBox":
       return "Checkbox";
     case "Image":
+    case "Material":
       return "Image";
     case "ProgressBar":
       return "ProgressBar";
@@ -129,6 +131,10 @@ export function guiSpecFromDescriptor(
     typeof control.props.imageGuid === "string"
       ? control.props.imageGuid
       : (control.style.imageGuid ?? null);
+  const materialGuid =
+    typeof control.props.materialGuid === "string"
+      ? control.props.materialGuid
+      : null;
   const layout = control.layout;
   const slotOwned =
     control.layoutMode === "stack" ||
@@ -170,6 +176,7 @@ export function guiSpecFromDescriptor(
     hitTestVisible: interactive && hitTestable && allowGuiHits,
     isPointerBlocker: interactive && hitTestable && allowGuiHits,
     imageGuid,
+    materialGuid,
     sliderValue: numberProp(control.props, "value", 0),
     sliderMin: numberProp(control.props, "min", 0),
     sliderMax: numberProp(control.props, "max", 1),

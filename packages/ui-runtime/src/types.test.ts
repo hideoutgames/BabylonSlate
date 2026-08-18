@@ -22,6 +22,7 @@ describe("Hit Testable defaults", () => {
     expect(defaultHitTestableFor("TouchJoystick")).toBe(true);
     expect(defaultHitTestableFor("TouchDPad")).toBe(true);
     expect(defaultHitTestableFor("Image")).toBe(false);
+    expect(defaultHitTestableFor("Material")).toBe(false);
     expect(defaultHitTestableFor("Text")).toBe(false);
     expect(defaultHitTestableFor("Slider")).toBe(false);
     expect(defaultHitTestableFor("CheckBox")).toBe(false);

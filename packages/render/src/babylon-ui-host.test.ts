@@ -12,7 +12,8 @@ import {
   type UiControlDescriptor,
 } from "@babylonslate/ui-runtime";
 import { applyUiControls, RecordingUiHost } from "./ui-apply";
-import { Vector2 } from "@babylonjs/core";
+import { NullEngine, Scene, Vector2 } from "@babylonjs/core";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { Control as GuiControl } from "@babylonjs/gui/2D/controls/control";
 import { Container } from "@babylonjs/gui/2D/controls/container";
 import { Ellipse } from "@babylonjs/gui/2D/controls/ellipse";
@@ -999,5 +1000,79 @@ describe("Babylon GUI Image widgets", () => {
     recreated.onImageLoadedObservable.notifyObservers(recreated);
     expect(onImageReady).not.toHaveBeenCalled();
     expect(recreated.onImageLoadedObservable.hasObservers()).toBe(false);
+  });
+});
+
+describe("Babylon GUI Material widgets", () => {
+  it("binds an Interface material blit canvas onto the Image", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const doc = createDefaultUserInterface();
+    const panel = createWidget(
+      "fx",
+      "Material",
+      "Glow",
+      pinLayout("left", "top", 64, 32),
+    );
+    panel.props.materialGuid = "mat-glow";
+    doc.widgets.canvas!.children = ["fx"];
+    doc.widgets.fx = panel;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      scene,
+      resolveInterfaceMaterial: (guid) =>
+        guid === "mat-glow"
+          ? createDefaultMaterialDocument("Glow", "interface")
+          : null,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+    );
+    const control = named(root, "fx");
+    expect(control).toBeInstanceOf(Image);
+    expect((control as Image).domImage).toBeTruthy();
+    expect(((control as Image).domImage as HTMLCanvasElement).width).toBe(64);
+    expect(((control as Image).domImage as HTMLCanvasElement).height).toBe(32);
+    host.clear();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("rebuilds the presenter when materialGuid changes", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const doc = createDefaultUserInterface();
+    const panel = createWidget(
+      "fx",
+      "Material",
+      "Glow",
+      pinLayout("left", "top", 32, 32),
+    );
+    panel.props.materialGuid = "mat-a";
+    doc.widgets.canvas!.children = ["fx"];
+    doc.widgets.fx = panel;
+    const materials: Record<string, ReturnType<typeof createDefaultMaterialDocument>> = {
+      "mat-a": createDefaultMaterialDocument("A", "interface"),
+      "mat-b": createDefaultMaterialDocument("B", "interface"),
+    };
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      scene,
+      resolveInterfaceMaterial: (guid) => materials[guid] ?? null,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    const first = (named(root, "fx") as Image).domImage;
+    panel.props.materialGuid = "mat-b";
+    applyUiControls(host, describeUiControls(doc, layout));
+    const second = (named(root, "fx") as Image).domImage;
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+    host.clear();
+    scene.dispose();
+    engine.dispose();
   });
 });

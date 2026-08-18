@@ -58,6 +58,7 @@ import { PlayHudOverlay } from "./play-hud-overlay";
 import {
   applyPlayHudInstance,
   applyPlayHudVisibility,
+  lookupInterfaceMaterialDocument,
   playUserInterfaceRuntimeDocuments,
   removePlayHudInstance,
   resolvePlayHudDocuments,
@@ -552,6 +553,12 @@ export function PlayOverlay({
         uiLibrary={uiLibrary}
         fontEntries={fontEntries}
         resolveImageUrl={resolveImageUrl}
+        resolveInterfaceMaterial={(guid) =>
+          lookupInterfaceMaterialDocument(guid, materialDocuments)
+        }
+        materialFunctions={() =>
+          Object.fromEntries(materialFunctions ?? [])
+        }
         width={overlaySize.width}
         height={overlaySize.height}
         hiddenWidgetIds={hiddenWidgetIds}

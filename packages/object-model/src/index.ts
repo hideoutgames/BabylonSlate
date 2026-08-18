@@ -61,6 +61,7 @@ export {
   GridWidget,
   HorizontalBoxWidget,
   ImageWidget,
+  MaterialWidget,
   OverlayWidget,
   ProgressBarWidget,
   ScrollBoxWidget,

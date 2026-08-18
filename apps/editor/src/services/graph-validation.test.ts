@@ -1523,6 +1523,7 @@ describe("scriptPaletteNodes", () => {
     expect(ids.has("Widget")).toBe(true);
     expect(ids.has("ButtonWidget")).toBe(true);
     expect(ids.has("ImageWidget")).toBe(true);
+    expect(ids.has("MaterialWidget")).toBe(true);
   });
 
   it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {

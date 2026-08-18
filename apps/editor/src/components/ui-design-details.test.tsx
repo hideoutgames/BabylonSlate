@@ -67,4 +67,13 @@ describe("UiDesignDetails Hit Testable", () => {
       "Disabled",
     );
   });
+
+  it("shows an Interface Material picker for a Material widget", () => {
+    const glow = createWidget("fx", "Material", "Glow", defaultAddLayout("Image"));
+    glow.props.materialGuid = "mat-glow";
+    renderDetails(glow);
+    expect(screen.getByTestId("property-material").textContent).toContain(
+      "mat-glow",
+    );
+  });
 });

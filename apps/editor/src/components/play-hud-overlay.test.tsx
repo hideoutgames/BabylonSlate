@@ -330,6 +330,34 @@ describe("PlayHudOverlay images", () => {
     expect(options.resolveImageUrl?.("missing")).toBeNull();
   });
 
+  it("passes resolveInterfaceMaterial into the fullscreen GUI host", () => {
+    attachFullscreenGuiMock.mockReturnValue({
+      adt: { markAsDirty: vi.fn() },
+      host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    });
+    const resolveInterfaceMaterial = (guid: string) =>
+      guid === "mat-glow" ? ({ domain: "interface" } as never) : null;
+    render(
+      <PlayHudOverlay
+        scene={{} as never}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "hud", document: hudWith("TouchButton") }]}
+        onTouchAxis={() => {}}
+        resolveInterfaceMaterial={resolveInterfaceMaterial}
+      />,
+    );
+    const options = attachFullscreenGuiMock.mock.calls[0]?.[1] as {
+      resolveInterfaceMaterial?: (guid: string) => unknown;
+    };
+    expect(options.resolveInterfaceMaterial?.("mat-glow")).toEqual({
+      domain: "interface",
+    });
+    expect(options.resolveInterfaceMaterial?.("missing")).toBeNull();
+  });
+
   it("keeps Image and Button widgets in the applied HUD", () => {
     const doc = createDefaultUserInterface("HUD");
     doc.widgets.canvas!.children = ["play-btn", "logo"];

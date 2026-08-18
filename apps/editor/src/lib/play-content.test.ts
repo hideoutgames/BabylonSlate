@@ -57,6 +57,9 @@ import {
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
   materialGuidsFromScenes,
+  interfaceMaterialGuidsFromUiDocuments,
+  lookupInterfaceMaterialDocument,
+  playMaterialGuidsFromSources,
   playSceneByGuid,
   materialClosureFromGuids,
 } from "./play-content";
@@ -772,6 +775,33 @@ describe("scene-referenced Play content", () => {
     const level2 = createDefaultScene();
     level2.settings.postProcessStack = [{ materialGuid: "pp-b", enabled: true }];
     expect(materialGuidsFromScenes([startup, level2])).toEqual(["pp-a", "pp-b"]);
+  });
+
+  it("collects Interface material graphs from applied HUD documents", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const glow = createWidget("glow", "Material", "Glow");
+    glow.props.materialGuid = "mat-glow";
+    hud.widgets.canvas!.children = ["glow"];
+    hud.widgets.glow = glow;
+    expect(interfaceMaterialGuidsFromUiDocuments([hud])).toEqual(["mat-glow"]);
+    const startup = createDefaultScene();
+    startup.settings.postProcessStack = [{ materialGuid: "pp-a", enabled: true }];
+    expect(playMaterialGuidsFromSources([startup], [hud])).toEqual([
+      "pp-a",
+      "mat-glow",
+    ]);
+  });
+
+  it("looks up Interface materials and ignores other domains", () => {
+    const documents = new Map([
+      ["mat-glow", { domain: "interface" as const, name: "Glow" } as never],
+      ["mat-rock", { domain: "surface" as const, name: "Rock" } as never],
+    ]);
+    expect(lookupInterfaceMaterialDocument("mat-glow", documents)?.name).toBe(
+      "Glow",
+    );
+    expect(lookupInterfaceMaterialDocument("mat-rock", documents)).toBeNull();
+    expect(lookupInterfaceMaterialDocument("missing", documents)).toBeNull();
   });
 
   it("resolves an activeScene guid from the Play library", () => {
