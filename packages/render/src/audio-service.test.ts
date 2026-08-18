@@ -71,6 +71,30 @@ describe("AudioService", () => {
     expect(service.stats().accountedBytes).toBe(0);
   });
 
+  it("nulls missing Audio Channel and Attenuation refs with diagnostics", () => {
+    const diagnostics: Array<{ code: string }> = [];
+    const service = new AudioService({
+      backend: new FakeAudioPlaybackBackend(),
+      onDiagnostic: (entry) => diagnostics.push(entry),
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            volume: 1,
+            audioChannelGuid: "gone-channel",
+            soundAttenuationGuid: "gone-atten",
+          },
+        },
+      }),
+    );
+    expect(diagnostics.map((entry) => entry.code).sort()).toEqual([
+      "audio.missing_attenuation",
+      "audio.missing_channel",
+    ]);
+    service.dispose();
+  });
+
   it("caps the pre-unlock queue and drains in order", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });

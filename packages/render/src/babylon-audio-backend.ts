@@ -170,11 +170,19 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   }
 
   setReverbWet(wet: number): void {
+    this.setReverbProfile({ wet, decay: 0.4, damping: 0.5 });
+  }
+
+  setReverbProfile(profile: {
+    wet: number;
+    decay: number;
+    damping: number;
+  }): void {
     if (this.reverbGraph) {
-      this.reverbGraph.setWet(wet);
+      this.reverbGraph.setProfile(profile);
       return;
     }
-    if (this.reverbBus) this.reverbBus.volume = wet;
+    if (this.reverbBus) this.reverbBus.volume = profile.wet;
   }
 
   dispose(): void {

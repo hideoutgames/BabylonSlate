@@ -11,8 +11,27 @@ export type ParametricReverbGraph = {
   combCount: number;
   allpassCount: number;
   setWet: (wet: number) => void;
+  setProfile: (profile: {
+    wet: number;
+    decay: number;
+    damping: number;
+  }) => void;
   dispose: () => void;
 };
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/** Comb feedback from baked decay (0..1). */
+export function reverbCombFeedbackFromDecay(decay: number): number {
+  return 0.35 + clamp01(decay) * 0.55;
+}
+
+/** Low-pass Hz from baked damping (0..1, higher = duller). */
+export function reverbLowpassFromDamping(damping: number): number {
+  return 200 + (1 - clamp01(damping)) * 9800;
+}
 
 export function parametricReverbTopology(): {
   combDelays: number[];
@@ -86,6 +105,8 @@ export function connectParametricReverb(
   const combOut = context.createGain();
   combOut.gain.value = 1 / Math.max(1, combDelays.length);
   nodes.push(combOut);
+  const combFeedbacks: GainNode[] = [];
+  const combFilters: BiquadFilterNode[] = [];
   for (const delayTime of combDelays) {
     const delay = context.createDelay(1);
     delay.delayTime.value = delayTime;
@@ -99,6 +120,8 @@ export function connectParametricReverb(
     damping.connect(feedback);
     feedback.connect(delay);
     damping.connect(combOut);
+    combFeedbacks.push(feedback);
+    combFilters.push(damping);
     nodes.push(delay, feedback, damping);
   }
 
@@ -112,7 +135,14 @@ export function connectParametricReverb(
     combCount: combDelays.length,
     allpassCount: allpassDelays.length,
     setWet: (value) => {
-      wet.gain.value = Math.min(1, Math.max(0, value));
+      wet.gain.value = clamp01(value);
+    },
+    setProfile: (profile) => {
+      wet.gain.value = clamp01(profile.wet);
+      const feedbackGain = reverbCombFeedbackFromDecay(profile.decay);
+      const frequency = reverbLowpassFromDamping(profile.damping);
+      for (const node of combFeedbacks) node.gain.value = feedbackGain;
+      for (const node of combFilters) node.frequency.value = frequency;
     },
     dispose: () => {
       for (const node of nodes) node.disconnect();

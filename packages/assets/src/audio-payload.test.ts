@@ -40,6 +40,7 @@ import {
   normalizeAudioPayload,
   normalizeSoundAttenuationPayload,
   resolveAudioReferences,
+  sanitizeAudioLibrary,
   validateAudioChannelGraph,
   validateAudioMixer,
 } from "./audio-payload";
@@ -174,6 +175,49 @@ describe("audio payloads", () => {
     expect(cycle.diagnostics.map((row) => row.code)).toContain(
       "audio.channel.parent_cycle",
     );
+    expect(cycle.resolvedParents.a).toBeNull();
+    expect(cycle.resolvedParents.b).toBeNull();
+  });
+
+  it("sanitizes missing Audio refs and cyclic channel parents for Play", () => {
+    const result = sanitizeAudioLibrary({
+      audio: new Map([
+        [
+          "jump",
+          {
+            volume: 1,
+            audioChannelGuid: "gone",
+            soundAttenuationGuid: "near",
+          },
+        ],
+      ]),
+      channels: new Map([
+        [
+          "a",
+          {
+            parentChannelGuid: "b",
+            effects: [{ kind: "environmentReverb", enabled: false }],
+          },
+        ],
+        [
+          "b",
+          {
+            parentChannelGuid: "a",
+            effects: [{ kind: "environmentReverb", enabled: false }],
+          },
+        ],
+      ]),
+      attenuations: new Map(),
+    });
+    expect(result.audio.get("jump")?.audioChannelGuid).toBeNull();
+    expect(result.audio.get("jump")?.soundAttenuationGuid).toBeNull();
+    expect(result.channels.get("a")?.parentChannelGuid).toBeNull();
+    expect(result.channels.get("b")?.parentChannelGuid).toBeNull();
+    expect(result.diagnostics.map((row) => row.code).sort()).toEqual([
+      "audio.channel.parent_cycle",
+      "audio.missing_attenuation",
+      "audio.missing_channel",
+    ]);
   });
 
   it("falls missing Audio references back to null with one diagnostic each", () => {

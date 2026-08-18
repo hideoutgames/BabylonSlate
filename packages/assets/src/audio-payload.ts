@@ -325,11 +325,11 @@ export function validateAudioChannelGraph(
         guid: parent,
       });
       resolvedParents[guid] = null;
+    } else if (audioChannelHasParentCycle(parents, guid)) {
+      cyclic = true;
+      resolvedParents[guid] = null;
     } else {
       resolvedParents[guid] = parent;
-    }
-    if (audioChannelHasParentCycle(parents, guid)) {
-      cyclic = true;
     }
   }
   if (cyclic) {
@@ -339,6 +339,45 @@ export function validateAudioChannelGraph(
     });
   }
   return { ok: !cyclic, diagnostics, resolvedParents };
+}
+
+export function sanitizeAudioLibrary(input: {
+  audio: ReadonlyMap<string, AudioPayload>;
+  channels: ReadonlyMap<string, AudioChannelPayload>;
+  attenuations: ReadonlyMap<string, SoundAttenuationPayload>;
+}): {
+  audio: Map<string, AudioPayload>;
+  channels: Map<string, AudioChannelPayload>;
+  diagnostics: AudioDiagnostic[];
+} {
+  const diagnostics: AudioDiagnostic[] = [];
+  const known = new Set([
+    ...input.channels.keys(),
+    ...input.attenuations.keys(),
+  ]);
+  const audio = new Map<string, AudioPayload>();
+  for (const [guid, payload] of input.audio) {
+    const resolved = resolveAudioReferences(payload, known);
+    diagnostics.push(...resolved.diagnostics);
+    audio.set(guid, resolved.payload);
+  }
+  const graph = validateAudioChannelGraph(
+    Object.fromEntries(
+      [...input.channels].map(([guid, channel]) => [
+        guid,
+        { parentChannelGuid: channel.parentChannelGuid },
+      ]),
+    ),
+  );
+  diagnostics.push(...graph.diagnostics);
+  const channels = new Map<string, AudioChannelPayload>();
+  for (const [guid, channel] of input.channels) {
+    channels.set(guid, {
+      ...channel,
+      parentChannelGuid: graph.resolvedParents[guid] ?? null,
+    });
+  }
+  return { audio, channels, diagnostics };
 }
 
 function collectGuids(values: Array<string | null | undefined>): string[] {
