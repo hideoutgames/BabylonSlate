@@ -58,6 +58,7 @@ describe("EditorUtilityRuntime", () => {
     render(<EditorUtilityRuntime />);
     await waitFor(() => {
       expect(invokeEvent.mock.calls.map((call) => call[1])).toEqual([
+        EDITOR_UTILITY_EVENTS.beginPlay,
         EDITOR_UTILITY_EVENTS.startup,
         EDITOR_UTILITY_EVENTS.sceneOpen,
       ]);
@@ -117,6 +118,7 @@ describe("EditorUtilityRuntime", () => {
     await waitFor(() => {
       expect(invokeEvent.mock.calls.map((call) => call[1])).toEqual([
         EDITOR_UTILITY_EVENTS.shutdown,
+        EDITOR_UTILITY_EVENTS.beginPlay,
         EDITOR_UTILITY_EVENTS.startup,
       ]);
     });
