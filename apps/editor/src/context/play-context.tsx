@@ -631,7 +631,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         try {
           const library = await collectPlayUiLibrary();
           setPlayUiLibrary(library);
-          revokeUiImageUrls(playImageUrlsRef.current);
           const urls = await collectUiImageUrls(
             collectImageGuidsFromUiDocuments(Object.values(library)),
             (assetRegistry?.list() ?? []).map((asset) => ({
@@ -641,6 +640,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               chunks: asset.header.chunks,
             })),
             readAssetChunk,
+            playImageUrlsRef.current,
           );
           playImageUrlsRef.current = urls;
           setPlayImageUrls(urls);

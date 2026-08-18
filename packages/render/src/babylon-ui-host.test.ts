@@ -641,6 +641,42 @@ describe("Babylon GUI Image widgets", () => {
     host.clear();
   });
 
+  it("does not reassign Image.source when the blob URL is unchanged", () => {
+    const doc = createDefaultUserInterface();
+    const image = createWidget("img", "Image", "Logo", pinLayout("left", "top", 64, 64));
+    image.props.imageGuid = "tex-1";
+    doc.widgets.canvas!.children = ["img"];
+    doc.widgets.img = image;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      resolveImageUrl: () => "blob:tex-1",
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    const control = named(root, "img") as Image;
+    const proto = Object.getPrototypeOf(control) as Image;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, "source");
+    expect(descriptor?.set).toBeTypeOf("function");
+    const assigned: string[] = [];
+    Object.defineProperty(proto, "source", {
+      configurable: true,
+      get: descriptor!.get,
+      set(this: Image, value: string) {
+        assigned.push(value);
+        descriptor!.set!.call(this, value);
+      },
+    });
+    try {
+      applyUiControls(host, describeUiControls(doc, layout));
+      expect(assigned).toEqual([]);
+      expect(control.source).toBe("blob:tex-1");
+    } finally {
+      Object.defineProperty(proto, "source", descriptor!);
+    }
+    host.clear();
+  });
+
   it("calls onImageReady when Image.onImageLoadedObservable fires", () => {
     const onImageReady = vi.fn();
     const doc = createDefaultUserInterface();

@@ -46,6 +46,8 @@ import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
   resolveUiImages,
   revokeUiImageUrls,
+  revokeUnreferencedUiImageUrls,
+  uiImageUrlsEqual,
   type UiImageIssue,
 } from "../lib/play-ui-images";
 import type { FontAssetEntry } from "@babylonslate/render";
@@ -233,15 +235,17 @@ export function UiEditingProvider({
       guids,
       assets,
       readAssetChunk ?? (async () => null),
+      imageUrlsRef.current,
     ).then(({ urls, issues }) => {
       if (cancelled) {
-        revokeUiImageUrls(urls);
+        revokeUnreferencedUiImageUrls(urls, imageUrlsRef.current);
         return;
       }
-      revokeUiImageUrls(imageUrlsRef.current);
+      setImageIssues(issues);
+      if (uiImageUrlsEqual(imageUrlsRef.current, urls)) return;
+      revokeUnreferencedUiImageUrls(imageUrlsRef.current, urls);
       imageUrlsRef.current = urls;
       setImageUrls(urls);
-      setImageIssues(issues);
     });
     return () => {
       cancelled = true;

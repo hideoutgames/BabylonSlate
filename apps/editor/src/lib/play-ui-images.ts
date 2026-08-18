@@ -34,17 +34,26 @@ export function uiImageIssueMessage(issue: UiImageIssue): string {
   return `Texture ${issue.guid} is missing from the project.`;
 }
 
-/** Load Texture pixels and report unresolved / missing-chunk issues. */
+/**
+ * Load Texture pixels and report unresolved / missing-chunk issues.
+ * Pass `previous` to reuse blob URLs for guids that are still referenced.
+ */
 export async function resolveUiImages(
   imageGuids: readonly string[],
   assets: readonly UiTextureAssetSource[],
   readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+  previous?: Map<string, string>,
 ): Promise<{ urls: Map<string, string>; issues: UiImageIssue[] }> {
   const byGuid = new Map(assets.map((asset) => [asset.guid, asset] as const));
   const urls = new Map<string, string>();
   const issues: UiImageIssue[] = [];
   for (const guid of imageGuids) {
     if (!guid || urls.has(guid)) continue;
+    const reused = previous?.get(guid);
+    if (reused) {
+      urls.set(guid, reused);
+      continue;
+    }
     const asset = byGuid.get(guid);
     if (!asset) {
       issues.push({ guid, reason: "missing-asset" });
@@ -77,9 +86,39 @@ export async function collectUiImageUrls(
   imageGuids: readonly string[],
   assets: readonly UiTextureAssetSource[],
   readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+  previous?: Map<string, string>,
 ): Promise<Map<string, string>> {
-  const { urls } = await resolveUiImages(imageGuids, assets, readChunk);
+  const { urls } = await resolveUiImages(
+    imageGuids,
+    assets,
+    readChunk,
+    previous,
+  );
+  if (previous) revokeUnreferencedUiImageUrls(previous, urls);
   return urls;
+}
+
+/** Revoke URLs in `urls` that are not still held by `keep`. */
+export function revokeUnreferencedUiImageUrls(
+  urls: Map<string, string>,
+  keep: Map<string, string>,
+): void {
+  for (const [guid, url] of urls) {
+    if (keep.get(guid) === url) continue;
+    URL.revokeObjectURL(url);
+    urls.delete(guid);
+  }
+}
+
+export function uiImageUrlsEqual(
+  left: Map<string, string>,
+  right: Map<string, string>,
+): boolean {
+  if (left.size !== right.size) return false;
+  for (const [guid, url] of right) {
+    if (left.get(guid) !== url) return false;
+  }
+  return true;
 }
 
 export function revokeUiImageUrls(urls: Map<string, string>): void {
