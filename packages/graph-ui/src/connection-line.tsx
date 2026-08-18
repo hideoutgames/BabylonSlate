@@ -117,7 +117,7 @@ export function GraphConnectionLineView({
             aria-hidden="true"
             className="pointer-events-none whitespace-nowrap shadow-md"
           >
-            Tap to Add Node
+            Tap to Cancel
           </Badge>
         </foreignObject>
       ) : null}

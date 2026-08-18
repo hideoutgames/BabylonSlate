@@ -178,19 +178,19 @@ export function connectEventPointerId(event: Event | {
   return 1;
 }
 
-export type SecondaryAddNodePointer = {
+export type SecondaryCancelPointer = {
   connectionActive: boolean;
   dragPointerId: number | null;
   eventPointerId: number;
   inAddNodeZone: boolean;
 };
 
-export function shouldOpenAddNodeOnSecondaryPointer({
+export function shouldCancelConnectOnSecondaryPointer({
   connectionActive,
   dragPointerId,
   eventPointerId,
   inAddNodeZone,
-}: SecondaryAddNodePointer): boolean {
+}: SecondaryCancelPointer): boolean {
   if (!connectionActive || !inAddNodeZone) return false;
   if (dragPointerId == null) return false;
   return eventPointerId !== dragPointerId;
@@ -221,6 +221,7 @@ export function connectEndAction(
     if (decision.pointerOverNode) return "none";
     return "add-node";
   }
+  if (shouldOpenAddNodeOnConnectEnd(decision)) return "add-node";
   if (shouldBreakPinConnectionsOnConnectEnd(decision)) return "break";
   return "none";
 }
