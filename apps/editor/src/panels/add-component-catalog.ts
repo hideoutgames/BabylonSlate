@@ -1,8 +1,12 @@
-import type { PhysicsWorldKind, ViewportMode } from "@babylonslate/core";
-import { emptySkyboxFaces } from "@babylonslate/core";
+import type {
+  PhysicsWorldKind,
+  SerializedScene,
+  ViewportMode,
+} from "@babylonslate/core";
 import {
   DEFAULT_CAMERA_FIELD_OF_VIEW,
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+  emptySkyboxFaces,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -13,87 +17,101 @@ import {
   defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
 } from "@babylonslate/navigation";
+import { humanizePropertyLabel, walkAncestry } from "@babylonslate/editor-kit";
+import { isLockedEngineClassId } from "@babylonslate/object-model";
+import {
+  classIdFromClassAsset,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 
-export const ADDABLE_COMPONENT_CLASSES = [
-  {
-    id: "MeshComponent",
-    label: "Mesh",
-    description: "Renderable primitive",
-    category: "Rendering",
-  },
-  {
-    id: "SpriteComponent",
-    label: "Sprite",
-    description: "2D sprite quad",
-    category: "Rendering",
-  },
-  {
-    id: "TilemapComponent",
-    label: "Tilemap",
-    description: "Chunked 2D tilemap",
-    category: "Rendering",
-  },
-  {
-    id: "AnimationGraphComponent",
-    label: "Animation Graph",
-    description: "Worker-evaluated clip state machine",
-    category: "Animation",
-  },
-  {
-    id: "BehaviourTreeComponent",
-    label: "Behaviour Tree",
-    description: "Worker-evaluated behaviour tree",
-    category: "AI",
-  },
-  {
-    id: "NavAgentComponent",
-    label: "Nav Agent",
-    description: "Crowd agent on the baked navmesh",
-    category: "AI",
-  },
-  {
-    id: "LightComponent",
-    label: "Light",
-    description: "Scene light",
-    category: "Rendering",
-  },
-  {
-    id: "SkyboxComponent",
-    label: "Skybox",
-    description: "Cubemap sky surrounding the scene",
-    category: "Rendering",
-  },
-  {
-    id: "CameraComponent",
-    label: "Camera",
-    description: "Scene camera",
-    category: "Camera",
-  },
-  {
-    id: "AudioComponent",
-    label: "Audio",
-    description: "Plays an Audio asset",
-    category: "Audio",
-  },
-  {
-    id: "ParticleComponent",
-    label: "Particle",
-    description: "Plays a Particle System",
-    category: "Particles",
-  },
-  {
-    id: "RigidBodyComponent",
-    label: "Rigid Body",
-    description: "Physics body",
-    category: "Physics",
-  },
-  {
-    id: "ColliderComponent",
-    label: "Collider",
-    description: "Physics collider",
-    category: "Physics",
-  },
-] as const;
+export type AddComponentItem = {
+  id: string;
+  classId: string;
+  label: string;
+  description: string;
+  category: string;
+  properties?: Record<string, unknown>;
+};
+
+export type AddComponentSelection = {
+  classId: string;
+  properties?: Record<string, unknown>;
+};
+
+function engineComponent(
+  id: string,
+  label: string,
+  description: string,
+  category: string,
+): AddComponentItem {
+  return { id, classId: id, label, description, category };
+}
+
+export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
+  engineComponent(
+    "MeshComponent",
+    "Mesh",
+    "Primitive or Model asset",
+    "Rendering",
+  ),
+  engineComponent("SpriteComponent", "Sprite", "2D sprite quad", "Rendering"),
+  engineComponent(
+    "TilemapComponent",
+    "Tilemap",
+    "Chunked 2D tilemap",
+    "Rendering",
+  ),
+  engineComponent(
+    "AnimationGraphComponent",
+    "Animation Graph",
+    "Worker-evaluated clip state machine",
+    "Animation",
+  ),
+  engineComponent(
+    "BehaviourTreeComponent",
+    "Behaviour Tree",
+    "Worker-evaluated behaviour tree",
+    "AI",
+  ),
+  engineComponent(
+    "NavAgentComponent",
+    "Nav Agent",
+    "Crowd agent on the baked navmesh",
+    "AI",
+  ),
+  engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
+  engineComponent(
+    "SkyboxComponent",
+    "Skybox",
+    "Cubemap sky surrounding the scene",
+    "Rendering",
+  ),
+  engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
+  engineComponent(
+    "AudioComponent",
+    "Audio",
+    "Plays an Audio asset",
+    "Audio",
+  ),
+  engineComponent(
+    "ParticleComponent",
+    "Particle",
+    "Plays a Particle System",
+    "Particles",
+  ),
+  engineComponent(
+    "RigidBodyComponent",
+    "Rigid Body",
+    "Physics body",
+    "Physics",
+  ),
+  engineComponent(
+    "ColliderComponent",
+    "Collider",
+    "Physics collider",
+    "Physics",
+  ),
+];
 
 export function defaultPropertiesFor(
   classId: string,
@@ -162,4 +180,121 @@ export function defaultPropertiesFor(
     default:
       return {};
   }
+}
+
+const PROJECT_ASSET_BINDINGS: Record<
+  string,
+  { classId: string; property: string }
+> = {
+  Model: { classId: "MeshComponent", property: "assetGuid" },
+  Mesh: { classId: "MeshComponent", property: "assetGuid" },
+  Audio: { classId: "AudioComponent", property: "audioAssetGuid" },
+  ParticleSystem: { classId: "ParticleComponent", property: "particleSystemGuid" },
+  Sprite: { classId: "SpriteComponent", property: "assetGuid" },
+  Tilemap: { classId: "TilemapComponent", property: "assetGuid" },
+  AnimationGraph: { classId: "AnimationGraphComponent", property: "graphGuid" },
+  BehaviourTree: { classId: "BehaviourTreeComponent", property: "treeGuid" },
+};
+
+const HIDDEN_COMPONENT_ANCESTORS = new Set([
+  "WidgetComponent",
+  "NavMeshComponent",
+  "NavMeshBlockerComponent",
+]);
+
+const COMPONENT_GUID_PROPERTIES = [
+  "assetGuid",
+  "audioAssetGuid",
+  "particleSystemGuid",
+  "graphGuid",
+  "treeGuid",
+  "uiAssetGuid",
+] as const;
+
+export type ProjectAddComponentAsset = {
+  path?: string;
+  header: {
+    guid: string;
+    name: string;
+    type: string;
+    parentClass?: string | null;
+  };
+};
+
+export function projectAddComponentItems(
+  assets: readonly ProjectAddComponentAsset[],
+): AddComponentItem[] {
+  const parentOf = classParentLookup(assets);
+  const items: AddComponentItem[] = [];
+  for (const asset of assets) {
+    const type = asset.header.type;
+    const binding = PROJECT_ASSET_BINDINGS[type];
+    if (binding) {
+      items.push({
+        id: `asset-${asset.header.guid}`,
+        classId: binding.classId,
+        label: asset.header.name,
+        description: type,
+        category: "Project",
+        properties: { [binding.property]: asset.header.guid },
+      });
+      continue;
+    }
+    if (type !== "Class") continue;
+    const classId = classIdFromClassAsset(asset);
+    if (isLockedEngineClassId(classId)) continue;
+    const ancestry = walkAncestry(classId, parentOf);
+    if (!ancestry.includes("ActorComponent")) continue;
+    if (ancestry.includes("Actor")) continue;
+    if (ancestry.some((id) => HIDDEN_COMPONENT_ANCESTORS.has(id))) continue;
+    items.push({
+      id: `class-${classId}`,
+      classId,
+      label: asset.header.name,
+      description: "Actor Component",
+      category: "Project",
+      properties: {},
+    });
+  }
+  return items;
+}
+
+export function prefabComponentLabel(
+  component: {
+    classId: string;
+    properties?: Record<string, unknown>;
+  },
+  assetLabel?: (guid: string) => string | undefined,
+): string {
+  const typeLabel =
+    ADDABLE_COMPONENT_CLASSES.find((entry) => entry.id === component.classId)
+      ?.label ??
+    humanizePropertyLabel(component.classId.replace(/([a-z0-9])([A-Z])/g, "$1 $2"));
+  const guid = componentGuid(component.properties);
+  const name = guid ? assetLabel?.(guid) : undefined;
+  return name ? `${typeLabel} (${name})` : typeLabel;
+}
+
+function componentGuid(
+  properties: Record<string, unknown> | undefined,
+): string | null {
+  if (!properties) return null;
+  for (const key of COMPONENT_GUID_PROPERTIES) {
+    const value = properties[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
+}
+
+export function physicsWorldFromOpenDocuments(
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string };
+    content: unknown;
+  }>,
+): PhysicsWorldKind {
+  const sceneDoc = openDocuments.find(
+    (entry) => entry.ref.kind === "scene" && entry.content,
+  );
+  const settings = (sceneDoc?.content as SerializedScene | undefined)?.settings;
+  return settings?.physicsWorld === "2d" ? "2d" : "3d";
 }

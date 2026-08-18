@@ -6,23 +6,32 @@ import {
   resolveTypeVisual,
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
-import { ADDABLE_COMPONENT_CLASSES } from "../panels/add-component-catalog";
+import {
+  ADDABLE_COMPONENT_CLASSES,
+  type AddComponentItem,
+  type AddComponentSelection,
+} from "../panels/add-component-catalog";
 
 export function AddComponentDialog({
   open,
   onOpenChange,
   onSelect,
+  projectItems = [],
   "data-testid": testId = "add-component-catalog",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelect: (classId: string) => void;
+  onSelect: (selection: AddComponentSelection) => void;
+  projectItems?: readonly AddComponentItem[];
   "data-testid"?: string;
 }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
 
-  const items = useMemo(() => [...ADDABLE_COMPONENT_CLASSES], []);
+  const items = useMemo(
+    () => [...ADDABLE_COMPONENT_CLASSES, ...projectItems],
+    [projectItems],
+  );
 
   const categories = useMemo(() => {
     const map = new Map<string, number>();
@@ -58,7 +67,7 @@ export function AddComponentDialog({
         }
       }}
       title="Add Component"
-      description="Rendering, camera, and physics components."
+      description="Rendering, camera, physics, and project assets."
       categories={categories}
       activeCategoryId={activeCategory}
       onCategoryChange={setActiveCategory}
@@ -76,13 +85,14 @@ export function AddComponentDialog({
               key={item.id}
               data-testid={`${testId}-item-${item.id}`}
               onClick={() => {
-                onSelect(item.id);
+                onSelect({
+                  classId: item.classId,
+                  ...(item.properties ? { properties: item.properties } : {}),
+                });
                 onOpenChange(false);
               }}
             >
-              <TypeVisualIcon
-                visual={resolveTypeVisual({ classId: item.id })}
-              />
+              <TypeVisualIcon visual={visualForAddComponentItem(item)} />
               <span className="flex min-w-0 flex-col items-start gap-0.5">
                 <span className="truncate">{item.label}</span>
                 <span className="text-xs text-muted-foreground">
@@ -95,4 +105,11 @@ export function AddComponentDialog({
       )}
     </CatalogDialog>
   );
+}
+
+function visualForAddComponentItem(item: AddComponentItem) {
+  if (item.id.startsWith("asset-")) {
+    return resolveTypeVisual({ assetType: item.description });
+  }
+  return resolveTypeVisual({ classId: item.classId });
 }
