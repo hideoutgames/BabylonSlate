@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, Scene } from "@babylonjs/core";
+import { NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -551,12 +551,14 @@ describe("material compiler", () => {
       },
     );
     const requested: string[] = [];
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "test",
       resolveTexture: (guid) => {
         requested.push(guid);
-        return null;
+        return resolved;
       },
     });
     expect(result.ok).toBe(true);
@@ -605,18 +607,232 @@ describe("material compiler", () => {
       },
     );
     const requested: string[] = [];
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
     const result = compileMaterialPlan(planFor(doc), {
       scene,
       name: "test",
       resolveTexture: (guid) => {
         requested.push(guid);
-        return null;
+        return resolved;
       },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     disposers.push(() => result.material.dispose());
     expect(requested).toEqual(["tex-inline"]);
+  });
+
+  it("samples an inline Texture on mesh UVs when UV is unwired", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-inline" },
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push({
+      id: "e-sample",
+      sourceNodeId: "sample",
+      sourcePinId: "rgb",
+      targetNodeId: "output",
+      targetPinId: "baseColor",
+    });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: () => resolved,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const sample = result.material.attachedBlocks.find(
+      (block) => block.getClassName() === "TextureBlock",
+    ) as TextureBlock | undefined;
+    expect(sample?.texture).toBe(resolved);
+    expect(sample?.uv.isConnected).toBe(true);
+    const uvSource = sample?.uv.connectedPoint?.ownerBlock as
+      | { isAttribute?: boolean; name?: string }
+      | undefined;
+    expect(uvSource?.isAttribute).toBe(true);
+    expect(uvSource?.name).toMatch(/uv/i);
+  });
+
+  it("samples an inline Texture on screen UVs in a post-process material", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    const doc = createDefaultMaterialDocument("Bloom", "postProcess");
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-inline" },
+    });
+    doc.edges = [
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgba",
+        targetNodeId: "output",
+        targetPinId: "color",
+      },
+    ];
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "bloom",
+      resolveTexture: () => resolved,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const sample = result.material.attachedBlocks.find(
+      (block) => block.getClassName() === "TextureBlock",
+    ) as TextureBlock | undefined;
+    expect(sample?.texture).toBe(resolved);
+    expect(sample?.uv.isConnected).toBe(true);
+    expect(sample?.uv.connectedPoint?.ownerBlock.name).toMatch(/screenUv/i);
+  });
+
+  it("keeps an authored Transform UV connection instead of the mesh UV default", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-inline" },
+      },
+      {
+        id: "xform",
+        type: "texture.transformUv",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-xform",
+        sourceNodeId: "xform",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: () => resolved,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const sample = result.material.attachedBlocks.find(
+      (block) => block.getClassName() === "TextureBlock",
+    ) as TextureBlock | undefined;
+    expect(sample?.uv.connectedPoint?.ownerBlock.getClassName()).toBe("AddBlock");
+  });
+
+  it("reports a missing Texture when the provider cannot resolve the guid", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "gone" },
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push({
+      id: "e-sample",
+      sourceNodeId: "sample",
+      sourcePinId: "rgb",
+      targetNodeId: "output",
+      targetPinId: "baseColor",
+    });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: () => null,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map((row) => row.code)).toContain(
+      "material.missingTexture",
+    );
+  });
+
+  it("assigns the Texture Parameter asset onto the sampling TextureBlock", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-tex",
+        sourceNodeId: "tex",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "texture",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const sample = result.material.attachedBlocks.find(
+      (block) => block.getClassName() === "TextureBlock",
+    ) as TextureBlock | undefined;
+    expect(sample?.texture).toBe(resolved);
   });
 
   it("inlines a material function into the same block graph", () => {

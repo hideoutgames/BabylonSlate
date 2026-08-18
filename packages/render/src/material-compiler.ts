@@ -239,7 +239,9 @@ export function compileMaterialPlan(
       operation.nodeType === "texture.sample" ||
       operation.nodeType === "texture.sampleLod"
     ) {
-      bindTexture(operation, plan, realization, options);
+      if (!bindTexture(operation, plan, realization, options, diagnostics)) {
+        return false;
+      }
     }
 
     const colored = colorPins(operation.nodeType);
@@ -263,6 +265,25 @@ export function compileMaterialPlan(
           severity: "error",
           nodeId: anchorNodeId(operation),
           pinId,
+        });
+        return false;
+      }
+    }
+
+    const uvTarget = realization.inputs.uv;
+    const uvFallback = plumbing.uv ?? plumbing.screenUv;
+    if (uvTarget && !uvTarget.isConnected && uvFallback) {
+      try {
+        uvFallback.connectTo(uvTarget);
+      } catch (error) {
+        diagnostics.push({
+          code: "material.compile.connectionFailed",
+          message: `"${operation.nodeType}" could not accept "uv": ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          severity: "error",
+          nodeId: anchorNodeId(operation),
+          pinId: "uv",
         });
         return false;
       }
@@ -378,19 +399,30 @@ function bindTexture(
   plan: MaterialBuildPlan,
   realization: BlockRealization,
   options: CompileMaterialOptions,
-): void {
+  diagnostics: MaterialDiagnostic[],
+): boolean {
   const operand = operation.inputs.texture;
   const producerId =
     operand?.kind === "operation" ? operand.operationId : undefined;
   const binding =
     plan.textures.find((entry) => entry.operationId === producerId) ??
     plan.textures.find((entry) => entry.operationId === operation.id);
-  if (!binding) return;
+  if (!binding) return true;
   const texture = options.resolveTexture?.(binding.textureGuid) ?? null;
+  if (!texture) {
+    diagnostics.push({
+      code: "material.missingTexture",
+      message: `Texture "${binding.textureGuid}" could not be loaded`,
+      severity: "error",
+      nodeId: anchorNodeId(operation),
+    });
+    return false;
+  }
   const block = realization.blocks[0] as unknown as {
     texture?: Texture | null;
   };
-  if (texture) block.texture = texture;
+  block.texture = texture;
+  return true;
 }
 
 /** ParticleTextureBlock requires UV; live systems supply `particle_uv`. */
