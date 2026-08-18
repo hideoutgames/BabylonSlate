@@ -403,6 +403,9 @@ importers:
 
   packages/editor-kit:
     dependencies:
+      '@babylonslate/assets':
+        specifier: workspace:*
+        version: link:../assets
       '@babylonslate/input':
         specifier: workspace:*
         version: link:../input

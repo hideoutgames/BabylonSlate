@@ -2,6 +2,7 @@ import { OctagonAlertIcon, SaveIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AssetPicker,
+  AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
   ClassPicker,
@@ -38,6 +39,10 @@ import {
   type PropertyRow,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
+import {
+  ensureTilesetTiles,
+  normalizeTilesetPayload,
+} from "@babylonslate/assets";
 import { createDefaultInputMappings } from "@babylonslate/input";
 import { ASSET_COLOR_VAR, PIN_COLOR_VAR } from "@babylonslate/ui/lib/data-types";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
@@ -157,6 +162,7 @@ function GalleryComposites() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
+  const [atlasTileId, setAtlasTileId] = useState(1);
   const [sceneComponentPickerOpen, setSceneComponentPickerOpen] =
     useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
@@ -262,6 +268,30 @@ function GalleryComposites() {
       <div className="rounded-lg border border-border">
         <PanelFrame title="Property grid" data-testid="gallery-property-grid">
           <PropertyGrid rows={rows} />
+        </PanelFrame>
+      </div>
+      <div className="rounded-lg border border-border">
+        <PanelFrame title="Atlas tile grid" data-testid="gallery-atlas-tile-grid">
+          <div className="h-48">
+            <AtlasTileGrid
+              tileset={ensureTilesetTiles(
+                normalizeTilesetPayload({
+                  atlasWidth: 32,
+                  atlasHeight: 16,
+                  tileWidth: 16,
+                  tileHeight: 16,
+                  tiles: [
+                    { id: 1, collision: "full" },
+                    { id: 2, collision: "none" },
+                  ],
+                }),
+              )}
+              imageUrl={null}
+              selectedId={atlasTileId}
+              onSelect={setAtlasTileId}
+              data-testid="gallery-atlas"
+            />
+          </div>
         </PanelFrame>
       </div>
       <div className="rounded-lg border border-border">
