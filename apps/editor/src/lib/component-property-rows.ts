@@ -518,6 +518,33 @@ export function componentPropertyRows(
           new Set(["audioAssetGuid", "playOnStart", "loop", "volume"]),
         ),
       ];
+    case "ParticleComponent":
+      return [
+        assetRow(
+          actorId,
+          component,
+          "particleSystemGuid",
+          "Particle System",
+          ["ParticleSystem"],
+          update,
+          context,
+          "Pick Particle System",
+        ),
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "playOnStart"),
+          label: "Play On Start",
+          value: component.properties.playOnStart !== false,
+          onChange: (next) => update("playOnStart", next),
+        },
+        sortingLayerRow(actorId, component, update, context.sortingLayers),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["particleSystemGuid", "playOnStart", "sortingLayer"]),
+        ),
+      ];
     case "NavMeshComponent": {
       const settings = {
         tiled: component.properties.tiled === true,

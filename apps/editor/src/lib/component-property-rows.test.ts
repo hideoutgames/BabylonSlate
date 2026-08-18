@@ -33,7 +33,9 @@ function rowsFor(
                   ? "Overworld"
                   : guid === "sfx-1"
                     ? "Jump"
-                    : undefined,
+                    : guid === "fx-1"
+                      ? "Fire"
+                      : undefined,
       assetType: (guid) =>
         guid === "mesh-1"
           ? "Mesh"
@@ -51,7 +53,9 @@ function rowsFor(
                       ? "Blackboard"
                       : guid === "sfx-1"
                         ? "Audio"
-                        : undefined,
+                        : guid === "fx-1"
+                          ? "ParticleSystem"
+                          : undefined,
       physicsWorld: "3d",
       onPickAsset,
       ...context,
@@ -192,6 +196,40 @@ describe("componentPropertyRows", () => {
     expect(audio.rows.find((row) => row.id.endsWith("-volume"))).toMatchObject({
       kind: "number",
       value: 0.5,
+    });
+
+    const particles = rowsFor({
+      id: "fx",
+      classId: "ParticleComponent",
+      properties: {
+        particleSystemGuid: "fx-1",
+        playOnStart: true,
+        sortingLayer: "Default",
+        orderInLayer: 2,
+      },
+    });
+    const particleAsset = particles.rows.find((row) =>
+      row.id.endsWith("-particleSystemGuid"),
+    );
+    expect(particleAsset).toMatchObject({
+      kind: "asset",
+      displayLabel: "Fire",
+    });
+    if (particleAsset?.kind === "asset") particleAsset.onPick();
+    expect(particles.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedTypes: ["ParticleSystem"] }),
+    );
+    expect(
+      particles.rows.find((row) => row.id.endsWith("-playOnStart")),
+    ).toMatchObject({
+      kind: "boolean",
+      value: true,
+    });
+    expect(
+      particles.rows.find((row) => row.id.endsWith("-sortingLayer")),
+    ).toMatchObject({
+      kind: "enum",
+      value: "Default",
     });
 
     const emptySpeaker = rowsFor({

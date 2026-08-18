@@ -2137,6 +2137,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "audio-mixer"
         | "audio-channel"
         | "sound-attenuation"
+        | "particle-emitter"
+        | "particle-system"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {

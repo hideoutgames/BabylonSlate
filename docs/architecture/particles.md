@@ -19,6 +19,19 @@ Do **not** write a custom thin-instance simulator, Solid Particle System, points
 
 `ParticleComponent` references a Particle System. `playOnStart`, sorting layer/order. Actor transform is `IParticleSystem.emitter`.
 
+## Authoring
+
+- **New Asset → Rendering**: Particle Emitter (`.emitter.babasset`) and Particle System (`.particles.babasset`).
+- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. Preview shows **No Texture** until the Emitter Texture guid is set; live `GPUParticleSystem` construction is the runtime slice.
+- Lucide `Sparkles` (Particle System / ParticleComponent) and `Wind` (Particle Emitter); family color matches Material.
+- **Place Actors → Particles** and **Place Actors → Project** Particle System spawn `ParticleComponent`. Engine Particle stays empty until a System is picked.
+- Add Component / Search: `ParticleComponent` (`particleSystemGuid`, play-on-start, sorting layer/order).
+- Editor viewport uses a camera-facing billboard helper (`billboard:particle`), same as audio/light/camera. Play hides that helper (`meshKind: "particle"`).
+
+Emitter Details: Texture, optional particle-domain Material (AssetPicker filters `domain === "particle"`), capacity 16–4096, emit rate, blend Standard/Additive, shape point/box/sphere/cone, lifetime/speed/size min/max, gravity, color start/end (RGB + alpha), angular speed, pre-warm cycles.
+
+System Details: space world/local, looping, duration, up to 8 Emitter slots (duplicates allowed).
+
 ## GPU-safe authored surface
 
 Construct `GPUParticleSystem` when `GPUParticleSystem.IsSupported`; else `ParticleSystem` with `min(capacity, 512)`. Capacity default 256, clamp 16–4096.

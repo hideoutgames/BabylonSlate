@@ -11,6 +11,8 @@ import {
   createDefaultAudioMixerPayload,
   createDefaultAudioChannelPayload,
   createDefaultSoundAttenuationPayload,
+  createDefaultParticleEmitterPayload,
+  createDefaultParticleSystemPayload,
   parseSpriteAnimationPayload,
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
@@ -209,6 +211,8 @@ export const CREATABLE_ASSET_TYPES = [
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
+  "ParticleEmitter",
+  "ParticleSystem",
 ] as const;
 
 export type CreatableAssetType = (typeof CREATABLE_ASSET_TYPES)[number];
@@ -246,7 +250,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "rendering",
     label: "Rendering",
-    types: ["Material", "MaterialFunction"],
+    types: ["Material", "MaterialFunction", "ParticleEmitter", "ParticleSystem"],
   },
   {
     id: "audio",
@@ -281,6 +285,8 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
+  ParticleEmitter: "One Babylon particle recipe: texture, shape, lifetime, and color.",
+  ParticleSystem: "Starts several Particle Emitters on one actor.",
 };
 
 /** Title Case label for a creatable asset type (`User Interface`). */
@@ -1325,6 +1331,24 @@ export function buildNewAssetResult(options: {
     );
   }
 
+  if (type === "ParticleEmitter") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultParticleEmitterPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
+  if (type === "ParticleSystem") {
+    return documentAsset(
+      type,
+      name,
+      guid,
+      createDefaultParticleSystemPayload() as unknown as Record<string, unknown>,
+    );
+  }
+
   const exhaustive: never = type;
   throw new Error(`Unsupported creatable asset type: ${String(exhaustive)}`);
 }
@@ -1346,6 +1370,8 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   AudioMixer: ".mixer.babasset",
   AudioChannel: ".channel.babasset",
   SoundAttenuation: ".atten.babasset",
+  ParticleEmitter: ".emitter.babasset",
+  ParticleSystem: ".particles.babasset",
 };
 
 export function newAssetFileName(

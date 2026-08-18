@@ -34,6 +34,8 @@ describe("app settings", () => {
       "audio-mixer": ["audio-mixer-details"],
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],
+      "particle-emitter": ["particle-emitter-preview"],
+      "particle-system": ["particle-system-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
@@ -130,6 +132,12 @@ describe("app settings", () => {
     ]);
     expect(parsed.focusKeepPanels["sound-attenuation"]).toEqual([
       "sound-attenuation-details",
+    ]);
+    expect(parsed.focusKeepPanels["particle-emitter"]).toEqual([
+      "particle-emitter-preview",
+    ]);
+    expect(parsed.focusKeepPanels["particle-system"]).toEqual([
+      "particle-system-preview",
     ]);
   });
 

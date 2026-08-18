@@ -26,6 +26,7 @@ export type PlaceActorKind =
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
   | { type: "audio" }
+  | { type: "particle" }
   | { type: "empty" }
   | {
       type: "asset";
@@ -89,9 +90,20 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Audio",
     kind: { type: "audio" },
   },
+  {
+    id: "particle",
+    title: "Particle",
+    category: "Particles",
+    kind: { type: "particle" },
+  },
 ];
 
-export const PLACEABLE_PROJECT_TYPES = new Set(["Class", "Model", "Audio"]);
+export const PLACEABLE_PROJECT_TYPES = new Set([
+  "Class",
+  "Model",
+  "Audio",
+  "ParticleSystem",
+]);
 
 export function prefabComponentsForGuid(
   guid: string,
@@ -164,6 +176,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   }
   if (kind.type === "audio") {
     return resolveTypeVisual({ classId: "AudioComponent", family: "class" });
+  }
+  if (kind.type === "particle") {
+    return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
   }
   if (kind.type === "asset") {
     return resolveTypeVisual({ assetType: kind.assetType });
@@ -267,6 +282,18 @@ export function spawnPlacedActor(
       ],
     });
   }
+  if (kind.type === "particle") {
+    return createActor(id, "Particle", {
+      transform,
+      components: [
+        {
+          id: `${id}-particle`,
+          classId: "ParticleComponent",
+          properties: defaultPropertiesFor("ParticleComponent"),
+        },
+      ],
+    });
+  }
   if (kind.type === "asset") {
     if (kind.assetType === "Class") {
       return createActor(id, kind.name, {
@@ -291,6 +318,22 @@ export function spawnPlacedActor(
               playOnStart: true,
               loop: false,
               volume: 1,
+            },
+          },
+        ],
+      });
+    }
+    if (kind.assetType === "ParticleSystem") {
+      return createActor(id, kind.name, {
+        transform,
+        components: [
+          {
+            id: `${id}-particle`,
+            classId: "ParticleComponent",
+            properties: {
+              ...defaultPropertiesFor("ParticleComponent"),
+              particleSystemGuid: kind.guid,
+              playOnStart: true,
             },
           },
         ],
