@@ -91,6 +91,8 @@
   background: transparent;
   border: none;
   border-radius: 0;
+  /* xyflow centers 6px dots with translate(±50%). Stretched side plates must not. */
+  transform: none !important;
 }
 
 .anim-state-handle-top {
