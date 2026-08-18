@@ -8,6 +8,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  useStore,
   useStoreApi,
   type Connection,
   type DefaultEdgeOptions,
@@ -100,6 +101,9 @@ import {
 } from "./graph-viewport";
 import { formatGraphNodes } from "./graph-format";
 import {
+  selectVisibleGraphElements,
+} from "./graph-virtualize";
+import {
   attachGraphPaneMarquee,
   flowRectFromPoints,
   nodesIntersectingMarquee,
@@ -118,6 +122,7 @@ export {
   GRAPH_ZOOM_ON_DOUBLE_CLICK,
   resolveGraphMountViewport,
 } from "./graph-viewport";
+export { selectVisibleGraphElements } from "./graph-virtualize";
 
 export interface GraphEditorProps {
   initialGraph: GraphDocument;
@@ -1487,6 +1492,44 @@ function GraphEditorCanvas({
     () => styleFlowEdges(edges, nodes, pinDisplayTypes),
     [edges, nodes, pinDisplayTypes],
   );
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const element = wrapperRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const read = () => {
+      setHostSize({
+        width: element.clientWidth,
+        height: element.clientHeight,
+      });
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const viewportX = useStore((state) => state.transform[0]);
+  const viewportY = useStore((state) => state.transform[1]);
+  const viewportZoom = useStore((state) => state.transform[2]);
+  const visibleGraph = useMemo(
+    () =>
+      selectVisibleGraphElements(nodes, styledEdges, {
+        x: viewportX,
+        y: viewportY,
+        zoom: viewportZoom,
+        width: hostSize.width,
+        height: hostSize.height,
+      }),
+    [
+      nodes,
+      styledEdges,
+      viewportX,
+      viewportY,
+      viewportZoom,
+      hostSize.height,
+      hostSize.width,
+    ],
+  );
+  const virtualize = hostSize.width > 0 && hostSize.height > 0;
 
   const connectionLineStyle = useMemo(() => {
     if (pendingPin) {
@@ -1558,6 +1601,8 @@ function GraphEditorCanvas({
         data-connect-end-mode={connectEndMode}
         data-focused-node-id={focusedNodeId || undefined}
         data-restore-viewport={sessionViewport ? "true" : undefined}
+        data-virtualize={virtualize ? "true" : "false"}
+        data-visible-node-count={String(visibleGraph.nodes.length)}
         data-readonly={readOnly ? "true" : undefined}
         data-nodes-draggable={nodesDraggable ? "true" : "false"}
       >
@@ -1652,14 +1697,15 @@ function GraphEditorCanvas({
         <ReactFlow
           className="graph-editor-canvas"
           colorMode={colorMode}
-          nodes={nodes}
-          edges={styledEdges}
+          nodes={virtualize ? visibleGraph.nodes : nodes}
+          edges={virtualize ? visibleGraph.edges : styledEdges}
           nodeTypes={knownTypes}
           edgeTypes={edgeTypes}
           nodesDraggable={nodesDraggable}
           nodesConnectable={!readOnly}
           elementsSelectable
           edgesReconnectable={false}
+          onlyRenderVisibleElements={virtualize}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
