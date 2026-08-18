@@ -26,6 +26,7 @@ import {
   applyAuthoredLightProperties,
   attachSingleShadowGenerator,
   shadowMapSizeFromQuality,
+  syncDefaultFillLight,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -264,6 +265,10 @@ function refreshPlayActiveCamera(
   if (playDefault) scene.activeCamera = playDefault;
 }
 
+function syncPlayFillLight(scene: Scene, binding: SnapshotSceneBinding): void {
+  syncDefaultFillLight(scene, binding.lights.size > 0);
+}
+
 function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
   const mapSize = shadowMapSizeFromQuality(binding.shadowQuality);
   if (mapSize === null || binding.shadowOwnerSlot === null) {
@@ -314,6 +319,7 @@ export function applyAssignMesh(
     }
     applyPlayShadows(scene, binding);
     refreshPlayActiveCamera(scene, binding);
+    syncPlayFillLight(scene, binding);
     return;
   }
   const existingCamera = binding.cameras.get(command.slotId);
@@ -332,6 +338,7 @@ export function applyAssignMesh(
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
+  syncPlayFillLight(scene, binding);
 }
 
 function setPlayVisualVisibility(mesh: Mesh, visible: boolean): void {
@@ -387,7 +394,7 @@ function disposeSlotVisuals(
     binding.shadow = null;
     binding.shadowOwnerSlot = null;
   }
-  void scene;
+  syncPlayFillLight(scene, binding);
 }
 
 function createPlayVisual(
@@ -625,6 +632,7 @@ export function applySnapshotToScene(
       }
     }
     refreshPlayActiveCamera(scene, binding);
+    syncPlayFillLight(scene, binding);
   } finally {
     scene.blockMaterialDirtyMechanism = false;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;
