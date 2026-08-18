@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Context-sensitive Add Node filtered compatible nodes but did not prefer matching Make/Break/Switch/Equal rows | Resolved |
+| 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Make/Break and Switch hydrate kept stale edges after a field or member rename (`ref.missing_pin`) | Resolved |
+| 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Standards | Structure field and engine Transform/Rotator/Color pin displays were camelCase; enum Select options used raw member names | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Inspector identity labeled `Guid` instead of Title Case `GUID` | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Console `DialogHeader` used `space-y-0`; repo spacing is `flex` + `gap-*` | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Package API docs omitted `createDebugInspectSnapshot`; bridge Channels omitted `inspect` / `inspectSnapshot` (and `console` / `consoleResult`) | Resolved |
