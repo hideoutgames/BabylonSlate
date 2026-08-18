@@ -64,19 +64,28 @@ describe("resolveTypeVisual", () => {
     expect(visual.icon).toBe(PuzzleIcon);
   });
 
-  it("reuses the Volume glyph and audio family for mixer, channel, and attenuation", () => {
+  it("colors mixer, channel, and attenuation like Scene, Structure, and Class", () => {
     const audio = resolveTypeVisual({ assetType: "Audio" });
     const mixer = resolveTypeVisual({ assetType: "AudioMixer" });
     const channel = resolveTypeVisual({ assetType: "AudioChannel" });
     const atten = resolveTypeVisual({ assetType: "SoundAttenuation" });
+    const scene = resolveTypeVisual({ assetType: "Scene" });
+    const structure = resolveTypeVisual({ assetType: "Structure" });
+    const klass = resolveTypeVisual({ assetType: "Class" });
     expect(audio.family).toBe("audio");
-    expect(mixer.family).toBe("audio");
-    expect(channel.family).toBe("audio");
-    expect(atten.family).toBe("audio");
+    expect(audio.colorVar).toBe("var(--asset-audio)");
+    expect(mixer.family).toBe("scene");
+    expect(channel.family).toBe("struct");
+    expect(atten.family).toBe("class");
     expect(mixer.icon).toBe(Volume2Icon);
     expect(channel.icon).toBe(Volume2Icon);
     expect(atten.icon).toBe(Volume2Icon);
-    expect(mixer.colorVar).toBe(audio.colorVar);
+    expect(mixer.colorVar).toBe(scene.colorVar);
+    expect(channel.colorVar).toBe(structure.colorVar);
+    expect(atten.colorVar).toBe(klass.colorVar);
+    expect(mixer.colorVar).not.toBe(audio.colorVar);
+    expect(channel.colorVar).not.toBe(audio.colorVar);
+    expect(atten.colorVar).not.toBe(audio.colorVar);
   });
 
   it("treats Mesh assets as the model family", () => {
