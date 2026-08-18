@@ -85,6 +85,7 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 - Shadows, nav bake, and `frameActor` skip skyboxes (`infiniteDistance` tracks the camera, so framing the mesh origin is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
 - Six-face cubes are Engine-owned so Play overlay `scene.dispose()` does not race pending face loads
+- Authors produce custom faces with Content Browser **Skybox Creator** (editor-only helper, not a Skybox document). Preview slices in memory; **Create Skybox Textures** writes six uncompressed `usage: "skybox"` Textures. Assign those guids on `SkyboxComponent`. Equirect-to-cubemap projection is out of scope.
 
 ## AudioService (P16)
 

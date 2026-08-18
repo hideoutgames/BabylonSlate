@@ -50,6 +50,7 @@ describe("asset file suffix helpers", () => {
     expect(stripAssetFileSuffix("near.atten.babasset")).toBe("near");
     expect(stripAssetFileSuffix("tex.babasset")).toBe("tex");
     expect(stripAssetFileSuffix("walk.spriteanim.babasset")).toBe("walk");
+    expect(stripAssetFileSuffix("day.skyboxcreator.babasset")).toBe("day");
     expect(stripAssetFileSuffix("Duplicate_1.babasset")).toBe("Duplicate_1");
   });
 
@@ -73,6 +74,9 @@ describe("asset file suffix helpers", () => {
     expect(assetFileSuffix("master.mixer.babasset")).toBe(".mixer.babasset");
     expect(assetFileSuffix("sfx.channel.babasset")).toBe(".channel.babasset");
     expect(assetFileSuffix("near.atten.babasset")).toBe(".atten.babasset");
+    expect(assetFileSuffix("day.skyboxcreator.babasset")).toBe(
+      ".skyboxcreator.babasset",
+    );
     expect(assetFileSuffix("tex.babasset")).toBe(".babasset");
   });
 });

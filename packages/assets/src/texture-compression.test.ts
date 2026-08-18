@@ -22,6 +22,7 @@ describe("texture compression policy", () => {
     expect(shouldCompressTexture("sprite")).toBe(false);
     expect(shouldCompressTexture("ui")).toBe(false);
     expect(shouldCompressTexture("font")).toBe(false);
+    expect(shouldCompressTexture("skybox")).toBe(false);
   });
 
   it("clamps dimensions to the project max", () => {

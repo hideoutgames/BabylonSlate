@@ -203,6 +203,19 @@ describe("Class and settings documents", () => {
     ).toBe("Fire Particle System");
   });
 
+  it("opens SkyboxCreator as its own DockView document kind", () => {
+    expect(documentKindForAssetType("SkyboxCreator")).toBe("skybox-creator");
+    expect(assetTypeForDocumentKind("skybox-creator")).toBe("SkyboxCreator");
+    expect(documentKindLabel("skybox-creator")).toBe("Skybox Creator");
+    expect(isAssetDocumentKind("skybox-creator")).toBe(true);
+    expect(labelFromPath("assets/day.skyboxcreator.babasset")).toBe("Day");
+    expect(
+      createDocumentRef("skybox-creator", "assets/day.skyboxcreator.babasset", {
+        name: "Day",
+      }).label,
+    ).toBe("Day Skybox Creator");
+  });
+
   it("opens PluginSettings as its own document kind", () => {
     expect(documentKindForAssetType("PluginSettings")).toBe("plugin-settings");
     expect(assetTypeForDocumentKind("plugin-settings")).toBe("PluginSettings");

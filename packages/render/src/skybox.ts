@@ -23,6 +23,7 @@ import {
   generateDefaultSkyboxFaceRgba,
 } from "./default-skybox/faces";
 import { encodePngRgba } from "./default-skybox/png";
+export { encodePngRgba };
 import type { MeshAssetContext } from "./mesh-assets";
 import {
   createEngineCubeTextureFromImages,

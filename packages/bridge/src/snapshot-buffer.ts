@@ -81,6 +81,12 @@ export function isPublishedSnapshot(buf: Float32Array): boolean {
   );
 }
 
+/** Last completed simulation tick, or null when the buffer is unpublished. */
+export function snapshotTickIndex(buf: Float32Array): number | null {
+  if (!isPublishedSnapshot(buf)) return null;
+  return readSnapshotHeader(buf).tickIndex;
+}
+
 export function writeActorSlot(
   buf: Float32Array,
   slotIndex: number,

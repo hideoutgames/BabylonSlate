@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   accountedTextureBytes,
   BYTES_PER_TEXEL,
 } from "./texture-bytes";
 import { ResourceCache } from "./resource-cache";
 import { RenderScheduler } from "./render-scheduler";
-import { SnapshotInterpolator } from "./snapshot-sync";
+import { SnapshotInterpolator, writeSampledAudioPoses } from "./snapshot-sync";
 import {
   snapshotFloatCount,
   writeActorSlot,
@@ -290,5 +290,60 @@ describe("snapshot interpolator", () => {
     expect(out).not.toBeNull();
     expect(out!.actorCount).toBe(0);
     expect(out!.frameId).toBe(2);
+  });
+
+  it("copies into owned ping-pong buffers instead of slicing each push", () => {
+    const slice = vi.spyOn(Float32Array.prototype, "slice");
+    const buf = new Float32Array(snapshotFloatCount(2));
+    writeSnapshotHeader(buf, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId: 0,
+      position: { x: 1, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    const interp = new SnapshotInterpolator(2);
+    try {
+      for (let i = 0; i < 16; i++) interp.push(buf);
+      expect(slice).not.toHaveBeenCalled();
+    } finally {
+      slice.mockRestore();
+    }
+    buf[snapshotFloatCount(0) + 1] = 99;
+    const sampled = interp.sample(1);
+    expect(sampled?.actors[0]?.position.x).toBe(1);
+  });
+});
+
+describe("writeSampledAudioPoses", () => {
+  it("reuses scratch pose objects across samples", () => {
+    const sampled = {
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 3,
+          position: { x: 1, y: 2, z: 3 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+        },
+      ],
+    };
+    const out: Parameters<typeof writeSampledAudioPoses>[1] = [];
+    writeSampledAudioPoses(sampled, out);
+    const first = out[0];
+    expect(first).toMatchObject({
+      slotId: 3,
+      position: { x: 1, y: 2, z: 3, qx: 0, qy: 0, qz: 0, qw: 1 },
+    });
+    sampled.actors[0]!.position.x = 8;
+    writeSampledAudioPoses(sampled, out);
+    expect(out[0]).toBe(first);
+    expect(out[0]?.position.x).toBe(8);
   });
 });

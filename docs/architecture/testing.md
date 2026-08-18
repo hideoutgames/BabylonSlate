@@ -85,6 +85,8 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 
 `e2e/p18-editor-opt.spec.ts` covers P18 iPad editor optimisation: Prefab Preview + Play overlay + Scene viewport on one Engine; a synthetic 200-node Class graph keeps `data-visible-node-count` near the viewport and Add Node still picks `debug.log`; Behaviour Tree host virtualises; Scene → Class → Scene inside 2 minutes keeps Class mounted; five Class tabs cap at 3 non-CB workspaces; after 2 minutes on Content Browser those workspaces unmount; overlay Play still boots from the open scene document. Unit tests cover working-set selection (fake timers + idle-clock hatch), GraphEditor spatial filter, `windowedSlice` / NodePalette body, Content Browser 2D grid + thumbnail revoke/skip-hidden, and Prefab `present: "rtt"` (no `registerView`).
 
+`e2e/skybox-creator.spec.ts` imports `albedo.png`, creates a Skybox Creator helper, picks that Texture, Create writes six `*_px`…`*_nz` Textures in the same folder, asserts Windows Preview/Details and the labeled net, save/reopen, and a packed-closure fixture that omits the helper while keeping referenced face Textures.
+
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 
 ## Golden files
