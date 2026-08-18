@@ -236,7 +236,10 @@ describe("AssetDocumentWorkspace authoring", () => {
     );
     expect(screen.getByTestId("audio-preview")).toBeTruthy();
     expect(screen.getByTestId("audio-preview-play")).toBeTruthy();
+    expect(screen.getByTestId("audio-preview-loop")).toBeTruthy();
+    expect(screen.getByTestId("audio-preview-waveform")).toBeTruthy();
     expect(screen.getByTestId("property-volume")).toBeTruthy();
+    expect(screen.getByTestId("property-loop")).toBeTruthy();
     expect(screen.getByTestId("property-pitch")).toBeTruthy();
     expect(screen.getByTestId("property-pitchRandom")).toBeTruthy();
     expect(screen.getByTestId("audio-add-clip")).toBeTruthy();

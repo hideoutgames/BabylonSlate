@@ -46,6 +46,7 @@ describe("createAudioPreviewSession", () => {
     expect(backend.plays[0]?.source).toEqual(new Uint8Array([1, 2, 3]));
     expect(backend.plays[0]?.clipChunkId).toBe("source");
     expect(backend.plays[0]?.gain).toBe(0.5);
+    expect(backend.plays[0]?.loop).toBe(false);
     expect(backend.playbackRates.get("preview")).toBe(2);
     expect(result).toMatchObject({ ok: true, clipChunkId: "source", pitch: 2 });
   });
@@ -60,5 +61,37 @@ describe("createAudioPreviewSession", () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe("audio.preview_missing_source");
     expect(backend.plays).toHaveLength(0);
+  });
+
+  it("passes asset loop into backend.play", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const session = createAudioPreviewSession({
+      backend,
+      readChunk: async () => new Uint8Array([1, 2, 3]),
+    });
+    await session.prefetch(createDefaultAudioPayload());
+    session.play({ ...createDefaultAudioPayload(), loop: true });
+    expect(backend.plays[0]?.loop).toBe(true);
+    session.dispose();
+  });
+
+  it("notifies onEnded when the Fake backend finishes a non-looping voice", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    let ended = 0;
+    const session = createAudioPreviewSession({
+      backend,
+      readChunk: async () => new Uint8Array([1, 2, 3]),
+      onEnded: () => {
+        ended += 1;
+      },
+    });
+    await session.prefetch(createDefaultAudioPayload());
+    session.play(createDefaultAudioPayload());
+    expect(ended).toBe(0);
+    backend.finish("preview");
+    expect(ended).toBe(1);
+    backend.finish("preview");
+    expect(ended).toBe(1);
+    session.dispose();
   });
 });

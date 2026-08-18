@@ -21,6 +21,7 @@ export type GraphEditorContextValue = {
     attachmentId: string,
   ) => NestedMenuItem[];
   onEdgeDoubleClick?: (edgeId: string) => void;
+  connectionLineKind?: "default" | "animTransition";
 };
 
 const GraphEditorContext = createContext<GraphEditorContextValue | null>(null);

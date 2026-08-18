@@ -637,6 +637,27 @@ describe("project schema", () => {
     });
   });
 
+  it("drops a token field from source control project settings", () => {
+    const settings = normalizeProjectSettings({
+      sourceControl: {
+        enabled: true,
+        repositoryUrl: "https://github.com/org/repo.git",
+        branch: "main",
+        autoLockOnEdit: true,
+        pollIntervalMs: 60_000,
+        token: "ghp_secret",
+      },
+    } as unknown as Partial<ProjectSettings>).sourceControl;
+    expect(settings).toEqual({
+      enabled: true,
+      repositoryUrl: "https://github.com/org/repo.git",
+      branch: "main",
+      autoLockOnEdit: true,
+      pollIntervalMs: 60_000,
+    });
+    expect(settings).not.toHaveProperty("token");
+  });
+
   it("normalizes pluginOverrides keyed by guid", () => {
     expect(
       normalizeProjectSettings({

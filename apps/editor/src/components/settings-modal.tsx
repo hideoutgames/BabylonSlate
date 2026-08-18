@@ -1301,9 +1301,24 @@ export function SettingsModal({
                 onChange={(event) => setTokenDraft(event.target.value)}
                 data-testid="settings-source-control-token"
               />
+              <FieldDescription data-testid="settings-source-control-token-help">
+                On GitHub, create a personal access token from{" "}
+                <a
+                  href="https://github.com/settings/tokens"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  GitHub Token Settings
+                </a>
+                . Use a classic token with the repo scope, or a fine-grained
+                token with Contents: Read and Write on this repository. GitLab
+                and Gitea tokens with push access also work.
+              </FieldDescription>
               <FieldDescription data-testid="settings-source-control-token-copy">
                 {sourceControl.hasToken ? "Token Saved. " : ""}
-                Not written to the project. This browser only.
+                Save Token stores it for this project on this device. It is not
+                written into project files or git. Clear Token removes it from
+                that store.
               </FieldDescription>
             </Field>
             <div className="flex flex-wrap gap-2">
@@ -1326,8 +1341,9 @@ export function SettingsModal({
                 className="min-h-[var(--touch-target,44px)]"
                 data-testid="settings-source-control-clear-token"
                 onClick={() => {
-                  void sourceControl.clearToken();
-                  setTokenDraft("");
+                  void sourceControl.clearToken().then(() => {
+                    setTokenDraft("");
+                  });
                 }}
               >
                 Clear Token

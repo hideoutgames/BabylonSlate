@@ -76,7 +76,7 @@ sourceControl: {
 }
 ```
 
-Missing settings normalize to disabled. Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). UI shows **Token Saved** plus **Not written to the project. This browser only.**, never the secret. Enable is not labeled Not Saved. Turning Enable off asks for confirm; Off/On does not clear the in-memory lock list.
+Missing settings normalize to disabled (a stray `token` field is dropped and never persisted). Project Settings → **Source Control** (hidden on production web): Enable, Repository URL, Branch, Auto-Lock On First Edit, Poll Interval (seconds), Token (password field + Save / Clear). Token help: create a GitHub personal access token at [GitHub Token Settings](https://github.com/settings/tokens) (classic `repo` scope, or fine-grained **Contents: Read and Write** on the repository; GitLab / Gitea tokens with push access also work). **Save Token** writes the SecretStore key `source-control:{projectGuid}` for this project on this device; the UI shows **Token Saved** plus that persist note (not in project files or git), never the secret. **Clear Token** deletes that store entry. Enable is not labeled Not Saved. Turning Enable off asks for confirm; Off/On does not clear the in-memory lock list.
 
 ## Editor UX
 
