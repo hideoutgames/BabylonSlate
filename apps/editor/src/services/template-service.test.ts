@@ -19,10 +19,10 @@ async function folderWithTemplates() {
   const files = createEmptyProjectFiles({ guid: "tpl", name: "Platformer" });
   await writeProjectTree(
     storage,
-    files.map((f) => ({ path: `Platformer.babproject/${f.path}`, data: f.data })),
+    files.map((f) => ({ path: `Platformer/${f.path}`, data: f.data })),
   );
   await storage.writeBinary(
-    "TopDown.babproject",
+    "TopDown.zip",
     encodeProjectZip(createEmptyProjectFiles({ guid: "tpl2", name: "TopDown" })),
   );
   return storage;
@@ -94,11 +94,11 @@ describe("Homepage template cards", () => {
       name: "MyPlatformer",
     });
 
-    expect(document.metadata.name).toBe("MyPlatformer.babproject");
+    expect(document.metadata.name).toBe("MyPlatformer");
     const manifest = JSON.parse(await destination.readText("project.json"));
-    expect(manifest.name).toBe("MyPlatformer.babproject");
+    expect(manifest.name).toBe("MyPlatformer");
     expect(manifest.guid).not.toBe("tpl");
-    expect(destination.getCurrentFolder()?.name).toBe("MyPlatformer.babproject");
+    expect(destination.getCurrentFolder()?.name).toBe("MyPlatformer");
 
     // A template that ships no documents still opens with a usable scene.
     expect(document.scenes).toHaveLength(1);
@@ -110,7 +110,7 @@ describe("Homepage template cards", () => {
 
   it("keeps the documents a template ships instead of scaffolding new ones", async () => {
     const templates = await folderWithTemplates();
-    await templates.mkdir("Platformer.babproject/assets", true);
+    await templates.mkdir("Platformer/assets", true);
     const sceneBytes = await encodeAssetDocument({
       type: "Scene",
       name: "level1.scene",
@@ -119,7 +119,7 @@ describe("Homepage template cards", () => {
       payload: { name: "Level 1", meshes: [] },
     });
     await templates.writeBinary(
-      "Platformer.babproject/assets/level1.scene.babasset",
+      "Platformer/assets/level1.scene.babasset",
       sceneBytes,
     );
 

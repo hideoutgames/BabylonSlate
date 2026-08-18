@@ -39,6 +39,17 @@ export function readPinDefault(
   return properties[pinName];
 }
 
+/** Prefer the pin id (codegen key) so Title Case display names can differ. */
+export function readPinDefaultForPin(
+  properties: Record<string, unknown>,
+  pin: { id: string; name: string },
+): unknown {
+  const byId = readPinDefault(properties, pin.id);
+  if (byId !== undefined) return byId;
+  if (pin.name !== pin.id) return readPinDefault(properties, pin.name);
+  return undefined;
+}
+
 /** JS value used when an applicable data pin has no authored default. */
 export function defaultJsValue(type: PinType): unknown {
   switch (type.kind) {
@@ -89,7 +100,7 @@ export function listUnconnectedLiteralPinDefaults(
     if (pin.direction !== "in" || pin.kind !== "data") continue;
     if (!pinAcceptsLiteralDefault(pin.type)) continue;
     if (connectedPinIds.has(pin.id)) continue;
-    const stored = readPinDefault(properties, pin.name);
+    const stored = readPinDefaultForPin(properties, pin);
     listed.push({
       pinId: pin.id,
       name: pin.name,

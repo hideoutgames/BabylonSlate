@@ -64,7 +64,7 @@ File-count report: warn 800 / fail 1000 (preset-overridable). Export smoke asser
 | Action | Output |
 | --- | --- |
 | **Export Game** (Project Settings) | Itch zip of the packaged player |
-| **Export Project** | `.babproject` backup of the project tree |
+| **Export Project** | `.zip` backup of the project directory tree |
 
 Preview packs are in-memory only. Capacitor and Electron host the **editor**, not shipped games.
 
