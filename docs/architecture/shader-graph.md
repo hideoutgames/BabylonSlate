@@ -172,7 +172,9 @@ the Class graph (`PinDefaultPreviewWidget`). Catalog `defaultValue` (and
 `colorHint` swatches) hydrate onto `__pins`; authored overrides persist as
 `default:<pinId>` number arrays on the node. Widgets hide when that pin is
 wired. Lowering prefers the authored override, then the catalog default;
-unwired pins with neither stay unset (Normal, Alpha Clip). World Position Offset
+unwired pins with neither stay unset in the plan (Normal, Alpha Clip, Texture
+Sample UV/texture, Scene Color/Depth/Normal UV). The compiler then attaches
+mesh UV or screen UV when a sample's UV pin is absent. World Position Offset
 defaults to `[0, 0, 0]` when unwired.
 
 Details is selection-aware:
@@ -201,7 +203,26 @@ participates in the plan hash so a body edit invalidates the cache.
 while still accepting a wired `param.texture`. An unwired texture input is
 valid only when that asset is set. The GUID is part of
 `materialDependencies()`, header `dependencies[]`, and the Play/export
-closure. Selected Texture Sample nodes expose an `AssetPicker` in Details.
+closure. Selected Texture Sample and Texture Parameter nodes expose an
+`AssetPicker` in Details.
+
+Unwired UV does **not** lower to a constant `[0, 0]` (that used to sample one
+texel and look like a solid color). Lowering omits the pin so the compiler
+can connect mesh UV (`plumbing.uv`) on a surface material or screen UV
+(`plumbing.screenUv`) on a post-process. An authored UV / Transform UV edge
+still wins. Babylon `TextureBlock.autoConfigure` is not used: it looks for a
+block named `"uv"`, while surface plumbing names the attribute `${name}_uv`.
+
+Material preview resolves Texture chunks the same way Play does: preload
+`pixels` then `source` via `readAssetChunk` into a tab-owned `ResourceCache`,
+and pass `resolveTexture` into `MaterialLibrary`. A guid that cannot load
+surfaces as `material.missingTexture` instead of a sampler-less black
+preview. Editor validation also receives `textureExists` from the asset
+registry so Compiler Results can flag a missing Texture before GPU compile.
+
+Playwright wires Sample `rgb` → Output `baseColor` without a UV node (and a
+second path Parameter `out` → Sample `texture`) and asserts
+`material-preview-canvas` `data-status="ready"`.
 
 ## Post-process buffers
 
