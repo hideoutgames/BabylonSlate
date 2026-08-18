@@ -5,8 +5,50 @@ import {
   MATERIAL_SIDE_STACK_WIDTH,
   listDockWindows,
   primaryDockPanel,
+  resolveDockInitialWidth,
 } from "./window-catalog";
 import { listEditorUtilityWindows } from "./editor-utility-windows";
+
+describe("resolveDockInitialWidth", () => {
+  it("converts a width ratio against the DockView host", () => {
+    expect(
+      resolveDockInitialWidth(
+        {
+          referencePanelId: "sprite-animation-preview",
+          direction: "right",
+          initialWidthRatio: 0.75,
+        },
+        800,
+      ),
+    ).toBe(600);
+  });
+
+  it("keeps pixel widths when no ratio is set", () => {
+    expect(
+      resolveDockInitialWidth(
+        {
+          referencePanelId: "sprite-preview",
+          direction: "right",
+          initialWidth: 280,
+        },
+        800,
+      ),
+    ).toBe(280);
+  });
+
+  it("omits a ratio width when the host is unmeasured", () => {
+    expect(
+      resolveDockInitialWidth(
+        {
+          referencePanelId: "sprite-animation-preview",
+          direction: "right",
+          initialWidthRatio: 0.75,
+        },
+        0,
+      ),
+    ).toBeUndefined();
+  });
+});
 
 describe("listDockWindows", () => {
   it("lists scene dock tabs with default positions and omits the retired assets dock", () => {
@@ -114,6 +156,15 @@ describe("listDockWindows", () => {
       "sprite-animation-preview",
       "sprite-animation-details",
     ]);
+    expect(
+      listDockWindows("sprite-animation").find(
+        (entry) => entry.id === "sprite-animation-details",
+      )?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "sprite-animation-preview",
+      direction: "right",
+      initialWidthRatio: 0.75,
+    });
     expect(listDockWindows("tileset").map((entry) => entry.id)).toEqual([
       "tileset-preview",
       "tileset-details",

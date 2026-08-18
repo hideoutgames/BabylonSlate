@@ -13,6 +13,53 @@ describe("graph default layout", () => {
 });
 
 describe("createDefaultLayoutForKind", () => {
+  it("sizes Sprite Animation Details to 75% of the DockView host", () => {
+    const panels = new Map<
+      string,
+      { id: string; api: { setActive: ReturnType<typeof vi.fn> } }
+    >();
+    const added: Array<{ id: string; initialWidth?: number }> = [];
+    const api = {
+      width: 800,
+      getPanel: (id: string) => panels.get(id),
+      addPanel: (options: { id: string; initialWidth?: number }) => {
+        added.push({ id: options.id, initialWidth: options.initialWidth });
+        const panel = { id: options.id, api: { setActive: vi.fn() } };
+        panels.set(options.id, panel);
+        return panel;
+      },
+    };
+    createDefaultLayoutForKind(api as never, "sprite-animation");
+    expect(
+      added.find((entry) => entry.id === "sprite-animation-details")
+        ?.initialWidth,
+    ).toBe(600);
+  });
+
+  it("falls back to the host element width when DockView reports 0", () => {
+    const panels = new Map<
+      string,
+      { id: string; api: { setActive: ReturnType<typeof vi.fn> } }
+    >();
+    const added: Array<{ id: string; initialWidth?: number }> = [];
+    const api = {
+      width: 0,
+      element: { clientWidth: 1000 },
+      getPanel: (id: string) => panels.get(id),
+      addPanel: (options: { id: string; initialWidth?: number }) => {
+        added.push({ id: options.id, initialWidth: options.initialWidth });
+        const panel = { id: options.id, api: { setActive: vi.fn() } };
+        panels.set(options.id, panel);
+        return panel;
+      },
+    };
+    createDefaultLayoutForKind(api as never, "sprite-animation");
+    expect(
+      added.find((entry) => entry.id === "sprite-animation-details")
+        ?.initialWidth,
+    ).toBe(750);
+  });
+
   it("adds the Behaviour Tree graph before docks that split from it", () => {
     const panels = new Map<
       string,
