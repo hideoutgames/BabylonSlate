@@ -358,6 +358,8 @@ test.describe("P4 Play overlay and session report", () => {
         { timeout: 15_000 },
       )
       .toBeGreaterThan(firstTick);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("debug-inspect")).toHaveCount(0);
     await page.getByTestId("play-overlay-close").click();
   });
 
