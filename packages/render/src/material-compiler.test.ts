@@ -679,4 +679,162 @@ describe("material compiler", () => {
     result.dispose();
     expect(() => result.dispose()).not.toThrow();
   });
+
+  it("skips a World Position Offset add when the channel is the zero default", () => {
+    const scene = host();
+    const result = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
+      scene,
+      name: "test",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(
+      result.material.attachedBlocks.some((block) =>
+        block.name.includes("worldPosOffset"),
+      ),
+    ).toBe(false);
+  });
+
+  it("adds a world-space offset into the clip chain for a constant lift", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    const output = doc.nodes.find((node) => node.type === "output.surface");
+    expect(output).toBeDefined();
+    output!.properties = { "default:worldPositionOffset": [0, 1, 0] };
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "lift" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(
+      result.material.attachedBlocks.some(
+        (block) =>
+          block.getClassName() === "AddBlock" &&
+          block.name.includes("worldPosOffset"),
+      ),
+    ).toBe(true);
+    const clip = result.material.attachedBlocks.find((block) =>
+      block.name.endsWith("_clipPos"),
+    );
+    expect(clip?.inputs[0]?.isConnected).toBe(true);
+  });
+
+  it("builds a Time and Sine graph wired into World Position Offset", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      { id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} },
+      { id: "sin", type: "math.sin", position: { x: 0, y: 0 }, properties: {} },
+      {
+        id: "combine",
+        type: "vector.combine",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges.push(
+      {
+        id: "e-time-sin",
+        sourceNodeId: "time",
+        sourcePinId: "time",
+        targetNodeId: "sin",
+        targetPinId: "value",
+      },
+      {
+        id: "e-sin-combine",
+        sourceNodeId: "sin",
+        sourcePinId: "out",
+        targetNodeId: "combine",
+        targetPinId: "y",
+      },
+      {
+        id: "e-combine-wpo",
+        sourceNodeId: "combine",
+        sourcePinId: "xyz",
+        targetNodeId: "output",
+        targetPinId: "worldPositionOffset",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "waves" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    const names = result.material.attachedBlocks.map((block) =>
+      block.getClassName(),
+    );
+    expect(names).toContain("TrigonometryBlock");
+    expect(
+      result.material.attachedBlocks.some(
+        (block) =>
+          block.getClassName() === "AddBlock" &&
+          block.name.includes("worldPosOffset"),
+      ),
+    ).toBe(true);
+  });
+
+  it("builds when World Position feeds World Position Offset", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "worldPos",
+      type: "input.worldPosition",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    doc.edges.push({
+      id: "e-world-wpo",
+      sourceNodeId: "worldPos",
+      sourcePinId: "position",
+      targetNodeId: "output",
+      targetPinId: "worldPositionOffset",
+    });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "fromWorld",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    expect(
+      result.material.attachedBlocks.some(
+        (block) => block.getClassName() === "VertexOutputBlock",
+      ),
+    ).toBe(true);
+  });
+
+  it("reads fragment World Position from the displaced tap", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    const output = doc.nodes.find((node) => node.type === "output.surface");
+    expect(output).toBeDefined();
+    output!.properties = { "default:worldPositionOffset": [0, 1, 0] };
+    doc.nodes.push({
+      id: "worldPos",
+      type: "input.worldPosition",
+      position: { x: 0, y: 0 },
+      properties: {},
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push({
+      id: "e-world-color",
+      sourceNodeId: "worldPos",
+      sourcePinId: "position",
+      targetNodeId: "output",
+      targetPinId: "baseColor",
+    });
+    const result = compileMaterialPlan(planFor(doc), { scene, name: "foam" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    disposers.push(() => result.material.dispose());
+    const displaced = result.material.attachedBlocks.find((block) =>
+      block.name.endsWith("_worldPosDisplaced"),
+    );
+    const splitter = result.material.attachedBlocks.find(
+      (block) => block.name === "worldPos_xyz",
+    );
+    expect(displaced).toBeDefined();
+    expect(splitter).toBeDefined();
+    const source = splitter?.inputs[0]?.connectedPoint?.ownerBlock;
+    expect(source?.name).toBe(displaced?.name);
+  });
 });
