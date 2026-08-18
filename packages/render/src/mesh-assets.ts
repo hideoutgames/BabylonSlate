@@ -3,6 +3,7 @@ import {
   Material,
   StandardMaterial,
   Texture,
+  type AbstractMesh,
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
@@ -58,7 +59,7 @@ export function meshAssetFingerprint(
 }
 
 export function applyAlbedoTexture(
-  mesh: Mesh,
+  mesh: AbstractMesh,
   scene: Scene,
   textureGuid: string | null | undefined,
   assets?: MeshAssetContext,
