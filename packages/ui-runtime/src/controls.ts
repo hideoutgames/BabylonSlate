@@ -7,6 +7,7 @@ import type {
   WidgetLayout,
   WidgetStyle,
 } from "./types";
+import { defaultHitTestableFor } from "./types";
 import { flattenLaidOut, normalizeLayout, SAFE_AREA_CONTROL_ID } from "./layout";
 
 export type UiLayoutMode = "absolute" | "stack" | "grid" | "scroll";
@@ -28,6 +29,7 @@ export interface UiControlDescriptor {
   nestedUiGuid?: string | null;
   visualOverrideGuid?: string | null;
   ignoreSafeArea?: boolean;
+  hitTestable: boolean;
 }
 
 function layoutModeFor(kind: WidgetKind): UiLayoutMode {
@@ -115,6 +117,7 @@ export function describeUiControls(
       nestedUiGuid: widget?.nestedUiGuid,
       visualOverrideGuid: widget?.visualOverrideGuid,
       ignoreSafeArea: widget?.ignoreSafeArea === true,
+      hitTestable: widget?.hitTestable ?? defaultHitTestableFor(node.kind),
     };
   });
 }

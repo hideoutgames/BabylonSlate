@@ -52,3 +52,28 @@ describe("UiDesignDetails style colors", () => {
     expect(hex.value.toLowerCase()).not.toBe("#333333");
   });
 });
+
+describe("UiDesignDetails Hit Testable", () => {
+  it("shows Enabled for a Button and Disabled for an Image", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    renderDetails(button);
+    expect(screen.getByTestId("property-hitTestable").textContent).toContain(
+      "Enabled",
+    );
+    cleanup();
+    const image = createWidget("art", "Image", "Logo", defaultAddLayout("Image"));
+    renderDetails(image);
+    expect(screen.getByTestId("property-hitTestable").textContent).toContain(
+      "Disabled",
+    );
+  });
+
+  it("shows an Interface Material picker for a Material widget", () => {
+    const glow = createWidget("fx", "Material", "Glow", defaultAddLayout("Image"));
+    glow.props.materialGuid = "mat-glow";
+    renderDetails(glow);
+    expect(screen.getByTestId("property-material").textContent).toContain(
+      "mat-glow",
+    );
+  });
+});

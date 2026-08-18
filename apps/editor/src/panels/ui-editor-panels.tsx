@@ -181,6 +181,8 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
             sharedEngine={editing.sharedEngine}
             fontEntries={editing.fontEntries}
             resolveImageUrl={editing.resolveImageUrl}
+            resolveInterfaceMaterial={editing.resolveInterfaceMaterial}
+            materialFunctions={editing.materialFunctions}
             imageIssues={editing.imageIssues}
             panelVisible={panelVisible}
             documentActive={documentActive}

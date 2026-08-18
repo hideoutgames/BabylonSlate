@@ -360,6 +360,10 @@ export type CommandMessage =
       type: "setRenderResolution";
       width: number;
       height: number;
+    }
+  | {
+      type: "setInputMode";
+      mode: "All" | "Interface" | "Game";
     };
 
 export type BridgeHostMessage =

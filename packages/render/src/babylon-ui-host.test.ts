@@ -3,6 +3,7 @@ import {
   SAFE_AREA_CONTROL_ID,
   createDefaultUserInterface,
   createWidget,
+  defaultHitTestableFor,
   describeUiControls,
   guiSpecFromDescriptor,
   layoutUserInterface,
@@ -11,7 +12,8 @@ import {
   type UiControlDescriptor,
 } from "@babylonslate/ui-runtime";
 import { applyUiControls, RecordingUiHost } from "./ui-apply";
-import { Vector2 } from "@babylonjs/core";
+import { NullEngine, Scene, Vector2 } from "@babylonjs/core";
+import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { Control as GuiControl } from "@babylonjs/gui/2D/controls/control";
 import { Container } from "@babylonjs/gui/2D/controls/container";
 import { Ellipse } from "@babylonjs/gui/2D/controls/ellipse";
@@ -46,6 +48,7 @@ function descriptor(
     style: {},
     props: {},
     layout: pinLayout("left", "top", 40, 20),
+    hitTestable: defaultHitTestableFor(partial.kind),
     ...partial,
   };
 }
@@ -513,16 +516,19 @@ describe("BabylonUiApplyHost", () => {
     const sliderDesc = descriptor({
       id: "slider",
       kind: "Slider",
+      hitTestable: true,
       props: { value: 0.2, min: 0, max: 1 },
     });
     const checkDesc = descriptor({
       id: "check",
       kind: "CheckBox",
+      hitTestable: true,
       props: { checked: false },
     });
     const inputDesc = descriptor({
       id: "input",
       kind: "TextInput",
+      hitTestable: true,
       props: { text: "" },
     });
     const button = createBabylonControl(
@@ -681,7 +687,173 @@ describe("BabylonUiApplyHost", () => {
     host.clear();
     canvas.dispose();
   });
+
+  it("does not emit pointer events when Hit Testable is Disabled", () => {
+    const onWidgetEvent = vi.fn();
+    const artDesc = descriptor({
+      id: "art",
+      kind: "Image",
+    });
+    const art = createBabylonControl(
+      guiSpecFromDescriptor(artDesc, { interactive: true }),
+    );
+    const factory: GuiControlFactory = {
+      create(spec) {
+        return {
+          id: "art",
+          type: spec.type,
+          spec,
+          control: art,
+          dispose() {},
+        };
+      },
+      clear() {},
+    };
+    const host = new BabylonUiApplyHost(factory, {
+      interactive: true,
+      onWidgetEvent,
+    });
+    host.addControl(artDesc);
+    art.onPointerDownObservable.notifyObservers(
+      new Vector2WithInfo(new Vector2(0, 0)),
+    );
+    expect(onWidgetEvent).not.toHaveBeenCalled();
+    expect(art.isHitTestVisible).toBe(false);
+    expect(art.isPointerBlocker).toBe(false);
+    host.clear();
+    art.dispose();
+  });
+
+  it("lets a Button receive hits through an overlapping Image that defaults off", () => {
+    const { root, host } = applyInteractiveOverlap("btn", "art", false);
+    const button = named(root, "btn")!;
+    const image = named(root, "art")!;
+    expect(image.isHitTestVisible).toBe(false);
+    expect(image.isPointerBlocker).toBe(false);
+    expect(button.isHitTestVisible).toBe(true);
+    expect(button.isPointerBlocker).toBe(true);
+    expect(siblingIndex(root, "art")).toBeGreaterThan(siblingIndex(root, "btn"));
+    host.clear();
+  });
+
+  it("blocks a Button when an overlapping Image is Hit Testable", () => {
+    const { root, host } = applyInteractiveOverlap("btn", "art", true);
+    const image = named(root, "art")!;
+    expect(image.isHitTestVisible).toBe(true);
+    expect(image.isPointerBlocker).toBe(true);
+    expect(siblingIndex(root, "art")).toBeGreaterThan(siblingIndex(root, "btn"));
+    host.clear();
+  });
+
+  it("picks the later overlapping Button", () => {
+    const doc = createDefaultUserInterface();
+    const first = createWidget(
+      "btn-1",
+      "Button",
+      "First",
+      pinLayout("left", "top", 160, 40, 0, 0),
+    );
+    const second = createWidget(
+      "btn-2",
+      "Button",
+      "Second",
+      pinLayout("left", "top", 160, 40, 0, 0),
+    );
+    doc.widgets.canvas!.children = ["btn-1", "btn-2"];
+    doc.widgets["btn-1"] = first;
+    doc.widgets["btn-2"] = second;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: true });
+    applyUiControls(
+      host,
+      describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+    );
+    const later = named(root, "btn-2")!;
+    expect(later.isHitTestVisible).toBe(true);
+    expect(later.isPointerBlocker).toBe(true);
+    expect(siblingIndex(root, "btn-2")).toBeGreaterThan(siblingIndex(root, "btn-1"));
+    host.clear();
+  });
+
+  it("does not let a full-screen Canvas eat hits in Play", () => {
+    const doc = createDefaultUserInterface();
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: true });
+    applyUiControls(
+      host,
+      describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+    );
+    const canvas = named(root, "canvas")!;
+    expect(canvas.isHitTestVisible).toBe(false);
+    expect(canvas.isPointerBlocker).toBe(false);
+    host.clear();
+  });
+
+  it("clears Button hit flags when GUI hits are disabled", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 40, 0, 0),
+    );
+    doc.widgets.canvas!.children = ["btn"];
+    doc.widgets.btn = button;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: true });
+    applyUiControls(
+      host,
+      describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+    );
+    expect(named(root, "btn")!.isHitTestVisible).toBe(true);
+    host.setAllowGuiHits(false);
+    expect(named(root, "btn")!.isHitTestVisible).toBe(false);
+    expect(named(root, "btn")!.isPointerBlocker).toBe(false);
+    host.clear();
+  });
 });
+
+function applyInteractiveOverlap(
+  buttonId: string,
+  imageId: string,
+  imageHitTestable: boolean,
+) {
+  const doc = createDefaultUserInterface();
+  const button = createWidget(
+    buttonId,
+    "Button",
+    "Play",
+    pinLayout("left", "top", 160, 40, 0, 0),
+  );
+  const art = createWidget(
+    imageId,
+    "Image",
+    "Logo",
+    pinLayout("left", "top", 160, 40, 0, 0),
+  );
+  art.hitTestable = imageHitTestable;
+  doc.widgets.canvas!.children = [buttonId, imageId];
+  doc.widgets[buttonId] = button;
+  doc.widgets[imageId] = art;
+  const root = new Container("adt-root");
+  const factory = createAdtControlFactory(root);
+  const host = new BabylonUiApplyHost(factory, { interactive: true });
+  applyUiControls(
+    host,
+    describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+  );
+  return { root, host };
+}
+
+function siblingIndex(root: Container, id: string): number {
+  const control = named(root, id);
+  expect(control?.parent).toBeTruthy();
+  const parent = control!.parent as Container;
+  return parent.children.indexOf(control!);
+}
 
 describe("Babylon GUI Image widgets", () => {
   it("sets Image.source from resolveImageUrl", () => {
@@ -828,5 +1000,82 @@ describe("Babylon GUI Image widgets", () => {
     recreated.onImageLoadedObservable.notifyObservers(recreated);
     expect(onImageReady).not.toHaveBeenCalled();
     expect(recreated.onImageLoadedObservable.hasObservers()).toBe(false);
+  });
+});
+
+describe("Babylon GUI Material widgets", () => {
+  it("binds an Interface material blit canvas onto the Image", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const doc = createDefaultUserInterface();
+    const panel = createWidget(
+      "fx",
+      "Material",
+      "Glow",
+      pinLayout("left", "top", 64, 32),
+    );
+    panel.props.materialGuid = "mat-glow";
+    doc.widgets.canvas!.children = ["fx"];
+    doc.widgets.fx = panel;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      scene,
+      resolveInterfaceMaterial: (guid) =>
+        guid === "mat-glow"
+          ? createDefaultMaterialDocument("Glow", "interface")
+          : null,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, layoutUserInterface(doc, { width: 800, height: 600 })),
+    );
+    const control = named(root, "fx");
+    expect(control).toBeInstanceOf(Image);
+    const blit = (control as Image).domImage as unknown as {
+      width: number;
+      height: number;
+    };
+    expect(blit.width).toBe(64);
+    expect(blit.height).toBe(32);
+    host.clear();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("rebuilds the presenter when materialGuid changes", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const doc = createDefaultUserInterface();
+    const panel = createWidget(
+      "fx",
+      "Material",
+      "Glow",
+      pinLayout("left", "top", 32, 32),
+    );
+    panel.props.materialGuid = "mat-a";
+    doc.widgets.canvas!.children = ["fx"];
+    doc.widgets.fx = panel;
+    const materials: Record<string, ReturnType<typeof createDefaultMaterialDocument>> = {
+      "mat-a": createDefaultMaterialDocument("A", "interface"),
+      "mat-b": createDefaultMaterialDocument("B", "interface"),
+    };
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      scene,
+      resolveInterfaceMaterial: (guid) => materials[guid] ?? null,
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const layout = layoutUserInterface(doc, { width: 800, height: 600 });
+    applyUiControls(host, describeUiControls(doc, layout));
+    const first = (named(root, "fx") as Image).domImage;
+    panel.props.materialGuid = "mat-b";
+    applyUiControls(host, describeUiControls(doc, layout));
+    const second = (named(root, "fx") as Image).domImage;
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+    host.clear();
+    scene.dispose();
+    engine.dispose();
   });
 });

@@ -27,6 +27,7 @@ export const WIDGET_KINDS = [
   "Slider",
   "CheckBox",
   "Image",
+  "Material",
   "ProgressBar",
   "Spacer",
   "TouchJoystick",
@@ -95,6 +96,8 @@ export interface WidgetNode {
   visualOverrideGuid?: string | null;
   /** When true, a Canvas child parents to the full-bleed canvas, not the SafeArea container. */
   ignoreSafeArea?: boolean;
+  /** When true, the control can receive GUI pointer hits and block widgets behind it. */
+  hitTestable: boolean;
 }
 
 export interface UserInterfaceDocument {
@@ -201,6 +204,15 @@ export function defaultStyleFor(kind: WidgetKind): WidgetStyle {
   return style;
 }
 
+export function defaultHitTestableFor(kind: WidgetKind): boolean {
+  return (
+    kind === "Button" ||
+    kind === "TouchButton" ||
+    kind === "TouchJoystick" ||
+    kind === "TouchDPad"
+  );
+}
+
 export function createWidget(
   id: string,
   kind: WidgetKind,
@@ -213,6 +225,7 @@ export function createWidget(
     kind,
     layout,
     visible: true,
+    hitTestable: defaultHitTestableFor(kind),
     children: [],
     style: defaultStyleFor(kind),
     props: defaultPropsFor(kind),
@@ -235,6 +248,8 @@ export function defaultPropsFor(kind: WidgetKind): Record<string, unknown> {
       return { value: 0 };
     case "Image":
       return { imageGuid: null };
+    case "Material":
+      return { materialGuid: null };
     case "Spacer":
       return { flex: 1 };
     case "SizeBox":
