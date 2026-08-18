@@ -552,22 +552,22 @@ Spec: [engineplan.md](../engineplan.md) §2.6 / §18 / §19, Appendix A `p16-aud
 
 ## P17 Particle engine
 
-Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-*`. Design note: [particles.md](../architecture/particles.md). **Next phase.** P16 is Done. No `p1-device-spikes` gate. Quads only; wrap `GPUParticleSystem` / `ParticleSystem`; particle-domain NME; two assets. Do not start P18 until P17 is Done.
+Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-*`. Design note: [particles.md](../architecture/particles.md). **Done.** Quads only; wrap `GPUParticleSystem` / `ParticleSystem`; particle-domain NME; two assets. Packed-player hydrate and overlay Play share `ParticleService`. Out of scope remains mesh particles / SPS / NPE / fluid renderer.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Payloads + apply-mapping | `p17-particle-assets` | `core`, `assets`, `exporter` | P16 done |
-| Particle domain + Particle Color / Texture | `p17-particle-material` | `shader-graph`, `render` | particle assets |
-| New Asset, DockView, ParticleComponent | `p17-particle-authoring` | `apps/editor`, `editor-kit`, `object-model` | particle assets |
-| ParticleService GPU/CPU start/stop/dispose | `p17-particle-runtime` | `render`, `bridge`, `runtime`, `apps/editor`, `apps/player` | authoring + material |
-| Play Particles / Stop Particles | `p17-particle-nodes` | `scripting`, `scripting-nodes`, `runtime` | runtime |
-| Architecture doc + Playwright + verify | `p17-particle-acceptance` | unit + e2e | all P17 slices |
+| Payloads + apply-mapping | Done (`p17-particle-assets`) | `core`, `assets`, `exporter` | P16 done |
+| Particle domain + Particle Color / Texture | Done (`p17-particle-material`) | `shader-graph`, `render` | particle assets |
+| New Asset, DockView, ParticleComponent | Done (`p17-particle-authoring`) | `apps/editor`, `editor-kit`, `object-model` | particle assets |
+| ParticleService GPU/CPU start/stop/dispose | Done (`p17-particle-runtime`) | `render`, `bridge`, `runtime`, `apps/editor`, `apps/player` | authoring + material |
+| Play Particles / Stop Particles | Done (`p17-particle-nodes`) | `scripting`, `scripting-nodes`, `runtime` | runtime |
+| Architecture doc + Playwright + verify | Done (`p17-particle-acceptance`) | unit + e2e | all P17 slices |
 
-Out of scope: mesh particles / SPS / NPE / fluid renderer / bursts / sub-emitters / sprite-sheet flipbooks; P18 iPad optimisation; P19 BT/nav leftovers.
+**P17 is Done.** Overlay Play and the packed player share `ParticleService`. GPU `stop()` still draws leftovers; teardown must `dispose()`. Out of scope: mesh particles / SPS / NPE / fluid renderer / bursts / sub-emitters / sprite-sheet flipbooks; P18 iPad optimisation; P19 BT/nav leftovers.
 
 ## P18 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. P16 is Done. Do not start until P17 is marked Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Collapse-inactive-subtree / cap-auto-layout stay parked.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **Next phase.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
