@@ -47,3 +47,4 @@ export * from "./nav-debug-overlay";
 export * from "./audio-buffer-cache";
 export * from "./audio-playback-backend";
 export * from "./audio-service";
+export { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";

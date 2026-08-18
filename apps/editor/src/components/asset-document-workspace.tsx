@@ -16,6 +16,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
+import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
 import { Input } from "@babylonslate/ui/components/input";
 import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import {
@@ -30,7 +31,7 @@ import {
 } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
-import { FontRegistry } from "@babylonslate/render";
+import { FontRegistry, BabylonAudioPlaybackBackend } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
   applyTextureMaxDimensionChange,
@@ -39,7 +40,7 @@ import {
   TEXTURE_USAGE_OPTIONS,
   TEXTURE_MAX_DIMENSION_OPTIONS,
 } from "../lib/asset-settings";
-import { stopAudioPreviewElement } from "../lib/audio-preview";
+import { createAudioPreviewSession } from "../lib/audio-preview";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object"
@@ -506,11 +507,36 @@ function AudioSettingsEditor({
   const audio = normalizeAudioPayload(payload);
   const [pick, setPick] = useState<"channel" | "atten" | null>(null);
   const [playing, setPlaying] = useState(false);
-  const previewRef = useRef<{
-    element: HTMLAudioElement;
-    url: string;
-  } | null>(null);
   const clipInputRef = useRef<HTMLInputElement | null>(null);
+  const previewSessionRef = useRef<ReturnType<
+    typeof createAudioPreviewSession
+  > | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const clipIds = audio.clips.map((clip) => clip.chunkId).join("|");
+  const audioRef = useRef(audio);
+  audioRef.current = audio;
+  useEffect(() => {
+    if (typeof AudioContext === "undefined") return;
+    let session: ReturnType<typeof createAudioPreviewSession>;
+    try {
+      session = createAudioPreviewSession({
+        backend: new BabylonAudioPlaybackBackend(),
+        readChunk: (chunkId) => readAssetChunk(path, chunkId),
+        onError: (error) => {
+          setPreviewError(error.message);
+          setPlaying(false);
+        },
+      });
+    } catch {
+      return;
+    }
+    previewSessionRef.current = session;
+    void session.prefetch(audioRef.current);
+    return () => {
+      session.dispose();
+      previewSessionRef.current = null;
+    };
+  }, [path, readAssetChunk, clipIds]);
   const assets = assetRegistry?.list() ?? [];
   const channel = assets.find(
     (asset) => asset.header.guid === audio.audioChannelGuid,
@@ -532,31 +558,25 @@ function AudioSettingsEditor({
     : {};
 
   const stopPreview = () => {
-    const preview = previewRef.current;
-    if (preview) {
-      stopAudioPreviewElement(preview.element);
-      URL.revokeObjectURL(preview.url);
-      previewRef.current = null;
-    }
+    previewSessionRef.current?.stop();
     setPlaying(false);
   };
 
-  const playPreview = async () => {
-    stopPreview();
-    const bytes = await readAssetChunk(path, "source");
-    if (!bytes || bytes.byteLength === 0) return;
-    const url = URL.createObjectURL(
-      new Blob([bytes], { type: mimeForAudioBytes(bytes) }),
-    );
-    const element = new Audio(url);
-    previewRef.current = { element, url };
+  const playPreview = () => {
+    const session = previewSessionRef.current;
+    if (!session) {
+      setPreviewError("Audio preview is unavailable.");
+      setPlaying(false);
+      return;
+    }
+    const result = session.play(audio);
+    if (!result.ok) {
+      setPreviewError(result.message);
+      setPlaying(false);
+      return;
+    }
+    setPreviewError(null);
     setPlaying(true);
-    element.onended = () => {
-      stopPreview();
-    };
-    void element.play().catch(() => {
-      stopPreview();
-    });
   };
 
   return (
@@ -572,11 +592,17 @@ function AudioSettingsEditor({
               stopPreview();
               return;
             }
-            void playPreview();
+            playPreview();
           }}
         >
           {playing ? "Stop" : "Play"}
         </Button>
+        {previewError ? (
+          <Alert data-testid="audio-preview-error">
+            <AlertTitle>Preview Failed</AlertTitle>
+            <AlertDescription>{previewError}</AlertDescription>
+          </Alert>
+        ) : null}
         <PropertyGrid
           rows={[
             {
