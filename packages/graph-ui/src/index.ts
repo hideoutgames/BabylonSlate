@@ -1,3 +1,4 @@
+export { animTransitionEdgeMarkers } from "./anim-transition-markers";
 export * from "./graph-editor";
 export { resolveGraphViewport } from "./graph-viewport";
 export * from "./graph-connect";

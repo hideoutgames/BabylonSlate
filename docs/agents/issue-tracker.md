@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Spec | Sprite Animation physics/render used `frame.width ?? 100` while Texture pick did not stamp pixels; Play/player now hydrate missing sizes from PNG IHDR | Resolved |
+| 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Spec | Sprite Animation Preview overlay covered the letterbox, not the `object-contain` image | Resolved |
+| 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Spec | Leaving a sprite clip never called `setActorSpriteClip(null)`, so a later Model state kept the last Sprite Animation AABB | Resolved |
+| 2026-08-18 | cursor/animgraph-spec-audit-c687 | AnimGraph Sprite Animation | Standards | Sprite Animation Details duplicated the DockView tab title; checkerboard used raw hex; collision handle labels were sentence case | Resolved |
 | 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Spec | Consecutive finished node moves reused `mergeKey` `"bt-node-move"`, so two completed drags undid as one. Position commits now call `applyNodePositions` with no merge key (`commitPositionsOnDragEnd` already emits once) | Resolved |
 | 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Spec | `serializedToBehaviourTree` X-sorted siblings without a previous-`children[]` tie-break; canvas round-trip could flip equal-X order. Graph position path now uses `applyNodePositions` | Resolved |
 | 2026-08-16 | cursor/bt-editor-ux-review-ed63 | p-bt-editor-ux | Spec | Drag-off-handle e2e only asserted Wait Details, not a parent→child edge | Resolved |

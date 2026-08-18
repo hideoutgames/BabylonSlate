@@ -20,11 +20,13 @@ import {
   parseSpriteAnimationPayload,
   parseSpriteCollision,
   parseSpritePivot,
+  pngPixelSize,
   type SpriteAnimationPayload,
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
+import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 
@@ -97,7 +99,7 @@ export function SpriteAnimationDetailsPanel(_props: IDockviewPanelProps) {
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   return (
-    <PanelFrame data-testid="sprite-animation-details-panel" title="Details">
+    <PanelFrame data-testid="sprite-animation-details-panel">
       <SpriteAnimationDetails
         payload={payload}
         onChange={(next) => {
@@ -146,6 +148,12 @@ export function SpriteAnimationPreview({
 
   const pivot = parseSpritePivot(frame?.pivot);
   const collision = parseSpriteCollision(frame?.collision);
+  const imageWidth = frame?.width && frame.width > 0 ? frame.width : 0;
+  const imageHeight = frame?.height && frame.height > 0 ? frame.height : 0;
+  const contain =
+    imageWidth > 0 && imageHeight > 0
+      ? objectContainRect(1, 1, imageWidth, imageHeight)
+      : { left: 0, top: 0, width: 1, height: 1 };
 
   return (
     <div className="flex min-h-0 flex-col gap-2 p-3" data-testid="sprite-animation-preview">
@@ -153,7 +161,7 @@ export function SpriteAnimationPreview({
         className="relative aspect-square w-full overflow-hidden rounded-md border border-border"
         style={{
           backgroundImage:
-            "conic-gradient(#808080 0.25turn, #c0c0c0 0.25turn 0.5turn, #808080 0.5turn 0.75turn, #c0c0c0 0.75turn)",
+            "repeating-conic-gradient(var(--muted) 0% 25%, var(--background) 0% 50%)",
           backgroundSize: "16px 16px",
         }}
       >
@@ -165,31 +173,42 @@ export function SpriteAnimationPreview({
           </p>
         )}
         <div
-          data-testid="sprite-pivot-marker"
-          className="pointer-events-none absolute z-10"
+          data-testid="sprite-animation-image-box"
+          className="absolute z-10"
           style={{
-            left: `${pivot.x * 100}%`,
-            top: `${pivot.y * 100}%`,
-            transform: "translate(-50%, -50%)",
+            left: `${contain.left * 100}%`,
+            top: `${contain.top * 100}%`,
+            width: `${contain.width * 100}%`,
+            height: `${contain.height * 100}%`,
           }}
         >
-          <div className="relative size-4">
-            <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-primary" />
-            <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-primary" />
+          <div
+            data-testid="sprite-pivot-marker"
+            className="pointer-events-none absolute z-10"
+            style={{
+              left: `${pivot.x * 100}%`,
+              top: `${pivot.y * 100}%`,
+              transform: "translate(-50%, -50%)",
+            }}
+          >
+            <div className="relative size-4">
+              <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-primary" />
+              <span className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-primary" />
+            </div>
           </div>
+          <SpriteCollisionOverlay
+            collision={collision}
+            onChange={(next) => {
+              if (!onChange) return;
+              const frames = animation.frames.map((entry, index) =>
+                index === selectedFrameIndex
+                  ? { ...entry, collision: next }
+                  : entry,
+              );
+              onChange({ ...animation, frames });
+            }}
+          />
         </div>
-        <SpriteCollisionOverlay
-          collision={collision}
-          onChange={(next) => {
-            if (!onChange) return;
-            const frames = animation.frames.map((entry, index) =>
-              index === selectedFrameIndex
-                ? { ...entry, collision: next }
-                : entry,
-            );
-            onChange({ ...animation, frames });
-          }}
-        />
       </div>
       <div className="flex flex-wrap gap-1" data-testid="sprite-animation-frame-strip">
         {animation.frames.map((entry, index) => (
@@ -220,7 +239,7 @@ export function SpriteAnimationDetails({
   const { selectedFrameIndex, setSelectedFrameIndex } =
     useSpriteAnimationSelection(animation.frames.length);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, readAssetChunk } = useDocuments();
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -245,6 +264,31 @@ export function SpriteAnimationDetails({
     onChange({ ...animation, frames });
   };
 
+  const applyTextureGuid = (guid: string | null): void => {
+    if (!guid) {
+      patchFrame({ textureGuid: "" });
+      return;
+    }
+    const path = assets.find((asset) => asset.guid === guid)?.path;
+    if (!path || !readAssetChunk) {
+      patchFrame({ textureGuid: guid });
+      return;
+    }
+    void (async () => {
+      const pixels = await readAssetChunk(path, "pixels");
+      const source =
+        pixels && pixels.byteLength > 0
+          ? pixels
+          : await readAssetChunk(path, "source");
+      const size = source && source.byteLength > 0 ? pngPixelSize(source) : null;
+      patchFrame(
+        size
+          ? { textureGuid: guid, width: size.width, height: size.height }
+          : { textureGuid: guid },
+      );
+    })();
+  };
+
   const rows: PropertyRow[] = [
     {
       id: "texture",
@@ -253,7 +297,7 @@ export function SpriteAnimationDetails({
       value: frame?.textureGuid || null,
       placeholder: "None",
       onPick: () => setPickerOpen(true),
-      onChange: (value) => patchFrame({ textureGuid: value ?? "" }),
+      onChange: (value) => applyTextureGuid(value),
       ...assetRowIdentity(
         textureName ? { name: textureName, type: "Texture" } : undefined,
       ),
@@ -333,7 +377,7 @@ export function SpriteAnimationDetails({
         assets={assets}
         allowedTypes={["Texture"]}
         onPick={(guid) => {
-          patchFrame({ textureGuid: guid });
+          applyTextureGuid(guid);
           setPickerOpen(false);
         }}
         data-testid="sprite-animation-texture-picker"

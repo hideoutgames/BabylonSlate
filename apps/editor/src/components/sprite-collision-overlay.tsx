@@ -5,6 +5,17 @@ import { cn } from "@babylonslate/ui/lib/utils";
 const HANDLES = ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const;
 type CollisionHandle = (typeof HANDLES)[number];
 
+const HANDLE_LABEL: Record<CollisionHandle, string> = {
+  n: "North",
+  s: "South",
+  e: "East",
+  w: "West",
+  ne: "Northeast",
+  nw: "Northwest",
+  se: "Southeast",
+  sw: "Southwest",
+};
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(1, Math.max(0, value));
@@ -122,7 +133,7 @@ export function SpriteCollisionOverlay({
             key={handle}
             type="button"
             data-testid={`sprite-collision-handle-${handle}`}
-            aria-label={`Resize collision ${handle}`}
+            aria-label={`Resize Collision ${HANDLE_LABEL[handle]}`}
             className={cn(
               "absolute size-[var(--touch-target)] min-h-[var(--touch-target)] min-w-[var(--touch-target)] p-0",
               HANDLE_CLASS[handle],

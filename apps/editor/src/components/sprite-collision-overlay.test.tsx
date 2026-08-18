@@ -23,5 +23,7 @@ describe("SpriteCollisionOverlay", () => {
     expect(overlay.style.height).toBe("40%");
     expect(screen.getByTestId("sprite-collision-handle-e")).toBeTruthy();
     expect(screen.getByTestId("sprite-collision-handle-nw")).toBeTruthy();
+    expect(screen.getByLabelText("Resize Collision East")).toBeTruthy();
+    expect(screen.getByLabelText("Resize Collision Northwest")).toBeTruthy();
   });
 });

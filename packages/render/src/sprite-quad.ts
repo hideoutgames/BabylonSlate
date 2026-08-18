@@ -31,6 +31,22 @@ export function createSpriteQuad(
   return mesh;
 }
 
+export function setSpriteQuadSize(
+  mesh: Mesh,
+  width: number,
+  height: number,
+): void {
+  const hw = Math.max(0, width) / 2;
+  const hh = Math.max(0, height) / 2;
+  if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
+  mesh.setVerticesData(VertexBuffer.PositionKind, [
+    -hw, -hh, 0,
+    hw, -hh, 0,
+    hw, hh, 0,
+    -hw, hh, 0,
+  ]);
+}
+
 export function applySpriteFrameUvs(mesh: Mesh, frame: SpriteFrame): void {
   const { u0, v0, u1, v1 } = spriteFrameUvs(frame);
   // CreatePlane UV order: bottom-left, bottom-right, top-right, top-left

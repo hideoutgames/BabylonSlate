@@ -1,3 +1,4 @@
+import { pngPixelSize } from "./bytes";
 import {
   DEFAULT_SPRITE_COLLISION,
   DEFAULT_SPRITE_PIVOT,
@@ -116,4 +117,47 @@ export function spriteAnimationTextureGuids(
     guids.push(frame.textureGuid);
   }
   return guids;
+}
+
+export type TexturePixelSize = { width: number; height: number };
+
+/** Stamp missing frame width/height from a texture-guid lookup. Authored sizes win. */
+export function applyTexturePixelSizesToSpriteAnimation(
+  payload: SpriteAnimationPayload,
+  sizeForGuid: (guid: string) => TexturePixelSize | null | undefined,
+): SpriteAnimationPayload {
+  let changed = false;
+  const frames = payload.frames.map((frame) => {
+    if (!frame.textureGuid) return frame;
+    if (frame.width != null && frame.height != null) return frame;
+    const size = sizeForGuid(frame.textureGuid);
+    if (!size) return frame;
+    changed = true;
+    return {
+      ...frame,
+      width: frame.width ?? size.width,
+      height: frame.height ?? size.height,
+    };
+  });
+  return changed ? { ...payload, frames } : payload;
+}
+
+/** Fill missing Sprite Animation frame sizes from PNG texture bytes. */
+export function hydrateSpriteAnimationPixelSizes(
+  animations: ReadonlyMap<string, SpriteAnimationPayload>,
+  textureBytes: ReadonlyMap<string, Uint8Array>,
+): Map<string, SpriteAnimationPayload> {
+  const cache = new Map<string, TexturePixelSize | null>();
+  const sizeForGuid = (guid: string): TexturePixelSize | null => {
+    if (cache.has(guid)) return cache.get(guid) ?? null;
+    const bytes = textureBytes.get(guid);
+    const size = bytes ? pngPixelSize(bytes) : null;
+    cache.set(guid, size);
+    return size;
+  };
+  const next = new Map<string, SpriteAnimationPayload>();
+  for (const [guid, payload] of animations) {
+    next.set(guid, applyTexturePixelSizesToSpriteAnimation(payload, sizeForGuid));
+  }
+  return next;
 }
