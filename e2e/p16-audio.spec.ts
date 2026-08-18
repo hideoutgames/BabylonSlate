@@ -54,8 +54,8 @@ test.describe("P16 audio", () => {
     await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
     await page.getByTestId("place-actors-catalog-search").fill("beep");
     await page.getByTestId(`place-actors-item-asset-${beepGuid}`).click();
+    await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
 
-    await saveAllIfEnabled(page);
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();
     await expect(page.getByTestId("play-audio-unlock-hint")).toBeVisible({
