@@ -470,7 +470,7 @@ describe("UiDesigner", () => {
 
   it("shows Title Case dock kind labels after a Settings change", () => {
     function Harness() {
-      const [payload, setPayload] = useState({
+      const [payload, setPayload] = useState<Record<string, unknown>>({
         ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
         dockKind: "scene",
       });
