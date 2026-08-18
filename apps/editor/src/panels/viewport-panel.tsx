@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   applyGizmoMultiSelectDrag,
+  applyViewportJoystickSteer,
   beginGizmoMultiSelectDrag,
   collectNavBakeGeometry,
   createEngine,
@@ -578,7 +579,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           <div className="pointer-events-auto">
             <ViewportJoystick
               onFly={(forward, right) => {
-                engineRef.current?.editor?.camera.fly(forward, right);
+                const camera = engineRef.current?.editor?.camera;
+                if (camera) applyViewportJoystickSteer(camera, forward, right);
               }}
               onActiveChange={(active) => {
                 const scheduler = engineRef.current?.scheduler;

@@ -223,6 +223,26 @@ describe("attachViewportGestures", () => {
     expect(scheduler.shouldRender()).toBe(false);
   });
 
+  it("orbits around the target on a one-finger drag when pivotAroundCenter is on", () => {
+    const { controller } = attach("3d");
+    controller.setPivotAroundCenter(true);
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    const targetBefore = controller.camera.target.clone();
+    const alphaBefore = controller.camera.alpha;
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 100));
+    canvas.emit("pointerup", pointer(1, 160, 100));
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.alpha).not.toBeCloseTo(alphaBefore, 6);
+    expect(controller.camera.target.x).toBeCloseTo(targetBefore.x, 4);
+    expect(controller.camera.target.y).toBeCloseTo(targetBefore.y, 4);
+    expect(controller.camera.target.z).toBeCloseTo(targetBefore.z, 4);
+    expect(controller.camera.position.x).not.toBeCloseTo(positionBefore.x, 4);
+  });
+
   it("does not look when blockLook reports the pointer is on a gizmo", () => {
     const { controller } = attach("3d", { blockLook: () => true });
     const alphaBefore = controller.camera.alpha;
