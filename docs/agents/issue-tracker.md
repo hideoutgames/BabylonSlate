@@ -328,10 +328,16 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 
 | Gap vs engineplan §9 | Reality | Owner |
 | --- | --- | --- |
-| Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | Later polish / P14 player |
+| Core quality commands “mutate real engine settings” | `consoleHost` still `emitSetting` logs ([debugger.md](../architecture/debugger.md) already says this) | `p8-console-apply` |
+| No `resume`; console `step` no-ops while paused; overlay Pause/Resume unsynced | `RuntimeDriver.resume()` exists; overlay Step uses resume→tick→pause; console `step` calls `tick()` | `p8-console-session` |
+| No free cam / spectate without pausing | Possess Camera is a graph node; Play cameras are detached `UniversalCamera` | `p8-console-freecam` |
+| `showcollision` / `showbounds` / `wireframe` / `slomo` | Log only | `p8-console-slomo`, `p8-console-viz` |
+| User `BDebugCommand` can overwrite engine names | `registry.register` is last-write-wins | `p8-console-session` |
 | §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
 | Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
 | `PinListEditor` on Class / ScriptInterface | Done (Class Inspector function pins + ScriptInterface method Details; ExecuteJavaScript / OnCommandRun keep the `ParameterListEditor` wrapper) | — |
+
+Command catalog and slice order: [console-commands.md](../architecture/console-commands.md).
 
 ## P9 slice ownership
 
