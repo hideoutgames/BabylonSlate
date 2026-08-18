@@ -149,7 +149,15 @@ describe("material node catalog", () => {
       "emissive",
       "opacity",
       "alphaClip",
+      "worldPositionOffset",
     ]);
+    expect(
+      surface?.inputs.find((pin) => pin.id === "worldPositionOffset"),
+    ).toMatchObject({
+      name: "World Position Offset",
+      type: { kind: "vec3" },
+      defaultValue: [0, 0, 0],
+    });
   });
 
   it("takes a single Color input on the post-process output", () => {
