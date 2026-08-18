@@ -7,6 +7,7 @@ export type UserInterfaceWidgetMeta = {
   id: string;
   name?: string;
   kind: string;
+  nestedUiGuid?: string;
 };
 
 /** UserInterface document metadata shipped on `loadUserInterfaces`. */

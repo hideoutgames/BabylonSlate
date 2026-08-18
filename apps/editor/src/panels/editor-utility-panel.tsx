@@ -37,8 +37,10 @@ import { loadLatest } from "../lib/load-latest";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
 import {
   bindEditorUtilityWidgetEvent,
+  collectNestedUtilityLogicSources,
   compileEditorUtilityInterfaceLogic,
   createEditorUtilityInterfaceHost,
+  nestedUtilitySlots,
 } from "../lib/editor-utility-interface-runtime";
 import { editorUtilityGuidFromWindowId } from "../shell/editor-utility-windows";
 
@@ -53,6 +55,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
   const hostRef = useRef<ReturnType<typeof createEditorUtilityInterfaceHost> | null>(
     null,
   );
+  const nestedSlotsRef = useRef<ReturnType<typeof nestedUtilitySlots>>([]);
   const [payload, setPayload] = useState<unknown>(null);
   const [panelVisible, setPanelVisible] = useState(props.api.isVisible);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -175,7 +178,11 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
         onWidgetEvent: (event) => {
           const runtime = hostRef.current;
           if (!runtime) return;
-          bindEditorUtilityWidgetEvent(runtime.host, event);
+          bindEditorUtilityWidgetEvent(
+            runtime.host,
+            event,
+            nestedSlotsRef.current,
+          );
         },
         resolveImageUrl,
       });
@@ -269,7 +276,21 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     });
     hostRef.current = runtime;
     let cancelled = false;
-    const scripts = compileEditorUtilityInterfaceLogic(asset.path, payload);
+    const listed = assetRegistry?.list() ?? [];
+    const nested = collectNestedUtilityLogicSources(payload, (nestedGuid) => {
+      const nestedAsset = listed.find((entry) => entry.header.guid === nestedGuid);
+      if (!nestedAsset) return null;
+      const openDoc = openDocuments.find((doc) => doc.ref.path === nestedAsset.path);
+      if (openDoc?.content) {
+        return { path: nestedAsset.path, payload: openDoc.content };
+      }
+      if (nestedAsset.header.payload) {
+        return { path: nestedAsset.path, payload: nestedAsset.header.payload };
+      }
+      return null;
+    });
+    nestedSlotsRef.current = nestedUtilitySlots(nested);
+    const scripts = compileEditorUtilityInterfaceLogic(asset.path, payload, nested);
     void runtime.loadAll(scripts).then(() => {
       if (cancelled) return;
       runtime.beginPlay();
@@ -278,8 +299,9 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       cancelled = true;
       runtime.dispose();
       if (hostRef.current === runtime) hostRef.current = null;
+      nestedSlotsRef.current = [];
     };
-  }, [asset?.path, payload]);
+  }, [asset?.path, assetRegistry, openDocuments, payload]);
 
   return (
     <PanelFrame data-testid="editor-utility-panel">

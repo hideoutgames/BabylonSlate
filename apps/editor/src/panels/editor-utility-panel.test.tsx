@@ -44,6 +44,8 @@ vi.mock("../context/play-context", () => ({
 
 vi.mock("../lib/editor-utility-interface-runtime", () => ({
   bindEditorUtilityWidgetEvent: vi.fn(),
+  collectNestedUtilityLogicSources: () => [],
+  nestedUtilitySlots: () => [],
   compileEditorUtilityInterfaceLogic: () => [],
   createEditorUtilityInterfaceHost: (...args: unknown[]) =>
     createHostMock(...args),

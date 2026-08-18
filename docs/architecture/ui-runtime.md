@@ -43,6 +43,8 @@ Text measurement is injected (`TextMeasurer`). Golden tests use a deterministic 
 
 A `UserInterface` asset stores the widget tree in the `document` chunk. Nested UserInterface widgets (`kind: "UserInterface"`, `nestedUiGuid`) are allowed; **edit-time cycle check** (`nestedUiPickableGuids`) excludes self and cycle partners from the designer picker. `visualOverrideGuid` on Button / TouchJoystick / TouchButton is the same nested-subtree path.
 
+Nested **visuals** stay one tree (layout prefixes inner ids `hostSlot/innerBtn`). Nested **logic** runs as a worker-only child instance (`UserInterface:<nestedGuid>` at id `hostInstance/slotId`) — no second `uiApply`. Prefixed widget events dispatch to that child with the local remainder. Game UI nested graphs tick while the host is mounted; live EditorUtilityInterface nested graphs fire Event Editor On Begin Play on create and do not tick. Cycles are skipped.
+
 Placement:
 
 - **Viewport layer** — `ctx.applyUserInterface(classIdOrGuid)` creates a typed `UserInterface` (`classId` `UserInterface:<guid>`, instance ids `ui-1`, `ui-2`, …) plus concrete `*Widget` children. Not auto-hosted on Play.
@@ -54,10 +56,10 @@ Placement:
 
 Engine bases `UserInterface` and `Widget` are `BObject`s (`kind: "object"`), not Actors. Concrete subclasses match authored kinds (`ButtonWidget`, `ImageWidget`, …; `widgetClassIdForKind`). Asset class ids are stable `UserInterface:<assetGuid>` — not the file stem.
 
-- **Apply** registers the asset class, constructs the `UserInterface`, then widgets from `loadUserInterfaces` metadata (`guid` `ui-N:widgetId`, `owner` = the instance). Widgets then the UI run `onCreation`; interfaces bind; the worker emits `uiApply`.
-- **Remove** tears widgets down in reverse (`onDestroyed`, `owner = null`) then the UI, and emits `uiRemove`. Change-scene and Play stop tear down every mounted UI.
+- **Apply** registers the asset class, constructs the `UserInterface`, then widgets from `loadUserInterfaces` metadata (`guid` `ui-N:widgetId`, `owner` = the instance). Nested `UserInterface` widgets with `nestedUiGuid` mount a child instance (`ui-N/slotId`) without emitting `uiApply`. Widgets then the UI run `onCreation`; interfaces bind; the worker emits `uiApply` for the host only.
+- **Remove** tears nested children first (no `uiRemove`), then widgets in reverse (`onDestroyed`, `owner = null`) then the UI, and emits `uiRemove` for the host. Change-scene and Play stop tear down every mounted UI.
 - **Tick** calls `onTick` only while mounted. Two applies of one class are independent (variables, widgets, visibility).
-- **Events** (`click` / `value` / `checked` / `text` / `pointerEnter` / `pointerExit` / `pointerDown` / `pointerUp`) travel main → worker as `uiWidgetEvent` and invoke `onWidgetClick` / `onWidgetValue` / `onWidgetChecked` / `onWidgetText` / `onMouseEnter` / `onMouseExit` / `onMousePress` / `onMouseRelease` on the owning UI with `{ widget, widgetId, value }`. Catalog nodes: **Event On Mouse Enter/Exit/Press/Release** and **Event On Widget Click**. Empty Canvas hits do not emit widget events. Live EUI fires the same pointer events at editor time.
+- **Events** (`click` / `value` / `checked` / `text` / `pointerEnter` / `pointerExit` / `pointerDown` / `pointerUp`) travel main → worker as `uiWidgetEvent` and invoke `onWidgetClick` / `onWidgetValue` / `onWidgetChecked` / `onWidgetText` / `onMouseEnter` / `onMouseExit` / `onMousePress` / `onMouseRelease` on the owning UI with `{ widget, widgetId, value }`. Prefixed ids (`chip/inner-btn`) route to the nested instance with local `inner-btn`. Catalog nodes: **Event On Mouse Enter/Exit/Press/Release** and **Event On Widget Click**. Empty Canvas hits do not emit widget events. Live EUI fires the same pointer events at editor time (including nested graphs).
 - **Visibility** is instance-scoped (`uiSetVisible` `{ instanceId, widgetId, visible }`). Hosts prefix control ids `instanceId:widgetId`.
 - UI / Widget class ids are **not** spawned as Actors (`shouldSpawnScriptedActor`).
 
