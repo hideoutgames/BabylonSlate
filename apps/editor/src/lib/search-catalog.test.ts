@@ -14,6 +14,7 @@ describe("search catalog class ids", () => {
 
   it("advertises AudioComponent once it is addable", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("AudioComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("SkyboxComponent");
   });
 
   it("still indexes shipped engine classes", () => {

@@ -10,6 +10,7 @@ import {
   createDefaultScene,
   createDefaultSceneSettings,
   createMeshComponent,
+  createSkyboxComponent,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
@@ -739,7 +740,7 @@ describe("p7-play-scene-load", () => {
     expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
       {
         type: "assignMaterial",
-        slotId: 2,
+        slotId: 4,
         materialAssetGuid: "mat-rock",
       },
     ]);
@@ -1194,6 +1195,49 @@ describe("p7-play-scene-load", () => {
         "iface-damageable:ApplyDamage",
       ),
     ).toBe(true);
+    runtime.stop();
+  });
+
+  it("emits assignMesh meshKind skybox with size and faces", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/sky.scene.babasset",
+        scene: {
+          name: "Sky",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("sky", "Skybox", {
+              components: [createSkyboxComponent("sky-comp")],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
+      {
+        type: "assignMesh",
+        slotId: 0,
+        meshAssetGuid: null,
+        meshKind: "skybox",
+        skybox: {
+          size: 1000,
+          faces: {
+            px: null,
+            py: null,
+            pz: null,
+            nx: null,
+            ny: null,
+            nz: null,
+          },
+        },
+      },
+    ]);
     runtime.stop();
   });
 });

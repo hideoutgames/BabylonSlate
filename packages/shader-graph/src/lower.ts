@@ -384,6 +384,13 @@ export function lowerMaterialDocument(
     emitting.add(id);
     const inputs: Record<string, MaterialOperand> = {};
     for (const pin of definition.inputs) {
+      const wired = frame.graph.edges.some(
+        (edge) =>
+          edge.targetNodeId === node.id && edge.targetPinId === pin.id,
+      );
+      if (!wired && resolveMaterialPinDefault(node, pin) === undefined) {
+        continue;
+      }
       inputs[pin.id] = operandForInput(frame, node, pin.id);
     }
     emitting.delete(id);
