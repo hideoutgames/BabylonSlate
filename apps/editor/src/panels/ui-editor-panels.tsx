@@ -58,7 +58,8 @@ function useDockPanelVisible(props: IDockviewPanelProps): boolean {
 export function UiDesignPanel(props: IDockviewPanelProps) {
   const panelVisible = useDockPanelVisible(props);
   const workspace = useOptionalDocumentWorkspace();
-  const { activeDocumentId, uiEditorMode } = useDocuments();
+  const { activeDocumentId, uiEditorMode, assetRegistry, openLiveEditorUtility } =
+    useDocuments();
   const editing = useUiEditing();
   const viewportMeasureRef = useRef<HTMLDivElement>(null);
   const setViewportSize = editing.setViewportSize;
@@ -148,6 +149,21 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
           >
             Fit
           </Button>
+          {editing.isEditorUtilityInterface ? (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="ui-open-live"
+              onClick={() => {
+                const guid = assetRegistry
+                  ?.list()
+                  .find((asset) => asset.path === editing.path)?.header.guid;
+                if (guid) void openLiveEditorUtility(guid);
+              }}
+            >
+              Open Live
+            </Button>
+          ) : null}
           <span className="text-xs text-muted-foreground" data-testid="ui-design-zoom">
             {Math.round(editing.view.zoom * 100)}%
           </span>

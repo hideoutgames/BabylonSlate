@@ -28,6 +28,33 @@ const DEFAULT_REFERENCE: Record<string, string> = {
   graph: "graph",
 };
 
+export function editorUtilityHostDocumentKind(
+  dockKind: unknown,
+): "scene" | "graph" {
+  return normalizeEditorUtilityDockKind(dockKind) === "class" ? "graph" : "scene";
+}
+
+function editorUtilityWindowDefinition(
+  asset: EditorUtilityAssetRef,
+  hostKind: "scene" | "graph",
+): DockWindowDefinition {
+  const referencePanelId = DEFAULT_REFERENCE[hostKind];
+  return {
+    id: editorUtilityWindowId(asset.guid),
+    component: "editor-utility",
+    title: asset.name,
+    ...(referencePanelId
+      ? {
+          defaultPosition: {
+            referencePanelId,
+            direction: "right" as const,
+            initialWidth: 320,
+          },
+        }
+      : {}),
+  };
+}
+
 export function editorUtilityWindowId(guid: string): string {
   return `eui-${guid}`;
 }
@@ -83,29 +110,82 @@ export function listEditorUtilityWindows(
     ? DOCK_KIND_FOR_DOCUMENT[options.kind]
     : undefined;
   if (!dockKind || !options?.assets) return [];
-  const referencePanelId = options.kind
-    ? DEFAULT_REFERENCE[options.kind]
-    : undefined;
   return options.assets
     .filter((asset) => asset.type === "EditorUtilityInterface")
     .filter(
       (asset) =>
         normalizeEditorUtilityDockKind(asset.payload?.dockKind) === dockKind,
     )
-    .map((asset) => ({
-      id: editorUtilityWindowId(asset.guid),
-      component: "editor-utility",
-      title: asset.name,
-      ...(referencePanelId
-        ? {
-            defaultPosition: {
-              referencePanelId,
-              direction: "right" as const,
-              initialWidth: 320,
-            },
-          }
-        : {}),
-    }));
+    .map((asset) =>
+      editorUtilityWindowDefinition(
+        asset,
+        options.kind === "graph" ? "graph" : "scene",
+      ),
+    );
+}
+
+/** Windows → Editor Utilities entries, including every EUI while authoring UI. */
+export function listEditorUtilityMenuWindows(
+  options?: ListEditorUtilityWindowsOptions,
+): DockWindowDefinition[] {
+  if (options?.kind === "ui") {
+    if (!options.assets) return [];
+    return options.assets
+      .filter((asset) => asset.type === "EditorUtilityInterface")
+      .map((asset) =>
+        editorUtilityWindowDefinition(
+          asset,
+          editorUtilityHostDocumentKind(asset.payload?.dockKind),
+        ),
+      );
+  }
+  return listEditorUtilityWindows(options);
+}
+
+export function editorUtilityEmptyLabel(
+  kind: string | undefined,
+  assets: EditorUtilityAssetRef[],
+): string | null {
+  const hasEui = assets.some((asset) => asset.type === "EditorUtilityInterface");
+  if (!hasEui) return "No Editor Utility Interfaces In This Project";
+  if (listEditorUtilityMenuWindows({ kind, assets }).length === 0) {
+    return "None For This Document";
+  }
+  return null;
+}
+
+export function resolveEditorUtilityLiveHost(options: {
+  dockKind: unknown;
+  scenes: readonly string[];
+  graphs: readonly string[];
+}): { kind: "scene" | "graph"; path: string } | null {
+  const kind = editorUtilityHostDocumentKind(options.dockKind);
+  const path = (kind === "scene" ? options.scenes : options.graphs)[0];
+  if (!path) return null;
+  return { kind, path };
+}
+
+export function editorUtilityLiveTarget(options: {
+  guid: string;
+  assets: EditorUtilityAssetRef[];
+  scenes: readonly string[];
+  graphs: readonly string[];
+}): {
+  host: { kind: "scene" | "graph"; path: string };
+  panelId: string;
+} | null {
+  const asset = options.assets.find(
+    (entry) =>
+      entry.guid === options.guid && entry.type === "EditorUtilityInterface",
+  );
+  if (!asset) return null;
+  const host = resolveEditorUtilityLiveHost({
+    dockKind: asset.payload?.dockKind,
+    scenes: options.scenes,
+    graphs: options.graphs,
+  });
+  if (!host) return null;
+  return { host, panelId: editorUtilityWindowId(asset.guid) };
 }
 
 export function findDockOrUtilityWindow(

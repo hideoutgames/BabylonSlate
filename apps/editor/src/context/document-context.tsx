@@ -112,8 +112,10 @@ import {
   capturePanelPlacement,
   isDockWindowOpen as isDockWindowOpenOnApi,
   listDockPanels,
+  openDockWindow,
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
+  type PanelPlacement,
 } from "../shell/dock-window-ops";
 import { isDockviewDocumentKind, type DockWindowOptions } from "../shell/window-catalog";
 import {
@@ -141,6 +143,7 @@ import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
   closeMismatchedEditorUtilityPanels,
   editorUtilityAssetsFromIndexed,
+  editorUtilityLiveTarget,
   findDockOrUtilityWindow,
 } from "../shell/editor-utility-windows";
 import {
@@ -345,6 +348,8 @@ interface DocumentContextValue {
   setAnimEditorMode: (id: string, mode: AnimEditorMode) => void;
   activateDockPanel: (panelId: string) => void;
   toggleDockWindow: (panelId: string) => void;
+  /** Open a live EditorUtilityInterface tab on its Scene or Class host dock. */
+  openLiveEditorUtility: (guid: string) => Promise<void>;
   isDockWindowOpen: (panelId: string) => boolean;
   getOpenDockWindowCount: () => number;
   captureActiveLayout: () => void;
@@ -506,6 +511,19 @@ function findWindowDefinition(
   return findDockOrUtilityWindow(kind, panelId, { ...dockOptions, assets });
 }
 
+function openEditorUtilityOnApi(
+  api: DockviewApi,
+  kind: string,
+  panelId: string,
+  assets: ReturnType<typeof editorUtilityAssetsFromIndexed>,
+  placement: PanelPlacement | null,
+): boolean {
+  const def = findWindowDefinition(kind, panelId, {}, assets);
+  if (!def) return false;
+  openDockWindow(asDockWindowApi(api), def, placement);
+  return true;
+}
+
 function restorePreFocusSnapshot(
   id: string,
   snapshot: PreFocusSnapshot,
@@ -540,6 +558,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
+  const pendingLiveEditorUtilityRef = useRef<{
+    documentId: string;
+    panelId: string;
+  } | null>(null);
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
   const [uiEditorModes, setUiEditorModes] = useState<Record<string, UiEditorMode>>(
     {},
@@ -1029,6 +1051,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       pending: MigrationPending[] = [],
     ) => {
       dockviewApisRef.current.clear();
+      pendingLiveEditorUtilityRef.current = null;
       disposeDockSubscriptions();
       preFocusLayoutsRef.current.clear();
       setFocusedLayoutIds(new Set());
@@ -1339,6 +1362,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     await projectService.closeProject();
     sourceControlRef.current.dispose();
     projectService.setDerivedStorage(null);
+    pendingLiveEditorUtilityRef.current = null;
     dockviewApisRef.current.clear();
     disposeDockSubscriptions();
     preFocusLayoutsRef.current.clear();
@@ -1545,6 +1569,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const cancelExclusiveSceneOpen = useCallback(() => {
+    pendingLiveEditorUtilityRef.current = null;
     setPendingExclusiveScene(null);
   }, []);
 
@@ -2908,6 +2933,29 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ]);
     rememberPlacements();
     bumpDockWindows();
+    const pending = pendingLiveEditorUtilityRef.current;
+    if (
+      pending &&
+      pending.documentId === id &&
+      surface === "default"
+    ) {
+      const assets = editorUtilityAssetsFromIndexed(
+        projectService.registry?.list() ?? [],
+        documentService.getOpenDocumentsOrdered(),
+      );
+      const hostKind = documentService.getDocument(id)?.ref.kind ?? "";
+      const opened = openEditorUtilityOnApi(
+        api,
+        hostKind,
+        pending.panelId,
+        assets,
+        documentService.getPanelPlacements(id)[pending.panelId] ?? null,
+      );
+      if (opened) {
+        pendingLiveEditorUtilityRef.current = null;
+        bumpDockWindows();
+      }
+    }
   }, [bumpDockWindows, documentService, projectService]);
 
   const activeDockApi = useCallback((): DockviewApi | undefined => {
@@ -3067,9 +3115,71 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, [activeDockApi, bumpDockWindows, documentService, projectService, uiEditorModes, animEditorModes]);
 
   const isDockWindowOpen = useCallback((panelId: string) => {
+    if (panelId.startsWith("eui-")) {
+      for (const api of dockviewApisRef.current.values()) {
+        if (isDockWindowOpenOnApi(asDockWindowApi(api), panelId)) {
+          return true;
+        }
+      }
+      return false;
+    }
     const api = activeDockApi();
     return api ? isDockWindowOpenOnApi(asDockWindowApi(api), panelId) : false;
   }, [activeDockApi]);
+
+  const openLiveEditorUtility = useCallback(
+    async (guid: string) => {
+      const project = projectDocumentRef.current;
+      if (!project) return;
+      const assets = editorUtilityAssetsFromIndexed(
+        projectService.registry?.list() ?? [],
+        documentService.getOpenDocumentsOrdered(),
+      );
+      const target = editorUtilityLiveTarget({
+        guid,
+        assets,
+        scenes: project.scenes,
+        graphs: project.graphs,
+      });
+      if (!target) return;
+      const hostId = documentId({
+        kind: target.host.kind,
+        path: target.host.path,
+      });
+      pendingLiveEditorUtilityRef.current = {
+        documentId: hostId,
+        panelId: target.panelId,
+      };
+      const existing = documentService.getDocument(hostId);
+      if (existing) {
+        setActiveDocument(hostId);
+      } else {
+        await openDocument({
+          kind: target.host.kind,
+          path: target.host.path,
+          label: target.host.path.split("/").pop() ?? target.host.path,
+        });
+      }
+      const api = dockviewApisRef.current.get(hostId);
+      const hostDoc = documentService.getDocument(hostId);
+      if (!api || !hostDoc) return;
+      const opened = openEditorUtilityOnApi(
+        api,
+        hostDoc.ref.kind,
+        target.panelId,
+        editorUtilityAssetsFromIndexed(
+          projectService.registry?.list() ?? [],
+          documentService.getOpenDocumentsOrdered(),
+        ),
+        documentService.getPanelPlacements(hostId)[target.panelId] ?? null,
+      );
+      if (opened) {
+        pendingLiveEditorUtilityRef.current = null;
+        bumpDockWindows();
+      }
+    },
+    [bumpDockWindows, documentService, openDocument, projectService, setActiveDocument],
+  );
 
   const getOpenDockWindowCount = useCallback(() => {
     const api = activeDockApi();
@@ -3296,6 +3406,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setAnimEditorMode,
       activateDockPanel,
       toggleDockWindow,
+      openLiveEditorUtility,
       isDockWindowOpen,
       getOpenDockWindowCount,
       captureActiveLayout,
@@ -3442,6 +3553,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       animEditorModes,
       activateDockPanel,
       toggleDockWindow,
+      openLiveEditorUtility,
       isDockWindowOpen,
       getOpenDockWindowCount,
       captureActiveLayout,

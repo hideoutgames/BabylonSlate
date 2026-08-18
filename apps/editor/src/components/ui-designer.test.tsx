@@ -57,8 +57,13 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
+const { openLiveEditorUtility } = vi.hoisted(() => ({
+  openLiveEditorUtility: vi.fn(),
+}));
+
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
+    openLiveEditorUtility,
     assetRegistry: {
       list: () => [
         {
@@ -162,6 +167,7 @@ vi.mock("../context/document-context", () => ({
 afterEach(() => {
   cleanup();
   resetProjectUiAssets();
+  openLiveEditorUtility.mockReset();
 });
 
 function renderHud() {
@@ -415,6 +421,27 @@ describe("UiDesigner", () => {
     fireEvent.click(screen.getByTestId("ui-widget-jump"));
     expect(screen.getByTestId("property-action").tagName).not.toBe("INPUT");
     expect(screen.getByTestId("property-visual-override")).toBeTruthy();
+  });
+
+  it("does not show Open Live on a UserInterface Design toolbar", () => {
+    renderHud();
+    expect(screen.queryByTestId("ui-open-live")).toBeNull();
+  });
+
+  it("opens the live Editor Utility for the current EditorUtilityInterface", () => {
+    render(
+      <UiDesigner
+        path="assets/SceneTools.eui.babasset"
+        payload={{
+          ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
+          dockKind: "scene",
+        }}
+        onChange={vi.fn()}
+        editorUtilityInterface
+      />,
+    );
+    fireEvent.click(screen.getByTestId("ui-open-live"));
+    expect(openLiveEditorUtility).toHaveBeenCalledWith("eui-1");
   });
 
   it("round-trips EditorUtilityInterface dockKind in Settings", () => {
