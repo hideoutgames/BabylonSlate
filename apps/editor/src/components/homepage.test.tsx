@@ -303,9 +303,9 @@ describe("Homepage recent project rows", () => {
 
     const list = screen.getByTestId("project-list");
     const names = () =>
-      [...list.querySelectorAll("[data-testid^='open-listed-project-']")].map(
-        (row) => row.getAttribute("data-testid"),
-      );
+      Array.from(
+        list.querySelectorAll("[data-testid^='open-listed-project-']"),
+      ).map((row) => row.getAttribute("data-testid"));
     expect(names()[0]).toBe("open-listed-project-Zebra.babproject");
 
     fireEvent.click(screen.getByTestId("homepage-project-sort"));
