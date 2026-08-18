@@ -50,6 +50,14 @@ import { RenderScheduler } from "./render-scheduler";
 import { ResourceCache } from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
+import {
+  applyPlayFreeCamCommand,
+  attachPlayFreeCamInput,
+  createPlayFreeCamController,
+  disablePlayFreeCam,
+  type PlayFreeCamController,
+  type PlayFreeCamInputHandle,
+} from "./play-free-cam";
 import { SnapshotInterpolator } from "./snapshot-sync";
 import {
   applySnapshotToScene,
@@ -150,6 +158,8 @@ export interface EngineHandle {
   resetAudioSession: () => void;
   /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
   resetParticleSession: () => void;
+  /** Debug free camera is the Play active camera. */
+  isFreeCamEnabled: () => boolean;
 }
 
 export interface CreateEngineOptions {
@@ -439,6 +449,18 @@ export function createEngine(
     scheduler.invalidate("snapshot");
   };
 
+  const playFreeCam: PlayFreeCamController | null = options.playMode
+    ? createPlayFreeCamController(scene, {
+        binding,
+        mode: options.viewportMode ?? "3d",
+      })
+    : null;
+  const playFreeCamInput: PlayFreeCamInputHandle | null = playFreeCam
+    ? attachPlayFreeCamInput(canvas, playFreeCam, {
+        mode: options.viewportMode ?? "3d",
+      })
+    : null;
+
   const materialDocuments = new Map<string, MaterialDocument>(
     options.materialDocuments ?? [],
   );
@@ -538,6 +560,7 @@ export function createEngine(
       return;
     }
     if (options.playMode) {
+      disablePlayFreeCam(playFreeCam);
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
       applySerializedSceneEnvironment(scene, sceneData, {
@@ -875,6 +898,8 @@ export function createEngine(
     dispose: () => {
       releasePlayLoop?.();
       engine.stopRenderLoop(renderLoop);
+      playFreeCamInput?.dispose();
+      playFreeCam?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -915,6 +940,7 @@ export function createEngine(
     },
     applyCommand: (command: CommandMessage) => {
       applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+      applyPlayFreeCamCommand(playFreeCam, command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }
@@ -1109,6 +1135,7 @@ export function createEngine(
     resetParticleSession: () => {
       particleService?.resetSession();
     },
+    isFreeCamEnabled: () => playFreeCam?.enabled() ?? false,
   };
 }
 

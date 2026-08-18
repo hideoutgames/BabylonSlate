@@ -113,6 +113,19 @@ describe("applyPlayerEngineCommand", () => {
     ]);
   });
 
+  it("forwards setFreeCam onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, { type: "setFreeCam", enabled: true }),
+    ).toBe(true);
+    expect(applied).toEqual(["setFreeCam"]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

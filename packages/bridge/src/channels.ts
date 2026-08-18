@@ -363,7 +363,8 @@ export type CommandMessage =
   | { type: "sessionPaused"; paused: boolean }
   | { type: "setRenderQuality"; level: string }
   | { type: "setResolutionScale"; scale: number }
-  | { type: "setFrameCap"; fps: number };
+  | { type: "setFrameCap"; fps: number }
+  | { type: "setFreeCam"; enabled: boolean };
 
 export type BridgeHostMessage =
   | { channel: "control"; payload: ControlMessage }

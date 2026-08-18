@@ -119,6 +119,29 @@ export function applyPlaySessionPausedCommand(
   return true;
 }
 
+export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
+  "assignMesh",
+  "assignMaterial",
+  "possessCamera",
+  "setShadowQuality",
+  "spawn",
+  "playSound",
+  "stopSound",
+  "setChannelVolume",
+  "setGlobalVolume",
+  "setFrameCap",
+  "setRenderQuality",
+  "setResolutionScale",
+  "assignParticle",
+  "setParticlePlaying",
+  "setFreeCam",
+  "animState",
+]);
+
+export function shouldForwardPlayEngineCommand(type: string): boolean {
+  return PLAY_ENGINE_APPLY_COMMAND_TYPES.has(type as CommandMessage["type"]);
+}
+
 /** Apply worker UI commands onto Play HUD callbacks. */
 export function applyPlayUiCommand(
   command: CommandMessage,
@@ -477,6 +500,7 @@ export function startPlaySession(options: {
     pixelsPerUnit: options.pixelsPerUnit,
     pixelPerfect: options.pixelPerfect,
     environmentColor: options.scene?.settings.environmentColor,
+    viewportMode: options.scene?.viewportMode,
     ktx2BasePath: editorKtx2PublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
@@ -534,25 +558,7 @@ export function startPlaySession(options: {
     if (command.type === "spawn") {
       spawnedActorGuids.push(command.actorGuid);
     }
-    if (
-      command.type === "assignMesh" ||
-      command.type === "assignMaterial" ||
-      command.type === "possessCamera" ||
-      command.type === "setShadowQuality" ||
-      command.type === "spawn" ||
-      command.type === "playSound" ||
-      command.type === "stopSound" ||
-      command.type === "setChannelVolume" ||
-      command.type === "setGlobalVolume" ||
-      command.type === "setFrameCap" ||
-      command.type === "setRenderQuality" ||
-      command.type === "setResolutionScale" ||
-      command.type === "assignParticle" ||
-      command.type === "setParticlePlaying"
-    ) {
-      handle.applyCommand(command);
-    }
-    if (command.type === "animState") {
+    if (shouldForwardPlayEngineCommand(command.type)) {
       handle.applyCommand(command);
     }
     if (command.type === "activeScene") {
@@ -760,7 +766,9 @@ export function startPlaySession(options: {
     );
   }
 
-  const input: InputCaptureHandle = attachInputCapture(canvas);
+  const input: InputCaptureHandle = attachInputCapture(canvas, {
+    skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+  });
 
   const unlock = () => {
     void handle.unlockAudio();

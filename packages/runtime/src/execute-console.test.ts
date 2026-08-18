@@ -232,4 +232,41 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("slomo -1").output).toBe("slomo 0");
     runtime.stop();
   });
+
+  it("emits setFreeCam without pausing the simulation", () => {
+    const commands: CommandMessage[] = [];
+    const dts: number[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.start();
+    const actor = runtime.getWorld().createActor({
+      guid: "probe",
+      classId: "Actor",
+      hooks: {
+        onTick: (_self, ctx) => {
+          dts.push(ctx.dt);
+        },
+      },
+    });
+    runtime.getWorld().spawnActorNow(actor);
+    const before = runtime.getWorld().clock.tickIndex;
+    expect(runtime.executeConsoleCommand("freecam")).toEqual({
+      success: true,
+      output: "freecam on",
+    });
+    expect(
+      commands.filter((command) => command.type === "setFreeCam"),
+    ).toEqual([{ type: "setFreeCam", enabled: true }]);
+    expect(commands.some((command) => command.type === "sessionPaused")).toBe(
+      false,
+    );
+    runtime.tick();
+    expect(runtime.getWorld().clock.tickIndex).toBe(before + 1);
+    expect(dts.length).toBeGreaterThan(0);
+    runtime.stop();
+  });
 });

@@ -101,6 +101,7 @@ export function startPlayer(options: {
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,
     environmentColor: scene.settings.environmentColor,
+    viewportMode: scene.viewportMode,
     ktx2BasePath: ktx2BasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
       diagnostics.push({
@@ -332,7 +333,9 @@ export function startPlayer(options: {
     });
   }
 
-  input = attachInputCapture(canvas);
+  input = attachInputCapture(canvas, {
+    skipPointerAndKeyboard: () => handle.isFreeCamEnabled(),
+  });
   const releaseUnlock = unlockAudioOnFirstGesture(() => {
     void handle.unlockAudio();
   });

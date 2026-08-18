@@ -15,6 +15,7 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setFrameCap",
   "setRenderQuality",
   "setResolutionScale",
+  "setFreeCam",
   "assignParticle",
   "setParticlePlaying",
 ]);

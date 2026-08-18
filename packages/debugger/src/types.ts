@@ -42,6 +42,7 @@ export type ConsoleCommandHost = {
   setShowCollision?(enabled: boolean): void;
   setShowBounds?(enabled: boolean): void;
   setWireframe?(enabled: boolean): void;
+  setFreeCam?(enabled: boolean): void;
   pause?(): void;
   resume?(): void;
   step?(): void;

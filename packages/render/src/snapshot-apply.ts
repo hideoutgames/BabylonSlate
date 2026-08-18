@@ -241,10 +241,13 @@ function applyPartTransform(mesh: Mesh, part: AssignMeshPart): void {
   });
 }
 
-function refreshPlayActiveCamera(
+export const PLAY_FREE_CAM_NAME = "playFreeCam";
+
+export function refreshPlayActiveCamera(
   scene: Scene,
   binding: SnapshotSceneBinding,
 ): void {
+  if (scene.activeCamera?.name === PLAY_FREE_CAM_NAME) return;
   const possessed =
     binding.possessedCameraSlotId !== null
       ? binding.cameras.get(binding.possessedCameraSlotId)

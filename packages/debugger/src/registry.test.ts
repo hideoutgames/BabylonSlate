@@ -51,6 +51,9 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     setWireframe: (enabled) => {
       calls.push(`wireframe:${enabled}`);
     },
+    setFreeCam: (enabled) => {
+      calls.push(`freecam:${enabled}`);
+    },
     pause: () => {
       calls.push("pause");
     },
@@ -143,6 +146,7 @@ describe("createCommandRegistry", () => {
     expect(registry.execute("showfps off", host).success).toBe(true);
     expect(registry.execute("stat memory", host).success).toBe(true);
     expect(registry.execute("pause", host).success).toBe(true);
+    expect(registry.execute("freecam", host).success).toBe(true);
     expect(registry.execute("slomo 0.25", host).success).toBe(true);
     expect(registry.execute("dumplog", host)).toEqual({
       success: true,
@@ -152,8 +156,23 @@ describe("createCommandRegistry", () => {
       "showfps:false",
       "stat:memory:true",
       "pause",
+      "freecam:true",
       "slomo:0.25",
     ]);
+  });
+
+  it("turns freecam on by default and off without pausing", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("freecam", host)).toEqual({
+      success: true,
+      output: "freecam on",
+    });
+    expect(registry.execute("freecam off", host)).toEqual({
+      success: true,
+      output: "freecam off",
+    });
+    expect(host.calls).toEqual(["freecam:true", "freecam:false"]);
   });
 
   it("coerces types and rejects bad enum values", () => {

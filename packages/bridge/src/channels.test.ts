@@ -170,6 +170,15 @@ describe("Play session commands", () => {
     expect(commandType(scale)).toBe("setResolutionScale");
     expect(commandType(cap)).toBe("setFrameCap");
   });
+
+  it("setFreeCam is a CommandMessage variant", () => {
+    const command = {
+      type: "setFreeCam",
+      enabled: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setFreeCam");
+    expect(command.enabled).toBe(true);
+  });
 });
 
 describe("Particle commands", () => {

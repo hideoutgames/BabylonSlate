@@ -8,6 +8,7 @@ import {
   diagnosticFromCommand,
   applyPlaySessionStep,
   applyPlaySessionPausedCommand,
+  shouldForwardPlayEngineCommand,
   dispatchPlayUiWidgetEvent,
   deliverInspectSnapshot,
   inspectSnapshotFromCommand,
@@ -265,6 +266,14 @@ describe("applyPlayUiCommand", () => {
         {},
       ),
     ).toBe(false);
+  });
+});
+
+describe("shouldForwardPlayEngineCommand", () => {
+  it("forwards setFreeCam onto the Play engine handle", () => {
+    expect(shouldForwardPlayEngineCommand("setFreeCam")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });
 });
 

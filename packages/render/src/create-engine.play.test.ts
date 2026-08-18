@@ -750,4 +750,32 @@ describe("Play createEngine view", () => {
     ]);
     handle.dispose();
   });
+
+  it("applies setFreeCam without pausing and restores on possessCamera", () => {
+    const { handle } = playHandle(sharedEngine());
+    const defaultCam = handle.scene.activeCamera;
+    expect(handle.isFreeCamEnabled()).toBe(false);
+    handle.applyCommand({ type: "setFreeCam", enabled: true });
+    expect(handle.isFreeCamEnabled()).toBe(true);
+    expect(handle.scene.activeCamera?.name).toBe("playFreeCam");
+    expect(handle.scene.activeCamera).not.toBe(defaultCam);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    expect(handle.isFreeCamEnabled()).toBe(false);
+    expect(handle.scene.activeCamera?.name).not.toBe("playFreeCam");
+    handle.applyCommand({ type: "setFreeCam", enabled: true });
+    expect(handle.isFreeCamEnabled()).toBe(true);
+    handle.loadScene(createDefaultScene());
+    expect(handle.isFreeCamEnabled()).toBe(false);
+  });
 });

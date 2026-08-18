@@ -54,6 +54,7 @@ export const DEBUG_COMMAND_NAMES = [
   "dumplog",
   "snapshot start",
   "snapshot stop",
+  "freecam",
 ] as const;
 
 export function isReservedConsoleCommandName(name: string): boolean {
@@ -211,6 +212,11 @@ export function builtinCommands(): RegisteredCommand[] {
     ),
     flagCommand("showbounds", (host, enabled) => host.setShowBounds?.(enabled)),
     flagCommand("wireframe", (host, enabled) => host.setWireframe?.(enabled)),
+    flagCommand(
+      "freecam",
+      (host, enabled) => host.setFreeCam?.(enabled),
+      "Detached fly camera; simulation keeps running",
+    ),
     {
       name: "pause",
       tier: "debug",

@@ -1742,6 +1742,9 @@ class InProcessRuntime implements RuntimeDriver {
       setShowCollision: (enabled) => emitSetting("showcollision", enabled),
       setShowBounds: (enabled) => emitSetting("showbounds", enabled),
       setWireframe: (enabled) => emitSetting("wireframe", enabled),
+      setFreeCam: (enabled) => {
+        this.emit({ type: "setFreeCam", enabled: Boolean(enabled) });
+      },
       pause: () => {
         this.pause();
         this.emit({ type: "sessionPaused", paused: true });
