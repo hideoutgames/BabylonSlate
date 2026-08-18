@@ -1464,6 +1464,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
+        occlusionEnabled:
+          projectDocument?.settings.audio.occlusionEnabled !== false,
         assets: assetsFromIndexed(list),
         plugins: projectService.plugins.map((plugin) => ({
           pluginGuid: plugin.pluginGuid,

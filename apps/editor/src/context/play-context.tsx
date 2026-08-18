@@ -1084,6 +1084,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             hardwareScalingLevel={hardwareScalingLevel}
             navmeshBytes={playNavmeshBytes}
             audioReverbBytes={playAudioReverbBytes}
+            audioProjectSettings={projectDocument?.settings.audio}
             pixelsPerUnit={
               projectDocument?.settings.twoD.pixelsPerUnit ?? 100
             }

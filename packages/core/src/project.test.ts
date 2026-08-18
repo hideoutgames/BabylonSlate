@@ -56,7 +56,10 @@ describe("project schema", () => {
       defaultFontGuid: null,
       globalFallback: "sans-serif",
     });
-    expect(project.settings.audio).toEqual({ audioMixerGuid: null });
+    expect(project.settings.audio).toEqual({
+      audioMixerGuid: null,
+      occlusionEnabled: true,
+    });
     expect(project.settings.startupSceneGuid).toBeNull();
     expect(project.settings.gameInstanceClass).toBeNull();
     expect(project.settings.playFrameCap).toBe(60);
@@ -479,6 +482,19 @@ describe("project schema", () => {
       normalizeProjectSettings({ audio: { audioMixerGuid: "mixer-1" } }).audio
         .audioMixerGuid,
     ).toBe("mixer-1");
+  });
+
+  it("defaults Audio occlusion on and keeps an explicit off switch", () => {
+    expect(normalizeProjectSettings(undefined).audio.occlusionEnabled).toBe(true);
+    expect(normalizeProjectSettings({}).audio.occlusionEnabled).toBe(true);
+    expect(
+      normalizeProjectSettings({ audio: { audioMixerGuid: "mixer-1" } }).audio
+        .occlusionEnabled,
+    ).toBe(true);
+    expect(
+      normalizeProjectSettings({ audio: { occlusionEnabled: false } }).audio
+        .occlusionEnabled,
+    ).toBe(false);
   });
 
   it("normalizes a missing Game Instance class to null and keeps a stored id", () => {

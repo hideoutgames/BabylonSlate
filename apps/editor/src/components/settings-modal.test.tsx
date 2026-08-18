@@ -214,6 +214,19 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("toggles project Audio occlusion", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-audio"));
+    fireEvent.click(screen.getByTestId("settings-audio-occlusion"));
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.objectContaining({ occlusionEnabled: false }),
+      }),
+    );
+  });
+
   it("edits sorting layers as a named list", () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

@@ -55,10 +55,9 @@ export type AudioPayload = {
   pitchMax: number;
 };
 
-export type AudioChannelEffect = {
-  kind: "environmentReverb";
-  enabled: boolean;
-};
+export type AudioChannelEffect =
+  | { kind: "environmentReverb"; enabled: boolean }
+  | { kind: "muffleThroughWalls"; enabled: boolean };
 
 export type AudioChannelPayload = {
   parentChannelGuid: string | null;
@@ -187,7 +186,10 @@ export function createDefaultAudioPayload(): AudioPayload {
 export function createDefaultAudioChannelPayload(): AudioChannelPayload {
   return {
     parentChannelGuid: null,
-    effects: [{ kind: "environmentReverb", enabled: false }],
+    effects: [
+      { kind: "environmentReverb", enabled: false },
+      { kind: "muffleThroughWalls", enabled: false },
+    ],
   };
 }
 
@@ -379,8 +381,40 @@ export function extraChunksWithoutAudioClip(
 
 function normalizeChannelEffect(value: unknown): AudioChannelEffect | null {
   const source = asRecord(value);
-  if (source.kind !== "environmentReverb") return null;
-  return { kind: "environmentReverb", enabled: source.enabled === true };
+  if (source.kind === "environmentReverb" || source.kind === "muffleThroughWalls") {
+    return { kind: source.kind, enabled: source.enabled === true };
+  }
+  return null;
+}
+
+const DEFAULT_CHANNEL_EFFECTS: AudioChannelEffect[] = [
+  { kind: "environmentReverb", enabled: false },
+  { kind: "muffleThroughWalls", enabled: false },
+];
+
+function ensureChannelEffects(effects: AudioChannelEffect[]): AudioChannelEffect[] {
+  const seen = new Set<AudioChannelEffect["kind"]>();
+  const next: AudioChannelEffect[] = [];
+  for (const effect of effects) {
+    if (seen.has(effect.kind)) continue;
+    seen.add(effect.kind);
+    next.push(effect);
+  }
+  for (const fallback of DEFAULT_CHANNEL_EFFECTS) {
+    if (!seen.has(fallback.kind)) next.push(fallback);
+  }
+  return next;
+}
+
+export function setAudioChannelEffect(
+  payload: AudioChannelPayload,
+  kind: AudioChannelEffect["kind"],
+  enabled: boolean,
+): AudioChannelPayload {
+  const effects = ensureChannelEffects(payload.effects).map((effect) =>
+    effect.kind === kind ? { kind, enabled } : effect,
+  );
+  return { ...payload, effects };
 }
 
 export function normalizeAudioChannelPayload(value: unknown): AudioChannelPayload {
@@ -389,13 +423,12 @@ export function normalizeAudioChannelPayload(value: unknown): AudioChannelPayloa
     ? source.effects
         .map(normalizeChannelEffect)
         .filter((entry): entry is AudioChannelEffect => entry !== null)
-    : createDefaultAudioChannelPayload().effects;
+    : DEFAULT_CHANNEL_EFFECTS;
   return {
     parentChannelGuid: nullableGuid(source.parentChannelGuid),
-    effects:
-      effects.length > 0
-        ? effects
-        : [{ kind: "environmentReverb", enabled: false }],
+    effects: ensureChannelEffects(
+      effects.length > 0 ? effects : DEFAULT_CHANNEL_EFFECTS,
+    ),
   };
 }
 
@@ -634,6 +667,7 @@ export type AudioPlaybackResolution = {
   gain: number;
   channelGuids: string[];
   environmentReverb: boolean;
+  muffleThroughWalls: boolean;
 };
 
 export function resolveAudioPlayback(options: {
@@ -646,6 +680,7 @@ export function resolveAudioPlayback(options: {
 }): AudioPlaybackResolution {
   const channelGuids: string[] = [];
   let environmentReverb = false;
+  let muffleThroughWalls = false;
   const start = options.audio.audioChannelGuid;
   if (start) {
     const seen = new Set<string>();
@@ -660,6 +695,13 @@ export function resolveAudioPlayback(options: {
         )
       ) {
         environmentReverb = true;
+      }
+      if (
+        channel?.effects.some(
+          (effect) => effect.kind === "muffleThroughWalls" && effect.enabled,
+        )
+      ) {
+        muffleThroughWalls = true;
       }
       current = channel?.parentChannelGuid ?? null;
     }
@@ -693,6 +735,7 @@ export function resolveAudioPlayback(options: {
     }),
     channelGuids,
     environmentReverb,
+    muffleThroughWalls,
   };
 }
 

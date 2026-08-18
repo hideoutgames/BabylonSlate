@@ -61,6 +61,7 @@ export type CollectExportGameParams = {
   startupSceneGuid: string | null;
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;
+  occlusionEnabled?: boolean;
   assets: ExportIndexedAsset[];
   plugins: readonly ExportPluginDescriptor[];
   projectPluginOverrides: Record<string, { enabled: boolean }>;
@@ -268,6 +269,7 @@ export async function collectAndExportGame(
     startupSceneGuid: startup,
     gameInstanceClass: params.gameInstanceClass,
     audioMixerGuid: params.audioMixerGuid,
+    occlusionEnabled: params.occlusionEnabled,
     customResolution: params.customResolution,
     playFrameCap: params.playFrameCap,
     pixelsPerUnit: params.pixelsPerUnit,

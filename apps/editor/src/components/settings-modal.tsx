@@ -753,6 +753,28 @@ export function SettingsModal({
                 channel or global gain.
               </FieldDescription>
             </Field>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="settings-audio-occlusion">
+                Occlusion
+              </FieldLabel>
+              <Switch
+                id="settings-audio-occlusion"
+                checked={projectDocument.settings.audio.occlusionEnabled}
+                onCheckedChange={(checked) =>
+                  updateProjectSettings({
+                    audio: {
+                      ...projectDocument.settings.audio,
+                      occlusionEnabled: checked === true,
+                    },
+                  })
+                }
+                data-testid="settings-audio-occlusion"
+              />
+            </Field>
+            <FieldDescription>
+              Muffles spatial sounds through baked occupancy walls when a
+              channel enables Muffle Through Walls. Channel-less stays clear.
+            </FieldDescription>
           </FieldSet>
         </FieldGroup>
       ) : null}

@@ -8,6 +8,7 @@ import {
   interpolateAudioReverb,
   isDryAudioReverbFallback,
   normalizeAudioPayload,
+  occlusionFactor,
   pickWeightedAudioClip,
   resolveAudioPitch,
   audioClipCacheKey,
@@ -80,6 +81,7 @@ type LiveVoice = {
   gain: number;
   pitch: number;
   reverbSend: boolean;
+  muffleThroughWalls: boolean;
   previousPose: AudioPose | null;
 };
 
@@ -132,6 +134,9 @@ export class AudioService {
   private readonly now: () => number;
   private lastSnapshotAt: number | null = null;
   private readonly random: () => number;
+  private projectAudio = {
+    occlusionEnabled: true,
+  };
 
   constructor(options: {
     backend: AudioPlaybackBackend;
@@ -177,6 +182,15 @@ export class AudioService {
 
   setReverbField(bytes: Uint8Array | null | undefined): void {
     this.reverbField = bytes ? decodeAudioReverbChunk(bytes) : null;
+    this.refreshReverbWet();
+    this.refreshSpatialVoices(false);
+  }
+
+  setProjectAudioSettings(settings: { occlusionEnabled?: boolean }): void {
+    if (settings.occlusionEnabled !== undefined) {
+      this.projectAudio.occlusionEnabled = settings.occlusionEnabled === true;
+    }
+    this.refreshSpatialVoices(false);
     this.refreshReverbWet();
   }
 
@@ -422,6 +436,7 @@ export class AudioService {
       gain: resolved.gain,
       pitch,
       reverbSend: resolved.environmentReverb,
+      muffleThroughWalls: resolved.muffleThroughWalls,
       previousPose: null,
     });
     this.lastGain = resolved.gain;
@@ -471,6 +486,7 @@ export class AudioService {
       });
       voice.gain = resolved.gain;
       voice.reverbSend = resolved.environmentReverb;
+      voice.muffleThroughWalls = resolved.muffleThroughWalls;
       this.backend.setVoiceGain(voice.voiceId, resolved.gain);
       this.lastGain = resolved.gain;
     }
@@ -486,7 +502,10 @@ export class AudioService {
         : 0;
     if (fromSnapshot) this.lastSnapshotAt = now;
     for (const voice of this.voices.values()) {
-      if (!voice.spatial) continue;
+      if (!voice.spatial) {
+        this.backend.setVoiceMuffle(voice.voiceId, 0);
+        continue;
+      }
       const slotId =
         voice.emitterActorGuid !== null
           ? this.actorSlots.get(voice.emitterActorGuid)
@@ -495,9 +514,11 @@ export class AudioService {
         slotId !== undefined ? this.slotPoses.get(slotId) : undefined;
       if (!pose) {
         this.lastDistance = null;
+        this.backend.setVoiceMuffle(voice.voiceId, 0);
         continue;
       }
       this.backend.setVoicePose(voice.voiceId, pose);
+      this.refreshVoiceMuffle(voice, pose);
       const dx = pose.x - this.listener.x;
       const dy = pose.y - this.listener.y;
       const dz = pose.z - this.listener.z;
@@ -524,6 +545,21 @@ export class AudioService {
       }
     }
     this.publishStats();
+  }
+
+  private refreshVoiceMuffle(voice: LiveVoice, pose: AudioPose): void {
+    if (
+      !this.projectAudio.occlusionEnabled ||
+      !voice.muffleThroughWalls ||
+      !voice.spatial
+    ) {
+      this.backend.setVoiceMuffle(voice.voiceId, 0);
+      return;
+    }
+    this.backend.setVoiceMuffle(
+      voice.voiceId,
+      occlusionFactor(pose, this.listener, this.reverbField?.occupancy),
+    );
   }
 
   private refreshReverbWet(): void {

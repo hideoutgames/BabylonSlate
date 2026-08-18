@@ -11,7 +11,7 @@ import {
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
-import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -359,6 +359,7 @@ export function startPlaySession(options: {
   audioLibrary?: AudioLibrary;
   /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
   audioReverbBytes?: Uint8Array | null;
+  audioProjectSettings?: Pick<AudioProjectSettings, "occlusionEnabled">;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
   postProcessingEnabled?: boolean;
@@ -402,6 +403,7 @@ export function startPlaySession(options: {
     audioBytes: options.audioBytes,
     audioLibrary: options.audioLibrary,
     audioReverbBytes: options.audioReverbBytes,
+    audioProjectSettings: options.audioProjectSettings,
     materialDocuments: options.materialDocuments,
     materialFunctions: options.materialFunctions,
     postProcessStack: options.scene?.settings.postProcessStack,

@@ -88,10 +88,13 @@ export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
 export interface AudioProjectSettings {
   /** Selected AudioMixer asset, or None. */
   audioMixerGuid: string | null;
+  /** Master for wall muffling. Channel-less sounds stay unmuffled. */
+  occlusionEnabled: boolean;
 }
 
 export const DEFAULT_AUDIO_PROJECT_SETTINGS: AudioProjectSettings = {
   audioMixerGuid: null,
+  occlusionEnabled: true,
 };
 
 export interface RenderProjectSettings {
@@ -664,6 +667,7 @@ function normalizeAudioSettings(
     typeof value?.audioMixerGuid === "string" ? value.audioMixerGuid.trim() : "";
   return {
     audioMixerGuid: guid === "" ? null : guid,
+    occlusionEnabled: value?.occlusionEnabled !== false,
   };
 }
 

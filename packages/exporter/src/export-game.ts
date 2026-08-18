@@ -252,6 +252,7 @@ export async function exportGame(
     ...(options.audioMixerGuid?.trim()
       ? { audioMixerGuid: options.audioMixerGuid.trim() }
       : {}),
+    occlusionEnabled: options.occlusionEnabled !== false,
     bundleDebugger: options.bundleDebugger,
     mode,
     render: options.customResolution,
@@ -325,6 +326,7 @@ export function parseGameManifest(source: string): GameManifest {
     ...rest,
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
     ...(audioMixerGuid ? { audioMixerGuid } : {}),
+    occlusionEnabled: parsed.occlusionEnabled !== false,
     bundleDebugger,
     pixelsPerUnit:
       typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0

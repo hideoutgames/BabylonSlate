@@ -96,6 +96,9 @@ export function startPlayer(options: {
     audioBytes: game.audioBytes,
     audioLibrary: content.audioLibrary,
     audioReverbBytes: content.audioReverbBytes,
+    audioProjectSettings: {
+      occlusionEnabled: manifest.occlusionEnabled !== false,
+    },
     materialDocuments: content.materialDocuments,
     materialFunctions: content.materialFunctions,
     postProcessStack: content.postProcessStack,

@@ -6,7 +6,7 @@ import {
   ScenePerformancePriority,
   Texture,
 } from "@babylonjs/core";
-import type { SerializedScene, ViewportMode } from "@babylonslate/core";
+import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
@@ -221,6 +221,8 @@ export interface CreateEngineOptions {
   audioLibrary?: AudioLibrary;
   /** Scene `audioReverb` chunk; dry when missing. */
   audioReverbBytes?: Uint8Array | null;
+  /** Project Settings Audio (occlusion master). */
+  audioProjectSettings?: Pick<AudioProjectSettings, "occlusionEnabled">;
   onAudioDiagnostic?: (diagnostic: {
     code: string;
     message: string;
@@ -400,6 +402,9 @@ export function createEngine(
     }
     if (options.audioReverbBytes) {
       audioService.setReverbField(options.audioReverbBytes);
+    }
+    if (options.audioProjectSettings) {
+      audioService.setProjectAudioSettings(options.audioProjectSettings);
     }
   }
   const settingsLevel = options.hardwareScalingLevel ?? 1;

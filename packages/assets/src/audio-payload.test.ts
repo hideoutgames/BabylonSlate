@@ -49,6 +49,7 @@ import {
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
   normalizeSoundAttenuationPayload,
+  setAudioChannelEffect,
   resolveAudioReferences,
   sanitizeAudioLibrary,
   validateAudioChannelGraph,
@@ -277,7 +278,10 @@ describe("audio payloads", () => {
     });
     expect(createDefaultAudioChannelPayload()).toEqual({
       parentChannelGuid: null,
-      effects: [{ kind: "environmentReverb", enabled: false }],
+      effects: [
+        { kind: "environmentReverb", enabled: false },
+        { kind: "muffleThroughWalls", enabled: false },
+      ],
     });
     expect(createDefaultSoundAttenuationPayload()).toEqual({
       innerRadius: 1,
@@ -558,6 +562,77 @@ describe("audio payloads", () => {
         channels,
       }),
     ).toMatchObject({ gain: 1, environmentReverb: true });
+  });
+
+  it("keeps both channel effects and walks muffle through parents", () => {
+    const payload = createDefaultAudioChannelPayload();
+    expect(
+      setAudioChannelEffect(payload, "muffleThroughWalls", true).effects,
+    ).toEqual([
+      { kind: "environmentReverb", enabled: false },
+      { kind: "muffleThroughWalls", enabled: true },
+    ]);
+    expect(
+      setAudioChannelEffect(
+        { parentChannelGuid: null, effects: [{ kind: "environmentReverb", enabled: true }] },
+        "muffleThroughWalls",
+        true,
+      ).effects,
+    ).toEqual([
+      { kind: "environmentReverb", enabled: true },
+      { kind: "muffleThroughWalls", enabled: true },
+    ]);
+    expect(
+      normalizeAudioChannelPayload({
+        effects: [{ kind: "environmentReverb", enabled: true }],
+      }).effects,
+    ).toEqual([
+      { kind: "environmentReverb", enabled: true },
+      { kind: "muffleThroughWalls", enabled: false },
+    ]);
+    const channels = new Map([
+      [
+        "sfx",
+        {
+          parentChannelGuid: "master",
+          effects: [{ kind: "environmentReverb" as const, enabled: false }],
+        },
+      ],
+      [
+        "master",
+        {
+          parentChannelGuid: null,
+          effects: [
+            { kind: "environmentReverb" as const, enabled: false },
+            { kind: "muffleThroughWalls" as const, enabled: true },
+          ],
+        },
+      ],
+    ]);
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: "sfx",
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer: null,
+        channels,
+      }),
+    ).toMatchObject({ environmentReverb: false, muffleThroughWalls: true });
+    expect(
+      resolveAudioPlayback({
+        audio: {
+          volume: 1,
+          audioChannelGuid: null,
+          soundAttenuationGuid: null,
+        },
+        playCallVolume: 1,
+        mixer: null,
+        channels,
+      }).muffleThroughWalls,
+    ).toBe(false);
   });
 
   it("computes mixer gain as asset × play × channel chain × global", () => {

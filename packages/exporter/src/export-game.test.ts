@@ -481,6 +481,52 @@ describe("exportGame", () => {
     expect(manifest.pixelPerfect).toBe(false);
     expect(manifest.infiniteLoopDetection).toBeUndefined();
     expect(manifest.loopCount).toBeUndefined();
+    expect(manifest.occlusionEnabled).toBe(true);
+  });
+
+  it("writes Audio occlusion into game.json", async () => {
+    const on = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(on.ok).toBe(true);
+    if (!on.ok) return;
+    expect(on.value.manifest.occlusionEnabled).toBe(true);
+    const off = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      occlusionEnabled: false,
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(off.ok).toBe(true);
+    if (!off.ok) return;
+    expect(off.value.manifest.occlusionEnabled).toBe(false);
+    expect(
+      parseGameManifest(
+        new TextDecoder().decode(off.value.files.get(GAME_MANIFEST_FILE)!),
+      ).occlusionEnabled,
+    ).toBe(false);
   });
 
   it("defaults bundled debugger loop settings when game.json omits them", () => {
