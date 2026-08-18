@@ -19,9 +19,9 @@ Import accepts **pre-packed JSON** or **loose frames**. Loose frames run a **det
 
 ## `SpriteComponent`
 
-A **quad mesh** with the current frame baked into UVs. Editor `EditorSceneSync` replaces the box proxy with that quad and assigns `ResourceCache.getTexture(textureGuid)` as the unlit albedo/emissive (nearest, no mips) when Play/editor collected the Texture asset's `pixels`/`source` bytes. Alpha-test default; blending opt-in via existing `sorting.ts` `alphaIndex`. Play `assignMesh` with `meshKind: "sprite"` creates the same textured quad. Play loads sprite payloads from scene `SpriteComponent.assetGuid` (the asset does not need to be an open tab). `spriteClipFrameAt` picks a named clip frame from normalised time for **legacy** Sprite clips. When `animState.clipKind === "sprite"` and `clipAssetGuid` is a Sprite Animation, render `applySpriteAnimationAssetFrame` binds that frame’s Texture (full UVs) and pivot on the quad.
+A **quad mesh** with the current frame baked into UVs. Editor `EditorSceneSync` replaces the box proxy with that quad and assigns `ResourceCache.getTexture(textureGuid)` as the unlit albedo/emissive (nearest, no mips) when Play/editor collected the Texture asset's `pixels`/`source` bytes. Alpha-test default; blending opt-in via existing `sorting.ts` `alphaIndex`. Play `assignMesh` with `meshKind: "sprite"` creates the same textured quad. Play loads sprite payloads from scene `SpriteComponent.assetGuid` (the asset does not need to be an open tab). `spriteClipFrameAt` picks a named clip frame from normalised time for **legacy** Sprite clips. When `animState.clipKind === "sprite"` and `clipAssetGuid` is a Sprite Animation, render `applySpriteAnimationAssetFrame` binds that frame’s Texture (full UVs), resizes the quad from texture pixels / `pixelsPerUnit`, and sets pivot on the `SpriteComponent` mesh.
 
-When the actor also has `ColliderComponent` with shape `box2d`, `PhysicsWorldSync` maps the **current** frame AABB (minus pivot) through `spriteCollisionToBox2d` using texture pixels / `pixelsPerUnit`, and updates each tick while a Sprite Animation plays. Circle / capsule / polygon colliders are left as authored.
+When the actor also has `ColliderComponent` with shape `box2d`, `PhysicsWorldSync` maps the **current** frame AABB (minus pivot) through `spriteCollisionToBox2d` using texture pixels / `pixelsPerUnit`, and updates each tick while a Sprite Animation plays. When the graph leaves a sprite clip (Model / empty clip), `tickAnimGraphs` clears that override so the Sprite default AABB returns. Circle / capsule / polygon colliders are left as authored.
 
 Golden: a sprite at world +X renders **right of origin** (Babylon left-handed 2D, camera at −Z — same trap as [render.md](render.md) 2D projection).
 
@@ -36,13 +36,13 @@ SpriteAnimationPayload = {
     durationMs: number;
     pivot: { x: number; y: number }; // default {0.5,0.5}
     collision: SpriteCollision;      // default {0,0,1,1}
-    width?: number;
+    width?: number;   // texture pixels; stamped from PNG IHDR when missing
     height?: number;
   }>;
 }
 ```
 
-DockView **Preview** + **Details** (same checklist as Sprite). Preview: checkerboard, current frame, pivot crosshair, AABB overlay, frame strip. Details: Texture `AssetPicker`, duration, pivot, collision numbers. Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
+DockView **Preview** + **Details** (same checklist as Sprite). Preview: token checkerboard, current frame (`object-contain`), pivot crosshair and AABB overlay on the contained image box, frame strip. Details: Texture `AssetPicker` (stamps `width`/`height` from the Texture `pixels` PNG IHDR), duration, pivot, collision numbers. Play and the packaged player fill missing frame sizes from collected Texture bytes (`hydrateSpriteAnimationPixelSizes`). Header `dependencies[]` lists frame `textureGuid`s for Show References and export closure.
 
 AnimGraph **Sprite** clip kind picks this asset (not Sprite). Duration for the evaluator is `sum(durationMs)`.
 

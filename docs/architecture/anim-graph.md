@@ -35,6 +35,7 @@ Each tick `tickAnimGraphs`:
 2. Once per `${slotId}:{guid}`, `invokeAnimEvent(AnimGraph:{guid}, onInitializeAnimation)`.
 3. Every tick, `invokeAnimEvent(..., onUpdateAnimation, dt)`.
 4. `evaluateAnimGraph` with `decideTransition` → `invokeAnimRule(AnimRule:{guid}:{id})` (`exports.evaluate` → `{ enter, exit }`; missing class / throw → `undefined` = legacy fallback).
+5. If the current clip is `kind: "sprite"` with an asset guid, `setActorSpriteClip`; otherwise clear it so a later Model state does not keep the last Sprite Animation box.
 
 `self` on those scripts is the **Actor**. Get/Set Variable hit the component `variableStore` when the host passes it. Animation Object Get Variable nodes migrate with `implicitSelf: true`.
 
@@ -45,7 +46,7 @@ Protocol: extra command-channel `animState` (not a snapshot stride bump). See [b
 Drives:
 
 - glTF `Animation` clips via `@babylonjs/loaders` `LoadAssetContainerAsync` (Play `modelBytes` → paused per-slot `AnimationGroup`s).
-- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of frame `durationMs`.
+- Sprite Animation assets (and legacy Sprite named clips) from [sprites.md](sprites.md). `applySpriteAnimationAssetFrame` binds the current frame Texture, full UVs, pixel size, and pivot on the `SpriteComponent` quad. Duration for the evaluator is the sum of frame `durationMs`.
 
 ## Render
 
