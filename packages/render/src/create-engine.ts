@@ -44,7 +44,10 @@ import {
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
-import { applySceneEnvironment as applySerializedSceneEnvironment } from "./scene-illumination";
+import {
+  applySceneEnvironment as applySerializedSceneEnvironment,
+  refreshAuthoredCameraLenses,
+} from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import { ResourceCache } from "./resource-cache";
@@ -738,6 +741,7 @@ export function createEngine(
       editor?.camera.setCanvasHeight(height);
       editor?.camera.updateOrthoBounds(width / height);
     }
+    refreshAuthoredCameraLenses(scene);
   };
 
   let interpAlpha = 1;
@@ -868,6 +872,7 @@ export function createEngine(
     resize,
     setSize: (width: number, height: number) => {
       engine.setSize(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)));
+      refreshAuthoredCameraLenses(scene);
     },
     loadScene,
     pushSnapshot: (buffer: Float32Array) => {

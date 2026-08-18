@@ -3,6 +3,8 @@ import {
   createDefaultGraph,
   createDefaultScene,
   createEmptyProject,
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   DEFAULT_SORTING_LAYERS,
   MAIN_CLASS_FILE,
   MAIN_GRAPH_FILE,
@@ -90,6 +92,10 @@ describe("project schema", () => {
       (component) => component.classId === "CameraComponent",
     );
     expect(cameraComponent?.properties.attemptPossessViewTarget).toBe(true);
+    expect(cameraComponent?.properties.fieldOfView).toBe(DEFAULT_CAMERA_FIELD_OF_VIEW);
+    expect(cameraComponent?.properties.orthographicSize).toBe(
+      DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+    );
     expect(cameraComponent?.properties.projectionMode).toBe("perspective");
     expect(scene.settings.mainCameraActorId).toBe(camera!.id);
     expect(scene.settings.mainCameraComponentId).toBe(cameraComponent!.id);
