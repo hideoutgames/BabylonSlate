@@ -29,7 +29,7 @@ function aiScene(properties: Record<string, unknown>): SerializedScene {
 }
 
 describe("runtime behaviour tree evaluation", () => {
-  it("emits btState from BehaviourTreeComponent each tick", () => {
+  it("emits btState from BehaviourTreeComponent and skips identical repeats", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -49,6 +49,11 @@ describe("runtime behaviour tree evaluation", () => {
       status: "success",
       btNodeId: null,
     });
+    runtime.tick();
+    runtime.tick();
+    expect(commands.filter((command) => command.type === "btState")).toHaveLength(
+      1,
+    );
     runtime.stop();
   });
 

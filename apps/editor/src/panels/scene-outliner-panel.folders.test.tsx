@@ -202,6 +202,47 @@ describe("Scene Outliner folders", () => {
     expect(moved.parentId).toBe("hero");
     expect(moved.folderId).toBeNull();
   });
+
+  it("moves every selected sibling actor into a folder in one drop", () => {
+    harness.selectedActorIds = ["lamp", "hero"];
+    renderOutliner({
+      ...createDefaultScene(),
+      folders: [{ id: "f1", name: "One", parentFolderId: null }],
+      actors: [createActor("lamp", "Lamp"), createActor("hero", "Hero")],
+    });
+    // Rows: 0 = folder f1, 1 = lamp, 2 = hero.
+    dragRow(actorRowId("lamp"), folderRowId("f1"), 0);
+
+    const next = lastScene();
+    expect(next.actors).toHaveLength(2);
+    expect(next.actors.find((actor) => actor.id === "lamp")?.folderId).toBe("f1");
+    expect(next.actors.find((actor) => actor.id === "hero")?.folderId).toBe("f1");
+    expect(next.actors.every((actor) => actor.parentId === null)).toBe(true);
+  });
+
+  it("does not also reparent a selected child when its parent is dragged", () => {
+    harness.selectedActorIds = ["hero", "sword"];
+    renderOutliner({
+      ...createDefaultScene(),
+      folders: [{ id: "f1", name: "One", parentFolderId: null }],
+      actors: [
+        createActor("hero", "Hero"),
+        createActor("sword", "Sword", { parentId: "hero" }),
+      ],
+    });
+    dragRow(actorRowId("hero"), folderRowId("f1"), 0);
+
+    const next = lastScene();
+    expect(next.actors).toHaveLength(2);
+    expect(next.actors.find((actor) => actor.id === "hero")).toMatchObject({
+      folderId: "f1",
+      parentId: null,
+    });
+    expect(next.actors.find((actor) => actor.id === "sword")).toMatchObject({
+      parentId: "hero",
+      folderId: null,
+    });
+  });
 });
 
 function lockIconName(actorId: string): string | null {
@@ -245,30 +286,57 @@ describe("Scene Outliner lock icons", () => {
 });
 
 describe("applyOutlinerRowSelect", () => {
-  const rows = [actorRowId("hero"), actorRowId("sword"), actorRowId("lamp")];
+  const rows = [
+    folderRowId("f1"),
+    actorRowId("hero"),
+    actorRowId("sword"),
+    actorRowId("lamp"),
+  ];
 
   it("selects one actor exclusively by default", () => {
-    expect(applyOutlinerRowSelect(actorRowId("sword"), undefined, rows, ["hero"])).toEqual({
-      folderId: null,
+    expect(
+      applyOutlinerRowSelect(actorRowId("sword"), undefined, rows, [actorRowId("hero")]),
+    ).toEqual({
+      folderIds: [],
       actorIds: ["sword"],
     });
   });
 
   it("toggles an actor into the selection when additive", () => {
     expect(
-      applyOutlinerRowSelect(actorRowId("sword"), { additive: true }, rows, ["hero"]),
-    ).toEqual({ folderId: null, actorIds: ["hero", "sword"] });
+      applyOutlinerRowSelect(actorRowId("sword"), { additive: true }, rows, [
+        actorRowId("hero"),
+      ]),
+    ).toEqual({ folderIds: [], actorIds: ["hero", "sword"] });
   });
 
   it("range-selects actors between the anchor and the tapped row", () => {
     expect(
-      applyOutlinerRowSelect(actorRowId("lamp"), { range: true }, rows, ["hero"]),
-    ).toEqual({ folderId: null, actorIds: ["hero", "sword", "lamp"] });
+      applyOutlinerRowSelect(actorRowId("lamp"), { range: true }, rows, [
+        actorRowId("hero"),
+      ]),
+    ).toEqual({ folderIds: [], actorIds: ["hero", "sword", "lamp"] });
   });
 
-  it("clears actors when a folder is selected", () => {
+  it("selects one folder exclusively by default", () => {
     expect(
-      applyOutlinerRowSelect(folderRowId("f1"), { additive: true }, rows, ["hero"]),
-    ).toEqual({ folderId: "f1", actorIds: [] });
+      applyOutlinerRowSelect(folderRowId("f1"), undefined, rows, [actorRowId("hero")]),
+    ).toEqual({ folderIds: ["f1"], actorIds: [] });
+  });
+
+  it("toggles a folder into a mixed selection when additive", () => {
+    expect(
+      applyOutlinerRowSelect(folderRowId("f1"), { additive: true }, rows, [
+        actorRowId("hero"),
+      ]),
+    ).toEqual({ folderIds: ["f1"], actorIds: ["hero"] });
+  });
+
+  it("range-selects mixed folder and actor rows", () => {
+    expect(
+      applyOutlinerRowSelect(actorRowId("sword"), { range: true }, rows, [
+        folderRowId("f1"),
+      ]),
+    ).toEqual({ folderIds: ["f1"], actorIds: ["hero", "sword"] });
   });
 });
