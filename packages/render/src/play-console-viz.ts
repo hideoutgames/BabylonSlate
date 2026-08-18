@@ -2,6 +2,7 @@ import {
   Color3,
   Mesh,
   MeshBuilder,
+  Quaternion,
   StandardMaterial,
   Vector3,
   type LinesMesh,
@@ -94,6 +95,12 @@ export function createPlayCollisionOverlay(scene: Scene): {
             collider.position.x,
             collider.position.y,
             collider.position.z,
+          );
+          mesh.rotationQuaternion = new Quaternion(
+            collider.rotation.x,
+            collider.rotation.y,
+            collider.rotation.z,
+            collider.rotation.w,
           );
           mesh.material = material;
           markDebugOverlay(mesh);

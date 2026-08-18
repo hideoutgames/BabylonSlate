@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam / p8-console-apply / p8-console-viz | Spec | 2D `freecam` panned per finger instead of pinch-zooming ortho | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `setRenderQuality` applied on the editor viewport `HardwareScalingController`, not Play-only | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale` followed Play valve max 4 instead of clamping 1..2 | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Collision debug boxes ignored listed world rotation | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Inspector identity labeled `Guid` instead of Title Case `GUID` | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Console `DialogHeader` used `space-y-0`; repo spacing is `flex` + `gap-*` | Resolved |
 | 2026-08-18 | cursor/play-debugger-review-f6e8 | Play debugger overlay / inspector / console | Standards | Package API docs omitted `createDebugInspectSnapshot`; bridge Channels omitted `inspect` / `inspectSnapshot` (and `console` / `consoleResult`) | Resolved |

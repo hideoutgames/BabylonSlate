@@ -28,7 +28,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `shadowquality` | yes | **yes** | Emits `{ type: "setShadowQuality" }`; renderer sizes or disposes the one `ShadowGenerator`. `2048` warns. No arg → print current. |
 | `quit` | yes | **yes** | `runtime.stop()`. Overlay Stop is a separate chrome path. |
 | `renderquality` | yes | **yes** | `{ type: "setRenderQuality" }` → Play `HardwareScalingController` (`high=1`, `medium=1.5`, `low=2`). No arg → print current. |
-| `resolutionscale` | yes | **yes** | `{ type: "setResolutionScale" }` → `setLevel`. No arg → print current. |
+| `resolutionscale` | yes | **yes** | `{ type: "setResolutionScale" }` → Play `setLevel`, clamped `1..2` (Play valve max may be 4). No arg → print current. Play canvas only. |
 | `framecap` | yes | **yes** | `{ type: "setFrameCap" }` → Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume` | yes | **yes** | `{ type: "setGlobalVolume" }` (P16 mixer). No arg → print current. |
 | `help` | yes | **yes** | Core. Lists registered names or one command’s parameters. Stripped debug names print “not available in this build”. |
@@ -41,10 +41,10 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
 | `slomo` | yes | **yes** | `RuntimeDriver.timeDilation` clamp `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace replay keeps recorded `dt`. No arg → print current. |
-| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; gamepad still forwards. Off / `changescene` / `possessCamera` restore. |
+| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards. Off / `changescene` / `possessCamera` restore. |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings, not OS threads. |
-| `showcollision` / `showbounds` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/polylines). Skip helper/debug meshes. |
+| `showcollision` / `showbounds` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/polylines, including box world rotation). Skip helper/debug meshes. |
 | `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene with the session navmesh bytes. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |

@@ -41,6 +41,15 @@ describe("play console render apply", () => {
     const setFrameCap = vi.fn();
     applyPlayResolutionScale(scaling, 1.25);
     expect(scaling.getLevel()).toBe(1.25);
+    applyPlayResolutionScale(scaling, 0.25);
+    expect(scaling.getLevel()).toBe(1);
+    const wide = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      initialLevel: 1,
+    });
+    applyPlayResolutionScale(wide, 8);
+    expect(wide.getLevel()).toBe(2);
     expect(
       applyPlayConsoleRenderCommand(
         { scaling, scheduler: { setFrameCap } },

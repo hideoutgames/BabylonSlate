@@ -779,6 +779,15 @@ describe("Play createEngine view", () => {
     expect(handle.isFreeCamEnabled()).toBe(false);
   });
 
+  it("applies setRenderQuality on Play views only, not the editor viewport", () => {
+    const play = playHandle(sharedEngine());
+    const editor = editorHandle(sharedEngine());
+    play.handle.applyCommand({ type: "setRenderQuality", level: "low" });
+    editor.handle.applyCommand({ type: "setRenderQuality", level: "low" });
+    expect(play.handle.scaling.getLevel()).toBe(2);
+    expect(editor.handle.scaling.getLevel()).toBe(1);
+  });
+
   it("syncs the Fake audio listener to the possessed camera world pose", async () => {
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();

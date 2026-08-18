@@ -39,7 +39,7 @@ describe("play console visualization", () => {
         id: "box",
         shape: "box",
         position: { x: 0, y: 0, z: 0 },
-        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        rotation: { x: 0, y: 1, z: 0, w: 0 },
         halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
       },
       {
@@ -67,7 +67,9 @@ describe("play console visualization", () => {
         ],
       },
     ]);
-    expect(scene.getMeshByName("playConsoleViz:box")).not.toBeNull();
+    const box = scene.getMeshByName("playConsoleViz:box");
+    expect(box).not.toBeNull();
+    expect(box?.rotationQuaternion?.y).toBeCloseTo(1);
     expect(scene.getMeshByName("playConsoleViz:sphere")).not.toBeNull();
     expect(scene.getMeshByName("playConsoleViz:circle")).not.toBeNull();
     expect(scene.getMeshByName("playConsoleViz:line")).not.toBeNull();

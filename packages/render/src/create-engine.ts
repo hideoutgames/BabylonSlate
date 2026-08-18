@@ -969,7 +969,9 @@ export function createEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
-      applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+      if (options.playMode) {
+        applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+      }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       if (command.type === "spawn") {
