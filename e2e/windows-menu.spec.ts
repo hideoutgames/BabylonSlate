@@ -256,6 +256,46 @@ test.describe("Windows menu", { tag: IPAD_TEST_TAG }, () => {
     await assertNoPageFailures(collector);
   });
 
+  test("opens an EditorUtilityInterface from a UI authoring tab onto the Scene dock", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await createEditorUtility(page, "SceneTools");
+    await openAssetFromBrowser(page, "assets/SceneTools.eui.babasset");
+    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await expect(page.getByTestId("windows-menu")).toBeEnabled({
+      timeout: 15_000,
+    });
+    await openWindowsMenu(page);
+    await page.getByTestId("windows-editor-utilities").click({ force: true });
+    await expect(page.getByTestId("windows-editor-utilities-empty")).toHaveCount(0);
+    const utilityItem = page.locator('[data-testid^="windows-menu-eui-"]');
+    await utilityItem.click({ force: true });
+    await expect(page.getByTestId("editor-utility-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("viewport-panel")).toBeVisible();
+    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+    await closeWindowsMenu(page);
+  });
+
+  test("opens a live Editor Utility from Designer Open Live", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await createEditorUtility(page, "SceneTools");
+    await openAssetFromBrowser(page, "assets/SceneTools.eui.babasset");
+    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
+    await page.getByTestId("ui-open-live").click();
+    await expect(page.getByTestId("editor-utility-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("viewport-panel")).toBeVisible();
+    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
+  });
+
   test("Class-dock Editor Utility stays open on the Class document", async ({
     page,
   }) => {
