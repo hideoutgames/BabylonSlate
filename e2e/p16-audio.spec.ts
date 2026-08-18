@@ -32,6 +32,22 @@ async function pickAsset(
   await expect(page.getByTestId(pickerTestId)).toHaveCount(0);
 }
 
+/** Beep.wav is ~0ms; one-shot voices drop after onEnded. Loop so Play stats stay non-zero. */
+async function enableImportedAudioLoop(
+  page: Page,
+  assetPath = "assets/beep.babasset",
+): Promise<void> {
+  await openAssetFromBrowser(page, assetPath);
+  await expect(page.getByTestId("document-workspace-audio")).toBeVisible();
+  const loop = page.getByTestId("audio-preview-loop");
+  await expect(loop).toBeVisible();
+  if ((await loop.getAttribute("data-state")) !== "on") {
+    await loop.click();
+  }
+  await expect(loop).toHaveAttribute("data-state", "on");
+  await saveAllIfEnabled(page);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("P16 audio", () => {
@@ -48,6 +64,7 @@ test.describe("P16 audio", () => {
     ).toBeVisible({ timeout: 30_000 });
     const beepGuid = await guidForPath(page, "assets/beep.babasset");
     expect(beepGuid.length).toBeGreaterThan(0);
+    await enableImportedAudioLoop(page);
 
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -359,6 +376,7 @@ test.describe("P16 audio", () => {
     ).toBeVisible({ timeout: 30_000 });
     const beepGuid = await guidForPath(page, "assets/beep.babasset");
     expect(beepGuid.length).toBeGreaterThan(0);
+    await enableImportedAudioLoop(page);
 
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -400,7 +418,7 @@ test.describe("P16 audio", () => {
           }),
         { timeout: 15_000 },
       )
-      .toEqual(expect.objectContaining({ unlocked: true }));
+      .toEqual(expect.objectContaining({ unlocked: true, voices: expect.any(Number) }));
     await expect
       .poll(
         async () =>
