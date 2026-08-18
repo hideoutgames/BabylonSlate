@@ -6,9 +6,9 @@ There is **no second sound type**. Imported `Audio` stays kind `audio` with a `s
 
 ## Author path
 
-- **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so). Compact Audio stays `asset-settings` (not DockView).
+- **Import** a WAV / MP3 / OGG. New Asset does not create sounds (the Audio group says so). Imported Audio opens a DockView document (`audio`: Preview / Details / Clips).
 - **Place Actors → Project** tile for that Audio. That binds `audioAssetGuid` with Play On Start. The engine **Audio** speaker stays empty until an asset is picked.
-- **Play**, then **click the game view** to enable audio. Chrome shows **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load.
+- **Play**, then **click the game view** to enable audio. Overlay Play and the bundled-debugger player show **Click the game view to enable audio** while play-on-start is queued and AudioV2 is still locked. Do not auto-unlock at load. Overlay **Pause** pauses live AudioV2 voices (it does not stop or dispose them). Console `pause` stays sim-only.
 - Mixer, channel, and attenuation are optional. Playback is `assetVolume × playCallVolume` with those refs at None.
 
 Also:
@@ -34,12 +34,12 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 | Type | Created by | Suffix | Editor |
 | --- | --- | --- | --- |
-| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, gesture-safe Play/Stop + Repeat, read-only PCM peak waveform, Volume, Loop, Pitch, clips, Channel + Attenuation) |
+| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | DockView Preview (Play/Stop, Loop, waveform), Details (Volume, Loop, Randomize Pitch, Pitch unless randomize is on, Pitch Min/Max, Channel, Attenuation), Clips (read-only names, editable weights) |
 | `AudioMixer` | New Asset | `.mixer.babasset` | DockView Details (`audio-mixer`) |
 | `AudioChannel` | New Asset | `.channel.babasset` | DockView Details (`audio-channel`) |
 | `SoundAttenuation` | New Asset | `.atten.babasset` | DockView Details (`sound-attenuation`) with an SVG falloff **plot** (numeric UI, not artwork) |
 
-**Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `loop` default `false`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`; `clips` (omitted/empty → `[{ chunkId: "source", name: "", weight: 1 }]`, cap 8); `pitch` default `1` (clamp `0.25..4`); `pitchRandom` default `false`; `pitchMin` / `pitchMax` default `1`. Extra files land as `source:<id>` chunks — not a playlist of other Audio guids. `pickWeightedAudioClip` treats weights `>= 0` (all-zero → equal). Decode cache key is `${guid}:${chunkId}`. Playback rate is `pitch × dopplerRate`; `syncListener` must not overwrite it. Play loops when `command.loop === true` **or** `payload.loop === true`. Graph / BT Play Sound omit `loop` and inherit the asset flag. `AudioComponent.loop` still forces loop on a one-shot asset. To play a looping asset once, uncheck asset Loop.
+**Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `loop` default `false`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`; `clips` (omitted/empty → `[{ chunkId: "source", name: "<asset file stem>", weight: 1 }]`, cap 8); `pitch` default `1` (clamp `0.25..4`); `pitchRandom` default `false`; `pitchMin` / `pitchMax` default `1`. Import writes the source clip name from the file stem. Empty source names fill from the asset header name on first Details/Clips commit (`fillEmptySourceClipName`). Clip names are read-only in the editor; only Weight / Add / Remove are editable. The `source` clip cannot be removed. Extra files land as `source:<id>` chunks — not a playlist of other Audio guids. `pickWeightedAudioClip` treats weights `>= 0` (all-zero → equal). Decode cache key is `${guid}:${chunkId}`. Playback rate is `pitch × dopplerRate`; `syncListener` must not overwrite it. Play loops when `command.loop === true` **or** `payload.loop === true`. Graph / BT Play Sound omit `loop` and inherit the asset flag. `AudioComponent.loop` still forces loop on a one-shot asset. To play a looping asset once, uncheck asset Loop. Details hide the **Pitch** row when `pitchRandom` is on (min/max stay).
 
 **AudioChannel** has no volume: `parentChannelGuid`, `effects: [{ kind: "environmentReverb" \| "muffleThroughWalls", enabled }]`. Old channels with only reverb gain a disabled muffle row. Parent cycles fail validation; missing/rejected parent routes to master with one diagnostic. `AudioService.setLibrary` sanitizes the Play library the same way: missing channel/attenuation refs and cyclic parents become `null` with one diagnostic each. Channel Details toggles must keep both effect kinds (`setAudioChannelEffect`).
 
@@ -78,9 +78,11 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 
 ## Unlock and cache
 
-First `pointerdown` / `touchstart` on overlay Play and the packaged player calls `audioService.unlockAsync()`. Commands before unlock enqueue (cap 32, ordered) and drain after the gesture. Overlay chrome shows **Click the game view to enable audio** (`play-audio-unlock-hint`) while `queued > 0` and still locked. Decode / missing-context → one diagnostic; the game keeps running.
+First `pointerdown` / `touchstart` on overlay Play (`play-canvas`) and the packaged player (`player-canvas`) calls `audioService.unlockAsync()`. `AudioService` warms the AudioV2 engine at boot (suspended) so the gesture turn only `resume()`s / `unlockAsync()`s — it does not `await CreateAudioEngineAsync` on the click. Commands before unlock enqueue (cap 32, ordered) and drain after the gesture. Overlay chrome and the bundled-debugger player show **Click the game view to enable audio** (`play-audio-unlock-hint`) while `queued > 0` and still locked. Decode / missing-context → one diagnostic; the game keeps running. There is no `[audio] …` play-log-tail line; `showaudiodebug` is the now-playing overlay.
 
-Compact Audio preview **prefetches** clip bytes when the tab opens and starts playback **in the same turn** as Play (unlock + backend `play`, no `await readAssetChunk` before start). WKWebView drops the user-gesture if Play awaits I/O first. Cache miss → `audio.preview_missing_source`; play failure surfaces `audio.play_failed` instead of swallowing. Compact preview is non-spatial (no Play listener). Preview Play uses `payload.loop`; when Loop is off, `onVoiceEnded` flips the transport back to Play. After prefetch (not on the Play click), `decodeAudioData` builds a read-only PCM peak plot (`extractAudioWaveformPeaks`, 128 bars) for the first / last-played clip. Decode failure leaves an empty well; Play still works. Overlay Play / Preview Build / `apps/player` load **every** clip chunk (`guid` and `guid:chunk` keys); BSAU with a clip table after JSON stays compatible with the old “rest is one source” pack.
+Asset-document preview **prefetches** clip bytes when the tab opens and starts playback **in the same turn** as Play (unlock + backend `play`, no `await readAssetChunk` before start). WKWebView drops the user-gesture if Play awaits I/O first. Cache miss → `audio.preview_missing_source`; play failure surfaces `audio.play_failed` instead of swallowing. Document preview is non-spatial (no Play listener). Preview Play uses `payload.loop`; when Loop is off, `onVoiceEnded` flips the transport back to Play. After prefetch (not on the Play click), `decodeAudioData` builds a read-only PCM peak plot (`extractAudioWaveformPeaks`, 128 bars) for the first / last-played clip. Decode failure leaves an empty well; Play still works. Overlay Play / Preview Build / `apps/player` load **every** clip chunk (`guid` and `guid:chunk` keys); BSAU with a clip table after JSON stays compatible with the old “rest is one source” pack.
+
+Preview Build’s iframe uses `outline-none` / `focus-visible:outline-none`; the packaged player also sets `canvas:focus { outline: none }` so a click does not draw a browser focus ring. Packing already includes Audio (BSAU); `export-game-inputs` loads documents as kind `audio`.
 
 `AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32.
 
@@ -130,10 +132,12 @@ Named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in
 
 ## Test hatch
 
-Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/render`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes` — same idea as `uiHostStats`. Playwright: `e2e/p16-audio.spec.ts`. Cross-package gain/unlock/reverb proofs: `packages/render/src/p16-acceptance.test.ts`.
+Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/render`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes`, and `debugVoices` when `showaudiodebug` is on — same idea as `uiHostStats`. Playwright: `e2e/p16-audio.spec.ts` (overlay Play unlock plus Preview Build iframe unlock). Cross-package gain/unlock/reverb proofs: `packages/render/src/p16-acceptance.test.ts`.
+
+`showaudiodebug [on|off]` is a debug-tier flag (same bool parser as `showfps`) that **applies**. Runtime emits `{ type: "setShowAudioDebug"; enabled }`; `AudioService` publishes a per-voice snapshot and a DOM overlay (not Babylon GUI) polls it with `requestAnimationFrame` so it still draws while sim is paused. Per voice: asset guid, clip name, gain, pitch, loop, spatial vs not, listener–emitter distance, inner/max radius, and **inside radius** (`distance <= maxRadius` when spatial and pose known; `n/a` otherwise). Empty list: `No playing voices`. Off: overlay unmounted. Overlay Play and the bundled-debugger player both mount it.
 
 ## Out of P16
 
-Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture/Model/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Compact Audio may draw a read-only PCM peak plot; that is not waveform editing.
+Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture/Model `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Audio Preview may draw a read-only PCM peak plot; that is not waveform editing.
 
 See [render.md](render.md), [bridge.md](bridge.md), [scripting.md](scripting.md), [exporter.md](exporter.md). Spec: [engineplan.md](../engineplan.md) §2.6.
