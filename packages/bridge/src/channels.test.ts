@@ -92,3 +92,28 @@ describe("UserInterface command and control contracts", () => {
     expect(text.value).toBe("Ada");
   });
 });
+
+describe("Play inspect contract", () => {
+  it("inspect control and inspectSnapshot command round-trip a node list", () => {
+    const control = { type: "inspect" } satisfies ControlMessage;
+    expect(controlType(control)).toBe("inspect");
+    const command = {
+      type: "inspectSnapshot",
+      snapshot: {
+        tickIndex: 4,
+        nodes: [
+          {
+            id: "hero",
+            kind: "actor",
+            label: "Hero",
+            classId: "Actor",
+            parentId: null,
+            variables: { health: 10 },
+          },
+        ],
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("inspectSnapshot");
+    expect(command.snapshot.nodes[0]?.label).toBe("Hero");
+  });
+});

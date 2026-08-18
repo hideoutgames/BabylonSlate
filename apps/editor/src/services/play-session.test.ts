@@ -7,6 +7,7 @@ import {
   diagnosticFromCommand,
   applyPlaySessionStep,
   dispatchPlayUiWidgetEvent,
+  inspectSnapshotFromCommand,
   isFatalPlayDiagnostic,
   playInputStampTick,
   playSessionBootControls,
@@ -89,6 +90,50 @@ describe("diagnosticFromCommand", () => {
     expect(isFatalPlayDiagnostic("runtime.uncaught")).toBe(false);
     expect(isFatalPlayDiagnostic("preview")).toBe(false);
     expect(isFatalPlayDiagnostic(undefined)).toBe(false);
+  });
+});
+
+describe("inspectSnapshotFromCommand", () => {
+  it("returns the inspect payload from inspectSnapshot commands", () => {
+    expect(
+      inspectSnapshotFromCommand({
+        type: "stats",
+        frameId: 1,
+        tickIndex: 1,
+        scriptMs: 0,
+        physicsMs: 0,
+      }),
+    ).toBeNull();
+    expect(
+      inspectSnapshotFromCommand({
+        type: "inspectSnapshot",
+        snapshot: {
+          tickIndex: 8,
+          nodes: [
+            {
+              id: "hero",
+              kind: "actor",
+              label: "Hero",
+              classId: "Actor",
+              parentId: null,
+              variables: { health: 4 },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      tickIndex: 8,
+      nodes: [
+        {
+          id: "hero",
+          kind: "actor",
+          label: "Hero",
+          classId: "Actor",
+          parentId: null,
+          variables: { health: 4 },
+        },
+      ],
+    });
   });
 });
 
