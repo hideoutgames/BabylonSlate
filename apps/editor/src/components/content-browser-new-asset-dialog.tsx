@@ -29,6 +29,7 @@ import {
 } from "@babylonslate/ui/components/empty";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -166,6 +167,13 @@ export function ContentBrowserNewAssetDialog({
                   {visibleGroups.map((group) => (
                     <FieldSet key={group.id} className="gap-2">
                       <FieldLegend variant="label">{group.label}</FieldLegend>
+                      {group.hint ? (
+                        <FieldDescription
+                          data-testid={`new-asset-group-hint-${group.id}`}
+                        >
+                          {group.hint}
+                        </FieldDescription>
+                      ) : null}
                       <div className="grid grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-2">
                         {group.types.map((item) => {
                           const selected = item === type;

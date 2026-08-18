@@ -177,4 +177,13 @@ describe("ContentBrowserNewAssetDialog", () => {
     fireEvent.click(screen.getByTestId("content-browser-new-asset-create"));
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
+
+  it("tells authors that sounds come from Import, not New Asset", () => {
+    renderDialog();
+    const hint = screen.getByTestId("new-asset-group-hint-audio");
+    expect(hint.textContent).toMatch(/Import/);
+    expect(hint.textContent).toMatch(/WAV/);
+    expect(hint.textContent).toMatch(/MP3/);
+    expect(hint.textContent).toMatch(/OGG/);
+  });
 });

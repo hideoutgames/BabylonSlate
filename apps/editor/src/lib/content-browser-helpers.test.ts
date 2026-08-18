@@ -1062,6 +1062,10 @@ describe("content-browser-helpers", () => {
       "AudioChannel",
       "SoundAttenuation",
     ]);
+    expect(audio!.hint).toMatch(/Import/i);
+    expect(audio!.hint).toMatch(/WAV/);
+    expect(audio!.hint).toMatch(/MP3/);
+    expect(audio!.hint).toMatch(/OGG/);
   });
 
   it("describes the selected creatable type", () => {
