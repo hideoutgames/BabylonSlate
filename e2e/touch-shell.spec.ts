@@ -40,6 +40,22 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     expect(box!.height).toBeGreaterThanOrEqual(28);
   });
 
+  test("chrome document tab bar hides scrollbars while remaining scrollable", async ({
+    page,
+  }) => {
+    const tabBar = page.getByTestId("document-tab-bar");
+    await expect(tabBar).toBeVisible();
+    const styles = await tabBar.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return {
+        overflowX: cs.overflowX,
+        scrollbarWidth: cs.scrollbarWidth,
+      };
+    });
+    expect(styles.overflowX).toBe("auto");
+    expect(styles.scrollbarWidth).toBe("none");
+  });
+
   test("dockview tabs meet pointer-aware height", async ({ page }) => {
     const tab = page.locator(".dockview-theme-babylonslate .dv-tab").first();
     await expect(tab).toBeVisible();
