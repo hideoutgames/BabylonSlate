@@ -18,7 +18,7 @@ export interface InputCaptureHandle {
   dispose: () => void;
 }
 
-/** Tick stamp for canvas events. In-process uses World.clock; worker uses last stats tick. */
+/** Tick stamp for canvas events. In-process uses World.clock; worker uses last snapshot tick. */
 export function playInputStampTick(
   inProcessTickIndex: number | undefined,
   lastWorkerTickIndex: number,

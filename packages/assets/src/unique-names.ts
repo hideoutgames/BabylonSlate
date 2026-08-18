@@ -41,6 +41,7 @@ export function stripAssetFileSuffix(fileName: string): string {
     .replace(/\.channel\.babasset$/i, "")
     .replace(/\.atten\.babasset$/i, "")
     .replace(/\.plugin\.babasset$/i, "")
+    .replace(/\.skyboxcreator\.babasset$/i, "")
     .replace(/\.babasset$/i, "");
 }
 
@@ -63,5 +64,8 @@ export function assetFileSuffix(fileName: string): string {
   if (/\.channel\.babasset$/i.test(fileName)) return ".channel.babasset";
   if (/\.atten\.babasset$/i.test(fileName)) return ".atten.babasset";
   if (/\.plugin\.babasset$/i.test(fileName)) return ".plugin.babasset";
+  if (/\.skyboxcreator\.babasset$/i.test(fileName)) {
+    return ".skyboxcreator.babasset";
+  }
   return ".babasset";
 }

@@ -26,7 +26,7 @@ export {
   applyConsoleCompletion,
   suggestConsoleCompletions,
 } from "./autocomplete";
-export { TICK_BUDGET_MS, isTickOverBudget } from "./stats";
+export { STATS_COMMAND_INTERVAL_MS, TICK_BUDGET_MS, isTickOverBudget, shouldEmitStatsCommand } from "./stats";
 export {
   DEFAULT_INFINITE_LOOP_COUNT,
   INFINITE_LOOP_DIAGNOSTIC_CODE,

@@ -49,6 +49,8 @@ export function rectContains(rect: CanvasRect, point: CanvasPoint): boolean {
 /**
  * Names of pickable meshes whose origin projects inside a canvas rectangle;
  * used by 2D hold-marquee and by Drag Select in both viewport modes.
+ * Hidden volumetric pick colliders (`visibility === 0`) are skipped so
+ * origin-root helpers are not listed twice (icon + collider).
  */
 export function meshNamesInCanvasRect(
   scene: Scene,
@@ -59,7 +61,7 @@ export function meshNamesInCanvasRect(
   scene.updateTransformMatrix();
   const hits: string[] = [];
   for (const mesh of scene.meshes) {
-    if (!mesh.isPickable || !mesh.isVisible) continue;
+    if (!mesh.isPickable || !mesh.isVisible || mesh.visibility === 0) continue;
     // A marquee can run before the next render, so the world matrix a freshly
     // moved or freshly created mesh carries is still stale.
     mesh.computeWorldMatrix(true);
