@@ -174,4 +174,26 @@ describe("createActorsFromSerializedScene", () => {
     });
     expect(actors[0]!.components[0]!.assetGuid).toBe("jump");
   });
+
+  it("copies particleSystemGuid onto ParticleComponent assetGuid", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Particles",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [
+        createActor("fx", "Fire", {
+          components: [
+            {
+              id: "particle-1",
+              classId: "ParticleComponent",
+              properties: { particleSystemGuid: "fire" },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.assetGuid).toBe("fire");
+  });
 });

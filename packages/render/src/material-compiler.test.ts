@@ -86,6 +86,68 @@ describe("material compiler", () => {
     expect(result.material.getClassName()).toBe("NodeMaterial");
   });
 
+  it("compiles a particle-domain graph in Particle mode for createEffectForParticles", () => {
+    const scene = host();
+    const result = compileMaterialPlan(
+      planFor(createDefaultMaterialDocument("Sparks", "particle")),
+      { scene, name: "particle" },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(result.dispose);
+    expect(result.material.mode).toBe(2);
+    expect(
+      result.material.attachedBlocks.some(
+        (block) => block.getClassName() === "PBRMetallicRoughnessBlock",
+      ),
+    ).toBe(false);
+    expect(
+      result.material.attachedBlocks.some((block) => {
+        const input = block as { isAttribute?: boolean; name?: string };
+        return (
+          input.isAttribute === true ||
+          block.name.toLowerCase().includes("color")
+        );
+      }),
+    ).toBe(true);
+  });
+
+  it("compiles Particle Texture as ParticleTextureBlock with particle_uv when UV is unwired", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
+    doc.nodes.push({
+      id: "tex",
+      type: "input.particleTexture",
+      position: { x: 0, y: 80 },
+      properties: {},
+    });
+    doc.edges = [
+      {
+        id: "e-tex-output",
+        sourceNodeId: "tex",
+        sourcePinId: "rgba",
+        targetNodeId: "output",
+        targetPinId: "color",
+      },
+    ];
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "particleTexture",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(result.dispose);
+    expect(
+      result.material.attachedBlocks.some(
+        (block) => block.getClassName() === "ParticleTextureBlock",
+      ),
+    ).toBe(true);
+  });
+
   it("instantiates a Babylon block per lowered operation", () => {
     const scene = host();
     const result = compileMaterialPlan(planFor(multiplyMaterial()), {

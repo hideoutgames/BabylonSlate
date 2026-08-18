@@ -11,6 +11,7 @@ import { transformNodes } from "./transform";
 import { physicsNodes } from "./physics";
 import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
+import { particleNodes } from "./particles";
 import { uiNodes } from "./ui";
 import { sceneNodes } from "./scene";
 import { renderNodes } from "./render";
@@ -39,6 +40,7 @@ export * from "./transform";
 export * from "./physics";
 export * from "./input";
 export * from "./audio";
+export * from "./particles";
 export * from "./ui";
 export * from "./scene";
 export * from "./render";
@@ -69,6 +71,7 @@ export const ALL_NODE_CATEGORIES = [
   "physics",
   "input",
   "audio",
+  "particles",
   "ui",
   "scene",
   "render",
@@ -101,6 +104,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...physicsNodes,
     ...inputNodes,
     ...audioNodes,
+    ...particleNodes,
     ...uiNodes,
     ...sceneNodes,
     ...renderNodes,

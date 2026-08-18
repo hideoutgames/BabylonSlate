@@ -428,6 +428,61 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-mix");
   });
 
+  it("includes ParticleComponent → Particle System → Emitters → Texture/Material", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("vfx", "Vfx", {
+          components: [
+            {
+              id: "particle-1",
+              classId: "ParticleComponent",
+              properties: { particleSystemGuid: "ps-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "ps-1",
+          type: "ParticleSystem",
+          name: "Fire",
+          dependencies: ["em-1", "em-2"],
+        }),
+        asset({
+          guid: "em-1",
+          type: "ParticleEmitter",
+          name: "Flame",
+          dependencies: ["tex-1", "mat-1"],
+        }),
+        asset({
+          guid: "em-2",
+          type: "ParticleEmitter",
+          name: "Smoke",
+          dependencies: ["tex-2"],
+        }),
+        asset({ guid: "tex-1", type: "Texture", name: "FlameTex" }),
+        asset({ guid: "tex-2", type: "Texture", name: "SmokeTex" }),
+        asset({ guid: "mat-1", type: "Material", name: "ParticleMat" }),
+        asset({ guid: "unused-em", type: "ParticleEmitter", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sort()).toEqual(
+      ["em-1", "em-2", "mat-1", "ps-1", "scene-1", "tex-1", "tex-2"].sort(),
+    );
+    expect(result.value).not.toContain("unused-em");
+  });
+
   it("includes a project GameInstance class when the scene field is empty", () => {
     const scene = createDefaultScene();
     const result = collectExportClosure({

@@ -65,6 +65,12 @@ export const ADDABLE_COMPONENT_CLASSES = [
     category: "Audio",
   },
   {
+    id: "ParticleComponent",
+    label: "Particle",
+    description: "Plays a Particle System",
+    category: "Particles",
+  },
+  {
     id: "RigidBodyComponent",
     label: "Rigid Body",
     description: "Physics body",
@@ -128,6 +134,13 @@ export function defaultPropertiesFor(
         playOnStart: true,
         loop: false,
         volume: 1,
+      };
+    case "ParticleComponent":
+      return {
+        particleSystemGuid: null,
+        playOnStart: true,
+        sortingLayer: "Default",
+        orderInLayer: 0,
       };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };

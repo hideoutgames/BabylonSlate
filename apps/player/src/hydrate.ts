@@ -3,6 +3,8 @@ import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
   normalizeAudioPayload,
+  normalizeParticleEmitterPayload,
+  normalizeParticleSystemPayload,
   normalizeSoundAttenuationPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
@@ -11,6 +13,8 @@ import {
   type AudioChannelPayload,
   type AudioMixerPayload,
   type AudioPayload,
+  type ParticleEmitterPayload,
+  type ParticleSystemPayload,
   type SoundAttenuationPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
@@ -43,6 +47,11 @@ export type PackedAudioLibrary = {
   attenuations: Map<string, SoundAttenuationPayload>;
 };
 
+export type PackedParticleLibrary = {
+  emitters: Map<string, ParticleEmitterPayload>;
+  systems: Map<string, ParticleSystemPayload>;
+};
+
 export type PackedGameContent = {
   spritePayloads: Map<string, SpritePayload>;
   spriteAnimationPayloads: Map<string, SpriteAnimationPayload>;
@@ -61,6 +70,7 @@ export type PackedGameContent = {
   pixelsPerUnit: number;
   pixelPerfect: boolean;
   audioLibrary: PackedAudioLibrary;
+  particleLibrary: PackedParticleLibrary;
   userInterfaces: Map<string, UserInterfaceDocument>;
 };
 
@@ -110,6 +120,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
   const channels = new Map<string, AudioChannelPayload>();
   const audio = new Map<string, AudioPayload>(game.audioPayloads);
   const attenuations = new Map<string, SoundAttenuationPayload>();
+  const emitters = new Map<string, ParticleEmitterPayload>();
+  const systems = new Map<string, ParticleSystemPayload>();
 
   for (const entry of game.manifest.assets ?? []) {
     const bytes = game.payloads.get(entry.guid);
@@ -179,6 +191,14 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     }
     if (entry.type === "Audio" && parsed && !audio.has(entry.guid)) {
       audio.set(entry.guid, normalizeAudioPayload(parsed));
+      continue;
+    }
+    if (entry.type === "ParticleEmitter" && parsed) {
+      emitters.set(entry.guid, normalizeParticleEmitterPayload(parsed));
+      continue;
+    }
+    if (entry.type === "ParticleSystem" && parsed) {
+      systems.set(entry.guid, normalizeParticleSystemPayload(parsed));
     }
   }
 
@@ -221,6 +241,10 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       channels,
       audio,
       attenuations,
+    },
+    particleLibrary: {
+      emitters,
+      systems,
     },
     userInterfaces: new Map(game.userInterfaces ?? []),
   };

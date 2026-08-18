@@ -211,6 +211,9 @@ import {
   type PlayBlackboardEntry,
 } from "../lib/play-content";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
+import {
+  playParticleLibraryFromAssets,
+} from "../lib/play-particles";
 import { materialPreviewCameraRadius } from "../lib/material-preview-test-host";
 import {
   clearDocumentDirtyTrace,
@@ -434,11 +437,15 @@ interface DocumentContextValue {
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
+    extraMaterialGuids?: readonly string[],
   ) => Promise<{
     documents: Map<string, MaterialDocument>;
     functions: Map<string, MaterialFunctionDocument>;
     textureGuids: string[];
   }>;
+  collectPlayParticles: () => Promise<
+    import("../lib/play-particles").PlayParticleLibrary
+  >;
   /** Mounted Scene assets (all roots) so Play `changescene` can instantiate them. */
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
@@ -2163,6 +2170,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "audio-mixer"
         | "audio-channel"
         | "sound-attenuation"
+        | "particle-emitter"
+        | "particle-system"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
@@ -2481,10 +2490,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     };
   }, [loadPlayAssetContent, projectDocument, projectService]);
 
+  const collectPlayParticles = useCallback(async () => {
+    const assets = projectService.registry?.list() ?? [];
+    const particleAssets = assets.filter((asset) =>
+      ["ParticleEmitter", "ParticleSystem"].includes(asset.header.type),
+    );
+    const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
+    for (const asset of particleAssets) {
+      const kind =
+        asset.header.type === "ParticleEmitter"
+          ? "particle-emitter"
+          : "particle-system";
+      const content =
+        (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
+      payloads.push({
+        guid: asset.header.guid,
+        type: asset.header.type,
+        payload: content,
+      });
+    }
+    return playParticleLibraryFromAssets({ assets: payloads });
+  }, [loadPlayAssetContent, projectService]);
+
   const collectPlayMaterialLibrary = useCallback(
     async (
       scene?: SerializedScene | null,
       extraScenes: readonly SerializedScene[] = [],
+      extraMaterialGuids: readonly string[] = [],
     ): Promise<{
       documents: Map<string, MaterialDocument>;
       functions: Map<string, MaterialFunctionDocument>;
@@ -2509,7 +2541,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         const content = await loadPlayAssetContent(kind, asset.path);
         if (content) loaded.set(guid, content);
       };
-      const needed = new Set(materialGuidsFromScenes([scene, ...extraScenes]));
+      const needed = new Set([
+        ...materialGuidsFromScenes([scene, ...extraScenes]),
+        ...(extraMaterialGuids ?? []),
+      ]);
       let grew = true;
       while (grew) {
         grew = false;
@@ -3595,6 +3630,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTextureBytes,
       collectPlayModelBytes,
       collectPlayAudio,
+      collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,
@@ -3642,6 +3678,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTextureBytes,
       collectPlayModelBytes,
       collectPlayAudio,
+      collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       loadGraphDocument,

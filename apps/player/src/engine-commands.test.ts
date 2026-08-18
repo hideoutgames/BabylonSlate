@@ -20,6 +20,33 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["assignMaterial"]);
   });
 
+  it("forwards assignParticle and setParticlePlaying onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "assignParticle",
+        slotId: 1,
+        actorGuid: "fx",
+        componentId: "particle-1",
+        particleSystemGuid: "sys-1",
+        play: true,
+      }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "setParticlePlaying",
+        actorGuid: "fx",
+        playing: false,
+      }),
+    ).toBe(true);
+    expect(applied).toEqual(["assignParticle", "setParticlePlaying"]);
+  });
+
   it("forwards playSound and mixer commands onto the Engine handle", () => {
     const applied: string[] = [];
     const handle = {
@@ -83,6 +110,12 @@ describe("applyPlayerActiveScene", () => {
       applySceneEnvironment: (scene: { name: string }) => {
         loaded.push(`env:${scene.name}`);
       },
+      resetAudioSession: () => {
+        loaded.push("reset-audio");
+      },
+      resetParticleSession: () => {
+        loaded.push("reset-particles");
+      },
     };
     const scene = { ...createDefaultScene(), name: "Level 2" };
     const scenes = new Map([["scene-2", scene]]);
@@ -92,6 +125,11 @@ describe("applyPlayerActiveScene", () => {
         sceneAssetGuid: "scene-2",
       }),
     ).toBe(true);
-    expect(loaded).toEqual(["load:Level 2", "env:Level 2"]);
+    expect(loaded).toEqual([
+      "load:Level 2",
+      "env:Level 2",
+      "reset-audio",
+      "reset-particles",
+    ]);
   });
 });
