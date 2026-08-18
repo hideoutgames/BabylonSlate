@@ -207,7 +207,7 @@ export type ProjectAddComponentAsset = {
   header: {
     guid: string;
     name: string;
-    type?: string;
+    type: string;
     parentClass?: string | null;
   };
 };
@@ -218,7 +218,7 @@ export function projectAddComponentItems(
   const parentOf = classParentLookup(assets);
   const items: AddComponentItem[] = [];
   for (const asset of assets) {
-    const type = asset.header.type ?? "";
+    const type = asset.header.type;
     const binding = PROJECT_ASSET_BINDINGS[type];
     if (binding) {
       items.push({
