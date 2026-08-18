@@ -135,6 +135,11 @@ beforeEach(() => {
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     stroke: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    clip: vi.fn(),
+    rect: vi.fn(),
+    strokeRect: vi.fn(),
     fillStyle: "",
     strokeStyle: "",
     lineWidth: 1,
@@ -143,6 +148,30 @@ beforeEach(() => {
 });
 
 describe("TilemapDetails", () => {
+  it("exposes map width and height next to tile size", () => {
+    const payload = createDefaultTilemapPayload();
+    const onChange = vi.fn();
+    render(
+      <TilemapDetails
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    expect((screen.getByTestId("property-mapWidth") as HTMLInputElement).value).toBe(
+      "64",
+    );
+    expect((screen.getByTestId("property-mapHeight") as HTMLInputElement).value).toBe(
+      "64",
+    );
+    fireEvent.change(screen.getByTestId("property-mapWidth"), {
+      target: { value: "8" },
+    });
+    fireEvent.blur(screen.getByTestId("property-mapWidth"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ width: 8, height: 64 }),
+    );
+  });
+
   it("adds a second layer and exposes visibility, sorting, and parallax", () => {
     const payload = createDefaultTilemapPayload();
     const onChange = vi.fn();
@@ -213,6 +242,56 @@ describe("TilemapPalette", () => {
 });
 
 describe("TilemapPaint", () => {
+  it("defaults to the Move tool", async () => {
+    render(
+      <TilemapHarness
+        initial={mapWithGround() as unknown as Record<string, unknown>}
+        onChange={() => {}}
+      />,
+    );
+    const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    expect(canvas.getAttribute("data-tool")).toBe("move");
+    expect(screen.getByTestId("tilemap-tool-move")).toBeTruthy();
+  });
+
+  it("pans the view with a one-finger drag in Move without writing tiles", async () => {
+    const onChange = vi.fn();
+    render(
+      <TilemapHarness
+        initial={mapWithGround() as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    canvas.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 256,
+        bottom: 256,
+        width: 256,
+        height: 256,
+        toJSON: () => {},
+      }) as DOMRect;
+    expect(canvas.getAttribute("data-pan-x")).toBe("0");
+    dispatchPointerEvent(canvas, "pointerdown", {
+      pointerId: 1,
+      clientX: 40,
+      clientY: 40,
+    });
+    dispatchPointerEvent(canvas, "pointermove", {
+      pointerId: 1,
+      clientX: 80,
+      clientY: 40,
+    });
+    await waitFor(() => {
+      expect(Number(canvas.getAttribute("data-pan-x") ?? "0")).toBe(40);
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("maps pointer cells with a zoomed cell size", async () => {
     const onChange = vi.fn();
     render(
@@ -223,6 +302,8 @@ describe("TilemapPaint", () => {
     );
     const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
     expect(canvas.getAttribute("data-cell-size")).toBe("32");
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    expect(canvas.getAttribute("data-tool")).toBe("brush");
     canvas.getBoundingClientRect = () =>
       ({
         x: 0,
@@ -243,6 +324,119 @@ describe("TilemapPaint", () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const painted = normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]);
     expect(getTile(painted, "layer-1", 0, 0)).toBe(encodeTileGid(1, 1));
+  });
+
+  it("paints inside the map bounds and ignores cells outside", async () => {
+    const onChange = vi.fn();
+    render(
+      <TilemapHarness
+        initial={
+          {
+            ...mapWithGround(),
+            width: 2,
+            height: 2,
+          } as unknown as Record<string, unknown>
+        }
+        onChange={onChange}
+      />,
+    );
+    const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    canvas.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 256,
+        bottom: 256,
+        width: 256,
+        height: 256,
+        toJSON: () => {},
+      }) as DOMRect;
+    dispatchPointerEvent(canvas, "pointerdown", {
+      pointerId: 1,
+      clientX: 16,
+      clientY: 240,
+    });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(
+      getTile(
+        normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
+        "layer-1",
+        0,
+        0,
+      ),
+    ).toBe(encodeTileGid(1, 1));
+    onChange.mockClear();
+    dispatchPointerEvent(canvas, "pointerup", { pointerId: 1, clientX: 16, clientY: 240 });
+    dispatchPointerEvent(canvas, "pointerdown", {
+      pointerId: 2,
+      clientX: 80,
+      clientY: 240,
+    });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(
+      getTile(
+        normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
+        "layer-1",
+        2,
+        0,
+      ),
+    ).toBe(0);
+  });
+
+  it("drops an in-progress paint stroke when a second finger lands", async () => {
+    const onChange = vi.fn();
+    render(
+      <TilemapHarness
+        initial={mapWithGround() as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    const canvas = await waitFor(() => screen.getByTestId("tilemap-paint-canvas"));
+    fireEvent.click(screen.getByTestId("tilemap-tool-brush"));
+    canvas.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 256,
+        bottom: 256,
+        width: 256,
+        height: 256,
+        toJSON: () => {},
+      }) as DOMRect;
+    dispatchPointerEvent(canvas, "pointerdown", {
+      pointerId: 1,
+      clientX: 16,
+      clientY: 240,
+    });
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(
+      getTile(
+        normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
+        "layer-1",
+        0,
+        0,
+      ),
+    ).toBe(encodeTileGid(1, 1));
+    dispatchPointerEvent(canvas, "pointerdown", {
+      pointerId: 2,
+      clientX: 80,
+      clientY: 240,
+    });
+    await waitFor(() => {
+      expect(
+        getTile(
+          normalizeTilemapPayload(onChange.mock.calls.at(-1)?.[0]),
+          "layer-1",
+          0,
+          0,
+        ),
+      ).toBe(0);
+    });
   });
 
   it("pinches to change the paint cell size", async () => {
