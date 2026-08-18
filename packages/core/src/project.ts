@@ -603,7 +603,11 @@ function normalizeProjectInput(value: unknown): ProjectInputSettings {
 }
 
 export function normalizeProjectSettings(
-  settings: Partial<ProjectSettings> | undefined,
+  settings:
+    | (Partial<Omit<ProjectSettings, "audio">> & {
+        audio?: Partial<AudioProjectSettings>;
+      })
+    | undefined,
 ): ProjectSettings {
   const twoD = settings?.twoD;
   return {
