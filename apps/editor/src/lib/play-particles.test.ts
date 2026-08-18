@@ -7,7 +7,6 @@ import {
 } from "./play-particles";
 import {
   createDefaultParticleEmitterPayload,
-  createDefaultParticleSystemPayload,
 } from "@babylonslate/assets";
 
 describe("playParticleLibraryFromAssets", () => {
