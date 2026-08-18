@@ -793,9 +793,9 @@ describe("scene-referenced Play content", () => {
   });
 
   it("looks up Interface materials and ignores other domains", () => {
-    const documents = new Map([
-      ["mat-glow", { domain: "interface" as const, name: "Glow" } as never],
-      ["mat-rock", { domain: "surface" as const, name: "Rock" } as never],
+    const documents = new Map<string, { domain: string; name: string }>([
+      ["mat-glow", { domain: "interface", name: "Glow" }],
+      ["mat-rock", { domain: "surface", name: "Rock" }],
     ]);
     expect(lookupInterfaceMaterialDocument("mat-glow", documents)?.name).toBe(
       "Glow",

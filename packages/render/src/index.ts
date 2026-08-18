@@ -37,6 +37,7 @@ export * from "./scene-illumination";
 export * from "./material-block-registry";
 export * from "./material-compiler";
 export * from "./material-library";
+export * from "./material-preview";
 export * from "./interface-material-presenter";
 export * from "./post-process-material";
 export * from "./anim-apply";

@@ -45,7 +45,7 @@ function createBlitCanvas(width: number, height: number): HTMLCanvasElement {
     width,
     height,
     getContext: () => null,
-  } as HTMLCanvasElement;
+  } as unknown as HTMLCanvasElement;
 }
 
 function blitTextureToCanvas(

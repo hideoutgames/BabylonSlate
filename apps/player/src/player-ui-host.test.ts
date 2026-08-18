@@ -222,7 +222,8 @@ describe("createPlayerUiHost", () => {
       viewport: { width: 800, height: 600 },
     });
     host.apply("ui-1", "hud-1");
-    expect(attachGui.mock.calls[0]?.[1]).toMatchObject({
+    const firstCall = attachGui.mock.calls[0] as unknown[] | undefined;
+    expect(firstCall?.[1]).toMatchObject({
       resolveInterfaceMaterial,
     });
   });

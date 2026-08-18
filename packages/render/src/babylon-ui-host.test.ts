@@ -1032,9 +1032,12 @@ describe("Babylon GUI Material widgets", () => {
     );
     const control = named(root, "fx");
     expect(control).toBeInstanceOf(Image);
-    expect((control as Image).domImage).toBeTruthy();
-    expect(((control as Image).domImage as HTMLCanvasElement).width).toBe(64);
-    expect(((control as Image).domImage as HTMLCanvasElement).height).toBe(32);
+    const blit = (control as Image).domImage as unknown as {
+      width: number;
+      height: number;
+    };
+    expect(blit.width).toBe(64);
+    expect(blit.height).toBe(32);
     host.clear();
     scene.dispose();
     engine.dispose();
