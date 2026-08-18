@@ -193,7 +193,7 @@ function mergeTransitions(
       row,
     ]),
   );
-  const merged = edges.map((edge) => {
+  const merged: AnimTransition[] = edges.map((edge) => {
     const prev =
       byId.get(edge.id) ??
       byPair.get(transitionPairKey(edge.source, edge.target));
