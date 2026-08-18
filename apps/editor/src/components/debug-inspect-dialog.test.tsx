@@ -104,6 +104,8 @@ describe("DebugInspectDialog", () => {
     expect(details.textContent).toContain("Hero");
     expect(details.textContent).toContain("hero");
     expect(details.textContent).toContain("Actor");
+    expect(screen.getByText("GUID")).toBeTruthy();
+    expect(screen.queryByText("Guid")).toBeNull();
     expect(details.textContent).toContain("1, 2, 3");
     expect(screen.getByTestId("debug-inspect-var-health").textContent).toContain(
       "10",

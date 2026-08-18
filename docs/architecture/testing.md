@@ -39,7 +39,7 @@ Excluded, each for a stated reason:
 | `create-engine.ts` | Needs a real WebGL context; covered by Playwright |
 | `babylon-audio-backend.ts` | Babylon AudioV2; unit tests inject `FakeAudioPlaybackBackend` |
 | `ui-surface.ts` | Standalone `CreateFullscreenUI` + Canvas2D blit need a real Engine canvas; covered by Playwright HUD / designer |
-| `worker-entry.ts` | Game worker host; covered by Play e2e |
+| `worker-entry.ts` | Game worker host; covered by Play e2e. Inspect control and Pause On Play gating are unit-tested in `inspect-control.ts` / `play-pause-gate.ts` |
 | `bake-worker.ts` | Navmesh bake worker; `runNavBakeJob` unit tests plus editor host |
 | `audio-reverb-worker.ts` | Audio reverb bake worker; occupancy/probe bake is covered in `audio-reverb.test.ts` plus editor host |
 | `havok-backend.ts`, `havok-loader.ts`, `rapier-backend.ts` | Wasm backends; HavokPlugin path asserted in `havok-v2.test.ts`; coverage of the Babylon/Havok surface is environment-dependent |

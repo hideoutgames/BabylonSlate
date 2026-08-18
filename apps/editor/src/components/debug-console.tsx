@@ -135,7 +135,7 @@ export function DebugConsole({
         data-testid="debug-console"
         initialFocus={bodyRef}
       >
-        <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 border-b px-4 py-3 pr-14">
+        <DialogHeader className="flex-row items-center justify-between gap-2 border-b px-4 py-3 pr-14">
           <DialogTitle>Console</DialogTitle>
           <div className="flex shrink-0 gap-2">
             <Button

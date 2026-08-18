@@ -15,6 +15,14 @@ export {
   type PlayBootRuntime,
   type PlaySpawnEntry,
 } from "./play-boot";
+export {
+  createPlayPauseGate,
+  type PlayPauseTarget,
+} from "./play-pause-gate";
+export {
+  applyInspectControl,
+  type InspectControlRuntime,
+} from "./inspect-control";
 export { PhysicsWorldSync } from "./physics-sync";
 export { LogRingBuffer, type LogEntry, type LogSeverity } from "./log-ring";
 export {

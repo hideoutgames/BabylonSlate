@@ -33,6 +33,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Visible editor viewports always render at `viewportFrameCap` (default 30); freeze when hidden (zero-size or fully off-screen), obstructed, or a modal is open. IntersectionObserver plus an on-screen rect fallback; continuous-render leases stay refcounted.
 - Idle-unmount inactive chrome-tab workspaces after 2 minutes (`p18-inactive-documents`); cap 3 warm non-CB DockViews. P4 freeze is not a substitute for unmount. Remount restores layout / camera / graph viewport.
 - Content Browser **grid** is window-virtualised (`p18-content-browser-virtualize`); TreeView already is. Revoke off-screen thumbnail blob URLs.
+- Add Node catalog **body** is window-virtualised (`p18-add-node-virtualize`); category sidebar stays unwindowed. Distinct from canvas `p18-graph-virtualize`.
 - One `Engine` for editor viewport, Play overlay, Material Preview, UI designer, **and Prefab Preview** (`p18-shared-prefab-engine`).
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
 - Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags).

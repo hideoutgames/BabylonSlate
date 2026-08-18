@@ -30,6 +30,7 @@ import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands } from "../lib/play-console";
+import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
@@ -267,11 +268,15 @@ export function PlayOverlay({
   const liveSizeRef = useRef<{ width: number; height: number } | null>(null);
   const commands = useMemo(() => playConsoleCommands(scripts ?? []), [scripts]);
   const inspectSnapshot = useInspectWorldPoll(
-    inspectorOpen && overlayInspector,
+    nextPlayInspectorOpen(inspectorOpen, overlayInspector),
     () =>
       sessionRef.current?.inspectWorld() ??
       Promise.resolve({ tickIndex: 0, nodes: [] }),
   );
+
+  useEffect(() => {
+    setInspectorOpen((open) => nextPlayInspectorOpen(open, overlayInspector));
+  }, [overlayInspector]);
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -340,6 +345,7 @@ export function PlayOverlay({
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,
+      pauseOnPlay: initialPauseOnPlayRef.current,
       userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
       onUiSetVisible: (instanceId, widgetId, visible) => {
         setHiddenWidgetIds((prev) =>
@@ -607,7 +613,7 @@ export function PlayOverlay({
         }
       />
       <DebugInspectDialog
-        open={inspectorOpen && overlayInspector}
+        open={nextPlayInspectorOpen(inspectorOpen, overlayInspector)}
         onOpenChange={setInspectorOpen}
         snapshot={inspectSnapshot}
       />

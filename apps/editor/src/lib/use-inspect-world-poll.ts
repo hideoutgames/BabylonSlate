@@ -19,10 +19,17 @@ export function useInspectWorldPoll(
       return;
     }
     let cancelled = false;
+    let inFlight = false;
     const pull = async () => {
-      const next = await inspectRef.current();
-      if (!cancelled) {
-        setSnapshot(next);
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const next = await inspectRef.current();
+        if (!cancelled) {
+          setSnapshot(next);
+        }
+      } finally {
+        inFlight = false;
       }
     };
     void pull();
