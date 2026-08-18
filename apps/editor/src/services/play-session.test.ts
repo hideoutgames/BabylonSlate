@@ -5,6 +5,7 @@ import {
   applyPlayUiCommand,
   applyWorkerPlayStats,
   diagnosticFromCommand,
+  applyPlaySessionStep,
   dispatchPlayUiWidgetEvent,
   isFatalPlayDiagnostic,
   playInputStampTick,
@@ -235,6 +236,42 @@ describe("dispatchPlayUiWidgetEvent", () => {
       kind: "value",
       value: 0.4,
     });
+  });
+});
+
+describe("applyPlaySessionStep", () => {
+  it("steps the in-process runtime when the worker is absent", () => {
+    const resume = vi.fn();
+    const tick = vi.fn();
+    const pause = vi.fn();
+    applyPlaySessionStep({
+      worker: null,
+      runtime: { resume, tick, pause },
+    });
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(tick).toHaveBeenCalledTimes(1);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(resume.mock.invocationCallOrder[0]).toBeLessThan(
+      tick.mock.invocationCallOrder[0]!,
+    );
+    expect(tick.mock.invocationCallOrder[0]).toBeLessThan(
+      pause.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("posts step to the worker when present", () => {
+    const postControl = vi.fn();
+    const resume = vi.fn();
+    const tick = vi.fn();
+    const pause = vi.fn();
+    applyPlaySessionStep({
+      worker: { postControl },
+      runtime: { resume, tick, pause },
+    });
+    expect(postControl).toHaveBeenCalledWith({ type: "step" });
+    expect(resume).not.toHaveBeenCalled();
+    expect(tick).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
   });
 });
 

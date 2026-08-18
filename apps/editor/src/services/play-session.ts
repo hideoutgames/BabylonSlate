@@ -132,6 +132,30 @@ export function dispatchPlayUiWidgetEvent(
   return false;
 }
 
+export type PlaySessionStepTarget = {
+  worker?: { postControl: (message: ControlMessage) => void } | null;
+  runtime?: {
+    resume(): void;
+    tick(): void;
+    pause(): void;
+  } | null;
+};
+
+/** Advance one paused tick: worker `step` control, or in-process resume/tick/pause. */
+export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
+  if (target.worker) {
+    target.worker.postControl({ type: "step" });
+    return true;
+  }
+  if (target.runtime) {
+    target.runtime.resume();
+    target.runtime.tick();
+    target.runtime.pause();
+    return true;
+  }
+  return false;
+}
+
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   userInterfaces?: readonly UserInterfaceRuntimeDocument[];
@@ -226,6 +250,8 @@ export interface PlaySession {
   executeConsoleCommand: (
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
+  /** Advance one simulation tick while paused. */
+  step: () => void;
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
@@ -794,6 +820,9 @@ export function startPlaySession(options: {
         success: false,
         output: "runtime unavailable",
       });
+    },
+    step: () => {
+      applyPlaySessionStep({ worker, runtime });
     },
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),

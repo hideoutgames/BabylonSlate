@@ -234,6 +234,14 @@ export function EditorChromeBar({
     canPlay,
     previewBuild,
     setPreviewBuild,
+    overlayStats,
+    overlayConsole,
+    overlayInspector,
+    pauseOnPlay,
+    setOverlayStats,
+    setOverlayConsole,
+    setOverlayInspector,
+    setPauseOnPlay,
   } = usePlay();
   const { errorCount, setDiagnostics } = useValidation();
   const [settingsScope, setSettingsScope] = useState<
@@ -532,8 +540,48 @@ export function EditorChromeBar({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="center">
                 <DropdownMenuGroup>
-                  <DropdownMenuLabel>Preview debug</DropdownMenuLabel>
+                  <DropdownMenuLabel>Play Overlay</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    data-testid="overlay-stats-toggle"
+                    checked={overlayStats}
+                    onCheckedChange={(checked) =>
+                      setOverlayStats(checked === true)
+                    }
+                  >
+                    Stats
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    data-testid="overlay-console-toggle"
+                    checked={overlayConsole}
+                    onCheckedChange={(checked) =>
+                      setOverlayConsole(checked === true)
+                    }
+                  >
+                    Console
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    data-testid="overlay-inspector-toggle"
+                    checked={overlayInspector}
+                    onCheckedChange={(checked) =>
+                      setOverlayInspector(checked === true)
+                    }
+                  >
+                    Inspector
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuGroup>
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Session</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    data-testid="pause-on-play-toggle"
+                    checked={pauseOnPlay}
+                    onCheckedChange={(checked) =>
+                      setPauseOnPlay(checked === true)
+                    }
+                  >
+                    Pause On Play
+                  </DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem
                     data-testid="preview-build-toggle"
                     checked={previewBuild}

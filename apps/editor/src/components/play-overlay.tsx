@@ -102,6 +102,7 @@ export interface PlayOverlayProps {
   pixelPerfect?: boolean;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
+  pauseOnPlay?: boolean;
   onClose: (result: PlaySessionResult) => void;
 }
 
@@ -152,9 +153,11 @@ export function PlayOverlay({
   pixelPerfect,
   navmeshBytes,
   audioReverbBytes,
+  pauseOnPlay = false,
   onClose,
 }: PlayOverlayProps) {
-  const { reportBtState } = usePlay();
+  const { reportBtState, overlayStats, overlayConsole, overlayInspector } =
+    usePlay();
   const overlayRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<PlaySession | null>(null);
@@ -173,9 +176,10 @@ export function PlayOverlay({
   const [audioQueued, setAudioQueued] = useState(0);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
-  const [paused, setPaused] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [paused, setPaused] = useState(pauseOnPlay);
   const [statsOpen, setStatsOpen] = useState(false);
-  const userPausedRef = useRef(false);
+  const userPausedRef = useRef(pauseOnPlay);
   const [trace, setTrace] = useState<TracePayload | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
   const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
@@ -248,6 +252,7 @@ export function PlayOverlay({
   });
   sceneRef.current = { sceneAssetGuid, scene, gameInstanceClass, scenes };
   const initialFrameCapRef = useRef(frameCap);
+  const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
   const initialLoopCountRef = useRef(loopCount);
   const initialPlayPreviewRef = useRef(playPreview);
@@ -287,8 +292,8 @@ export function PlayOverlay({
       resizeIfSized(canvas);
     };
     layoutPlay();
-    userPausedRef.current = false;
-    setPaused(false);
+    userPausedRef.current = initialPauseOnPlayRef.current;
+    setPaused(initialPauseOnPlayRef.current);
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -357,6 +362,9 @@ export function PlayOverlay({
       onFatalDiagnostic: () => finishSessionRef.current(),
     });
     sessionRef.current = session;
+    if (initialPauseOnPlayRef.current) {
+      session.setPaused(true);
+    }
     setPlayUiWidgetEventSink((event) =>
       sessionRef.current?.dispatchUiWidgetEvent(event) ?? false,
     );
@@ -476,6 +484,10 @@ export function PlayOverlay({
       <PlayOverlayChrome
         paused={paused}
         statsOpen={statsOpen}
+        inspectorOpen={inspectorOpen}
+        showStats={overlayStats}
+        showConsole={overlayConsole}
+        showInspector={overlayInspector}
         onPauseToggle={() => {
           setPaused((prev) => {
             const next = !prev;
@@ -486,6 +498,8 @@ export function PlayOverlay({
         }}
         onStatsToggle={() => setStatsOpen((open) => !open)}
         onConsoleOpen={() => setConsoleOpen(true)}
+        onInspectorToggle={() => setInspectorOpen((open) => !open)}
+        onStep={() => sessionRef.current?.step()}
         onClose={() => finishSessionRef.current()}
         stats={
           <StatsHud
