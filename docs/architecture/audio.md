@@ -47,7 +47,7 @@ Every factor is clamped `0..1`:
 - No mixer + no channel: `assetVolume × playCallVolume` only.
 - Channel-less sound never takes channel gain or channel effects; a selected mixer still applies `globalGain`.
 - Channel with no mixer: non-gain effects/routing may resolve; no invented channel/master gain.
-- Set Channel / Set Global **replace** session values (do not edit assets). Play stop / scene change reloads mixer defaults.
+- Set Channel / Set Global **replace** session values (do not edit assets). Play stop / scene change reloads mixer defaults. Without a selected mixer, or with an unknown channel, the nodes warn (`audio.no_mixer` / `audio.unknown_channel`) and no-op.
 
 ## Commands
 
@@ -71,7 +71,7 @@ First `pointerdown` / `touchstart` on overlay Play and the packaged player calls
 
 ## Spatial
 
-Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply). Listener is the active Play camera, once per rendered frame. No scene listener picker. Inner radius = full gain, max radius = silent, monotonic between.
+Worker emits identity only (`emitterActorGuid` / `voiceId`). Main thread follows interpolated snapshot poses (same as mesh apply). Listener is the active Play camera, once per rendered frame (position **and** orientation). No scene listener picker. Inner radius = full gain, max radius = silent, monotonic between — that curve lives in `computeAttenuationGain` (unit tests) and in Babylon AudioV2 `spatialMinDistance` / `spatialMaxDistance` on the real backend. `AudioService` must not pre-multiply the same falloff into `volume` or voices attenuate twice. Optional Doppler is authored on the asset; Web Audio removed PannerNode Doppler, so snapshot follow applies `playbackRate` from radial emitter velocity × `doppler.factor`. The render loop's later `syncListener` call must not rewrite that rate (dt would be 0).
 
 ## Reverb bake
 
@@ -79,7 +79,7 @@ Mirrors nav bake: main-thread collect of **static** `MeshComponent` triangles (c
 
 Versioned Scene extra chunk `audioReverb` (magic `BSAR`, same extra-chunk pattern as `navmesh`). Save/export await the current result or write a marked dry fallback (`audio.reverb_bake_failed`); they never hang. Export packs a sidecar `type: "AudioReverb"`, guid `audioReverb:<sceneGuid>`. Packed Audio is a **BSAU** envelope (JSON payload + source bytes).
 
-Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-pass bus. Listener interpolates ≤2 probes. No per-voice convolver. Channel-less stays dry. Dry fallback → wet 0.
+Channels with `environmentReverb.enabled` send to **one** shared delay/comb/all-pass bus (`AUDIO_REVERB_COMB_COUNT` = 4, `AUDIO_REVERB_ALLPASS_COUNT` = 2). Comb taps use feedback + damping; all-pass taps are Schroeder (delay + negative feedforward). Listener interpolates ≤2 probes. No per-voice convolver. Channel-less stays dry. Dry fallback → wet 0. AudioV2 keeps the bus→main dry route at unity; the parametric graph is an extra wet send (`dryPassThrough: false`). `setReverbWet` drives that wet gain. If the send cannot attach, wet falls back to scaling the whole bus volume. Do not `disconnect()` AudioV2 private `_outNode` / `_inNode` ports — that hung Play Stop.
 
 ## A16 budgets
 
@@ -95,6 +95,7 @@ Named constants in `packages/assets/src/audio-payload.ts`:
 | Geometry collect slice | 8 static mesh actors per yield |
 | Background debounce | 1_500 ms |
 | Shared reverb buses | 1 |
+| Comb / all-pass taps | 4 / 2 |
 | Crossfading profiles | 2 |
 | Pre-unlock command queue | 32 |
 | Decoded PCM LRU | 64 MiB |
