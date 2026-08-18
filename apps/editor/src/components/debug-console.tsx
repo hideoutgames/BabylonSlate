@@ -1,4 +1,11 @@
-import { useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   suggestConsoleCompletions,
   type RegisteredCommand,
@@ -13,6 +20,7 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import { Input } from "@babylonslate/ui/components/input";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
+import { cn } from "@babylonslate/ui/lib/utils";
 
 export type ConsoleExecuteResult = {
   success: boolean;
@@ -36,13 +44,23 @@ type HistoryEntry = {
   output: string;
 };
 
-/** Play/export console: history, registry autocomplete, SelectableText transcript. */
+function formatTranscript(entries: readonly HistoryEntry[]): string {
+  return entries
+    .map((entry) =>
+      entry.output ? `> ${entry.line}\n${entry.output}` : `> ${entry.line}`,
+    )
+    .join("\n");
+}
+
+/** Play overlay console: large transcript, history, registry autocomplete. */
 export function DebugConsole({
   open,
   onOpenChange,
   commands,
   onExecute,
 }: DebugConsoleProps) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const transcriptEndRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
@@ -51,6 +69,13 @@ export function DebugConsole({
     () => suggestConsoleCompletions(draft, commands),
     [draft, commands],
   );
+
+  useEffect(() => {
+    const end = transcriptEndRef.current;
+    if (typeof end?.scrollIntoView === "function") {
+      end.scrollIntoView({ block: "end" });
+    }
+  }, [entries]);
 
   const submit = async (line: string) => {
     const trimmed = line.trim();
@@ -99,83 +124,119 @@ export function DebugConsole({
     );
   };
 
+  const copyTranscript = async () => {
+    await navigator.clipboard.writeText(formatTranscript(entries));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex max-h-[min(32rem,80vh)] w-full flex-col gap-3 overflow-hidden sm:max-w-lg"
+        className="flex h-[min(92vh,56rem)] w-[min(96vw,80rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
         data-testid="debug-console"
+        initialFocus={bodyRef}
       >
-        <DialogHeader>
+        <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 border-b px-4 py-3 pr-14">
           <DialogTitle>Console</DialogTitle>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              size="touch"
+              variant="outline"
+              data-testid="debug-console-clear"
+              onClick={() => setEntries([])}
+            >
+              Clear
+            </Button>
+            <Button
+              type="button"
+              size="touch"
+              variant="outline"
+              data-testid="debug-console-copy"
+              onClick={() => void copyTranscript()}
+            >
+              Copy Transcript
+            </Button>
+          </div>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className="min-h-0 flex-1 bg-background">
           <div
-            className="flex flex-col gap-1 p-2 font-mono text-xs"
+            ref={bodyRef}
+            tabIndex={-1}
+            className="flex min-h-full flex-col gap-1 p-3 font-mono text-sm outline-none"
             data-testid="debug-console-transcript"
           >
             {entries.map((entry, index) => (
               <div key={`${index}-${entry.line}`}>
                 <SelectableText>{`> ${entry.line}`}</SelectableText>
                 {entry.output ? (
-                  <div data-testid={`debug-console-output-${index}`}>
+                  <div
+                    className={cn(
+                      entry.success ? "text-foreground" : "text-destructive",
+                    )}
+                    data-testid={`debug-console-output-${index}`}
+                  >
                     <SelectableText>{entry.output}</SelectableText>
                   </div>
                 ) : null}
               </div>
             ))}
+            <div ref={transcriptEndRef} />
           </div>
         </ScrollArea>
-        {suggestions.length > 0 ? (
+        <div className="flex shrink-0 flex-col gap-2 border-t p-3">
+          {suggestions.length > 0 ? (
+            <div
+              className="flex flex-wrap gap-1"
+              data-testid="debug-console-suggestions"
+            >
+              {suggestions.slice(0, 8).map((name) => (
+                <Button
+                  key={name}
+                  type="button"
+                  variant="outline"
+                  size="touch"
+                  data-testid={`debug-console-suggest-${name}`}
+                  onClick={() => setDraft(name)}
+                >
+                  {name}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+          <form className="flex gap-2" onSubmit={onSubmit}>
+            <Input
+              className="min-h-11 flex-1 font-mono"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="changescene …"
+              aria-label="Console command"
+              data-testid="debug-console-input"
+              autoComplete="off"
+              autoCorrect="off"
+              autoFocus={false}
+            />
+            <Button type="submit" size="touch" data-testid="debug-console-submit">
+              Run
+            </Button>
+          </form>
           <div
             className="flex flex-wrap gap-1"
-            data-testid="debug-console-suggestions"
+            data-testid="debug-console-accessory"
           >
-            {suggestions.slice(0, 8).map((name) => (
+            {ACCESSORY.map((token) => (
               <Button
-                key={name}
+                key={token}
                 type="button"
-                variant="outline"
-                size="touch"
-                data-testid={`debug-console-suggest-${name}`}
-                onClick={() => setDraft(name)}
+                variant="secondary"
+                size="touch-icon"
+                aria-label={token === "Tab" ? "Tab" : `Insert ${token}`}
+                onClick={() => insert(token)}
               >
-                {name}
+                {token === "Tab" ? "⇥" : token}
               </Button>
             ))}
           </div>
-        ) : null}
-        <form className="flex gap-2" onSubmit={onSubmit}>
-          <Input
-            className="min-h-11 flex-1 font-mono"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="changescene …"
-            aria-label="Console command"
-            data-testid="debug-console-input"
-            autoComplete="off"
-            autoCorrect="off"
-          />
-          <Button type="submit" size="touch" data-testid="debug-console-submit">
-            Run
-          </Button>
-        </form>
-        <div
-          className="flex flex-wrap gap-1"
-          data-testid="debug-console-accessory"
-        >
-          {ACCESSORY.map((token) => (
-            <Button
-              key={token}
-              type="button"
-              variant="secondary"
-              size="touch-icon"
-              aria-label={token === "Tab" ? "Tab" : `Insert ${token}`}
-              onClick={() => insert(token)}
-            >
-              {token === "Tab" ? "⇥" : token}
-            </Button>
-          ))}
         </div>
       </DialogContent>
     </Dialog>
