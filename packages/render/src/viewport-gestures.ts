@@ -74,9 +74,10 @@ function canvasRect(from: PointerSample, to: PointerSample): CanvasRect {
 
 /**
  * Gesture contract from docs/design/gestures.md: one-finger tap picks;
- * one-finger drag looks in 3D and pans in 2D; hold then move marquees in 2D;
- * drag-select marquees immediately in both modes; pinch zooms; three fingers
- * pan. Two-finger translation does not orbit or pan.
+ * one-finger drag looks in 3D (or orbits when `pivotAroundCenter`) and pans
+ * in 2D; hold then move marquees in 2D; drag-select marquees immediately in
+ * both modes; pinch zooms; three fingers pan. Two-finger translation does
+ * not orbit or pan.
  */
 export function attachViewportGestures(
   canvas: HTMLCanvasElement,
