@@ -1,8 +1,17 @@
 # Testing architecture
 
-`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build. CI runs the same command.
+`pnpm verify` runs typecheck, lint, unit tests with coverage, Playwright, and the VitePress docs build locally as one command.
 
-GitHub Actions must use **standard** hosted runners only (`ubuntu-latest`, `macos-latest`, …). Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
+## GitHub Actions
+
+[`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into two standard `ubuntu-latest` jobs (`unit` and `e2e`). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
+
+GitHub Free public repos cap concurrent jobs at 20. Agents wait on Verify before merge, so a backed-up queue stalls every PR.
+
+- **Concurrency.** Verify cancels superseded runs for the same pull request (or `main` ref). Preview already cancels in-progress Pages deploys.
+- **Timeouts.** Each Verify job is 45 minutes (healthy `unit` is ~6–7 min; `e2e` is ~20–25 min). Playwright Chromium download and OS-deps install each time out at 5 minutes so a hung `apt` or browser fetch cannot occupy a runner for six hours.
+- **Playwright cache.** `e2e` restores `~/.cache/ms-playwright` keyed on `pnpm-lock.yaml`, then runs `playwright install chromium` and `playwright install-deps chromium` as separate steps (not `--with-deps`).
+- **Drafts.** Draft pull requests skip both jobs. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate.
 
 ## Vitest projects
 
@@ -10,7 +19,7 @@ Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.pr
 
 | Project | Environment | Covers |
 | --- | --- | --- |
-| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage + repo-link rewriter), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed) — no DOM |
+| `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/ui-runtime`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage, repo-link rewriter, Verify workflow policy), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed) — no DOM |
 | `jsdom` | jsdom + `vitest.setup.jsdom.ts` | `packages/editor-kit`, `packages/graph-ui`, `packages/vfs`, `apps/editor` (`.test.ts` and `.test.tsx`) |
 | `babylon` | node | `packages/render` via `NullEngine` |
 
