@@ -85,21 +85,27 @@ export function GraphConnectionLineView({
     targetY: toY,
     targetPosition: toPosition,
   });
+  const inAddZone = pin
+    ? shouldOpenAddNodeOnConnectEnd({
+        hasTargetHandle: Boolean(toHandle),
+        pointerOverNode: isClientPointOverGraphNode(pointer, root),
+        pointer,
+        safePins: screenCentersForSafePins(
+          root,
+          collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin),
+        ),
+      })
+    : false;
   const showHint = pin
-    ? connectEndMode === "add-node"
-      ? !toHandle
-      : shouldOpenAddNodeOnConnectEnd({
-          hasTargetHandle: Boolean(toHandle),
-          pointerOverNode: isClientPointOverGraphNode(pointer, root),
-          pointer,
-          safePins: screenCentersForSafePins(
-            root,
-            collectSafeConnectPins(nodePinLists(nodes), fromNode.id, pin),
-          ),
-        })
+    ? connectEndMode === "disabled"
+      ? false
+      : connectEndMode === "add-node"
+        ? !toHandle
+        : inAddZone
     : false;
   const badge = hintOffset(fromX, fromY, toX, toY);
-  const hintLabel = "Tap to Cancel";
+  const hintLabel =
+    connectEndMode === "zone-add-node" ? "Release to Add Node" : "Tap to Cancel";
 
   return (
     <>
@@ -113,7 +119,7 @@ export function GraphConnectionLineView({
         <foreignObject
           x={badge.x}
           y={badge.y - 10}
-          width={160}
+          width={180}
           height={24}
           overflow="visible"
           className="pointer-events-none"

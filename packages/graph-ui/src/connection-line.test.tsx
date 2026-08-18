@@ -123,6 +123,22 @@ describe("GraphConnectionLineView", () => {
     expect(queryByRole("button", { name: "Tap to Cancel" })).toBeNull();
   });
 
+  it("shows Release to Add Node in zone-add-node mode", () => {
+    mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
+    const { getByTestId } = renderLine({
+      connectEndMode: "zone-add-node",
+    });
+    expect(getByTestId("add-node-hint").textContent).toBe("Release to Add Node");
+  });
+
+  it("hides the live-wire hint when connect-end is disabled", () => {
+    mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
+    const { queryByTestId } = renderLine({
+      connectEndMode: "disabled",
+    });
+    expect(queryByTestId("add-node-hint")).toBeNull();
+  });
+
   it("hides the hint near the source pin", () => {
     mountHandles([{ nodeId: "source", pinId: "execOut", x: 0, y: 0 }]);
     const { queryByTestId } = renderLine({

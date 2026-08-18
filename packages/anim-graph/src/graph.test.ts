@@ -315,7 +315,10 @@ describe("anim graph evaluator", () => {
       parameters: [],
     });
     expect(parsed?.states[0]!.position).toEqual({ x: 80, y: 80 });
-    expect(parsed?.states[1]!.position).toEqual({ x: 300, y: 80 });
+    expect(parsed?.states[1]!.position).toEqual({
+      x: 80 + ANIM_STATE_LAYOUT_GAP_X,
+      y: 80,
+    });
   });
 
   it("round-trips stored positions through parse", () => {
