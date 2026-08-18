@@ -14,6 +14,7 @@ export * from "./audio-payload";
 export * from "./audio-reverb";
 export * from "./sprite-packer";
 export * from "./sprite-payload";
+export * from "./sprite-animation-payload";
 export * from "./tileset-payload";
 export * from "./tilemap-payload";
 export * from "./tilemap-chunk";

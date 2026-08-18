@@ -1,3 +1,20 @@
+/** Normalized AABB in texture/frame space. Default is the full image. */
+export interface SpriteCollision {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export const DEFAULT_SPRITE_COLLISION: SpriteCollision = {
+  x: 0,
+  y: 0,
+  width: 1,
+  height: 1,
+};
+
+export const DEFAULT_SPRITE_PIVOT = { x: 0.5, y: 0.5 } as const;
+
 export interface SpriteFrame {
   name: string;
   u: number;
@@ -6,6 +23,8 @@ export interface SpriteFrame {
   vSize: number;
   durationMs: number;
   pivot: { x: number; y: number };
+  /** Normalized AABB; omitted documents parse as the full image. */
+  collision?: SpriteCollision;
   /** Pixel rect in the packed atlas, when packed from loose frames. */
   x?: number;
   y?: number;
@@ -38,6 +57,7 @@ export function createDefaultSpritePayload(): SpritePayload {
         vSize: 1,
         durationMs: 100,
         pivot: { x: 0.5, y: 0.5 },
+        collision: { ...DEFAULT_SPRITE_COLLISION },
       },
     ],
     clips: [{ name: "Idle", frames: ["idle"] }],
@@ -107,9 +127,89 @@ export function packedRectsToFrames(
     vSize: pack.height > 0 ? rect.height / pack.height : 1,
     durationMs,
     pivot: { x: 0.5, y: 0.5 },
+    collision: { ...DEFAULT_SPRITE_COLLISION },
     x: rect.x,
     y: rect.y,
     width: rect.width,
     height: rect.height,
   }));
+}
+
+function clampUnit(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(1, Math.max(0, value));
+}
+
+/** Parse a normalized AABB, defaulting missing/invalid values to the full image. */
+export function parseSpriteCollision(value: unknown): SpriteCollision {
+  if (!value || typeof value !== "object") {
+    return { ...DEFAULT_SPRITE_COLLISION };
+  }
+  const source = value as Record<string, unknown>;
+  const x = clampUnit(typeof source.x === "number" ? source.x : 0, 0);
+  const y = clampUnit(typeof source.y === "number" ? source.y : 0, 0);
+  const width = clampUnit(
+    typeof source.width === "number" ? source.width : 1,
+    1,
+  );
+  const height = clampUnit(
+    typeof source.height === "number" ? source.height : 1,
+    1,
+  );
+  return {
+    x,
+    y,
+    width: Math.max(0.001, Math.min(1 - x, width)),
+    height: Math.max(0.001, Math.min(1 - y, height)),
+  };
+}
+
+export function parseSpritePivot(value: unknown): { x: number; y: number } {
+  if (!value || typeof value !== "object") {
+    return { x: DEFAULT_SPRITE_PIVOT.x, y: DEFAULT_SPRITE_PIVOT.y };
+  }
+  const source = value as Record<string, unknown>;
+  return {
+    x: clampUnit(
+      typeof source.x === "number" ? source.x : DEFAULT_SPRITE_PIVOT.x,
+      DEFAULT_SPRITE_PIVOT.x,
+    ),
+    y: clampUnit(
+      typeof source.y === "number" ? source.y : DEFAULT_SPRITE_PIVOT.y,
+      DEFAULT_SPRITE_PIVOT.y,
+    ),
+  };
+}
+
+/**
+ * Map a normalized frame AABB (minus pivot) into a 2D box collider.
+ * Y is up: texture v=0 is the top of the image.
+ */
+export function spriteCollisionToBox2d(options: {
+  collision: SpriteCollision;
+  pivot: { x: number; y: number };
+  pixelWidth: number;
+  pixelHeight: number;
+  pixelsPerUnit: number;
+}): {
+  translation: { x: number; y: number };
+  halfExtents: { x: number; y: number };
+} {
+  const ppu = options.pixelsPerUnit > 0 ? options.pixelsPerUnit : 100;
+  const worldWidth = Math.max(0, options.pixelWidth) / ppu;
+  const worldHeight = Math.max(0, options.pixelHeight) / ppu;
+  const collision = parseSpriteCollision(options.collision);
+  const pivot = parseSpritePivot(options.pivot);
+  const centerX = collision.x + collision.width / 2;
+  const centerY = collision.y + collision.height / 2;
+  return {
+    translation: {
+      x: (centerX - pivot.x) * worldWidth,
+      y: (pivot.y - centerY) * worldHeight,
+    },
+    halfExtents: {
+      x: (collision.width * worldWidth) / 2,
+      y: (collision.height * worldHeight) / 2,
+    },
+  };
 }

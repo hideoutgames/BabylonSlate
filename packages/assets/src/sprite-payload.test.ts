@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultSpritePayload,
+  parseSpriteCollision,
   spriteClipFrameAt,
+  spriteCollisionToBox2d,
 } from "./sprite-payload";
 
 describe("spriteClipFrameAt", () => {
@@ -31,5 +33,56 @@ describe("spriteClipFrameAt", () => {
     expect(spriteClipFrameAt(payload, "Idle", 0)?.name).toBe("a");
     expect(spriteClipFrameAt(payload, "Idle", 0.75)?.name).toBe("b");
     expect(spriteClipFrameAt(payload, "Idle", 1)?.name).toBe("b");
+  });
+});
+
+describe("sprite collision", () => {
+  it("defaults a missing collision to the full image", () => {
+    expect(createDefaultSpritePayload().frames[0]?.collision).toEqual({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    });
+    expect(parseSpriteCollision(undefined)).toEqual({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    });
+    expect(parseSpriteCollision({ x: 0.25, y: 0.1, width: 0.5, height: 0.4 })).toEqual({
+      x: 0.25,
+      y: 0.1,
+      width: 0.5,
+      height: 0.4,
+    });
+  });
+
+  it("maps a full-image AABB at a centered pivot to a centered box2d collider", () => {
+    expect(
+      spriteCollisionToBox2d({
+        collision: { x: 0, y: 0, width: 1, height: 1 },
+        pivot: { x: 0.5, y: 0.5 },
+        pixelWidth: 100,
+        pixelHeight: 50,
+        pixelsPerUnit: 100,
+      }),
+    ).toEqual({
+      translation: { x: 0, y: 0 },
+      halfExtents: { x: 0.5, y: 0.25 },
+    });
+  });
+
+  it("offsets box2d translation when the AABB is not the full image", () => {
+    const mapped = spriteCollisionToBox2d({
+      collision: { x: 0, y: 0, width: 0.5, height: 1 },
+      pivot: { x: 0.5, y: 0.5 },
+      pixelWidth: 100,
+      pixelHeight: 100,
+      pixelsPerUnit: 100,
+    });
+    expect(mapped.halfExtents).toEqual({ x: 0.25, y: 0.5 });
+    expect(mapped.translation.x).toBeCloseTo(-0.25);
+    expect(mapped.translation.y).toBeCloseTo(0);
   });
 });
