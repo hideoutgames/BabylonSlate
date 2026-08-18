@@ -178,6 +178,13 @@ function handleControl(msg: ControlMessage): void {
       });
       return;
     }
+    case "inspect": {
+      onCommand({
+        type: "inspectSnapshot",
+        snapshot: ensureRuntime().inspectWorld(),
+      });
+      return;
+    }
   }
 }
 

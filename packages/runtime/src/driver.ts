@@ -12,6 +12,7 @@ import {
   World,
   createActorsFromSerializedScene,
   createWorldSnapshot,
+  createDebugInspectSnapshot,
   stringifyWorldSnapshot,
   Actor,
   ActorComponent,
@@ -21,6 +22,7 @@ import {
   createWidgetForKind,
   userInterfaceAssetClassDef,
   type ClassKind,
+  type DebugInspectSnapshot,
   type TickContext,
   type TickPhase,
 } from "@babylonslate/object-model";
@@ -199,6 +201,7 @@ export interface RuntimeDriver {
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
+  inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
     classId: string,
     event: string,
@@ -913,6 +916,10 @@ class InProcessRuntime implements RuntimeDriver {
 
   executeConsoleCommand(command: string): { success: boolean; output: string } {
     return this.commands.execute(command, this.consoleHost());
+  }
+
+  inspectWorld(): DebugInspectSnapshot {
+    return createDebugInspectSnapshot(this.world);
   }
 
   invokeScriptEvent(

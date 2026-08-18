@@ -158,7 +158,8 @@ export type ControlMessage =
   | { type: "step" }
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
-  | { type: "console"; line: string };
+  | { type: "console"; line: string }
+  | { type: "inspect" };
 
 export type CommandMessage =
   | {
@@ -259,6 +260,25 @@ export type CommandMessage =
       type: "consoleResult";
       success: boolean;
       output: string;
+    }
+  | {
+      type: "inspectSnapshot";
+      snapshot: {
+        tickIndex: number;
+        nodes: Array<{
+          id: string;
+          kind: "gameInstance" | "actor" | "component";
+          label: string;
+          classId: string;
+          parentId: string | null;
+          transform?: {
+            position: [number, number, number];
+            rotation: [number, number, number, number];
+            scale: [number, number, number];
+          };
+          variables: Record<string, unknown>;
+        }>;
+      };
     }
   | {
       type: "trace";

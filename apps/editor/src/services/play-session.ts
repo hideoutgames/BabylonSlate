@@ -11,6 +11,7 @@ import {
   type RuntimeDriver,
   type SessionReportEntry,
 } from "@babylonslate/runtime";
+import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import { DEFAULT_PLAY_FRAME_CAP, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
@@ -78,6 +79,13 @@ export function diagnosticFromCommand(
   };
 }
 
+export function inspectSnapshotFromCommand(
+  command: CommandMessage,
+): DebugInspectSnapshot | null {
+  if (command.type !== "inspectSnapshot") return null;
+  return command.snapshot;
+}
+
 export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
 }
@@ -127,6 +135,30 @@ export function dispatchPlayUiWidgetEvent(
   }
   if (target.runtime) {
     target.runtime.dispatchUiWidgetEvent(payload);
+    return true;
+  }
+  return false;
+}
+
+export type PlaySessionStepTarget = {
+  worker?: { postControl: (message: ControlMessage) => void } | null;
+  runtime?: {
+    resume(): void;
+    tick(): void;
+    pause(): void;
+  } | null;
+};
+
+/** Advance one paused tick: worker `step` control, or in-process resume/tick/pause. */
+export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
+  if (target.worker) {
+    target.worker.postControl({ type: "step" });
+    return true;
+  }
+  if (target.runtime) {
+    target.runtime.resume();
+    target.runtime.tick();
+    target.runtime.pause();
     return true;
   }
   return false;
@@ -226,6 +258,9 @@ export interface PlaySession {
   executeConsoleCommand: (
     line: string,
   ) => Promise<{ success: boolean; output: string }>;
+  inspectWorld: () => Promise<DebugInspectSnapshot>;
+  /** Advance one simulation tick while paused. */
+  step: () => void;
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
@@ -434,6 +469,7 @@ export function startPlaySession(options: {
   const spawnedActorGuids: string[] = [];
   const consoleWaiters: Array<(result: { success: boolean; output: string }) => void> =
     [];
+  const inspectWaiters: Array<(snapshot: DebugInspectSnapshot) => void> = [];
   let recordedTrace: TracePayload | null = null;
   let commandCount = 0;
   let commandWindowStart = performance.now();
@@ -523,6 +559,11 @@ export function startPlaySession(options: {
     if (command.type === "consoleResult") {
       const waiter = consoleWaiters.shift();
       waiter?.({ success: command.success, output: command.output });
+    }
+    const inspectSnapshot = inspectSnapshotFromCommand(command);
+    if (inspectSnapshot) {
+      const waiter = inspectWaiters.shift();
+      waiter?.(inspectSnapshot);
     }
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
@@ -794,6 +835,21 @@ export function startPlaySession(options: {
         success: false,
         output: "runtime unavailable",
       });
+    },
+    inspectWorld: () => {
+      if (runtime) {
+        return Promise.resolve(runtime.inspectWorld());
+      }
+      if (worker) {
+        return new Promise((resolve) => {
+          inspectWaiters.push(resolve);
+          worker.postControl({ type: "inspect" });
+        });
+      }
+      return Promise.resolve({ tickIndex: 0, nodes: [] });
+    },
+    step: () => {
+      applyPlaySessionStep({ worker, runtime });
     },
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
