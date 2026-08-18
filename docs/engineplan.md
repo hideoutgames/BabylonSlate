@@ -372,7 +372,7 @@ P17 wraps Babylon’s own particle APIs as **billboard quads only**. Detail: [ar
 
 - **Particle Emitter** (`.emitter.babasset`) — one `GPUParticleSystem` / `ParticleSystem` recipe: Texture, optional particle-domain Material, capacity, rate, shape (point / box / sphere / cone), lifetime, single-value color/size/angular/drag gradients, gravity, blend. No mesh guid.
 - **Particle System** (`.particles.babasset`) — ordered list of Emitter guids (duplicates allowed, max 8). Runtime starts one Babylon system per slot, all parented to the actor.
-- **ParticleComponent** → Particle System. `playOnStart`, sorting layer/order. Actor transform is `IParticleSystem.emitter`.
+- **ParticleComponent** → Particle System. `playOnStart`, sorting layer/order. Actor transform is `IParticleSystem.emitter`. Sorting layer maps onto `IParticleSystem.renderingGroupId` (Background / world / Foreground / UI). Particle systems have no mesh `alphaIndex`.
 
 **GPU-safe authored surface** (CPU fallback when `GPUParticleSystem.IsSupported` is false; capacity drops to `min(capacity, 512)`):
 
@@ -393,7 +393,7 @@ GPU `stop()` still **renders** leftover particles; teardown must `dispose()`. GP
 
 **Particle-domain materials.** `createEffectForParticles` **requires** `NodeMaterialModes.Particle`. Surface / PBR graphs cannot attach. Material `domain: "particle"` sits beside `surface` | `postProcess` (same Details Domain enum). Catalog: **Particle Color** (`input.particleColor` → `ParticleColorBlock`) and **Particle Texture** (`input.particleTexture` → `ParticleTextureBlock`; live sample is always `system.particleTexture` — an NME preview texture is ignored). Shared math / Mix / Combine stay legal. Hide world attributes, WPO, PBR metallic, Normal Map, post-process buffers. Terminal is fragment color/alpha only (no `output.surface`). Particle blend is `IParticleSystem.blendMode`, not MeshComponent `blendMode`. Always set `system.particleTexture` from the Emitter Texture guid.
 
-**Runtime (`ParticleService`).** Audio-shaped main-thread service in `@babylonslate/render` (worker never imports Babylon). Commands: `assignParticle` / `setParticlePlaying`. Construct `GPUParticleSystem` when supported, else `ParticleSystem`. Emitter of the Babylon system = actor origin mesh (or a `TransformNode` under it). `start()` / `stop()` + `reset()`; dispose on despawn and Play close. Preview uses the same constructors on a Material-Preview-style disposable Scene (shared Engine, RTT blit, never a second Engine). Payload tests assert apply-mapping, not a custom integrator.
+**Runtime (`ParticleService`).** Audio-shaped main-thread service in `@babylonslate/render` (worker never imports Babylon). Commands: `assignParticle` / `setParticlePlaying`. Construct `GPUParticleSystem` when supported, else `ParticleSystem`. Emitter of the Babylon system = actor origin mesh (or a `TransformNode` under it). `start()` / `stop()` + `reset()`; dispose on despawn and Play close. Preview uses the same constructors on a Material-Preview-style disposable Scene (shared Engine, RTT blit, never a second Engine) and compiles optional particle-domain Material via `createEffectForParticles`. Payload tests assert apply-mapping, not a custom integrator.
 
 **Out of P17 (locked):** mesh path (`MeshParticleEmitter`, SPS, Model picker), bursts, sub-emitters, noise texture, attractors, flow maps, ramps, sprite-sheet flipbooks, hemisphere/cylinder/custom emitters, NPE, fluid renderer, particle-age material node, any second renderer.
 

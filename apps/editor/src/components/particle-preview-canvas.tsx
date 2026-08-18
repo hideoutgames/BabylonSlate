@@ -8,13 +8,17 @@ import {
   ParticleService,
   ResourceCache,
   createMaterialPreviewPresenter,
+  createParticleMaterialResolver,
   createParticlePreviewScene,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
 } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
-import type { PlayParticleLibrary } from "../lib/play-particles";
+import {
+  particleMaterialGuidsFromLibrary,
+  type PlayParticleLibrary,
+} from "../lib/play-particles";
 
 async function loadTextureBytes(
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
@@ -37,7 +41,8 @@ export function ParticlePreviewCanvas({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { assetRegistry, readAssetChunk, collectPlayMaterialLibrary } =
+    useDocuments();
   const [engine, setEngine] = useState<Engine | null>(null);
 
   useEffect(() => {
@@ -65,6 +70,8 @@ export function ParticlePreviewCanvas({
     let presenter: MaterialPreviewPresenter | null = null;
     let service: ParticleService | null = null;
     let cache: ResourceCache | null = null;
+    let materials: ReturnType<typeof createParticleMaterialResolver> | null =
+      null;
     let frame = 0;
     void (async () => {
       const bytes = new Map<string, Uint8Array>();
@@ -82,14 +89,30 @@ export function ParticlePreviewCanvas({
         host = createParticlePreviewScene(engine);
         presenter = createMaterialPreviewPresenter(host, canvas);
         cache = new ResourceCache();
+        const resolveTexture = (guid: string) => {
+          const data = bytes.get(guid);
+          if (!data || !cache) return null;
+          const texture = cache.getTexture(guid, engine, data);
+          return texture instanceof Texture ? texture : null;
+        };
+        const extraGuids = particleMaterialGuidsFromLibrary(nextLibrary);
+        const libraryDocs = collectPlayMaterialLibrary
+          ? await collectPlayMaterialLibrary(undefined, [], extraGuids)
+          : {
+              documents: new Map(),
+              functions: new Map(),
+              textureGuids: [],
+            };
+        materials = createParticleMaterialResolver({
+          scene: host.scene,
+          documents: libraryDocs.documents,
+          functions: libraryDocs.functions,
+          resolveTexture,
+        });
         service = new ParticleService({
           scene: host.scene,
-          resolveTexture: (guid) => {
-            const data = bytes.get(guid);
-            if (!data || !cache) return null;
-            const texture = cache.getTexture(guid, engine, data);
-            return texture instanceof Texture ? texture : null;
-          },
+          resolveTexture,
+          resolveMaterial: materials.resolve,
         });
         service.setLibrary(nextLibrary);
         service.handleCommand({
@@ -104,6 +127,7 @@ export function ParticlePreviewCanvas({
         presenter?.dispose();
         host?.dispose();
         service?.dispose();
+        materials?.dispose();
         cache?.dispose();
         return;
       }
@@ -111,6 +135,7 @@ export function ParticlePreviewCanvas({
         presenter?.dispose();
         host?.dispose();
         service?.dispose();
+        materials?.dispose();
         cache?.dispose();
         return;
       }
@@ -124,11 +149,19 @@ export function ParticlePreviewCanvas({
       cancelled = true;
       window.cancelAnimationFrame(frame);
       service?.dispose();
+      materials?.dispose();
       presenter?.dispose();
       host?.dispose();
       cache?.dispose();
     };
-  }, [assetRegistry, engine, libraryKey, readAssetChunk, systemGuid]);
+  }, [
+    assetRegistry,
+    collectPlayMaterialLibrary,
+    engine,
+    libraryKey,
+    readAssetChunk,
+    systemGuid,
+  ]);
 
   return (
     <canvas

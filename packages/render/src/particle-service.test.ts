@@ -1,4 +1,4 @@
-import { Color4, MeshBuilder, ParticleSystem, RawTexture } from "@babylonjs/core";
+import { Color4, MeshBuilder, NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   PARTICLE_BLENDMODE_ONEONE,
@@ -405,6 +405,88 @@ describe("ParticleService", () => {
     service.bindSlot(2, emitterMesh);
     const emitter = system.emitter as { parent?: unknown };
     expect(emitter.parent).toBe(emitterMesh);
+    service.dispose();
+  });
+
+  it("maps ParticleComponent sorting layer onto renderingGroupId", () => {
+    const { scene, service } = host();
+    service.setLibrary({
+      emitters: new Map([
+        [
+          "em-1",
+          normalizeParticleEmitterPayload({
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          }),
+        ],
+      ]),
+      systems: new Map([
+        [
+          "sys-1",
+          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
+        ],
+      ]),
+    });
+    service.handleCommand({
+      type: "assignParticle",
+      slotId: 1,
+      actorGuid: "fx",
+      componentId: "particle-1",
+      particleSystemGuid: "sys-1",
+      play: true,
+      sortingLayer: "UI",
+      orderInLayer: 3,
+    });
+    const system = scene.particleSystems[0] as ParticleSystem;
+    expect(system.renderingGroupId).toBe(3);
+    service.dispose();
+  });
+
+  it("applies a particle-domain material with createEffectForParticles", () => {
+    const { scene, service, texture } = host();
+    const attached: unknown[] = [];
+    const material = {
+      mode: NodeMaterialModes.Particle,
+      createEffectForParticles: (system: unknown) => {
+        attached.push(system);
+      },
+    };
+    const withMaterial = new ParticleService({
+      scene,
+      gpuSupported: false,
+      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
+      resolveMaterial: (guid) =>
+        guid === "mat-1" ? (material as never) : null,
+    });
+    withMaterial.setLibrary({
+      emitters: new Map([
+        [
+          "em-1",
+          normalizeParticleEmitterPayload({
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+            materialGuid: "mat-1",
+          }),
+        ],
+      ]),
+      systems: new Map([
+        [
+          "sys-1",
+          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
+        ],
+      ]),
+    });
+    withMaterial.handleCommand({
+      type: "assignParticle",
+      slotId: 1,
+      actorGuid: "fx",
+      componentId: "particle-1",
+      particleSystemGuid: "sys-1",
+      play: true,
+    });
+    expect(attached).toHaveLength(1);
+    expect(attached[0]).toBe(scene.particleSystems[0]);
+    withMaterial.dispose();
     service.dispose();
   });
 });
