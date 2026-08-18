@@ -1,5 +1,6 @@
+import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
@@ -60,7 +61,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     pivotAroundCenter,
     setFrameActorHandler,
   } = useSceneEditing();
-  const { registerScheduler, playing } = usePlay();
+  const { registerScheduler, playing, ensureSharedEngine, sharedEngineGeneration } =
+    usePlay();
+  const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const setSelectedIdRef = useRef(setSelectedId);
   setSelectedIdRef.current = setSelectedId;
   const componentsRef = useRef(components);
@@ -73,10 +76,16 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   applyPivotTransformRef.current = applyPivotTransform;
 
   useEffect(() => {
+    setSharedEngine(ensureSharedEngine());
+  }, [ensureSharedEngine, sharedEngineGeneration]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !sharedEngine) return;
     const handle = createEngine(canvas, {
       editor: true,
+      sharedEngine,
+      present: "rtt",
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
@@ -130,9 +139,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       handle.dispose();
       engineRef.current = null;
     };
-    // Engine is created once; mode/tool changes are pushed below.
+    // Mode/tool changes are pushed below; remount when the app Engine swaps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sharedEngine]);
 
   useEffect(() => {
     if (engineRef.current) {
