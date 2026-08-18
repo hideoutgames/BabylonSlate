@@ -90,6 +90,21 @@ export const vectorNodes: NodeDefinition[] = [
     }),
   },
   {
+    id: "vector.break2",
+    title: "Break Vector2",
+    category: "vector",
+    pure: true,
+    pins: () => [
+      pin("in", "in", "in", VEC2),
+      pin("x", "x", "out", FLOAT),
+      pin("y", "y", "out", FLOAT),
+    ],
+    codegen: (ctx) => {
+      const v = ctx.input("in");
+      return { x: `(${v}).x`, y: `(${v}).y` };
+    },
+  },
+  {
     id: "vector.make4",
     title: "Make Vector4",
     category: "vector",
@@ -104,5 +119,27 @@ export const vectorNodes: NodeDefinition[] = [
     codegen: (ctx) => ({
       out: `{ x: ${ctx.input("x")}, y: ${ctx.input("y")}, z: ${ctx.input("z")}, w: ${ctx.input("w")} }`,
     }),
+  },
+  {
+    id: "vector.break4",
+    title: "Break Vector4",
+    category: "vector",
+    pure: true,
+    pins: () => [
+      pin("in", "in", "in", VEC4),
+      pin("x", "x", "out", FLOAT),
+      pin("y", "y", "out", FLOAT),
+      pin("z", "z", "out", FLOAT),
+      pin("w", "w", "out", FLOAT),
+    ],
+    codegen: (ctx) => {
+      const v = ctx.input("in");
+      return {
+        x: `(${v}).x`,
+        y: `(${v}).y`,
+        z: `(${v}).z`,
+        w: `(${v}).w`,
+      };
+    },
   },
 ];

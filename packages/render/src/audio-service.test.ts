@@ -1019,4 +1019,47 @@ describe("AudioService", () => {
     expect(backend.muffles.get("channel-less")).toBe(0);
     service.dispose();
   });
+
+  it("loops when the Audio asset is looping even if playSound omits loop", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: { bed: { ...createDefaultAudioPayload(), loop: true } },
+      }),
+    );
+    service.setSourceBytes("bed", new Uint8Array([1, 2, 3]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "bed",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(backend.plays[0]?.loop).toBe(true);
+    service.dispose();
+  });
+
+  it("loops a one-shot asset when playSound sets loop", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: { jump: createDefaultAudioPayload() },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1, 2, 3]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      loop: true,
+    });
+    await service.flush();
+    expect(backend.plays[0]?.loop).toBe(true);
+    service.dispose();
+  });
 });

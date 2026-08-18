@@ -3,10 +3,14 @@ import { SessionDiagnosticAggregator } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   applyPlayFpsSample,
+  applyPlayInputModeCommand,
   applyPlayUiCommand,
   applyWorkerPlayStats,
   diagnosticFromCommand,
   applyPlaySessionStep,
+  applyPlaySessionPausedCommand,
+  applyPlayHudConsoleCommand,
+  shouldForwardPlayEngineCommand,
   dispatchPlayUiWidgetEvent,
   deliverInspectSnapshot,
   inspectSnapshotFromCommand,
@@ -251,6 +255,23 @@ describe("applyPlayUiCommand", () => {
     expect(onUiRemove).toHaveBeenCalledWith("ui-1");
   });
 
+  it("forwards setInputMode members onto the Play HUD callback", () => {
+    const onSetInputMode = vi.fn();
+    expect(
+      applyPlayInputModeCommand(
+        { type: "setInputMode", mode: "Game" },
+        onSetInputMode,
+      ),
+    ).toBe(true);
+    expect(onSetInputMode).toHaveBeenCalledWith("Game");
+    expect(
+      applyPlayInputModeCommand(
+        { type: "stats", frameId: 1, tickIndex: 1, scriptMs: 0, physicsMs: 0 },
+        onSetInputMode,
+      ),
+    ).toBe(false);
+  });
+
   it("ignores non-UI commands", () => {
     expect(
       applyPlayUiCommand(
@@ -264,6 +285,74 @@ describe("applyPlayUiCommand", () => {
         {},
       ),
     ).toBe(false);
+  });
+});
+
+describe("applyPlayHudConsoleCommand", () => {
+  it("opens Stats HUD and highlights a row", () => {
+    const onShowFps = vi.fn();
+    const onStat = vi.fn();
+    expect(
+      applyPlayHudConsoleCommand(
+        { type: "setShowFps", enabled: true },
+        { onShowFps, onStat },
+      ),
+    ).toBe(true);
+    expect(onShowFps).toHaveBeenCalledWith(true);
+    expect(
+      applyPlayHudConsoleCommand(
+        { type: "setStat", name: "unit", enabled: true },
+        { onShowFps, onStat },
+      ),
+    ).toBe(true);
+    expect(onShowFps).toHaveBeenCalledWith(true);
+    expect(onStat).toHaveBeenCalledWith("unit", true);
+  });
+});
+
+describe("shouldForwardPlayEngineCommand", () => {
+  it("forwards setFreeCam onto the Play engine handle", () => {
+    expect(shouldForwardPlayEngineCommand("setFreeCam")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("debugColliders")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
+  });
+});
+
+describe("applyPlaySessionPausedCommand", () => {
+  it("forwards sessionPaused to overlay chrome", () => {
+    const onSessionPaused = vi.fn();
+    expect(
+      applyPlaySessionPausedCommand(
+        { type: "sessionPaused", paused: true },
+        onSessionPaused,
+      ),
+    ).toBe(true);
+    expect(onSessionPaused).toHaveBeenCalledWith(true);
+    expect(
+      applyPlaySessionPausedCommand(
+        { type: "sessionPaused", paused: false },
+        onSessionPaused,
+      ),
+    ).toBe(true);
+    expect(onSessionPaused).toHaveBeenCalledWith(false);
+  });
+
+  it("ignores other commands", () => {
+    const onSessionPaused = vi.fn();
+    expect(
+      applyPlaySessionPausedCommand(
+        {
+          type: "stats",
+          frameId: 1,
+          tickIndex: 1,
+          scriptMs: 0,
+          physicsMs: 0,
+        },
+        onSessionPaused,
+      ),
+    ).toBe(false);
+    expect(onSessionPaused).not.toHaveBeenCalled();
   });
 });
 

@@ -8,6 +8,10 @@ export const PIN_PICKER_TYPES = [
   "enum",
   "vec2",
   "vec3",
+  "vec4",
+  "rotator",
+  "color",
+  "transform",
   "object",
   "class",
   "struct",
@@ -29,6 +33,10 @@ export const PIN_PICKER_LABEL: Record<string, string> = {
   enum: "Enum",
   vec2: "Vector 2",
   vec3: "Vector 3",
+  vec4: "Vector 4",
+  rotator: "Rotator",
+  color: "Color",
+  transform: "Transform",
   object: "Object",
   class: "Class",
   struct: "Struct",
@@ -42,6 +50,10 @@ const PIN_PICKER_KIND: Record<PinPickerType, string> = {
   enum: "enumRef",
   vec2: "vec2",
   vec3: "vec3",
+  vec4: "vec4",
+  rotator: "rotator",
+  color: "color",
+  transform: "transform",
   object: "objectRef",
   class: "classRef",
   struct: "structRef",
@@ -64,4 +76,14 @@ export function pinPickerLabel(type: string): string {
 
 export function isPinPickerType(value: string): value is PinPickerType {
   return (PIN_PICKER_TYPES as readonly string[]).includes(value);
+}
+
+/** Object/class constraints and Structure/Enum guids share `typeClassId`. */
+export function pinPickerKeepsTypeClassId(type: string): boolean {
+  return (
+    type === "object" ||
+    type === "class" ||
+    type === "struct" ||
+    type === "enum"
+  );
 }

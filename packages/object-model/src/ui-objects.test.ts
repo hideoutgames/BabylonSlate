@@ -3,6 +3,7 @@ import { BObject } from "./objects";
 import {
   ButtonWidget,
   ImageWidget,
+  MaterialWidget,
   UserInterface,
   Widget,
   createWidgetForKind,
@@ -45,6 +46,7 @@ describe("UserInterface and Widget objects", () => {
   it("maps every widget kind to a concrete Widget subclass", () => {
     expect(widgetClassForKind("Button")).toBe(ButtonWidget);
     expect(widgetClassForKind("Image")).toBe(ImageWidget);
+    expect(widgetClassForKind("Material")).toBe(MaterialWidget);
     const image = createWidgetForKind("Image", {
       classId: "ImageWidget",
       guid: "w-2",
@@ -53,6 +55,12 @@ describe("UserInterface and Widget objects", () => {
     expect(image).toBeInstanceOf(ImageWidget);
     expect(image.widgetId).toBe("logo");
     expect(image.owner).toBeNull();
+    const material = createWidgetForKind("Material", {
+      classId: "MaterialWidget",
+      guid: "w-4",
+      widgetId: "glow",
+    });
+    expect(material).toBeInstanceOf(MaterialWidget);
     const unknown = createWidgetForKind("NotAKind", {
       classId: "Widget",
       guid: "w-3",

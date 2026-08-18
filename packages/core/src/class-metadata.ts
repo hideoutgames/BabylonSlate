@@ -26,6 +26,7 @@ export const ENGINE_WIDGET_KINDS = [
   "Slider",
   "CheckBox",
   "Image",
+  "Material",
   "ProgressBar",
   "Spacer",
   "TouchJoystick",

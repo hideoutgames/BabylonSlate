@@ -34,12 +34,12 @@ Unit tests inject `FakeAudioPlaybackBackend` (`NullEngine` cannot decode/play). 
 
 | Type | Created by | Suffix | Editor |
 | --- | --- | --- | --- |
-| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, gesture-safe preview Play/Stop that pauses and resets, Blob MIME from source bytes, Volume, Pitch, clips, Channel + Attenuation pickers) |
+| `Audio` | Import (WAV / MP3 / OGG) | `.babasset` | Compact `asset-settings` (metadata, gesture-safe Play/Stop + Repeat, read-only PCM peak waveform, Volume, Loop, Pitch, clips, Channel + Attenuation) |
 | `AudioMixer` | New Asset | `.mixer.babasset` | DockView Details (`audio-mixer`) |
 | `AudioChannel` | New Asset | `.channel.babasset` | DockView Details (`audio-channel`) |
 | `SoundAttenuation` | New Asset | `.atten.babasset` | DockView Details (`sound-attenuation`) with an SVG falloff **plot** (numeric UI, not artwork) |
 
-**Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`; `clips` (omitted/empty → `[{ chunkId: "source", name: "", weight: 1 }]`, cap 8); `pitch` default `1` (clamp `0.25..4`); `pitchRandom` default `false`; `pitchMin` / `pitchMax` default `1`. Extra files land as `source:<id>` chunks — not a playlist of other Audio guids. `pickWeightedAudioClip` treats weights `>= 0` (all-zero → equal). Decode cache key is `${guid}:${chunkId}`. Playback rate is `pitch × dopplerRate`; `syncListener` must not overwrite it.
+**Audio payload** (old `{}` normalises without rewriting the `audio` chunk): `volume` `0..1` default `1`; `loop` default `false`; `audioChannelGuid` / `soundAttenuationGuid` `string \| null` default `null`; `clips` (omitted/empty → `[{ chunkId: "source", name: "", weight: 1 }]`, cap 8); `pitch` default `1` (clamp `0.25..4`); `pitchRandom` default `false`; `pitchMin` / `pitchMax` default `1`. Extra files land as `source:<id>` chunks — not a playlist of other Audio guids. `pickWeightedAudioClip` treats weights `>= 0` (all-zero → equal). Decode cache key is `${guid}:${chunkId}`. Playback rate is `pitch × dopplerRate`; `syncListener` must not overwrite it. Play loops when `command.loop === true` **or** `payload.loop === true`. Graph / BT Play Sound omit `loop` and inherit the asset flag. `AudioComponent.loop` still forces loop on a one-shot asset. To play a looping asset once, uncheck asset Loop.
 
 **AudioChannel** has no volume: `parentChannelGuid`, `effects: [{ kind: "environmentReverb" \| "muffleThroughWalls", enabled }]`. Old channels with only reverb gain a disabled muffle row. Parent cycles fail validation; missing/rejected parent routes to master with one diagnostic. `AudioService.setLibrary` sanitizes the Play library the same way: missing channel/attenuation refs and cyclic parents become `null` with one diagnostic each. Channel Details toggles must keep both effect kinds (`setAudioChannelEffect`).
 
@@ -74,13 +74,13 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 | { type: "setGlobalVolume"; volume: number }
 ```
 
-`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits `playSound` with `emitterActorGuid` = the owning actor. Graph **Play Sound** uses `self` as emitter. Missing Actor + attenuation → non-spatial + one diagnostic.
+`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits `playSound` with `emitterActorGuid` = the owning actor. Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies). Missing Actor + attenuation → non-spatial + one diagnostic.
 
 ## Unlock and cache
 
 First `pointerdown` / `touchstart` on overlay Play and the packaged player calls `audioService.unlockAsync()`. Commands before unlock enqueue (cap 32, ordered) and drain after the gesture. Overlay chrome shows **Click the game view to enable audio** (`play-audio-unlock-hint`) while `queued > 0` and still locked. Decode / missing-context → one diagnostic; the game keeps running.
 
-Compact Audio preview **prefetches** clip bytes when the tab opens and starts playback **in the same turn** as Play (unlock + backend `play`, no `await readAssetChunk` before start). WKWebView drops the user-gesture if Play awaits I/O first. Cache miss → `audio.preview_missing_source`; play failure surfaces `audio.play_failed` instead of swallowing. Compact preview is non-spatial (no Play listener). Overlay Play / Preview Build / `apps/player` load **every** clip chunk (`guid` and `guid:chunk` keys); BSAU with a clip table after JSON stays compatible with the old “rest is one source” pack.
+Compact Audio preview **prefetches** clip bytes when the tab opens and starts playback **in the same turn** as Play (unlock + backend `play`, no `await readAssetChunk` before start). WKWebView drops the user-gesture if Play awaits I/O first. Cache miss → `audio.preview_missing_source`; play failure surfaces `audio.play_failed` instead of swallowing. Compact preview is non-spatial (no Play listener). Preview Play uses `payload.loop`; when Loop is off, `onVoiceEnded` flips the transport back to Play. After prefetch (not on the Play click), `decodeAudioData` builds a read-only PCM peak plot (`extractAudioWaveformPeaks`, 128 bars) for the first / last-played clip. Decode failure leaves an empty well; Play still works. Overlay Play / Preview Build / `apps/player` load **every** clip chunk (`guid` and `guid:chunk` keys); BSAU with a clip table after JSON stays compatible with the old “rest is one source” pack.
 
 `AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32.
 
@@ -102,7 +102,7 @@ Additive on Done P16. **Not** triangle ray tracing / Recast / physics rays. Spat
 
 ## A16 budgets
 
-Named constants in `packages/assets/src/audio-payload.ts`:
+Named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in `audio-waveform.ts`):
 
 | Constant | Value |
 | --- | --- |
@@ -120,6 +120,7 @@ Named constants in `packages/assets/src/audio-payload.ts`:
 | Decoded PCM LRU | 64 MiB |
 | Max concurrent voices | 32 |
 | Max clips per Audio | 8 |
+| Waveform preview bars | 128 |
 | Muffle lowpass | 700 Hz |
 | Walls to saturate muffle | 2 |
 
@@ -133,6 +134,6 @@ Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/re
 
 ## Out of P16
 
-Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform editing, DSP plugins, IR convolution, converting Texture/Model/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays).
+Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture/Model/Audio `asset-settings` to DockView, P18 idle-unmount, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Compact Audio may draw a read-only PCM peak plot; that is not waveform editing.
 
 See [render.md](render.md), [bridge.md](bridge.md), [scripting.md](scripting.md), [exporter.md](exporter.md). Spec: [engineplan.md](../engineplan.md) §2.6.

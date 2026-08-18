@@ -5,6 +5,11 @@ export {
   type TransportMode,
 } from "./driver";
 export {
+  applyInspectSelectionToConsoleLine,
+  formatDumpActors,
+  formatInspectActor,
+} from "./console-inspect";
+export {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,
   shouldSpawnScriptedActor,

@@ -18,6 +18,11 @@ function mockCtx(): CodegenContext {
         inputs: [{ name: "a", type: { kind: "float" } }],
         outputs: [{ name: "b", type: { kind: "float" } }],
         count: 2,
+        structGuid: "struct-stats",
+        fields: [{ name: "Health", typeId: "int" }],
+        enumGuid: "enum-team",
+        members: [{ name: "Red", value: 1 }],
+        value: "Red",
       },
     },
     indent: "  ",
@@ -43,6 +48,11 @@ describe("catalog codegen smoke", () => {
         inputs: [{ name: "a", type: { kind: "float" } }],
         outputs: [{ name: "b", type: { kind: "float" } }],
         count: 3,
+        structGuid: "struct-stats",
+        fields: [{ name: "Health", typeId: "int" }],
+        enumGuid: "enum-team",
+        members: [{ name: "Red", value: 1 }],
+        value: "Red",
       });
       expect(pins.length).toBeGreaterThan(0);
       const result = def.codegen(mockCtx());

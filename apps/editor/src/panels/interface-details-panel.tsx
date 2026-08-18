@@ -12,6 +12,10 @@ import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchScriptInterfaceMethod } from "../lib/asset-settings";
 import { subclassClassEntries } from "../lib/component-property-rows";
 import {
+  collectGraphTypeAssets,
+  typeAssetPickerEntries,
+} from "../lib/logic-graph-document";
+import {
   asScriptInterfaceAsset,
   parseMemberIndex,
   pinKey,
@@ -84,6 +88,12 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
           classEntries={subclassClassEntries(
             "BObject",
             assetRegistry?.list() ?? [],
+          )}
+          typeAssets={typeAssetPickerEntries(
+            collectGraphTypeAssets({
+              assets: assetRegistry?.list() ?? [],
+              openDocuments,
+            }),
           )}
           onChange={(nextRows) => {
             const pins = nextRows.map((row) => ({

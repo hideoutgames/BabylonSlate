@@ -5,6 +5,8 @@ import {
   type ClassPickerEntry,
 } from "@babylonslate/editor-kit";
 import {
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   isEditorGraphClass,
   userInterfaceClassId,
   type SerializedComponent,
@@ -130,6 +132,7 @@ function sliderRow(
   max: number,
   update: (property: string, value: unknown) => void,
   step?: number,
+  defaultValue?: number,
 ): PropertyRow {
   return {
     kind: "slider",
@@ -139,6 +142,7 @@ function sliderRow(
     min,
     max,
     step,
+    defaultValue,
     onChange: (next) => update(key, next),
   };
 }
@@ -983,21 +987,27 @@ export function componentPropertyRows(
           component.id,
           "fieldOfView",
           "Field Of View",
-          asNumber(component.properties.fieldOfView, 60),
+          asNumber(component.properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW),
           1,
           179,
           update,
           1,
+          DEFAULT_CAMERA_FIELD_OF_VIEW,
         ),
         sliderRow(
           actorId,
           component.id,
           "orthographicSize",
           "Orthographic Size",
-          asNumber(component.properties.orthographicSize, 5),
+          asNumber(
+            component.properties.orthographicSize,
+            DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+          ),
           0.1,
           50,
           update,
+          undefined,
+          DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
         ),
         {
           kind: "number",

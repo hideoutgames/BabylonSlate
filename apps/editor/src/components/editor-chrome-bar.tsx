@@ -32,7 +32,6 @@ import {
 import { useEffect, useState } from "react";
 import {
   CONTENT_BROWSER_ID,
-  CONTENT_BROWSER_REF,
   assetTypeForDocumentKind,
   type DocumentKind,
   type SerializedGraph,
@@ -67,7 +66,7 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
@@ -163,18 +162,27 @@ function SortableDocumentTab({
   );
 }
 
-function PinnedContentBrowserTab({
+function PinnedDocumentTab({
+  doc,
   active,
   onSelect,
+  onClose,
 }: {
+  doc: OpenDocument;
   active: boolean;
   onSelect: () => void;
+  onClose?: () => void;
 }) {
+  const { assetRegistry } = useDocuments();
+  const indexed = assetRegistry
+    ?.list()
+    .find((asset) => asset.path === doc.ref.path);
+
   return (
     <div
       data-testid="document-tab"
       data-active={active ? "true" : "false"}
-      data-document-kind="content-browser"
+      data-document-kind={doc.ref.kind}
       data-pinned="true"
       className={`chrome-tab chrome-tab-pinned ${active ? "chrome-tab-active" : ""}`}
     >
@@ -184,9 +192,24 @@ function PinnedContentBrowserTab({
         className="chrome-tab-label"
         onClick={onSelect}
       >
-        {kindIcon("content-browser")}
-        <span>{CONTENT_BROWSER_REF.label}</span>
+        {kindIcon(doc.ref.kind, indexed?.header.type)}
+        <span>
+          {doc.ref.label}
+          {doc.dirty ? " *" : ""}
+        </span>
       </button>
+      {onClose ? (
+        <button
+          type="button"
+          data-testid="document-tab-close"
+          className="chrome-tab-close"
+          aria-label={`Close ${doc.ref.label}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={onClose}
+        >
+          <XIcon />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -249,8 +272,9 @@ export function EditorChromeBar({
   const contentBrowserDoc = openDocuments.find(
     (doc) => doc.id === CONTENT_BROWSER_ID,
   );
-  const closableDocs = openDocuments.filter(
-    (doc) => doc.ref.kind !== "content-browser",
+  const pinnedSceneDoc = openDocuments.find((doc) => doc.ref.kind === "scene");
+  const scrollableDocs = openDocuments.filter(
+    (doc) => doc.ref.kind !== "content-browser" && doc.ref.kind !== "scene",
   );
   const activeKind = openDocuments.find((doc) => doc.id === activeDocumentId)
     ?.ref.kind;
@@ -270,8 +294,8 @@ export function EditorChromeBar({
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const fromIndex = closableDocs.findIndex((doc) => doc.id === active.id);
-    const toIndex = closableDocs.findIndex((doc) => doc.id === over.id);
+    const fromIndex = scrollableDocs.findIndex((doc) => doc.id === active.id);
+    const toIndex = scrollableDocs.findIndex((doc) => doc.id === over.id);
     if (fromIndex < 0 || toIndex < 0) return;
 
     reorderClosableTabs(fromIndex, toIndex);
@@ -324,12 +348,30 @@ export function EditorChromeBar({
         </div>
 
         <div className="editor-chrome-tabs" data-testid="document-tab-bar">
-          {contentBrowserDoc ? (
-            <PinnedContentBrowserTab
-              active={activeDocumentId === CONTENT_BROWSER_ID}
-              onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
-            />
-          ) : null}
+          <div
+            className="editor-chrome-tabs-pinned"
+            data-testid="document-tab-pinned"
+          >
+            {contentBrowserDoc ? (
+              <PinnedDocumentTab
+                doc={contentBrowserDoc}
+                active={activeDocumentId === CONTENT_BROWSER_ID}
+                onSelect={() => setActiveDocument(CONTENT_BROWSER_ID)}
+              />
+            ) : null}
+            {pinnedSceneDoc ? (
+              <PinnedDocumentTab
+                doc={pinnedSceneDoc}
+                active={activeDocumentId === pinnedSceneDoc.id}
+                onSelect={() => setActiveDocument(pinnedSceneDoc.id)}
+                onClose={() =>
+                  onCloseDocument
+                    ? onCloseDocument(pinnedSceneDoc.id)
+                    : closeDocument(pinnedSceneDoc.id)
+                }
+              />
+            ) : null}
+          </div>
 
           <div
             className="editor-chrome-tabs-scroll"
@@ -341,10 +383,10 @@ export function EditorChromeBar({
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={closableDocs.map((doc) => doc.id)}
+                items={scrollableDocs.map((doc) => doc.id)}
                 strategy={horizontalListSortingStrategy}
               >
-                {closableDocs.map((doc) => (
+                {scrollableDocs.map((doc) => (
                   <SortableDocumentTab
                     key={doc.id}
                     doc={doc}
@@ -433,6 +475,12 @@ export function EditorChromeBar({
                         openDocuments,
                         classIdForPath: classIdForGraphPath,
                       });
+                      const typeSchemas = typeSchemasFromGraphAssets(
+                        collectGraphTypeAssets({
+                          assets: assetRegistry?.list() ?? [],
+                          openDocuments,
+                        }),
+                      );
                       return validateSerializedGraph(
                         doc.content as SerializedGraph,
                         {
@@ -445,6 +493,8 @@ export function EditorChromeBar({
                             parentOf,
                             Object.keys(classGraphs),
                           ),
+                          enums: typeSchemas.enums,
+                          structs: typeSchemas.structs,
                         },
                       );
                     }),

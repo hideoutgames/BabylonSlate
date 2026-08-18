@@ -3,6 +3,8 @@ import {
   createDefaultGraph,
   createDefaultScene,
   createEmptyProject,
+  DEFAULT_CAMERA_FIELD_OF_VIEW,
+  DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   DEFAULT_SORTING_LAYERS,
   MAIN_CLASS_FILE,
   MAIN_GRAPH_FILE,
@@ -96,6 +98,10 @@ describe("project schema", () => {
       (component) => component.classId === "CameraComponent",
     );
     expect(cameraComponent?.properties.attemptPossessViewTarget).toBe(true);
+    expect(cameraComponent?.properties.fieldOfView).toBe(DEFAULT_CAMERA_FIELD_OF_VIEW);
+    expect(cameraComponent?.properties.orthographicSize).toBe(
+      DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
+    );
     expect(cameraComponent?.properties.projectionMode).toBe("perspective");
     expect(scene.settings.mainCameraActorId).toBe(camera!.id);
     expect(scene.settings.mainCameraComponentId).toBe(cameraComponent!.id);
@@ -629,6 +635,27 @@ describe("project schema", () => {
       autoLockOnEdit: true,
       pollIntervalMs: 60_000,
     });
+  });
+
+  it("drops a token field from source control project settings", () => {
+    const settings = normalizeProjectSettings({
+      sourceControl: {
+        enabled: true,
+        repositoryUrl: "https://github.com/org/repo.git",
+        branch: "main",
+        autoLockOnEdit: true,
+        pollIntervalMs: 60_000,
+        token: "ghp_secret",
+      },
+    } as unknown as Partial<ProjectSettings>).sourceControl;
+    expect(settings).toEqual({
+      enabled: true,
+      repositoryUrl: "https://github.com/org/repo.git",
+      branch: "main",
+      autoLockOnEdit: true,
+      pollIntervalMs: 60_000,
+    });
+    expect(settings).not.toHaveProperty("token");
   });
 
   it("normalizes pluginOverrides keyed by guid", () => {

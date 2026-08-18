@@ -119,6 +119,15 @@ describe("UserInterface command and control contracts", () => {
     expect(press.kind).toBe("pointerDown");
     expect(release.kind).toBe("pointerUp");
   });
+
+  it("setInputMode is a session-scoped Play command", () => {
+    const command = {
+      type: "setInputMode",
+      mode: "Interface",
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setInputMode");
+    expect(command.mode).toBe("Interface");
+  });
 });
 
 describe("Play inspect contract", () => {
@@ -147,6 +156,65 @@ describe("Play inspect contract", () => {
   });
 });
 
+describe("Play session commands", () => {
+  it("sessionPaused reports overlay pause chrome", () => {
+    const command = {
+      type: "sessionPaused",
+      paused: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("sessionPaused");
+    expect(command.paused).toBe(true);
+  });
+
+  it("setRenderQuality, setResolutionScale, and setFrameCap are CommandMessage variants", () => {
+    const quality = {
+      type: "setRenderQuality",
+      level: "low",
+    } satisfies CommandMessage;
+    const scale = {
+      type: "setResolutionScale",
+      scale: 1.5,
+    } satisfies CommandMessage;
+    const cap = { type: "setFrameCap", fps: 30 } satisfies CommandMessage;
+    expect(commandType(quality)).toBe("setRenderQuality");
+    expect(commandType(scale)).toBe("setResolutionScale");
+    expect(commandType(cap)).toBe("setFrameCap");
+  });
+
+  it("setFreeCam is a CommandMessage variant", () => {
+    const command = {
+      type: "setFreeCam",
+      enabled: true,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setFreeCam");
+    expect(command.enabled).toBe(true);
+  });
+
+  it("visualization console commands are CommandMessage variants", () => {
+    const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
+    const stat = {
+      type: "setStat",
+      name: "unit",
+      enabled: true,
+    } satisfies CommandMessage;
+    const colliders = {
+      type: "debugColliders",
+      colliders: [
+        {
+          id: "c1",
+          shape: "box",
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          halfExtents: { x: 1, y: 1, z: 1 },
+        },
+      ],
+    } satisfies CommandMessage;
+    expect(commandType(fps)).toBe("setShowFps");
+    expect(commandType(stat)).toBe("setStat");
+    expect(commandType(colliders)).toBe("debugColliders");
+  });
+});
+
 describe("Particle commands", () => {
   it("assignParticle and setParticlePlaying are CommandMessage variants", () => {
     const assign = {
@@ -156,6 +224,8 @@ describe("Particle commands", () => {
       componentId: "particle-1",
       particleSystemGuid: "sys-1",
       play: true,
+      sortingLayer: "UI",
+      orderInLayer: 1,
     } satisfies CommandMessage;
     const stop = {
       type: "setParticlePlaying",
@@ -166,6 +236,8 @@ describe("Particle commands", () => {
     expect(commandType(assign)).toBe("assignParticle");
     expect(commandType(stop)).toBe("setParticlePlaying");
     expect(assign.particleSystemGuid).toBe("sys-1");
+    expect(assign.sortingLayer).toBe("UI");
+    expect(assign.orderInLayer).toBe(1);
     expect(stop.playing).toBe(false);
   });
 });

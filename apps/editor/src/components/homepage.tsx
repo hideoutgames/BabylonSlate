@@ -514,7 +514,9 @@ export function Homepage({
                 />
               </div>
               <FieldDescription>
-                Play and packaged builds use this framebuffer. Default 1920×1080.
+                Play and packaged builds use this framebuffer (default
+                1920×1080). The host letterboxes it so the image is not
+                stretched.
               </FieldDescription>
             </Field>
             <Field orientation="horizontal">
@@ -531,8 +533,9 @@ export function Homepage({
               </FieldLabel>
             </Field>
             <FieldDescription>
-              Off stretches the framebuffer to fill Play. On letterboxes with
-              unused overlay space black.
+              A locked framebuffer always letterboxes. Unused overlay space is
+              black. This flag is stored on the project and does not stretch to
+              fill.
             </FieldDescription>
           </FieldGroup>
           <DialogFooter>
