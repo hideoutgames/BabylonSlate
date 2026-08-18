@@ -160,6 +160,7 @@ apps/
   editor/        Vite + React + Capacitor host: editor UI + renderer (main thread)
   player/        Standalone runtime host: Preview Build iframe (section 15.2) + exported game shell
   desktop/       Electron wrapper for Windows/macOS (Capacitor has no desktop target)
+engine-content/  Engine default skybox faces (`skybox/px.png` … `nz.png`); Kenney packs present, not wired
 engine-plugins/  First-party plugins bundled with the engine (see section 10)
 packages/
   core/            GUIDs, Result, math types, zod schemas, typed event bus   [was shared]
