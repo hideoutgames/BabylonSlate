@@ -20,6 +20,8 @@ import type { MeshAssetContext } from "./mesh-assets";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
+/** Unnamed hemispheric `"light"` intensity while any authored light exists. */
+export const AUTHORED_FILL_LIGHT_INTENSITY = 0.15;
 
 const EXTRA_CASTER_DIAGNOSTIC =
   "Only the first castShadows light owns a shadow map; extra casters are ignored.";
@@ -294,6 +296,17 @@ export function attachSingleShadowGenerator(
   return generator;
 }
 
+export function syncDefaultFillLight(
+  scene: Scene,
+  hasAuthoredLights: boolean,
+): void {
+  const defaultLight = scene.getLightByName("light");
+  if (!defaultLight) return;
+  defaultLight.intensity = hasAuthoredLights
+    ? AUTHORED_FILL_LIGHT_INTENSITY
+    : DEFAULT_LIGHT_INTENSITY;
+}
+
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
@@ -457,10 +470,7 @@ export function syncAuthoredIllumination(
     }
   }
 
-  const defaultLight = scene.getLightByName("light");
-  if (defaultLight) {
-    defaultLight.intensity = authoredLight ? 0.15 : DEFAULT_LIGHT_INTENSITY;
-  }
+  syncDefaultFillLight(scene, authoredLight);
 
   const mapSize = shadowMapSizeFromQuality(options.shadowQuality ?? "1024");
   const ownerId = shadowCandidates[0] ?? null;

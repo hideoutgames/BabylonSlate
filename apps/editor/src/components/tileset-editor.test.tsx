@@ -159,6 +159,27 @@ describe("TilesetPreview", () => {
     );
   });
 
+  it("stamps the current collision onto other cells in Paint Collision mode", () => {
+    const onChange = vi.fn();
+    render(
+      <TilesetHarness
+        initial={twoTilePayload() as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tileset-preview-cell-1"));
+    fireEvent.click(screen.getByTestId("tileset-collision-full"));
+    fireEvent.click(screen.getByTestId("tileset-paint-collision"));
+    fireEvent.click(screen.getByTestId("tileset-preview-cell-2"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tiles: expect.arrayContaining([
+          expect.objectContaining({ id: 2, collision: "full" }),
+        ]),
+      }),
+    );
+  });
+
   it("derives atlas size from the assigned texture", async () => {
     const createObjectURL = vi
       .spyOn(URL, "createObjectURL")

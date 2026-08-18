@@ -9,7 +9,6 @@ import {
   type SerializedScene,
   type ViewportMode,
 } from "./scene";
-import { lookAtRotation } from "./euler";
 
 export const PROJECT_FILE = "project.json";
 export const LAYOUT_FILE = "layout.json";
@@ -751,10 +750,7 @@ function createDefaultCameraActor(viewportMode: ViewportMode): SerializedActor {
   return createActor(DEFAULT_SCENE_CAMERA_ACTOR_ID, "Camera", {
     transform: {
       position,
-      rotation:
-        viewportMode === "2d"
-          ? [0, 0, 0, 1]
-          : lookAtRotation(position, [0, 0, 0]),
+      rotation: [0, 0, 0, 1],
       scale: [1, 1, 1],
     },
     components: [

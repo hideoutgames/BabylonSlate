@@ -95,6 +95,7 @@ describe("project schema", () => {
     expect(scene.settings.mainCameraComponentId).toBe(cameraComponent!.id);
     expect(camera!.transform.position[2]).toBeLessThan(0);
     expect(camera!.transform.position[1]).toBeGreaterThan(0);
+    expect(camera!.transform.rotation).toEqual([0, 0, 0, 1]);
   });
 
   it("creates a 2D project without a cube and with pixel-perfect units", () => {
