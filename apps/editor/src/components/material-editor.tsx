@@ -38,7 +38,6 @@ import {
   materialPinsAreCompatible,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
-  renderActionEnabled,
   serializedToMaterialFunctionGraph,
   serializedToMaterialGraph,
   setMaterialDomain,
@@ -339,6 +338,8 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   const { document, commit } = useMaterialDocument();
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const customPickNeedsFallbackRef = useRef(false);
+  const customPickCommittedRef = useRef(false);
   const [meshPickOpen, setMeshPickOpen] = useState(false);
   const { assetRegistry } = useDocuments();
 
@@ -360,8 +361,14 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
     [assetRegistry],
   );
 
-  const canRender = renderActionEnabled(editing.previewState);
   const status = editing.previewState.status;
+  const openCustomMeshPicker = () => {
+    customPickNeedsFallbackRef.current =
+      document.preview.mesh !== "custom" ||
+      !document.preview.customMeshGuid;
+    customPickCommittedRef.current = false;
+    setMeshPickOpen(true);
+  };
 
   return (
     <PanelFrame className="flex-1" data-testid="material-preview-panel">
@@ -379,17 +386,17 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
               onValueChange={(value) => {
                 const next = value[0] as MaterialPreviewMesh | undefined;
                 if (!next) return;
+                if (next === "custom") {
+                  openCustomMeshPicker();
+                  return;
+                }
                 commit({
                   ...document,
                   preview: {
                     mesh: next,
-                    customMeshGuid:
-                      next === "custom" ? document.preview.customMeshGuid : null,
+                    customMeshGuid: null,
                   },
                 });
-                if (next === "custom" && !document.preview.customMeshGuid) {
-                  setMeshPickOpen(true);
-                }
               }}
               aria-label="Preview Mesh"
               data-testid="material-preview-mesh"
@@ -402,46 +409,17 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
                     value={mesh}
                     aria-label={PREVIEW_MESH_LABEL[mesh]}
                     data-testid={`material-preview-mesh-${mesh}`}
+                    onClick={
+                      mesh === "custom"
+                        ? openCustomMeshPicker
+                        : undefined
+                    }
                   >
                     <Icon />
                   </ToggleGroupItem>
                 );
               })}
             </ToggleGroup>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canRender}
-              onClick={() => editing.requestRender()}
-              data-testid="material-render"
-            >
-              Render
-            </Button>
-            <Badge data-testid="material-preview-status">{status}</Badge>
-            {document.preview.mesh === "custom" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setMeshPickOpen(true)}
-                data-testid="material-preview-custom-mesh"
-              >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    (() => {
-                      const asset = assetRegistry?.getByGuid(
-                        document.preview.customMeshGuid ?? "",
-                      );
-                      return asset
-                        ? { name: asset.header.name, type: asset.header.type }
-                        : undefined;
-                    })(),
-                  ),
-                  "Pick Mesh",
-                )}
-              </Button>
-            ) : null}
           </div>
         </div>
         <canvas
@@ -461,15 +439,34 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
         ) : null}
         <AssetPicker
           open={meshPickOpen}
-          onOpenChange={setMeshPickOpen}
+          onOpenChange={(open) => {
+            if (
+              !open &&
+              customPickNeedsFallbackRef.current &&
+              !customPickCommittedRef.current
+            ) {
+              commit({
+                ...document,
+                preview: { mesh: "cube", customMeshGuid: null },
+              });
+            }
+            if (!open) {
+              customPickNeedsFallbackRef.current = false;
+              customPickCommittedRef.current = false;
+            }
+            setMeshPickOpen(open);
+          }}
           assets={modelAssets}
           allowedTypes={["Model"]}
           title="Pick Preview Mesh"
           allowNone
           onPick={(guid) => {
+            customPickCommittedRef.current = true;
             commit({
               ...document,
-              preview: { mesh: "custom", customMeshGuid: guid ?? null },
+              preview: guid
+                ? { mesh: "custom", customMeshGuid: guid }
+                : { mesh: "cube", customMeshGuid: null },
             });
             setMeshPickOpen(false);
           }}

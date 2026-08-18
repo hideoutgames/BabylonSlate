@@ -530,7 +530,9 @@ export function SettingsModal({
               Pick a device, then choose a key or button from the list.
             </FieldDescription>
             <InputMappingEditor
-              value={normalizeInputMappings(projectDocument.settings.input)}
+              value={normalizeInputMappings(projectDocument.settings.input, {
+                allowIncomplete: true,
+              })}
               onChange={(input) =>
                 updateProjectSettings({
                   input: input as unknown as ProjectInputSettings,

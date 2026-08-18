@@ -9,6 +9,14 @@ import {
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
+import {
+  actorParentGuid,
+  actorWorldTransforms,
+  inverseQuaternion,
+  multiplyQuaternion,
+  rotateVector,
+  type ActorTransformMap,
+} from "./actor-world-transform";
 
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
@@ -19,6 +27,8 @@ export class PhysicsWorldSync {
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private synced = false;
+  private actors: readonly Actor[] = [];
+  private worldTransforms: ActorTransformMap = new Map();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private pixelsPerUnit = 100;
@@ -51,8 +61,10 @@ export class PhysicsWorldSync {
 
   /** Ensure every physics-bearing actor has backend bodies (idempotent). */
   syncFromWorld(world: World): void {
+    this.actors = world.getActors();
+    this.worldTransforms = actorWorldTransforms(this.actors);
     const live = new Set<string>();
-    for (const actor of world.getActors()) {
+    for (const actor of this.actors) {
       if (actor.destroyed) continue;
       const rigid = actor.components.find(
         (c) => c.classId === "RigidBodyComponent" && !c.destroyed,
@@ -70,7 +82,10 @@ export class PhysicsWorldSync {
           rigid ? mapToRecord(rigid.variables) : { motionType: "static" },
         );
         if (props.motionType !== "dynamic") {
-          this.backend.setBodyTransform(bodyId, actorTransform(actor));
+          this.backend.setBodyTransform(
+            bodyId,
+            actorWorldPhysicsTransform(actor, this.worldTransforms),
+          );
         }
       }
     }
@@ -92,13 +107,18 @@ export class PhysicsWorldSync {
       if (!actor || actor.destroyed) continue;
       const transform = this.backend.getBodyTransform(bodyId);
       if (!transform) continue;
-      actor.transform.position.x = transform.position.x;
-      actor.transform.position.y = transform.position.y;
-      actor.transform.position.z = transform.position.z;
-      actor.transform.rotation.x = transform.rotation.x;
-      actor.transform.rotation.y = transform.rotation.y;
-      actor.transform.rotation.z = transform.rotation.z;
-      actor.transform.rotation.w = transform.rotation.w;
+      const localTransform = actorLocalPhysicsTransform(
+        transform,
+        actor,
+        this.worldTransforms,
+      );
+      actor.transform.position.x = localTransform.position.x;
+      actor.transform.position.y = localTransform.position.y;
+      actor.transform.position.z = localTransform.position.z;
+      actor.transform.rotation.x = localTransform.rotation.x;
+      actor.transform.rotation.y = localTransform.rotation.y;
+      actor.transform.rotation.z = localTransform.rotation.z;
+      actor.transform.rotation.w = localTransform.rotation.w;
     }
   }
 
@@ -150,13 +170,18 @@ export class PhysicsWorldSync {
     }
     const moved = this.backend.moveCharacter(actor.guid, translation, dt);
     if (!moved) return;
-    actor.transform.position.x = moved.position.x;
-    actor.transform.position.y = moved.position.y;
-    actor.transform.position.z = moved.position.z;
-    actor.transform.rotation.x = moved.rotation.x;
-    actor.transform.rotation.y = moved.rotation.y;
-    actor.transform.rotation.z = moved.rotation.z;
-    actor.transform.rotation.w = moved.rotation.w;
+    const localTransform = actorLocalPhysicsTransform(
+      moved,
+      actor,
+      this.worldTransforms,
+    );
+    actor.transform.position.x = localTransform.position.x;
+    actor.transform.position.y = localTransform.position.y;
+    actor.transform.position.z = localTransform.position.z;
+    actor.transform.rotation.x = localTransform.rotation.x;
+    actor.transform.rotation.y = localTransform.rotation.y;
+    actor.transform.rotation.z = localTransform.rotation.z;
+    actor.transform.rotation.w = localTransform.rotation.w;
   }
 
   private createForActor(actor: Actor): void {
@@ -179,7 +204,7 @@ export class PhysicsWorldSync {
       linearDamping: props.linearDamping,
       angularDamping: props.angularDamping,
       gravityScale: rigid ? props.gravityScale : 0,
-      transform: actorTransform(actor),
+      transform: actorWorldPhysicsTransform(actor, this.worldTransforms),
     });
     this.bodyByActor.set(actor.guid, bodyId);
 
@@ -261,20 +286,43 @@ export class PhysicsWorldSync {
   }
 }
 
-function actorTransform(actor: Actor): PhysicsTransform {
+function actorWorldPhysicsTransform(
+  actor: Actor,
+  transforms: ActorTransformMap,
+): PhysicsTransform {
+  const world = transforms.get(actor.guid) ?? actor.transform;
+  return {
+    position: { ...world.position },
+    rotation: { ...world.rotation },
+  };
+}
+
+function actorLocalPhysicsTransform(
+  world: PhysicsTransform,
+  actor: Actor,
+  transforms: ActorTransformMap,
+): PhysicsTransform {
+  const parentId = actorParentGuid(actor);
+  const parentWorld = parentId ? transforms.get(parentId) : undefined;
+  if (!parentWorld) return world;
+  const inverseRotation = inverseQuaternion(parentWorld.rotation);
+  const offset = rotateVector(inverseRotation, {
+    x: world.position.x - parentWorld.position.x,
+    y: world.position.y - parentWorld.position.y,
+    z: world.position.z - parentWorld.position.z,
+  });
   return {
     position: {
-      x: actor.transform.position.x,
-      y: actor.transform.position.y,
-      z: actor.transform.position.z,
+      x: divideScale(offset.x, parentWorld.scale.x),
+      y: divideScale(offset.y, parentWorld.scale.y),
+      z: divideScale(offset.z, parentWorld.scale.z),
     },
-    rotation: {
-      x: actor.transform.rotation.x,
-      y: actor.transform.rotation.y,
-      z: actor.transform.rotation.z,
-      w: actor.transform.rotation.w,
-    },
+    rotation: multiplyQuaternion(inverseRotation, world.rotation),
   };
+}
+
+function divideScale(value: number, scale: number): number {
+  return scale === 0 ? 0 : value / scale;
 }
 
 function mapToRecord(

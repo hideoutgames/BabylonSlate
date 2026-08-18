@@ -171,43 +171,6 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   return resolveActorTypeVisual({ classId: "Actor" });
 }
 
-/** Engine primitives are 1.5 units across, so 2 units always leaves a visible gap. */
-const PLACEMENT_SPACING = 2;
-
-/**
- * First free spot along +X, so a placed actor is never hidden inside one that is
- * already there. A sphere dropped on the default Cube at the origin is fully
- * enclosed by it and reads as "the actor did not spawn".
- */
-export function placementPositionFor(
-  scene: SerializedScene,
-): [number, number, number] {
-  // Child actors move with their parent, so only root actors define free space.
-  const occupied = scene.actors
-    .filter((actor) => actor.parentId === null)
-    .map((actor) => actor.transform.position);
-  const clashes = (candidate: readonly [number, number, number]) =>
-    occupied.some((position) =>
-      position.every(
-        (value, axis) => Math.abs(value - candidate[axis]!) < PLACEMENT_SPACING,
-      ),
-    );
-  // One occupied actor can block at most the two candidates it sits between.
-  const attempts = occupied.length * 2 + 1;
-  for (let step = 0; step < attempts; step += 1) {
-    const candidate: [number, number, number] = [step * PLACEMENT_SPACING, 0, 0];
-    if (!clashes(candidate)) return candidate;
-  }
-  return [attempts * PLACEMENT_SPACING, 0, 0];
-}
-
-function placedTransform(scene: SerializedScene) {
-  return {
-    ...identitySerializedTransform(),
-    position: placementPositionFor(scene),
-  };
-}
-
 export function nextActorId(scene: SerializedScene): string {
   let index = 1;
   while (scene.actors.some((actor) => actor.id === `actor-${index}`)) {
@@ -216,13 +179,21 @@ export function nextActorId(scene: SerializedScene): string {
   return `actor-${index}`;
 }
 
+function placedTransform(position: [number, number, number]) {
+  return {
+    ...identitySerializedTransform(),
+    position,
+  };
+}
+
 export function spawnPlacedActor(
   scene: SerializedScene,
   item: PlaceActorItem,
   id: string,
+  position: [number, number, number],
 ): SerializedActor {
   const kind = item.kind;
-  const transform = placedTransform(scene);
+  const transform = placedTransform(position);
   if (kind.type === "shape") {
     return createActor(id, kind.meshKind, {
       transform,
@@ -262,6 +233,7 @@ export function spawnPlacedActor(
   }
   if (kind.type === "navmesh") {
     return createActor(id, "NavMesh", {
+      transform,
       components: [
         {
           id: `${id}-navmesh`,
@@ -273,6 +245,7 @@ export function spawnPlacedActor(
   }
   if (kind.type === "navmesh-blocker") {
     return createActor(id, "NavMesh Blocker", {
+      transform,
       components: [
         {
           id: `${id}-blocker`,
@@ -310,4 +283,24 @@ export function spawnPlacedActor(
     return createActor(id, kind.name, { transform, components: [component] });
   }
   return createActor(id, "Empty", { transform });
+}
+
+export function duplicateSceneActor(
+  scene: SerializedScene,
+  source: SerializedActor,
+  options?: {
+    position?: [number, number, number];
+    parentId?: string | null;
+  },
+): SerializedActor {
+  const copy = structuredClone(source);
+  copy.id = nextActorId(scene);
+  copy.name = `${source.name} Copy`;
+  if (options && "parentId" in options) {
+    copy.parentId = options.parentId ?? null;
+  }
+  if (options?.position) {
+    copy.transform = { ...copy.transform, position: options.position };
+  }
+  return copy;
 }

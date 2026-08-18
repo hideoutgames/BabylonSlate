@@ -253,7 +253,8 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
-  it("publishes child actor snapshot positions in world space", () => {
+  it("publishes child actor snapshots with composed parent rotation and scale", () => {
+    const halfSqrt = Math.SQRT1_2;
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 8,
@@ -267,9 +268,9 @@ describe("p7-play-scene-load", () => {
         actors: [
           createActor("parent", "Parent", {
             transform: {
-              position: [5, 0, 0],
-              rotation: [0, 0, 0, 1],
-              scale: [1, 1, 1],
+              position: [5, 1, 0],
+              rotation: [0, 0, halfSqrt, halfSqrt],
+              scale: [2, 3, 4],
             },
             components: [createMeshComponent("parent-mesh", "box")],
           }),
@@ -277,8 +278,8 @@ describe("p7-play-scene-load", () => {
             parentId: "parent",
             transform: {
               position: [1, 2, 0],
-              rotation: [0, 0, 0, 1],
-              scale: [1, 1, 1],
+              rotation: [halfSqrt, 0, 0, halfSqrt],
+              scale: [0.5, 2, 1],
             },
             components: [createMeshComponent("child-mesh", "sphere")],
           }),
@@ -291,9 +292,17 @@ describe("p7-play-scene-load", () => {
     const buf = new Float32Array(snapshotFloatCount(8));
     expect(runtime.copySnapshot(buf)).toBe(true);
     const slots = [readActorSlot(buf, 0), readActorSlot(buf, 1)];
-    const child = slots.find((slot) => slot.position.x === 6);
-    expect(child).toBeDefined();
-    expect(child!.position.y).toBe(2);
+    const child = slots[1]!;
+    expect(child.position.x).toBeCloseTo(-1);
+    expect(child.position.y).toBeCloseTo(3);
+    expect(child.position.z).toBeCloseTo(0);
+    expect(child.rotation.x).toBeCloseTo(0.5);
+    expect(child.rotation.y).toBeCloseTo(0.5);
+    expect(child.rotation.z).toBeCloseTo(0.5);
+    expect(child.rotation.w).toBeCloseTo(0.5);
+    expect(child.scale.x).toBeCloseTo(1);
+    expect(child.scale.y).toBeCloseTo(6);
+    expect(child.scale.z).toBeCloseTo(4);
     runtime.stop();
   });
 
@@ -476,6 +485,54 @@ describe("p7-play-scene-load", () => {
             position: [2, 0, 0],
           }),
         ],
+      }),
+    );
+    runtime.stop();
+  });
+
+  it("resolves Play mesh parenting through a non-visual component", () => {
+    const commands: CommandMessage[] = [];
+    const root = createMeshComponent("root-visual", "box");
+    const leaf = createMeshComponent("leaf-visual", "sphere");
+    leaf.parentId = "pivot";
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/component-parent.scene.babasset",
+        scene: {
+          name: "ComponentParent",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("hero", "Hero", {
+              components: [
+                root,
+                {
+                  id: "pivot",
+                  classId: "SceneComponent",
+                  properties: {},
+                  parentId: "root-visual",
+                },
+                leaf,
+              ],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+
+    runtime.realizePlayWorld();
+    const assignment = commands.find((command) => command.type === "assignMesh");
+    expect(assignment).toEqual(
+      expect.objectContaining({
+        parts: expect.arrayContaining([
+          expect.objectContaining({
+            componentId: "leaf-visual",
+            parentId: "root-visual",
+          }),
+        ]),
       }),
     );
     runtime.stop();
@@ -690,6 +747,73 @@ describe("p7-play-scene-load", () => {
     runtime.start();
     for (let i = 0; i < 90; i++) runtime.tick();
     expect(box!.transform.position.y).toBeLessThan(5);
+    runtime.stop();
+  });
+
+  it("creates a parented physics body at the same world pose published for rendering", () => {
+    const runtime = createInProcessRuntime({
+      seed: 3,
+      maxActors: 8,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      gravity: [0, 0, 0],
+      seedDemoActors: false,
+      playScene: {
+        name: "ParentedPhysics",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings("3d"),
+        folders: [],
+        actors: [
+          createActor("parent", "Parent", {
+            transform: {
+              position: [5, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [createMeshComponent("parent-mesh", "box")],
+          }),
+          createActor("child", "Child", {
+            parentId: "parent",
+            transform: {
+              position: [1, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              createMeshComponent("child-mesh", "sphere"),
+              {
+                id: "child-rigid",
+                classId: "RigidBodyComponent",
+                properties: { motionType: "dynamic", mass: 1, gravityScale: 0 },
+              },
+              {
+                id: "child-collider",
+                classId: "ColliderComponent",
+                properties: {
+                  shape: {
+                    kind: "box",
+                    halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+                  },
+                },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+    const body = runtime
+      .getPhysicsSync()
+      ?.getBackend()
+      .getBodyTransform("body:child");
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    const childSnapshot = readActorSlot(buf, 1);
+    expect(body?.position.x).toBeCloseTo(6);
+    expect(childSnapshot.position.x).toBeCloseTo(6);
     runtime.stop();
   });
 

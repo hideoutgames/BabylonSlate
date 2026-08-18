@@ -32,6 +32,7 @@ import { EditorThemeProvider } from "./context/theme-context";
 import { PlayProvider, usePlay } from "./context/play-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
 import { ValidationProvider } from "./context/validation-context";
+import { MaterialRenderControlProvider } from "./context/material-render-control-context";
 import { EditorUtilityRuntime } from "./components/editor-utility-runtime";
 import { TestUiHostStats } from "./lib/test-ui-host-stats";
 import { TestAudioHostStats } from "./lib/test-audio-host-stats";
@@ -407,12 +408,14 @@ export default function App() {
         <DocumentProvider>
           <ValidationProvider>
             <PlayProvider>
-              <EditorUtilityRuntime />
-              <TestUiHostStats />
-              <TestAudioHostStats />
-              <ProjectSearchProvider>
-                <AppRoutes />
-              </ProjectSearchProvider>
+              <MaterialRenderControlProvider>
+                <EditorUtilityRuntime />
+                <TestUiHostStats />
+                <TestAudioHostStats />
+                <ProjectSearchProvider>
+                  <AppRoutes />
+                </ProjectSearchProvider>
+              </MaterialRenderControlProvider>
             </PlayProvider>
           </ValidationProvider>
         </DocumentProvider>

@@ -1,11 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import {
   MaterialEditingProvider,
+  MANUAL_RENDER_COOLDOWN_MS,
   useMaterialEditing,
 } from "./material-editing-context";
+import {
+  MaterialRenderControlProvider,
+  useMaterialRenderControl,
+} from "./material-render-control-context";
 
 const harness = vi.hoisted(() => ({
   playing: false,
@@ -20,6 +32,13 @@ const harness = vi.hoisted(() => ({
   createScene: vi.fn(),
   createPresenter: vi.fn(),
   attachGestures: vi.fn(),
+  acquireResult: {
+    ok: true,
+    material: {},
+    hash: "hash",
+  } as
+    | { ok: true; material: object; hash: string }
+    | { ok: false; diagnostics: [] },
   host: {
     scene: { render: vi.fn(), dispose: vi.fn() },
     camera: {
@@ -73,7 +92,7 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     ...actual,
     MaterialLibrary: class {
       acquire() {
-        return { ok: false, diagnostics: [] };
+        return harness.acquireResult;
       }
       dispose() {}
     },
@@ -101,14 +120,29 @@ function AttachCanvas() {
   return <canvas data-testid="material-preview-canvas" ref={ref} />;
 }
 
+function RenderProbe() {
+  const { control } = useMaterialRenderControl();
+  return (
+    <button
+      type="button"
+      disabled={control?.disabled ?? true}
+      onClick={() => control?.requestRender()}
+    >
+      Render
+    </button>
+  );
+}
+
 function mount(active = true, children?: ReactNode) {
   return render(
-    <MaterialEditingProvider
-      documentId="material:assets/Rock.material.babasset"
-      active={active}
-    >
-      {children ?? <AttachCanvas />}
-    </MaterialEditingProvider>,
+    <MaterialRenderControlProvider>
+      <MaterialEditingProvider
+        documentId="material:assets/Rock.material.babasset"
+        active={active}
+      >
+        {children ?? <AttachCanvas />}
+      </MaterialEditingProvider>
+    </MaterialRenderControlProvider>,
   );
 }
 
@@ -123,6 +157,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.createScene.mockReset().mockReturnValue(harness.host);
     harness.createPresenter.mockReset().mockReturnValue(harness.presenter);
     harness.attachGestures.mockReset().mockReturnValue(harness.gestures);
+    harness.acquireResult = { ok: true, material: {}, hash: "hash" };
     harness.host.camera.attachControl.mockReset();
     harness.presenter.present.mockReset();
     harness.presenter.setFrozen.mockReset();
@@ -170,4 +205,51 @@ describe("MaterialEditingProvider preview isolation", () => {
     });
     expect(harness.presenter.present).not.toHaveBeenCalled();
   });
+
+  it.each(["success", "error"] as const)(
+    "keeps manual Render disabled for three seconds after %s",
+    async (result) => {
+      vi.useFakeTimers();
+      try {
+        mount(true, (
+          <>
+            <AttachCanvas />
+            <RenderProbe />
+          </>
+        ));
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(250);
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        const button = screen.getByRole("button", { name: "Render" });
+        expect(button.hasAttribute("disabled")).toBe(false);
+
+        harness.acquireResult =
+          result === "success"
+            ? { ok: true, material: {}, hash: "hash" }
+            : { ok: false, diagnostics: [] };
+        fireEvent.click(button);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(button.hasAttribute("disabled")).toBe(true);
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(MANUAL_RENDER_COOLDOWN_MS - 1);
+        });
+        expect(button.hasAttribute("disabled")).toBe(true);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(button.hasAttribute("disabled")).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 });

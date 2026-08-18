@@ -81,6 +81,7 @@ function actionBindingHeld(
   binding: ActionBinding,
   state: ResolverInternals,
 ): boolean {
+  if (!binding.code) return false;
   if (!modifiersMatch(binding.modifiers, state.modifiers)) return false;
   switch (binding.device) {
     case "key":
@@ -106,6 +107,7 @@ function axisBindingValue(
   binding: AxisBinding,
   state: ResolverInternals,
 ): number {
+  if (!binding.code) return 0;
   if (!modifiersMatch(binding.modifiers, state.modifiers)) return 0;
   switch (binding.device) {
     case "key":

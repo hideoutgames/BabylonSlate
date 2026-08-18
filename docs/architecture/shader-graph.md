@@ -100,9 +100,20 @@ only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
 Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
 and in-editor Play freeze present.
 
-Mesh / **Render** / status live in a compact overlay chip on the canvas
-(`material-preview-overlay`) — viewport-style `ToggleGroup` `size="sm"` icons
-and a `size="sm"` Render button, not a `ToolbarStrip` of 44px controls.
+The compact `material-preview-overlay` contains only the viewport-style mesh
+`ToggleGroup`. Cube is the document default and the runtime fallback for
+missing/invalid custom bytes. **Custom** opens the existing Model `AssetPicker`
+directly; selecting None or dismissing an initial pick returns to Cube. A
+picked custom Model can be re-picked from the same Custom icon. There is no
+separate Pick Mesh button or visible Ready/status badge (the canvas keeps its
+machine-state data attributes for tests).
+
+**Render** lives in the global editor toolbar beside the Class graph Compile
+slot and appears only for the active Material document (not Material
+Functions). It can manually refresh a material that is already ready. It is
+disabled while queued/lowering/GPU compiling and for three seconds after a
+manual result (success or failure); automatic cheap-graph compiles do not start
+that cooldown.
 
 The default Material dock stacks **Preview** over **Details** on the left
 (~25% width, 50/50 height) so **Graph** keeps about 75% width. Compiler Results
@@ -115,11 +126,10 @@ clean → dirty → queued → lowering → gpuCompiling → ready | error
 ```
 
 Every edit bumps the generation. Cheap graphs auto-queue after a trailing
-debounce; expensive ones stay dirty until **Render**. Render is disabled while
-clean, queued or compiling, and whenever the newest generation is already on
-screen. A result from an older generation still becomes the last good image
-unless a newer compile is already in flight, so the preview is never blank while
-editing.
+debounce; expensive ones stay dirty until **Render**. A manual Render of the
+ready generation queues a fresh render generation. A result from an older
+generation still becomes the last good image unless a newer compile is already
+in flight, so the preview is never blank while editing.
 
 `classifyMaterialCost` prefers measured compile durations once the session has
 two of them and compares them against the **active frame budget**
@@ -203,6 +213,9 @@ assignment to one named mesh, re-applies after a mesh rebuild, and releases
 records on despawn. Editor viewports (scene and Prefab) do **not** use that
 Play path: `EditorSceneSync` binds the same guid onto `editorActor:<id>` /
 `editorActor:<id>|<componentId>` through `MaterialLibrary.resolveMaterial`.
+The shared browser fixture asserts the authored material on Scene, Prefab,
+overlay Play, Preview Build, and the packed player rather than relying only on
+command-record tests.
 
 Scene Details authors `SceneSettings.postProcessStack` (ordered Material guid +
 Enabled) with `NamedListEditor` / `AssetPicker`. The picker lists post-process

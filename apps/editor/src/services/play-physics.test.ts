@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeScene } from "@babylonslate/core";
 import {
+  canonicalPlaySceneGuid,
   inProcessPlayRuntimeOptions,
   playLoadControl,
   playPhysicsFromOpenDocuments,
@@ -75,6 +76,22 @@ describe("playLoadControl", () => {
 });
 
 describe("playPhysicsFromOpenDocuments", () => {
+  it("uses an asset guid for runtime scene changes when the path is indexed", () => {
+    const scene = {
+      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      scene: normalizeScene({ name: "Main" }),
+      path: "assets/main.scene.babasset",
+    };
+    expect(
+      canonicalPlaySceneGuid(scene, (path) =>
+        path === scene.path ? "scene-guid-main" : null,
+      ),
+    ).toBe("scene-guid-main");
+    expect(canonicalPlaySceneGuid(scene, () => null)).toBe(
+      "scene:assets/main.scene.babasset",
+    );
+  });
+
   it("reads physicsWorld and gravity from the active scene document", () => {
     expect(
       playPhysicsFromOpenDocuments(

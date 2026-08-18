@@ -120,75 +120,56 @@ describe("Material preview panel", () => {
     expect(container.querySelector("[data-slot=toolbar]")).toBeNull();
     expect(screen.getByTestId("material-preview-mesh")).toBeTruthy();
     expect(screen.getByTestId("material-preview-mesh-cube")).toBeTruthy();
-    expect(screen.getByTestId("material-render")).toBeTruthy();
+    expect(screen.queryByTestId("material-render")).toBeNull();
+    expect(screen.queryByTestId("material-preview-status")).toBeNull();
+    expect(screen.queryByTestId("material-preview-custom-mesh")).toBeNull();
   });
 
   it("stores the chosen primitive on the document", () => {
     render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-preview-mesh-cube"));
-    expect(lastCommit().preview.mesh).toBe("cube");
+    fireEvent.click(screen.getByTestId("material-preview-mesh-cylinder"));
+    expect(lastCommit().preview.mesh).toBe("cylinder");
   });
 
   it("opens the model picker when Custom is chosen with no mesh", () => {
     render(<MaterialPreviewPanel {...panelProps} />);
     fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
-    expect(lastCommit().preview.mesh).toBe("custom");
+    expect(harness.applyAssetDocumentChange).not.toHaveBeenCalled();
     expect(screen.getByTestId("material-preview-mesh-picker")).toBeTruthy();
   });
 
-  it("shows the picked custom mesh name", () => {
+  it("stores a picked custom model without a separate Pick Mesh button", () => {
+    render(<MaterialPreviewPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    fireEvent.click(screen.getByTestId("search-item-model-1"));
+    expect(lastCommit().preview).toEqual({
+      mesh: "custom",
+      customMeshGuid: "model-1",
+    });
+    expect(screen.queryByTestId("material-preview-custom-mesh")).toBeNull();
+  });
+
+  it("returns to Cube when the custom picker chooses None", () => {
+    render(<MaterialPreviewPanel {...panelProps} />);
+    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    fireEvent.click(screen.getByTestId("search-item-__none__"));
+    expect(lastCommit().preview).toEqual({
+      mesh: "cube",
+      customMeshGuid: null,
+    });
+  });
+
+  it("returns to Cube when an initial custom pick is dismissed", () => {
     const doc = createDefaultMaterialDocument("Rock");
-    doc.preview = { mesh: "custom", customMeshGuid: "model-1" };
+    doc.preview = { mesh: "cylinder", customMeshGuid: null };
     harness.content = doc as unknown as Record<string, unknown>;
     render(<MaterialPreviewPanel {...panelProps} />);
-    expect(
-      screen.getByTestId("material-preview-custom-mesh").textContent,
-    ).toContain("Statue");
-  });
-
-  it("disables Render while the preview is clean", () => {
-    render(<MaterialPreviewPanel {...panelProps} />);
-    expect(
-      screen.getByTestId("material-render").hasAttribute("disabled"),
-    ).toBe(true);
-  });
-
-  it("enables Render for an expensive graph that is waiting", () => {
-    harness.previewState = materialPreviewReducer(
-      createMaterialPreviewState(),
-      { type: "edit", cost: "expensive" },
-    );
-    render(<MaterialPreviewPanel {...panelProps} />);
-    expect(
-      screen.getByTestId("material-render").hasAttribute("disabled"),
-    ).toBe(false);
-  });
-
-  it("disables Render while a compile is in flight", () => {
-    let state = materialPreviewReducer(createMaterialPreviewState(), {
-      type: "edit",
-      cost: "expensive",
+    fireEvent.click(screen.getByTestId("material-preview-mesh-custom"));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(lastCommit().preview).toEqual({
+      mesh: "cube",
+      customMeshGuid: null,
     });
-    state = materialPreviewReducer(state, { type: "render" });
-    state = materialPreviewReducer(state, {
-      type: "compileStart",
-      generation: 1,
-    });
-    harness.previewState = state;
-    render(<MaterialPreviewPanel {...panelProps} />);
-    expect(
-      screen.getByTestId("material-render").hasAttribute("disabled"),
-    ).toBe(true);
-  });
-
-  it("asks the host to compile when Render is pressed", () => {
-    harness.previewState = materialPreviewReducer(
-      createMaterialPreviewState(),
-      { type: "edit", cost: "expensive" },
-    );
-    render(<MaterialPreviewPanel {...panelProps} />);
-    fireEvent.click(screen.getByTestId("material-render"));
-    expect(harness.requestRender).toHaveBeenCalled();
   });
 
   it("surfaces a compile error under the canvas", () => {

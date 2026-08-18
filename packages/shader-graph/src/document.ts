@@ -163,15 +163,17 @@ function normalizeEdges(value: unknown): MaterialGraphEdge[] {
 
 function normalizePreview(value: unknown): MaterialPreviewSettings {
   const record = asRecord(value);
-  const mesh = MATERIAL_PREVIEW_MESHES.includes(
+  const selectedMesh = MATERIAL_PREVIEW_MESHES.includes(
     record.mesh as MaterialPreviewMesh,
   )
     ? (record.mesh as MaterialPreviewMesh)
-    : "sphere";
+    : "cube";
   const customMeshGuid =
     typeof record.customMeshGuid === "string" && record.customMeshGuid
       ? record.customMeshGuid
       : null;
+  const mesh =
+    selectedMesh === "custom" && !customMeshGuid ? "cube" : selectedMesh;
   return { mesh, customMeshGuid: mesh === "custom" ? customMeshGuid : null };
 }
 
@@ -268,7 +270,7 @@ export function createDefaultMaterialDocument(
     blendMode: "opaque",
     twoSided: false,
     alphaCutoff: 0.5,
-    preview: { mesh: "sphere", customMeshGuid: null },
+    preview: { mesh: "cube", customMeshGuid: null },
     nodes,
     edges,
   };

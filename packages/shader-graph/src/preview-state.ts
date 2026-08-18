@@ -132,16 +132,25 @@ export function materialPreviewReducer(
         status: "queued",
         queuedGeneration: state.generation,
       };
-    case "render":
-      if (state.generation === state.readyGeneration) return state;
-      if (state.status === "queued" || state.status === "gpuCompiling") {
+    case "render": {
+      if (
+        state.status === "queued" ||
+        state.status === "lowering" ||
+        state.status === "gpuCompiling"
+      ) {
         return state;
       }
+      const renderGeneration =
+        state.generation === state.readyGeneration
+          ? state.generation + 1
+          : state.generation;
       return {
         ...state,
         status: "queued",
-        queuedGeneration: state.generation,
+        generation: renderGeneration,
+        queuedGeneration: renderGeneration,
       };
+    }
     case "lowerStart":
       if (event.generation !== state.generation) return state;
       return { ...state, status: "lowering", queuedGeneration: null };
@@ -210,9 +219,8 @@ export function shouldAutoCompile(
 }
 
 /**
- * Render is for work the editor will not start on its own: it lights up only
- * when there is a newer generation than the one on screen and nothing is
- * already in flight.
+ * Manual Render can refresh the current material even when it is already on
+ * screen. It is blocked only while work is already queued or compiling.
  */
 export function renderActionEnabled(state: MaterialPreviewState): boolean {
   if (
@@ -222,6 +230,5 @@ export function renderActionEnabled(state: MaterialPreviewState): boolean {
   ) {
     return false;
   }
-  if (state.status === "clean") return false;
-  return state.readyGeneration === null || state.generation > state.readyGeneration;
+  return true;
 }

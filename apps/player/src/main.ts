@@ -99,6 +99,17 @@ async function launchLoaded(
       );
     },
   });
+  if (import.meta.env.VITE_TEST_MODE === "true") {
+    (
+      window as typeof window & {
+        __babylonslatePlayerTest?: {
+          visuals: () => ReturnType<typeof session.visuals>;
+        };
+      }
+    ).__babylonslatePlayerTest = {
+      visuals: () => session.visuals(),
+    };
+  }
   if (window.parent !== window) {
     window.parent.postMessage(
       {

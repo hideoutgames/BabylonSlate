@@ -4,6 +4,11 @@ import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
+import {
+  EXPECTED_PREVIEW_ACTOR_POSITIONS,
+  previewPlacementScene,
+} from "./preview-scene-fixture";
+import { createMeshComponent } from "../packages/core/src/index.ts";
 
 async function showContentBrowser(
   page: Page,
@@ -484,10 +489,26 @@ test.describe("P9 content systems", () => {
     await expect(canvas).toHaveAttribute("data-status", "ready", {
       timeout: 15000,
     });
-    await expect(page.getByTestId("material-render")).toBeDisabled();
+    const renderButton = page.getByTestId("material-render");
+    await expect(renderButton).toBeVisible();
+    await expect(renderButton).toBeEnabled();
+    await expect(
+      page.getByTestId("editor-global-toolbar").getByTestId("material-render"),
+    ).toHaveCount(1);
+    await expect(
+      page.getByTestId("material-preview-overlay").getByTestId("material-render"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("material-preview-status")).toHaveCount(0);
+    await expect(page.getByTestId("material-preview-custom-mesh")).toHaveCount(0);
     await expect(page.getByTestId("material-compiler-results")).toContainText(
       "No Issues",
     );
+
+    await renderButton.click();
+    await expect(renderButton).toBeDisabled();
+    await page.waitForTimeout(2_000);
+    await expect(renderButton).toBeDisabled();
+    await expect(renderButton).toBeEnabled({ timeout: 5_000 });
 
     // Every primitive is reachable from the overlay mesh ToggleGroup.
     for (const mesh of ["cube", "cylinder", "cone", "plane"]) {
@@ -496,6 +517,18 @@ test.describe("P9 content systems", () => {
         timeout: 15000,
       });
     }
+    await page.getByTestId("material-preview-mesh-custom").click();
+    await expect(page.getByTestId("material-preview-mesh-picker")).toBeVisible();
+    await page.getByTestId("search-item-__none__").click();
+    await expect(page.getByTestId("material-preview-mesh-picker")).toHaveCount(0);
+
+    // A static preview must replace its RTT each frame rather than accumulating
+    // prior frames into progressively brighter trails.
+    await page.waitForTimeout(500);
+    const stableFrameA = await canvas.screenshot();
+    await page.waitForTimeout(500);
+    const stableFrameB = await canvas.screenshot();
+    expect(stableFrameB.equals(stableFrameA)).toBe(true);
 
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
@@ -758,6 +791,156 @@ test.describe("P9 content systems", () => {
       })
       .toBe(rockGuid);
     await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("Scene and Prefab previews render authored MeshComponent materials", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await createAsset(page, "Material", "PreviewRock");
+    await saveAllIfEnabled(page);
+    const materialGuid = await guidForPath(
+      page,
+      "assets/PreviewRock.material.babasset",
+    );
+    expect(materialGuid.length).toBeGreaterThan(0);
+
+    await openMainScene(page);
+    const scene = previewPlacementScene(materialGuid);
+    expect(
+      await page.evaluate(async (nextScene) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
+      }, scene),
+    ).toBe(true);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const host = globalThis as unknown as {
+              __babylonslateViewportTest?: {
+                sceneVisuals: () => Array<{
+                  actorId: string;
+                  materialName: string | null;
+                }>;
+              };
+            };
+            return host.__babylonslateViewportTest
+              ?.sceneVisuals()
+              .find((visual) => visual.actorId === "material-actor")
+              ?.materialName ?? null;
+          }),
+        { timeout: 15_000 },
+      )
+      .toContain(materialGuid);
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const host = globalThis as unknown as {
+            __babylonslateViewportTest?: {
+              sceneVisuals: () => Array<{
+                actorId: string;
+                position: [number, number, number];
+              }>;
+            };
+          };
+          return Object.fromEntries(
+            (host.__babylonslateViewportTest?.sceneVisuals() ?? []).map(
+              (visual) => [visual.actorId, visual.position],
+            ),
+          );
+        }),
+      )
+      .toMatchObject({
+        "material-actor": [-3, 1, 0],
+        "child-actor": [-1, 1, 0],
+        "far-actor": [4, -1, 0],
+      });
+
+    await clickPlayAndWaitForOverlay(page);
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const host = globalThis as unknown as {
+              __babylonslatePlayTest?: {
+                actorPositions: () => Array<{
+                  x: number;
+                  y: number;
+                  z: number;
+                }>;
+              };
+            };
+            return (host.__babylonslatePlayTest?.actorPositions() ?? [])
+              .map(({ x, y, z }) => [x, y, z])
+              .sort((a, b) => a[0]! - b[0]!);
+          }),
+        { timeout: 15_000 },
+      )
+      .toEqual(expect.arrayContaining(EXPECTED_PREVIEW_ACTOR_POSITIONS));
+    await page.getByTestId("play-overlay-close").click();
+
+    await showContentBrowser(page);
+    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
+    const prefabMesh = createMeshComponent("prefab-material", "box");
+    prefabMesh.properties.materialGuid = materialGuid;
+    expect(
+      await page.evaluate(async (components) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setMainGraphComponents: (
+              value: typeof components,
+            ) => Promise<boolean>;
+          };
+        };
+        return (
+          (await host.__babylonslateTest?.setMainGraphComponents(components)) ??
+          false
+        );
+      }, [prefabMesh]),
+    ).toBe(true);
+    await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
+    await expect(page.getByTestId("prefab-preview-canvas")).toBeVisible();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const host = globalThis as unknown as {
+              __babylonslatePrefabViewportTest?: {
+                visuals: () => Array<{
+                  actorId: string;
+                  materialName: string | null;
+                }>;
+              };
+            };
+            return host.__babylonslatePrefabViewportTest
+              ?.visuals()
+              .find((visual) => visual.actorId === "prefab-material")
+              ?.materialName ?? null;
+          }),
+        { timeout: 15_000 },
+      )
+      .toContain(materialGuid);
+    const rootMaterial = await page.evaluate(() => {
+      const host = globalThis as unknown as {
+        __babylonslatePrefabViewportTest?: {
+          visuals: () => Array<{
+            actorId: string;
+            materialName: string | null;
+          }>;
+        };
+      };
+      return host.__babylonslatePrefabViewportTest
+        ?.visuals()
+        .find((visual) => visual.actorId === "prefab-root")?.materialName ?? "";
+    });
+    expect(rootMaterial).not.toContain(materialGuid);
   });
 
   test("Material Function edits reach every calling material", async ({

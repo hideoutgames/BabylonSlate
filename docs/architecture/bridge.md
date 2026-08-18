@@ -50,7 +50,7 @@ Slot `i` starts at `16 + i * 16`:
 
 **Actor guid ↔ slotId** is maintained on the reliable command channel (`spawn` / `despawn` / `remap`). Guids never travel in the hot buffer.
 
-Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCount)`; reader interpolates between the two most recent stable buffers.
+Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCount)`; reader interpolates the two most recent stable buffers by `slotId`, not array index. New slots copy their latest pose immediately and removed slots disappear, so a spawn/despawn reorder cannot blend unrelated actors.
 
 ## Channels
 

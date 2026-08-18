@@ -14,6 +14,7 @@ export * from "./snapshot-apply";
 export * from "./hardware-scaling";
 export * from "./picking";
 export * from "./editor-camera";
+export * from "./editor-place";
 export * from "./editor-grid";
 export * from "./editor-scene-sync";
 export * from "./gizmo-host";

@@ -71,7 +71,13 @@ describe("BindingCodePicker", () => {
       />,
     );
     expect(screen.getByTestId("search-item-0:0").textContent).toContain(
-      "Gamepad 1 A",
+      "Face Button Down",
+    );
+    expect(screen.getByTestId("search-item-0:0").textContent).not.toMatch(
+      /Gamepad 1 Face Button Down/,
+    );
+    expect(screen.getByTestId("search-item-0:10").textContent).toContain(
+      "Left Stick Click",
     );
     expect(screen.queryByTestId("search-item-KeyW")).toBeNull();
     expect(screen.getByTestId("binding-code-picker").textContent).toContain(

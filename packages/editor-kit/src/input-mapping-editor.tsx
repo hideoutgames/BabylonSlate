@@ -10,8 +10,12 @@ import type {
 } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import {
+  Card,
+  CardContent,
+  CardHeader,
+} from "@babylonslate/ui/components/card";
+import {
   Field,
-  FieldGroup,
   FieldLabel,
   FieldLegend,
   FieldSet,
@@ -30,8 +34,10 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
+import { PIN_COLOR_VAR } from "@babylonslate/ui/lib/data-types";
 import { BindingCodePicker } from "./binding-code-picker";
 import { NumericDragField } from "./numeric-drag-field";
+import { TypeColorMark } from "./type-color-mark";
 
 export const DEFAULT_TOUCH_CONTROL_IDS = [
   "joystick-x",
@@ -45,10 +51,19 @@ export const INPUT_DEVICES: Array<{ value: InputDevice; label: string }> = [
   { value: "key", label: "Key" },
   { value: "mouseButton", label: "Mouse" },
   { value: "pointer", label: "Pointer" },
-  { value: "gamepadButton", label: "Pad Button" },
-  { value: "gamepadAxis", label: "Pad Axis" },
+  { value: "gamepadButton", label: "Gamepad Button" },
+  { value: "gamepadAxis", label: "Gamepad Axis" },
   { value: "touch", label: "Touch" },
 ];
+
+const INPUT_DEVICE_COLOR_VAR: Record<InputDevice, string> = {
+  key: PIN_COLOR_VAR.string,
+  mouseButton: PIN_COLOR_VAR.object,
+  pointer: PIN_COLOR_VAR.wildcard,
+  gamepadButton: PIN_COLOR_VAR.bool,
+  gamepadAxis: PIN_COLOR_VAR.vector,
+  touch: PIN_COLOR_VAR.float,
+};
 
 const MODIFIER_TOGGLES: Array<{ key: keyof BindingModifiers; label: string }> = [
   { key: "ctrl", label: "Ctrl" },
@@ -262,21 +277,37 @@ function ActionBindingRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2">
-      <DevicePicker
-        id={id}
-        device={binding.device}
-        onChange={(device) =>
-          onChange({ device, code: "" })
-        }
-      />
-      <BindingCodePicker
-        device={binding.device}
-        code={binding.code}
-        touchControlIds={touchControlIds}
-        onChange={(code) => onChange({ ...binding, code })}
-        data-testid={`${id}-code`}
-      />
+    <div
+      className="flex flex-col gap-2 rounded-md border border-border border-l-2 p-2"
+      data-testid={id}
+      data-device={binding.device}
+      style={{ borderLeftColor: INPUT_DEVICE_COLOR_VAR[binding.device] }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <TypeColorMark colorVar={INPUT_DEVICE_COLOR_VAR[binding.device]} />
+        <DevicePicker
+          id={id}
+          device={binding.device}
+          onChange={(device) =>
+            onChange({ device, code: "" })
+          }
+        />
+        <BindingCodePicker
+          device={binding.device}
+          code={binding.code}
+          touchControlIds={touchControlIds}
+          onChange={(code) => onChange({ ...binding, code })}
+          data-testid={`${id}-code`}
+        />
+        <BindingChrome
+          id={id}
+          index={index}
+          total={total}
+          onMove={onMove}
+          onRemove={onRemove}
+          name={`binding ${index + 1}`}
+        />
+      </div>
       {showsModifiers(binding.device) ? (
         <ModifierToggles
           id={id}
@@ -284,14 +315,6 @@ function ActionBindingRow({
           onChange={(modifiers) => onChange({ ...binding, modifiers })}
         />
       ) : null}
-      <BindingChrome
-        id={id}
-        index={index}
-        total={total}
-        onMove={onMove}
-        onRemove={onRemove}
-        name={`binding ${index + 1}`}
-      />
     </div>
   );
 }
@@ -318,9 +341,16 @@ function AxisBindingRow({
   onRemove: () => void;
 }) {
   const analog = isAnalogBinding(binding.device, binding.code);
+  const colorVar = INPUT_DEVICE_COLOR_VAR[binding.device];
   return (
-    <FieldGroup className="rounded-md border border-border p-2">
+    <div
+      className="flex flex-col gap-2 rounded-md border border-border border-l-2 p-2"
+      data-testid={id}
+      data-device={binding.device}
+      style={{ borderLeftColor: colorVar }}
+    >
       <div className="flex flex-wrap items-center gap-2">
+        <TypeColorMark colorVar={colorVar} />
         <DevicePicker
           id={id}
           device={binding.device}
@@ -335,6 +365,16 @@ function AxisBindingRow({
           onChange={(code) => onChange({ ...binding, code })}
           data-testid={`${id}-code`}
         />
+        <BindingChrome
+          id={id}
+          index={index}
+          total={total}
+          onMove={onMove}
+          onRemove={onRemove}
+          name={`binding ${index + 1}`}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         {showsModifiers(binding.device) ? (
           <ModifierToggles
             id={id}
@@ -355,10 +395,18 @@ function AxisBindingRow({
             }}
             aria-label="Axis Component"
           >
-            <ToggleGroupItem value="x" data-testid={`${id}-component-x`}>
+            <ToggleGroupItem
+              value="x"
+              className="text-axis-x"
+              data-testid={`${id}-component-x`}
+            >
               X
             </ToggleGroupItem>
-            <ToggleGroupItem value="y" data-testid={`${id}-component-y`}>
+            <ToggleGroupItem
+              value="y"
+              className="text-axis-y"
+              data-testid={`${id}-component-y`}
+            >
               Y
             </ToggleGroupItem>
           </ToggleGroup>
@@ -374,17 +422,9 @@ function AxisBindingRow({
           />
           <FieldLabel htmlFor={`${id}-invert`}>Invert</FieldLabel>
         </Field>
-        <BindingChrome
-          id={id}
-          index={index}
-          total={total}
-          onMove={onMove}
-          onRemove={onRemove}
-          name={`binding ${index + 1}`}
-        />
       </div>
       {analog ? (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-2 rounded-md bg-muted/50 p-2">
           <NumericDragField
             label="DZ"
             value={binding.deadZone ?? 0}
@@ -420,7 +460,7 @@ function AxisBindingRow({
           data-testid={`${id}-digital-value`}
         />
       )}
-    </FieldGroup>
+    </div>
   );
 }
 
@@ -434,99 +474,117 @@ export function InputMappingEditor({
   return (
     <div className="flex flex-col gap-4" data-testid={testId ?? "input-mapping-editor"}>
       <FieldSet>
-        <FieldLegend>Actions</FieldLegend>
+        <FieldLegend
+          className="flex items-center gap-2"
+          data-testid="input-actions-legend"
+        >
+          <TypeColorMark colorVar={PIN_COLOR_VAR.bool} />
+          Actions
+        </FieldLegend>
         <div className="flex flex-col gap-3">
           {value.actions.map((action, index) => {
             const actionId = `input-action-${index}`;
             return (
-              <FieldGroup
+              <Card
                 key={`${action.name}-${index}`}
-                className="rounded-lg border border-border p-3"
+                size="sm"
+                data-testid={actionId}
               >
-                <div className="flex flex-wrap items-end gap-2">
-                  <Field className="min-w-32 flex-1">
-                    <FieldLabel htmlFor={`${actionId}-name`}>Name</FieldLabel>
-                    <Input
-                      id={`${actionId}-name`}
-                      className="min-h-[var(--touch-target,44px)]"
-                      value={action.name}
-                      onChange={(event) =>
+                <CardHeader className="border-b bg-muted/50">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field className="min-w-32 flex-1">
+                      <FieldLabel htmlFor={`${actionId}-name`}>Name</FieldLabel>
+                      <Input
+                        id={`${actionId}-name`}
+                        className="min-h-[var(--touch-target,44px)]"
+                        value={action.name}
+                        onChange={(event) =>
+                          onChange(
+                            patchAction(value, index, { name: event.target.value }),
+                          )
+                        }
+                        data-testid={`${actionId}-name`}
+                      />
+                    </Field>
+                    <BindingChrome
+                      id={actionId}
+                      index={index}
+                      total={value.actions.length}
+                      onMove={(delta) =>
+                        onChange({
+                          ...value,
+                          actions: moveItem(value.actions, index, delta),
+                        })
+                      }
+                      onRemove={() =>
+                        onChange({
+                          ...value,
+                          actions: value.actions.filter((_, i) => i !== index),
+                        })
+                      }
+                      name={action.name || "action"}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  <div
+                    className="text-sm font-medium"
+                    data-testid={`${actionId}-bindings`}
+                  >
+                    Bindings
+                  </div>
+                  {action.bindings.map((binding, bindingIndex) => (
+                    <ActionBindingRow
+                      key={`${actionId}-binding-${bindingIndex}`}
+                      id={`${actionId}-binding-${bindingIndex}`}
+                      binding={binding}
+                      index={bindingIndex}
+                      total={action.bindings.length}
+                      touchControlIds={touchControlIds}
+                      onChange={(next) => {
+                        const bindings = [...action.bindings];
+                        bindings[bindingIndex] = next;
+                        onChange(patchAction(value, index, { bindings }));
+                      }}
+                      onMove={(delta) =>
                         onChange(
-                          patchAction(value, index, { name: event.target.value }),
+                          patchAction(value, index, {
+                            bindings: moveItem(action.bindings, bindingIndex, delta),
+                          }),
                         )
                       }
-                      data-testid={`${actionId}-name`}
+                      onRemove={() =>
+                        onChange(
+                          patchAction(value, index, {
+                            bindings: action.bindings.filter(
+                              (_, i) => i !== bindingIndex,
+                            ),
+                          }),
+                        )
+                      }
                     />
-                  </Field>
-                  <BindingChrome
-                    id={actionId}
-                    index={index}
-                    total={value.actions.length}
-                    onMove={(delta) =>
-                      onChange({
-                        ...value,
-                        actions: moveItem(value.actions, index, delta),
-                      })
-                    }
-                    onRemove={() =>
-                      onChange({
-                        ...value,
-                        actions: value.actions.filter((_, i) => i !== index),
-                      })
-                    }
-                    name={action.name || "action"}
-                  />
-                </div>
-                {action.bindings.map((binding, bindingIndex) => (
-                  <ActionBindingRow
-                    key={`${actionId}-binding-${bindingIndex}`}
-                    id={`${actionId}-binding-${bindingIndex}`}
-                    binding={binding}
-                    index={bindingIndex}
-                    total={action.bindings.length}
-                    touchControlIds={touchControlIds}
-                    onChange={(next) => {
-                      const bindings = [...action.bindings];
-                      bindings[bindingIndex] = next;
-                      onChange(patchAction(value, index, { bindings }));
-                    }}
-                    onMove={(delta) =>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="touch"
+                    className="w-fit"
+                    data-testid={`${actionId}-add-binding`}
+                    onClick={() =>
                       onChange(
                         patchAction(value, index, {
-                          bindings: moveItem(action.bindings, bindingIndex, delta),
+                          bindings: [
+                            ...action.bindings,
+                            { device: "key", code: "" },
+                          ],
                         }),
                       )
                     }
-                    onRemove={() =>
-                      onChange(
-                        patchAction(value, index, {
-                          bindings: action.bindings.filter(
-                            (_, i) => i !== bindingIndex,
-                          ),
-                        }),
-                      )
-                    }
-                  />
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="touch"
-                  data-testid={`${actionId}-add-binding`}
-                  onClick={() =>
-                    onChange(
-                      patchAction(value, index, {
-                        bindings: [
-                          ...action.bindings,
-                          { device: "key", code: "" },
-                        ],
-                      }),
-                    )
-                  }
-                >
-                  Add Binding
-                </Button>
-              </FieldGroup>
+                  >
+                    Add Binding
+                  </Button>
+                </CardContent>
+              </Card>
             );
           })}
           <Button
@@ -551,123 +609,141 @@ export function InputMappingEditor({
       </FieldSet>
 
       <FieldSet>
-        <FieldLegend>Axes</FieldLegend>
+        <FieldLegend
+          className="flex items-center gap-2"
+          data-testid="input-axes-legend"
+        >
+          <TypeColorMark colorVar={PIN_COLOR_VAR.vector} />
+          Axes
+        </FieldLegend>
         <div className="flex flex-col gap-3">
           {value.axes.map((axis, index) => {
             const axisId = `input-axis-${index}`;
             const kind = axis.kind === "2d" ? "2d" : "1d";
             return (
-              <FieldGroup
+              <Card
                 key={`${axis.name}-${index}`}
-                className="rounded-lg border border-border p-3"
+                size="sm"
+                data-testid={axisId}
               >
-                <div className="flex flex-wrap items-end gap-2">
-                  <Field className="min-w-32 flex-1">
-                    <FieldLabel htmlFor={`${axisId}-name`}>Name</FieldLabel>
-                    <Input
-                      id={`${axisId}-name`}
-                      className="min-h-[var(--touch-target,44px)]"
-                      value={axis.name}
-                      onChange={(event) =>
+                <CardHeader className="border-b bg-muted/50">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field className="min-w-32 flex-1">
+                      <FieldLabel htmlFor={`${axisId}-name`}>Name</FieldLabel>
+                      <Input
+                        id={`${axisId}-name`}
+                        className="min-h-[var(--touch-target,44px)]"
+                        value={axis.name}
+                        onChange={(event) =>
+                          onChange(
+                            patchAxis(value, index, { name: event.target.value }),
+                          )
+                        }
+                        data-testid={`${axisId}-name`}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel>Kind</FieldLabel>
+                      <ToggleGroup
+                        variant="outline"
+                        size="touch"
+                        spacing={1}
+                        value={[kind]}
+                        onValueChange={(next) => {
+                          const picked = next[0];
+                          if (picked !== "1d" && picked !== "2d") return;
+                          onChange(patchAxis(value, index, { kind: picked }));
+                        }}
+                        aria-label="Axis Kind"
+                      >
+                        <ToggleGroupItem value="1d" data-testid={`${axisId}-kind-1d`}>
+                          1D
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="2d" data-testid={`${axisId}-kind-2d`}>
+                          2D
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </Field>
+                    <BindingChrome
+                      id={axisId}
+                      index={index}
+                      total={value.axes.length}
+                      onMove={(delta) =>
+                        onChange({
+                          ...value,
+                          axes: moveItem(value.axes, index, delta),
+                        })
+                      }
+                      onRemove={() =>
+                        onChange({
+                          ...value,
+                          axes: value.axes.filter((_, i) => i !== index),
+                        })
+                      }
+                      name={axis.name || "axis"}
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  <div
+                    className="text-sm font-medium"
+                    data-testid={`${axisId}-bindings`}
+                  >
+                    Bindings
+                  </div>
+                  {axis.bindings.map((binding, bindingIndex) => (
+                    <AxisBindingRow
+                      key={`${axisId}-binding-${bindingIndex}`}
+                      id={`${axisId}-binding-${bindingIndex}`}
+                      binding={binding}
+                      index={bindingIndex}
+                      total={axis.bindings.length}
+                      kind={kind}
+                      touchControlIds={touchControlIds}
+                      onChange={(next) => {
+                        const bindings = [...axis.bindings];
+                        bindings[bindingIndex] = next;
+                        onChange(patchAxis(value, index, { bindings }));
+                      }}
+                      onMove={(delta) =>
                         onChange(
-                          patchAxis(value, index, { name: event.target.value }),
+                          patchAxis(value, index, {
+                            bindings: moveItem(axis.bindings, bindingIndex, delta),
+                          }),
                         )
                       }
-                      data-testid={`${axisId}-name`}
+                      onRemove={() =>
+                        onChange(
+                          patchAxis(value, index, {
+                            bindings: axis.bindings.filter(
+                              (_, i) => i !== bindingIndex,
+                            ),
+                          }),
+                        )
+                      }
                     />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Kind</FieldLabel>
-                    <ToggleGroup
-                      variant="outline"
-                      size="touch"
-                      spacing={1}
-                      value={[kind]}
-                      onValueChange={(next) => {
-                        const picked = next[0];
-                        if (picked !== "1d" && picked !== "2d") return;
-                        onChange(patchAxis(value, index, { kind: picked }));
-                      }}
-                      aria-label="Axis Kind"
-                    >
-                      <ToggleGroupItem value="1d" data-testid={`${axisId}-kind-1d`}>
-                        1D
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="2d" data-testid={`${axisId}-kind-2d`}>
-                        2D
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                  </Field>
-                  <BindingChrome
-                    id={axisId}
-                    index={index}
-                    total={value.axes.length}
-                    onMove={(delta) =>
-                      onChange({
-                        ...value,
-                        axes: moveItem(value.axes, index, delta),
-                      })
-                    }
-                    onRemove={() =>
-                      onChange({
-                        ...value,
-                        axes: value.axes.filter((_, i) => i !== index),
-                      })
-                    }
-                    name={axis.name || "axis"}
-                  />
-                </div>
-                {axis.bindings.map((binding, bindingIndex) => (
-                  <AxisBindingRow
-                    key={`${axisId}-binding-${bindingIndex}`}
-                    id={`${axisId}-binding-${bindingIndex}`}
-                    binding={binding}
-                    index={bindingIndex}
-                    total={axis.bindings.length}
-                    kind={kind}
-                    touchControlIds={touchControlIds}
-                    onChange={(next) => {
-                      const bindings = [...axis.bindings];
-                      bindings[bindingIndex] = next;
-                      onChange(patchAxis(value, index, { bindings }));
-                    }}
-                    onMove={(delta) =>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="touch"
+                    className="w-fit"
+                    data-testid={`${axisId}-add-binding`}
+                    onClick={() =>
                       onChange(
                         patchAxis(value, index, {
-                          bindings: moveItem(axis.bindings, bindingIndex, delta),
+                          bindings: [
+                            ...axis.bindings,
+                            { device: "key", code: "", digitalValue: 1 },
+                          ],
                         }),
                       )
                     }
-                    onRemove={() =>
-                      onChange(
-                        patchAxis(value, index, {
-                          bindings: axis.bindings.filter(
-                            (_, i) => i !== bindingIndex,
-                          ),
-                        }),
-                      )
-                    }
-                  />
-                ))}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="touch"
-                  data-testid={`${axisId}-add-binding`}
-                  onClick={() =>
-                    onChange(
-                      patchAxis(value, index, {
-                        bindings: [
-                          ...axis.bindings,
-                          { device: "key", code: "", digitalValue: 1 },
-                        ],
-                      }),
-                    )
-                  }
-                >
-                  Add Binding
-                </Button>
-              </FieldGroup>
+                  >
+                    Add Binding
+                  </Button>
+                </CardContent>
+              </Card>
             );
           })}
           <Button
