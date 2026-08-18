@@ -7,7 +7,8 @@ const { createEngineMock, play, dispose } = vi.hoisted(() => {
   const disposeFn = vi.fn();
   return {
     dispose: disposeFn,
-    createEngineMock: vi.fn(() => ({
+    createEngineMock: vi.fn(
+      (_canvas?: unknown, _options?: { sharedEngine?: unknown; present?: string }) => ({
       engine: { id: "created" },
       editor: {
         camera: {
@@ -49,7 +50,10 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
   return {
     ...actual,
-    createEngine: (...args: unknown[]) => createEngineMock(...args),
+    createEngine: (
+      canvas: HTMLCanvasElement,
+      options?: { sharedEngine?: unknown; present?: string },
+    ) => createEngineMock(canvas, options),
   };
 });
 
