@@ -44,7 +44,11 @@ export function createEditorBillboard(
   name: string,
   icon: EditorBillboardIcon,
 ): Mesh {
-  const mesh = MeshBuilder.CreatePlane(name, { size: BILLBOARD_SIZE }, scene);
+  const mesh = MeshBuilder.CreatePlane(
+    name,
+    { size: BILLBOARD_SIZE, sideOrientation: Mesh.DOUBLESIDE },
+    scene,
+  );
   mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
   mesh.isPickable = true;
   mesh.metadata = { ...(mesh.metadata ?? {}), editorBillboard: icon };
