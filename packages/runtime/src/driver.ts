@@ -588,6 +588,13 @@ class InProcessRuntime implements RuntimeDriver {
           frameId: this.frameId,
         });
       },
+      drawDebug: (payload) => {
+        this.emit({
+          type: "debugDraw",
+          ...(payload as Record<string, unknown>),
+          frameId: this.frameId,
+        } as CommandMessage);
+      },
       destroyActor: (actor) => {
         if (!actor) return;
         this.emitAudioStops(actor);

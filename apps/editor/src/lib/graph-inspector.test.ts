@@ -584,6 +584,12 @@ describe("developmentOnlyPropertyRows", () => {
       value: true,
       defaultValue: true,
     });
+    const drawLine = developmentOnlyPropertyRows("debug.drawLine", {}, onPatch);
+    expect(drawLine[0]).toMatchObject({
+      kind: "boolean",
+      value: true,
+      defaultValue: true,
+    });
   });
 
   it("shows Development Only unchecked for Log unless flagged", () => {

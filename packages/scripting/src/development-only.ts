@@ -10,6 +10,18 @@ import type { GraphNode } from "./ir";
 const developmentOnlyByDefaultTypeIds = new Set<string>([
   "debug.print",
   "debug.printString",
+  "debug.drawLine",
+  "debug.drawPoint",
+  "debug.drawBox",
+  "debug.drawSphere",
+  "debug.drawCircle",
+  "debug.drawRectangle",
+  "debug.drawSquare",
+  "debug.drawCone",
+  "debug.drawCylinder",
+  "debug.drawArrow",
+  "debug.drawFrustum",
+  "debug.drawCoordinateSystem",
 ]);
 
 export function registerDevelopmentOnlyByDefaultTypeId(typeId: string): void {

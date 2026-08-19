@@ -144,6 +144,7 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setShowNav",
   "setShowAudioDebug",
   "debugColliders",
+  "debugDraw",
   "animState",
 ]);
 

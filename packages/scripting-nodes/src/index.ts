@@ -16,6 +16,7 @@ import { uiNodes } from "./ui";
 import { sceneNodes } from "./scene";
 import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
+import { debugDrawNodes } from "./debug-draw";
 import { interfaceNodes } from "./interface";
 import { variableNodes } from "./variables";
 import { functionCallNodes } from "./functions";
@@ -45,6 +46,7 @@ export * from "./ui";
 export * from "./scene";
 export * from "./render";
 export * from "./debug";
+export * from "./debug-draw";
 export * from "./interface";
 export * from "./variables";
 export * from "./functions";
@@ -109,6 +111,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...sceneNodes,
     ...renderNodes,
     ...debugNodes,
+    ...debugDrawNodes,
     ...interfaceNodes,
     ...variableNodes,
     ...functionCallNodes,

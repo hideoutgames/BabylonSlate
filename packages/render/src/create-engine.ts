@@ -66,6 +66,10 @@ import {
   createPlayConsoleViz,
   type PlayConsoleVizController,
 } from "./play-console-viz";
+import {
+  createPlayDebugDraw,
+  type PlayDebugDrawController,
+} from "./play-debug-draw";
 import { SnapshotInterpolator, writeSampledAudioPoses, type SampledAudioPose } from "./snapshot-sync";
 import {
   applySnapshotToScene,
@@ -526,6 +530,9 @@ export function createEngine(
   const playViz: PlayConsoleVizController | null = options.playMode
     ? createPlayConsoleViz(scene, { navmeshBytes: options.navmeshBytes })
     : null;
+  const playDebugDraw: PlayDebugDrawController | null = options.playMode
+    ? createPlayDebugDraw(scene)
+    : null;
 
   const materialDocuments = new Map<string, MaterialDocument>(
     options.materialDocuments ?? [],
@@ -973,6 +980,7 @@ export function createEngine(
       playFreeCamInput?.dispose();
       playFreeCam?.dispose();
       playViz?.dispose();
+      playDebugDraw?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -1019,6 +1027,7 @@ export function createEngine(
       }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
+      playDebugDraw?.applyCommand(command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }

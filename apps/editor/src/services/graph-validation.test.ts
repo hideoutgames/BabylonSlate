@@ -624,6 +624,9 @@ describe("scriptPaletteNodes", () => {
     const printString = nodes.find((node) => node.id === "debug.printString");
     expect(printString?.title).toBe("Print String");
     expect(printString?.defaultData).toMatchObject({ developmentOnly: true });
+    const drawLine = nodes.find((node) => node.id === "debug.drawLine");
+    expect(drawLine?.title).toBe("Draw Debug Line");
+    expect(drawLine?.defaultData).toMatchObject({ developmentOnly: true });
   });
 
   it("lists Play Sound and mixer volume nodes on Actor and Class with volume 1", () => {
