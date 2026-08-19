@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createDefaultPlayHud, createWidget } from "@babylonslate/ui-runtime";
+import { createDefaultPlayHud, createDefaultUserInterface, createWidget, pinLayout } from "@babylonslate/ui-runtime";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import { UiDesigner } from "./ui-designer";
 
@@ -58,123 +58,105 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const { openLiveEditorUtility, collectPlayMaterialLibrary } = vi.hoisted(() => ({
+const { openLiveEditorUtility, collectPlayMaterialLibrary, docs } = vi.hoisted(() => ({
   openLiveEditorUtility: vi.fn(),
   collectPlayMaterialLibrary: async () => ({
     documents: new Map(),
     functions: new Map(),
     textureGuids: [] as string[],
   }),
+  docs: {
+    library: {} as Record<string, unknown>,
+    openDocuments: [] as Array<{ ref: { path: string }; content: unknown }>,
+    chipPayload: {} as Record<string, unknown>,
+  },
 }));
 
-vi.mock("../context/document-context", () => ({
-  useDocuments: () => ({
-    openLiveEditorUtility,
-    assetRegistry: {
-      list: () => [
-        {
-          header: {
-            guid: "tex-1",
-            name: "Icon",
-            type: "Texture",
-            payload: {},
-          },
-          path: "assets/Icon.texture.babasset",
+vi.mock("../context/document-context", () => {
+  const readAssetChunk = async () => null;
+  const collectPlayUiLibrary = async () => docs.library;
+  const assetRegistry = {
+    list: () => [
+      {
+        header: {
+          guid: "tex-1",
+          name: "Icon",
+          type: "Texture",
+          payload: {},
         },
-        {
-          header: {
-            guid: "font-1",
-            name: "Display",
-            type: "Font",
-            payload: { family: "Display Face" },
-          },
-          path: "assets/Display.font.babasset",
+        path: "assets/Icon.texture.babasset",
+      },
+      {
+        header: {
+          guid: "font-1",
+          name: "Display",
+          type: "Font",
+          payload: { family: "Display Face" },
         },
-        {
-          header: {
-            guid: "hud-1",
-            name: "HUD",
-            type: "UserInterface",
-            payload: {},
-          },
-          path: "assets/HUD.ui.babasset",
+        path: "assets/Display.font.babasset",
+      },
+      {
+        header: {
+          guid: "hud-1",
+          name: "HUD",
+          type: "UserInterface",
+          payload: {},
         },
-        {
-          header: {
-            guid: "eui-1",
-            name: "SceneTools",
-            type: "EditorUtilityInterface",
-            payload: { dockKind: "scene" },
-          },
-          path: "assets/SceneTools.eui.babasset",
+        path: "assets/HUD.ui.babasset",
+      },
+      {
+        header: {
+          guid: "eui-1",
+          name: "SceneTools",
+          type: "EditorUtilityInterface",
+          payload: { dockKind: "scene" },
         },
-      ],
-      getByGuid: (guid: string) =>
-        guid === "font-1"
-          ? {
-              header: {
-                guid: "font-1",
-                name: "Display",
-                type: "Font",
-                payload: { family: "Display Face" },
-              },
-              path: "assets/Display.font.babasset",
-            }
-          : guid === "hud-1"
-            ? {
-                header: {
-                  guid: "hud-1",
-                  name: "HUD",
-                  type: "UserInterface",
-                  payload: {},
-                },
-                path: "assets/HUD.ui.babasset",
-              }
-            : guid === "eui-1"
-              ? {
-                  header: {
-                    guid: "eui-1",
-                    name: "SceneTools",
-                    type: "EditorUtilityInterface",
-                    payload: { dockKind: "scene" },
-                  },
-                  path: "assets/SceneTools.eui.babasset",
-                }
-              : guid === "tex-1"
-                ? {
-                    header: {
-                      guid: "tex-1",
-                      name: "Icon",
-                      type: "Texture",
-                      payload: {},
-                    },
-                    path: "assets/Icon.texture.babasset",
-                  }
-                : undefined,
-    },
-    openDocuments: [],
-    collectPlayUiLibrary: async () => ({}),
-    collectPlayMaterialLibrary,
-    projectName: "Demo",
-    readAssetChunk: async () => null,
-    projectDocument: {
-      settings: {
-        input: {
-          actions: [
-            { name: "Jump", bindings: [] },
-            { name: "Confirm", bindings: [] },
-          ],
-          axes: [{ name: "Move", bindings: [] }],
+        path: "assets/SceneTools.eui.babasset",
+      },
+      {
+        header: {
+          guid: "chip-guid",
+          name: "Chip",
+          type: "UserInterface",
+          payload: docs.chipPayload,
+        },
+        path: "assets/Chip.ui.babasset",
+      },
+    ],
+    getByGuid: (guid: string) =>
+      assetRegistry.list().find((asset) => asset.header.guid === guid),
+  };
+  return {
+    useDocuments: () => ({
+      openLiveEditorUtility,
+      assetRegistry,
+      openDocuments: docs.openDocuments,
+      collectPlayUiLibrary,
+      collectPlayMaterialLibrary,
+      projectName: "Demo",
+      readAssetChunk,
+      projectDocument: {
+        settings: {
+          input: {
+            actions: [
+              { name: "Jump", bindings: [] },
+              { name: "Confirm", bindings: [] },
+            ],
+            axes: [{ name: "Move", bindings: [] }],
+          },
         },
       },
-    },
-  }),
-}));
+    }),
+  };
+});
 
 afterEach(() => {
   cleanup();
   resetProjectUiAssets();
   openLiveEditorUtility.mockReset();
+  docs.library = {};
+  docs.openDocuments = [];
+  docs.chipPayload = {};
 });
 
 function renderHud() {
@@ -188,6 +170,34 @@ function renderHud() {
     />,
   );
   return { onChange };
+}
+
+function labeledChipDocument() {
+  const chip = createDefaultUserInterface("Chip");
+  const label = createWidget(
+    "label",
+    "Text",
+    "HP",
+    pinLayout("left", "top", 80, 20),
+  );
+  label.props.text = "HP";
+  chip.widgets.canvas!.children = ["label"];
+  chip.widgets.label = label;
+  return chip;
+}
+
+function hudWithNestedChip() {
+  const hud = createDefaultUserInterface("HUD");
+  const host = createWidget(
+    "chip",
+    "UserInterface",
+    "Chip",
+    pinLayout("left", "top", 80, 20, 0, 0),
+  );
+  host.nestedUiGuid = "chip-guid";
+  hud.widgets.canvas!.children = ["chip"];
+  hud.widgets.chip = host;
+  return hud;
 }
 
 describe("UiDesigner", () => {
@@ -497,5 +507,29 @@ describe("UiDesigner", () => {
     fireEvent.click(classItem);
     expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Class");
     expect(screen.getByTestId("ui-dock-kind").textContent).not.toMatch(/graph/i);
+  });
+
+  it("paints nested UserInterface widgets from the UI library", async () => {
+    docs.library = { "chip-guid": labeledChipDocument() };
+    render(
+      <UiDesigner
+        path="assets/HUD.ui.babasset"
+        payload={hudWithNestedChip() as unknown as Record<string, unknown>}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("ui-widget-chip/label")).toBeTruthy();
+  });
+
+  it("paints nested UserInterface widgets from a usable header payload", async () => {
+    docs.chipPayload = labeledChipDocument() as unknown as Record<string, unknown>;
+    render(
+      <UiDesigner
+        path="assets/HUD.ui.babasset"
+        payload={hudWithNestedChip() as unknown as Record<string, unknown>}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("ui-widget-chip/label")).toBeTruthy();
   });
 });

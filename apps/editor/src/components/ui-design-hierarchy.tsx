@@ -178,9 +178,9 @@ export function UiDesignHierarchy({
             return next;
           });
         }}
-        onReparent={(dragId, targetId) => {
+        onReparent={(dragId, targetId, placement) => {
           if (!targetId) return;
-          onChange(reparentWidget(ui, dragId, targetId));
+          onChange(reparentWidget(ui, dragId, targetId, placement));
         }}
         reparentArm="immediate"
         emptyLabel="No widgets"

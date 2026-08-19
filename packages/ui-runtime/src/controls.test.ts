@@ -72,4 +72,44 @@ describe("describeUiControls", () => {
     expect(controls.find((row) => row.id === "c")?.gridColumn).toBe(0);
     expect(controls.find((row) => row.id === "c")?.gridRow).toBe(1);
   });
+
+  it("emits a prefixed nested UserInterface subtree with nested text and parent", () => {
+    const chip = createDefaultUserInterface("Chip");
+    const label = createWidget(
+      "label",
+      "Text",
+      "HP",
+      pinLayout("left", "top", 80, 20),
+    );
+    label.props.text = "HP";
+    label.style.color = "#ff0000";
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+
+    const hud = createDefaultUserInterface("HUD");
+    const host = createWidget(
+      "chip",
+      "UserInterface",
+      "Chip",
+      pinLayout("left", "top", 80, 20, 0, 0),
+    );
+    host.nestedUiGuid = "chip-guid";
+    hud.widgets.canvas!.children = ["chip"];
+    hud.widgets.chip = host;
+
+    const layout = layoutUserInterface(
+      hud,
+      { width: 1920, height: 1080 },
+      { resolveNested: (guid) => (guid === "chip-guid" ? chip : null) },
+    );
+    const controls = describeUiControls(hud, layout);
+    const ids = controls.map((row) => row.id);
+    expect(ids).toEqual(expect.arrayContaining(["chip", "chip/canvas", "chip/label"]));
+    const nestedLabel = controls.find((row) => row.id === "chip/label");
+    expect(nestedLabel?.text).toBe("HP");
+    expect(nestedLabel?.style.color).toBe("#ff0000");
+    expect(nestedLabel?.parentId).toBe("chip/canvas");
+    expect(nestedLabel?.parentId).not.toBe(SAFE_AREA_CONTROL_ID);
+    expect(nestedLabel?.parentId).not.toBe("canvas");
+  });
 });
