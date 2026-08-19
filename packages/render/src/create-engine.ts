@@ -4,7 +4,6 @@ import {
   Mesh,
   Scene,
   ScenePerformancePriority,
-  Texture,
 } from "@babylonjs/core";
 import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
@@ -584,8 +583,7 @@ export function createEngine(
         resolveTexture: (guid) => {
           const bytes = binding.textureBytes?.get(guid);
           if (!bytes) return null;
-          const texture = resourceCache.getTexture(guid, engine, bytes);
-          return texture instanceof Texture ? texture : null;
+          return getMaterialTexture(resourceCache, guid, engine, bytes);
         },
         resolveMaterial: (guid) => {
           const live = binding.resolveMaterial?.(guid);

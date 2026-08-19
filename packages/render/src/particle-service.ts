@@ -74,6 +74,10 @@ function liveKey(actorGuid: string, componentId: string): string {
   return `${actorGuid}:${componentId}`;
 }
 
+function particleTextureUrl(texture: { url?: unknown }): string {
+  return typeof texture.url === "string" ? texture.url : "";
+}
+
 /**
  * Main-thread owner of live Babylon `GPUParticleSystem` / `ParticleSystem`
  * instances. The game worker never imports Babylon.
@@ -172,8 +176,10 @@ export class ParticleService {
       return;
     }
     const node = MeshBuilder.CreateBox(`particleEmitter:${key}`, { size: 0.01 }, this.scene);
-    node.isVisible = false;
+    node.isVisible = true;
+    node.visibility = 0;
     node.isPickable = false;
+    node.alwaysSelectAsActiveMesh = true;
     const parent =
       this.slotMeshes.get(command.slotId) ??
       this.resolveEmitter?.(command.slotId) ??
@@ -200,6 +206,7 @@ export class ParticleService {
         });
         return;
       }
+      texture.hasAlpha = true;
       const capacity = particleCapacityFor(emitter, this.gpu);
       const system = createBabylonParticleSystem(
         `particle:${key}:${index}`,
@@ -278,10 +285,28 @@ export class ParticleService {
 
   private startEntry(entry: LiveComponent): void {
     for (const system of entry.systems) {
-      system.reset();
-      system.start();
+      this.startWhenTextureReady(system, entry);
     }
     entry.playing = true;
+  }
+
+  private startWhenTextureReady(
+    system: IParticleSystem,
+    entry: LiveComponent,
+  ): void {
+    const begin = () => {
+      if (!this.live.has(liveKey(entry.actorGuid, entry.componentId))) return;
+      system.reset();
+      system.start();
+    };
+    const texture = system.particleTexture;
+    if (!texture || texture.isReady() || !particleTextureUrl(texture)) {
+      begin();
+      return;
+    }
+    texture.onLoadObservable.addOnce(() => {
+      begin();
+    });
   }
 
   private stopEntry(entry: LiveComponent): void {

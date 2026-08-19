@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Texture, type Engine } from "@babylonjs/core";
+import type { Engine } from "@babylonjs/core";
 import type {
   ParticleEmitterPayload,
   ParticleSystemPayload,
@@ -10,6 +10,7 @@ import {
   createMaterialPreviewPresenter,
   createParticleMaterialResolver,
   createParticlePreviewScene,
+  getMaterialTexture,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ParticleServiceDiagnostic,
@@ -139,8 +140,7 @@ export function ParticlePreviewCanvas({
         const resolveTexture = (guid: string) => {
           const data = bytes.get(guid);
           if (!data || !cache) return null;
-          const texture = cache.getTexture(guid, engine, data);
-          return texture instanceof Texture ? texture : null;
+          return getMaterialTexture(cache, guid, engine, data);
         };
         const extraGuids = particleMaterialGuidsFromLibrary(nextLibrary);
         const libraryDocs = collectPlayMaterialLibrary
