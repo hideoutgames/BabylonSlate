@@ -195,6 +195,7 @@ import {
   playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
   spriteAnimationGuidsFromAnimGraphs,
+  spriteAnimationGuidsFromBehaviourTrees,
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
@@ -430,9 +431,10 @@ interface DocumentContextValue {
     scene?: SerializedScene | null,
     graphs?: readonly PlayAnimGraphEntry[],
   ) => Promise<Map<string, SpritePayload>>;
-  /** Sprite Animation clips referenced by loaded Animation Graphs. */
+  /** Sprite Animation clips referenced by loaded Animation Graphs and behaviour trees. */
   collectPlaySpriteAnimationPayloads: (
     graphs: readonly PlayAnimGraphEntry[],
+    trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
@@ -2427,6 +2429,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlaySpriteAnimationPayloads = useCallback(
     async (
       graphs: readonly PlayAnimGraphEntry[],
+      trees: readonly PlayBehaviourTreeEntry[] = [],
     ): Promise<Map<string, SpriteAnimationPayload>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
@@ -2435,7 +2438,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           .map((asset) => [asset.header.guid, asset]),
       );
       const loaded = new Map<string, unknown>();
-      for (const guid of spriteAnimationGuidsFromAnimGraphs(graphs)) {
+      const needed = new Set([
+        ...spriteAnimationGuidsFromAnimGraphs(graphs),
+        ...spriteAnimationGuidsFromBehaviourTrees(trees),
+      ]);
+      for (const guid of needed) {
         const asset = byGuid.get(guid);
         if (!asset) continue;
         const content = await loadPlayAssetContent(

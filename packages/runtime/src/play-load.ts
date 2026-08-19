@@ -35,6 +35,7 @@ export function runtimeOptionsFromLoadControl(
   | "infiniteLoopDetection"
   | "loopCount"
   | "audioAssetGuids"
+  | "animClipCatalog"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
@@ -63,6 +64,9 @@ export function runtimeOptionsFromLoadControl(
     loopCount: msg.loopCount,
     ...(msg.audioAssetGuids && msg.audioAssetGuids.length > 0
       ? { audioAssetGuids: msg.audioAssetGuids }
+      : {}),
+    ...(msg.animClipCatalog && msg.animClipCatalog.length > 0
+      ? { animClipCatalog: msg.animClipCatalog }
       : {}),
   };
 }

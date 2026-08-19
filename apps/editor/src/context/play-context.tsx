@@ -117,7 +117,7 @@ import {
 import { playUserInterfaceRuntimeDocuments, interfaceMaterialGuidsFromUiDocuments } from "../lib/play-content";
 import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
 import { collectFontAssetEntries } from "../lib/play-fonts";
-import { modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
+import { animClipCatalogFromAssets, modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
 import {
   collectUiImageUrls,
   revokeUiImageUrls,
@@ -795,10 +795,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           );
           setPlayAnimGraphs([]);
         }
+        let playTrees: typeof playBehaviourTrees = [];
         try {
-          setPlayBehaviourTrees(
-            await collectPlayBehaviourTrees(resolvedScene?.scene),
-          );
+          playTrees = await collectPlayBehaviourTrees(resolvedScene?.scene);
+          setPlayBehaviourTrees(playTrees);
         } catch (error) {
           appendLog(
             `BehaviourTree load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -830,7 +830,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlaySpritePayloads(new Map());
         }
         try {
-          spriteAnimations = await collectPlaySpriteAnimationPayloads(playGraphs);
+          spriteAnimations = await collectPlaySpriteAnimationPayloads(
+            playGraphs,
+            playTrees,
+          );
           setPlaySpriteAnimationPayloads(spriteAnimations);
         } catch (error) {
           appendLog(
@@ -1216,6 +1219,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             retargetAnimationLoads={playRetargetAnimationLoads}
             audioBytes={playAudioBytes}
             audioLibrary={playAudioLibrary}
+            animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
             particleLibrary={playParticleLibrary}
             materialDocuments={playMaterialDocuments}
             materialFunctions={playMaterialFunctions}
