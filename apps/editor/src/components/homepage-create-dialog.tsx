@@ -244,8 +244,7 @@ export function HomepageCreateDialog({
                   </FieldLabel>
                 </Field>
                 <FieldDescription>
-                  On locks WxH with black bars. Off fills the host without
-                  stretching.
+                  On locks WxH with bars. Off fills without stretching.
                 </FieldDescription>
               </FieldGroup>
             </div>
