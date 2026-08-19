@@ -194,7 +194,7 @@ describe("UiDesignDetails layout fields", () => {
         onPatchWidget={() => {}}
         onPatchLayout={() => {}}
         onPreviewLayout={(id, layout) => session.preview(id, layout)}
-        onCommitLayout={(id, layout) => session.commit(layout)}
+        onCommitLayout={(_id, layout) => session.commit(layout)}
         onPickAsset={() => {}}
       />,
     );
@@ -229,7 +229,7 @@ describe("UiDesignDetails layout fields", () => {
         onPatchWidget={() => {}}
         onPatchLayout={() => {}}
         onPreviewLayout={(id, layout) => session.preview(id, layout)}
-        onCommitLayout={(id, layout) => session.commit(layout)}
+        onCommitLayout={(_id, layout) => session.commit(layout)}
         onPickAsset={() => {}}
       />,
     );
