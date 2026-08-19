@@ -1,8 +1,13 @@
-import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDefaultSpritePayload } from "@babylonslate/assets";
+import { createDefaultSpritePayload, embedGlbExternalImages } from "@babylonslate/assets";
+import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, glbClipNames } from "./model-mesh";
+import { visualMeshes } from "./visual-meshes";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
 import {
@@ -15,6 +20,21 @@ import {
   isPlayHelperMeshKind,
 } from "./snapshot-apply";
 import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
+
+function kenneyMannequinGlb(): Uint8Array {
+  const dir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../engine-content/kenney-assets/Mannequin",
+  );
+  return embedGlbExternalImages(
+    new Uint8Array(readFileSync(join(dir, "mannequin.glb"))),
+    {
+      "Textures/texture-d.png": new Uint8Array(
+        readFileSync(join(dir, "mannequin.png")),
+      ),
+    },
+  );
+}
 
 describe("createPlayMesh", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -143,6 +163,77 @@ describe("createPlayMesh", () => {
     });
     expect(group).toBeDefined();
     expect(group?.from).toBeLessThan(group?.to ?? 0);
+  });
+
+  it("adopts Kenney with UVs on every visual mesh and slot 0 on all parts", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const override = new StandardMaterial("slot-0", scene);
+    binding.modelBytes = new Map([["mannequin", kenneyMannequinGlb()]]);
+    binding.modelPayloads = new Map([
+      [
+        "mannequin",
+        {
+          clipNames: ["idle"],
+          skeletonGuid: null,
+          materialSlots: [{ index: 0, name: "texture-d", materialGuid: "mat-1" }],
+        },
+      ],
+    ]);
+    binding.resolveMaterial = (guid) => (guid === "mat-1" ? override : null);
+    const root = createPlayMesh(scene, 2, "box", "mannequin", binding);
+    await binding.slotAnimLoads?.get(2);
+    const visuals = visualMeshes(root);
+    expect(visuals.length).toBeGreaterThan(1);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+      expect(part.material).toBe(override);
+    }
+  });
+
+  it("seeks Kenney idle on paused groups with live animatables", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["mannequin", kenneyMannequinGlb()]]);
+    createPlayMesh(scene, 2, "box", "mannequin", binding);
+    await binding.slotAnimLoads?.get(2);
+    const native = scene.animationGroups.find((group) => group.name === "idle");
+    expect(native).toBeDefined();
+    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.isPlaying).toBe(false);
+
+    const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
+    expect(target).toBeDefined();
+    const poseAt = () => {
+      target!.computeWorldMatrix(true);
+      const position = target!.getAbsolutePosition();
+      const rotation = target!.rotationQuaternion ?? target!.rotation;
+      return [position.x, position.y, position.z, rotation.x, rotation.y, rotation.z];
+    };
+    const host = sceneAnimHostFromBinding(binding, {
+      animationGroups: scene.animationGroups,
+    });
+    const command = {
+      type: "animState" as const,
+      slotId: 2,
+      stateId: "idle",
+      normalisedTime: 0,
+      blendWeights: { idle: 1 },
+      clipName: "idle",
+      clipKind: "animation" as const,
+      clipAssetGuid: "mannequin",
+    };
+    applyAnimStateToScene(host, command);
+    const atStart = poseAt();
+    applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
+    expect(poseAt()).not.toEqual(atStart);
+    expect(native!.isPlaying).toBe(false);
   });
 
   it("stamps native AnimationGroups with Animation asset guids when mapped", async () => {

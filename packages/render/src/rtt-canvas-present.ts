@@ -1,4 +1,5 @@
 import { RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { flipReadPixelsRgba } from "./flip-read-pixels";
 
 export type RttCanvasPresent = {
   /** Size the RTT from the canvas and assign `camera.outputRenderTarget`. */
@@ -79,7 +80,7 @@ export function createRttCanvasPresent(
         const bytes =
           buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
         ctx.putImageData(
-          new ImageData(new Uint8ClampedArray(bytes), width, height),
+          new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
           0,
           0,
         );

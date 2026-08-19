@@ -1,6 +1,7 @@
 import "./gltf-loader";
-import type { AbstractMesh, Node, Scene, TransformNode } from "@babylonjs/core";
+import type { AbstractEngine, AbstractMesh, Node, TransformNode } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { Scene } from "@babylonjs/core/scene";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
@@ -67,6 +68,8 @@ function wrapGroup(
     name: string;
     from: number;
     to: number;
+    start?(loop?: boolean): void;
+    play?(loop?: boolean): void;
     pause(): void;
     stop(): void;
     goToFrame(frame: number): void;
@@ -75,7 +78,13 @@ function wrapGroup(
   },
   clipAssetGuid: string,
 ): NamedSeekableGroup & { dispose(): void } {
-  group.stop();
+  // `stop()` drops animatables so later `goToFrame` is a no-op. Start (or keep
+  // a loader-started group) then pause so Play can seek idle without auto-advance.
+  if (typeof group.start === "function") {
+    group.start(true);
+  } else {
+    group.play?.(true);
+  }
   group.pause();
   group.setWeightForAllAnimatables?.(0);
   return {
@@ -207,6 +216,25 @@ export function beginSlotModelAnimLoad(
 
 /** True when name-match retarget keeps at least one channel. */
 export async function animationRetargetHasMatches(
+  engine: AbstractEngine,
+  sourceBytes: Uint8Array,
+  targetBytes: Uint8Array,
+  clipName: string,
+): Promise<boolean> {
+  const scene = new Scene(engine);
+  try {
+    return await animationRetargetHasMatchesOnScene(
+      scene,
+      sourceBytes,
+      targetBytes,
+      clipName,
+    );
+  } finally {
+    scene.dispose();
+  }
+}
+
+async function animationRetargetHasMatchesOnScene(
   scene: Scene,
   sourceBytes: Uint8Array,
   targetBytes: Uint8Array,

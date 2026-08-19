@@ -140,4 +140,27 @@ describe("AddFunctionDialog", () => {
     fireEvent.click(screen.getByTestId("add-event-confirm"));
     expect(onCreateEmpty).toHaveBeenCalledWith("On Hit");
   });
+
+  it("keeps the override list in a bounded scroll region", () => {
+    render(
+      <AddFunctionDialog
+        open
+        onOpenChange={() => {}}
+        items={Array.from({ length: 24 }, (_, index) => ({
+          id: `native:event-${index}`,
+          name: `Event ${index}`,
+          description: "Native",
+          overwritten: false,
+          kind: "native",
+        }))}
+        onCreateEmpty={() => {}}
+        onPick={() => {}}
+      />,
+    );
+    const list = screen.getByTestId("add-function-list");
+    const scroller = list.closest("[data-slot='scroll-area']");
+    expect(scroller).toBeTruthy();
+    expect(scroller?.className).toMatch(/max-h-/);
+    expect(scroller?.className).toMatch(/min-h-0/);
+  });
 });

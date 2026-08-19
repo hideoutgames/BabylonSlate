@@ -18,6 +18,10 @@ export function ensureNodeRotationQuaternion(node: TransformNode): void {
   }
 }
 
+function isCatalogBoneNode(node: TransformNode): boolean {
+  return node.name !== "__root__" && node.name !== "materialPreviewMesh";
+}
+
 function isCameraOrLight(node: Node): boolean {
   const className = node.getClassName();
   return className.includes("Camera") || className.includes("Light");
@@ -50,10 +54,11 @@ export function createLinkedSkeletonFromNodeRig(
   const name = options.name || `${root.name}_skeleton`;
   const skeleton = new Skeleton(name, name, scene);
   const nodes: TransformNode[] = [];
-  if (isRigTransform(root)) nodes.push(root);
+  if (isRigTransform(root) && isCatalogBoneNode(root)) nodes.push(root);
   for (const child of root.getChildTransformNodes(false)) {
     if (!isRigTransform(child)) continue;
     if (child.name.endsWith("_overlay")) continue;
+    if (!isCatalogBoneNode(child)) continue;
     nodes.push(child);
   }
 

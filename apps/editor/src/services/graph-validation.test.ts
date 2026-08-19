@@ -324,6 +324,7 @@ describe("createDefaultLogicGraphSerialized", () => {
     const types = graph.nodes.map((n) => n.type);
     expect(types).toContain("flow.event.beginPlay");
     expect(types).toContain("flow.event.tick");
+    expect(types).not.toContain("flow.event.destroyed");
     expect(graph.nodes.map((node) => node.id)).toEqual([
       "event-begin-play",
       "event-tick",
@@ -768,6 +769,7 @@ describe("scriptPaletteNodes", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "BObject" });
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(false);
   });
 
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {
@@ -882,6 +884,7 @@ describe("scriptPaletteNodes", () => {
     );
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.mouseExit")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.mousePress")).toBe(true);

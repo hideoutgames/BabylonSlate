@@ -7,6 +7,7 @@ import {
   createMaterialPreviewPresenter,
   createModelPreviewScene,
   loadModelPreviewSource,
+  previewRigRoot,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
 } from "@babylonslate/render";
@@ -60,7 +61,11 @@ export function SkeletonPreviewCanvas({
         presenterRef.current = presenter;
         if (showBones) {
           bonesRef.current?.dispose();
-          bonesRef.current = attachSkeletonPreview(host.mesh, host.scene, kind);
+          bonesRef.current = attachSkeletonPreview(
+            previewRigRoot(host),
+            host.scene,
+            kind,
+          );
           setBonesAttached(true);
         }
         presenter.present({ force: true });
@@ -114,7 +119,11 @@ export function SkeletonPreviewCanvas({
       presenterRef.current?.present({ force: true });
       return;
     }
-    bonesRef.current = attachSkeletonPreview(host.mesh, host.scene, kind);
+    bonesRef.current = attachSkeletonPreview(
+      previewRigRoot(host),
+      host.scene,
+      kind,
+    );
     setBonesAttached(true);
     presenterRef.current?.present({ force: true });
   }, [kind, showBones, previewGeneration]);

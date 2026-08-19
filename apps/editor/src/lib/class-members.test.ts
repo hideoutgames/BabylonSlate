@@ -12,6 +12,7 @@ import {
   functionLibraryShowsEventGraphEmpty,
   memberNamePromptCopy,
   patchClassMember,
+  pruneEventMembersToNodes,
   removeClassMember,
   resolveClassMemberDrop,
 } from "./class-members";
@@ -176,6 +177,26 @@ describe("addClassMember", () => {
     };
     const next = removeClassMember(graph, "begin");
     expect(next.nodes).toEqual([]);
+  });
+
+  it("drops event members when the custom event canvas node is gone", () => {
+    const graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    graph.members = [
+      ...(graph.members ?? []),
+      { id: "fn-1", kind: "function", name: "Jump" },
+    ];
+    const next = pruneEventMembersToNodes({
+      ...graph,
+      nodes: graph.nodes.filter((node) => node.id !== "evt-1"),
+    });
+    expect(next.members).toEqual([
+      { id: "fn-1", kind: "function", name: "Jump" },
+    ]);
+  });
+
+  it("keeps event members that still have a matching canvas node", () => {
+    const graph = addClassMember(emptyGraph(), "event", "On Hit", () => "evt-1");
+    expect(pruneEventMembersToNodes(graph)).toBe(graph);
   });
 
   it("Title Cases typed event names and prefixes Event on the node", () => {

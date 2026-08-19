@@ -37,9 +37,10 @@ const UNSUPPORTED_MODEL_FORMAT =
 function importedMaterialPayload(
   name: string,
   textureGuid: string | undefined,
+  unlit: boolean,
 ): Record<string, unknown> {
   const document = migrateLegacyShaderPayload(
-    {},
+    { shadingModel: unlit ? "unlit" : "pbr" },
     { textureGuids: textureGuid ? [textureGuid] : [] },
   );
   return { ...document, name } as unknown as Record<string, unknown>;
@@ -137,7 +138,7 @@ function importFromBrowse(
       version: MATERIAL_PAYLOAD_VERSION,
       dependencies: [textureGuid],
       parentClass: null,
-      payload: importedMaterialPayload(materialName, textureGuid),
+      payload: importedMaterialPayload(materialName, textureGuid, false),
       chunks: [],
     });
   } else {
@@ -165,7 +166,7 @@ function importFromBrowse(
         // The slot index keeps model-to-material assignment stable across
         // re-imports even when material names change.
         payload: {
-          ...importedMaterialPayload(materialName, dep[0]),
+          ...importedMaterialPayload(materialName, dep[0], material.unlit),
           slotIndex: i,
         },
         chunks: [],

@@ -51,6 +51,8 @@ import {
   inheritedCustomEventSeeds,
   isScriptCatalogNodeAllowed,
   nativeEventStubs,
+  NATIVE_CLASS_EVENT_TYPES,
+  SEEDED_NATIVE_EVENT_TYPES,
   type ClassEventOptions,
 } from "../lib/class-members";
 import type {
@@ -536,7 +538,12 @@ export function createDefaultLogicGraphSerialized(
   nodeRegistry: NodeRegistry = registry,
   options?: ClassEventOptions,
 ): SerializedGraph {
-  const stubs = nativeEventStubs(options);
+  const seedNatives = new Set<string>(SEEDED_NATIVE_EVENT_TYPES);
+  const actorUiNatives = new Set<string>(NATIVE_CLASS_EVENT_TYPES);
+  const stubs = nativeEventStubs(options).filter((stub) => {
+    if (!actorUiNatives.has(stub.eventType)) return true;
+    return seedNatives.has(stub.eventType);
+  });
   const parentClassId = options?.parentClass?.trim() || null;
   const logic: LogicGraph = {
     id: "main",

@@ -24,6 +24,7 @@ import {
   type AuthoredCameraProperties,
 } from "./scene-illumination";
 import { editorMeshName } from "./scene-loader";
+import { flipReadPixelsRgba } from "./flip-read-pixels";
 
 export const CAMERA_PREVIEW_INTERVAL_MS = 1000;
 export const CAMERA_PREVIEW_WIDTH = 320;
@@ -371,13 +372,11 @@ export class EditorDebugOverlay {
       canvas.width = width;
       canvas.height = height;
       const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
-      const row = width * 4;
-      const flipped = new Uint8ClampedArray(width * height * 4);
-      for (let y = 0; y < height; y++) {
-        const src = y * row;
-        flipped.set(bytes.subarray(src, src + row), (height - 1 - y) * row);
-      }
-      ctx.putImageData(new ImageData(flipped, width, height), 0, 0);
+      ctx.putImageData(
+        new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
+        0,
+        0,
+      );
     } catch {
       // NullEngine / missing GPU readback is fine — tests assert the RTT itself.
     }

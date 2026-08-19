@@ -71,9 +71,18 @@ describe("importers", () => {
     expect(
       results.filter((result) => result.type === "Animation"),
     ).toHaveLength(27);
+    expect(
+      results.find((result) => result.type === "Material")?.payload.shadingModel,
+    ).toBe("unlit");
   });
 
   it("rejects OBJ, STL, FBX, and invalid GLB bytes", async () => {
+    await expect(
+      importByExtension("mesh.obj", new Uint8Array([1]), {
+        fileName: "mesh.obj",
+        existingGuids: new Set(),
+      }),
+    ).rejects.toThrow(/No importer registered/i);
     await expect(
       importModel(new Uint8Array([1]), { fileName: "mesh.obj", existingGuids: new Set() }),
     ).rejects.toThrow(/GLB or glTF/i);

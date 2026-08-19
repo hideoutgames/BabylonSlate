@@ -51,7 +51,7 @@ import {
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
-import { ResourceCache } from "./resource-cache";
+import { getMaterialTexture, ResourceCache } from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
@@ -538,8 +538,7 @@ export function createEngine(
     resolveTexture: (guid) => {
       const bytes = binding.textureBytes?.get(guid);
       if (!bytes) return null;
-      const texture = resourceCache.getTexture(guid, engine, bytes);
-      return texture instanceof Texture ? texture : null;
+      return getMaterialTexture(resourceCache, guid, engine, bytes);
     },
   });
   binding.resolveMaterial = (guid) => {

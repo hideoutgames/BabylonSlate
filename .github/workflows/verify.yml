@@ -11,6 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # static + unit + 7 e2e shards = 9 jobs/PR. Two ready PRs = 18. After one
+  # merges, remaining PR + main Verify + Preview = 19. A 10th Verify job
+  # (or nine e2e shards) fills that overlap at 20.
+  static:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm --filter docs-site build
+
   unit:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -23,10 +42,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install
-      - run: pnpm typecheck
-      - run: pnpm lint
+      # Unsharded: per-package coverage gates need the full Vitest suite.
       - run: pnpm test:coverage
-      - run: pnpm --filter docs-site build
 
   e2e:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -34,10 +51,8 @@ jobs:
     timeout-minutes: 25
     strategy:
       fail-fast: false
-      # 8 shards + unit = 9 jobs/PR. Two ready PRs = 18. After one merges,
-      # remaining PR + main Verify + Preview = 19. Nine shards fill that overlap.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -53,7 +68,8 @@ jobs:
       - name: Install Playwright Chromium
         timeout-minutes: 5
         run: pnpm exec playwright install chromium
-      - name: Install Playwright OS dependencies
-        timeout-minutes: 5
-        run: pnpm exec playwright install-deps chromium
-      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/8
+      # GitHub ubuntu-latest already ships Chromium's shared libraries.
+      # Playwright's extra CJK/cyrillic font apt packages (~21MB) time out
+      # when seven shards hit the Ubuntu archive together. The suite has no
+      # screenshot baselines that need those fonts.
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/7

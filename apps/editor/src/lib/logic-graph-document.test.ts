@@ -307,6 +307,25 @@ describe("commitLogicGraph", () => {
     });
   });
 
+  it("drops custom event members whose canvas nodes were deleted", () => {
+    const next: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [
+        { id: "evt-1", kind: "event", name: "On Hit" },
+        { id: "fn-1", kind: "function", name: "Jump" },
+      ],
+    };
+    expect(commitLogicGraph("graph", graph, next)).toEqual({
+      kind: "graph",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [{ id: "fn-1", kind: "function", name: "Jump" }],
+      },
+    });
+  });
+
   it("returns a UserInterface payload commit that keeps widgets", () => {
     const next: SerializedGraph = {
       nodes: [],

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { NullEngine, Texture } from "@babylonjs/core";
-import { ResourceCache } from "./resource-cache";
+import { getMaterialTexture, ResourceCache } from "./resource-cache";
 import { accountedTextureBytes } from "./texture-bytes";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
@@ -32,6 +32,20 @@ describe("resource cache getTexture", () => {
     const a = cache.getTexture("tex", engine, bytes, { noMipmap: false });
     const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
     expect(a).not.toBe(b);
+    cache.dispose();
+    engine.dispose();
+  });
+
+  it("loads NodeMaterial textures without invertY so glTF UVs stay upright", () => {
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const defaulted = cache.getTexture("sprite", engine, bytes);
+    const material = getMaterialTexture(cache, "mat", engine, bytes);
+    expect(defaulted).toBeInstanceOf(Texture);
+    expect((defaulted as Texture).invertY).toBe(true);
+    expect(material).not.toBeNull();
+    expect(material!.invertY).toBe(false);
     cache.dispose();
     engine.dispose();
   });

@@ -204,4 +204,84 @@ describe("collectOverridableEventRows", () => {
         ?.overwritten,
     ).toBe(true);
   });
+
+  it("lists Actor native events including On Actor Destroyed and greys ones already on the graph", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: {
+        nodes: [
+          {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+        ],
+        edges: [],
+      },
+    });
+    expect(rows.find((row) => row.eventType === "flow.event.beginPlay")).toMatchObject(
+      {
+        kind: "native",
+        name: "Event Begin Play",
+        overwritten: true,
+      },
+    );
+    expect(rows.find((row) => row.eventType === "flow.event.tick")).toMatchObject({
+      kind: "native",
+      name: "Event Tick",
+      overwritten: false,
+    });
+    expect(rows.find((row) => row.eventType === "flow.event.destroyed")).toMatchObject(
+      {
+        kind: "native",
+        name: "Event On Actor Destroyed",
+        overwritten: false,
+      },
+    );
+    expect(rows.some((row) => row.eventType === "flow.event.mouseEnter")).toBe(
+      false,
+    );
+  });
+
+  it("does not list a deleted local custom event as overridable on the declaring class", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: { nodes: [], edges: [] },
+    });
+    expect(rows.some((row) => row.name === "On Hit")).toBe(false);
+  });
+
+  it("still lists a parent custom event after the child deletes its override node", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Pawn",
+      parentOf: (id) => {
+        if (id === "Hero") return "Pawn";
+        if (id === "Pawn") return "Actor";
+        return null;
+      },
+      graph: { nodes: [], edges: [] },
+      parentGraphs: {
+        Pawn: {
+          nodes: [
+            {
+              id: "p",
+              type: "flow.event.custom",
+              position: { x: 0, y: 0 },
+              data: { name: "On Hit" },
+            },
+          ],
+          edges: [],
+          members: [{ id: "p", kind: "event", name: "On Hit" }],
+        },
+      },
+    });
+    expect(rows.find((row) => row.name === "On Hit")).toMatchObject({
+      kind: "parent",
+      overwritten: false,
+    });
+  });
 });

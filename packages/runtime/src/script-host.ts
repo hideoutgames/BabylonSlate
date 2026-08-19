@@ -333,7 +333,7 @@ export class ScriptHost {
         );
       },
       onDestroyed: (self) => {
-        this.dispatchEvent(loaded, "onEndPlay", self, 0, 0);
+        this.dispatchEvent(loaded, "onDestroyed", self, 0, 0);
       },
     };
   }

@@ -1,5 +1,5 @@
 import "./gltf-loader";
-import type { AbstractMesh, AnimationGroup, Material } from "@babylonjs/core";
+import type { AbstractMesh, AnimationGroup, Material, TransformNode } from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { ModelMaterialSlot } from "@babylonslate/assets";
@@ -9,55 +9,22 @@ import {
   type MaterialPreviewScene,
 } from "./material-preview";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { constructionMaterialOf, visualMeshes } from "./visual-meshes";
 
-const CONSTRUCTION_KEY = "babylonslateModelConstructionMaterial";
+export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
 
-type ConstructionMeta = {
-  [CONSTRUCTION_KEY]?: Material | null;
-};
-
-function asMeta(mesh: AbstractMesh): ConstructionMeta {
-  const current =
-    mesh.metadata && typeof mesh.metadata === "object"
-      ? (mesh.metadata as ConstructionMeta)
-      : {};
-  mesh.metadata = current;
-  return current;
-}
-
-function visualMeshes(root: AbstractMesh): AbstractMesh[] {
-  const children = root.getChildMeshes();
-  // After LoadAssetContainerAsync adopt, the first-primitive stub is hidden.
-  // Counting it as slot 0 would offset every glTF material by one.
-  if (root.visibility === 0 && children.length > 0) {
-    return children;
-  }
-  return [root, ...children];
-}
-
-/**
- * Map first-seen construction materials to Model `materialSlots` indices.
- * Empty guid restores the glTF construction material; a filled guid assigns
- * `resolveMaterial` when it returns a material.
- */
 export function applyModelMaterialSlots(
   root: AbstractMesh,
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string) => Material | null,
 ): void {
   const meshes = visualMeshes(root);
-  const constructionOrder: Array<Material | null> = [];
   const constructionToSlot = new Map<Material, number>();
 
   for (const mesh of meshes) {
-    const meta = asMeta(mesh);
-    if (!Object.prototype.hasOwnProperty.call(meta, CONSTRUCTION_KEY)) {
-      meta[CONSTRUCTION_KEY] = mesh.material ?? null;
-    }
-    const construction = meta[CONSTRUCTION_KEY] ?? null;
+    const construction = constructionMaterialOf(mesh);
     if (construction && !constructionToSlot.has(construction)) {
-      constructionToSlot.set(construction, constructionOrder.length);
-      constructionOrder.push(construction);
+      constructionToSlot.set(construction, constructionToSlot.size);
     }
   }
 
@@ -67,7 +34,7 @@ export function applyModelMaterialSlots(
   }
 
   for (const mesh of meshes) {
-    const construction = asMeta(mesh)[CONSTRUCTION_KEY] ?? null;
+    const construction = constructionMaterialOf(mesh);
     if (!construction) continue;
     const slotIndex = constructionToSlot.get(construction);
     if (slotIndex === undefined) continue;
@@ -94,6 +61,14 @@ export function createModelPreviewScene(
     host.scene.clearColor = new Color4(0, 0, 0, 0);
   }
   return host;
+}
+
+/** glTF container root under the hidden preview placeholder (not the placeholder mesh). */
+export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
+  const child = host.mesh.getChildTransformNodes(true).find(
+    (node) => !node.name.endsWith("_overlay"),
+  );
+  return child ?? host.mesh;
 }
 
 export async function loadModelPreviewSource(

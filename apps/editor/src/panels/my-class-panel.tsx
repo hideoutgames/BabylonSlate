@@ -24,7 +24,6 @@ import {
   classAllowsMemberKind,
   ensureEventNodeOnGraph,
   memberNamePromptCopy,
-  nativeEventStubs,
   nativeStubId,
   patchClassMember,
   removeClassMember,
@@ -188,20 +187,7 @@ function inheritedMembers(
     if (!parentGraph) continue;
     for (const member of parentGraph.members ?? []) {
       if (member.kind === "variable" && member.functionId) continue;
-      if (member.kind === "event") {
-        const name = formatEventMemberName(member.name);
-        if (!name) continue;
-        push({
-          kind: "event",
-          name,
-          detail: nativeStubId(`custom:${className}:${name}`),
-          eventType: "flow.event.custom",
-          inherited: true,
-          inheritedFrom: className,
-          pins: member.pins,
-        });
-        continue;
-      }
+      if (member.kind === "event") continue;
       if (
         member.kind === "variable" ||
         member.kind === "function" ||
@@ -220,30 +206,18 @@ function inheritedMembers(
         });
       }
     }
-    for (const node of parentGraph.nodes) {
-      if (node.type !== "flow.event.custom") continue;
-      const name = eventMemberBodyName(node);
-      if (!name) continue;
-      const pins = Array.isArray(node.data.pins)
-        ? (node.data.pins as NonNullable<MyClassMember["pins"]>)
-        : undefined;
-      push({
-        kind: "event",
-        name,
-        detail: nativeStubId(`custom:${className}:${name}`),
-        eventType: "flow.event.custom",
-        inherited: true,
-        inheritedFrom: className,
-        ...(pins ? { pins } : {}),
-      });
-    }
   }
   return rows;
 }
 
+function isClassTreeEventNode(type: string): boolean {
+  if (isFlowEventCallNode(type)) return false;
+  return type.startsWith("flow.event.") || type.startsWith("bt.event.");
+}
+
 /**
- * Members the current graph declares. Native events always appear; custom
- * events come from canvas nodes; other kinds from `members`.
+ * Members the current graph declares. Events come from canvas nodes that are
+ * on the graph; unused natives and inherited customs stay in Events +.
  */
 export function membersForGraph(
   graph: SerializedGraph | null,
@@ -265,27 +239,9 @@ export function membersForGraph(
   const declaredKeys = new Set(
     declared.map((member) => `${member.kind}:${member.name}`),
   );
-  const stubs = nativeEventStubs({
-    parentClass: options?.parentClass,
-    parentOf: options?.parentOf,
-    assetType: options?.assetType,
-  });
-  const events: MyClassMember[] = stubs.map((stub) => {
-    const node = graph.nodes.find((entry) => entry.type === stub.eventType);
-    return {
-      kind: "event" as const,
-      name: stub.name,
-      detail: node?.id ?? nativeStubId(stub.eventType),
-      eventType: stub.eventType,
-    };
-  });
-  const listedTypes = new Set(stubs.map((stub) => stub.eventType));
+  const events: MyClassMember[] = [];
   for (const node of graph.nodes) {
-    if (!node.type.startsWith("flow.event.")) continue;
-    if (isFlowEventCallNode(node.type)) continue;
-    if (listedTypes.has(node.type) && node.type !== "flow.event.custom") {
-      continue;
-    }
+    if (!isClassTreeEventNode(node.type)) continue;
     events.push({
       kind: "event",
       name: eventDisplayName(node),
@@ -296,34 +252,9 @@ export function membersForGraph(
         : {}),
     });
   }
-  for (const member of graph.members ?? []) {
-    if (member.kind !== "event") continue;
-    const name = formatEventMemberName(member.name);
-    if (
-      events.some(
-        (event) =>
-          event.eventType === "flow.event.custom" && event.name === name,
-      )
-    ) {
-      continue;
-    }
-    events.push({
-      kind: "event",
-      name,
-      detail: member.id,
-      eventType: "flow.event.custom",
-      pins: member.pins,
-    });
-  }
-  const inherited = inheritedMembers(options).filter((row) => {
-    if (row.kind === "event") {
-      return !events.some(
-        (event) =>
-          event.eventType === "flow.event.custom" && event.name === row.name,
-      );
-    }
-    return !declaredKeys.has(`${row.kind}:${row.name}`);
-  });
+  const inherited = inheritedMembers(options).filter(
+    (row) => !declaredKeys.has(`${row.kind}:${row.name}`),
+  );
   return [...declared, ...events, ...inherited];
 }
 

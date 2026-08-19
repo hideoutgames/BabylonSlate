@@ -22,6 +22,7 @@ export type ScriptEventName = "onBeginPlay" | "onTick" | "onCommandRun" | string
 export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
+  "flow.event.destroyed": "onDestroyed",
   "flow.event.commandRun": "onCommandRun",
   "flow.event.editorBeginPlay": "onEditorBeginPlay",
   "flow.event.mouseEnter": "onMouseEnter",

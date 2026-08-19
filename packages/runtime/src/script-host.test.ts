@@ -580,6 +580,34 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("runs Event On Actor Destroyed when the actor is destroyed", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "destroyed", "flow.event.destroyed"),
+        node(registry, "log", "debug.log", { message: "gone" }),
+      ],
+      edges: [edge("e1", "destroyed", "execOut", "log", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 5,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([toScript(graph, registry, "Hero", "hero-asset")]);
+    const actor = runtime.spawnScriptedActor({ classId: "Hero" });
+    expect(actor).not.toBeNull();
+    runtime.getWorld().destroyActor(actor!.guid);
+    runtime.getWorld().flushPending();
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("gone");
+    runtime.stop();
+  });
+
   it("passes invokeEvent args through custom event output pins", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
