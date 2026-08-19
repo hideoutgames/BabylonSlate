@@ -89,7 +89,7 @@ export function AddFunctionDialog({
         >
           {emptyLabel}
         </Button>
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className="h-0 min-h-0 max-h-64 flex-1">
           <div className="flex flex-col gap-1" data-testid={`${prefix}-list`}>
             {items.map((item) => (
               <Button

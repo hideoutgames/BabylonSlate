@@ -23,11 +23,19 @@ export const DEFAULT_FUNCTION_PINS: GraphClassMemberPin[] = [
 export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.beginPlay",
   "flow.event.tick",
+  "flow.event.destroyed",
+] as const;
+
+/** Default new graphs seed these Actor/UI natives; Destroyed stays in Events +. */
+export const SEEDED_NATIVE_EVENT_TYPES = [
+  "flow.event.beginPlay",
+  "flow.event.tick",
 ] as const;
 
 const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
+  "flow.event.destroyed": "Event On Actor Destroyed",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.mouseEnter": "Event On Mouse Enter",
@@ -69,6 +77,7 @@ export function nativeEventTitle(eventType: string): string {
 const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginPlay",
   "flow.event.tick",
+  "flow.event.destroyed",
   "flow.event.commandRun",
 ] as const;
 
@@ -395,7 +404,11 @@ export function isScriptCatalogNodeAllowed(
       !isBlackboard
     );
   }
-  if (nodeId === "flow.event.beginPlay" || nodeId === "flow.event.tick") {
+  if (
+    nodeId === "flow.event.beginPlay" ||
+    nodeId === "flow.event.tick" ||
+    nodeId === "flow.event.destroyed"
+  ) {
     return chain.includes("Actor") || isUserInterfaceLogicHost(options);
   }
   if (nodeId === "flow.event.commandRun") {
@@ -1235,6 +1248,34 @@ export function patchClassMember(
     return syncEventPins(next, declared, patch.pins);
   }
   return syncFunctionGraphPins(next, memberId, patch.pins);
+}
+
+export function pruneEventMembersToNodes(
+  graph: SerializedGraph,
+): SerializedGraph {
+  const members = graph.members;
+  if (!members?.length) return graph;
+  const customNames = new Set<string>();
+  const customIds = new Set<string>();
+  for (const node of graph.nodes) {
+    if (node.type !== "flow.event.custom") continue;
+    customIds.add(node.id);
+    const raw =
+      typeof node.data.name === "string"
+        ? node.data.name
+        : typeof node.data.title === "string"
+          ? node.data.title
+          : "";
+    const name = formatEventMemberName(raw);
+    if (name) customNames.add(name);
+  }
+  const nextMembers = members.filter((member) => {
+    if (member.kind !== "event") return true;
+    const name = formatEventMemberName(member.name);
+    return customIds.has(member.id) || (name.length > 0 && customNames.has(name));
+  });
+  if (nextMembers.length === members.length) return graph;
+  return { ...graph, members: nextMembers };
 }
 
 export function removeClassMember(

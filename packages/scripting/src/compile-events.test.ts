@@ -34,6 +34,8 @@ describe("editor utility events", () => {
     expect(EVENT_BY_TYPE_ID["flow.event.mousePress"]).toBe("onMousePress");
     expect(EVENT_BY_TYPE_ID["flow.event.mouseRelease"]).toBe("onMouseRelease");
     expect(EVENT_BY_TYPE_ID["flow.event.widgetClick"]).toBe("onWidgetClick");
+    expect(EVENT_BY_TYPE_ID["flow.event.destroyed"]).toBe("onDestroyed");
+    expect(eventNameForEntry(entry("flow.event.destroyed"))).toBe("onDestroyed");
   });
 
   it("maps Animation Object lifecycle nodes to ScriptHost events", () => {

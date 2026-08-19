@@ -71,6 +71,8 @@ describe("flow nodes", () => {
     expect(byId["flow.event.editorBeginPlay"]?.editorOnly).toBe(true);
     expect(byId["flow.event.beginPlay"]?.editorOnly).toBeFalsy();
     expect(byId["flow.event.tick"]?.editorOnly).toBeFalsy();
+    expect(byId["flow.event.destroyed"]?.title).toBe("Event On Actor Destroyed");
+    expect(byId["flow.event.destroyed"]?.editorOnly).toBeFalsy();
   });
 
   it("titles widget pointer events", () => {
