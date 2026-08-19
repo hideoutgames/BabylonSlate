@@ -1,5 +1,6 @@
 import {
   applyPrintHudCommand,
+  nextPrintHudTimeoutMs,
   visiblePrintHudEntries,
   type PrintHudColor,
   type PrintHudEntry,
@@ -14,6 +15,12 @@ function asPrintColor(value: unknown): PrintHudColor | undefined {
     z: Number(record.z) || 0,
     w: Number(record.w) || 0,
   };
+}
+
+function visibleSignature(entries: readonly PrintHudEntry[], now: number): string {
+  return visiblePrintHudEntries(entries, now)
+    .map((entry) => `${entry.key}\n${entry.message}\n${entry.color}`)
+    .join("\n---\n");
 }
 
 export function mountPlayerPrintOverlay(parent: HTMLElement): {
@@ -32,27 +39,35 @@ export function mountPlayerPrintOverlay(parent: HTMLElement): {
   parent.appendChild(host);
 
   let entries: PrintHudEntry[] = [];
-  let raf = 0;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let renderedSignature = "";
 
   const render = () => {
-    const visible = visiblePrintHudEntries(entries);
-    host.replaceChildren();
-    for (const entry of visible) {
-      const row = document.createElement("div");
-      row.style.cssText =
-        "border-radius:6px;background:rgba(0,0,0,0.6);padding:4px 12px;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;";
-      row.style.color = entry.color;
-      row.textContent = entry.message;
-      host.appendChild(row);
+    const now = Date.now();
+    const visible = visiblePrintHudEntries(entries, now);
+    const signature = visibleSignature(entries, now);
+    if (signature !== renderedSignature) {
+      renderedSignature = signature;
+      host.replaceChildren();
+      for (const entry of visible) {
+        const row = document.createElement("div");
+        row.style.cssText =
+          "border-radius:6px;background:rgba(0,0,0,0.6);padding:4px 12px;font:14px/1.4 ui-sans-serif,system-ui,sans-serif;";
+        row.style.color = entry.color;
+        row.textContent = entry.message;
+        host.appendChild(row);
+      }
+      host.hidden = visible.length === 0;
     }
-    host.hidden = visible.length === 0;
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+      timeout = undefined;
+    }
+    const delay = nextPrintHudTimeoutMs(entries, now);
+    if (delay !== null) {
+      timeout = setTimeout(render, delay);
+    }
   };
-
-  const tick = () => {
-    render();
-    raf = requestAnimationFrame(tick);
-  };
-  raf = requestAnimationFrame(tick);
 
   return {
     applyPrint: (command) => {
@@ -66,7 +81,7 @@ export function mountPlayerPrintOverlay(parent: HTMLElement): {
       render();
     },
     dispose: () => {
-      cancelAnimationFrame(raf);
+      if (timeout !== undefined) clearTimeout(timeout);
       host.remove();
     },
   };

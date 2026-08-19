@@ -90,6 +90,47 @@ describe("Print and Print String", () => {
     expect(compiled.source).not.toContain("wildcard.to_");
   });
 
+  it("auto-casts int and vec3 wires into Print without a box converter", () => {
+    const registry = createDefaultNodeRegistry();
+    const intGraph: LogicGraph = {
+      id: "g-int",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "add", "math.add_int", { "default:a": 1, "default:b": 2 }),
+        node(registry, "print", "debug.print"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "print", "execIn"),
+        edge("e2", "add", "out", "print", "value"),
+      ],
+    };
+    const vecGraph: LogicGraph = {
+      id: "g-vec",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "make", "vector.make3", {
+          "default:x": 1,
+          "default:y": 2,
+          "default:z": 3,
+        }),
+        node(registry, "print", "debug.print"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "print", "execIn"),
+        edge("e2", "make", "out", "print", "value"),
+      ],
+    };
+    for (const graph of [intGraph, vecGraph]) {
+      const diags = validateGraphs([graph], { assetGuid: "a" });
+      expect(diags.some((d) => d.code === "type.mismatch")).toBe(false);
+      const compiled = compileGraph(graph, { assetGuid: "a", registry });
+      expect(compiled.source).toContain("ctx.formatValue((");
+      expect(compiled.source).not.toContain("wildcard.to_");
+    }
+  });
+
   it("does not warn when Print value is unconnected", () => {
     const registry = createDefaultNodeRegistry();
     const print = node(registry, "print", "debug.print");

@@ -26,6 +26,7 @@ import {
   type GraphPin,
   type PinType,
   type TypeSchemas,
+  isDevelopmentOnlyByDefaultTypeId,
 } from "@babylonslate/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
@@ -175,7 +176,8 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "enum.notEquals" ||
     typeId === "enum.toString" ||
     typeId === "enum.switch" ||
-    typeId === uiGetWidgetNodeId
+    typeId === uiGetWidgetNodeId ||
+    isDevelopmentOnlyByDefaultTypeId(typeId)
   );
 }
 
