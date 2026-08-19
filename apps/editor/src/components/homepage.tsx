@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   ArrowUpDownIcon,
   BoxIcon,
@@ -7,6 +7,7 @@ import {
   LayoutTemplateIcon,
   ListFilterIcon,
   PlusIcon,
+  XIcon,
 } from "lucide-react";
 import {
   DEFAULT_RENDER_HEIGHT,
@@ -14,12 +15,28 @@ import {
   type ProjectFolderHandle,
 } from "@babylonslate/core";
 import {
+  ContextMenuOverlay,
+  SearchInput,
+  useContextMenu,
+} from "@babylonslate/editor-kit";
+import {
   getHostPlatform,
   isTestModeEnabled,
   type HostPlatform,
 } from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
 import { Button } from "@babylonslate/ui/components/button";
+import { Card } from "@babylonslate/ui/components/card";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -30,13 +47,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@babylonslate/ui/components/context-menu";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +68,6 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
-import { SearchInput } from "@babylonslate/editor-kit";
 import { displayProjectName } from "../lib/display-project-name";
 import {
   filterListedProjects,
@@ -79,6 +88,7 @@ import {
 import { BrandIcon } from "./brand-icon";
 import { HomepageCreateDialog } from "./homepage-create-dialog";
 import { TemplatePickCard } from "./homepage-template-card";
+import { IconActionButton } from "./icon-action-button";
 import { SettingsModal } from "./settings-modal";
 import "./homepage.css";
 
@@ -102,6 +112,131 @@ const HOMEPAGE_LOCATION_FILTERS: ReadonlyArray<{
   { id: "on-this-device", label: "On this device" },
   { id: "chosen-folder", label: "Chosen folder" },
 ];
+
+function HomepageProjectRow({
+  project,
+  projects,
+  busy,
+  onOpen,
+  onRename,
+  onRequestRemove,
+}: {
+  project: ListedProject;
+  projects: ListedProject[];
+  busy: boolean;
+  onOpen: (project: ListedProject) => void;
+  onRename: (project: ListedProject) => void;
+  onRequestRemove: (project: ListedProject) => void;
+}) {
+  const skipOpenRef = useRef(false);
+  const { menu, closeMenu, bind } = useContextMenu({
+    enabled: !busy,
+    items: [
+      {
+        id: "open",
+        label: "Open",
+        testId: "homepage-project-open",
+        onSelect: () => onOpen(project),
+      },
+      {
+        id: "rename",
+        label: "Rename",
+        testId: "homepage-project-rename",
+        onSelect: () => onRename(project),
+      },
+      {
+        id: "remove",
+        label: "Remove from list",
+        testId: "homepage-project-remove",
+        onSelect: () => onRequestRemove(project),
+      },
+    ],
+  });
+
+  useEffect(() => {
+    if (menu?.open) {
+      skipOpenRef.current = true;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      skipOpenRef.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [menu?.open]);
+
+  const meta = listedProjectMetaParts(projects, project);
+  const openProject = () => {
+    if (busy) return;
+    onOpen(project);
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openProject();
+    }
+  };
+
+  return (
+    <li>
+      <Card
+        size="sm"
+        tabIndex={0}
+        data-testid={`open-listed-project-${project.name}`}
+        className="homepage-project-row flex cursor-pointer flex-row items-center gap-3 px-3 py-2 min-h-[var(--touch-target,44px)]"
+        {...bind}
+        onClick={(event) => {
+          if (skipOpenRef.current) {
+            skipOpenRef.current = false;
+            return;
+          }
+          if ((event.target as HTMLElement).closest("button")) return;
+          openProject();
+        }}
+        onKeyDown={onKeyDown}
+      >
+        <span
+          data-testid="project-card-well"
+          className="homepage-project-well rounded-md"
+        >
+          <span aria-hidden="true" className="homepage-mark-diamond" />
+          <BoxIcon />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+          <span className="font-medium">
+            {displayProjectName(project.label)}
+          </span>
+          {meta.length > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              {meta.join(" · ")}
+            </span>
+          ) : null}
+        </span>
+        <IconActionButton
+          type="button"
+          variant="ghost"
+          size="touch-icon"
+          label="Remove from list"
+          disabled={busy}
+          data-testid={`remove-listed-project-${project.name}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onRequestRemove(project);
+          }}
+        >
+          <XIcon />
+        </IconActionButton>
+      </Card>
+      <ContextMenuOverlay
+        menu={menu}
+        onClose={closeMenu}
+        contentTestId="homepage-project-menu"
+      />
+    </li>
+  );
+}
 
 interface HomepageProps {
   projects: ListedProject[];
@@ -145,6 +280,7 @@ export function Homepage({
   const [busy, setBusy] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createTemplateId, setCreateTemplateId] = useState<string>("empty");
@@ -476,77 +612,23 @@ export function Homepage({
             </Empty>
           ) : (
             <ul
-              className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain"
+              className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain touch-pan-y"
               data-testid="project-list"
             >
-              {visibleProjects.map((project) => {
-                const meta = listedProjectMetaParts(projects, project);
-                return (
-                  <li key={project.id}>
-                    <ContextMenu>
-                      <ContextMenuTrigger className="block">
-                        <Button
-                          variant="outline"
-                          className="homepage-project-row h-auto min-h-[var(--touch-target,44px)] w-full justify-start gap-3 px-3 py-2"
-                          data-testid={`open-listed-project-${project.name}`}
-                          disabled={busy}
-                          onClick={() => void run(() => onOpenProject(project))}
-                        >
-                          <span
-                            data-testid="project-card-well"
-                            className="homepage-project-well rounded-md"
-                          >
-                            <span
-                              aria-hidden="true"
-                              className="homepage-mark-diamond"
-                            />
-                            <BoxIcon />
-                          </span>
-                          <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                            <span className="font-medium">
-                              {displayProjectName(project.label)}
-                            </span>
-                            {meta.length > 0 ? (
-                              <span className="text-xs text-muted-foreground">
-                                {meta.join(" · ")}
-                              </span>
-                            ) : null}
-                          </span>
-                        </Button>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent data-testid="homepage-project-menu">
-                        <ContextMenuGroup>
-                          <ContextMenuItem
-                            data-testid="homepage-project-open"
-                            onClick={() => void run(() => onOpenProject(project))}
-                          >
-                            Open
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            data-testid="homepage-project-rename"
-                            onClick={() => {
-                              setRenameTarget(project);
-                              setRenameValue(
-                                displayProjectName(project.label),
-                              );
-                            }}
-                          >
-                            Rename
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            data-testid="homepage-project-remove"
-                            onClick={() =>
-                              void run(() => onRemoveFromList(project))
-                            }
-                          >
-                            Remove from list
-                          </ContextMenuItem>
-                        </ContextMenuGroup>
-                      </ContextMenuContent>
-                    </ContextMenu>
-                  </li>
-                );
-              })}
+              {visibleProjects.map((project) => (
+                <HomepageProjectRow
+                  key={project.id}
+                  project={project}
+                  projects={projects}
+                  busy={busy}
+                  onOpen={(next) => void run(() => onOpenProject(next))}
+                  onRename={(next) => {
+                    setRenameTarget(next);
+                    setRenameValue(displayProjectName(next.label));
+                  }}
+                  onRequestRemove={setRemoveTarget}
+                />
+              ))}
             </ul>
           )}
         </section>
@@ -583,10 +665,10 @@ export function Homepage({
           const folderName = normalizeProjectFolderName(createName);
           if (!folderName) return;
           const options: CreateProjectOptions = {
-            pickFolder,
             renderWidth: createWidth,
             renderHeight: createHeight,
             blackBars: createBlackBars,
+            ...(hostPlatform === "web" ? {} : { pickFolder }),
           };
           setCreateOpen(false);
           if (createTemplateId === "empty" || createTemplateId === "2d") {
@@ -653,6 +735,39 @@ export function Homepage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <AlertDialogContent data-testid="homepage-remove-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from List?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The project files stay on disk. This only drops the recent from
+              the Homepage list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="homepage-remove-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="homepage-remove-confirm"
+              onClick={() => {
+                const target = removeTarget;
+                if (!target) return;
+                void run(() => onRemoveFromList(target));
+                setRemoveTarget(null);
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <SettingsModal
         open={settingsOpen}

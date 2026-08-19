@@ -54,7 +54,8 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 ### Regions that still scroll internally
 
 - Homepage Start gallery — horizontal template cards (`overflow-x-auto overscroll-x-contain`, nowrap)
-- Homepage project list — vertical recents (`overflow-y-auto overscroll-y-contain`); Search / Filter / Sort stay above the scrollport
+- Homepage project list — vertical recents (`overflow-y-auto overscroll-y-contain touch-pan-y`); Search / Filter / Sort stay above the scrollport. Recents rows are Cards (not full-width buttons) so a finger pan scrolls the list; long-press still opens `ContextMenuOverlay` (8px cancel). A trailing **X** opens a default Remove confirm instead of eating the pan.
+- Create Project dialog — templates pane and the right-hand **form** may scroll vertically; the right pane is `overflow-x-hidden` and the Cancel / Create footer stays pinned. Name is not autofocused on coarse pointers so the iPad keyboard does not steal height.
 - Chrome closable-tab scroller (`.editor-chrome-tabs-scroll`) — horizontal overflow; pinned Content Browser and the open Scene tab stay put
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
