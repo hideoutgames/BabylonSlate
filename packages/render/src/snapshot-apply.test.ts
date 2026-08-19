@@ -7,6 +7,7 @@ import { createDefaultSpritePayload, embedGlbExternalImages } from "@babylonslat
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
+import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
@@ -72,9 +73,25 @@ describe("createPlayMesh", () => {
     expect(material.alphaCutOff).toBeCloseTo(0.4);
 
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
-    const positions = model.getVerticesData(VertexBuffer.PositionKind);
-    expect(positions).not.toBeNull();
-    expect(positions!.length).toBe(9);
+    expect(model.getTotalVertices()).toBe(0);
+    expect(model.isPickable).toBe(false);
+    expect(model.isVisible).toBe(false);
+  });
+
+  it("loads a Model guid once for two Play slots", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const bytes = encodeTriangleGlb();
+    binding.modelBytes = new Map([["model-1", bytes]]);
+    const first = createPlayMesh(scene, 2, "box", "model-1", binding);
+    const second = createPlayMesh(scene, 3, "box", "model-1", binding);
+    await binding.slotAnimLoads?.get(2);
+    await binding.slotAnimLoads?.get(3);
+    expect(visualMeshes(first).length).toBeGreaterThan(0);
+    expect(visualMeshes(second).length).toBeGreaterThan(0);
+    expect(glbContainerLoadCount(scene)).toBe(1);
   });
 
   it("adopts the full GLB container when the file has no clips", async () => {
@@ -1225,6 +1242,7 @@ describe("createPlayMesh", () => {
     expect(mesh!.infiniteDistance).toBe(true);
     expect(mesh!.ignoreCameraMaxZ).toBe(true);
     expect(isPlayHelperMeshKind("skybox")).toBe(false);
+    expect(isPlayHelperMeshKind("rigidbody")).toBe(true);
     binding.liveSlots.add(3);
     applySnapshotToScene(scene, binding, {
       frameId: 1,
@@ -1242,5 +1260,68 @@ describe("createPlayMesh", () => {
       ],
     });
     expect(mesh!.isVisible).toBe(true);
+  });
+
+  it("creates a 3D Text mesh for meshKind text3d", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "text3d",
+      text3d: {
+        text: "Hi",
+        size: 1,
+        depth: 0.1,
+        color: [1, 0, 0],
+        fontAssetGuid: null,
+      },
+    });
+    const mesh = scene.getMeshByName("actor-4") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect((mesh!.metadata as { text3d?: boolean }).text3d).toBe(true);
+    expect(isPlayHelperMeshKind("text3d")).toBe(false);
+  });
+
+  it("hides a RigidBody Play helper instead of drawing a white cube", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "rigidbody",
+    });
+    const mesh = scene.getMeshByName("actor-4") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect(mesh!.isVisible).toBe(false);
+    expect(mesh!.isPickable).toBe(false);
+    expect(
+      (mesh!.metadata as { playHelperVisual?: boolean }).playHelperVisual,
+    ).toBe(true);
+  });
+
+  it("draws Play collider dashes when meshKind encodes a collider shape", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "collider:{\"kind\":\"box\",\"halfExtents\":{\"x\":0.5,\"y\":0.5,\"z\":0.5}}",
+    });
+    const mesh = scene.getMeshByName("actor-5") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect(
+      (mesh!.metadata as { editorColliderVisual?: boolean }).editorColliderVisual,
+    ).toBe(true);
+    expect(mesh!.getChildMeshes().length).toBeGreaterThan(0);
   });
 });

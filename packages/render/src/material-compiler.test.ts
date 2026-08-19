@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Material, NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -84,6 +84,61 @@ describe("material compiler", () => {
     if (!result.ok) return;
     disposers.push(() => result.material.dispose());
     expect(result.material.getClassName()).toBe("NodeMaterial");
+  });
+
+  it("applies opaque blendMode as MATERIAL_OPAQUE after build, including unlit", () => {
+    const scene = host();
+    const pbr = compileMaterialPlan(planFor(createDefaultMaterialDocument()), {
+      scene,
+      name: "opaque-pbr",
+    });
+    expect(pbr.ok).toBe(true);
+    if (!pbr.ok) return;
+    disposers.push(() => pbr.material.dispose());
+    expect(pbr.material.transparencyMode).toBe(Material.MATERIAL_OPAQUE);
+
+    const unlitDoc = createDefaultMaterialDocument();
+    unlitDoc.shadingModel = "unlit";
+    const unlit = compileMaterialPlan(planFor(unlitDoc), {
+      scene,
+      name: "opaque-unlit",
+    });
+    expect(unlit.ok).toBe(true);
+    if (!unlit.ok) return;
+    disposers.push(() => unlit.material.dispose());
+    expect(unlit.material.transparencyMode).toBe(Material.MATERIAL_OPAQUE);
+  });
+
+  it("applies masked and translucent blendMode plus two-sided culling", () => {
+    const scene = host();
+    const maskedDoc = createDefaultMaterialDocument();
+    maskedDoc.blendMode = "masked";
+    maskedDoc.alphaCutoff = 0.4;
+    const masked = compileMaterialPlan(planFor(maskedDoc), {
+      scene,
+      name: "masked",
+    });
+    expect(masked.ok).toBe(true);
+    if (!masked.ok) return;
+    disposers.push(() => masked.material.dispose());
+    expect(masked.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    expect(
+      (masked.material as unknown as { alphaCutOff: number }).alphaCutOff,
+    ).toBeCloseTo(0.4);
+
+    const glassDoc = createDefaultMaterialDocument();
+    glassDoc.blendMode = "translucent";
+    glassDoc.twoSided = true;
+    const glass = compileMaterialPlan(planFor(glassDoc), {
+      scene,
+      name: "glass",
+    });
+    expect(glass.ok).toBe(true);
+    if (!glass.ok) return;
+    disposers.push(() => glass.material.dispose());
+    expect(glass.material.transparencyMode).toBe(Material.MATERIAL_ALPHABLEND);
+    expect(glass.material.needDepthPrePass).toBe(true);
+    expect(glass.material.backFaceCulling).toBe(false);
   });
 
   it("compiles a particle-domain graph in Particle mode for createEffectForParticles", () => {

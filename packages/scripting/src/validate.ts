@@ -1,5 +1,6 @@
 import type { GraphNode, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
+import { compiledNodeIds } from "./compiled-nodes";
 import { diagnostic, type Diagnostic } from "./diagnostics";
 import {
   listValidationRules,
@@ -51,13 +52,20 @@ function buildAdjacency(graph: LogicGraph): {
   return { execOut, dataDeps };
 }
 
-function hasCycle(adj: Map<string, string[]>): string | null {
+function hasCycle(
+  adj: Map<string, string[]>,
+  compiled: ReadonlySet<string>,
+): string | null {
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const stack: string[] = [];
 
   function dfs(id: string): string | null {
-    if (visiting.has(id)) return id;
+    if (visiting.has(id)) {
+      const start = stack.indexOf(id);
+      const cycle = start >= 0 ? stack.slice(start) : [id];
+      return cycle.find((nodeId) => compiled.has(nodeId)) ?? null;
+    }
     if (visited.has(id)) return null;
     visiting.add(id);
     stack.push(id);
@@ -71,7 +79,7 @@ function hasCycle(adj: Map<string, string[]>): string | null {
     return null;
   }
 
-  for (const id of adj.keys()) {
+  for (const id of compiled) {
     const hit = dfs(id);
     if (hit) return hit;
   }
@@ -81,11 +89,12 @@ function hasCycle(adj: Map<string, string[]>): string | null {
 function validateStructural(
   graph: LogicGraph,
   ctx: TypeContext,
+  compiled: ReadonlySet<string>,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const { execOut, dataDeps } = buildAdjacency(graph);
 
-  const execCycle = hasCycle(execOut);
+  const execCycle = hasCycle(execOut, compiled);
   if (execCycle) {
     out.push(
       diagnostic({
@@ -98,7 +107,7 @@ function validateStructural(
     );
   }
 
-  const dataCycle = hasCycle(dataDeps);
+  const dataCycle = hasCycle(dataDeps, compiled);
   if (dataCycle) {
     out.push(
       diagnostic({
@@ -758,6 +767,30 @@ function validateTypeRefs(
   return out;
 }
 
+const EDGE_DIAGNOSTIC_CODES = new Set([
+  "type.mismatch",
+  "pin.direction",
+  "pin.duplicate_connection",
+  "ref.missing_pin",
+  "ref.missing_node",
+  "type.wildcard_group",
+]);
+
+function keepCompiledNodeDiagnostics(
+  diagnostics: readonly Diagnostic[],
+  compiled: ReadonlySet<string>,
+): Diagnostic[] {
+  return diagnostics.filter((d) => {
+    if (!d.nodeId || compiled.has(d.nodeId)) return true;
+    const related = d.relatedNodeId;
+    return (
+      !!related &&
+      compiled.has(related) &&
+      EDGE_DIAGNOSTIC_CODES.has(d.code)
+    );
+  });
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -765,11 +798,14 @@ export function validateGraphs(
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   for (const graph of graphs) {
-    diagnostics.push(...validateStructural(graph, ctx));
-    diagnostics.push(...validatePinTyping(graph, ctx));
-    diagnostics.push(...validateExecuteJavaScript(graph, ctx));
-    diagnostics.push(...validateMemberBindings(graph, ctx));
-    diagnostics.push(...validateTypeRefs(graph, ctx));
+    const compiled = compiledNodeIds(graph);
+    const keep = (diags: readonly Diagnostic[]) =>
+      keepCompiledNodeDiagnostics(diags, compiled);
+    diagnostics.push(...keep(validateStructural(graph, ctx, compiled)));
+    diagnostics.push(...keep(validatePinTyping(graph, ctx)));
+    diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
+    diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
+    diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
   }
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   for (const rule of listValidationRules()) {

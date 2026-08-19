@@ -45,7 +45,9 @@ export {
   defaultWidgetLayout,
   defaultWidgetStyle,
   pinLayout,
+  resizeGridTracks,
   stretchLayout,
+  widgetRuntimeMeta,
 } from "./types";
 export {
   SAFE_AREA_CONTROL_ID,
@@ -102,6 +104,8 @@ export {
   applyAuthoringFields,
   applyWidgetResize,
   authoringFieldsFromLayout,
+  convertLayoutSize,
+  convertSizeValue,
   defaultAddLayout,
   layoutFromRect,
   matchAnchorPreset,

@@ -290,6 +290,32 @@ describe("addClassMember", () => {
     });
   });
 
+  it("stamps Array/Map container onto spawned and patched Get nodes", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Hits", () => "var-1", {
+      typeId: "rotator",
+      container: "array",
+    });
+    graph = addVariableAccessNode(graph, graph.members![0]!, "get", {
+      classId: "Hero",
+      idFactory: () => "n-get",
+    });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      typeId: "rotator",
+      container: "array",
+    });
+    graph = patchClassMember(graph, "var-1", {
+      container: "map",
+      keyTypeId: "string",
+    });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      container: "map",
+      keyTypeId: "string",
+    });
+    graph = patchClassMember(graph, "var-1", { container: "single" });
+    expect(graph.nodes[0]?.data.container).toBeUndefined();
+    expect(graph.nodes[0]?.data.keyTypeId).toBeUndefined();
+  });
+
   it("places Get nodes at an explicit graph position", () => {
     let graph = addClassMember(emptyGraph(), "variable", "Health", () => "var-1");
     graph = addVariableAccessNode(graph, graph.members![0]!, "get", {

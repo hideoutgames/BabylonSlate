@@ -1,7 +1,13 @@
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
+import {
+  createContentBrowserAsset,
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+} from "./open-test-project";
+import { readUiHostStats } from "./page-failures";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import {
@@ -30,17 +36,18 @@ async function createAsset(
     | "MaterialFunction",
   name: string,
 ): Promise<void> {
-  await showContentBrowser(page);
-  const assetsRoot = page.getByTestId("tree-row-assets");
-  if ((await assetsRoot.count()) > 0) {
-    await assetsRoot.click();
-  }
-  await page.getByTestId("content-browser-new-asset").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId(`new-asset-type-${type}`).click();
-  await page.getByTestId("new-asset-name").fill(name);
-  await page.getByTestId("content-browser-new-asset-create").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+  await createContentBrowserAsset(page, type, name);
+}
+
+async function addNestedUserInterface(
+  page: Page,
+  workspace: Locator,
+  assetName: string,
+): Promise<void> {
+  await workspace.getByTestId("ui-add-widget").click();
+  await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+  await page.getByTestId("ui-widget-catalog-search").fill(assetName);
+  await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
 }
 
 async function openWindowsMenu(page: Page): Promise<void> {
@@ -273,10 +280,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     const button = page.locator('[data-testid^="ui-widget-button-"]');
     await expect(button).toBeVisible();
-    // Add Widget selects the control. 44px screen-space handles then cover a
-    // 36px-tall Button on a fitted 1920 canvas, so a center press would resize.
-    await page.getByTestId("ui-widget-canvas").click({ position: { x: 8, y: 8 } });
-    await expect(page.getByTestId("ui-resize-se")).toHaveCount(0);
+    await expect(page.getByTestId("ui-resize-se")).toBeVisible();
     const before = await button.getAttribute("data-gui-x");
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
@@ -303,6 +307,54 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("property-left")).toBeVisible();
     await expect(page.getByTestId("property-top")).toBeVisible();
     await expect(page.getByTestId("property-width")).toBeVisible();
+  });
+
+  test("UserInterface designer resizes a selected Button without deselecting", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("ui-design-viewport")).toBeVisible();
+    await page.getByTestId("ui-add-widget").click();
+    await page.getByTestId("ui-add-widget-Button").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
+    const button = page.locator('[data-testid^="ui-widget-button-"]');
+    await expect(button).toBeVisible();
+    await expect(page.getByTestId("ui-resize-se")).toBeVisible();
+    await expect
+      .poll(async () => (await readUiHostStats(page)).apply, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+
+    const widthBefore = await button.getAttribute("data-gui-width");
+    const applyBefore = (await readUiHostStats(page)).apply;
+    const handle = page.getByTestId("ui-resize-se");
+    const handleBox = await handle.boundingBox();
+    expect(handleBox).not.toBeNull();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2 + 48,
+      handleBox!.y + handleBox!.height / 2 + 24,
+      { steps: 8 },
+    );
+    expect((await readUiHostStats(page)).apply).toBe(applyBefore);
+    await page.mouse.up();
+    await expect
+      .poll(async () => button.getAttribute("data-gui-width"))
+      .not.toBe(widthBefore);
+
+    const widthAfterResize = await button.getAttribute("data-gui-width");
+    const widthField = page.getByTestId("property-width");
+    await expect(widthField).toBeVisible();
+    await widthField.fill("240");
+    await widthField.blur();
+    await expect
+      .poll(async () => button.getAttribute("data-gui-width"))
+      .not.toBe(widthAfterResize);
   });
 
   test("UserInterface designer lists a custom Engine Settings preset", async ({
@@ -1432,13 +1484,21 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "UserInterface", "HUD");
     await createAsset(page, "UserInterface", "Panel");
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-    await page.getByTestId("ui-add-widget").click();
-    const catalog = page.getByTestId("ui-widget-catalog");
-    await expect(catalog).toBeVisible();
-    await expect(catalog.getByText("Panel", { exact: true })).toBeVisible();
-    await expect(catalog.getByText("HUD", { exact: true })).toHaveCount(0);
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    const workspace = page.locator(
+      '[data-testid="document-workspace-ui"]:visible',
+    );
+    await expect(workspace).toBeVisible();
+    await workspace.getByTestId("ui-add-widget").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
+    await expect(
+      page.locator('[data-testid^="ui-add-widget-UserInterface-"]'),
+    ).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("HUD");
+    await expect(
+      page.locator('[data-testid^="ui-add-widget-UserInterface-"]'),
+    ).toHaveCount(0);
   });
 
   test("UserInterface designer paints a nested UserInterface subtree", async ({
@@ -1446,7 +1506,7 @@ test.describe("P9 content systems", () => {
   }) => {
     await openTestProject(page);
     await createAsset(page, "UserInterface", "Panel");
-    await page.locator('[data-asset-path="assets/Panel.ui.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/Panel.ui.babasset");
     const panelWorkspace = page.locator(
       '[data-testid="document-workspace-ui"]:visible',
     );
@@ -1458,17 +1518,16 @@ test.describe("P9 content systems", () => {
     ).toBeVisible();
 
     await createAsset(page, "UserInterface", "HUD");
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
     const hudWorkspace = page.locator(
       '[data-testid="document-workspace-ui"]:visible',
     );
     await expect(hudWorkspace).toBeVisible();
-    await hudWorkspace.getByTestId("ui-add-widget").click();
-    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
-    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
-    await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
+    await addNestedUserInterface(page, hudWorkspace, "Panel");
+    await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     await expect(
-      hudWorkspace.locator('[data-testid^="ui-widget-"][data-testid*="/button-"]'),
+      hudWorkspace.locator('[data-testid^="ui-widget-"][data-kind="Button"]'),
+
     ).toBeVisible();
     await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });

@@ -26,6 +26,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("ColliderComponent");
     expect(ids).toContain("AudioComponent");
     expect(ids).toContain("SkyboxComponent");
+    expect(ids).toContain("Text3DComponent");
     expect(ids).toContain("ParticleComponent");
   });
 
@@ -51,6 +52,7 @@ describe("Add Component catalog", () => {
       "TilemapComponent",
       "LightComponent",
       "SkyboxComponent",
+      "Text3DComponent",
     ]);
     expect(byCategory.get("UI")).toBeUndefined();
     expect(byCategory.get("Animation")).toEqual(["AnimationGraphComponent"]);
@@ -132,6 +134,13 @@ describe("Add Component catalog", () => {
         nz: null,
       },
     });
+    expect(defaultPropertiesFor("Text3DComponent")).toEqual({
+      text: "Text",
+      size: 1,
+      depth: 0.1,
+      color: [1, 1, 1],
+      fontAssetGuid: null,
+    });
   });
 
   it("seeds camera projection from the scene viewport mode", () => {
@@ -158,6 +167,7 @@ describe("Add Component catalog", () => {
       isTrigger: false,
       layer: 1,
       mask: 4294967295,
+      renderInGame: false,
     });
     expect(defaultPropertiesFor("ColliderComponent", "2d").shape).toEqual({
       kind: "box2d",

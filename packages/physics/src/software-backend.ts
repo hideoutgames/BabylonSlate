@@ -1,5 +1,9 @@
 import type { PhysicsBackend } from "./backend";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
+import {
+  isIdentityQuat,
+  rotateQuatVec,
+} from "./collider-bake";
 import type {
   CharacterControllerDesc,
   ColliderDesc,
@@ -49,23 +53,50 @@ function colliderWorldPosition(desc: ColliderDesc, bodyPos: Vec3): Vec3 {
   };
 }
 
+function aabbForCollider(
+  desc: ColliderDesc,
+  bodyPos: Vec3,
+): { min: Vec3; max: Vec3 } {
+  return aabbForShape(
+    desc.shape,
+    colliderWorldPosition(desc, bodyPos),
+    desc.rotation,
+  );
+}
+
 function aabbForShape(
   shape: ColliderShape,
   position: Vec3,
+  rotation?: { x: number; y: number; z: number; w: number },
 ): { min: Vec3; max: Vec3 } {
+  const oriented = rotation && !isIdentityQuat(rotation);
   switch (shape.kind) {
     case "box": {
       const h = shape.halfExtents;
-      return {
-        min: vec(position.x - h.x, position.y - h.y, position.z - h.z),
-        max: vec(position.x + h.x, position.y + h.y, position.z + h.z),
-      };
+      if (!oriented) {
+        return {
+          min: vec(position.x - h.x, position.y - h.y, position.z - h.z),
+          max: vec(position.x + h.x, position.y + h.y, position.z + h.z),
+        };
+      }
+      return aabbFromLocalPoints(
+        position,
+        rotation,
+        boxCorners(h.x, h.y, h.z),
+      );
     }
     case "box2d": {
       const h = shape.halfExtents;
+      if (!oriented) {
+        return {
+          min: vec(position.x - h.x, position.y - h.y, position.z - 0.01),
+          max: vec(position.x + h.x, position.y + h.y, position.z + 0.01),
+        };
+      }
+      const box = aabbFromLocalPoints(position, rotation, boxCorners(h.x, h.y, 0));
       return {
-        min: vec(position.x - h.x, position.y - h.y, position.z - 0.01),
-        max: vec(position.x + h.x, position.y + h.y, position.z + 0.01),
+        min: vec(box.min.x, box.min.y, position.z - 0.01),
+        max: vec(box.max.x, box.max.y, position.z + 0.01),
       };
     }
     case "sphere":
@@ -80,60 +111,87 @@ function aabbForShape(
     case "capsule2d": {
       const r = shape.radius;
       const hh = shape.halfHeight;
+      if (!oriented) {
+        return {
+          min: vec(position.x - r, position.y - hh - r, position.z - r),
+          max: vec(position.x + r, position.y + hh + r, position.z + r),
+        };
+      }
+      const box = aabbFromLocalPoints(position, rotation, [
+        { x: 0, y: -hh, z: 0 },
+        { x: 0, y: hh, z: 0 },
+      ]);
       return {
-        min: vec(position.x - r, position.y - hh - r, position.z - r),
-        max: vec(position.x + r, position.y + hh + r, position.z + r),
+        min: vec(box.min.x - r, box.min.y - r, box.min.z - r),
+        max: vec(box.max.x + r, box.max.y + r, box.max.z + r),
       };
     }
     case "convex":
     case "mesh": {
       const pts = shape.kind === "convex" ? shape.points : shape.vertices;
-      let minX = Infinity;
-      let minY = Infinity;
-      let minZ = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      let maxZ = -Infinity;
-      for (const p of pts) {
-        minX = Math.min(minX, position.x + p.x);
-        minY = Math.min(minY, position.y + p.y);
-        minZ = Math.min(minZ, position.z + p.z);
-        maxX = Math.max(maxX, position.x + p.x);
-        maxY = Math.max(maxY, position.y + p.y);
-        maxZ = Math.max(maxZ, position.z + p.z);
-      }
-      if (!Number.isFinite(minX)) {
-        return { min: { ...position }, max: { ...position } };
-      }
-      return {
-        min: vec(minX, minY, minZ),
-        max: vec(maxX, maxY, maxZ),
-      };
+      return aabbFromLocalPoints(position, oriented ? rotation : undefined, pts);
     }
     case "polygon":
     case "chain": {
-      let minX = Infinity;
-      let minY = Infinity;
-      let maxX = -Infinity;
-      let maxY = -Infinity;
-      for (const p of shape.points) {
-        minX = Math.min(minX, position.x + p.x);
-        minY = Math.min(minY, position.y + p.y);
-        maxX = Math.max(maxX, position.x + p.x);
-        maxY = Math.max(maxY, position.y + p.y);
-      }
-      if (!Number.isFinite(minX)) {
+      const pts = shape.points.map((p) => ({ x: p.x, y: p.y, z: 0 }));
+      const box = aabbFromLocalPoints(
+        position,
+        oriented ? rotation : undefined,
+        pts,
+      );
+      if (!Number.isFinite(box.min.x)) {
         return {
           min: vec(position.x, position.y, position.z - 0.01),
           max: vec(position.x, position.y, position.z + 0.01),
         };
       }
       return {
-        min: vec(minX, minY, position.z - 0.01),
-        max: vec(maxX, maxY, position.z + 0.01),
+        min: vec(box.min.x, box.min.y, position.z - 0.01),
+        max: vec(box.max.x, box.max.y, position.z + 0.01),
       };
     }
   }
+}
+
+function boxCorners(hx: number, hy: number, hz: number): Vec3[] {
+  const points: Vec3[] = [];
+  for (const x of [-hx, hx]) {
+    for (const y of [-hy, hy]) {
+      for (const z of [-hz, hz]) {
+        points.push({ x, y, z });
+      }
+    }
+  }
+  return points;
+}
+
+function aabbFromLocalPoints(
+  position: Vec3,
+  rotation: { x: number; y: number; z: number; w: number } | undefined,
+  points: readonly Vec3[],
+): { min: Vec3; max: Vec3 } {
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (const p of points) {
+    const rotated = rotation ? rotateQuatVec(rotation, p) : p;
+    const x = position.x + rotated.x;
+    const y = position.y + rotated.y;
+    const z = position.z + rotated.z;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+    maxZ = Math.max(maxZ, z);
+  }
+  if (!Number.isFinite(minX)) {
+    return { min: { ...position }, max: { ...position } };
+  }
+  return { min: vec(minX, minY, minZ), max: vec(maxX, maxY, maxZ) };
 }
 
 function rayAabb(
@@ -309,17 +367,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
       if (collider.desc.isTrigger) continue;
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body || body.desc.motionType !== "dynamic") continue;
-      const a = aabbForShape(
-        collider.desc.shape,
-        colliderWorldPosition(collider.desc, body.transform.position),
-      );
+      const a = aabbForCollider(collider.desc, body.transform.position);
       for (const other of this.colliders.values()) {
         if (other.desc.id === collider.desc.id || other.desc.isTrigger) continue;
         const otherBody = this.bodies.get(other.desc.bodyId);
         if (!otherBody || otherBody.desc.motionType === "dynamic") continue;
-        const b = aabbForShape(
-          other.desc.shape,
-          colliderWorldPosition(other.desc, otherBody.transform.position),
+        const b = aabbForCollider(
+          other.desc,
+          otherBody.transform.position,
         );
         if (!aabbOverlap(a, b)) continue;
         const overlapY = Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y);
@@ -346,9 +401,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
-      const box = aabbForShape(
-        collider.desc.shape,
-        colliderWorldPosition(collider.desc, body.transform.position),
+      const box = aabbForCollider(
+        collider.desc,
+        body.transform.position,
       );
       const t = rayAabb(start, dir, box.min, box.max);
       if (t === null || t < 0 || t > 1 || t >= bestT) continue;
@@ -376,9 +431,9 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     for (const collider of this.colliders.values()) {
       const body = this.bodies.get(collider.desc.bodyId);
       if (!body) continue;
-      const box = aabbForShape(
-        collider.desc.shape,
-        colliderWorldPosition(collider.desc, body.transform.position),
+      const box = aabbForCollider(
+        collider.desc,
+        body.transform.position,
       );
       const cx = Math.max(box.min.x, Math.min(center.x, box.max.x));
       const cy = Math.max(box.min.y, Math.min(center.y, box.max.y));
@@ -450,13 +505,13 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         (c) => c.desc.bodyId === body.desc.id,
       );
       if (!selfCollider) continue;
-      const a = aabbForShape(
-        selfCollider.desc.shape,
-        colliderWorldPosition(selfCollider.desc, body.transform.position),
+      const a = aabbForCollider(
+        selfCollider.desc,
+        body.transform.position,
       );
-      const b = aabbForShape(
-        collider.desc.shape,
-        colliderWorldPosition(collider.desc, other.transform.position),
+      const b = aabbForCollider(
+        collider.desc,
+        other.transform.position,
       );
       if (!aabbOverlap(a, b)) continue;
       const overlapX =

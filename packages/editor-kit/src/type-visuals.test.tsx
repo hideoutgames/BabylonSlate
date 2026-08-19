@@ -8,6 +8,7 @@ import {
   PanelTopIcon,
   PersonStandingIcon,
   PuzzleIcon,
+  TypeIcon,
   Volume2Icon,
   WorkflowIcon,
 } from "lucide-react";
@@ -276,6 +277,11 @@ describe("resolveTypeVisual", () => {
     expect(skybox.iconKey).toBe("SkyboxComponent");
     expect(skybox.icon).toBe(CloudIcon);
     expect(skybox.colorVar).toBe(mesh.colorVar);
+    const text3d = resolveTypeVisual({ classId: "Text3DComponent" });
+    expect(text3d.iconKey).toBe("Text3DComponent");
+    expect(text3d.icon).toBe(TypeIcon);
+    expect(text3d.colorVar).toBe(mesh.colorVar);
+    expect(engineParentOf("Text3DComponent")).toBe("ActorComponent");
     expect(
       resolveTypeVisual({ classId: "MeshComponent", family: "class" }).colorVar,
     ).toBe("var(--asset-animation)");

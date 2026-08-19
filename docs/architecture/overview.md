@@ -13,7 +13,7 @@ apps/desktop/         Electron main + preload; Node VFS + userData for the edito
 apps/docs/            VitePress site; content is the markdown in `docs/`
 engine-logos/         Slate wordmark and icon (dark/light ink); copied into editor and docs `public/branding/`
 engine-content/       Engine default skybox faces (`skybox/px.png` … `nz.png`, copied to editor/player public); Kenney packs are present, not wired
-packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue (P5)
+packages/core/        GUIDs, Result, math, seeded RNG, schemas, command bus, storage port, formatValue, print HUD helper (P5)
 packages/vfs/         Storage adapters (OPFS, Capacitor, Electron IPC, Node), platform detection, app settings, SecretStore, nativeHttp
 packages/assets/      Containers, asset registry, search index, importers, encode queue
 packages/exporter/    Headless game packer: export closure, `.babpack`, zip (P14)

@@ -57,12 +57,14 @@ describe("listDockWindows", () => {
       "scene-outliner",
       "scene-details",
       "output-log",
+      "compiler-results",
     ]);
     expect(windows.map((entry) => entry.title)).toEqual([
       "Viewport",
       "Outliner",
       "Details",
       "Output Log",
+      "Compiler Results",
     ]);
     expect(windows.some((entry) => entry.id === "mini-asset-browser")).toBe(
       false,
@@ -85,6 +87,11 @@ describe("listDockWindows", () => {
       referencePanelId: "viewport",
       direction: "below",
       initialHeight: 160,
+    });
+    const results = windows.find((entry) => entry.id === "compiler-results");
+    expect(results?.defaultPosition).toEqual({
+      referencePanelId: "output-log",
+      direction: "within",
     });
   });
 

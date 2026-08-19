@@ -17,6 +17,10 @@ export {
   AUDIO_REVERB_EXPORT_GUID_PREFIX,
   audioReverbExportGuid,
   sceneGuidFromAudioReverbExport,
+  FONT_FACETYPE_EXPORT_TYPE,
+  FONT_FACETYPE_EXPORT_GUID_PREFIX,
+  fontFacetypeExportGuid,
+  fontGuidFromFontFacetypeExport,
 } from "./constants";
 export { collectExportClosure } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";

@@ -43,3 +43,19 @@ export {
   type RigidBodyProperties,
   type ColliderProperties,
 } from "./component-props";
+export {
+  bakeColliderLocal,
+  scaleColliderShape,
+  rotateQuatVec,
+  multiplyQuat,
+  quatToPlanarAngle,
+  identityQuat,
+  isIdentityQuat,
+  type ColliderLocalTransform,
+} from "./collider-bake";
+export {
+  physicsActorDiagnostics,
+  physicsActorsDiagnostics,
+  type PhysicsActorLike,
+  type PhysicsPairingWarning,
+} from "./pairing";

@@ -163,6 +163,24 @@ describe("isDevelopmentOnlyNode", () => {
       ),
     ).toBe(true);
   });
+
+  it("treats catalog-registered Print String as development-only by default", () => {
+    const extra = new NodeRegistry();
+    extra.register({
+      id: "debug.printString",
+      title: "Print String",
+      category: "debug",
+      developmentOnlyByDefault: true,
+      pins: () => [],
+      codegen: () => {},
+    });
+    expect(isDevelopmentOnlyNode(node("debug.printString", "p"))).toBe(true);
+    expect(
+      isDevelopmentOnlyNode(
+        node("debug.printString", "p", { developmentOnly: false }),
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("compileGraph stripDevelopmentOnly", () => {

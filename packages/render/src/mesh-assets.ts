@@ -25,6 +25,8 @@ export interface MeshAssetContext {
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */
   retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   pixelsPerUnit?: number;
+  /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
+  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
 }
 
 function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
@@ -61,8 +63,23 @@ export function meshAssetFingerprint(
     `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
     `tilesets:${sortedMapKeys(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
+    `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
     `models:${byteMapFingerprint(assets.modelBytes)}`,
   ].join("|");
+}
+
+export function meshAssetFingerprintWithoutModels(
+  assets: MeshAssetContext | undefined,
+): string {
+  return meshAssetFingerprint({
+    pixelsPerUnit: assets?.pixelsPerUnit,
+    spritePayloads: assets?.spritePayloads,
+    spriteAnimations: assets?.spriteAnimations,
+    tilemaps: assets?.tilemaps,
+    tilesets: assets?.tilesets,
+    textureBytes: assets?.textureBytes,
+    modelBytes: undefined,
+  });
 }
 
 export function modelSlotFingerprint(

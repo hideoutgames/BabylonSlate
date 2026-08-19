@@ -109,6 +109,7 @@ export interface PlayOverlayProps {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -175,6 +176,7 @@ export function PlayOverlay({
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
+  fontFacetypeBytes,
   modelBytes,
   modelPayloads,
   modelClipAnimationGuids,
@@ -269,6 +271,8 @@ export function PlayOverlay({
   tilesetPayloadsRef.current = tilesetPayloads;
   const textureBytesRef = useRef(textureBytes);
   textureBytesRef.current = textureBytes;
+  const fontFacetypeBytesRef = useRef(fontFacetypeBytes);
+  fontFacetypeBytesRef.current = fontFacetypeBytes;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
@@ -394,6 +398,7 @@ export function PlayOverlay({
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
+      fontFacetypeBytes: fontFacetypeBytesRef.current,
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,

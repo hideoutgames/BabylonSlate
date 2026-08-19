@@ -8,6 +8,26 @@ describe("vector nodes", () => {
     expect(vectorNodes[0]?.category).toBeTruthy();
   });
 
+  it("registers subtract, multiply, divide, dot, cross, length, and lerp", () => {
+    expect(vectorNodes.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining([
+        "vector.sub3",
+        "vector.mul3",
+        "vector.div3",
+        "vector.dot3",
+        "vector.cross3",
+        "vector.length3",
+        "vector.normalize3",
+        "vector.distance3",
+        "vector.lerp3",
+        "vector.add2",
+        "vector.scale2",
+        "vector.add4",
+        "vector.scale4",
+      ]),
+    );
+  });
+
   it("registers Break Vector2 and Break Vector4 beside the Make nodes", () => {
     expect(vectorNodes.map((entry) => entry.id)).toEqual(
       expect.arrayContaining([

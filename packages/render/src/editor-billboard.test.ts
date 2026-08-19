@@ -31,6 +31,7 @@ describe("editor billboard", () => {
     expect(parseEditorBillboardIcon("billboard:camera")).toBe("camera");
     expect(parseEditorBillboardIcon("billboard:audio")).toBe("audio");
     expect(parseEditorBillboardIcon("billboard:particle")).toBe("particle");
+    expect(parseEditorBillboardIcon("billboard:rigidbody")).toBe("rigidbody");
     expect(parseEditorBillboardIcon("billboard:nope")).toBeNull();
     expect(parseEditorBillboardIcon("box")).toBeNull();
     expect(parseEditorBillboardIcon(null)).toBeNull();

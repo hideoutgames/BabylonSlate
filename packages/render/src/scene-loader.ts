@@ -4,10 +4,17 @@ import {
   identitySerializedTransform,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText3DProperties,
   SKYBOX_FACE_KEYS,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
-import { createMeshFromModelBytes } from "./model-mesh";
+import {
+  beginSlotModelAnimLoad,
+  createModelActorRoot,
+  hideModelPlaceholder,
+  isEditorModelPlaceholder,
+} from "./glb-anim";
+import { isGltfModelBytes } from "./model-mesh";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import {
   applyEditorBillboardFromActor,
@@ -19,6 +26,13 @@ import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
+import { createColliderVisualMesh, isColliderVisualMesh } from "./collider-visual";
+import { parseColliderProperties } from "@babylonslate/physics";
+import { createText3DMesh } from "./text3d-mesh";
+import {
+  applyWorldVisualGroup,
+  RENDERING_GROUP,
+} from "./sorting";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -132,6 +146,30 @@ function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
   return root;
 }
 
+function colliderWorldKindFromShape(value: unknown): "3d" | "2d" | null {
+  if (!value || typeof value !== "object") return null;
+  const kind = (value as { kind?: unknown }).kind;
+  if (
+    kind === "box2d" ||
+    kind === "circle" ||
+    kind === "capsule2d" ||
+    kind === "polygon" ||
+    kind === "chain"
+  ) {
+    return "2d";
+  }
+  if (
+    kind === "box" ||
+    kind === "sphere" ||
+    kind === "capsule" ||
+    kind === "convex" ||
+    kind === "mesh"
+  ) {
+    return "3d";
+  }
+  return null;
+}
+
 function stringProp(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -144,7 +182,10 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "CameraComponent",
   "AudioComponent",
   "SkyboxComponent",
+  "Text3DComponent",
   "ParticleComponent",
+  "RigidBodyComponent",
+  "ColliderComponent",
 ]);
 
 function visualComponentsOf(actor: SerializedActor): SerializedComponent[] {
@@ -176,7 +217,8 @@ function isBillboardComponent(component: SerializedComponent): boolean {
     component.classId === "LightComponent" ||
     component.classId === "CameraComponent" ||
     component.classId === "AudioComponent" ||
-    component.classId === "ParticleComponent"
+    component.classId === "ParticleComponent" ||
+    component.classId === "RigidBodyComponent"
   );
 }
 
@@ -185,7 +227,8 @@ export function needsOriginRoot(actor: SerializedActor): boolean {
   return (
     visuals.length > 1 ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
-    visuals.some(isBillboardComponent)
+    visuals.some(isBillboardComponent) ||
+    visuals.some((component) => component.classId === "ColliderComponent")
   );
 }
 
@@ -208,8 +251,18 @@ function componentVisualKind(component: SerializedComponent): string {
     const faces = parseSkyboxFaces(component.properties.faces);
     return `skybox:${size}:${SKYBOX_FACE_KEYS.map((key) => faces[key] ?? "").join(",")}`;
   }
+  if (component.classId === "Text3DComponent") {
+    const parsed = parseText3DProperties(component.properties);
+    return `text3d:${parsed.text}:${parsed.size}:${parsed.depth}:${parsed.color.join(",")}:${parsed.fontAssetGuid ?? ""}`;
+  }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
+  }
+  if (component.classId === "RigidBodyComponent") {
+    return editorBillboardKind("rigidbody");
+  }
+  if (component.classId === "ColliderComponent") {
+    return `collider:${JSON.stringify(component.properties.shape ?? {})}`;
   }
   return component.classId;
 }
@@ -301,10 +354,19 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
     (component) => component.classId === "SkyboxComponent",
   );
   if (skyboxComponent) return componentVisualKind(skyboxComponent);
+  const text3dComponent = actor.components.find(
+    (component) => component.classId === "Text3DComponent",
+  );
+  if (text3dComponent) return componentVisualKind(text3dComponent);
   if (
     actor.components.some((component) => component.classId === "ParticleComponent")
   ) {
     return editorBillboardKind("particle");
+  }
+  if (
+    actor.components.some((component) => component.classId === "RigidBodyComponent")
+  ) {
+    return editorBillboardKind("rigidbody");
   }
   return null;
 }
@@ -343,17 +405,27 @@ export function createMeshForComponent(
       assets,
     );
   }
+  if (component.classId === "Text3DComponent") {
+    return createText3DMesh(scene, name, component.properties, assets);
+  }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
   }
-  const assetGuid = stringProp(component.properties.assetGuid);
-  if (assetGuid && assets?.modelBytes?.has(assetGuid)) {
-    const loaded = createMeshFromModelBytes(
+  if (component.classId === "RigidBodyComponent") {
+    return createEditorBillboard(scene, name, "rigidbody");
+  }
+  if (component.classId === "ColliderComponent") {
+    const world =
+      colliderWorldKindFromShape(component.properties.shape) ?? "3d";
+    return createColliderVisualMesh(
       scene,
       name,
-      assets.modelBytes.get(assetGuid)!,
+      parseColliderProperties(component.properties, world).shape,
     );
-    if (loaded) return loaded;
+  }
+  const assetGuid = stringProp(component.properties.assetGuid);
+  if (assetGuid) {
+    return createModelActorRoot(scene, name);
   }
   const meshKind =
     typeof component.properties.meshKind === "string"
@@ -377,6 +449,11 @@ function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
   root.isVisible = actor.visible;
   root.isPickable = !actor.locked;
   return root;
+}
+
+function visualIsPickable(mesh: Mesh, locked: boolean): boolean {
+  if (isSkyboxMesh(mesh) || isColliderVisualMesh(mesh)) return false;
+  return !locked;
 }
 
 function parentVisualMeshId(
@@ -416,7 +493,7 @@ function createActorOriginHierarchy(
       component.transform ?? identitySerializedTransform(),
     );
     mesh.isVisible = actor.visible;
-    mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
+    mesh.isPickable = visualIsPickable(mesh, actor.locked);
     meshes.set(component.id, mesh);
   }
   for (const component of visuals) {
@@ -450,6 +527,9 @@ export function createActorMesh(
   const skyboxComponent = actor.components.find(
     (component) => component.classId === "SkyboxComponent",
   );
+  const text3dComponent = actor.components.find(
+    (component) => component.classId === "Text3DComponent",
+  );
   if (!meshComponent && spriteComponent) {
     return createSpriteComponentMesh(scene, name, spriteComponent, assets);
   }
@@ -459,14 +539,18 @@ export function createActorMesh(
   if (!meshComponent && !spriteComponent && !tilemapComponent && skyboxComponent) {
     return createMeshForComponent(scene, name, actor, skyboxComponent, assets);
   }
+  if (
+    !meshComponent &&
+    !spriteComponent &&
+    !tilemapComponent &&
+    !skyboxComponent &&
+    text3dComponent
+  ) {
+    return createMeshForComponent(scene, name, actor, text3dComponent, assets);
+  }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
-  if (assetGuid && assets?.modelBytes?.has(assetGuid)) {
-    const loaded = createMeshFromModelBytes(
-      scene,
-      name,
-      assets.modelBytes.get(assetGuid)!,
-    );
-    if (loaded) return loaded;
+  if (assetGuid) {
+    return createModelActorRoot(scene, name);
   }
   const icon = parseEditorBillboardIcon(editorMeshKindOf(actor));
   if (icon) {
@@ -513,8 +597,21 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   if (origin) {
     mesh.visibility = 0;
   }
+  applyWorldVisualGroup(mesh, actor);
+  if (isSkyboxMesh(mesh)) {
+    mesh.renderingGroupId = RENDERING_GROUP.background;
+  }
+  if (isEditorModelPlaceholder(mesh)) {
+    hideModelPlaceholder(mesh);
+    for (const child of mesh.getChildMeshes()) {
+      if (!(child instanceof Mesh)) continue;
+      child.isVisible = actor.visible;
+      child.isPickable = visualIsPickable(child, actor.locked);
+    }
+    return;
+  }
   mesh.isVisible = actor.visible;
-  mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
+  mesh.isPickable = visualIsPickable(mesh, actor.locked);
   if (!origin) return;
   for (const child of childMeshesOf(mesh)) {
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) continue;
@@ -523,7 +620,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     );
     if (afterPipe.includes(":")) continue;
     child.isVisible = actor.visible;
-    child.isPickable = isSkyboxMesh(child) ? false : !actor.locked;
+    child.isPickable = visualIsPickable(child, actor.locked);
   }
 }
 
@@ -571,10 +668,36 @@ export function applySceneToBabylonScene(
   clearSceneMeshes(scene);
 
   const meshes = new Map<string, Mesh>();
+  const loadBinding = {
+    slotAnimEpoch: new Map<number, number>(),
+    slotAnimationGroups: new Map(),
+    slotAnimLoads: new Map<number, Promise<void>>(),
+    modelBytes: assets?.modelBytes,
+    modelPayloads: assets?.modelPayloads,
+    modelClipAnimationGuids: assets?.modelClipAnimationGuids,
+    retargetAnimationLoads: assets?.retargetAnimationLoads,
+  };
+  let loadSlot = 0;
   for (const actor of sceneData.actors) {
     const mesh = createActorMesh(scene, actor, assets);
     applyActorTransform(mesh, actor);
     meshes.set(actor.id, mesh);
+    const guid = actor.components.find(
+      (component) => component.classId === "MeshComponent",
+    )?.properties.assetGuid;
+    const bytes =
+      typeof guid === "string" ? assets?.modelBytes?.get(guid) : undefined;
+    if (typeof guid === "string" && bytes && isGltfModelBytes(bytes)) {
+      void beginSlotModelAnimLoad(
+        scene,
+        loadBinding,
+        ++loadSlot,
+        guid,
+        bytes,
+        mesh,
+        () => applyActorTransform(mesh, actor),
+      );
+    }
   }
 
   for (const actor of sceneData.actors) {

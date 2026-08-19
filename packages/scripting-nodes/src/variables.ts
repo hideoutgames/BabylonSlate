@@ -3,11 +3,32 @@ import {
   type NodeDefinition,
   EXEC,
   objectRef,
+  pinTypeForVariable,
 } from "@babylonslate/scripting";
-import {
-  localVariableIdent,
-  pinTypeForMember,
-} from "./member-pins";
+import { localVariableIdent } from "./member-pins";
+
+function variablePinType(properties: Record<string, unknown>) {
+  return pinTypeForVariable({
+    typeId:
+      typeof properties.typeId === "string" ? properties.typeId : "float",
+    typeClassId:
+      typeof properties.typeClassId === "string"
+        ? properties.typeClassId
+        : undefined,
+    container:
+      typeof properties.container === "string"
+        ? properties.container
+        : undefined,
+    keyTypeId:
+      typeof properties.keyTypeId === "string"
+        ? properties.keyTypeId
+        : undefined,
+    keyTypeClassId:
+      typeof properties.keyTypeClassId === "string"
+        ? properties.keyTypeClassId
+        : undefined,
+  });
+}
 
 function variableNameOf(properties: Record<string, unknown>): string {
   return typeof properties.variableName === "string" &&
@@ -70,12 +91,7 @@ export const variableNodes: NodeDefinition[] = [
           "value",
           name,
           "out",
-          pinTypeForMember(
-            typeof properties.typeId === "string" ? properties.typeId : "float",
-            typeof properties.typeClassId === "string"
-              ? properties.typeClassId
-              : undefined,
-          ),
+          variablePinType(properties),
         ),
       ];
     },
@@ -94,12 +110,7 @@ export const variableNodes: NodeDefinition[] = [
     category: "variables",
     pins: (properties) => {
       const name = variableNameOf(properties);
-      const type = pinTypeForMember(
-        typeof properties.typeId === "string" ? properties.typeId : "float",
-        typeof properties.typeClassId === "string"
-          ? properties.typeClassId
-          : undefined,
-      );
+      const type = variablePinType(properties);
       return [
         pin("execIn", "exec", "in", EXEC),
         pin("execOut", "then", "out", EXEC),

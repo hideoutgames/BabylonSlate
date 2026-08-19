@@ -25,10 +25,12 @@ import {
   TWO_D_BETA,
 } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { glbContainerLoadCount } from "./glb-anim";
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import {
   createEditorGrid,
+  GRID_MESH_NAME,
   gridCoverageWorld,
   gridEdgeFadeAlpha,
   gridEdgeFadeRange,
@@ -50,6 +52,7 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { RENDERING_GROUP } from "./sorting";
 
 function kenneyMannequinGlb(): Uint8Array {
   const dir = join(
@@ -785,6 +788,66 @@ describe("EditorSceneSync", () => {
     expect(before!.isDisposed()).toBe(true);
   });
 
+  it("uses an empty named root for a Model instead of baking the first primitive", () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    const root = sync.meshForActor("a");
+    expect(root?.name).toBe(editorMeshName("a"));
+    expect(root?.getTotalVertices()).toBe(0);
+    expect(root?.isPickable).toBe(false);
+    expect(root?.isVisible).toBe(false);
+  });
+
+  it("keeps the actor root when model bytes arrive after the first apply", async () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    const root = sync.meshForActor("a");
+    expect(root?.getTotalVertices()).toBe(0);
+    expect(root?.isDisposed()).toBe(false);
+
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    expect(sync.meshForActor("a")).toBe(root);
+    expect(root!.isDisposed()).toBe(false);
+    await vi.waitFor(() => {
+      expect(visualMeshes(root!).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("loads a Model guid once for two actors on the same scene", async () => {
+    const { scene } = createHandle();
+    const bytes = encodeTriangleGlb();
+    const meshA = createMeshComponent("c1", "box");
+    meshA.properties.assetGuid = "shared-model";
+    const meshB = createMeshComponent("c1", "box");
+    meshB.properties.assetGuid = "shared-model";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["shared-model", bytes]]),
+    });
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [meshA] }),
+        createActor("b", "B", { components: [meshB] }),
+      ]),
+    );
+    await vi.waitFor(() => {
+      expect(visualMeshes(sync.meshForActor("a")!).length).toBeGreaterThan(0);
+      expect(visualMeshes(sync.meshForActor("b")!).length).toBeGreaterThan(0);
+    });
+    expect(glbContainerLoadCount(scene)).toBe(1);
+  });
+
   it("binds MeshComponent.materialGuid onto the visual mesh", () => {
     const { scene } = createHandle();
     const assigned = new StandardMaterial("mat-rock", scene);
@@ -1205,6 +1268,25 @@ describe("editor grid", () => {
 
     grid.setMode("2d");
     expect(grid.boundsMesh).not.toBeNull();
+    grid.dispose();
+  });
+
+  it("draws the grid as a background underlay below world meshes", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "3d" });
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
+      ]),
+    );
+    const mesh = sync.meshForActor("a");
+    expect(grid.mesh.name).toBe(GRID_MESH_NAME);
+    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.background);
+    expect(mesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
+    const worldClear = scene.getAutoClearDepthStencilSetup(RENDERING_GROUP.world);
+    expect(worldClear.autoClear).toBe(true);
+    expect(worldClear.depth).toBe(true);
     grid.dispose();
   });
 });

@@ -190,6 +190,7 @@ export interface ProjectSettings {
   gameInstanceClass: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
+  physics: PhysicsProjectSettings;
   input: ProjectInputSettings;
   fonts: FontProjectSettings;
   /** Viewport-layer HUD design space shared by Play, the player, and the designer. */
@@ -291,6 +292,12 @@ export interface GraphClassMember {
   typeId?: string;
   /** Object/class constraint, or Structure/Enum asset guid when typeId is struct/enum. */
   typeClassId?: string;
+  /** Variable container. Missing or `"single"` is a scalar. Array/Map wrap `typeId`. */
+  container?: "single" | "array" | "map";
+  /** Map key picker id. Ignored unless `container` is `"map"`. */
+  keyTypeId?: string;
+  /** Map key Class/Structure/Enum/Asset parameter. */
+  keyTypeClassId?: string;
   defaultValue?: unknown;
   /** Function and custom-event signature pins. */
   pins?: GraphClassMemberPin[];
@@ -373,6 +380,21 @@ export const DEFAULT_SORTING_LAYERS = [
   "UI",
 ] as const;
 
+export const DEFAULT_COLLISION_LAYERS = ["Default"] as const;
+export const MAX_COLLISION_LAYERS = 32;
+
+export interface PhysicsProjectSettings {
+  /**
+   * Named collision layers (bit 0 = first name). Storage stays 32-bit for
+   * Havok membership/collide masks. Cap 32.
+   */
+  collisionLayers: string[];
+}
+
+export const DEFAULT_PHYSICS_PROJECT_SETTINGS: PhysicsProjectSettings = {
+  collisionLayers: [...DEFAULT_COLLISION_LAYERS],
+};
+
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
   pixelsPerUnit: 100,
   pixelPerfect: false,
@@ -393,6 +415,21 @@ function normalizeSortingLayers(value: unknown): string[] {
     layers.push(name);
   }
   return layers.length > 0 ? layers : [...DEFAULT_SORTING_LAYERS];
+}
+
+function normalizeCollisionLayers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_COLLISION_LAYERS];
+  const seen = new Set<string>();
+  const layers: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const name = entry.trim();
+    if (name === "" || seen.has(name)) continue;
+    seen.add(name);
+    layers.push(name);
+    if (layers.length >= MAX_COLLISION_LAYERS) break;
+  }
+  return layers.length > 0 ? layers : [...DEFAULT_COLLISION_LAYERS];
 }
 
 export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
@@ -665,6 +702,9 @@ export function normalizeProjectSettings(
       integerZoomSteps: twoD?.integerZoomSteps === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
     },
+    physics: {
+      collisionLayers: normalizeCollisionLayers(settings?.physics?.collisionLayers),
+    },
     textures: {
       maxTextureDimension:
         settings?.textures?.maxTextureDimension ??
@@ -923,6 +963,12 @@ function optionalTypeClassId(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function optionalVariableContainer(
+  value: unknown,
+): "array" | "map" | undefined {
+  return value === "array" || value === "map" ? value : undefined;
+}
+
 function normalizeMemberPins(value: unknown): GraphClassMemberPin[] {
   if (!Array.isArray(value)) return [];
   const pins: GraphClassMemberPin[] = [];
@@ -972,7 +1018,18 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
           : "float";
       const typeClassId = optionalTypeClassId(row.typeClassId);
       if (typeClassId) member.typeClassId = typeClassId;
-      if (member.typeId === "class") {
+      const container = optionalVariableContainer(row.container);
+      if (container) member.container = container;
+      const keyTypeId =
+        typeof row.keyTypeId === "string" && row.keyTypeId.trim()
+          ? row.keyTypeId.trim()
+          : undefined;
+      if (container === "map") {
+        member.keyTypeId = keyTypeId ?? "string";
+        const keyTypeClassId = optionalTypeClassId(row.keyTypeClassId);
+        if (keyTypeClassId) member.keyTypeClassId = keyTypeClassId;
+      }
+      if (member.typeId === "class" && !container) {
         member.defaultValue = typeClassId ?? "BObject";
       } else if ("defaultValue" in row) {
         member.defaultValue = row.defaultValue;

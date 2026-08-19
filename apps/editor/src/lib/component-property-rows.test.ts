@@ -33,9 +33,11 @@ function rowsFor(
                   ? "Overworld"
                   : guid === "sfx-1"
                     ? "Jump"
-                    : guid === "fx-1"
-                      ? "Fire"
-                      : undefined,
+                      : guid === "fx-1"
+                        ? "Fire"
+                        : guid === "font-1"
+                          ? "Display"
+                          : undefined,
       assetType: (guid) =>
         guid === "mesh-1"
           ? "Mesh"
@@ -55,8 +57,11 @@ function rowsFor(
                         ? "Audio"
                         : guid === "fx-1"
                           ? "ParticleSystem"
-                          : undefined,
+                          : guid === "font-1"
+                            ? "Font"
+                            : undefined,
       physicsWorld: "3d",
+      collisionLayers: ["Default"],
       onPickAsset,
       ...context,
     },
@@ -90,6 +95,90 @@ describe("componentPropertyRows", () => {
         allowedTypes: ["Mesh", "Model"],
       }),
     );
+  });
+
+  it("exposes 3D Text text, size, depth, color, and Font picker", () => {
+    const text3d = rowsFor(
+      {
+        id: "label",
+        classId: "Text3DComponent",
+        properties: {
+          text: "Hello",
+          size: 2,
+          depth: 0.25,
+          color: [0.2, 0.4, 0.6],
+          fontAssetGuid: "font-1",
+        },
+      },
+      {
+        fontHasFacetype: (guid) => guid === "font-1",
+      },
+    );
+    expect(text3d.rows.find((row) => row.id.endsWith("-text"))).toMatchObject({
+      kind: "text",
+      label: "Text",
+      value: "Hello",
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-size"))).toMatchObject({
+      kind: "slider",
+      label: "Size",
+      value: 2,
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-depth"))).toMatchObject({
+      kind: "slider",
+      label: "Depth",
+      value: 0.25,
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({
+      kind: "color",
+      label: "Color",
+      value: [0.2, 0.4, 0.6],
+    });
+    const font = text3d.rows.find((row) => row.id.endsWith("-fontAssetGuid"));
+    expect(font).toMatchObject({
+      kind: "asset",
+      label: "Font",
+      value: "font-1",
+      displayLabel: "Display",
+      displayType: "Font",
+    });
+    if (font?.kind === "asset") font.onPick();
+    expect(text3d.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property: "fontAssetGuid",
+        allowedTypes: ["Font"],
+      }),
+    );
+    expect(text3d.rows.find((row) => row.id.endsWith("-typeface-note"))).toBeUndefined();
+
+    const bundled = rowsFor({
+      id: "label",
+      classId: "Text3DComponent",
+      properties: defaultPropertiesFor("Text3DComponent"),
+    });
+    expect(bundled.rows.find((row) => row.id.endsWith("-typeface-note"))).toMatchObject({
+      kind: "text",
+      label: "Typeface",
+      value: "Bundled ASCII (no Font facetype chunk)",
+      disabled: true,
+    });
+
+    const missing = rowsFor(
+      {
+        id: "label",
+        classId: "Text3DComponent",
+        properties: {
+          ...defaultPropertiesFor("Text3DComponent"),
+          fontAssetGuid: "font-1",
+        },
+      },
+      { fontHasFacetype: () => false },
+    );
+    expect(missing.rows.find((row) => row.id.endsWith("-typeface-note"))).toMatchObject({
+      kind: "text",
+      value: "Bundled ASCII (no Font facetype chunk)",
+      disabled: true,
+    });
   });
 
   it("uses Sprite and Tilemap pickers plus project sorting layers", () => {
@@ -541,18 +630,21 @@ describe("componentPropertyRows", () => {
   });
 
   it("flattens collider shape kind and numeric extents instead of object text", () => {
-    const { rows, update } = rowsFor({
-      id: "col",
-      classId: "ColliderComponent",
-      properties: {
-        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.25, z: 0.5 } },
-        friction: 0.5,
-        restitution: 0,
-        isTrigger: false,
-        layer: 1,
-        mask: 1,
+    const { rows, update } = rowsFor(
+      {
+        id: "col",
+        classId: "ColliderComponent",
+        properties: {
+          shape: { kind: "box", halfExtents: { x: 0.5, y: 0.25, z: 0.5 } },
+          friction: 0.5,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 1,
+        },
       },
-    });
+      { collisionLayers: ["Default", "Enemy"] },
+    );
     expect(rows.some((row) => row.kind === "text" && row.label === "shape")).toBe(
       false,
     );
@@ -581,13 +673,35 @@ describe("componentPropertyRows", () => {
       max: 1,
     });
     expect(rows.find((row) => row.id.endsWith("-layer"))).toMatchObject({
-      kind: "flags",
-      value: 1,
-      bitCount: 32,
+      kind: "enum",
+      label: "Layer",
+      value: "Default",
     });
+    const layer = rows.find((row) => row.id.endsWith("-layer"));
+    if (layer?.kind === "enum") {
+      expect(layer.options.map((option) => option.value)).toEqual([
+        "Default",
+        "Enemy",
+      ]);
+      layer.onChange("Enemy");
+    }
+    expect(update).toHaveBeenCalledWith("layer", 2);
     expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
       kind: "flags",
+      label: "Collides With",
       value: 1,
+      bitCount: 2,
+      labels: ["Default", "Enemy"],
+    });
+    expect(rows.find((row) => row.id.endsWith("-isTrigger"))).toMatchObject({
+      kind: "boolean",
+      label: "Is Trigger",
+      value: false,
+    });
+    expect(rows.find((row) => row.id.endsWith("-renderInGame"))).toMatchObject({
+      kind: "boolean",
+      label: "Render In Game",
+      value: false,
     });
   });
 

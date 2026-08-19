@@ -1,15 +1,6 @@
-import {
-  Color3,
-  Effect,
-  LinesMesh,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  ShaderMaterial,
-  Vector3,
-  type ArcRotateCamera,
-} from "@babylonjs/core";
+import { Color3, Effect, LinesMesh, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector3, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
+import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
 export const GRID_MESH_NAME = "__editor-grid__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
@@ -233,6 +224,8 @@ export function createEditorGrid(
   mesh.doNotSyncBoundingInfo = true;
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.isVisible = visible;
+  mesh.renderingGroupId = RENDERING_GROUP.background;
+  configureEditorRenderingGroups(scene);
 
   const material = new ShaderMaterial(
     `${GRID_MESH_NAME}-material`,

@@ -10,6 +10,7 @@ const LITERAL_DEFAULT_KINDS = new Set<PinType["kind"]>([
   "vec3",
   "vec4",
   "rotator",
+  "quat",
   "color",
   "enumRef",
   "classRef",
@@ -66,10 +67,14 @@ export function defaultJsValue(type: PinType): unknown {
       return { x: 0, y: 0, z: 0 };
     case "rotator":
       return { pitch: 0, yaw: 0, roll: 0 };
+    case "quat":
+      return { x: 0, y: 0, z: 0, w: 1 };
     case "color":
       return { x: 0, y: 0, z: 0, w: 0 };
     case "vec4":
       return { x: 0, y: 0, z: 0, w: 0 };
+    case "array":
+      return [];
     case "enumRef":
       return "";
     case "structRef":
@@ -105,7 +110,12 @@ export function listUnconnectedLiteralPinDefaults(
       pinId: pin.id,
       name: pin.name,
       type: pin.type,
-      value: stored !== undefined ? stored : defaultJsValue(pin.type),
+      value:
+        stored !== undefined
+          ? stored
+          : pin.defaultValue !== undefined
+            ? pin.defaultValue
+            : defaultJsValue(pin.type),
     });
   }
   return listed;

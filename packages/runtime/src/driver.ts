@@ -21,6 +21,7 @@ import {
   Widget,
   createWidgetForKind,
   userInterfaceAssetClassDef,
+  hydrateClassVariableValue,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickContext,
@@ -33,6 +34,7 @@ import {
   normalizeUserInterfaceClassRef,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText3DProperties,
   parseInputMode,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
@@ -588,6 +590,13 @@ class InProcessRuntime implements RuntimeDriver {
           frameId: this.frameId,
         });
       },
+      drawDebug: (payload) => {
+        this.emit({
+          type: "debugDraw",
+          ...(payload as Record<string, unknown>),
+          frameId: this.frameId,
+        } as CommandMessage);
+      },
       destroyActor: (actor) => {
         if (!actor) return;
         this.emitAudioStops(actor);
@@ -831,6 +840,13 @@ class InProcessRuntime implements RuntimeDriver {
         name: variable.name,
         type: variable.type,
         defaultValue: variable.defaultValue,
+        ...(variable.container === "array" || variable.container === "map"
+          ? { container: variable.container }
+          : {}),
+        ...(variable.keyTypeId ? { keyTypeId: variable.keyTypeId } : {}),
+        ...(variable.keyTypeClassId
+          ? { keyTypeClassId: variable.keyTypeClassId }
+          : {}),
       })),
       implementedInterfaces: [...(script.implementedInterfaces ?? [])],
     });
@@ -2067,7 +2083,10 @@ class InProcessRuntime implements RuntimeDriver {
         (component.classId === "MeshComponent" ||
           component.classId === "SpriteComponent" ||
           component.classId === "TilemapComponent" ||
-          component.classId === "SkyboxComponent"),
+          component.classId === "SkyboxComponent" ||
+          component.classId === "Text3DComponent" ||
+          (component.classId === "ColliderComponent" &&
+            component.getVariable("renderInGame") === true)),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
@@ -2092,6 +2111,9 @@ class InProcessRuntime implements RuntimeDriver {
       const skyboxComp = renderables.find(
         (component) => component.classId === "SkyboxComponent",
       );
+      const text3dComp = renderables.find(
+        (component) => component.classId === "Text3DComponent",
+      );
       this.emit({
         type: "assignMesh",
         slotId,
@@ -2103,6 +2125,17 @@ class InProcessRuntime implements RuntimeDriver {
                 size: parseSkyboxSize(skyboxComp.getVariable("size")),
                 faces: parseSkyboxFaces(skyboxComp.getVariable("faces")),
               },
+            }
+          : {}),
+        ...(text3dComp
+          ? {
+              text3d: parseText3DProperties({
+                text: text3dComp.getVariable("text"),
+                size: text3dComp.getVariable("size"),
+                depth: text3dComp.getVariable("depth"),
+                color: text3dComp.getVariable("color"),
+                fontAssetGuid: text3dComp.getVariable("fontAssetGuid"),
+              }),
             }
           : {}),
         ...(parts ? { parts } : {}),
@@ -2188,6 +2221,20 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: null,
         meshKind: "particle",
         parts: [playMeshPartOf(particle)],
+      });
+      return;
+    }
+    const rigid = actor.components.find(
+      (component) =>
+        component.classId === "RigidBodyComponent" && !component.destroyed,
+    );
+    if (rigid) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "rigidbody",
+        parts: [playMeshPartOf(rigid)],
       });
     }
   }
@@ -2708,8 +2755,9 @@ class InProcessRuntime implements RuntimeDriver {
   } {
     const variables: Record<string, unknown> = {};
     for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
-      if (variable.defaultValue !== undefined) {
-        variables[variable.name] = variable.defaultValue;
+      const value = hydrateClassVariableValue(variable);
+      if (value !== undefined) {
+        variables[variable.name] = value;
       }
     }
     return {
@@ -2909,6 +2957,11 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
+  if (component.classId === "Text3DComponent") return "text3d";
+  if (component.classId === "ColliderComponent") {
+    const shape = component.getVariable("shape");
+    return `collider:${JSON.stringify(shape ?? {})}`;
+  }
   if (component.classId === "LightComponent") {
     const kind = component.getVariable("lightKind");
     return `light:${typeof kind === "string" ? kind : "point"}`;
@@ -2916,6 +2969,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "CameraComponent") return "camera";
   if (component.classId === "AudioComponent") return "audio";
   if (component.classId === "ParticleComponent") return "particle";
+  if (component.classId === "RigidBodyComponent") return "rigidbody";
   const meshKind = component.getVariable("meshKind");
   return typeof meshKind === "string" ? meshKind : null;
 }
@@ -2957,6 +3011,17 @@ function playMeshPartOf(
     position: [position.x, position.y, position.z],
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
     scale: [scale.x, scale.y, scale.z],
+    ...(component.classId === "Text3DComponent"
+      ? {
+          text3d: parseText3DProperties({
+            text: component.getVariable("text"),
+            size: component.getVariable("size"),
+            depth: component.getVariable("depth"),
+            color: component.getVariable("color"),
+            fontAssetGuid: component.getVariable("fontAssetGuid"),
+          }),
+        }
+      : {}),
   };
 }
 

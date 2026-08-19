@@ -1,4 +1,4 @@
-import { normalizeFontPayload } from "@babylonslate/assets";
+import { FONT_FACETYPE_CHUNK_ID, normalizeFontPayload } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 
 export interface FontAssetSource {
@@ -29,4 +29,26 @@ export async function collectFontAssetEntries(
     });
   }
   return entries;
+}
+
+export function fontAssetHasFacetype(payload: unknown): boolean {
+  return normalizeFontPayload(payload, "").representations.facetype === true;
+}
+
+/** Load facetype JSON for 3D Text, keyed by Font asset guid. */
+export async function collectFontFacetypeBytes(
+  assets: readonly FontAssetSource[],
+  fontGuids: readonly string[],
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+): Promise<Map<string, Uint8Array>> {
+  const wanted = new Set(fontGuids.filter((guid) => guid.trim()));
+  const bytes = new Map<string, Uint8Array>();
+  if (wanted.size === 0) return bytes;
+  for (const asset of assets) {
+    if (asset.type !== "Font" || !wanted.has(asset.guid)) continue;
+    const chunk = await readChunk(asset.path, FONT_FACETYPE_CHUNK_ID);
+    if (!chunk || chunk.byteLength === 0) continue;
+    bytes.set(asset.guid, chunk);
+  }
+  return bytes;
 }

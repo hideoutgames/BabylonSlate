@@ -67,14 +67,6 @@ function makeStructLiteral(
   return `{ ${parts.join(", ")} }`;
 }
 
-function rotatorToQuatExpr(rotatorExpr: string): string {
-  return `((r) => { const p = ((r)?.pitch ?? 0) * Math.PI / 180, y = ((r)?.yaw ?? 0) * Math.PI / 180, z = ((r)?.roll ?? 0) * Math.PI / 180; const c1 = Math.cos(p / 2), c2 = Math.cos(y / 2), c3 = Math.cos(z / 2), s1 = Math.sin(p / 2), s2 = Math.sin(y / 2), s3 = Math.sin(z / 2); return { x: s1 * c2 * c3 + c1 * s2 * s3, y: c1 * s2 * c3 - s1 * c2 * s3, z: c1 * c2 * s3 - s1 * s2 * c3, w: c1 * c2 * c3 + s1 * s2 * s3 }; })(${rotatorExpr})`;
-}
-
-function quatToRotatorExpr(quatExpr: string): string {
-  return `((q) => { const qx = (q)?.x ?? 0, qy = (q)?.y ?? 0, qz = (q)?.z ?? 0, qw = (q)?.w ?? 1; const sinp = 2 * (qw * qx - qy * qz); const RAD = 180 / Math.PI; let x, y, z; if (Math.abs(sinp) < 0.9999999) { x = Math.asin(Math.min(1, Math.max(-1, sinp))); y = Math.atan2(2 * (qw * qy + qz * qx), 1 - 2 * (qx * qx + qy * qy)); z = Math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qx * qx + qz * qz)); } else { x = Math.asin(Math.min(1, Math.max(-1, sinp))); y = Math.atan2(2 * (qy * qw - qz * qx), 1 - 2 * (qy * qy + qz * qz)); z = 0; } return { pitch: x * RAD, yaw: y * RAD, roll: z * RAD }; })(${quatExpr})`;
-}
-
 export const structNodes: NodeDefinition[] = [
   {
     id: "struct.make",
@@ -112,7 +104,7 @@ export const structNodes: NodeDefinition[] = [
   {
     id: "struct.makeRotator",
     title: "Make Rotator",
-    category: "struct",
+    category: "rotator",
     pure: true,
     pins: () => [
       pin("pitch", "Pitch", "in", FLOAT),
@@ -127,7 +119,7 @@ export const structNodes: NodeDefinition[] = [
   {
     id: "struct.breakRotator",
     title: "Break Rotator",
-    category: "struct",
+    category: "rotator",
     pure: true,
     pins: () => [
       pin("in", "In", "in", ROTATOR),
@@ -147,7 +139,7 @@ export const structNodes: NodeDefinition[] = [
   {
     id: "struct.makeColor",
     title: "Make Color",
-    category: "struct",
+    category: "color",
     pure: true,
     pins: () => [
       pin("r", "R", "in", FLOAT),
@@ -163,7 +155,7 @@ export const structNodes: NodeDefinition[] = [
   {
     id: "struct.breakColor",
     title: "Break Color",
-    category: "struct",
+    category: "color",
     pure: true,
     pins: () => [
       pin("in", "In", "in", COLOR),
@@ -185,7 +177,7 @@ export const structNodes: NodeDefinition[] = [
   {
     id: "struct.makeTransform",
     title: "Make Transform",
-    category: "struct",
+    category: "transform",
     pure: true,
     pins: () => [
       pin("location", "Location", "in", VEC3),
@@ -194,13 +186,13 @@ export const structNodes: NodeDefinition[] = [
       pin("out", "Out", "out", TRANSFORM),
     ],
     codegen: (ctx) => ({
-      out: `{ position: ${ctx.input("location")}, rotation: ${rotatorToQuatExpr(ctx.input("rotation"))}, scale: ${ctx.input("scale")} }`,
+      out: `{ position: ${ctx.input("location")}, rotation: ctx.rotatorToQuat(${ctx.input("rotation")}), scale: ${ctx.input("scale")} }`,
     }),
   },
   {
     id: "struct.breakTransform",
     title: "Break Transform",
-    category: "struct",
+    category: "transform",
     pure: true,
     pins: () => [
       pin("in", "In", "in", TRANSFORM),
@@ -212,7 +204,7 @@ export const structNodes: NodeDefinition[] = [
       const t = ctx.input("in");
       return {
         location: `((${t})?.position ?? { x: 0, y: 0, z: 0 })`,
-        rotation: quatToRotatorExpr(`((${t})?.rotation)`),
+        rotation: `ctx.quatToRotator((${t})?.rotation)`,
         scale: `((${t})?.scale ?? { x: 1, y: 1, z: 1 })`,
       };
     },

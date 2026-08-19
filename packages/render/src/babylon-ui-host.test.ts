@@ -8,6 +8,7 @@ import {
   guiSpecFromDescriptor,
   layoutUserInterface,
   pinLayout,
+  scopeUiControlIds,
   stretchLayout,
   type UiControlDescriptor,
 } from "@babylonslate/ui-runtime";
@@ -292,6 +293,180 @@ describe("BabylonUiApplyHost", () => {
     expect(scroller?.getDescendants(false).some((row) => row.name === "inner")).toBe(true);
   });
 
+  it("applies Grid gap as padding between Grid cells", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.gap = 12;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const cellC = createWidget("cellC", "Button", "C");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB", "cellC"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.cellC = cellC;
+    const { root } = applyDocument(doc);
+    const gridControl = named(root, "grid") as Grid;
+    const first = gridControl.cells["0:0"];
+    const nextCol = gridControl.cells["0:1"];
+    const nextRow = gridControl.cells["1:0"];
+    expect(first?.paddingLeft).toBe("0px");
+    expect(first?.paddingTop).toBe("0px");
+    expect(nextCol?.paddingLeft).toBe("12px");
+    expect(nextCol?.paddingTop).toBe("0px");
+    expect(nextRow?.paddingLeft).toBe("0px");
+    expect(nextRow?.paddingTop).toBe("12px");
+  });
+
+  it("rebuilds Grid track defs when column count grows", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    doc.widgets.canvas!.children = ["grid"];
+    doc.widgets.grid = grid;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    expect((named(root, "grid") as Grid).columnCount).toBe(2);
+    grid.props.columns = 3;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    expect((named(root, "grid") as Grid).columnCount).toBe(3);
+  });
+
+  it("keeps Grid cells when column count grows", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.columns = 2;
+    grid.props.rows = 2;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const cellC = createWidget("cellC", "Button", "C");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB", "cellC"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.cellC = cellC;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const first = named(root, "grid") as Grid;
+    expect(first.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(first.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+    expect(first.getChildrenAt(1, 0)?.some((row) => row.name === "cellC")).toBe(true);
+    grid.props.columns = 3;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const live = named(root, "grid") as Grid;
+    expect(live).toBe(first);
+    expect(live.columnCount).toBe(3);
+    expect(live.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(live.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+    expect(live.getChildrenAt(0, 2)?.some((row) => row.name === "cellC")).toBe(true);
+  });
+
+  it("keeps Grid cells when column count shrinks", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.columns = 3;
+    grid.props.rows = 2;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const cellC = createWidget("cellC", "Button", "C");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB", "cellC"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.cellC = cellC;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const first = named(root, "grid") as Grid;
+    expect(first.getChildrenAt(0, 2)?.some((row) => row.name === "cellC")).toBe(true);
+    grid.props.columns = 2;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const live = named(root, "grid") as Grid;
+    expect(live).toBe(first);
+    expect(live.columnCount).toBe(2);
+    expect(live.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(live.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+    expect(live.getChildrenAt(1, 0)?.some((row) => row.name === "cellC")).toBe(true);
+  });
+
+  it("updates Grid gap padding without recreating the Grid", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.gap = 12;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const first = named(root, "grid") as Grid;
+    expect(first.cells["0:1"]?.paddingLeft).toBe("12px");
+    grid.props.gap = 24;
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const live = named(root, "grid") as Grid;
+    expect(live).toBe(first);
+    expect(live.columnCount).toBe(2);
+    expect(live.cells["0:0"]?.paddingLeft).toBe("0px");
+    expect(live.cells["0:1"]?.paddingLeft).toBe("24px");
+    expect(live.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(live.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+  });
+
   it("parents default Canvas children into a padded SafeArea container", () => {
     const doc = createDefaultUserInterface();
     const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));
@@ -316,6 +491,69 @@ describe("BabylonUiApplyHost", () => {
     expect(safe?.getDescendants(false).some((row) => row.name === "bleed")).toBe(false);
     const canvas = named(root, "canvas") as Container;
     expect(canvas.getDescendants(false).some((row) => row.name === "bleed")).toBe(true);
+  });
+
+  it("parents scoped HUD children into a per-instance SafeArea", () => {
+    const doc = createDefaultUserInterface();
+    const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));
+    doc.widgets.canvas!.children = ["pin"];
+    doc.widgets.pin = pin;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      safeArea: { left: 10, right: 0, top: 20, bottom: 0 },
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      scopeUiControlIds(
+        describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+        "ui-1",
+      ),
+    );
+    const safe = named(root, `ui-1:${SAFE_AREA_CONTROL_ID}`);
+    expect(safe).toBeInstanceOf(Container);
+    expect(safe?.paddingTop).toBe("20px");
+    expect(safe?.getDescendants(false).some((row) => row.name === "ui-1:pin")).toBe(
+      true,
+    );
+    expect(root.children.some((row) => row.name === "ui-1:pin")).toBe(false);
+  });
+
+  it("gives stacked HUDs separate SafeArea containers", () => {
+    const first = createDefaultUserInterface("A");
+    const second = createDefaultUserInterface("B");
+    const a = createWidget("a", "Button", "A", pinLayout("left", "top", 80, 32));
+    const b = createWidget("b", "Button", "B", pinLayout("left", "top", 80, 32));
+    first.widgets.canvas!.children = ["a"];
+    first.widgets.a = a;
+    second.widgets.canvas!.children = ["b"];
+    second.widgets.b = b;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      safeArea: { left: 8, right: 8, top: 16, bottom: 16 },
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(host, [
+      ...scopeUiControlIds(
+        describeUiControls(first, { parentSize: { width: 800, height: 600 } }),
+        "ui-1",
+      ),
+      ...scopeUiControlIds(
+        describeUiControls(second, { parentSize: { width: 800, height: 600 } }),
+        "ui-2",
+      ),
+    ]);
+    const safe1 = named(root, `ui-1:${SAFE_AREA_CONTROL_ID}`);
+    const safe2 = named(root, `ui-2:${SAFE_AREA_CONTROL_ID}`);
+    expect(safe1).toBeInstanceOf(Container);
+    expect(safe2).toBeInstanceOf(Container);
+    expect(safe1).not.toBe(safe2);
+    expect(safe1?.getDescendants(false).some((row) => row.name === "ui-1:a")).toBe(
+      true,
+    );
+    expect(safe2?.getDescendants(false).some((row) => row.name === "ui-2:b")).toBe(
+      true,
+    );
   });
 
   it("parents a nested UserInterface label under the host slot, not the ADT root", () => {
@@ -400,6 +638,45 @@ describe("BabylonUiApplyHost", () => {
     expect(control.left).toBe("12px");
     expect(control.top).toBe("24px");
     expect(factory.created).toHaveLength(1);
+  });
+
+  it("patches live padding and alignment during a stretch resize", () => {
+    const factory = new RecordingFactory();
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const control = {
+      left: "0px",
+      top: "0px",
+      width: "100%",
+      height: "100%",
+      paddingLeft: "0px",
+      paddingRight: "0px",
+      paddingTop: "0px",
+      paddingBottom: "0px",
+      horizontalAlignment: 0,
+      verticalAlignment: 0,
+    };
+    factory.create = (spec) => {
+      const handle = {
+        id: spec.id,
+        type: spec.type,
+        spec,
+        control: control as never,
+        dispose() {},
+      };
+      factory.created.push(handle);
+      return handle;
+    };
+    host.addControl(descriptor({ id: "btn", kind: "Button" }));
+    host.patchLiveLayout(
+      "btn",
+      stretchLayout({ left: 16, right: 24, top: 8, bottom: 12 }),
+    );
+    expect(control.width).toBe("100%");
+    expect(control.paddingLeft).toBe("16px");
+    expect(control.paddingRight).toBe("24px");
+    expect(control.paddingTop).toBe("8px");
+    expect(control.paddingBottom).toBe("12px");
+    expect(control.horizontalAlignment).toBe(GuiControl.HORIZONTAL_ALIGNMENT_LEFT);
   });
 
   it("maps scale rules onto ADT ideal width/height", () => {

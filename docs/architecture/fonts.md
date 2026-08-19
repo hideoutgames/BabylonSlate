@@ -14,7 +14,20 @@ Importer (`packages/assets/src/importers/font.ts`) already accepts woff2 / woff 
 | `fallbackGuids` | ordered Font asset guids |
 | `representations` | flags for source / facetype / msdf chunks present |
 
-Facetype and MSDF remain **import-only** optional chunks (no in-engine bake).
+Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Chunk id `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`), kind `font-facetype`.
+
+## Extruded 3D text
+
+`Text3DComponent` (catalog **3D Text**) uses `MeshBuilder.CreateText` + injected `earcut` in `@babylonslate/render` (`createText3DMesh`). This is a scene mesh, not UserInterface `TextBlock` and not a DynamicTexture plane.
+
+| Font data | When |
+| --- | --- |
+| Font `facetype-glyphs` bytes | `fontAssetGuid` set and the chunk parses |
+| Bundled ASCII TypeFace | No Font, missing chunk, or invalid JSON |
+
+Details shows a disabled **Typeface** note when the Font has no facetype chunk. Play/export collect those bytes independently of `FontFace` source bytes (GUI still uses woff/ttf). Export packs a `FontFacetype` sidecar (`font-facetype:<guid>`) so the source Font stays a font file. The component is **not** Development Only.
+
+See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
 
 ## Fallback stack
 

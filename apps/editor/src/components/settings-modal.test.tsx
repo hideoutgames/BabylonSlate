@@ -294,6 +294,23 @@ describe("SettingsModal project authoring", () => {
     );
   });
 
+  it("edits physics collision layers as a named list", () => {
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-physics"));
+    fireEvent.change(screen.getByTestId("settings-collision-layers-0-value"), {
+      target: { value: "Player" },
+    });
+    expect(updateProjectSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        physics: expect.objectContaining({
+          collisionLayers: expect.arrayContaining(["Player"]),
+        }),
+      }),
+    );
+  });
+
   it("picks the packaged startup scene from Scene assets only", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

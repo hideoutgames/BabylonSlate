@@ -5,6 +5,17 @@ import type { EnumMember, StructField } from "./type-assets";
 
 export const ENGINE_TYPE_GUID_PREFIX = "engine:";
 
+export const ENGINE_COLLISION_CHANNEL_ENUM_ID = "engine:CollisionChannel";
+export const ENGINE_HIT_RESULT_STRUCT_ID = "engine:HitResult";
+
+export const COLLISION_CHANNEL_MEMBERS = [
+  "All",
+  "WorldStatic",
+  "WorldDynamic",
+  "Pawn",
+  "Visibility",
+] as const;
+
 export type EngineEnum = {
   id: string;
   name: string;
@@ -17,17 +28,34 @@ export type EngineStruct = {
   fields: StructField[];
 };
 
-/** Built-in engine enums (`engine:InputMode`, future `engine:CollisionChannel`, …). */
+/** Built-in engine enums (`engine:InputMode`, `engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
   {
     id: ENGINE_INPUT_MODE_ENUM_ID,
     name: "Input Mode",
     members: INPUT_MODE_MEMBERS.map((name, value) => ({ name, value })),
   },
+  {
+    id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
+    name: "Collision Channel",
+    members: COLLISION_CHANNEL_MEMBERS.map((name, value) => ({ name, value })),
+  },
 ];
 
-/** Future engine user-style structs register here. Pin-kind math types stay first-class. */
-export const ENGINE_STRUCTS: readonly EngineStruct[] = [];
+/** Engine user-style structs. Pin-kind math types stay first-class. */
+export const ENGINE_STRUCTS: readonly EngineStruct[] = [
+  {
+    id: ENGINE_HIT_RESULT_STRUCT_ID,
+    name: "Hit Result",
+    fields: [
+      { name: "Hit", typeId: "bool" },
+      { name: "Location", typeId: "vec3" },
+      { name: "Normal", typeId: "vec3" },
+      { name: "Actor", typeId: "actor" },
+      { name: "Distance", typeId: "float" },
+    ],
+  },
+];
 
 export function engineTypeGuid(id: string): string {
   const trimmed = id.trim();

@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  applyPrintHudCommand,
+  nextPrintHudTimeoutMs,
+  visiblePrintHudEntries,
+  type PrintHudColor,
+  type PrintHudEntry,
+} from "@babylonslate/core";
 
-export type PrintOverlayEntry = {
-  key: string;
-  message: string;
-  color: string;
-  expiresAt: number;
-};
+export type PrintOverlayEntry = PrintHudEntry;
 
 export type PrintOverlayProps = {
   entries: PrintOverlayEntry[];
@@ -13,9 +15,16 @@ export type PrintOverlayProps = {
 
 /** Keyed on-screen prints (P5). Entries with the same key replace in place. */
 export function PrintOverlay({ entries }: PrintOverlayProps) {
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const delay = nextPrintHudTimeoutMs(entries);
+    if (delay === null) return;
+    const id = window.setTimeout(() => setClock((tick) => tick + 1), delay);
+    return () => window.clearTimeout(id);
+  }, [entries, clock]);
   const visible = useMemo(
-    () => entries.filter((e) => e.expiresAt > Date.now()),
-    [entries],
+    () => visiblePrintHudEntries(entries),
+    [entries, clock],
   );
   if (visible.length === 0) return null;
   return (
@@ -43,22 +52,44 @@ export function usePrintRegistry() {
     message: string;
     key?: string;
     duration?: number;
-    color?: string;
+    color?: string | PrintHudColor;
   }) => {
-    const key = options.key?.trim() || `print_${Date.now()}_${Math.random()}`;
-    const duration = (options.duration ?? 2) * 1000;
-    const color = options.color ?? "#ffffff";
-    setEntries((prev) => {
-      const next = prev.filter((e) => e.key !== key);
-      next.push({
-        key,
+    const color =
+      typeof options.color === "string"
+        ? parseCssColor(options.color)
+        : options.color;
+    setEntries((prev) =>
+      applyPrintHudCommand(prev, {
         message: options.message,
+        key: options.key,
+        duration: options.duration,
         color,
-        expiresAt: Date.now() + duration,
-      });
-      return next;
-    });
+      }),
+    );
   };
 
   return { entries, print, setEntries };
+}
+
+function parseCssColor(color: string): PrintHudColor | undefined {
+  const rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)$/i.exec(
+    color,
+  );
+  if (rgba) {
+    return {
+      x: Number(rgba[1]) / 255,
+      y: Number(rgba[2]) / 255,
+      z: Number(rgba[3]) / 255,
+      w: rgba[4] === undefined ? 1 : Number(rgba[4]),
+    };
+  }
+  const hex = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!hex) return undefined;
+  const n = Number.parseInt(hex[1]!, 16);
+  return {
+    x: ((n >> 16) & 255) / 255,
+    y: ((n >> 8) & 255) / 255,
+    z: (n & 255) / 255,
+    w: 1,
+  };
 }

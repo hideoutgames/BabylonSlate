@@ -1,6 +1,6 @@
 import type { UiControlDescriptor } from "./controls";
 import type { HorizontalAlignment, VerticalAlignment, WidgetKind } from "./types";
-import { defaultHitTestableFor } from "./types";
+import { defaultHitTestableFor, resizeGridTracks, type GridTrackDef } from "./types";
 import type { EdgeInsets, SizeUnit, Vec2 } from "./types";
 
 export type GuiControlType =
@@ -51,8 +51,8 @@ export interface GuiControlSpec {
     spacing?: number;
     gridColumns?: number;
     gridRows?: number;
-    columnDefs?: Array<{ value: number; isPixel: boolean }>;
-    rowDefs?: Array<{ value: number; isPixel: boolean }>;
+    columnDefs?: GridTrackDef[];
+    rowDefs?: GridTrackDef[];
     zIndex?: number;
     rotation?: number;
     scaleX?: number;
@@ -184,12 +184,18 @@ export function guiSpecFromDescriptor(
     spacing: numberProp(control.props, "gap", 0),
     gridColumns: numberProp(control.props, "columns", 2),
     gridRows: numberProp(control.props, "rows", 2),
-    columnDefs: Array.isArray(control.props.gridColumns)
-      ? (control.props.gridColumns as Array<{ value: number; isPixel: boolean }>)
-      : undefined,
-    rowDefs: Array.isArray(control.props.gridRows)
-      ? (control.props.gridRows as Array<{ value: number; isPixel: boolean }>)
-      : undefined,
+    columnDefs: resizeGridTracks(
+      Array.isArray(control.props.gridColumns)
+        ? (control.props.gridColumns as GridTrackDef[])
+        : undefined,
+      numberProp(control.props, "columns", 2),
+    ),
+    rowDefs: resizeGridTracks(
+      Array.isArray(control.props.gridRows)
+        ? (control.props.gridRows as GridTrackDef[])
+        : undefined,
+      numberProp(control.props, "rows", 2),
+    ),
     zIndex: control.zIndex,
     rotation: layout.rotation,
     scaleX: layout.scaleX,

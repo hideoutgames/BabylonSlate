@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
-import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
   createDefaultPlayHud,
   createDefaultUserInterface,
@@ -9,19 +8,53 @@ import {
   describeUiControls,
   pinLayout,
 } from "@babylonslate/ui-runtime";
+import { createUiDesignerSession } from "../lib/ui-designer-session";
 import { UiDesignCanvas } from "./ui-design-canvas";
 
-const { createUiSurfaceMock } = vi.hoisted(() => ({
-  createUiSurfaceMock: vi.fn(),
-}));
-
-vi.mock("@babylonslate/render", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+const { createUiSurfaceMock, uiHostStats, resetUiHostStats } = vi.hoisted(() => {
+  const uiHostStats = { apply: 0, create: 0, present: 0, commit: 0 };
   return {
-    ...actual,
-    createUiSurface: (...args: unknown[]) => createUiSurfaceMock(...args),
+    createUiSurfaceMock: vi.fn(),
+    uiHostStats,
+    resetUiHostStats: () => {
+      uiHostStats.apply = 0;
+      uiHostStats.create = 0;
+      uiHostStats.present = 0;
+      uiHostStats.commit = 0;
+    },
   };
 });
+
+vi.mock("@babylonslate/render", () => ({
+  createUiSurface: (...args: unknown[]) => createUiSurfaceMock(...args),
+  uiHostStats,
+  resetUiHostStats,
+  FontRegistry: class FontRegistry {},
+  applyFontRegistryToHost: vi.fn(async () => undefined),
+  applyUiControlsIfUnfrozen: (
+    frozen: boolean,
+    host: {
+      clear: () => void;
+      addControl: (control: unknown) => void;
+      markAsDirty: () => void;
+      reconcile?: (controls: unknown[]) => void;
+    },
+    controls: unknown[],
+  ) => {
+    if (frozen) return;
+    uiHostStats.apply += 1;
+    if (host.reconcile) {
+      host.reconcile(controls);
+    } else {
+      host.clear();
+      for (const control of controls) {
+        host.addControl(control);
+      }
+    }
+    host.markAsDirty();
+  },
+  isHardUiPresentFailure: () => false,
+}));
 
 afterEach(() => {
   cleanup();
@@ -31,13 +64,22 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  // Real rAF is async. A synchronous stub re-enters schedule() from work()
-  // (setLiveRects → render → paint effect) and hangs the jsdom worker.
+  const pending: FrameRequestCallback[] = [];
+  let flushing = false;
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    return setTimeout(() => callback(0), 0) as unknown as number;
+    pending.push(callback);
+    if (!flushing) {
+      flushing = true;
+      queueMicrotask(() => {
+        flushing = false;
+        const batch = pending.splice(0);
+        for (const cb of batch) cb(0);
+      });
+    }
+    return pending.length;
   });
-  vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
-    clearTimeout(handle);
+  vi.stubGlobal("cancelAnimationFrame", () => {
+    pending.length = 0;
   });
 });
 
@@ -93,6 +135,12 @@ function mockSurface() {
   };
 }
 
+async function flushPaint(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 describe("UiDesignCanvas preview fallback", () => {
   it("shows an error instead of a silent black canvas when the surface fails", () => {
     createUiSurfaceMock.mockImplementation(() => {
@@ -131,7 +179,8 @@ describe("UiDesignCanvas preview fallback", () => {
         }
       />,
     );
-    await waitFor(() => expect(present).toHaveBeenCalled());
+    await flushPaint();
+    expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
       resolveImageUrl?: (guid: string) => string | null;
@@ -223,6 +272,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
     const props = hudCanvasProps();
     const { rerender } = render(<UiDesignCanvas {...props} />);
+    await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(resizeDesign).toHaveBeenCalled());
     rerender(
@@ -231,6 +281,7 @@ describe("UiDesignCanvas preview fallback", () => {
         viewport={{ ...props.viewport, width: 800, height: 600 }}
       />,
     );
+    await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     await waitFor(() =>
@@ -263,12 +314,79 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(
       <UiDesignCanvas {...props} panelVisible documentActive={false} />,
     );
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    await flushPaint();
     expect(addControl).not.toHaveBeenCalled();
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
-    await waitFor(() => expect(addControl).toHaveBeenCalled());
+    await flushPaint();
+    expect(addControl).toHaveBeenCalled();
+  });
+
+  it("commits a locked session when Designer becomes inactive", async () => {
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    expect(session.locked).toBe(true);
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const props = hudCanvasProps();
+    const { rerender } = render(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(session.locked).toBe(true);
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive={false}
+      />,
+    );
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
+    expect(commitLayout.mock.calls[0]![0]).toBe("stick");
+  });
+
+  it("commits a locked session when the canvas unmounts", async () => {
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const { unmount } = render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(session.locked).toBe(true);
+    unmount();
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
   });
 
   it("commits a widget drag once on pointer up", () => {
@@ -525,6 +643,85 @@ describe("UiDesignCanvas preview fallback", () => {
     ];
     expect(next.width).toBeGreaterThan(160);
     expect(next.height).toBeGreaterThan(36);
+    expect(onLayoutChange.mock.calls[0]?.[2]).toMatch(/^ui-design-stroke:/);
+  });
+
+  it("keeps selection outline and resize handles visible when the GUI preview is live", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    render(<UiDesignCanvas {...hudCanvasProps()} selectedId="stick" />);
+    expect(screen.getByTestId("ui-selection-outline").className).toMatch(/border/);
+    expect(screen.getByTestId("ui-resize-se-visual").className).toMatch(/border/);
+  });
+
+  it("does not retrigger paint from a default adtIdeal object identity", async () => {
+    const surface = mockSurface();
+    createUiSurfaceMock.mockReturnValue(surface);
+    const props = hudCanvasProps();
+    render(
+      <UiDesignCanvas
+        ui={props.ui}
+        viewport={props.viewport}
+        controls={props.controls}
+        selectedId={props.selectedId}
+        view={props.view}
+        previewScale={props.previewScale}
+        bitmapScale={props.bitmapScale}
+        sharedEngine={props.sharedEngine}
+        onSelect={props.onSelect}
+        onViewChange={props.onViewChange}
+        onLayoutChange={props.onLayoutChange}
+      />,
+    );
+    await flushPaint();
+    expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
+    expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
+  });
+
+  it("does not resize the ADT while a layout stroke is in progress", async () => {
+    const surface = mockSurface();
+    createUiSurfaceMock.mockReturnValue(surface);
+    const ui = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 36, 40, 40),
+    );
+    ui.widgets.canvas!.children = ["btn"];
+    ui.widgets.btn = button;
+    const viewport = {
+      id: "desktop-16-9",
+      width: 800,
+      height: 600,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    };
+    render(
+      <UiDesignCanvas
+        ui={ui}
+        viewport={viewport}
+        controls={describeUiControls(ui, {
+          parentSize: { width: viewport.width, height: viewport.height },
+        })}
+        selectedId="btn"
+        view={{ zoom: 1, panX: 0, panY: 0 }}
+        previewScale={1}
+        bitmapScale={1}
+        sharedEngine={{} as Engine}
+        onSelect={() => {}}
+        onViewChange={() => {}}
+        onLayoutChange={() => {}}
+      />,
+    );
+    await flushPaint();
+    const afterPaint = surface.resizeDesign.mock.calls.length;
+    expect(afterPaint).toBeGreaterThan(0);
+    const hit = screen.getByTestId("ui-widget-btn");
+    act(() => {
+      dispatchPointerEvent(hit, "pointerdown", { clientX: 120, clientY: 58 });
+      dispatchPointerEvent(hit, "pointermove", { clientX: 180, clientY: 58 });
+    });
+    expect(surface.resizeDesign.mock.calls.length).toBe(afterPaint);
+    expect(surface.host.patchLiveLayout).toHaveBeenCalled();
   });
 
   it("surfaces missing texture chunk feedback instead of a silent blank Image", () => {

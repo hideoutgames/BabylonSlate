@@ -12,6 +12,7 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "CameraComponent",
   "LightComponent",
   "SkyboxComponent",
+  "Text3DComponent",
   "RigidBodyComponent",
   "ColliderComponent",
   "AnimationGraphComponent",

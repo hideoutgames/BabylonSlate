@@ -34,6 +34,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "CameraComponent",
   "LightComponent",
   "SkyboxComponent",
+  "Text3DComponent",
   "AudioComponent",
   "ParticleComponent",
   "RigidBodyComponent",

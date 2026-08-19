@@ -15,6 +15,7 @@ import { Container } from "@babylonjs/gui/2D/controls/container";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
 import type {
   EdgeInsets,
+  GridTrackDef,
   GuiControlSpec,
   HorizontalAlignment,
   ScaleRule,
@@ -25,6 +26,7 @@ import type {
 } from "@babylonslate/ui-runtime";
 import {
   guiSpecFromDescriptor,
+  resizeGridTracks,
   SAFE_AREA_CONTROL_ID,
   ZERO_INSETS,
 } from "@babylonslate/ui-runtime";
@@ -203,10 +205,19 @@ export class BabylonUiApplyHost implements UiApplyHost {
     const handle = this.handles.find((row) => row.id === id);
     const control = handle?.control;
     if (!control) return;
+    control.horizontalAlignment = horizontalAlignmentValue(layout.horizontalAlignment);
+    control.verticalAlignment = verticalAlignmentValue(layout.verticalAlignment);
     control.left = sizeValue(layout.left, layout.leftUnit ?? "px");
     control.top = sizeValue(layout.top, layout.topUnit ?? "px");
     control.width = sizeValue(layout.width, layout.widthUnit);
     control.height = sizeValue(layout.height, layout.heightUnit);
+    const padding = layout.padding;
+    if (padding) {
+      control.paddingLeft = `${padding.left}px`;
+      control.paddingRight = `${padding.right}px`;
+      control.paddingTop = `${padding.top}px`;
+      control.paddingBottom = `${padding.bottom}px`;
+    }
   }
 
   markAsDirty(): void {
@@ -285,11 +296,67 @@ function canUpdateInPlace(previous: GuiControlSpec, next: GuiControlSpec): boole
     previous.parentId === next.parentId &&
     previous.kind === next.kind &&
     previous.layoutMode === next.layoutMode &&
-    previous.gridColumns === next.gridColumns &&
-    previous.gridRows === next.gridRows &&
     previous.gridColumn === next.gridColumn &&
     previous.gridRow === next.gridRow
   );
+}
+
+function syncGridTrackDefs(
+  grid: Grid,
+  defs: readonly GridTrackDef[],
+  kind: "column" | "row",
+): void {
+  const count = () => (kind === "column" ? grid.columnCount : grid.rowCount);
+  const add = (value: number, isPixel: boolean) =>
+    kind === "column"
+      ? grid.addColumnDefinition(value, isPixel)
+      : grid.addRowDefinition(value, isPixel);
+  const set = (index: number, value: number, isPixel: boolean) =>
+    kind === "column"
+      ? grid.setColumnDefinition(index, value, isPixel)
+      : grid.setRowDefinition(index, value, isPixel);
+  const remove = (index: number) =>
+    kind === "column"
+      ? grid.removeColumnDefinition(index)
+      : grid.removeRowDefinition(index);
+  while (count() < defs.length) {
+    const def = defs[count()]!;
+    add(def.value, def.isPixel);
+  }
+  for (let index = 0; index < defs.length; index++) {
+    const def = defs[index]!;
+    set(index, def.value, def.isPixel);
+  }
+  while (count() > defs.length) {
+    remove(count() - 1);
+  }
+}
+
+function applyGridTracks(grid: Grid, spec: GuiControlSpec): void {
+  const columns = Math.max(1, spec.gridColumns ?? 2);
+  const rows = Math.max(1, spec.gridRows ?? 2);
+  syncGridTrackDefs(grid, resizeGridTracks(spec.columnDefs, columns), "column");
+  syncGridTrackDefs(grid, resizeGridTracks(spec.rowDefs, rows), "row");
+}
+
+const gridGapByControl = new WeakMap<Grid, number>();
+
+function applyGridCellPadding(grid: Grid, spacing: number): void {
+  for (const [key, cell] of Object.entries(grid.cells)) {
+    const [rowRaw, columnRaw] = key.split(":");
+    const row = Number(rowRaw);
+    const column = Number(columnRaw);
+    cell.paddingLeft = column > 0 ? `${spacing}px` : "0px";
+    cell.paddingTop = row > 0 ? `${spacing}px` : "0px";
+    cell.paddingRight = "0px";
+    cell.paddingBottom = "0px";
+  }
+}
+
+function applyGridSpacing(grid: Grid, spec: GuiControlSpec): void {
+  const spacing = spec.spacing ?? 0;
+  gridGapByControl.set(grid, spacing);
+  applyGridCellPadding(grid, spacing);
 }
 
 function applyTypeSpecific(
@@ -352,6 +419,14 @@ function applyTypeSpecific(
       if (control instanceof StackPanel) {
         control.isVertical = spec.isVertical ?? true;
         control.spacing = spec.spacing ?? 0;
+        if (spec.background) control.background = spec.background;
+      }
+      return;
+    }
+    case "Grid": {
+      if (control instanceof Grid) {
+        applyGridTracks(control, spec);
+        applyGridSpacing(control, spec);
         if (spec.background) control.background = spec.background;
       }
       return;
@@ -555,28 +630,8 @@ export function createBabylonControl(
     case "Grid": {
       const grid = new Grid(spec.id);
       applyCommon(grid, spec);
-      const columnDefs = spec.columnDefs;
-      const rowDefs = spec.rowDefs;
-      if (columnDefs && columnDefs.length > 0) {
-        for (const def of columnDefs) {
-          grid.addColumnDefinition(def.value, def.isPixel);
-        }
-      } else {
-        const columns = Math.max(1, spec.gridColumns ?? 2);
-        for (let column = 0; column < columns; column++) {
-          grid.addColumnDefinition(1, false);
-        }
-      }
-      if (rowDefs && rowDefs.length > 0) {
-        for (const def of rowDefs) {
-          grid.addRowDefinition(def.value, def.isPixel);
-        }
-      } else {
-        const rows = Math.max(1, spec.gridRows ?? 2);
-        for (let row = 0; row < rows; row++) {
-          grid.addRowDefinition(1, false);
-        }
-      }
+      applyGridTracks(grid, spec);
+      applyGridSpacing(grid, spec);
       if (spec.background) grid.background = spec.background;
       return grid;
     }
@@ -604,6 +659,29 @@ export function createBabylonControl(
       return rect;
     }
   }
+}
+
+const SAFE_AREA_ID_SUFFIX = `:${SAFE_AREA_CONTROL_ID}`;
+
+function isSafeAreaControlId(id: string): boolean {
+  return id === SAFE_AREA_CONTROL_ID || id.endsWith(SAFE_AREA_ID_SUFFIX);
+}
+
+function canvasInstancePrefix(canvasId: string): string {
+  const sep = canvasId.lastIndexOf(":");
+  return sep > 0 ? canvasId.slice(0, sep) : "";
+}
+
+function safeAreaIdForPrefix(prefix: string): string {
+  return prefix ? `${prefix}:${SAFE_AREA_CONTROL_ID}` : SAFE_AREA_CONTROL_ID;
+}
+
+function prefixFromSafeAreaId(id: string): string {
+  if (id === SAFE_AREA_CONTROL_ID) return "";
+  if (id.endsWith(SAFE_AREA_ID_SUFFIX)) {
+    return id.slice(0, -SAFE_AREA_ID_SUFFIX.length);
+  }
+  return "";
 }
 
 export interface GuiTextureHost {
@@ -637,8 +715,8 @@ export function createAdtControlFactory(
     string,
     { guid: string; presenter: InterfaceMaterialPresenter }
   >();
-  let safeArea: Container | null = null;
-  let rootCanvas: Container | null = null;
+  const safeAreas = new Map<string, Container>();
+  const canvases = new Map<string, Container>();
 
   const disposeMaterialPresenter = (id: string): void => {
     materialPresenters.get(id)?.presenter.dispose();
@@ -709,10 +787,12 @@ export function createAdtControlFactory(
     }
   };
 
-  const ensureSafeArea = (canvas: Container): Container => {
-    if (safeArea) return safeArea;
+  const ensureSafeArea = (canvas: Container, prefix: string): Container => {
+    const safeId = safeAreaIdForPrefix(prefix);
+    const existing = safeAreas.get(safeId);
+    if (existing) return existing;
     const insets = options.safeArea ?? ZERO_INSETS;
-    const box = new Container(SAFE_AREA_CONTROL_ID);
+    const box = new Container(safeId);
     box.horizontalAlignment = GuiControl.HORIZONTAL_ALIGNMENT_LEFT;
     box.verticalAlignment = GuiControl.VERTICAL_ALIGNMENT_TOP;
     box.width = "100%";
@@ -724,10 +804,24 @@ export function createAdtControlFactory(
     box.isHitTestVisible = false;
     box.isPointerBlocker = false;
     canvas.addControl(box);
-    byId.set(SAFE_AREA_CONTROL_ID, box);
+    byId.set(safeId, box);
     handles.push(box);
-    safeArea = box;
+    safeAreas.set(safeId, box);
     return box;
+  };
+
+  const forgetCanvas = (id: string, control: Control): void => {
+    if (!(control instanceof Container)) return;
+    const prefix = canvasInstancePrefix(id);
+    if (canvases.get(prefix) !== control) return;
+    canvases.delete(prefix);
+    const safeId = safeAreaIdForPrefix(prefix);
+    const box = safeAreas.get(safeId);
+    safeAreas.delete(safeId);
+    if (!box) return;
+    byId.delete(safeId);
+    const index = handles.indexOf(box);
+    if (index >= 0) handles.splice(index, 1);
   };
 
   return {
@@ -741,18 +835,23 @@ export function createAdtControlFactory(
       if (!spec.parentId) {
         attach(adt, control);
         if (spec.kind === "Canvas" && control instanceof Container) {
-          rootCanvas = control;
-          ensureSafeArea(control);
+          const prefix = canvasInstancePrefix(spec.id);
+          canvases.set(prefix, control);
+          ensureSafeArea(control, prefix);
         }
-      } else if (spec.parentId === SAFE_AREA_CONTROL_ID) {
+      } else if (isSafeAreaControlId(spec.parentId)) {
+        const prefix = prefixFromSafeAreaId(spec.parentId);
+        const canvas = canvases.get(prefix);
         const box =
-          safeArea ?? (rootCanvas ? ensureSafeArea(rootCanvas) : null);
+          safeAreas.get(spec.parentId) ??
+          (canvas ? ensureSafeArea(canvas, prefix) : null);
         if (box) box.addControl(control);
         else attach(adt, control);
       } else {
         const parent = byId.get(spec.parentId);
         if (parent instanceof Grid && spec.layoutMode === "grid") {
           parent.addControl(control, spec.gridRow ?? 0, spec.gridColumn ?? 0);
+          applyGridCellPadding(parent, gridGapByControl.get(parent) ?? 0);
         } else if (parent instanceof Container) {
           parent.addControl(control);
         } else {
@@ -778,7 +877,8 @@ export function createAdtControlFactory(
     },
     remove(id) {
       const control = byId.get(id);
-      if (!control || id === SAFE_AREA_CONTROL_ID) return;
+      if (!control || isSafeAreaControlId(id)) return;
+      forgetCanvas(id, control);
       disposeMaterialPresenter(id);
       disposeControl(control);
     },
@@ -794,8 +894,8 @@ export function createAdtControlFactory(
       materialPresenters.clear();
       handles.length = 0;
       byId.clear();
-      safeArea = null;
-      rootCanvas = null;
+      safeAreas.clear();
+      canvases.clear();
     },
   };
 

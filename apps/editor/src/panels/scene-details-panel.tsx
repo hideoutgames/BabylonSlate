@@ -14,9 +14,11 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
+  DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
   findActor,
+  identitySerializedTransform,
   patchComponentProperties,
   type SerializedActor,
   type SerializedScene,
@@ -49,6 +51,7 @@ import {
 } from "../lib/scene-component-entries";
 import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { fontAssetHasFacetype } from "../lib/play-fonts";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -81,6 +84,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const collisionLayers =
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -94,6 +99,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       assetRegistry?.getByGuid?.(guid)?.header.type ??
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
+  };
+  const fontHasFacetype = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -696,13 +705,35 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   })),
                 {
                   sortingLayers,
+                  collisionLayers,
                   assetLabel,
                   assetType,
+                  fontHasFacetype,
                   physicsWorld: scene.settings.physicsWorld,
                   onPickAsset: setAssetPick,
                 },
               )}
             />
+            {component.classId === "ColliderComponent" ? (
+              <PropertyGrid
+                title="Transform"
+                rows={spatialTransformPropertyRows(
+                  `${actor.id}-${component.id}`,
+                  scene.viewportMode,
+                  component.transform ?? identitySerializedTransform(),
+                  (transform) =>
+                    updateActor((entry) => ({
+                      ...entry,
+                      components: entry.components.map((candidate) =>
+                        candidate.id === component.id
+                          ? { ...candidate, transform }
+                          : candidate,
+                      ),
+                    })),
+                )}
+                data-testid={`collider-transform-grid-${component.id}`}
+              />
+            ) : null}
             {component.classId === "NavMeshComponent" ? (
               <div className="p-2">
                 <Button

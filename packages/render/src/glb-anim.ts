@@ -1,5 +1,13 @@
 import "./gltf-loader";
-import type { AbstractEngine, AbstractMesh, Node, TransformNode } from "@babylonjs/core";
+import type {
+  AbstractEngine,
+  AbstractMesh,
+  AssetContainer,
+  InstantiatedEntries,
+  Node,
+  TransformNode,
+} from "@babylonjs/core";
+import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { Scene } from "@babylonjs/core/scene";
 import { applyAnimStateToScene,
@@ -9,9 +17,104 @@ import { applyAnimStateToScene,
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
+import { RENDERING_GROUP } from "./sorting";
+
+/**
+ * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
+ * binding; the editor scene-loader can pass a stub without lights/cameras.
+ */
+export type ModelAnimLoadBinding = Pick<
+  SnapshotSceneBinding,
+  | "slotAnimEpoch"
+  | "slotAnimationGroups"
+  | "slotAnimLoads"
+  | "pendingAnimState"
+  | "slotAnimReady"
+  | "modelBytes"
+  | "modelPayloads"
+  | "modelClipAnimationGuids"
+  | "retargetAnimationLoads"
+  | "spritePayloads"
+>;
+
+const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
+const MODEL_INSTANCE_KEY = "babylonslateModelInstance";
+const MODEL_LOAD_KEY = "babylonslateModelLoadKey";
+
+type ModelPlaceholderMeta = {
+  [MODEL_PLACEHOLDER_KEY]?: boolean;
+  [MODEL_INSTANCE_KEY]?: InstantiatedEntries;
+  [MODEL_LOAD_KEY]?: string;
+};
+
+type CachedGlb = {
+  byteLength: number;
+  load: Promise<AssetContainer>;
+};
+
+type SceneGlbCache = {
+  loadCount: number;
+  entries: Map<string, CachedGlb>;
+};
+
+const glbCaches = new WeakMap<Scene, SceneGlbCache>();
+
+function cacheFor(scene: Scene): SceneGlbCache {
+  let cache = glbCaches.get(scene);
+  if (!cache) {
+    cache = { loadCount: 0, entries: new Map() };
+    glbCaches.set(scene, cache);
+    scene.onDisposeObservable.addOnce(() => {
+      for (const entry of cache!.entries.values()) {
+        void entry.load.then((container) => container.dispose()).catch(() => {});
+      }
+      cache!.entries.clear();
+    });
+  }
+  return cache;
+}
+
+/** Count of `LoadAssetContainerAsync` calls for this Scene (cache misses). */
+export function glbContainerLoadCount(scene: Scene): number {
+  return glbCaches.get(scene)?.loadCount ?? 0;
+}
+
+function modelLoadKey(guid: string, bytes: Uint8Array): string {
+  return `${guid}:${bytes.byteLength}`;
+}
+
+function asPlaceholderMeta(mesh: AbstractMesh): ModelPlaceholderMeta {
+  const current =
+    mesh.metadata && typeof mesh.metadata === "object"
+      ? (mesh.metadata as ModelPlaceholderMeta)
+      : {};
+  mesh.metadata = current;
+  return current;
+}
+
+export function isEditorModelPlaceholder(mesh: AbstractMesh): boolean {
+  return Boolean(
+    (mesh.metadata as ModelPlaceholderMeta | null)?.[MODEL_PLACEHOLDER_KEY],
+  );
+}
+
+export function hideModelPlaceholder(placeholder: AbstractMesh): void {
+  placeholder.visibility = 0;
+  placeholder.isVisible = false;
+  placeholder.isPickable = false;
+}
+
+/** Empty named transform root. Snapshot TRS and gizmos attach here; glTF parts instantiate under it. */
+export function createModelActorRoot(scene: Scene, name: string): Mesh {
+  const mesh = new Mesh(name, scene);
+  asPlaceholderMeta(mesh)[MODEL_PLACEHOLDER_KEY] = true;
+  hideModelPlaceholder(mesh);
+  mesh.renderingGroupId = RENDERING_GROUP.world;
+  return mesh;
+}
 
 function bumpSlotAnimEpoch(
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): number {
   if (!binding.slotAnimEpoch) binding.slotAnimEpoch = new Map();
@@ -21,7 +124,7 @@ function bumpSlotAnimEpoch(
 }
 
 export function disposeSlotAnimationGroups(
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   for (const group of binding.slotAnimationGroups?.get(slotId) ?? []) {
@@ -32,7 +135,7 @@ export function disposeSlotAnimationGroups(
 
 /** Cancel in-flight GLB animation loads and dispose registered groups. */
 export function invalidateSlotAnimLoad(
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   bumpSlotAnimEpoch(binding, slotId);
@@ -41,13 +144,13 @@ export function invalidateSlotAnimLoad(
 
 function replayPendingAnimState(
   scene: Scene,
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   const pending = binding.pendingAnimState?.get(slotId);
   if (!pending) return;
   applyAnimStateToScene(
-    sceneAnimHostFromBinding(binding, {
+    sceneAnimHostFromBinding(binding as SnapshotSceneBinding, {
       animationGroups: scene.animationGroups,
       spritePayloads: binding.spritePayloads,
     }),
@@ -61,6 +164,25 @@ async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
     pluginExtension: gltfLoaderExtension(bytes),
     name,
   });
+}
+
+function getCachedGlbContainer(
+  scene: Scene,
+  guid: string,
+  bytes: Uint8Array,
+): Promise<AssetContainer> {
+  const cache = cacheFor(scene);
+  const existing = cache.entries.get(guid);
+  if (existing && existing.byteLength === bytes.byteLength) {
+    return existing.load;
+  }
+  if (existing) {
+    void existing.load.then((container) => container.dispose()).catch(() => {});
+  }
+  cache.loadCount += 1;
+  const load = loadGlbContainer(scene, bytes, `${guid}.glb`);
+  cache.entries.set(guid, { byteLength: bytes.byteLength, load });
+  return load;
 }
 
 function wrapGroup(
@@ -119,18 +241,46 @@ export function adoptLoadedHierarchy(
     seen.add(node);
     if (!node.parent) node.parent = placeholder;
   }
-  placeholder.visibility = 0;
+  hideModelPlaceholder(placeholder);
+}
+
+function disposePlaceholderInstance(placeholder: AbstractMesh): void {
+  const meta = asPlaceholderMeta(placeholder);
+  meta[MODEL_INSTANCE_KEY]?.dispose();
+  meta[MODEL_INSTANCE_KEY] = undefined;
+}
+
+function keepSourceName(sourceName: string): string {
+  return sourceName;
+}
+
+function instantiateUnderPlaceholder(
+  placeholder: AbstractMesh,
+  container: AssetContainer,
+): InstantiatedEntries {
+  disposePlaceholderInstance(placeholder);
+  const instance = container.instantiateModelsToScene(keepSourceName, true, {
+    doNotInstantiate: true,
+  });
+  for (const node of instance.rootNodes) {
+    node.parent = placeholder;
+  }
+  const group = placeholder.renderingGroupId;
+  for (const child of placeholder.getChildMeshes()) {
+    child.renderingGroupId = group;
+  }
+  asPlaceholderMeta(placeholder)[MODEL_INSTANCE_KEY] = instance;
+  hideModelPlaceholder(placeholder);
+  return instance;
 }
 
 /**
- * Load the full glTF container for a Play slot. Keeps the sync first-primitive
- * mesh until the container is ready, then registers paused groups and replays
- * the last animState. Runs even when the file has no clips so untextured stubs
- * are replaced by the authored hierarchy.
+ * Load the Model GLB once per Scene+guid, then instantiate under the named
+ * actor root. Groups stay paused for Play seeks.
  */
 export function beginSlotModelAnimLoad(
   scene: Scene,
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
   clipAssetGuid: string,
   bytes: Uint8Array,
@@ -140,21 +290,23 @@ export function beginSlotModelAnimLoad(
   if (!isGltfModelBytes(bytes)) {
     return Promise.resolve();
   }
+  const key = modelLoadKey(clipAssetGuid, bytes);
+  const meta = asPlaceholderMeta(placeholder);
+  if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
+    return Promise.resolve();
+  }
   const epoch = bumpSlotAnimEpoch(binding, slotId);
   const load = (async () => {
-    let container: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
     try {
-      container = await loadGlbContainer(scene, bytes, `${clipAssetGuid}.glb`);
+      const container = await getCachedGlbContainer(scene, clipAssetGuid, bytes);
       if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
-        container.dispose();
         return;
       }
       if (placeholder.isDisposed()) {
-        container.dispose();
         return;
       }
-      container.addAllToScene();
-      adoptLoadedHierarchy(placeholder, container);
+      const instance = instantiateUnderPlaceholder(placeholder, container);
+      meta[MODEL_LOAD_KEY] = key;
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);
       const retargets = binding.retargetAnimationLoads?.get(clipAssetGuid) ?? [];
@@ -166,45 +318,38 @@ export function beginSlotModelAnimLoad(
       const existing = (binding.slotAnimationGroups.get(slotId) ?? []).filter(
         (group) => !nativeGuids.has(group.clipAssetGuid ?? ""),
       );
-      const wrapped = container.animationGroups.map((group) =>
+      const wrapped = instance.animationGroups.map((group) =>
         wrapGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
       for (const row of retargets) {
         const sourceBytes = binding.modelBytes?.get(row.sourceModelGuid);
         if (!sourceBytes || !isGltfModelBytes(sourceBytes)) continue;
-        let sourceContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
-        try {
-          sourceContainer = await loadGlbContainer(
-            scene,
-            sourceBytes,
-            `${row.animationGuid}-src.glb`,
+        const sourceContainer = await getCachedGlbContainer(
+          scene,
+          row.sourceModelGuid,
+          sourceBytes,
+        );
+        if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
+          return;
+        }
+        const sourceGroup = sourceContainer.animationGroups.find(
+          (group) => group.name === row.clipName,
+        );
+        if (sourceGroup) {
+          const retargeted = retargetAnimationGroupWithMeshProxy(
+            sourceGroup,
+            placeholder,
           );
-          if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
-            sourceContainer.dispose();
-            container.dispose();
-            return;
+          if (retargeted) {
+            wrapped.push(wrapGroup(retargeted, row.animationGuid));
           }
-          const sourceGroup = sourceContainer.animationGroups.find(
-            (group) => group.name === row.clipName,
-          );
-          if (sourceGroup) {
-            const retargeted = retargetAnimationGroupWithMeshProxy(
-              sourceGroup,
-              placeholder,
-            );
-            if (retargeted) {
-              wrapped.push(wrapGroup(retargeted, row.animationGuid));
-            }
-          }
-        } finally {
-          sourceContainer?.dispose();
         }
       }
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
     } catch {
-      container?.dispose();
+      // Loader / instantiate failures leave the empty named root in place.
     }
   })();
   if (!binding.slotAnimLoads) binding.slotAnimLoads = new Map();
@@ -246,25 +391,38 @@ async function animationRetargetHasMatchesOnScene(
   let sourceContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
   let targetContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
   try {
-    sourceContainer = await loadGlbContainer(scene, sourceBytes, "retarget-src.glb");
-    targetContainer = await loadGlbContainer(scene, targetBytes, "retarget-dst.glb");
-    targetContainer.addAllToScene();
+    sourceContainer = await getCachedGlbContainer(
+      scene,
+      "retarget-src",
+      sourceBytes,
+    );
+    targetContainer = await getCachedGlbContainer(
+      scene,
+      "retarget-dst",
+      targetBytes,
+    );
+    const instance = targetContainer.instantiateModelsToScene(
+      keepSourceName,
+      true,
+      { doNotInstantiate: true },
+    );
     const sourceGroup = sourceContainer.animationGroups.find(
       (group) => group.name === clipName,
     );
     const root =
-      (targetContainer.rootNodes[0] as TransformNode | undefined) ??
+      (instance.rootNodes[0] as TransformNode | undefined) ??
       targetContainer.transformNodes[0] ??
       targetContainer.meshes[0];
-    if (!sourceGroup || !root) return false;
+    if (!sourceGroup || !root) {
+      instance.dispose();
+      return false;
+    }
     const retargeted = retargetAnimationGroupWithMeshProxy(sourceGroup, root);
     const matched = retargeted != null;
     retargeted?.dispose();
+    instance.dispose();
     return matched;
   } catch {
     return false;
-  } finally {
-    sourceContainer?.dispose();
-    targetContainer?.dispose();
   }
 }

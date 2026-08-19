@@ -432,6 +432,17 @@ describe("collectGraphTypeAssets", () => {
     });
     expect(catalog.structures).toEqual([
       {
+        guid: "engine:HitResult",
+        name: "Hit Result",
+        fields: [
+          { name: "Hit", typeId: "bool" },
+          { name: "Location", typeId: "vec3" },
+          { name: "Normal", typeId: "vec3" },
+          { name: "Actor", typeId: "actor" },
+          { name: "Distance", typeId: "float" },
+        ],
+      },
+      {
         guid: "struct-stats",
         name: "Stats",
         fields: [{ name: "Health", typeId: "int" }],
@@ -445,6 +456,17 @@ describe("collectGraphTypeAssets", () => {
           { name: "All", value: 0 },
           { name: "Interface", value: 1 },
           { name: "Game", value: 2 },
+        ],
+      },
+      {
+        guid: "engine:CollisionChannel",
+        name: "Collision Channel",
+        members: [
+          { name: "All", value: 0 },
+          { name: "WorldStatic", value: 1 },
+          { name: "WorldDynamic", value: 2 },
+          { name: "Pawn", value: 3 },
+          { name: "Visibility", value: 4 },
         ],
       },
       {

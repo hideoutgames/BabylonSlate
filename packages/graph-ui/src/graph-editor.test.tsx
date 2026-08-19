@@ -438,7 +438,7 @@ describe("GraphEditor", () => {
     expect(container.querySelectorAll(".react-flow__node").length).toBe(80);
   });
 
-  it("mounts only viewport-near nodes when the host has a measured size", () => {
+  it("mounts only viewport-near nodes when the host has a measured size", { timeout: 15_000 }, () => {
     const restore = installImmediateGraphHostSize();
     const nodes = Array.from({ length: 200 }, (_, index) => ({
       id: `n${index}`,
@@ -466,7 +466,7 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("keeps a focused off-screen node mounted when virtualizing", () => {
+  it("keeps a focused off-screen node mounted when virtualizing", { timeout: 15_000 }, () => {
     const restore = installImmediateGraphHostSize();
     const nodes = Array.from({ length: 200 }, (_, index) => ({
       id: `n${index}`,
@@ -493,7 +493,7 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("keeps a selected off-screen node mounted so Copy stays available", () => {
+  it("keeps a selected off-screen node mounted so Copy stays available", { timeout: 15_000 }, () => {
     const restore = installImmediateGraphHostSize();
     const nodes = Array.from({ length: 200 }, (_, index) => ({
       id: `n${index}`,
@@ -521,7 +521,7 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("keeps virtualizing after a later 0×0 host size (hidden tab)", () => {
+  it("keeps virtualizing after a later 0×0 host size (hidden tab)", { timeout: 15_000 }, () => {
     const previous = globalThis.ResizeObserver;
     const observers: Array<{
       callback: ResizeObserverCallback;

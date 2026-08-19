@@ -182,8 +182,7 @@ describe("struct nodes", () => {
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("position:");
-    expect(compiled.source).toContain("rotation:");
+    expect(compiled.source).toContain("ctx.rotatorToQuat");
     expect(compiled.source).toContain("scale:");
-    expect(compiled.source).toContain("Math.PI");
   });
 });

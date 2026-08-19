@@ -13,7 +13,7 @@ import {
   type CatalogCategoryGroup,
 } from "@babylonslate/editor-kit";
 import type { ProjectInputSettings } from "@babylonslate/core";
-import { defaultExportPreset, isErr } from "@babylonslate/core";
+import { defaultExportPreset, isErr, MAX_COLLISION_LAYERS } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { Button } from "@babylonslate/ui/components/button";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
@@ -95,6 +95,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "pixels per unit pixel perfect integer zoom sorting layers",
   },
   {
+    id: "physics",
+    label: "Physics",
+    keywords: "collision layers collide mask havok",
+  },
+  {
     id: "fonts",
     label: "Fonts",
     keywords: "default font fallback family stack",
@@ -143,7 +148,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "fonts", "ui", "audio", "rendering", "textures", "plugins", "export", "sourceControl"] },
+  { label: "Project", ids: ["general", "input", "twoD", "physics", "fonts", "ui", "audio", "rendering", "textures", "plugins", "export", "sourceControl"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -633,6 +638,37 @@ export function SettingsModal({
               />
               <FieldDescription>
                 Back to front. Compiles to one alphaIndex sort key per sprite.
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "physics" ? (
+        <FieldGroup>
+          <FieldSet>
+            <FieldLegend>Physics</FieldLegend>
+            <Field>
+              <FieldLabel>Collision Layers</FieldLabel>
+              <NamedListEditor
+                values={projectDocument.settings.physics.collisionLayers}
+                onChange={(collisionLayers) =>
+                  updateProjectSettings({
+                    physics: {
+                      collisionLayers: collisionLayers.slice(
+                        0,
+                        MAX_COLLISION_LAYERS,
+                      ),
+                    },
+                  })
+                }
+                addPlaceholder="Layer"
+                addLabel="Add Layer"
+                data-testid="settings-collision-layers"
+              />
+              <FieldDescription>
+                Named bits for collider Layer and Collides With. Storage stays
+                32-bit. Maximum {MAX_COLLISION_LAYERS} layers.
               </FieldDescription>
             </Field>
           </FieldSet>

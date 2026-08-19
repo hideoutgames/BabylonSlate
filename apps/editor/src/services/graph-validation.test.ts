@@ -56,6 +56,52 @@ describe("hydrateSerializedGraphForEditor", () => {
     );
   });
 
+  it("rehydrates Print catalog defaultValue onto stored pins that lack it", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "print-1",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            __nodeType: "debug.print",
+            "default:key": "hp",
+            __pins: [
+              {
+                id: "duration",
+                name: "Duration",
+                kind: "data",
+                direction: "in",
+                type: { kind: "float" },
+              },
+              {
+                id: "color",
+                name: "Color",
+                kind: "data",
+                direction: "in",
+                type: { kind: "color" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      defaultValue?: unknown;
+    }>;
+    expect(hydrated.nodes[0]?.data["default:key"]).toBe("hp");
+    expect(pins.find((pin) => pin.id === "duration")?.defaultValue).toBe(2);
+    expect(pins.find((pin) => pin.id === "color")?.defaultValue).toEqual({
+      x: 1,
+      y: 1,
+      z: 1,
+      w: 1,
+    });
+  });
+
   it("maps legacy logMessage to debug.log with Log pins", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -316,6 +362,46 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[0]?.data.__editorOnly).toBe(true);
     expect(hydrated.nodes[1]?.data.__editorOnly).toBeUndefined();
   });
+
+  it("drops Get Variable wires whose types no longer assign after a container change", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "get",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            variableName: "Health",
+            typeId: "float",
+            container: "array",
+            implicitSelf: true,
+          },
+        },
+        {
+          id: "add",
+          type: "math.add",
+          position: { x: 200, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "get",
+          target: "add",
+          sourceHandle: "value",
+          targetHandle: "a",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string };
+    }>;
+    expect(pins.find((pin) => pin.id === "value")?.type.kind).toBe("array");
+    expect(hydrated.edges).toEqual([]);
+  });
 });
 
 describe("createDefaultLogicGraphSerialized", () => {
@@ -551,13 +637,27 @@ describe("validateSerializedGraph", () => {
       {
         nodes: [
           {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+          {
             id: "call",
             type: "functions.call",
-            position: { x: 0, y: 0 },
+            position: { x: 200, y: 0 },
             data: { functionName: "Jump", classId: "Hero", implicitSelf: true },
           },
         ],
-        edges: [],
+        edges: [
+          {
+            id: "e1",
+            source: "begin",
+            target: "call",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+        ],
       },
       {
         assetGuid: "g1",
@@ -621,6 +721,12 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
     const print = nodes.find((node) => node.id === "debug.print");
     expect(print?.defaultData).toMatchObject({ developmentOnly: true });
+    const printString = nodes.find((node) => node.id === "debug.printString");
+    expect(printString?.title).toBe("Print String");
+    expect(printString?.defaultData).toMatchObject({ developmentOnly: true });
+    const drawLine = nodes.find((node) => node.id === "debug.drawLine");
+    expect(drawLine?.title).toBe("Draw Debug Line");
+    expect(drawLine?.defaultData).toMatchObject({ developmentOnly: true });
   });
 
   it("lists Play Sound and mixer volume nodes on Actor and Class with volume 1", () => {
@@ -1925,6 +2031,37 @@ describe("scriptPaletteNodes", () => {
         (pin) =>
           pin.id === "value" &&
           (pin.type as { kind?: string; guid?: string }).guid === "struct-stats",
+      ),
+    ).toBe(true);
+  });
+
+  it("stamps Array container onto Get palette pins", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Hits",
+            typeId: "rotator",
+            container: "array",
+          },
+        ],
+      },
+    });
+    const get = nodes.find((node) => node.id === "variables.get:Hero:Hits");
+    expect(get?.defaultData).toMatchObject({
+      typeId: "rotator",
+      container: "array",
+    });
+    expect(
+      get?.pins?.some(
+        (pin) =>
+          pin.id === "value" && (pin.type as { kind?: string }).kind === "array",
       ),
     ).toBe(true);
   });

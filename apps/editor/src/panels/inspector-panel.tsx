@@ -7,16 +7,19 @@ import {
   PanelFrame,
   ParameterListEditor,
   PinListEditor,
-  PinTypePicker,
   PropertyGrid,
+  SearchDropdown,
   TypeVisualIcon,
+  VariableTypeFields,
   assetRowIdentity,
   classRowIdentity,
   formatEventMemberName,
   resolveTypeVisual,
   selectedPickerIdentity,
+  ASSET_REF_PICKER_TYPES,
   type ClassPickerEntry,
   type PinListRow,
+  type VariableTypeFieldsValue,
 } from "@babylonslate/editor-kit";
 import {
   Field,
@@ -28,6 +31,7 @@ import { Input } from "@babylonslate/ui/components/input";
 import { Button } from "@babylonslate/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   identitySerializedTransform,
   isEditorGraphHost,
@@ -50,6 +54,7 @@ import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { fontAssetHasFacetype } from "../lib/play-fonts";
 import {
   componentPropertyRows,
   subclassClassEntries,
@@ -119,6 +124,44 @@ function memberPinsFromRows(
   ];
 }
 
+function variableContainerOf(
+  member: GraphClassMember,
+): "single" | "array" | "map" {
+  return member.container === "array" || member.container === "map"
+    ? member.container
+    : "single";
+}
+
+function defaultValueForVariableType(
+  spec: {
+    typeId: string;
+    typeClassId?: string;
+    container: "single" | "array" | "map";
+  },
+  schemas: ReturnType<typeof typeSchemasFromGraphAssets>,
+): unknown {
+  if (spec.container === "array") return [];
+  if (spec.container === "map") return undefined;
+  if (
+    spec.typeId === "object" ||
+    spec.typeId === "actor" ||
+    spec.typeId === "wildcard" ||
+    spec.typeId === "asset"
+  ) {
+    return undefined;
+  }
+  if (spec.typeId === "class") return spec.typeClassId ?? "BObject";
+  return defaultValueForMember(spec.typeId, spec.typeClassId, schemas);
+}
+
+function constrainedTypeClassId(typeId: string, typeClassId?: string): string | undefined {
+  const trimmed = typeClassId?.trim();
+  if (trimmed) return trimmed;
+  if (typeId === "actor") return "Actor";
+  if (typeId === "object" || typeId === "class") return "BObject";
+  return undefined;
+}
+
 function ClassMemberDetails({
   graph,
   member,
@@ -147,12 +190,16 @@ function ClassMemberDetails({
 
   if (member.kind === "variable") {
     const typeId = member.typeId ?? "float";
+    const container = variableContainerOf(member);
     const isObject = typeId === "object";
+    const isActor = typeId === "actor";
     const isClass = typeId === "class";
     const isStruct = typeId === "struct";
     const isEnum = typeId === "enum";
+    const isAsset = typeId === "asset";
     const typeClassId =
-      member.typeClassId?.trim() || (isObject || isClass ? "BObject" : "");
+      member.typeClassId?.trim() ||
+      (isObject || isClass ? "BObject" : isActor ? "Actor" : "");
     const typeAsset = typeAssets.find((asset) => asset.guid === typeClassId);
     const typeAssetIdentity = assetRowIdentity(
       typeAsset
@@ -161,6 +208,38 @@ function ClassMemberDetails({
           ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
           : undefined,
     );
+    const commitTypeFields = (next: VariableTypeFieldsValue) => {
+      const nextContainer =
+        next.container === "array" || next.container === "map"
+          ? next.container
+          : "single";
+      const keepParam = keepsTypeClassId(next.typeId);
+      const nextClassId = keepParam
+        ? constrainedTypeClassId(next.typeId, next.typeClassId)
+        : undefined;
+      const typeChanged = next.typeId !== typeId;
+      const containerChanged = nextContainer !== container;
+      const patch: Partial<GraphClassMember> = {
+        typeId: next.typeId,
+        container: nextContainer === "single" ? undefined : nextContainer,
+        keyTypeId:
+          nextContainer === "map" ? (next.keyTypeId ?? "string") : undefined,
+        keyTypeClassId:
+          nextContainer === "map" ? next.keyTypeClassId : undefined,
+        typeClassId: nextClassId,
+      };
+      if (typeChanged || containerChanged) {
+        patch.defaultValue = defaultValueForVariableType(
+          {
+            typeId: next.typeId,
+            typeClassId: nextClassId,
+            container: nextContainer,
+          },
+          schemas,
+        );
+      }
+      commit(patch);
+    };
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -184,36 +263,26 @@ function ClassMemberDetails({
                 typeClassId: member.typeClassId,
                 schemas,
                 enumMembers,
+                container,
               },
             ),
           ]}
         />
-        <div className="flex flex-col gap-1">
-          <div className="text-sm font-medium">Type</div>
-          <PinTypePicker
-            value={typeId}
-            onChange={(nextType) => {
-              const keepParam = keepsTypeClassId(nextType);
-              const nextClassId = keepParam ? member.typeClassId : undefined;
-              const next: Partial<GraphClassMember> = {
-                typeId: nextType,
-                defaultValue:
-                  nextType === "object"
-                    ? undefined
-                    : nextType === "class"
-                      ? (nextClassId ?? "BObject")
-                      : defaultValueForMember(nextType, nextClassId, schemas),
-              };
-              if (!keepParam) next.typeClassId = undefined;
-              else if (member.typeClassId) next.typeClassId = member.typeClassId;
-              commit(next);
-            }}
-            data-testid="inspector-member-type"
-          />
-        </div>
-        {isObject || isClass ? (
-          <div className="flex flex-col gap-1">
-            <div className="text-sm font-medium">Class Type</div>
+        <VariableTypeFields
+          value={{
+            typeId,
+            typeClassId: member.typeClassId,
+            container,
+            keyTypeId: member.keyTypeId,
+            keyTypeClassId: member.keyTypeClassId,
+          }}
+          onChange={commitTypeFields}
+          classEntries={classEntries}
+          typeAssets={typeAssets}
+        />
+        {isObject || isActor || isClass ? (
+          <Field>
+            <FieldLabel>Class Type</FieldLabel>
             <Button
               type="button"
               variant="outline"
@@ -228,29 +297,54 @@ function ClassMemberDetails({
                 ),
               )}
             </Button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            <div className="text-sm font-medium">
-              {isEnum ? "Enum Type" : isStruct ? "Structure Type" : "Type Asset"}
-            </div>
+          </Field>
+        ) : isStruct || isEnum ? (
+          <Field>
+            <FieldLabel>
+              {isEnum ? "Enum Type" : "Structure Type"}
+            </FieldLabel>
             <Button
               type="button"
               variant="outline"
               className="h-auto w-full justify-start"
-              disabled={!isStruct && !isEnum}
               data-testid="inspector-member-type-asset"
-              onClick={() => {
-                if (isStruct || isEnum) setTypeAssetPickerOpen(true);
-              }}
+              onClick={() => setTypeAssetPickerOpen(true)}
             >
               {selectedPickerIdentity(
                 typeAssetIdentity,
                 typeClassId || "Pick type",
               )}
             </Button>
-          </div>
-        )}
+          </Field>
+        ) : isAsset ? (
+          <Field>
+            <FieldLabel>Asset Type</FieldLabel>
+            <SearchDropdown
+              title="Asset Type"
+              items={ASSET_REF_PICKER_TYPES.map((assetType) => ({
+                id: assetType,
+                label: assetType,
+                description: "Asset",
+              }))}
+              onSelect={(id) => commit({ typeClassId: id })}
+              data-testid="inspector-member-asset-type-picker"
+            >
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto w-full justify-start"
+                data-testid="inspector-member-asset-type"
+              >
+                {selectedPickerIdentity(
+                  typeClassId
+                    ? { displayLabel: typeClassId, displayType: "Asset" }
+                    : { displayLabel: undefined },
+                  "Pick type",
+                )}
+              </Button>
+            </SearchDropdown>
+          </Field>
+        ) : null}
         <ClassPicker
           open={classPickerOpen}
           onOpenChange={setClassPickerOpen}
@@ -276,7 +370,10 @@ function ClassMemberDetails({
           onPick={(guid) => {
             commit({
               typeClassId: guid ?? undefined,
-              defaultValue: defaultValueForMember(typeId, guid ?? undefined, schemas),
+              defaultValue:
+                container === "single"
+                  ? defaultValueForMember(typeId, guid ?? undefined, schemas)
+                  : member.defaultValue,
             });
             setTypeAssetPickerOpen(false);
           }}
@@ -422,16 +519,19 @@ function ClassMemberDetails({
 function PrefabComponentDetails({
   component,
   sortingLayers,
+  collisionLayers,
   physicsWorld,
   viewportMode,
   pickerAssets,
   assetLabel,
   assetType,
+  fontHasFacetype,
   onUpdate,
   onUpdateTransform,
 }: {
   component: SerializedComponent;
   sortingLayers: readonly string[];
+  collisionLayers: readonly string[];
   physicsWorld: "3d" | "2d";
   viewportMode: ViewportMode;
   pickerAssets: Array<{
@@ -442,6 +542,7 @@ function PrefabComponentDetails({
   }>;
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType: (guid: string | null | undefined) => string | undefined;
+  fontHasFacetype?: (guid: string | null | undefined) => boolean;
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
@@ -474,8 +575,10 @@ function PrefabComponentDetails({
         <PropertyGrid
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,
+            collisionLayers,
             assetLabel,
             assetType,
+            fontHasFacetype,
             physicsWorld,
             onPickAsset: setAssetPick,
           })}
@@ -610,6 +713,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const typeAssets = typeAssetPickerEntries(typeCatalog);
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const collisionLayers =
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const physicsWorld = physicsWorldFromOpenDocuments(openDocuments);
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
@@ -624,6 +729,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       assetRegistry?.getByGuid?.(guid)?.header.type ??
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
+  };
+  const fontHasFacetype = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
 
   const selectedPrefabComponentIds = prefabSelectedIds.filter(
@@ -654,11 +763,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         <PrefabComponentDetails
           component={selectedPrefabComponent}
           sortingLayers={sortingLayers}
+          collisionLayers={collisionLayers}
           physicsWorld={physicsWorld}
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}
           assetLabel={assetLabel}
           assetType={assetType}
+          fontHasFacetype={fontHasFacetype}
           onUpdate={(property, value) =>
             updateComponent(selectedPrefabComponent.id, property, value)
           }

@@ -30,6 +30,7 @@ class FakeCanvas {
   clientWidth = 256;
   clientHeight = 256;
   readonly listeners = new Map<string, Set<EventListener>>();
+  capturedPointers: number[] = [];
 
   addEventListener(type: string, listener: EventListener): void {
     const set = this.listeners.get(type) ?? new Set<EventListener>();
@@ -41,8 +42,24 @@ class FakeCanvas {
     this.listeners.get(type)?.delete(listener);
   }
 
+  setPointerCapture(pointerId: number): void {
+    this.capturedPointers.push(pointerId);
+  }
+
   getBoundingClientRect() {
-    return { left: 0, top: 0, width: 256, height: 256 };
+    return {
+      left: 0,
+      top: 0,
+      width: this.clientWidth,
+      height: this.clientHeight,
+    };
+  }
+
+  emit(type: string, event: Record<string, unknown>): void {
+    const payload = { preventDefault: () => {}, ...event } as unknown as Event;
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(payload);
+    }
   }
 }
 
@@ -935,6 +952,30 @@ describe("Play createEngine view", () => {
     resize.mockClear();
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
+  });
+
+  it("forwards Prefab RTT canvas pointers into the scene for gizmo drags", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(400);
+    const canvas = new FakeCanvas();
+    canvas.clientWidth = 200;
+    canvas.clientHeight = 100;
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+      present: "rtt",
+    });
+    handles.push(handle);
+    const down = vi.spyOn(handle.scene, "simulatePointerDown");
+    canvas.emit("pointerdown", {
+      pointerId: 3,
+      clientX: 100,
+      clientY: 50,
+    });
+    expect(handle.scene.pointerX).toBeCloseTo(400);
+    expect(handle.scene.pointerY).toBeCloseTo(200);
+    expect(down).toHaveBeenCalled();
   });
 
   it("keeps the Default Camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {

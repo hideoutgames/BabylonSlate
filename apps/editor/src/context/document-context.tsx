@@ -19,7 +19,7 @@ import type {
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, text3DFontGuidsFromScene } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -107,6 +107,7 @@ import {
   zipGameArtifact,
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
+import { collectFontFacetypeBytes } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
@@ -452,6 +453,11 @@ interface DocumentContextValue {
     tilesets: ReadonlyMap<string, TilesetPayload>,
     extraGuids?: readonly string[],
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
+  ) => Promise<Map<string, Uint8Array>>;
+  /** Facetype JSON bytes for Text3DComponent Font references. */
+  collectPlayFontFacetypeBytes: (
+    scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, Uint8Array>>;
   /** Model source bytes for scene MeshComponent `assetGuid`s. */
   collectPlayModelBytes: (
@@ -1494,6 +1500,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
         guiImageBytesByGuid: loaded.guiImageBytesByGuid,
+        fontFacetypeBytesByGuid: loaded.fontFacetypeBytesByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
         customResolution:
@@ -1761,6 +1768,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             twoD: {
               ...current.settings.twoD,
               ...settings.twoD,
+            },
+            physics: {
+              ...current.settings.physics,
+              ...settings.physics,
             },
             playPreview: {
               ...current.settings.playPreview,
@@ -2551,6 +2562,29 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (source && source.byteLength > 0) bytes.set(guid, source);
       }
       return bytes;
+    },
+    [projectService],
+  );
+
+  const collectPlayFontFacetypeBytes = useCallback(
+    async (
+      scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
+    ): Promise<Map<string, Uint8Array>> => {
+      const assets = projectService.registry?.list() ?? [];
+      const guids = [
+        ...text3DFontGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => text3DFontGuidsFromScene(entry)),
+      ];
+      return collectFontFacetypeBytes(
+        assets.map((asset) => ({
+          guid: asset.header.guid,
+          path: asset.path,
+          type: asset.header.type,
+        })),
+        guids,
+        (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+      );
     },
     [projectService],
   );
@@ -3733,6 +3767,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
+      collectPlayFontFacetypeBytes,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
@@ -3784,6 +3819,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
+      collectPlayFontFacetypeBytes,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,

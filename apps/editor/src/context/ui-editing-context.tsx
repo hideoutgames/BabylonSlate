@@ -24,6 +24,7 @@ import {
   collectImageGuidsFromUiDocuments,
   nestedUiPickableGuids,
   parentOwnsChildLayout,
+  previewRect,
   resolveUiAdtIdeal,
   extractWidgetAsPrefab,
   type DesignerCanvasId,
@@ -59,9 +60,19 @@ import {
 } from "../lib/engine-ui-presets";
 import {
   centeredFitView,
+  frameRectView,
   previewScaleToFit,
+  uiDesignerCanvasFitKey,
+  UI_DESIGN_FIT_PADDING_PX,
+  UI_DESIGN_HANDLE_HIT_SIZE_PX,
   type DesignView,
 } from "../components/ui-design-gestures";
+import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
+import {
+  createUiDesignerSession,
+  type UiDesignerLiveHost,
+  type UiDesignerSession,
+} from "../lib/ui-designer-session";
 import { UiWidgetCatalog, type WidgetCatalogSelection } from "../components/ui-widget-catalog";
 import type { UiAssetPickKind } from "../components/ui-design-details";
 import { isInterfaceMaterialForPicker } from "../lib/content-browser-helpers";
@@ -120,6 +131,13 @@ export interface UiEditingContextValue {
   openNestedAsset: (guid: string) => void;
   setAssetPick: (kind: UiAssetPickKind | null) => void;
   fitView: () => void;
+  frameSelection: () => void;
+  layoutSession: UiDesignerSession;
+  registerDesignerHost: (
+    host: UiDesignerLiveHost | null,
+    present: (() => void) | null,
+    onOverlay?: ((id: string, layout: WidgetLayout) => void) | null,
+  ) => void;
   nestedUiAssets: ReadonlyArray<{ guid: string; name: string }>;
 }
 
@@ -192,6 +210,42 @@ export function UiEditingProvider({
   >(null);
   const latestPayloadRef = useRef(payload);
   latestPayloadRef.current = payload;
+  const designerHostRef = useRef<UiDesignerLiveHost | null>(null);
+  const designerPresentRef = useRef<() => void>(() => {});
+  const designerOverlayRef = useRef<(id: string, layout: WidgetLayout) => void>(
+    () => {},
+  );
+  const patchLayoutRef = useRef<
+    (id: string, layout: WidgetLayout, mergeKey?: string) => void
+  >(() => {});
+  const strokeSchedulerRef = useRef(createUiFrameScheduler());
+  const fittedCanvasKeyRef = useRef<string | null>(null);
+  const layoutSession = useMemo(
+    () =>
+      createUiDesignerSession({
+        getHost: () => designerHostRef.current,
+        present: () => designerPresentRef.current(),
+        schedule: (work) => strokeSchedulerRef.current.schedule(work),
+        commitLayout: (id, layout, mergeKey) =>
+          patchLayoutRef.current(id, layout, mergeKey),
+        onOverlay: (id, layout) => designerOverlayRef.current(id, layout),
+      }),
+    [],
+  );
+  const registerDesignerHost = useCallback(
+    (
+      host: UiDesignerLiveHost | null,
+      present: (() => void) | null,
+      onOverlay?: ((id: string, layout: WidgetLayout) => void) | null,
+    ) => {
+      designerHostRef.current = host;
+      designerPresentRef.current = present ?? (() => {});
+      if (onOverlay !== undefined) {
+        designerOverlayRef.current = onOverlay ?? (() => {});
+      }
+    },
+    [],
+  );
 
   const indexed = (assetRegistry?.list() ?? []).find((asset) => asset.path === path);
   const selfGuid = indexed?.header.guid ?? path;
@@ -371,13 +425,16 @@ export function UiEditingProvider({
 
   useEffect(() => {
     if (viewportSize.width < 2 || viewportSize.height < 2) return;
+    const key = uiDesignerCanvasFitKey(presetId, viewport);
+    if (fittedCanvasKeyRef.current === key) return;
+    fittedCanvasKeyRef.current = key;
     setView(
       centeredFitView(viewportSize, {
         width: viewport.width,
         height: viewport.height,
       }).view,
     );
-  }, [presetId, viewport.width, viewport.height, viewportSize]);
+  }, [presetId, viewport, viewport.height, viewport.width, viewportSize]);
 
   const selected =
     ui.widgets[selectedId] ?? ui.widgets[ui.rootId] ?? createWidget(ui.rootId, "Canvas");
@@ -438,6 +495,7 @@ export function UiEditingProvider({
     },
     [commit],
   );
+  patchLayoutRef.current = patchLayout;
 
   const addWidget = useCallback(
     (selection: WidgetCatalogSelection) => {
@@ -468,8 +526,31 @@ export function UiEditingProvider({
       const next = insertWidget(current, widget, parent.id);
       commit({ ...latestPayloadRef.current, ...next });
       setSelectedId(widget.id);
+      if (viewportSize.width >= 2 && viewportSize.height >= 2) {
+        const parentRect = {
+          x: 0,
+          y: 0,
+          width: viewport.width,
+          height: viewport.height,
+        };
+        setView(
+          frameRectView(
+            viewportSize,
+            previewRect(parentRect, widget.layout),
+            previewScale,
+            UI_DESIGN_FIT_PADDING_PX + UI_DESIGN_HANDLE_HIT_SIZE_PX,
+          ),
+        );
+      }
     },
-    [commit, selectedId],
+    [
+      commit,
+      previewScale,
+      selectedId,
+      viewport.height,
+      viewport.width,
+      viewportSize,
+    ],
   );
 
   const nestedUiAssets = pickerAssets.map((asset) => ({
@@ -526,6 +607,20 @@ export function UiEditingProvider({
       }).view,
     );
   }, [viewport.height, viewport.width, viewportSize]);
+
+  const frameSelection = useCallback(() => {
+    const control = controls.find((row) => row.id === selectedId);
+    const rect = control?.guiRect;
+    if (!rect || viewportSize.width < 2) return;
+    setView(
+      frameRectView(
+        viewportSize,
+        rect,
+        previewScale,
+        UI_DESIGN_FIT_PADDING_PX + UI_DESIGN_HANDLE_HIT_SIZE_PX,
+      ),
+    );
+  }, [controls, previewScale, selectedId, viewportSize]);
 
   const actionNames = normalizeInputMappings(
     projectDocument?.settings.input,
@@ -594,6 +689,9 @@ export function UiEditingProvider({
       nestedUiAssets,
       setAssetPick,
       fitView,
+      frameSelection,
+      layoutSession,
+      registerDesignerHost,
     }),
     [
       actionNames,
@@ -609,6 +707,7 @@ export function UiEditingProvider({
       controls,
       devicePresets,
       fitView,
+      frameSelection,
       fontEntries,
       resolveImageUrl,
       resolveInterfaceMaterial,
@@ -619,6 +718,8 @@ export function UiEditingProvider({
       patchWidget,
       payload,
       path,
+      layoutSession,
+      registerDesignerHost,
       presetId,
       previewScale,
       selected,
