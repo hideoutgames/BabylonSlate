@@ -591,13 +591,27 @@ describe("validateSerializedGraph", () => {
       {
         nodes: [
           {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+          {
             id: "call",
             type: "functions.call",
-            position: { x: 0, y: 0 },
+            position: { x: 200, y: 0 },
             data: { functionName: "Jump", classId: "Hero", implicitSelf: true },
           },
         ],
-        edges: [],
+        edges: [
+          {
+            id: "e1",
+            source: "begin",
+            target: "call",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+        ],
       },
       {
         assetGuid: "g1",

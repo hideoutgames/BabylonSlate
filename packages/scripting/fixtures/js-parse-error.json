@@ -3,9 +3,24 @@
   "kind": "function",
   "nodes": [
     {
+      "id": "in",
+      "typeId": "flow.function.input",
+      "position": { "x": 0, "y": 0 },
+      "pins": [
+        {
+          "id": "execOut",
+          "name": "then",
+          "kind": "exec",
+          "direction": "out",
+          "type": { "kind": "exec" }
+        }
+      ],
+      "properties": {}
+    },
+    {
       "id": "js",
       "typeId": "debug.executeJavaScript",
-      "position": { "x": 0, "y": 0 },
+      "position": { "x": 200, "y": 0 },
       "pins": [
         {
           "id": "execIn",
@@ -27,5 +42,13 @@
       }
     }
   ],
-  "edges": []
+  "edges": [
+    {
+      "id": "exec",
+      "sourceNodeId": "in",
+      "sourcePinId": "execOut",
+      "targetNodeId": "js",
+      "targetPinId": "execIn"
+    }
+  ]
 }
