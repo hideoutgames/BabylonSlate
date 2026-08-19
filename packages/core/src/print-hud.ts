@@ -72,3 +72,15 @@ export function visiblePrintHudEntries(
 ): PrintHudEntry[] {
   return entries.filter((entry) => entry.expiresAt > now);
 }
+
+/** Delay until the soonest visible expiry, or `null` when nothing is showing. */
+export function nextPrintHudTimeoutMs(
+  entries: readonly PrintHudEntry[],
+  now = Date.now(),
+): number | null {
+  const visible = visiblePrintHudEntries(entries, now);
+  if (visible.length === 0) return null;
+  const soonest = Math.min(...visible.map((entry) => entry.expiresAt));
+  const delay = soonest - now;
+  return delay > 0 ? delay : null;
+}

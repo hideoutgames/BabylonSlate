@@ -104,9 +104,9 @@ See [fonts.md](fonts.md).
 
 `play-debug-draw.ts` applies `{ type: "debugDraw" }` in Play (editor overlay and packed player). World-space wireframes, not editor gizmos:
 
-- `CreateLines` / `CreateDashedLines`; **GreasedLine** when Line thickness > 1
+- `CreateLines`; **GreasedLine** when Line thickness > 1
 - Tag `playDebugOverlay` so illumination/shadows skip them (same idea as other Play helpers)
-- Duration `0` = one frame (expire after the first `onBeforeRender`); `> 0` = seconds
+- Duration `0` = one frame (expire after the first `onAfterRender`); `> 0` = seconds
 - Coordinate System draws RGB axes and ignores Color
 - Player `applyPlayerEngineCommand` accepts `debugDraw` **without** `bundleDebugger`
 

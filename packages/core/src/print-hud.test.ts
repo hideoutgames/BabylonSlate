@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPrintHudCommand,
+  nextPrintHudTimeoutMs,
   printHudCssColor,
   printHudDurationMs,
   visiblePrintHudEntries,
@@ -49,5 +50,17 @@ describe("applyPrintHudCommand", () => {
     ]);
     expect(visiblePrintHudEntries(second, 2_400)).toHaveLength(1);
     expect(visiblePrintHudEntries(second, 2_500)).toHaveLength(0);
+  });
+});
+
+describe("nextPrintHudTimeoutMs", () => {
+  it("returns the delay until the soonest visible expiry", () => {
+    const entries = applyPrintHudCommand(
+      [],
+      { message: "flash", key: "a", duration: 0 },
+      1_000,
+    );
+    expect(nextPrintHudTimeoutMs(entries, 1_000)).toBe(16);
+    expect(nextPrintHudTimeoutMs(entries, 1_016)).toBeNull();
   });
 });
