@@ -71,11 +71,6 @@ const DEFAULT_ADT_IDEAL = {
   scaleRule: "shortestSide" as const,
 };
 
-const DEFAULT_ADT_IDEAL = {
-  designResolution: { width: 1920, height: 1080 },
-  scaleRule: "shortestSide" as const,
-};
-
 export function UiDesignCanvas({
   ui,
   viewport,
