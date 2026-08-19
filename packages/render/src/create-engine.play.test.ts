@@ -779,6 +779,15 @@ describe("Play createEngine view", () => {
     expect(handle.isFreeCamEnabled()).toBe(false);
   });
 
+  it("applies setRenderQuality on Play views only, not the editor viewport", () => {
+    const play = playHandle(sharedEngine());
+    const editor = editorHandle(sharedEngine());
+    play.handle.applyCommand({ type: "setRenderQuality", level: "low" });
+    editor.handle.applyCommand({ type: "setRenderQuality", level: "low" });
+    expect(play.handle.scaling.getLevel()).toBe(2);
+    expect(editor.handle.scaling.getLevel()).toBe(1);
+  });
+
   it("syncs the Fake audio listener to the possessed camera world pose", async () => {
     const { FakeAudioPlaybackBackend } = await import("./audio-playback-backend");
     const backend = new FakeAudioPlaybackBackend();
@@ -827,6 +836,105 @@ describe("Play createEngine view", () => {
     expect(backend.listener.z).toBeCloseTo(-6, 5);
     expect(fallback?.globalPosition.x ?? 0).not.toBeCloseTo(10, 0);
     handle.dispose();
+  });
+
+  it("does not registerView when present is rtt", () => {
+    const engine = sharedEngine();
+    const registerView = vi.spyOn(engine, "registerView");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      editor: true,
+      present: "rtt",
+    });
+    handles.push(handle);
+    expect(registerView).not.toHaveBeenCalled();
+    expect(handle.engine).toBe(engine);
+    expect(handle.editor).not.toBeNull();
+  });
+
+  it("does not unRegisterView on dispose when present is rtt", () => {
+    const engine = sharedEngine();
+    const unRegisterView = vi.spyOn(engine, "unRegisterView");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      editor: true,
+      present: "rtt",
+    });
+    handle.dispose();
+    handles.pop();
+    expect(unRegisterView).not.toHaveBeenCalled();
+  });
+
+  it("uses one Engine for editor viewport, Prefab rtt, and Play overlay", () => {
+    const engine = sharedEngine();
+    const editorCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const prefabCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const playCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const editor = createEngine(editorCanvas, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    const prefab = createEngine(prefabCanvas, {
+      sharedEngine: engine,
+      editor: true,
+      present: "rtt",
+    });
+    const play = createEngine(playCanvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(editor, prefab, play);
+    expect(editor.engine).toBe(engine);
+    expect(prefab.engine).toBe(engine);
+    expect(play.engine).toBe(engine);
+    expect(prefab.scene).not.toBe(editor.scene);
+    expect(prefab.scene).not.toBe(play.scene);
+    expect(editor.scene).not.toBe(play.scene);
+  });
+
+  it("does not dispose the shared Engine when Prefab rtt handle disposes", () => {
+    const engine = sharedEngine();
+    const disposeEngine = vi.spyOn(engine, "dispose");
+    const handle = createEngine(
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { sharedEngine: engine, editor: true, present: "rtt" },
+    );
+    handle.dispose();
+    expect(disposeEngine).not.toHaveBeenCalled();
+    expect(engine.getLoadedTexturesCache()).toBeDefined();
+  });
+
+  it("renders Prefab into camera.outputRenderTarget instead of the default framebuffer", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      editor: true,
+      present: "rtt",
+    });
+    handles.push(handle);
+    const camera = handle.scene.activeCamera;
+    expect(camera).not.toBeNull();
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    expect(camera?.outputRenderTarget).not.toBeNull();
+  });
+
+  it("does not call engine.resize from Prefab rtt present", () => {
+    const engine = sharedEngine();
+    const resize = vi.spyOn(engine, "resize");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      editor: true,
+      present: "rtt",
+    });
+    handles.push(handle);
+    resize.mockClear();
+    handle.resize();
+    expect(resize).not.toHaveBeenCalled();
   });
 
   it("keeps the Default Camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {

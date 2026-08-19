@@ -60,6 +60,56 @@ export function asUiDocument(value: unknown): UserInterfaceDocument {
   return normalizeUserInterfaceDocument(value);
 }
 
+/** True when a payload has a widget tree — not `{}` or dockKind-only. */
+export function isUsableUiDocumentPayload(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.rootId === "string" && record.rootId.length > 0) return true;
+  return record.widgets !== null && typeof record.widgets === "object";
+}
+
+export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
+
+export type NestedUiAssetRef = {
+  path: string;
+  header: { payload?: unknown };
+};
+
+export type ResolveNestedUiDocumentOptions = {
+  selfGuid?: string | null;
+  selfDocument?: UserInterfaceDocument | null;
+  openDocuments?: ReadonlyArray<{ ref: { path: string }; content: unknown }>;
+  getAsset?: (guid: string) => NestedUiAssetRef | null | undefined;
+  uiLibrary?: PlayUiLibrary;
+};
+
+/**
+ * Nested UserInterface documents: open content, then the loaded library,
+ * then a usable header payload. Empty `{}` / dockKind-only headers are ignored.
+ */
+export function resolveNestedUiDocument(
+  guid: string,
+  options: ResolveNestedUiDocumentOptions,
+): UserInterfaceDocument | null {
+  if (!guid) return null;
+  if (options.selfGuid && guid === options.selfGuid) {
+    return options.selfDocument ?? null;
+  }
+  const asset = options.getAsset?.(guid) ?? null;
+  const open = asset
+    ? options.openDocuments?.find((entry) => entry.ref.path === asset.path)
+    : undefined;
+  if (isUsableUiDocumentPayload(open?.content)) {
+    return asUiDocument(open!.content);
+  }
+  const fromLibrary = options.uiLibrary?.[guid];
+  if (fromLibrary) return fromLibrary;
+  if (asset && isUsableUiDocumentPayload(asset.header.payload)) {
+    return asUiDocument(asset.header.payload);
+  }
+  return null;
+}
+
 function isSerializedGraph(value: unknown): value is SerializedGraph {
   if (!value || typeof value !== "object") return false;
   const record = value as { nodes?: unknown; edges?: unknown };
@@ -143,8 +193,6 @@ export type PlayHudInstance = {
   assetGuid: string;
   classId: string;
 };
-
-export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
 
 /** Open in-memory UserInterface payloads win over disk bytes. */
 export function preferOpenPlayUiContent(
@@ -621,7 +669,7 @@ export function materialGuidsFromScenes(
   return guids;
 }
 
-/** Interface Material guids referenced by HUD / EUI Material widgets. */
+/** Interface Material guids referenced by HUD Material widgets. */
 export function interfaceMaterialGuidsFromUiDocuments(
   documents: Iterable<UserInterfaceDocument>,
   resolveNested?: (guid: string) => UserInterfaceDocument | null,

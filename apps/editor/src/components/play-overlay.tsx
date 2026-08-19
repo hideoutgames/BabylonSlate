@@ -60,7 +60,10 @@ import type {
 } from "@babylonslate/shader-graph";
 import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { isTestModeEnabled } from "@babylonslate/vfs";
-import { audioStats } from "@babylonslate/render";
+import {
+  audioDebugOverlayText,
+  audioStats,
+} from "@babylonslate/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
@@ -205,6 +208,7 @@ export function PlayOverlay({
   const [actorYs, setActorYs] = useState<number[]>([]);
   const [audioQueued, setAudioQueued] = useState(0);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [audioDebugText, setAudioDebugText] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [paused, setPaused] = useState(pauseOnPlay);
@@ -564,6 +568,17 @@ export function PlayOverlay({
     };
   }, []);
 
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const next = audioDebugOverlayText(audioStats);
+      setAudioDebugText((prev) => (prev === next ? prev : next));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
   return (
     <div
       ref={overlayRef}
@@ -675,6 +690,14 @@ export function PlayOverlay({
         }
       />
       <PrintOverlay entries={printEntries} />
+      {audioDebugText !== null ? (
+        <pre
+          className="pointer-events-none absolute bottom-3 right-3 z-20 m-0 max-h-48 max-w-md overflow-hidden whitespace-pre rounded-md bg-background/80 p-2 font-mono text-xs text-foreground"
+          data-testid="audio-debug-overlay"
+        >
+          <SelectableText>{audioDebugText}</SelectableText>
+        </pre>
+      ) : null}
       {logs.length > 0 ? (
         <div
           className="pointer-events-none absolute bottom-3 left-3 max-h-32 max-w-md overflow-hidden rounded-md bg-background/80 p-2 text-xs"

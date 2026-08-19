@@ -211,6 +211,23 @@ export function createDefaultSoundAttenuationPayload(): SoundAttenuationPayload 
   };
 }
 
+export function fillEmptySourceClipName(
+  payload: AudioPayload | unknown,
+  assetName: string,
+): AudioPayload {
+  const audio = normalizeAudioPayload(payload);
+  const name = assetName.trim();
+  if (!name) return audio;
+  let changed = false;
+  const clips = audio.clips.map((clip) => {
+    if (clip.chunkId !== AUDIO_DEFAULT_SOURCE_CHUNK) return clip;
+    if (clip.name.trim() !== "") return clip;
+    changed = true;
+    return { ...clip, name };
+  });
+  return changed ? { ...audio, clips } : audio;
+}
+
 export function normalizeAudioPayload(value: unknown): AudioPayload {
   const source = asRecord(value);
   let pitchMin = clampPitch(source.pitchMin, 1);

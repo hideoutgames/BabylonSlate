@@ -76,7 +76,7 @@ function blitTextureToCanvas(
 
 /**
  * Compile an Interface material onto a widget-sized RTT and blit into a 2D
- * canvas for a GUI Image (`domImage`). Shared by designer, Play HUD, live EUI,
+ * canvas for a GUI Image (`domImage`). Shared by designer, Play HUD,
  * and the packaged player.
  */
 export function createInterfaceMaterialPresenter(

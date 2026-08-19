@@ -42,7 +42,7 @@ Every registered command has a tier. A non-debug registry **does not register de
 | Tier | Ships | Commands |
 | --- | --- | --- |
 | **core** | Every build | `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, `help`, plus user `BDebugCommand` classes |
-| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
+| **debug** | Debugger bundled | `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start`, `snapshot stop` |
 
 Real export tree-shaking of the debug module is landed: the release player calls `createCommandRegistry({ includeDebug: false })` via `includeDebugCommands: manifest.bundleDebugger`. Preview Build and a **Bundle Debugger** export preset keep the debug tier. See [exporter.md](exporter.md).
 
@@ -63,15 +63,16 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `renderquality` / `resolutionscale` / `volume` / `framecap` | Typed setters. Optional arg prints the last value. Play applies `{ type: "setRenderQuality" \| "setResolutionScale" \| "setGlobalVolume" \| "setFrameCap" }` (`high=1`, `medium=1.5`, `low=2` hardware scale on the Play view only) |
+| `renderquality` / `resolutionscale` / `volume` / `framecap` | Typed setters. Optional arg prints the last value. Play applies `{ type: "setRenderQuality" \| "setResolutionScale" \| "setGlobalVolume" \| "setFrameCap" }` (`high=1`, `medium=1.5`, `low=2` hardware scale on the Play view only). `resolutionscale` clamps `1..2` on the host so print matches apply |
 | `shadowquality` | enum `off`/`512`/`1024`/`2048`. Runtime emits `{ type: "setShadowQuality"; level }` and the renderer sizes the one `ShadowGenerator` (or disposes it when `off`). `2048` also warns |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
 | `pause` / `resume` / `unpause` / `step` | `pause` / `resume` / overlay-style `resume`→`tick`→`pause`. Console pause/resume emit `{ type: "sessionPaused" }` so overlay chrome matches |
-| `slomo [rate]` | `setTimeDilation` / `getTimeDilation`. `tick` uses `dt * rate` (clamp `0..8`) for script, physics, nav crowd, and BT. Trace replay keeps recorded `dt` |
-| `freecam [on\|off]` | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stay off the game ring; gamepad still forwards |
+| `slomo [rate]` | `setTimeDilation` / `getTimeDilation`. `tick` uses `dt * rate` (clamp `0..8`) for script, physics, nav crowd, and BT. Trace header and frame snapshots keep recorded (undilated) `dt` |
+| `freecam [on\|off]` | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stay off the game ring; 2D pinch zooms ortho; gamepad still forwards |
 | `showfps` / `stat *` | `{ type: "setShowFps" }` / `{ type: "setStat" }`. Opens Stats HUD; `stat` highlights unit (timings), memory, draws, or threads (main vs worker) |
-| `wireframe` / `showbounds` / `showcollision` / `shownav` | Play-scene overlays. Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/polylines) |
+| `wireframe` / `showbounds` / `showcollision` / `shownav` | Play-scene overlays. Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/polylines; body rotation of local offsets and polyline points) |
+| `showaudiodebug` | `{ type: "setShowAudioDebug" }`. DOM overlay of playing AudioV2 voices (applies; not log-only) |
 | `dumpactors` / `inspect [name\|guid]` | Format `inspectWorld()`. Bare `inspect` uses overlay Inspector selection when known, else prints usage |
 | `dumplog` | `dumpLog()` from the log ring |
 | `snapshot start` / `snapshot stop` | `startSnapshot` / `stopSnapshot` → `TraceRecorder`; stop emits a `trace` command |
@@ -90,7 +91,7 @@ The shared `ParameterListEditor` in `editor-kit` authors those rows (types, opti
 
 ## Console, inspector, and stats HUD
 
-Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`). Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples fps on the rAF pump; Pause / Console / Inspector stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
+Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **Console**, **Inspector**, **Stop**, plus **Step** while paused) with 44px targets. `StatsHud` stays **collapsed** until Stats is tapped so the first Play frame reads as a game view. Pause calls `session.setPaused` (the same path as `attachLifecyclePause`), which pauses the render scheduler **and** live AudioV2 voices. Close is one tap (**Stop**). Preview Build uses the same labeled **Stop** over its player iframe (the packaged player keeps its own stats HUD, which samples fps on the rAF pump; Pause / Console / Inspector stay overlay-Play-only). When Preview Build is on, the chrome launch control reads **Preview**.
 
 **Debug menu** (next to Play) persists overlay chrome in Engine Settings `debuggerDefaults` (same store as Preview Build). Do not reuse unused `showFps` (defaults false).
 
@@ -100,7 +101,7 @@ Play overlay chrome is a labeled top bar (**Pause** / **Resume**, **Stats**, **C
 | Session | Pause On Play | off | After Play boot, `setPaused(true)` via `createPlayPauseGate` so `boot.play`'s `resume()` cannot undo it. `start()` / Begin Play may still run; the first tick after that waits for Resume / Step. Overlay boot also posts `{ type: "setPaused", paused: true }` after `{ type: "play" }`. |
 | Session | Preview Build | off | Disabled while playing or preparing |
 
-`showcollision` / `showbounds` / `wireframe` / `shownav` apply on the Play scene from the console (not Debug-menu items).
+`showcollision` / `showbounds` / `wireframe` / `shownav` / `showaudiodebug` apply from the console (not Debug-menu items). Audio debug is a DOM overlay that keeps drawing while Pause freezes the sim.
 
 Play overlay **extends** the existing FPS / `scriptMs` / `physicsMs` strip:
 

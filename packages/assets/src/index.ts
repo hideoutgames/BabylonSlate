@@ -3,6 +3,7 @@ export * from "./babasset";
 export * from "./babproject";
 export * from "./blob-store";
 export * from "./bytes";
+export * from "./clear-asset-refs";
 export * from "./content-root";
 export * from "./decode-source-rgba";
 export * from "./derived-data";

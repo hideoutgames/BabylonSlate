@@ -1105,21 +1105,45 @@ describe("selection outline", () => {
 describe("gizmo host", () => {
   it("hides the axes 2D cannot use", () => {
     expect(gizmoAxisEnabledFlags("2d", "translate")).toEqual({
-      position: { x: true, y: true, z: false },
+      position: {
+        x: true,
+        y: true,
+        z: false,
+        xPlane: false,
+        yPlane: false,
+        zPlane: true,
+      },
       rotation: { x: false, y: false, z: false },
       scale: { x: false, y: false, z: false, uniform: false },
     });
     expect(gizmoAxisEnabledFlags("2d", "rotate")).toEqual({
-      position: { x: false, y: false, z: false },
+      position: {
+        x: false,
+        y: false,
+        z: false,
+        xPlane: false,
+        yPlane: false,
+        zPlane: false,
+      },
       rotation: { x: false, y: false, z: true },
       scale: { x: false, y: false, z: false, uniform: false },
     });
     expect(gizmoAxisEnabledFlags("2d", "scale")).toEqual({
-      position: { x: false, y: false, z: false },
+      position: {
+        x: false,
+        y: false,
+        z: false,
+        xPlane: false,
+        yPlane: false,
+        zPlane: false,
+      },
       rotation: { x: false, y: false, z: false },
       scale: { x: true, y: true, z: false, uniform: true },
     });
     expect(gizmoAxisEnabledFlags("3d", "translate").position.z).toBe(true);
+    expect(gizmoAxisEnabledFlags("3d", "translate").position.xPlane).toBe(true);
+    expect(gizmoAxisEnabledFlags("3d", "translate").position.yPlane).toBe(true);
+    expect(gizmoAxisEnabledFlags("3d", "translate").position.zPlane).toBe(true);
     expect(gizmoAxisEnabledFlags("3d", "rotate").rotation.x).toBe(true);
   });
 
@@ -1127,10 +1151,21 @@ describe("gizmo host", () => {
     const { scene } = createHandle();
     const host = createGizmoHost(scene, { mode: "2d", tool: "translate" });
     expect(host.mode).toBe("2d");
+    expect(host.positionGizmo.xGizmo.isEnabled).toBe(true);
+    expect(host.positionGizmo.yGizmo.isEnabled).toBe(true);
+    expect(host.positionGizmo.zGizmo.isEnabled).toBe(false);
+    expect(host.positionGizmo.xPlaneGizmo.isEnabled).toBe(false);
+    expect(host.positionGizmo.yPlaneGizmo.isEnabled).toBe(false);
+    expect(host.positionGizmo.zPlaneGizmo.isEnabled).toBe(true);
     host.setTool("rotate");
     expect(host.tool).toBe("rotate");
+    expect(host.positionGizmo.zPlaneGizmo.isEnabled).toBe(false);
     host.setMode("3d");
     expect(host.mode).toBe("3d");
+    host.setTool("translate");
+    expect(host.positionGizmo.zGizmo.isEnabled).toBe(true);
+    expect(host.positionGizmo.xPlaneGizmo.isEnabled).toBe(true);
+    expect(host.positionGizmo.yPlaneGizmo.isEnabled).toBe(true);
     host.dispose();
   });
 

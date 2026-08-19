@@ -9,8 +9,6 @@ import {
   isEditorOnlyAssetType,
   isEditorUtilityObjectClass,
   isFunctionLibraryClass,
-  normalizeEditorUtilityDockKind,
-  editorUtilityDockKindLabel,
 } from "./editor-only";
 
 describe("editor-only assets", () => {
@@ -25,7 +23,7 @@ describe("editor-only assets", () => {
     return null;
   };
 
-  it("treats EditorUtilityInterface as editor-only", () => {
+  it("strips leftover EditorUtilityInterface files from Play and export", () => {
     expect(isEditorOnlyAssetType("EditorUtilityInterface")).toBe(true);
     expect(isEditorOnlyAssetType("PluginSettings")).toBe(true);
     expect(isEditorOnlyAssetType("SkyboxCreator")).toBe(true);
@@ -53,22 +51,6 @@ describe("editor-only assets", () => {
     ).toBe(false);
   });
 
-  it("normalizes EditorUtilityInterface dockKind to Dockview document kinds", () => {
-    expect(normalizeEditorUtilityDockKind("class")).toBe("graph");
-    expect(normalizeEditorUtilityDockKind("graph")).toBe("graph");
-    expect(normalizeEditorUtilityDockKind("scene")).toBe("scene");
-    expect(normalizeEditorUtilityDockKind("sprite")).toBe("sprite");
-    expect(normalizeEditorUtilityDockKind("tilemap")).toBe("tilemap");
-    expect(normalizeEditorUtilityDockKind("skybox-creator")).toBe(
-      "skybox-creator",
-    );
-    expect(editorUtilityDockKindLabel("skybox-creator")).toBe("Skybox Creator");
-    expect(normalizeEditorUtilityDockKind(undefined)).toBe("scene");
-    expect(normalizeEditorUtilityDockKind("viewport")).toBe("scene");
-    expect(editorUtilityDockKindLabel("graph")).toBe("Class");
-    expect(editorUtilityDockKindLabel("sprite-animation")).toBe("Sprite Animation");
-  });
-
   it("does not treat FunctionLibrary ancestry as editor-only", () => {
     expect(isEditorFunctionLibraryClass("MathLib", parentOf)).toBe(false);
     expect(
@@ -86,10 +68,10 @@ describe("editor-only assets", () => {
     ).toBe(true);
   });
 
-  it("detects editor graph hosts from asset type, parent class, and editorGraph", () => {
+  it("detects editor graph hosts from parent class and editorGraph", () => {
     expect(isEditorGraphHost({ assetType: "UserInterface" })).toBe(false);
     expect(isEditorGraphHost({ assetType: "EditorUtilityInterface" })).toBe(
-      true,
+      false,
     );
     expect(
       isEditorGraphHost({ parentClass: "EditorUtilityObject", parentOf }),

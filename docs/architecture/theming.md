@@ -103,7 +103,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
 | `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
-| `--asset-graph` | Graph / UserInterface / EditorUtilityInterface (cyan) | Graph, UserInterface (`PanelTop`), EditorUtilityInterface (widget glyph) |
+| `--asset-graph` | Graph / UserInterface (cyan) | Graph, UserInterface (`PanelTop`) |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
 | `--asset-material` | Material, Material Function, Shader (green, former Audio) | Material |
 | `--asset-model` | Model (orange) | Model |
@@ -193,9 +193,9 @@ Source artwork lives in [`engine-logos/`](../../engine-logos/). It is human-auth
 
 | File | Ink | Use |
 | --- | --- | --- |
-| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Homepage header (`h-8` / 2rem), docs home hero |
-| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Docs nav, favicon source |
+| `SlateLogoDark.png` / `SlateLogoLight.png` | Dark (black) / light (white) wordmark | Docs home hero |
+| `SlateIconDark.png` / `SlateIconLight.png` | Dark / light mark | Homepage rail (`BrandIcon`), docs nav, favicon source |
 
 `*Dark` is dark ink for light chrome; `*Light` is light ink for dark chrome. Served copies must stay byte-identical in `apps/editor/public/branding/` and `apps/docs/public/branding/`.
 
-Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's `public/`. The editor homepage swaps wordmarks with `html.dark` (`dark:hidden` / `dark:block`), not `prefers-color-scheme`, so Engine Settings Appearance wins.
+Favicon is a theme-aware SVG (`prefers-color-scheme`) plus `favicon.ico` and `apple-touch-icon.png` in each app's `public/`. The editor homepage swaps **icon** marks with `html.dark` (`dark:hidden` / `dark:block`), not `prefers-color-scheme`, so Engine Settings Appearance wins. Homepage mount motion (rail/main slide, icon scale, card stagger) lives in `apps/editor/src/components/homepage.css` and is disabled under `prefers-reduced-motion: reduce`.

@@ -1125,16 +1125,13 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("play-hud")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
-    // iPad Playwright viewports are 1194×834 / 834×1194 and now map to 4:3
+    // iPad Playwright viewport is landscape 1194×834 and maps to 4:3
     // (closest aspect) with zero safe-area insets.
     const preset = await page.getByTestId("play-hud").getAttribute("data-preset");
     const safeTop = Number(
       await page.getByTestId("play-hud").getAttribute("data-safe-top"),
     );
-    if (
-      testInfo.project.name === "ipad-landscape" ||
-      testInfo.project.name === "ipad-portrait"
-    ) {
+    if (testInfo.project.name === "ipad-landscape") {
       expect(preset).toBe("desktop-4-3");
       expect(safeTop).toBe(0);
     } else {
@@ -1447,5 +1444,42 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("ui-nested-picker").getByText("HUD", { exact: true }),
     ).toHaveCount(0);
+  });
+
+  test("UserInterface designer paints a nested UserInterface subtree", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "Panel");
+    await page.locator('[data-asset-path="assets/Panel.ui.babasset"]').dblclick();
+    const panelWorkspace = page.locator(
+      '[data-testid="document-workspace-ui"]:visible',
+    );
+    await expect(panelWorkspace).toBeVisible();
+    await panelWorkspace.getByTestId("ui-add-widget").click();
+    await page.getByTestId("ui-add-widget-Button").click();
+    await expect(
+      panelWorkspace.locator('[data-testid^="ui-widget-button-"]'),
+    ).toBeVisible();
+
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    const hudWorkspace = page.locator(
+      '[data-testid="document-workspace-ui"]:visible',
+    );
+    await expect(hudWorkspace).toBeVisible();
+    await hudWorkspace.getByTestId("ui-add-widget").click();
+    await page.getByTestId("ui-add-widget-UserInterface").click();
+    await page.getByTestId("property-nestedUi").click();
+    await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
+    await page
+      .getByTestId("ui-nested-picker")
+      .getByText("Panel", { exact: true })
+      .click();
+    await expect(page.getByTestId("ui-nested-picker")).toHaveCount(0);
+    await expect(
+      hudWorkspace.locator('[data-testid*="/button-"]'),
+    ).toBeVisible();
+    await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });
 });

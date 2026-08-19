@@ -104,6 +104,7 @@ import { ParticleService } from "./particle-service";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
+import { createRttCanvasPresent } from "./rtt-canvas-present";
 
 export interface EngineHandle {
   engine: Engine;
@@ -173,6 +174,13 @@ export interface EngineHandle {
 export interface CreateEngineOptions {
   /** Existing app-lifetime engine; when set, this canvas is registerView'd. */
   sharedEngine?: Engine;
+  /**
+   * How a `sharedEngine` canvas is presented.
+   * `registerView` (default) is the Play overlay blit of the engine framebuffer.
+   * `rtt` renders this Scene into an RTT and 2D-blits the canvas — Prefab
+   * Preview must use this so it does not steal Scene/Play's default framebuffer.
+   */
+  present?: "registerView" | "rtt";
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
   maxActors?: number;
@@ -409,6 +417,7 @@ export function createEngine(
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
 
   const ownsEngine = !options.sharedEngine;
+  const presentRtt = options.present === "rtt";
   const engine =
     options.sharedEngine ??
     new Engine(canvas, true, {
@@ -418,7 +427,7 @@ export function createEngine(
       antialias: false,
     });
 
-  if (options.sharedEngine) {
+  if (options.sharedEngine && !presentRtt) {
     // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
     // clear, skipped render-on-demand frames composite additively.
     engine.registerView(canvas, undefined, true);
@@ -435,6 +444,14 @@ export function createEngine(
     // scenes often have none, so restore autoClear to avoid additive trails.
     scene.autoClear = true;
   }
+  if (presentRtt) {
+    // RTT clear targets the preview buffer, not Scene/Play's framebuffer.
+    scene.autoClear = true;
+  }
+
+  const rttPresent = presentRtt
+    ? createRttCanvasPresent(scene, canvas, { name: "prefabPreview" })
+    : null;
 
   setupDefaultViewport(scene);
 
@@ -842,9 +859,17 @@ export function createEngine(
   }
 
   const resize = () => {
-    engine.resize();
-    const width = engine.getRenderWidth();
-    const height = engine.getRenderHeight();
+    if (!presentRtt) {
+      engine.resize();
+    }
+    const size = presentRtt
+      ? rttPresent?.canvasSize() ?? { width: 1, height: 1 }
+      : {
+          width: engine.getRenderWidth(),
+          height: engine.getRenderHeight(),
+        };
+    const width = size.width;
+    const height = size.height;
     if (height > 0) {
       editor?.camera.setCanvasHeight(height);
       editor?.camera.updateOrthoBounds(width / height);
@@ -894,7 +919,9 @@ export function createEngine(
     // as a catastrophic frame time and drop quality for no reason.
     const renderStart = performance.now();
     beginEngineDrawCallFrame(engine);
+    if (rttPresent) rttPresent.bind();
     scene.render();
+    if (rttPresent) rttPresent.blit();
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered();
     scaling.noteFrameTime(performance.now() - renderStart);
@@ -965,7 +992,8 @@ export function createEngine(
       audioService?.dispose();
       particleService?.dispose();
       scene.dispose();
-      if (options.sharedEngine) {
+      rttPresent?.dispose();
+      if (options.sharedEngine && !presentRtt) {
         engine.unRegisterView(canvas);
       }
       resourceCache.dispose();
@@ -987,7 +1015,9 @@ export function createEngine(
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {
-      applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+      if (options.playMode) {
+        applyPlayConsoleRenderCommand({ scaling, scheduler }, command);
+      }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       if (command.type === "spawn") {
@@ -1062,7 +1092,10 @@ export function createEngine(
         scheduler.invalidate("snapshot");
       }
     },
-    setPaused: (paused: boolean) => scheduler.setPaused(paused),
+    setPaused: (paused: boolean) => {
+      scheduler.setPaused(paused);
+      audioService?.setPaused(paused);
+    },
     liveObjectCounts: () => ({
       meshes: scene.meshes.length,
       textures: engine.getLoadedTexturesCache().length,

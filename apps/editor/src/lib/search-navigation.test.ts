@@ -105,6 +105,14 @@ describe("documentOpenForTarget", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
+        path: "assets/jump.babasset",
+        guid: "audio-1",
+        assetType: "Audio",
+      }),
+    ).toEqual({ kind: "audio", path: "assets/jump.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
         path: "assets/colors.babasset",
         guid: "enum-1",
         assetType: "Enum",

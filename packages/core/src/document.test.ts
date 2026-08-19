@@ -50,10 +50,10 @@ describe("P9 document kinds", () => {
 
   it("maps UserInterface / Sprite / AnimationGraph kinds", () => {
     expect(documentKindForAssetType("UserInterface")).toBe("ui");
-    expect(documentKindForAssetType("EditorUtilityInterface")).toBe("ui");
+    expect(documentKindForAssetType("EditorUtilityInterface")).toBeNull();
     expect(assetTypeForDocumentKind("ui")).toBe("UserInterface");
     expect(assetTypeForDocumentSave("ui", "EditorUtilityInterface")).toBe(
-      "EditorUtilityInterface",
+      "UserInterface",
     );
     expect(assetTypeForDocumentSave("ui", null)).toBe("UserInterface");
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
@@ -184,8 +184,19 @@ describe("Class and settings documents", () => {
     ).toBe("animation:assets/hero_idle.babasset");
   });
 
+  it("opens imported Audio as a DockView document", () => {
+    expect(documentKindForAssetType("Audio")).toBe("audio");
+    expect(assetTypeForDocumentKind("audio")).toBe("Audio");
+    expect(documentKindLabel("audio")).toBe("Audio");
+    expect(isAssetDocumentKind("audio")).toBe(true);
+    expect(labelFromPath("assets/jump.babasset")).toBe("Jump");
+    expect(
+      createDocumentRef("audio", "assets/jump.babasset", { name: "Jump" }).label,
+    ).toBe("Jump Audio");
+  });
+
   it("opens import assets as settings tabs", () => {
-    for (const type of ["Texture", "Audio"]) {
+    for (const type of ["Texture"]) {
       expect(documentKindForAssetType(type)).toBe("asset-settings");
     }
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");

@@ -80,4 +80,24 @@ describe("unlockAudioOnFirstGesture", () => {
     expect(listeners.has("pointerdown")).toBe(false);
     expect(listeners.has("touchstart")).toBe(false);
   });
+
+  it("binds unlock to the game canvas instead of the window", () => {
+    const windowListeners = new Map<string, () => void>();
+    const canvasListeners = new Map<string, () => void>();
+    const canvas = {
+      addEventListener: (type: string, fn: EventListenerOrEventListenerObject) => {
+        if (typeof fn === "function") canvasListeners.set(type, fn as () => void);
+      },
+      removeEventListener: (type: string) => {
+        canvasListeners.delete(type);
+      },
+    };
+    const unlocks: string[] = [];
+    const release = unlockAudioOnFirstGesture(() => unlocks.push("unlock"), canvas);
+    expect(windowListeners.size).toBe(0);
+    canvasListeners.get("pointerdown")?.();
+    expect(unlocks).toEqual(["unlock"]);
+    release();
+    expect(canvasListeners.has("pointerdown")).toBe(false);
+  });
 });

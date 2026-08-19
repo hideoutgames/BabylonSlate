@@ -7,7 +7,6 @@ import {
   primaryDockPanel,
   resolveDockInitialWidth,
 } from "./window-catalog";
-import { listEditorUtilityWindows } from "./editor-utility-windows";
 
 describe("resolveDockInitialWidth", () => {
   it("converts a width ratio against the DockView host", () => {
@@ -152,6 +151,33 @@ describe("listDockWindows", () => {
       "sprite-preview",
       "sprite-details",
     ]);
+    expect(listDockWindows("audio").map((entry) => entry.id)).toEqual([
+      "audio-preview",
+      "audio-details",
+      "audio-clips",
+    ]);
+    expect(listDockWindows("audio").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+      "Clips",
+    ]);
+    expect(
+      listDockWindows("audio").find((entry) => entry.id === "audio-details")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "audio-preview",
+      direction: "right",
+      initialWidth: 280,
+    });
+    expect(
+      listDockWindows("audio").find((entry) => entry.id === "audio-clips")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "audio-preview",
+      direction: "below",
+      initialHeight: 220,
+    });
+    expect(primaryDockPanel("audio")).toBe("audio-preview");
     expect(listDockWindows("sprite-animation").map((entry) => entry.id)).toEqual([
       "sprite-animation-preview",
       "sprite-animation-details",
@@ -255,16 +281,6 @@ describe("listDockWindows", () => {
       "ui-hierarchy",
       "ui-details",
     ]);
-    expect(
-      listDockWindows("ui", { editorUtilityInterface: true }).map(
-        (entry) => entry.id,
-      ),
-    ).toEqual([
-      "ui-design",
-      "ui-hierarchy",
-      "ui-details",
-      "ui-settings",
-    ]);
     expect(listDockWindows("plugin-settings").map((entry) => entry.id)).toEqual([
       "plugin-settings-details",
     ]);
@@ -302,25 +318,24 @@ describe("listDockWindows", () => {
     expect(windows.some((entry) => entry.id === "prefab-viewport")).toBe(false);
   });
 
+  it("does not add a Settings dock for UserInterface authoring", () => {
+    expect(
+      listDockWindows("ui", { uiEditorMode: "designer" }).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["ui-design", "ui-hierarchy", "ui-details"]);
+    expect(
+      listDockWindows("ui", { uiEditorMode: "logic" }).map((entry) => entry.id),
+    ).toEqual(["graph", "my-class", "inspector", "compiler-results"]);
+    expect(
+      listDockWindows("ui").some((entry) => entry.id === "ui-settings"),
+    ).toBe(false);
+  });
+
   it("uses Design as the Designer primary and Graph as the Logic primary", () => {
     expect(primaryDockPanel("ui")).toBe("ui-design");
     expect(primaryDockPanel("ui", { uiEditorMode: "designer" })).toBe("ui-design");
     expect(primaryDockPanel("ui", { uiEditorMode: "logic" })).toBe("graph");
-  });
-
-  it("keeps EUI Settings on Designer and omits it from Logic", () => {
-    expect(
-      listDockWindows("ui", {
-        uiEditorMode: "designer",
-        editorUtilityInterface: true,
-      }).map((entry) => entry.id),
-    ).toEqual(["ui-design", "ui-hierarchy", "ui-details", "ui-settings"]);
-    expect(
-      listDockWindows("ui", {
-        uiEditorMode: "logic",
-        editorUtilityInterface: true,
-      }).map((entry) => entry.id),
-    ).toEqual(["graph", "my-class", "inspector", "compiler-results"]);
   });
 
   it("anchors Locks to Graph when UI Logic mode is on", () => {
@@ -360,6 +375,7 @@ describe("listDockWindows", () => {
       "model",
       "skeleton",
       "animation",
+      "audio",
       "skybox-creator",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(
@@ -565,11 +581,5 @@ describe("animation graph and behaviour tree dock catalogs", () => {
   it("focuses the graph as the primary panel", () => {
     expect(primaryDockPanel("anim-graph")).toBe("anim-graph-graph");
     expect(primaryDockPanel("behaviour-tree")).toBe("behaviour-tree-graph");
-  });
-});
-
-describe("listEditorUtilityWindows", () => {
-  it("returns no editor utility tabs when no assets are supplied", () => {
-    expect(listEditorUtilityWindows()).toEqual([]);
   });
 });

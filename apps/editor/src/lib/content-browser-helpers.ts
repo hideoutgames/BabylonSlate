@@ -51,6 +51,7 @@ import {
   resolveTypeVisual,
   walkAncestry,
   type TypeVisual,
+  type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
@@ -214,7 +215,6 @@ export const CREATABLE_ASSET_TYPES = [
   "Enum",
   "Structure",
   "ScriptInterface",
-  "EditorUtilityInterface",
   "AudioMixer",
   "AudioChannel",
   "SoundAttenuation",
@@ -243,7 +243,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
   {
     id: "ui",
     label: "UI",
-    types: ["UserInterface", "EditorUtilityInterface"],
+    types: ["UserInterface"],
   },
   {
     id: "2d",
@@ -289,7 +289,6 @@ const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Enum: "Named integer members used by pins and variables.",
   Structure: "A user-defined struct of typed fields.",
   ScriptInterface: "A contract of methods that classes can implement.",
-  EditorUtilityInterface: "An editor-only Babylon GUI widget for Windows.",
   AudioMixer: "Global and per-channel default volumes for Play.",
   AudioChannel: "A routing bus with an optional parent and reverb send.",
   SoundAttenuation: "Distance falloff that opts Audio into 3D playback.",
@@ -1061,6 +1060,7 @@ function contentBrowserDropDestination(
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
   rootPaths: readonly string[],
+  placement: TreeDropPlacement = "into",
 ): { destinationPath: string; destRoot: string; sourceRoot: string } | null {
   const source = rows.find((row) => row.id === dragId);
   if (!source) return null;
@@ -1072,9 +1072,12 @@ function contentBrowserDropDestination(
   if (targetId !== null) {
     const target = rows.find((row) => row.id === targetId);
     if (!target) return null;
+    const around = placement === "before" || placement === "after";
     destinationPath =
       target.kind === "folder"
-        ? target.path
+        ? around
+          ? parentFolderPath(target.path, sourceRoot)
+          : target.path
         : parentFolderPath(target.path, sourceRoot);
   }
   const destRoot = contentRootOfPath(destinationPath, rootPaths);
@@ -1114,9 +1117,16 @@ export function contentBrowserMoveFromDrop(
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
   rootPaths: readonly string[] = [ASSETS_ROOT],
+  placement: TreeDropPlacement = "into",
 ): ContentBrowserDropMove | null {
   const source = rows.find((row) => row.id === dragId);
-  const dest = contentBrowserDropDestination(dragId, targetId, rows, rootPaths);
+  const dest = contentBrowserDropDestination(
+    dragId,
+    targetId,
+    rows,
+    rootPaths,
+    placement,
+  );
   if (!source || !dest) return null;
   const move = contentBrowserDropMoveForRow(
     source,
@@ -1143,6 +1153,7 @@ export function contentBrowserTreeDropMoves(options: {
   selectedFolderPaths: ReadonlySet<string>;
   rootPaths?: readonly string[];
   resolvePath?: (guid: string) => string | undefined;
+  placement?: TreeDropPlacement;
 }): ContentBrowserDropMove[] {
   const {
     dragId,
@@ -1151,12 +1162,25 @@ export function contentBrowserTreeDropMoves(options: {
     selectedGuids,
     selectedFolderPaths,
     rootPaths = [ASSETS_ROOT],
+    placement = "into",
   } = options;
   const source = rows.find((row) => row.id === dragId);
-  const dest = contentBrowserDropDestination(dragId, targetId, rows, rootPaths);
+  const dest = contentBrowserDropDestination(
+    dragId,
+    targetId,
+    rows,
+    rootPaths,
+    placement,
+  );
   if (!source || !dest) return [];
   if (!treeRowInSelection(source, selectedGuids, selectedFolderPaths)) {
-    const move = contentBrowserMoveFromDrop(dragId, targetId, rows, rootPaths);
+    const move = contentBrowserMoveFromDrop(
+      dragId,
+      targetId,
+      rows,
+      rootPaths,
+      placement,
+    );
     return move ? [move] : [];
   }
   const pathOf = (guid: string) =>
@@ -1377,17 +1401,6 @@ export function buildNewAssetResult(options: {
     return documentAsset(type, name, guid, payload);
   }
 
-  if (type === "EditorUtilityInterface") {
-    const payload = {
-      ...createDefaultUserInterface(name),
-      dockKind: "scene",
-      logic: createDefaultLogicGraphSerialized(defaultNodeRegistry, {
-        parentClass: "BObject",
-      }),
-    } as unknown as Record<string, unknown>;
-    return documentAsset(type, name, guid, payload);
-  }
-
   if (type === "Sprite") {
     return documentAsset(
       type,
@@ -1554,7 +1567,6 @@ const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Scene: ".scene.babasset",
   Class: ".class.babasset",
   UserInterface: ".ui.babasset",
-  EditorUtilityInterface: ".eui.babasset",
   Sprite: ".sprite.babasset",
   SpriteAnimation: ".spriteanim.babasset",
   AnimationGraph: ".anim.babasset",

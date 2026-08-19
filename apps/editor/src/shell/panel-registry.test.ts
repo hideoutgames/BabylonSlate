@@ -21,6 +21,12 @@ describe("panelComponents", () => {
     );
   });
 
+  it("registers imported Audio Preview, Details, and Clips docks", () => {
+    expect(panelComponents["audio-preview"]).toBeTypeOf("function");
+    expect(panelComponents["audio-details"]).toBeTypeOf("function");
+    expect(panelComponents["audio-clips"]).toBeTypeOf("function");
+  });
+
   it("registers Audio Mixer, Channel, and Attenuation details docks", () => {
     expect(panelComponents["audio-mixer-details"]).toBeTypeOf("function");
     expect(panelComponents["audio-channel-details"]).toBeTypeOf("function");

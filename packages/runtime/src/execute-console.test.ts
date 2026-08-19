@@ -194,6 +194,20 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("resolutionscale").output).toBe(
       "resolutionscale 1.5",
     );
+    expect(runtime.executeConsoleCommand("resolutionscale 8")).toEqual({
+      success: true,
+      output: "resolutionscale 2",
+    });
+    expect(runtime.executeConsoleCommand("resolutionscale 0.25").output).toBe(
+      "resolutionscale 1",
+    );
+    expect(
+      commands.filter((command) => command.type === "setResolutionScale"),
+    ).toEqual([
+      { type: "setResolutionScale", scale: 1.5 },
+      { type: "setResolutionScale", scale: 2 },
+      { type: "setResolutionScale", scale: 1 },
+    ]);
     runtime.stop();
   });
 
@@ -305,6 +319,10 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       success: true,
       output: "shownav on",
     });
+    expect(runtime.executeConsoleCommand("showaudiodebug")).toEqual({
+      success: true,
+      output: "showaudiodebug on",
+    });
     expect(runtime.executeConsoleCommand("showcollision")).toEqual({
       success: true,
       output: "showcollision on",
@@ -318,6 +336,12 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(
       commands.some((command) => command.type === "setStat" && command.name === "unit"),
     ).toBe(true);
+    expect(
+      commands.filter((command) => command.type === "setShowNav"),
+    ).toEqual([{ type: "setShowNav", enabled: true }]);
+    expect(
+      commands.filter((command) => command.type === "setShowAudioDebug"),
+    ).toEqual([{ type: "setShowAudioDebug", enabled: true }]);
     expect(
       commands.filter((command) => command.type === "setWireframe"),
     ).toEqual([{ type: "setWireframe", enabled: true }]);

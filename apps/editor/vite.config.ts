@@ -5,6 +5,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { enginePluginsVitePlugin } from "./vite-engine-plugins.ts";
 import { kenneyMannequinVitePlugin } from "./vite-kenney-mannequin.ts";
+import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox.ts";
 import { playerHostVitePlugin } from "./vite-player-host.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,7 @@ export default defineConfig({
         "public/engine-content/kenney-assets/Mannequin",
       ),
     }),
+    engineDefaultSkyboxVitePlugin(repoRoot, path.join(rootDir, "public")),
     playerHostVitePlugin(
       path.join(rootDir, "../player/dist"),
       path.join(rootDir, "dist"),

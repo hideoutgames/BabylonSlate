@@ -87,7 +87,17 @@ export const GIZMO_AXIS_COLORS = {
 export const GIZMO_UNIFORM_COLOR = new Color3(0.82, 0.84, 0.88);
 
 export interface GizmoAxisEnabledFlags {
-  position: { x: boolean; y: boolean; z: boolean };
+  position: {
+    x: boolean;
+    y: boolean;
+    z: boolean;
+    /** YZ plane (includes Z). */
+    xPlane: boolean;
+    /** XZ plane (includes Z). */
+    yPlane: boolean;
+    /** XY plane. */
+    zPlane: boolean;
+  };
   rotation: { x: boolean; y: boolean; z: boolean };
   scale: { x: boolean; y: boolean; z: boolean; uniform: boolean };
 }
@@ -98,11 +108,15 @@ export function gizmoAxisEnabledFlags(
   tool: GizmoTool,
 ): GizmoAxisEnabledFlags {
   const twoD = mode === "2d";
+  const translate = tool === "translate";
   return {
     position: {
-      x: tool === "translate",
-      y: tool === "translate",
-      z: tool === "translate" && !twoD,
+      x: translate,
+      y: translate,
+      z: translate && !twoD,
+      xPlane: translate && !twoD,
+      yPlane: translate && !twoD,
+      zPlane: translate,
     },
     rotation: {
       x: tool === "rotate" && !twoD,
@@ -231,8 +245,9 @@ function enlargeGizmoTouchTargets(root: AbstractMesh): void {
 
 /**
  * Translate / rotate / scale gizmos on a utility layer, with the axis set
- * filtered by viewport mode: 2D exposes XY translate, Z rotate and XY scale and
- * hides the unused axes rather than merely ignoring them (engineplan §13.1).
+ * filtered by viewport mode: 2D exposes XY translate plus the XY plane, Z rotate
+ * and XY scale, and hides the Z arrow and YZ/XZ planes rather than merely
+ * ignoring them (engineplan §13.1).
  */
 export function createGizmoHost(
   scene: Scene,
@@ -312,6 +327,9 @@ export function createGizmoHost(
     position.xGizmo.isEnabled = flags.position.x;
     position.yGizmo.isEnabled = flags.position.y;
     position.zGizmo.isEnabled = flags.position.z;
+    position.xPlaneGizmo.isEnabled = flags.position.xPlane;
+    position.yPlaneGizmo.isEnabled = flags.position.yPlane;
+    position.zPlaneGizmo.isEnabled = flags.position.zPlane;
     rotation.xGizmo.isEnabled = flags.rotation.x;
     rotation.yGizmo.isEnabled = flags.rotation.y;
     rotation.zGizmo.isEnabled = flags.rotation.z;

@@ -19,6 +19,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "structure",
   "script-interface",
   "plugin-settings",
+  "audio",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
@@ -93,6 +94,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ScriptInterface";
     case "plugin-settings":
       return "PluginSettings";
+    case "audio":
+      return "Audio";
     case "audio-mixer":
       return "AudioMixer";
     case "audio-channel":
@@ -117,8 +120,6 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
 }
 
 /**
- * Preserve EditorUtilityInterface when a ui document is saved.
- *
  * A legacy `Shader` asset opens as a Material document and is rewritten to the
  * canonical `Material` header type on save, which the migrate-on-save approval
  * flow gates. Its `.shader.babasset` path is deliberately left alone so open
@@ -128,9 +129,7 @@ export function assetTypeForDocumentSave(
   kind: AssetDocumentKind,
   existingType?: string | null,
 ): string {
-  if (kind === "ui" && existingType === "EditorUtilityInterface") {
-    return "EditorUtilityInterface";
-  }
+  void existingType;
   return assetTypeForDocumentKind(kind);
 }
 
@@ -149,7 +148,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Class":
       return "graph";
     case "UserInterface":
-    case "EditorUtilityInterface":
       return "ui";
     case "Font":
       return "font";
@@ -181,6 +179,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "script-interface";
     case "PluginSettings":
       return "plugin-settings";
+    case "Audio":
+      return "audio";
     case "AudioMixer":
       return "audio-mixer";
     case "AudioChannel":
@@ -200,7 +200,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Animation":
       return "animation";
     case "Texture":
-    case "Audio":
       return "asset-settings";
     default:
       return null;
@@ -247,6 +246,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Script Interface";
     case "plugin-settings":
       return "Plugin Settings";
+    case "audio":
+      return "Audio";
     case "audio-mixer":
       return "Audio Mixer";
     case "audio-channel":

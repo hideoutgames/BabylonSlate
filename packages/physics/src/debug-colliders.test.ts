@@ -150,3 +150,61 @@ describe("SoftwarePhysicsBackend.listDebugColliders", () => {
     backend.dispose();
   });
 });
+
+describe("debugColliderFromDesc world pose", () => {
+  it("rotates the local collider offset by the body quaternion", () => {
+    const yaw90 = Math.SQRT1_2;
+    const listed = debugColliderFromDesc(
+      {
+        id: "offset-box",
+        bodyId: "body",
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+        friction: 0,
+        restitution: 0,
+        isTrigger: false,
+        layer: 1,
+        mask: 1,
+        translation: { x: 1, y: 0, z: 0 },
+      },
+      {
+        position: { x: 10, y: 0, z: 0 },
+        rotation: { x: 0, y: yaw90, z: 0, w: yaw90 },
+      },
+    );
+    expect(listed?.position.x).toBeCloseTo(10);
+    expect(listed?.position.y).toBeCloseTo(0);
+    expect(listed?.position.z).toBeCloseTo(-1);
+  });
+
+  it("rotates polyline points into world space", () => {
+    const yaw90 = Math.SQRT1_2;
+    const listed = debugColliderFromDesc(
+      {
+        id: "poly",
+        bodyId: "body",
+        shape: {
+          kind: "polygon",
+          points: [
+            { x: 1, y: 0 },
+            { x: 0, y: 0 },
+            { x: 0, y: 1 },
+          ],
+        },
+        friction: 0,
+        restitution: 0,
+        isTrigger: false,
+        layer: 1,
+        mask: 1,
+      },
+      {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: yaw90, z: 0, w: yaw90 },
+      },
+    );
+    expect(listed?.points?.[0]?.x).toBeCloseTo(0);
+    expect(listed?.points?.[0]?.z).toBeCloseTo(-1);
+    expect(listed?.points?.[2]?.x).toBeCloseTo(0);
+    expect(listed?.points?.[2]?.y).toBeCloseTo(1);
+    expect(listed?.points?.[2]?.z).toBeCloseTo(0);
+  });
+});

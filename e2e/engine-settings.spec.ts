@@ -48,6 +48,16 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
   const field = page.getByTestId("setting-frame-cap");
   await expect(field).toHaveValue("30");
   await field.click();
+  // Select-all on activate re-selects on pointerup via rAF. Wait until "30"
+  // is selected so a late reselect cannot swallow digits while retyping.
+  await expect
+    .poll(async () =>
+      field.evaluate((el) => {
+        const input = el as HTMLInputElement;
+        return input.selectionEnd - input.selectionStart;
+      }),
+    )
+    .toBe(2);
   await field.fill("");
   await expect(field).toHaveValue("");
   await field.fill("45");

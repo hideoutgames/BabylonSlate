@@ -3,6 +3,7 @@ import {
   createDefaultPlayHud,
   createDefaultUserInterface,
   createWidget,
+  pinLayout,
   WIDGET_KINDS,
 } from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
@@ -23,6 +24,7 @@ import {
   applyPlayHudInstance,
   applyPlayHudVisibility,
   asUiDocument,
+  resolveNestedUiDocument,
   behaviourTreeGuidsFromScene,
   blackboardGuidsFromScene,
   logicGraphFromUiPayload,
@@ -355,6 +357,98 @@ describe("asUiDocument", () => {
     const doc = asUiDocument({ name: "Broken" });
     expect(doc.rootId).toBe("canvas");
     expect(doc.widgets.canvas?.kind).toBe("Canvas");
+  });
+});
+
+describe("resolveNestedUiDocument", () => {
+  function labeledChip(text: string) {
+    const chip = createDefaultUserInterface("Chip");
+    const label = createWidget(
+      "label",
+      "Text",
+      text,
+      pinLayout("left", "top", 80, 20),
+    );
+    label.props.text = text;
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+    return chip;
+  }
+
+  const chipPath = "assets/Chip.ui.babasset";
+
+  it("prefers open document content over the UI library", () => {
+    const resolved = resolveNestedUiDocument("chip-guid", {
+      openDocuments: [{ ref: { path: chipPath }, content: labeledChip("OPEN") }],
+      getAsset: (guid) =>
+        guid === "chip-guid"
+          ? { path: chipPath, header: { payload: {} } }
+          : null,
+      uiLibrary: { "chip-guid": labeledChip("LIB") },
+    });
+    expect(resolved?.widgets.label?.props.text).toBe("OPEN");
+  });
+
+  it("uses the UI library when the nested asset is not open", () => {
+    const resolved = resolveNestedUiDocument("chip-guid", {
+      openDocuments: [],
+      getAsset: (guid) =>
+        guid === "chip-guid"
+          ? { path: chipPath, header: { payload: {} } }
+          : null,
+      uiLibrary: { "chip-guid": labeledChip("LIB") },
+    });
+    expect(resolved?.widgets.label?.props.text).toBe("LIB");
+  });
+
+  it("does not treat an empty header payload as a nested document", () => {
+    const resolved = resolveNestedUiDocument("chip-guid", {
+      openDocuments: [],
+      getAsset: (guid) =>
+        guid === "chip-guid"
+          ? { path: chipPath, header: { payload: {} } }
+          : null,
+      uiLibrary: {},
+    });
+    expect(resolved).toBeNull();
+  });
+
+  it("does not treat a dockKind-only header payload as a nested document", () => {
+    const resolved = resolveNestedUiDocument("chip-guid", {
+      openDocuments: [],
+      getAsset: (guid) =>
+        guid === "chip-guid"
+          ? { path: chipPath, header: { payload: { dockKind: "scene" } } }
+          : null,
+      uiLibrary: {},
+    });
+    expect(resolved).toBeNull();
+  });
+
+  it("uses a header payload that contains widgets when the library is empty", () => {
+    const resolved = resolveNestedUiDocument("chip-guid", {
+      openDocuments: [],
+      getAsset: (guid) =>
+        guid === "chip-guid"
+          ? {
+              path: chipPath,
+              header: { payload: labeledChip("HEADER") },
+            }
+          : null,
+      uiLibrary: {},
+    });
+    expect(resolved?.widgets.label?.props.text).toBe("HEADER");
+  });
+
+  it("returns the self document when the guid matches", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const resolved = resolveNestedUiDocument("hud-1", {
+      selfGuid: "hud-1",
+      selfDocument: hud,
+      openDocuments: [],
+      uiLibrary: {},
+    });
+    expect(resolved).toBe(hud);
   });
 });
 

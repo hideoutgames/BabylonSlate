@@ -45,7 +45,7 @@ export function stripAssetFileSuffix(fileName: string): string {
     .replace(/\.babasset$/i, "");
 }
 
-/** Preserve Scene/Graph/Class/P9 container suffixes when duplicating. */
+/** Preserve Scene/Graph/Class/P9 container suffixes when duplicating. Leftover `.eui.babasset` keeps its suffix on rename/duplicate. */
 export function assetFileSuffix(fileName: string): string {
   if (/\.scene\.babasset$/i.test(fileName)) return ".scene.babasset";
   if (/\.graph\.babasset$/i.test(fileName)) return ".graph.babasset";

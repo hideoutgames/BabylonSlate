@@ -33,13 +33,13 @@ describe("nativeEventStubs", () => {
     ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
   });
 
-  it("lists Event Editor On Begin Play on EditorUtilityInterface and not Tick or game Begin Play", () => {
+  it("does not treat leftover EditorUtilityInterface as a logic host", () => {
     expect(
       nativeEventStubs({
         assetType: "EditorUtilityInterface",
         parentClass: "BObject",
-      }).map((stub) => stub.eventType),
-    ).toEqual(["flow.event.editorBeginPlay"]);
+      }),
+    ).toEqual([]);
   });
 
   it("lists editor lifecycle events when ancestry includes EditorUtilityObject", () => {

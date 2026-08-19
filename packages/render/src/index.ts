@@ -56,6 +56,8 @@ export * from "./nav-debug-overlay";
 export * from "./audio-buffer-cache";
 export * from "./audio-playback-backend";
 export * from "./audio-service";
+export * from "./audio-debug";
+export * from "./audio-unlock-hint";
 export { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 export * from "./particle-service";
 export * from "./particle-system-factory";

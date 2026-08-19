@@ -16,25 +16,49 @@ function identityQuat(): Quat {
   return { x: 0, y: 0, z: 0, w: 1 };
 }
 
-export function colliderWorldPosition(desc: ColliderDesc, bodyPos: Vec3): Vec3 {
-  const offset = desc.translation;
-  if (!offset) return { ...bodyPos };
+function rotateOffset(rotation: Quat, offset: Vec3): Vec3 {
+  const { x, y, z, w } = rotation;
+  const tx = 2 * (y * offset.z - z * offset.y);
+  const ty = 2 * (z * offset.x - x * offset.z);
+  const tz = 2 * (x * offset.y - y * offset.x);
   return {
-    x: bodyPos.x + offset.x,
-    y: bodyPos.y + offset.y,
-    z: bodyPos.z + offset.z,
+    x: offset.x + w * tx + (y * tz - z * ty),
+    y: offset.y + w * ty + (z * tx - x * tz),
+    z: offset.z + w * tz + (x * ty - y * tx),
+  };
+}
+
+export function colliderWorldPosition(
+  desc: ColliderDesc,
+  bodyTransform: Pick<PhysicsTransform, "position" | "rotation">,
+): Vec3 {
+  const offset = desc.translation;
+  if (!offset) return { ...bodyTransform.position };
+  const rotated = rotateOffset(bodyTransform.rotation ?? identityQuat(), offset);
+  return {
+    x: bodyTransform.position.x + rotated.x,
+    y: bodyTransform.position.y + rotated.y,
+    z: bodyTransform.position.z + rotated.z,
   };
 }
 
 function polylinePoints(
   points: ReadonlyArray<{ x: number; y: number; z?: number }>,
-  position: Vec3,
+  origin: Vec3,
+  rotation: Quat,
 ): Vec3[] {
-  return points.map((point) => ({
-    x: position.x + point.x,
-    y: position.y + point.y,
-    z: position.z + (point.z ?? 0),
-  }));
+  return points.map((point) => {
+    const rotated = rotateOffset(rotation, {
+      x: point.x,
+      y: point.y,
+      z: point.z ?? 0,
+    });
+    return {
+      x: origin.x + rotated.x,
+      y: origin.y + rotated.y,
+      z: origin.z + rotated.z,
+    };
+  });
 }
 
 /** Boxes, spheres, circles, and polylines only — skip convex/mesh authorship. */
@@ -42,7 +66,7 @@ export function debugColliderFromDesc(
   desc: ColliderDesc,
   bodyTransform: PhysicsTransform,
 ): DebugColliderPrimitive | null {
-  const position = colliderWorldPosition(desc, bodyTransform.position);
+  const position = colliderWorldPosition(desc, bodyTransform);
   const rotation = bodyTransform.rotation ?? identityQuat();
   const shape = desc.shape;
   switch (shape.kind) {
@@ -89,7 +113,7 @@ export function debugColliderFromDesc(
         shape: "polyline",
         position,
         rotation,
-        points: polylinePoints(shape.points, position),
+        points: polylinePoints(shape.points, position, rotation),
       };
     default:
       return null;

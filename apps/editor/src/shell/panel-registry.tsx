@@ -15,7 +15,15 @@ import { TypeDetailsPanel } from "../panels/type-details-panel";
 import { InterfaceMethodsPanel } from "../panels/interface-methods-panel";
 import { InterfacePreviewPanel } from "../panels/interface-preview-panel";
 import { InterfaceDetailsPanel } from "../panels/interface-details-panel";
-import { SpritePreviewPanel, SpriteDetailsPanel } from "../components/sprite-editor";
+import {
+  SpritePreviewPanel,
+  SpriteDetailsPanel,
+} from "../components/sprite-editor";
+import {
+  AudioClipsPanel,
+  AudioDetailsPanel,
+  AudioPreviewPanel,
+} from "../components/audio-editor";
 import {
   SpriteAnimationPreviewPanel,
   SpriteAnimationDetailsPanel,
@@ -33,7 +41,6 @@ import {
   UiDesignPanel,
   UiDetailsPanel,
   UiHierarchyPanel,
-  UiSettingsPanel,
 } from "../panels/ui-editor-panels";
 import {
   MaterialCompilerResultsPanel,
@@ -43,7 +50,6 @@ import {
   MaterialGraphPanel,
   MaterialPreviewPanel,
 } from "../components/material-editor";
-import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
 import {
   AudioChannelDetailsPanel,
@@ -128,6 +134,15 @@ export const panelComponents = {
   "sprite-details": (props: IDockviewPanelProps) => (
     <SpriteDetailsPanel {...props} />
   ),
+  "audio-preview": (props: IDockviewPanelProps) => (
+    <AudioPreviewPanel {...props} />
+  ),
+  "audio-details": (props: IDockviewPanelProps) => (
+    <AudioDetailsPanel {...props} />
+  ),
+  "audio-clips": (props: IDockviewPanelProps) => (
+    <AudioClipsPanel {...props} />
+  ),
   "sprite-animation-preview": (props: IDockviewPanelProps) => (
     <SpriteAnimationPreviewPanel {...props} />
   ),
@@ -154,7 +169,6 @@ export const panelComponents = {
     <UiHierarchyPanel {...props} />
   ),
   "ui-details": (props: IDockviewPanelProps) => <UiDetailsPanel {...props} />,
-  "ui-settings": (props: IDockviewPanelProps) => <UiSettingsPanel {...props} />,
   "material-graph": (props: IDockviewPanelProps) => (
     <MaterialGraphPanel {...props} />
   ),
@@ -172,9 +186,6 @@ export const panelComponents = {
   ),
   "material-function-interface": (props: IDockviewPanelProps) => (
     <MaterialFunctionInterfacePanel {...props} />
-  ),
-  "editor-utility": (props: IDockviewPanelProps) => (
-    <EditorUtilityPanel {...props} />
   ),
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />

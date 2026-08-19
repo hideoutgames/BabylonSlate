@@ -26,7 +26,8 @@ export function applyPlayResolutionScale(
   scaling: Pick<HardwareScalingController, "setLevel">,
   scale: number,
 ): void {
-  scaling.setLevel(scale);
+  const clamped = Math.min(2, Math.max(1, scale));
+  scaling.setLevel(clamped);
 }
 
 export type PlayConsoleRenderTarget = {

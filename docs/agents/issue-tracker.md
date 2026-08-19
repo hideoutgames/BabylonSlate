@@ -19,6 +19,16 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-slomo | Spec | Trace frame `snapshotText` baked `world.clock.dt` (`dt * rate`) instead of recorded `dt` | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Standards | `showcollision` disposed and rebuilt overlay meshes every tick | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale 8` printed and emitted 8 while Play clamped to 2 | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam | Spec | `help freecam` omitted the pointer/WASD steal vs gamepad-still-forwards split | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Debug collider listing added local translation without rotating by the body quaternion | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-hud | Spec | `stat threads` highlights fps (main) plus script/physics (worker); HUD has no separate render-ms row | Accepted |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam / p8-console-apply / p8-console-viz | Spec | 2D `freecam` panned per finger instead of pinch-zooming ortho | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `setRenderQuality` applied on the editor viewport `HardwareScalingController`, not Play-only | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale` followed Play valve max 4 instead of clamping 1..2 | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Collision debug boxes ignored listed world rotation | Resolved |
 | 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Spec | Origin collider `isVisible = true` also entered marquee (`meshNamesInCanvasRect`), so Drag Select listed a helper twice (icon + origin) and Details could show "2 Actors" | Resolved |
 | 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Standards | `pickWorld` pre-refreshed camera-dependent matrices, so tests would pass without `pickAtCanvas`'s refresh loop | Resolved |
 | 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Context-sensitive Add Node filtered compatible nodes but did not prefer matching Make/Break/Switch/Equal rows | Resolved |
@@ -143,10 +153,9 @@ Agents must never create visual or spatial media with AI (images, video, icons, 
 
 ## BabylonJS skill
 
-Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** or **EditorUtilityInterface** work. Both asset types are Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
+Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** work. UserInterface is Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
 
 - **UserInterface** — game HUD, viewport-layer apply, designer canvas ([ui-runtime.md](../architecture/ui-runtime.md)).
-- **EditorUtilityInterface** — widgets opened from **Windows → Editor Utilities** (P12).
 - React editor chrome (Dockview, shadcn, editor-kit) still uses the editor-ui-components and shadcn skills.
 - Rule: [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (BabylonJS).
 
@@ -395,7 +404,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 | G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19**, not this wave |
 
-Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
+Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
 ### P9 follow-ups / open deferrals
 
@@ -409,7 +418,7 @@ Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer Cu
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
-| UserInterface + EditorUtilityInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details (EUI Settings); Logic Class docks on `payload.logic`. Live EditorUtilityInterface **tabs** stay P12 Dockview + `createUiSurface` from Windows → Editor Utilities | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
+| UserInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details; Logic Class docks on `payload.logic` | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
 | Animation Graph Object + transition-rule graphs | Chrome **State Machine \| Animation Object**; typed variables; compiled `AnimGraph:` / `AnimRule:` scripts; per-slot `animState` layers; Unreal state nodes + nested Enter/Exit rule graphs | Done (`cursor/complete-animation-graph-9a46`) |
 
 ## P10 tilemaps
@@ -512,15 +521,15 @@ Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation hosts 
 
 ## P12 editor extensions
 
-Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live vs author), §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) is Done. Design notes: [editor-extensions.md](../architecture/editor-extensions.md).
+Spec: [engineplan.md](../engineplan.md) §7, §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) is Done. Design notes: [editor-extensions.md](../architecture/editor-extensions.md).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| EditorUtilityObject + live Interface tabs | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
-| UserInterface + EditorUtilityInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
+| EditorUtilityObject | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, export strip | P11 done |
+| UserInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
 | Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
-**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one host (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
+UserInterface authoring (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a healthy Engine. Do not rebuild `@babylonslate/ui-runtime`.
 
 Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
 
@@ -586,21 +595,24 @@ Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-
 
 ## P18 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **Next phase.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **P18 is Done.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Idle-unmount background chrome tabs (2 min grace, cap 3) | `p18-inactive-documents` | `apps/editor` (`document-workspace`, UI/Anim docks) | P17 done |
-| Off-screen node virtualisation for every `GraphEditor` host | `p18-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P17 done (can parallel) |
-| Windowed Add Node catalog body (~1000 nodes) | `p18-add-node-virtualize` | `graph-ui` (`NodePalette`); optional `editor-kit` list helper | P17 done (can parallel) |
-| Windowed Content Browser grid + revoke off-screen thumbs | `p18-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |
-| Prefab Preview on the app-lifetime Engine | `p18-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
+| Idle-unmount background chrome tabs (2 min grace, cap 3) | Done (`p18-inactive-documents`) | `apps/editor` (`document-workspace`, UI/Anim docks) | P17 done |
+| Off-screen node virtualisation for every `GraphEditor` host | Done (`p18-graph-virtualize`) | `graph-ui`, hosts in `apps/editor` | P17 done (can parallel) |
+| Windowed Add Node catalog body (~1000 nodes) | Done (`p18-add-node-virtualize`) | `graph-ui` (`NodePalette`); `editor-kit` `windowedSlice` | P17 done (can parallel) |
+| Windowed Content Browser grid + revoke off-screen thumbs | Done (`p18-content-browser-virtualize`) | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |
+| Prefab Preview on the app-lifetime Engine | Done (`p18-shared-prefab-engine`) | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
+| Architecture docs + Playwright + verify | Done | unit + `e2e/p18-editor-opt.spec.ts` | all P18 slices |
 
 Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers; **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
 
+**P18 is Done.** Idle-unmount, GraphEditor virtualisation, windowed Add Node, windowed Content Browser grid, and Prefab on the app-lifetime Engine all landed. Playwright: `e2e/p18-editor-opt.spec.ts`.
+
 ## P19 Behaviour tree hosts and navigation leftovers
 
-Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P18 is marked Done. **P20** may run in parallel (editor/runtime perf, not a P19 reopen).
+Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. **P18** is Done. **P20** may run in parallel (editor/runtime perf, not a P19 reopen).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -611,7 +623,7 @@ Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; r
 
 ## P20 Editor/runtime follow-on optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. Do **not** start until P18 is marked Done. May parallel P19 (different packages). No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. **P18** is Done. May parallel P19 (different packages). No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |

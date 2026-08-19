@@ -20,6 +20,7 @@ export type DockviewDocumentKind =
   | "plugin-settings"
   | "anim-graph"
   | "behaviour-tree"
+  | "audio"
   | "audio-mixer"
   | "audio-channel"
   | "sound-attenuation"
@@ -47,6 +48,7 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "plugin-settings",
   "anim-graph",
   "behaviour-tree",
+  "audio",
   "audio-mixer",
   "audio-channel",
   "sound-attenuation",
@@ -73,11 +75,9 @@ export const MATERIAL_SIDE_STACK_WIDTH = 360;
 export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */
   actorPrefab?: boolean;
-  /** EditorUtilityInterface authoring adds a Settings dock for `dockKind`. */
-  editorUtilityInterface?: boolean;
   /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
   sourceControl?: boolean;
-  /** UserInterface / EditorUtilityInterface Designer vs Logic surface. */
+  /** UserInterface Designer vs Logic surface. */
   uiEditorMode?: UiEditorMode;
   /** Animation Graph State Machine vs Animation Object surface. */
   animEditorMode?: AnimEditorMode;
@@ -101,6 +101,7 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "plugin-settings": "plugin-settings-details",
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
+  audio: "audio-preview",
   "audio-mixer": "audio-mixer-details",
   "audio-channel": "audio-channel-details",
   "sound-attenuation": "sound-attenuation-details",
@@ -426,6 +427,30 @@ const SPRITE_WINDOWS: DockWindowDefinition[] = [
       referencePanelId: "sprite-preview",
       direction: "right",
       initialWidth: 280,
+    },
+  },
+];
+
+const AUDIO_WINDOWS: DockWindowDefinition[] = [
+  { id: "audio-preview", component: "audio-preview", title: "Preview" },
+  {
+    id: "audio-details",
+    component: "audio-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "audio-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+  {
+    id: "audio-clips",
+    component: "audio-clips",
+    title: "Clips",
+    defaultPosition: {
+      referencePanelId: "audio-preview",
+      direction: "below",
+      initialHeight: 220,
     },
   },
 ];
@@ -773,17 +798,6 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const UI_SETTINGS_WINDOW: DockWindowDefinition = {
-  id: "ui-settings",
-  component: "ui-settings",
-  title: "Settings",
-  defaultPosition: {
-    referencePanelId: "ui-details",
-    direction: "below",
-    initialHeight: 160,
-  },
-};
-
 export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
@@ -804,6 +818,7 @@ export function listDockWindows(
   if (kind === "animation") {
     return withOptionalLocks(kind, ANIMATION_WINDOWS, options);
   }
+  if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);
   }
@@ -832,10 +847,7 @@ export function listDockWindows(
     if (options?.uiEditorMode === "logic") {
       return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
     }
-    const windows = options?.editorUtilityInterface
-      ? [...UI_DESIGNER_WINDOWS, UI_SETTINGS_WINDOW]
-      : UI_DESIGNER_WINDOWS;
-    return withOptionalLocks(kind, windows, options);
+    return withOptionalLocks(kind, UI_DESIGNER_WINDOWS, options);
   }
   if (kind === "plugin-settings") {
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);

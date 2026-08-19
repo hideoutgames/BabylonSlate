@@ -43,7 +43,7 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 ## shadcn/ui
 
 - Follow `.cursor/skills/editor-ui-components/SKILL.md` before composing Editor UI — read `docs/architecture/components.md` and reuse catalog components.
-- Follow `.cursor/skills/shadcn/SKILL.md` for React editor chrome. UserInterface and EditorUtilityInterface are Babylon GUI — see BabylonJS below.
+- Follow `.cursor/skills/shadcn/SKILL.md` for React editor chrome. UserInterface is Babylon GUI — see BabylonJS below.
 - Use `@babylonslate/ui` components; run `npx shadcn@latest add <component> -c apps/editor` to add new ones.
 
 ## BabylonJS
@@ -51,7 +51,6 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 - Follow `.cursor/skills/BabylonJS/SKILL.md` (read it before implementing) for:
   - Engine and scene work
   - **UserInterface** assets and runtime (game HUD, viewport-layer apply, designer canvas — Babylon GUI)
-  - **EditorUtilityInterface** assets and runtime (**Windows → Editor Utilities** widgets — Babylon GUI)
 - React editor chrome (Dockview, shadcn, `@babylonslate/ui`, editor-kit) still uses the editor-ui-components and shadcn skills. Those are not Babylon GUI.
 
 ## Subagent models
@@ -90,6 +89,7 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 - No unresolved merge conflicts.
 - User has **not** explicitly asked to hold the PR open, keep it draft, or skip merge.
 - Session is not read-only (e.g. Plan mode).
+- A Verify **slot** is free (fewer than 2 non-draft PRs targeting `main`). If not, stay draft and stop — see [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
 
 ### When merge is not reasonable (exceptions)
 
@@ -97,11 +97,12 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 - CI failures that cannot be fixed in-session.
 - Merge conflicts needing human judgment.
 - User explicitly requested "PR only", "don't merge", or "wait for review".
+- No Verify slot: two non-draft PRs already target `main`. Leave the draft and stop.
 
 ### Workflow
 
-1. Open or update a PR targeting `main` (use `ManagePullRequest`, not `gh` for create/update/merge).
-2. Mark draft PRs **ready** once local verification passes.
-3. Fix any failing CI before merging; push fixes until CI is green.
+1. Open or update a PR targeting `main` (use `ManagePullRequest`, not `gh` for create/update/merge). Open it **draft**.
+2. Keep the PR draft until local `pnpm verify` passes. Then mark ready **once** — not on the first push, and not if **2** non-draft PRs already target `main`. If there is no slot, leave the draft and **stop**. Detail: [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
+3. After ready, avoid extra pushes; each synchronize restarts sharded Verify. Fix any failing CI before merging.
 4. **Merge the PR into `main` automatically** when all merge gates pass.
 5. Prefer merge commits (not squash) when the PR contains multiple logical commits, unless the user specifies otherwise.

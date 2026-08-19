@@ -16,6 +16,7 @@ import {
   normalizeScene,
   classHeaderMeta,
   documentId,
+  documentKindForAssetType,
   isAssetDocumentKind,
   LAYOUT_FILE,
   MAIN_CLASS_FILE,
@@ -44,6 +45,8 @@ import {
   extraChunksWithAudioClip,
   extraChunksWithoutAudioClip,
   exportProjectZip,
+  fallbackParentClass,
+  clearDeletedAssetRefs,
   isAssetDocumentPath,
   loadPayloadWithMigration,
   defaultRegistry,
@@ -104,14 +107,6 @@ function headerMetaForSave(
     content as Record<string, unknown>,
   );
   if (materialMeta) return materialMeta;
-  if (type === "EditorUtilityInterface") {
-    return {
-      dockKind:
-        typeof (content as { dockKind?: unknown }).dockKind === "string"
-          ? (content as { dockKind: string }).dockKind
-          : "scene",
-    };
-  }
   if (type === "Class" || type === "Graph") {
     return classHeaderMeta(
       content as {
@@ -928,6 +923,60 @@ export class ProjectService {
     return registry;
   }
 
+  /**
+   * Set remaining writable assets' references to deleted guids to None.
+   * Does not delete files — call after `deleteAsset` / `deleteFolder`.
+   */
+  async clearDeletedAssetReferences(
+    deletedGuids: ReadonlySet<string>,
+    options: { deletedClassNames?: ReadonlySet<string> } = {},
+  ): Promise<void> {
+    const registry = this.assetRegistry;
+    const deletedClassNames = options.deletedClassNames ?? new Set();
+    if (!registry) return;
+    if (deletedGuids.size === 0 && deletedClassNames.size === 0) return;
+
+    for (const asset of registry.list()) {
+      if (deletedGuids.has(asset.header.guid)) continue;
+      const root = registry.getRoot(asset.rootId);
+      if (root?.readOnly) continue;
+      if (isPluginDocumentReadOnly(this.pluginDescriptors, asset.path)) continue;
+      const kind = documentKindForAssetType(asset.header.type);
+      if (!kind) continue;
+
+      let content: SerializedScene | SerializedGraph | Record<string, unknown>;
+      try {
+        content = await this.loadDocument(kind, asset.path);
+      } catch {
+        continue;
+      }
+      const walked = clearDeletedAssetRefs(
+        content,
+        deletedGuids,
+        deletedClassNames,
+      );
+      const isClass =
+        asset.header.type === "Class" || asset.header.type === "Graph";
+      const nextParent = isClass
+        ? fallbackParentClass(asset.header.parentClass, deletedClassNames)
+        : undefined;
+      const parentChanged =
+        nextParent !== undefined &&
+        nextParent !== (asset.header.parentClass ?? null);
+      if (!walked.changed && !parentChanged) continue;
+      try {
+        await this.saveDocument(
+          kind,
+          asset.path,
+          walked.value,
+          parentChanged ? { parentClass: nextParent } : undefined,
+        );
+      } catch {
+        /* read-only or unreadable referrer — leave on disk */
+      }
+    }
+  }
+
   private async keepExisting(paths: string[]): Promise<string[]> {
     const kept: string[] = [];
     for (const path of paths) {
@@ -1115,6 +1164,7 @@ export class ProjectService {
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
     content: SerializedScene | SerializedGraph | Record<string, unknown>,
+    options?: { parentClass?: string | null },
   ): Promise<void> {
     if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
       throw new Error(
@@ -1141,7 +1191,9 @@ export class ProjectService {
           : "Class";
     const version = this.migrations.currentVersion(type);
     const parentClass =
-      existing?.parentClass ?? (type === "Class" ? "Actor" : null);
+      options?.parentClass !== undefined
+        ? options.parentClass
+        : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     const storeInHeader =
       (kind === "asset-settings" ||
         kind === "model" ||

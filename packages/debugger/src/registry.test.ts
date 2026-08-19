@@ -8,6 +8,7 @@ import { createUserCommand } from "./user-commands";
 function recordingHost(): ConsoleCommandHost & { calls: string[] } {
   const calls: string[] = [];
   let dilation = 1;
+  let resolutionScale = 1;
   return {
     calls,
     changeScene: (scene) => {
@@ -20,6 +21,7 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
       calls.push(`shadowquality:${level}`);
     },
     setResolutionScale: (scale) => {
+      resolutionScale = scale;
       calls.push(`resolutionscale:${scale}`);
     },
     setFrameCap: (fps) => {
@@ -31,7 +33,7 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     getVolume: () => 1,
     getFrameCap: () => 60,
     getRenderQuality: () => "high",
-    getResolutionScale: () => 1,
+    getResolutionScale: () => resolutionScale,
     getShadowQuality: () => "1024",
     quit: () => {
       calls.push("quit");
@@ -56,6 +58,9 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     },
     setShowNav: (enabled) => {
       calls.push(`shownav:${enabled}`);
+    },
+    setShowAudioDebug: (enabled) => {
+      calls.push(`showaudiodebug:${enabled}`);
     },
     dumpActors: () => "actor-dump",
     inspectActor: (query) => `inspect:${query || "(selection)"}`,
@@ -203,6 +208,27 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual(["shownav:true"]);
   });
 
+  it("toggles showaudiodebug with true/false and on/off", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("showaudiodebug true", host)).toEqual({
+      success: true,
+      output: "showaudiodebug on",
+    });
+    expect(registry.execute("showaudiodebug false", host)).toEqual({
+      success: true,
+      output: "showaudiodebug off",
+    });
+    expect(registry.execute("showaudiodebug on", host).success).toBe(true);
+    expect(registry.execute("showaudiodebug off", host).success).toBe(true);
+    expect(host.calls).toEqual([
+      "showaudiodebug:true",
+      "showaudiodebug:false",
+      "showaudiodebug:true",
+      "showaudiodebug:false",
+    ]);
+  });
+
   it("coerces types and rejects bad enum values", () => {
     const registry = createCommandRegistry();
     expect(registry.execute("framecap nope", recordingHost())).toEqual({
@@ -248,6 +274,19 @@ describe("createCommandRegistry", () => {
     expect(host.calls).toEqual([]);
   });
 
+  it("prints the host resolutionscale after applying a value", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: false });
+    expect(registry.execute("resolutionscale 1.25", host)).toEqual({
+      success: true,
+      output: "resolutionscale 1.25",
+    });
+    expect(registry.execute("resolutionscale", host)).toEqual({
+      success: true,
+      output: "resolutionscale 1.25",
+    });
+  });
+
   it("lists commands with help and details for one name", () => {
     const registry = createCommandRegistry({ includeDebug: true });
     registry.register(
@@ -276,6 +315,17 @@ describe("createCommandRegistry", () => {
       success: false,
       output: "debug command 'pause' is not available in this build",
     });
+  });
+
+  it("documents freecam pointer steal vs gamepad in help", () => {
+    const help = createCommandRegistry({ includeDebug: true }).execute(
+      "help freecam",
+      recordingHost(),
+    );
+    expect(help.success).toBe(true);
+    expect(help.output.toLowerCase()).toContain("pointer");
+    expect(help.output.toLowerCase()).toContain("wasd");
+    expect(help.output.toLowerCase()).toContain("gamepad");
   });
 
   it("runs resume and unpause", () => {

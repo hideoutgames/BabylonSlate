@@ -23,6 +23,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "anim-graph": ["anim-graph-graph"],
   animGraphObject: ["anim-object-graph"],
   "behaviour-tree": ["behaviour-tree-graph"],
+  audio: ["audio-preview"],
   "audio-mixer": ["audio-mixer-details"],
   "audio-channel": ["audio-channel-details"],
   "sound-attenuation": ["sound-attenuation-details"],
@@ -58,6 +59,7 @@ export const engineSettingsSchema = z.object({
         name: z.string(),
         tier: z.enum(["documents", "external", "opfs"]),
         lastOpenedAt: z.string(),
+        createdAt: z.string().optional(),
         bookmark: z.string().nullable().optional(),
       }),
     )
@@ -127,6 +129,7 @@ export const engineSettingsSchema = z.object({
       "behaviour-tree": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["behaviour-tree"],
       ),
+      audio: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.audio),
       "audio-mixer": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["audio-mixer"],
       ),

@@ -21,7 +21,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 
 ## Babylon.js
 
-- Engine, scene, **UserInterface**, and **EditorUtilityInterface** work follows the BabylonJS skill (`@babylonjs/gui` / `AdvancedDynamicTexture` for those two asset types). Agent rule: [`.cursor/rules/agent-workflow.mdc`](../.cursor/rules/agent-workflow.mdc).
+- Engine, scene, and **UserInterface** work follows the BabylonJS skill (`@babylonjs/gui` / `AdvancedDynamicTexture` for UserInterface). Agent rule: [`.cursor/rules/agent-workflow.mdc`](../.cursor/rules/agent-workflow.mdc).
 - React editor chrome (Dockview, shadcn, `@babylonslate/ui`, editor-kit) is not Babylon GUI; use the editor-ui-components and shadcn skills for that.
 
 ## React / editor

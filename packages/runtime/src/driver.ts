@@ -1726,7 +1726,7 @@ class InProcessRuntime implements RuntimeDriver {
     if (!this.showCollision) return;
     this.emit({
       type: "debugColliders",
-      colliders: [...this.physicsSync.getBackend().listDebugColliders()],
+      colliders: this.physicsSync.getBackend().listDebugColliders(),
     });
   }
 
@@ -1756,7 +1756,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
       getShadowQuality: () => this.shadowQuality,
       setResolutionScale: (scale) => {
-        this.resolutionScale = Number(scale);
+        this.resolutionScale = Math.min(2, Math.max(1, Number(scale)));
         this.emit({ type: "setResolutionScale", scale: this.resolutionScale });
       },
       getResolutionScale: () => this.resolutionScale,
@@ -1797,6 +1797,9 @@ class InProcessRuntime implements RuntimeDriver {
       },
       setShowNav: (enabled) => {
         this.emit({ type: "setShowNav", enabled: Boolean(enabled) });
+      },
+      setShowAudioDebug: (enabled) => {
+        this.emit({ type: "setShowAudioDebug", enabled: Boolean(enabled) });
       },
       dumpActors: () => formatDumpActors(this.inspectWorld()),
       inspectActor: (query) =>
@@ -2313,7 +2316,10 @@ class InProcessRuntime implements RuntimeDriver {
             message: entry.message,
           })),
         prints: [...this.tickPrints],
-        snapshotText: stringifyWorldSnapshot(createWorldSnapshot(this.world)),
+        snapshotText: stringifyWorldSnapshot({
+          ...createWorldSnapshot(this.world),
+          dt: this.dt,
+        }),
         inputEvents: pending.map((event) => {
           if (event.kind === "key") {
             return {

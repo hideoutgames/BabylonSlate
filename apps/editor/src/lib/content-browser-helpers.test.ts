@@ -591,6 +591,21 @@ describe("content-browser-helpers", () => {
       destinationPath: "assets/fx",
       id: "assets/textures",
     });
+    expect(
+      contentBrowserMoveFromDrop(
+        "assets/textures/dirt.babasset",
+        "assets/fx",
+        rows,
+        undefined,
+        "before",
+      ),
+    ).toEqual({
+      kind: "asset",
+      sourcePath: "assets/textures",
+      destinationPath: "assets",
+      id: "assets/textures/dirt.babasset",
+      guid: "dirt-guid",
+    });
   });
 
   it("rejects illegal tree drops including dragging the assets root", () => {
@@ -1143,9 +1158,6 @@ describe("content-browser-helpers", () => {
     expect(newAssetFileName("Blackboard", "Guard")).toBe(
       "Guard.blackboard.babasset",
     );
-    expect(newAssetFileName("EditorUtilityInterface", "SceneTools")).toBe(
-      "SceneTools.eui.babasset",
-    );
     expect(newAssetFileName("AudioMixer", "Master")).toBe(
       "Master.mixer.babasset",
     );
@@ -1353,7 +1365,6 @@ describe("content-browser-helpers", () => {
       "Enum",
       "Structure",
       "ScriptInterface",
-      "EditorUtilityInterface",
       "AudioMixer",
       "AudioChannel",
       "SoundAttenuation",
@@ -1366,9 +1377,6 @@ describe("content-browser-helpers", () => {
   it("labels creatable types in Title Case with spaces", () => {
     expect(creatableAssetTypeLabel("Scene")).toBe("Scene");
     expect(creatableAssetTypeLabel("UserInterface")).toBe("User Interface");
-    expect(creatableAssetTypeLabel("EditorUtilityInterface")).toBe(
-      "Editor Utility Interface",
-    );
     expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
     expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
@@ -1480,22 +1488,8 @@ describe("content-browser-helpers", () => {
     expect(klass.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 
-  it("creates EditorUtilityInterface assets with UserInterface payload and dockKind", () => {
-    const eui = buildNewAssetResult({
-      type: "EditorUtilityInterface",
-      name: "SceneTools",
-      guid: "eui-1",
-      parentClass: null,
-    });
-    expect(eui.type).toBe("EditorUtilityInterface");
-    expect(eui.payload.dockKind).toBe("scene");
-    expect(eui.payload.rootId).toBeTruthy();
-    expect(eui.payload.widgets).toBeTruthy();
-    expect(
-      (eui.payload.logic as { nodes: Array<{ type: string }> }).nodes.map(
-        (node) => node.type,
-      ),
-    ).toEqual([]);
+  it("does not create EditorUtilityInterface assets", () => {
+    expect(CREATABLE_ASSET_TYPES).not.toContain("EditorUtilityInterface");
   });
 
   it("seeds a BTDecorator class with On Evaluate instead of Begin Play", () => {

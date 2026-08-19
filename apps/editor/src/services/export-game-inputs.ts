@@ -126,25 +126,20 @@ export async function loadExportDocuments(
   for (const asset of loaders.assets) {
     const kind = documentKindForAssetType(asset.header.type);
     let document: unknown = null;
-    if (asset.header.type === "Audio") {
-      try {
-        document = await loaders.loadDocument("asset-settings", asset.path);
-      } catch {
-        document = asset.header.payload;
-      }
-    } else if (
+    if (
       kind &&
       kind !== "asset-settings" &&
       (JSON_TYPES.has(asset.header.type) ||
         asset.header.type === "Class" ||
         asset.header.type === "Graph" ||
         asset.header.type === "Scene" ||
-        asset.header.type === "Font")
+        asset.header.type === "Font" ||
+        asset.header.type === "Audio")
     ) {
       try {
         document = await loaders.loadDocument(kind, asset.path);
       } catch {
-        document = null;
+        document = asset.header.type === "Audio" ? asset.header.payload : null;
       }
     }
     if (document && typeof document === "object") {

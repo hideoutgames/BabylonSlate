@@ -3,11 +3,6 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { PanelFrame } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-} from "@babylonslate/ui/components/field";
-import {
   Select,
   SelectContent,
   SelectGroup,
@@ -20,11 +15,6 @@ import {
   type DesignerCanvasId,
   type ScaleRule,
 } from "@babylonslate/ui-runtime";
-import {
-  EDITOR_UTILITY_DOCK_KINDS,
-  editorUtilityDockKindLabel,
-  normalizeEditorUtilityDockKind,
-} from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useUiEditing } from "../context/ui-editing-context";
@@ -58,8 +48,7 @@ function useDockPanelVisible(props: IDockviewPanelProps): boolean {
 export function UiDesignPanel(props: IDockviewPanelProps) {
   const panelVisible = useDockPanelVisible(props);
   const workspace = useOptionalDocumentWorkspace();
-  const { activeDocumentId, uiEditorMode, assetRegistry, openLiveEditorUtility } =
-    useDocuments();
+  const { activeDocumentId, uiEditorMode } = useDocuments();
   const editing = useUiEditing();
   const viewportMeasureRef = useRef<HTMLDivElement>(null);
   const setViewportSize = editing.setViewportSize;
@@ -149,21 +138,6 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
           >
             Fit
           </Button>
-          {editing.isEditorUtilityInterface ? (
-            <Button
-              size="sm"
-              variant="outline"
-              data-testid="ui-open-live"
-              onClick={() => {
-                const guid = assetRegistry
-                  ?.list()
-                  .find((asset) => asset.path === editing.path)?.header.guid;
-                if (guid) void openLiveEditorUtility(guid);
-              }}
-            >
-              Open Live
-            </Button>
-          ) : null}
           <span className="text-xs text-muted-foreground" data-testid="ui-design-zoom">
             {Math.round(editing.view.zoom * 100)}%
           </span>
@@ -182,6 +156,7 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
             fontEntries={editing.fontEntries}
             resolveImageUrl={editing.resolveImageUrl}
             resolveInterfaceMaterial={editing.resolveInterfaceMaterial}
+            resolveNested={editing.resolveNested}
             materialFunctions={editing.materialFunctions}
             imageIssues={editing.imageIssues}
             panelVisible={panelVisible}
@@ -244,58 +219,6 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
         onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
         onPickAsset={setAssetPick}
       />
-    </PanelFrame>
-  );
-}
-
-export function UiSettingsPanel(_props: IDockviewPanelProps) {
-  void _props;
-  const { payload, commit, isEditorUtilityInterface, dockKind } = useUiEditing();
-  return (
-    <PanelFrame data-testid="ui-settings-panel">
-      <FieldGroup className="p-3">
-        <Field>
-          <FieldLabel>Dock Kind</FieldLabel>
-          <Select
-            value={dockKind}
-            disabled={!isEditorUtilityInterface}
-            onValueChange={(next) => {
-              if (!next) return;
-              commit({
-                ...payload,
-                dockKind: normalizeEditorUtilityDockKind(next),
-              });
-            }}
-          >
-            <SelectTrigger
-              className="w-56"
-              aria-label="Dock Kind"
-              data-testid="ui-dock-kind"
-            >
-              <SelectValue>
-                {(value: unknown) =>
-                  editorUtilityDockKindLabel(
-                    normalizeEditorUtilityDockKind(value),
-                  )
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {EDITOR_UTILITY_DOCK_KINDS.map((kind) => (
-                  <SelectItem
-                    key={kind}
-                    value={kind}
-                    data-testid={`ui-dock-kind-${kind}`}
-                  >
-                    {editorUtilityDockKindLabel(kind)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-      </FieldGroup>
     </PanelFrame>
   );
 }

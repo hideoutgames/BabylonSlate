@@ -55,6 +55,18 @@ describe("createEditorCameraPoseStore", () => {
     const store = createEditorCameraPoseStore();
     expect(store.load()).toBeNull();
   });
+
+  it("restores a pose after a new store is created for the same document id", () => {
+    const first = createEditorCameraPoseStore("scene:level-1");
+    first.save(pose);
+    const remount = createEditorCameraPoseStore("scene:level-1");
+    expect(remount.load()).toEqual(pose);
+  });
+
+  it("keeps poses isolated per document id", () => {
+    createEditorCameraPoseStore("scene:level-1").save(pose);
+    expect(createEditorCameraPoseStore("scene:other").load()).toBeNull();
+  });
 });
 
 

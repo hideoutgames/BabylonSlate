@@ -61,7 +61,7 @@ Overlay Play and `apps/player` pass a particle library (Emitter + System payload
 
 Missing Texture skips that emitter and logs `particle.missing_texture` (asset guid is the Emitter).
 
-Preview uses the same constructors on a Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Optional particle-domain Material compiles through `MaterialLibrary` then `createEffectForParticles`. Prefab’s separate-Engine exception still closes in P18.
+Preview uses the same constructors on a Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Optional particle-domain Material compiles through `MaterialLibrary` then `createEffectForParticles`. Prefab Preview uses that Engine too (`p18-shared-prefab-engine`).
 
 Scripting: **Play Particles** (`particles.play`) / **Stop Particles** (`particles.stop`) — exec + optional `actorRef("Actor")` (unconnected → `ctx.self`). Graphs emit `setParticlePlaying` only.
 
