@@ -86,7 +86,7 @@ const {
           },
         },
       ],
-    },
+    } as { components: import("@babylonslate/core").SerializedComponent[] },
     play: {
       ensureSharedEngine: vi.fn(() => ({ id: "shared-engine" })),
       sharedEngineGeneration: 1,
