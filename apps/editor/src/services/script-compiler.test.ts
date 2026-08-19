@@ -140,6 +140,37 @@ describe("script compiler service", () => {
     ]);
   });
 
+  it("copies Class variable Array/Map containers onto the bundle", () => {
+    const script = compileGraphDocument(
+      {
+        ...tickToLog,
+        members: [
+          {
+            id: "var-hits",
+            kind: "variable",
+            name: "hits",
+            typeId: "rotator",
+            container: "array",
+            defaultValue: [],
+          },
+          {
+            id: "var-by-name",
+            kind: "variable",
+            name: "byName",
+            typeId: "float",
+            container: "map",
+            keyTypeId: "string",
+          },
+        ],
+      },
+      { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
+    );
+    expect(script?.variables).toEqual([
+      { name: "hits", type: "rotator", container: "array", defaultValue: [] },
+      { name: "byName", type: "float", container: "map", keyTypeId: "string" },
+    ]);
+  });
+
   it("excludes function-local variables from the bundle and emits lets in the function export", () => {
     const script = compileGraphDocument(
       {

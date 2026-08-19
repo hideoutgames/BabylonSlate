@@ -16,12 +16,14 @@ import { TypeColorMark } from "./type-color-mark";
 import { PinTypePicker } from "./pin-type-picker";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
+import { SearchDropdown } from "./search-dropdown";
 import {
   PickerIdentity,
   assetRowIdentity,
   classRowIdentity,
 } from "./picker-identity";
 import {
+  ASSET_REF_PICKER_TYPES,
   pinPickerColorVar,
   pinPickerKeepsTypeClassId,
   type PinPickerType,
@@ -54,7 +56,11 @@ export type PinListEditorProps = {
 };
 
 function isReferencePinType(type: string): boolean {
-  return type === "object" || type === "class";
+  return type === "object" || type === "actor" || type === "class";
+}
+
+function isAssetPinType(type: string): boolean {
+  return type === "asset";
 }
 
 function isTypeAssetPinType(type: string): boolean {
@@ -277,6 +283,34 @@ export function PinListEditor({
                         visual={classIdentity.visual}
                       />
                     </Button>
+                  </Field>
+                ) : isAssetPinType(row.type) ? (
+                  <Field className="min-w-32 flex-1">
+                    <FieldLabel>Asset Type</FieldLabel>
+                    <SearchDropdown
+                      title="Asset Type"
+                      items={ASSET_REF_PICKER_TYPES.map((assetType) => ({
+                        id: assetType,
+                        label: assetType,
+                        description: "Asset",
+                      }))}
+                      onSelect={(id) =>
+                        onChange(patchRow(rows, row.id, { typeClassId: id }))
+                      }
+                      data-testid={`${testIdPrefix}-${row.id}-asset-type-picker`}
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-auto min-h-7 justify-start"
+                        data-testid={`${testIdPrefix}-${row.id}-asset-type`}
+                      >
+                        {row.typeClassId?.trim()
+                          ? row.typeClassId
+                          : "Pick type"}
+                      </Button>
+                    </SearchDropdown>
                   </Field>
                 ) : isTypeAssetPinType(row.type) && hasTypeAssets ? (
                   <Field className="min-w-32 flex-1">

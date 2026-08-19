@@ -90,7 +90,14 @@ export type ScriptBundleEntry = {
   /** ScriptInterface asset guids this class implements. */
   implementedInterfaces?: string[];
   /** Class variable defaults applied at spawn when the caller omits them. */
-  variables?: Array<{ name: string; type: string; defaultValue?: unknown }>;
+  variables?: Array<{
+    name: string;
+    type: string;
+    defaultValue?: unknown;
+    container?: "single" | "array" | "map";
+    keyTypeId?: string;
+    keyTypeClassId?: string;
+  }>;
   /** Function exports that implement ScriptInterface methods. */
   interfaceImplementations?: Array<{
     interfaceGuid: string;

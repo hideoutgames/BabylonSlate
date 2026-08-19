@@ -264,6 +264,70 @@ describe("project schema", () => {
     ]);
   });
 
+  it("round-trips Class variable Single/Array/Map containers and drops unknown values", () => {
+    expect(
+      normalizeGraphMembers([
+        {
+          id: "var-array",
+          kind: "variable",
+          name: "Hits",
+          typeId: "rotator",
+          container: "array",
+        },
+        {
+          id: "var-map",
+          kind: "variable",
+          name: "ByName",
+          typeId: "float",
+          container: "map",
+          keyTypeId: "string",
+        },
+        {
+          id: "var-legacy",
+          kind: "variable",
+          name: "Health",
+          typeId: "float",
+          container: "set",
+        },
+        {
+          id: "var-object-map",
+          kind: "variable",
+          name: "Actors",
+          typeId: "actor",
+          container: "map",
+          keyTypeId: "object",
+          keyTypeClassId: "Hero",
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "var-array",
+        kind: "variable",
+        name: "Hits",
+        typeId: "rotator",
+        container: "array",
+      },
+      {
+        id: "var-map",
+        kind: "variable",
+        name: "ByName",
+        typeId: "float",
+        container: "map",
+        keyTypeId: "string",
+      },
+      { id: "var-legacy", kind: "variable", name: "Health", typeId: "float" },
+      {
+        id: "var-object-map",
+        kind: "variable",
+        name: "Actors",
+        typeId: "actor",
+        container: "map",
+        keyTypeId: "object",
+        keyTypeClassId: "Hero",
+      },
+    ]);
+  });
+
   it("persists overridable, implementsInterface, and overrides on functions", () => {
     expect(
       normalizeGraphMembers([

@@ -58,6 +58,7 @@ Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`
 | `--pin-string` | string (magenta) |
 | `--pin-vector` | vec2 / vec3 / vec4 (gold) |
 | `--pin-rotator` | rotator (violet) |
+| `--pin-quat` | quaternion (magenta-violet) |
 | `--pin-transform` | transform (orange) |
 | `--pin-color` | color |
 | `--pin-object` | objectRef (blue) |

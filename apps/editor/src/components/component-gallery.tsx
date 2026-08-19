@@ -18,6 +18,7 @@ import {
   ParameterListEditor,
   PinListEditor,
   PinTypePicker,
+  VariableTypeFields,
   PropertyGrid,
   SearchDialog,
   SearchDropdown,
@@ -38,6 +39,7 @@ import {
   type PinPickerType,
   type PropertyRow,
   type TreeViewNode,
+  type VariableTypeFieldsValue,
 } from "@babylonslate/editor-kit";
 import {
   ensureTilesetTiles,
@@ -173,6 +175,10 @@ function GalleryComposites() {
     { id: "gallery-amount", name: "amount", type: "float" },
   ]);
   const [pinType, setPinType] = useState<PinPickerType>("float");
+  const [variableType, setVariableType] = useState<VariableTypeFieldsValue>({
+    typeId: "float",
+    container: "single",
+  });
   const [bindingCode, setBindingCode] = useState("Space");
   const [pins, setPins] = useState<PinListRow[]>([
     { id: "gallery-hit", name: "hit", type: "bool", direction: "out" },
@@ -330,6 +336,10 @@ function GalleryComposites() {
       <div className="rounded-lg border border-border p-3" data-testid="gallery-pin-type-picker">
         <div className="mb-2 text-sm font-medium">Pin Type Picker</div>
         <PinTypePicker value={pinType} onChange={setPinType} />
+      </div>
+      <div className="rounded-lg border border-border p-3" data-testid="gallery-variable-type-fields">
+        <div className="mb-2 text-sm font-medium">Variable Type Fields</div>
+        <VariableTypeFields value={variableType} onChange={setVariableType} />
       </div>
       <div className="rounded-lg border border-border p-3" data-testid="gallery-binding-code-picker">
         <div className="mb-2 text-sm font-medium">Binding Code Picker</div>

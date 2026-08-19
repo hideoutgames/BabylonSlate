@@ -381,6 +381,13 @@ describe("collectEnumMemberNames", () => {
       "enum-1": ["Idle", "Run"],
       "enum-2": ["Red", "Blue"],
       "engine:InputMode": ["All", "Interface", "Game"],
+      "engine:CollisionChannel": [
+        "All",
+        "WorldStatic",
+        "WorldDynamic",
+        "Pawn",
+        "Visibility",
+      ],
     });
   });
 
@@ -671,5 +678,13 @@ describe("variableDefaultPropertyRows", () => {
   it("omits a Default row for object and class variables", () => {
     expect(variableDefaultPropertyRows("object", null, vi.fn())).toEqual([]);
     expect(variableDefaultPropertyRows("class", "Actor", vi.fn())).toEqual([]);
+    expect(variableDefaultPropertyRows("actor", null, vi.fn())).toEqual([]);
+    expect(variableDefaultPropertyRows("wildcard", null, vi.fn())).toEqual([]);
+    expect(
+      variableDefaultPropertyRows("float", 1, vi.fn(), { container: "array" }),
+    ).toEqual([]);
+    expect(
+      variableDefaultPropertyRows("float", 1, vi.fn(), { container: "map" }),
+    ).toEqual([]);
   });
 });
