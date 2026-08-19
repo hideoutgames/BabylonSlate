@@ -67,7 +67,11 @@ operation ids (`callNodeId/innerNodeId`) because Babylon has no runtime function
 object; each inlined operation still maps back to its call node.
 
 `compileMaterialPlan` instantiates one or more real Babylon blocks per operation
-and connects actual connection points. The compiler owns plumbing the graph does
+and connects actual connection points. After `material.build()`, authored
+`blendMode` / `twoSided` / `alphaCutoff` are applied (`MATERIAL_OPAQUE` for
+opaque including unlit, alphatest + cutoff for masked, alphablend +
+`needDepthPrePass` for translucent/additive, `backFaceCulling = false` when
+two-sided). The compiler owns plumbing the graph does
 not author:
 
 - **Surface**: position/normal/uv attributes, world and clip-space transforms,
@@ -126,7 +130,8 @@ default-framebuffer `scene.render()` — those overwrite the Scene viewport and
 Play overlay, which share that Engine. Prefab Preview is on that Engine too
 (`p18-shared-prefab-engine`) via RTT + 2D blit. Orbit / pinch / wheel attach to the preview canvas
 only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
-Babylon binds to the Engine input element (Scene / Play). Hidden Material tabs
+Babylon binds to the Engine input element (Scene / Play). Vertical orbit matches
+the Scene viewport (`beta -= dy`; dragging down looks up). Hidden Material tabs
 and in-editor Play freeze present.
 
 The compact `material-preview-overlay` contains only the viewport-style mesh
