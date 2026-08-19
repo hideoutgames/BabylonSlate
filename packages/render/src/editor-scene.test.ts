@@ -903,6 +903,57 @@ describe("EditorSceneSync", () => {
       expect(child.material).toBe(meshMat);
     }
   });
+
+  it("rebinds Model slots without disposing when only materialSlots change", async () => {
+    const { scene } = createHandle();
+    const slotMat = new StandardMaterial("slot-mat", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-slot" ? slotMat : null),
+    });
+    const bytes = encodeTriangleGlb();
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", bytes]]),
+      modelPayloads: new Map([
+        [
+          "model-1",
+          { clipNames: [], skeletonGuid: null, materialSlots: [] },
+        ],
+      ]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    await vi.waitFor(() => {
+      expect(sync.meshForActor("a")?.getChildMeshes().length).toBeGreaterThan(0);
+    });
+    const live = sync.meshForActor("a");
+    expect(live).not.toBeNull();
+
+    const rebuilt = sync.setMeshAssets({
+      modelBytes: new Map([["model-1", bytes]]),
+      modelPayloads: new Map([
+        [
+          "model-1",
+          {
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [
+              { index: 0, name: "Hero Mat", materialGuid: "mat-slot" },
+            ],
+          },
+        ],
+      ]),
+    });
+    expect(rebuilt).toBe(false);
+    expect(sync.meshForActor("a")).toBe(live);
+    expect(live!.isDisposed()).toBe(false);
+    await vi.waitFor(() => {
+      const visible = live!
+        .getChildMeshes()
+        .filter((child) => child.visibility > 0);
+      expect(visible.some((child) => child.material === slotMat)).toBe(true);
+    });
+  });
 });
 
 describe("editor grid", () => {

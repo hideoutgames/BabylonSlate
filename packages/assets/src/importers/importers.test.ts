@@ -219,4 +219,101 @@ describe("importers", () => {
     expect(audio.payload.audioChannelGuid).toBe(channel.guid);
     expect(audio.dependencies).toContain(channel.guid);
   });
+
+  it("returns the same array when no imported guid collides", () => {
+    const results = [
+      {
+        type: "Model",
+        name: "Hero",
+        guid: "model-1",
+        version: 1,
+        dependencies: ["skel-1"],
+        parentClass: null,
+        payload: {
+          clipNames: ["Idle"],
+          skeletonGuid: "skel-1",
+          materialSlots: [],
+        },
+        chunks: [],
+      },
+    ];
+    expect(remapImportResultGuids(results, new Set(["other"]))).toBe(results);
+  });
+
+  it("rewrites Model, Skeleton, and Animation guids together when a Model collides", () => {
+    const remapped = remapImportResultGuids(
+      [
+        {
+          type: "Model",
+          name: "Hero",
+          guid: "model-1",
+          version: 1,
+          dependencies: ["skel-1", "mat-1"],
+          parentClass: null,
+          payload: {
+            clipNames: ["Idle"],
+            skeletonGuid: "skel-1",
+            materialSlots: [
+              { index: 0, name: "Body", materialGuid: "mat-1" },
+            ],
+          },
+          chunks: [],
+        },
+        {
+          type: "Skeleton",
+          name: "Hero_Skeleton",
+          guid: "skel-1",
+          version: 1,
+          dependencies: ["model-1"],
+          parentClass: null,
+          payload: {
+            modelGuid: "model-1",
+            kind: "hierarchy",
+            boneNames: ["root"],
+          },
+          chunks: [],
+        },
+        {
+          type: "Animation",
+          name: "Idle",
+          guid: "anim-1",
+          version: 1,
+          dependencies: ["model-1", "skel-1"],
+          parentClass: null,
+          payload: {
+            clipName: "Idle",
+            modelGuid: "model-1",
+            skeletonGuid: "skel-1",
+          },
+          chunks: [],
+          attachToGuid: "model-1",
+        },
+        {
+          type: "Material",
+          name: "Body",
+          guid: "mat-1",
+          version: 1,
+          dependencies: [],
+          parentClass: null,
+          payload: {},
+          chunks: [],
+        },
+      ],
+      new Set(["model-1"]),
+    );
+    const model = remapped.find((entry) => entry.type === "Model")!;
+    const skeleton = remapped.find((entry) => entry.type === "Skeleton")!;
+    const animation = remapped.find((entry) => entry.type === "Animation")!;
+    const material = remapped.find((entry) => entry.type === "Material")!;
+    expect(model.guid).not.toBe("model-1");
+    expect(skeleton.guid).toBe("skel-1");
+    expect(material.guid).toBe("mat-1");
+    expect(model.payload.skeletonGuid).toBe("skel-1");
+    expect(skeleton.payload.modelGuid).toBe(model.guid);
+    expect(skeleton.dependencies).toEqual([model.guid]);
+    expect(animation.payload.modelGuid).toBe(model.guid);
+    expect(animation.payload.skeletonGuid).toBe("skel-1");
+    expect(animation.dependencies).toEqual([model.guid, "skel-1"]);
+    expect(animation.attachToGuid).toBe(model.guid);
+  });
 });
