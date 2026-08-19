@@ -1281,4 +1281,24 @@ describe("createPlayMesh", () => {
       (mesh!.metadata as { playHelperVisual?: boolean }).playHelperVisual,
     ).toBe(true);
   });
+
+  it("draws Play collider dashes when meshKind encodes a collider shape", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "collider:{\"kind\":\"box\",\"halfExtents\":{\"x\":0.5,\"y\":0.5,\"z\":0.5}}",
+    });
+    const mesh = scene.getMeshByName("actor-5") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect(
+      (mesh!.metadata as { editorColliderVisual?: boolean }).editorColliderVisual,
+    ).toBe(true);
+    expect(mesh!.overlay).toBe(false);
+    expect(mesh!.getChildMeshes().length).toBeGreaterThan(0);
+  });
 });
