@@ -12,6 +12,7 @@ import type { ViewportMode } from "@babylonslate/core";
 import type {
   EditorCameraSessionState,
   GizmoTool,
+  ViewportShadingMode,
 } from "@babylonslate/render";
 
 export type ViewportDropApi = {
@@ -54,6 +55,9 @@ export interface SceneEditingContextValue {
   /** Session-only 3D orbit around the current look-at point. */
   pivotAroundCenter: boolean;
   setPivotAroundCenter: (enabled: boolean) => void;
+  /** Session-only actor shading overlay (PBR / Unlit / Wireframe / Points Cloud). */
+  viewportShadingMode: ViewportShadingMode;
+  setViewportShadingMode: (mode: ViewportShadingMode) => void;
   frameActor: (actorId: string) => void;
   setFrameActorHandler: (handler: ((actorId: string) => void) | null) => void;
   /** Scene viewport hit-test and screen-to-world for Outliner drop / Place Actors. */
@@ -159,6 +163,8 @@ export function SceneEditingProvider({
   );
   const [previewGameCamera, setPreviewGameCamera] = useState(false);
   const [pivotAroundCenter, setPivotAroundCenter] = useState(false);
+  const [viewportShadingMode, setViewportShadingMode] =
+    useState<ViewportShadingMode>("pbr");
   const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
     null,
   );
@@ -266,6 +272,8 @@ export function SceneEditingProvider({
       setPreviewGameCamera,
       pivotAroundCenter,
       setPivotAroundCenter,
+      viewportShadingMode,
+      setViewportShadingMode,
       frameActor,
       setFrameActorHandler,
       viewportDropApi,
@@ -291,6 +299,7 @@ export function SceneEditingProvider({
       viewportMode,
       previewGameCamera,
       pivotAroundCenter,
+      viewportShadingMode,
     ],
   );
 

@@ -66,6 +66,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     saveEditorCameraPose,
     loadEditorCameraPose,
     pivotAroundCenter,
+    viewportShadingMode,
     setFrameActorHandler,
   } = useSceneEditing();
   const { registerScheduler, playing, ensureSharedEngine, sharedEngineGeneration } =
@@ -226,6 +227,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
   }, [viewportMode]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
+  }, [viewportShadingMode]);
 
   useEffect(() => {
     engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);

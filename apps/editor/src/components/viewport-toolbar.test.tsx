@@ -32,6 +32,8 @@ const harness = vi.hoisted(() => ({
   setPreviewGameCamera: vi.fn(),
   pivotAroundCenter: false,
   setPivotAroundCenter: vi.fn(),
+  viewportShadingMode: "pbr" as "pbr" | "unlit" | "wireframe" | "pointsCloud",
+  setViewportShadingMode: vi.fn(),
   scene: null as SerializedScene | null,
   applySceneChange: vi.fn(async () => true),
 }));
@@ -62,6 +64,8 @@ vi.mock("../context/scene-editing-context", () => ({
     setPreviewGameCamera: harness.setPreviewGameCamera,
     pivotAroundCenter: harness.pivotAroundCenter,
     setPivotAroundCenter: harness.setPivotAroundCenter,
+    viewportShadingMode: harness.viewportShadingMode,
+    setViewportShadingMode: harness.setViewportShadingMode,
   }),
 }));
 
@@ -94,6 +98,7 @@ beforeEach(() => {
   harness.viewportMode = "3d";
   harness.previewGameCamera = false;
   harness.pivotAroundCenter = false;
+  harness.viewportShadingMode = "pbr";
   harness.scene = createDefaultScene();
   harness.setGizmoTool.mockClear();
   harness.setSnapEnabled.mockClear();
@@ -104,6 +109,7 @@ beforeEach(() => {
   harness.setViewportMode.mockClear();
   harness.setPreviewGameCamera.mockClear();
   harness.setPivotAroundCenter.mockClear();
+  harness.setViewportShadingMode.mockClear();
   harness.applySceneChange.mockClear();
 });
 
@@ -169,9 +175,10 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
-  it("opens a settings menu with Snap, Show Grid, Show Navmesh, Joystick, Pivot Around Center, and Game Camera", () => {
+  it("opens a settings menu with Viewport Mode, Snap, Show Grid, Show Navmesh, Joystick, Pivot Around Center, and Game Camera", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
+    expect(screen.getByTestId("viewport-shading-mode")).toBeTruthy();
     expect(screen.getByTestId("gizmo-snap-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-navmesh-toggle")).toBeTruthy();
@@ -212,5 +219,29 @@ describe("ViewportToolbar", () => {
     renderToolbar({ showDragSelect: false });
     expect(screen.queryByTestId("viewport-drag-select")).toBeNull();
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
+  });
+
+  it("opens Viewport Mode radios and keeps PBR selected by default", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-shading-mode"));
+    expect(screen.getByTestId("viewport-shading-pbr").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.getByTestId("viewport-shading-unlit")).toBeTruthy();
+    expect(screen.getByTestId("viewport-shading-wireframe")).toBeTruthy();
+    expect(screen.getByTestId("viewport-shading-points-cloud")).toBeTruthy();
+    expect(screen.getByTestId("viewport-mode-toggle").getAttribute("aria-label")).toBe(
+      "2D / 3D",
+    );
+  });
+
+  it("sets Unlit shading without writing the scene document", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-shading-mode"));
+    fireEvent.click(screen.getByTestId("viewport-shading-unlit"));
+    expect(harness.setViewportShadingMode).toHaveBeenCalledWith("unlit");
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 });

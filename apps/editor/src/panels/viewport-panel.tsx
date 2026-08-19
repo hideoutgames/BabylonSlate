@@ -90,6 +90,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     saveEditorCameraPose,
     loadEditorCameraPose,
     pivotAroundCenter,
+    viewportShadingMode,
   } = useSceneEditing();
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
   const navBake = useOptionalNavBake();
@@ -464,6 +465,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
   }, [viewportMode]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
+  }, [viewportShadingMode]);
 
   useEffect(() => {
     engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);
