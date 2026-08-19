@@ -1433,12 +1433,20 @@ test.describe("P9 content systems", () => {
     await createAsset(page, "UserInterface", "HUD");
     await createAsset(page, "UserInterface", "Panel");
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-    await page.getByTestId("ui-add-widget").click();
+    const workspace = page.locator(
+      '[data-testid="document-workspace-ui"]:visible',
+    );
+    await expect(workspace).toBeVisible();
+    await workspace.getByTestId("ui-add-widget").click();
     await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
-    const nestedSlots = page.locator('[data-testid^="ui-add-widget-UserInterface-"]');
-    await expect(nestedSlots).toHaveCount(1);
-    await expect(nestedSlots).toContainText("Panel");
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
+    await expect(
+      page.locator('[data-testid^="ui-add-widget-UserInterface-"]'),
+    ).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("HUD");
+    await expect(
+      page.locator('[data-testid^="ui-add-widget-UserInterface-"]'),
+    ).toHaveCount(0);
   });
 
   test("UserInterface designer paints a nested UserInterface subtree", async ({
@@ -1465,7 +1473,9 @@ test.describe("P9 content systems", () => {
     await expect(hudWorkspace).toBeVisible();
     await hudWorkspace.getByTestId("ui-add-widget").click();
     await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
     await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
+    await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     await expect(
       hudWorkspace.locator('[data-testid^="ui-widget-"][data-kind="Button"]'),
     ).toBeVisible();
