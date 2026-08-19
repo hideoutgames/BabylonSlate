@@ -651,6 +651,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!id) return null;
         return this.spawnScriptedActor({ classId: id });
       },
+      getActors: () => this.world.getActors(),
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {

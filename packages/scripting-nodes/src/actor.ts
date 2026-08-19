@@ -7,6 +7,7 @@ import {
   objectRef,
   BOOL,
   STRING,
+  arrayOf,
 } from "@babylonslate/scripting";
 
 export const actorNodes: NodeDefinition[] = [
@@ -69,5 +70,31 @@ export const actorNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       ctx.emit(`${out} = ctx.spawnActor(${ctx.input("classId")});`);
     },
+  },
+  {
+    id: "actor.getAllOfClass",
+    title: "Get All Actors Of Class",
+    category: "actor",
+    pure: true,
+    pins: () => [
+      pin("classId", "Class", "in", classRef("Actor")),
+      pin("out", "Out", "out", arrayOf(actorRef("Actor"))),
+    ],
+    codegen: (ctx) => ({
+      out: `ctx.getAllActorsOfClass(${ctx.input("classId")})`,
+    }),
+  },
+  {
+    id: "actor.getOfClass",
+    title: "Get Actor Of Class",
+    category: "actor",
+    pure: true,
+    pins: () => [
+      pin("classId", "Class", "in", classRef("Actor")),
+      pin("out", "Out", "out", actorRef("Actor")),
+    ],
+    codegen: (ctx) => ({
+      out: `ctx.getActorOfClass(${ctx.input("classId")})`,
+    }),
   },
 ];

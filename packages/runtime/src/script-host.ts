@@ -67,6 +67,8 @@ export interface ScriptHostServices {
   interfaceRegistry?: InterfaceRegistry;
   /** Live-object `ctx.isA` uses ClassRegistry ancestry, not string equality. */
   classRegistry?: ClassRegistry;
+  /** World actors in deterministic spawn order for class queries. */
+  getActors?(): readonly Actor[];
   log(severity: LogSeverity, category: string, message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
@@ -173,6 +175,10 @@ export interface ScriptContext {
     actor: BObject | null | undefined,
     location: { x: number; y: number; z: number },
   ): void;
+  addActorWorldOffset(
+    actor: BObject | null | undefined,
+    offset: { x: number; y: number; z: number },
+  ): void;
   setActorRotation(
     actor: BObject | null | undefined,
     rotation: { pitch: number; yaw: number; roll: number },
@@ -243,7 +249,16 @@ export interface ScriptContext {
   normalizeQuat(
     quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
   ): { x: number; y: number; z: number; w: number };
+  /** Seeded PRNG surface — never Math.random. */
+  random: {
+    float(): number;
+    int(min: number, max: number): number;
+    bool(): boolean;
+  };
+  /** @deprecated Prefer `ctx.random.float()`. */
   randomFloat(): number;
+  getAllActorsOfClass(classId: string): Actor[];
+  getActorOfClass(classId: string): Actor | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
@@ -674,6 +689,13 @@ export class ScriptHost {
         target.transform.position.y = Number(location.y ?? 0);
         target.transform.position.z = Number(location.z ?? 0);
       },
+      addActorWorldOffset: (actor, offset) => {
+        const target = asActor(actor ?? self);
+        if (!target || !offset) return;
+        target.transform.position.x += Number(offset.x ?? 0);
+        target.transform.position.y += Number(offset.y ?? 0);
+        target.transform.position.z += Number(offset.z ?? 0);
+      },
       setActorRotation: (actor, rotation) => {
         const target = asActor(actor ?? self);
         if (!target) return;
@@ -725,7 +747,41 @@ export class ScriptHost {
       slerpQuats,
       quatRotateVector,
       normalizeQuat,
+      random: {
+        float: () => this.rng.nextFloat(),
+        int: (min, max) => {
+          const a = Number(min) | 0;
+          const b = Number(max) | 0;
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          if (hi === lo) return lo;
+          return lo + (this.rng.next() % (hi - lo + 1));
+        },
+        bool: () => this.rng.nextFloat() < 0.5,
+      },
       randomFloat: () => this.rng.nextFloat(),
+      getAllActorsOfClass: (classId) => {
+        const target = String(classId ?? "");
+        const actors = services.getActors?.() ?? [];
+        if (!target) return [];
+        return actors.filter((actor) => {
+          const id = actor.classId;
+          if (!id) return false;
+          return services.classRegistry?.isA(id, target) ?? id === target;
+        });
+      },
+      getActorOfClass: (classId) => {
+        const target = String(classId ?? "");
+        const actors = services.getActors?.() ?? [];
+        if (!target) return null;
+        return (
+          actors.find((actor) => {
+            const id = actor.classId;
+            if (!id) return false;
+            return services.classRegistry?.isA(id, target) ?? id === target;
+          }) ?? null
+        );
+      },
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
       delay: (seconds) => services.delay(seconds),

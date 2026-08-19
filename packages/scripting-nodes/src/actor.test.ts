@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   compileGraph,
+  arrayOf,
+  actorRef,
   classRef,
   type GraphNode,
   type LogicGraph,
@@ -75,5 +77,176 @@ describe("actor nodes", () => {
       },
     });
     expect(spawned).toEqual(["Child"]);
+  });
+
+  it("registers Get All Actors Of Class and Get Actor Of Class", () => {
+    expect(actorNodes.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining([
+        "actor.getAllOfClass",
+        "actor.getOfClass",
+      ]),
+    );
+    expect(
+      actorNodes.find((entry) => entry.id === "actor.getAllOfClass")?.title,
+    ).toBe("Get All Actors Of Class");
+    expect(actorNodes.find((entry) => entry.id === "actor.getOfClass")?.title).toBe(
+      "Get Actor Of Class",
+    );
+    const allPins =
+      actorNodes.find((entry) => entry.id === "actor.getAllOfClass")?.pins({}) ??
+      [];
+    expect(allPins.find((pin) => pin.id === "classId")?.type).toEqual(
+      classRef("Actor"),
+    );
+    expect(allPins.find((pin) => pin.id === "out")?.type).toEqual(
+      arrayOf(actorRef("Actor")),
+    );
+    const onePins =
+      actorNodes.find((entry) => entry.id === "actor.getOfClass")?.pins({}) ?? [];
+    expect(onePins.find((pin) => pin.id === "out")?.type).toEqual(
+      actorRef("Actor"),
+    );
+  });
+
+  it("compiles class queries through ctx.getAllActorsOfClass and ctx.getActorOfClass", () => {
+    const registry = createDefaultNodeRegistry();
+    for (const [typeId, needle] of [
+      ["actor.getAllOfClass", "ctx.getAllActorsOfClass"],
+      ["actor.getOfClass", "ctx.getActorOfClass"],
+    ] as const) {
+      const graph: LogicGraph = {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node(registry, "begin", "flow.event.beginPlay"),
+          node(registry, "query", typeId, {
+            "default:classId": "Hero",
+          }),
+          node(registry, "log", "debug.log"),
+        ],
+        edges: [
+          {
+            id: "e1",
+            sourceNodeId: "begin",
+            sourcePinId: "execOut",
+            targetNodeId: "log",
+            targetPinId: "execIn",
+          },
+          {
+            id: "e2",
+            sourceNodeId: "query",
+            sourcePinId: "out",
+            targetNodeId: "log",
+            targetPinId: "message",
+          },
+        ],
+      };
+      const compiled = compileGraph(graph, { assetGuid: "a", registry });
+      expect(compiled.source).toContain(needle);
+    }
+
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "all", "actor.getAllOfClass", {
+          "default:classId": "Hero",
+        }),
+        node(registry, "one", "actor.getOfClass", {
+          "default:classId": "Hero",
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "one",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "all",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    // Second data wire to message replaces the first — keep getOfClass only for runtime call order.
+    graph.edges = graph.edges.filter((edge) => edge.id !== "e3");
+    const compiled = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+    });
+    // Force both queries by compiling a Sequence that logs both lengths via Execute JS would be heavy;
+    // invoke both helpers through a dedicated module load of getAll alone:
+    const allCompiled = compileGraph(
+      {
+        id: "all",
+        kind: "event",
+        nodes: [
+          node(registry, "begin", "flow.event.beginPlay"),
+          node(registry, "all", "actor.getAllOfClass", {
+            "default:classId": "Hero",
+          }),
+          node(registry, "log", "debug.log"),
+        ],
+        edges: [
+          {
+            id: "e1",
+            sourceNodeId: "begin",
+            sourcePinId: "execOut",
+            targetNodeId: "log",
+            targetPinId: "execIn",
+          },
+          {
+            id: "e2",
+            sourceNodeId: "all",
+            sourcePinId: "out",
+            targetNodeId: "log",
+            targetPinId: "message",
+          },
+        ],
+      },
+      { assetGuid: "a", registry },
+    );
+    const queried: string[] = [];
+    const allMod = loadModule(allCompiled.source);
+    (allMod.onBeginPlay as (ctx: unknown) => void)({
+      formatValue: () => "",
+      log: () => {},
+      getAllActorsOfClass: (classId: string) => {
+        queried.push(`all:${classId}`);
+        return [{ name: "a" }, { name: "b" }];
+      },
+      getActorOfClass: (classId: string) => {
+        queried.push(`one:${classId}`);
+        return { name: "a" };
+      },
+    });
+    const oneMod = loadModule(compiled.source);
+    (oneMod.onBeginPlay as (ctx: unknown) => void)({
+      formatValue: () => "",
+      log: () => {},
+      getAllActorsOfClass: (classId: string) => {
+        queried.push(`all:${classId}`);
+        return [{ name: "a" }, { name: "b" }];
+      },
+      getActorOfClass: (classId: string) => {
+        queried.push(`one:${classId}`);
+        return { name: "a" };
+      },
+    });
+    expect(queried).toEqual(["all:Hero", "one:Hero"]);
   });
 });

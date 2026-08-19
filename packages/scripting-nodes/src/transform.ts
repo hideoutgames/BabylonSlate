@@ -164,4 +164,20 @@ export const transformNodes: NodeDefinition[] = [
       out: `ctx.rotatorUp(ctx.quatToRotator(${ctx.input("target")}?.transform?.rotation))`,
     }),
   },
+  {
+    id: "transform.addWorldOffset",
+    title: "Add World Offset",
+    category: "transform",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("target", "Target", "in", actorRef("Actor")),
+      pin("offset", "Offset", "in", VEC3),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `ctx.addActorWorldOffset(${ctx.input("target")}, ${ctx.input("offset")});`,
+      );
+    },
+  },
 ];
