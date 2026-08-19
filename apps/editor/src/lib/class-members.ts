@@ -141,10 +141,6 @@ function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
   );
 }
 
-function isEditorUtilityInterfaceHost(options?: ClassEventOptions): boolean {
-  return options?.assetType === "EditorUtilityInterface";
-}
-
 function isFunctionLibraryHost(options?: ClassEventOptions): boolean {
   return isFunctionLibraryClass(options?.parentClass, parentLookup(options));
 }
@@ -207,9 +203,6 @@ export function nativeEventStubs(
       EDITOR_BEGIN_PLAY_EVENT,
       ...EDITOR_UTILITY_EVENT_TYPES,
     ]);
-  }
-  if (isEditorUtilityInterfaceHost(options)) {
-    return eventStubsForTypes([EDITOR_BEGIN_PLAY_EVENT]);
   }
   if (chain.includes("BTTask")) return eventStubsForTypes(BT_TASK_EVENT_TYPE_IDS);
   if (chain.includes("BTDecorator")) {
@@ -312,18 +305,12 @@ export function isScriptCatalogNodeAllowed(
   );
   const isEditorBeginPlay = nodeId === EDITOR_BEGIN_PLAY_EVENT;
   if (isEditorBeginPlay) {
-    return (
-      isEditorUtilityInterfaceHost(options) ||
-      ancestryChain(options).includes("EditorUtilityObject")
-    );
+    return ancestryChain(options).includes("EditorUtilityObject");
   }
   if (
     (WIDGET_POINTER_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)
   ) {
-    return (
-      isUserInterfaceLogicHost(options) ||
-      isEditorUtilityInterfaceHost(options)
-    );
+    return isUserInterfaceLogicHost(options);
   }
   if (
     isEditorEvent &&
@@ -409,7 +396,6 @@ export function isScriptCatalogNodeAllowed(
     );
   }
   if (nodeId === "flow.event.beginPlay" || nodeId === "flow.event.tick") {
-    if (isEditorUtilityInterfaceHost(options)) return false;
     return chain.includes("Actor") || isUserInterfaceLogicHost(options);
   }
   if (nodeId === "flow.event.commandRun") {

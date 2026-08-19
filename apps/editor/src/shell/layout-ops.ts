@@ -14,10 +14,7 @@ export interface FocusKeepCandidate {
   title: string;
 }
 
-export type FocusKeepOptions = DockWindowOptions & {
-  editorUtilities?: FocusKeepCandidate[];
-  openUtilityIds?: string[];
-};
+export type FocusKeepOptions = DockWindowOptions;
 
 function catalogFocusCandidates(
   kind: FocusDocumentKind,
@@ -52,11 +49,11 @@ export function focusKeepPanelIds(
   return panels[kind];
 }
 
-/** Built-in Scene dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */
+/** Built-in Scene dock tabs Focus may keep. */
 export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
   catalogFocusCandidates("scene");
 
-/** Built-in Class dock tabs Focus may keep. EditorUtility widgets merge in via `focusKeepCandidates`. */
+/** Built-in Class dock tabs Focus may keep. */
 export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
   catalogFocusCandidates("graph");
 
@@ -88,16 +85,12 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
 
 /**
  * Dock tabs Focus can keep for a document kind.
- * Merge registered EditorUtilityInterface widgets for this kind here when that registry exists.
  */
 export function focusKeepCandidates(
   kind: FocusDocumentKind,
   options?: FocusKeepOptions,
 ): FocusKeepCandidate[] {
-  return [
-    ...catalogFocusCandidates(kind, options),
-    ...(options?.editorUtilities ?? []),
-  ];
+  return catalogFocusCandidates(kind, options);
 }
 
 export function resolveFocusKeepPanelIds(
@@ -105,14 +98,10 @@ export function resolveFocusKeepPanelIds(
   keepPanelIds: readonly string[] | undefined,
   options?: FocusKeepOptions,
 ): string[] {
-  const openUtilities = (options?.openUtilityIds ?? []).filter(Boolean);
   const keep =
     !keepPanelIds || keepPanelIds.length === 0
       ? [primaryDockPanel(kind, options)]
       : [...keepPanelIds];
-  for (const id of openUtilities) {
-    if (!keep.includes(id)) keep.push(id);
-  }
   return keep;
 }
 
@@ -174,6 +163,7 @@ export function restoreDockviewLayout(
 export function migrateRestoredLayout(api: FocusableDockApi): void {
   api.getPanel("mini-asset-browser")?.api.close();
   api.getPanel("ui-logic")?.api.close();
+  api.getPanel("ui-settings")?.api.close();
   const myClass = api.getPanel("my-class");
   const components = api.getPanel("actor-prefab");
   if (

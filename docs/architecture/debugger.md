@@ -63,15 +63,15 @@ The registry does not touch the world or renderer. Runtime implements:
 | Command | Host |
 | --- | --- |
 | `changescene` | `changeScene(guid)` → load that guid from the Play scene library into the World (same as `ctx.changeScene`) |
-| `renderquality` / `resolutionscale` / `volume` / `framecap` | Typed setters. Optional arg prints the last value. Play applies `{ type: "setRenderQuality" \| "setResolutionScale" \| "setGlobalVolume" \| "setFrameCap" }` (`high=1`, `medium=1.5`, `low=2` hardware scale on the Play view only) |
+| `renderquality` / `resolutionscale` / `volume` / `framecap` | Typed setters. Optional arg prints the last value. Play applies `{ type: "setRenderQuality" \| "setResolutionScale" \| "setGlobalVolume" \| "setFrameCap" }` (`high=1`, `medium=1.5`, `low=2` hardware scale on the Play view only). `resolutionscale` clamps `1..2` on the host so print matches apply |
 | `shadowquality` | enum `off`/`512`/`1024`/`2048`. Runtime emits `{ type: "setShadowQuality"; level }` and the renderer sizes the one `ShadowGenerator` (or disposes it when `off`). `2048` also warns |
 | `quit` | `quit()` → runtime `stop` |
 | `help [name]` | Core. Lists registered commands (user included) or one command’s parameters. Stripped debug names print “not available in this build” |
 | `pause` / `resume` / `unpause` / `step` | `pause` / `resume` / overlay-style `resume`→`tick`→`pause`. Console pause/resume emit `{ type: "sessionPaused" }` so overlay chrome matches |
-| `slomo [rate]` | `setTimeDilation` / `getTimeDilation`. `tick` uses `dt * rate` (clamp `0..8`) for script, physics, nav crowd, and BT. Trace replay keeps recorded `dt` |
-| `freecam [on\|off]` | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stay off the game ring; gamepad still forwards |
+| `slomo [rate]` | `setTimeDilation` / `getTimeDilation`. `tick` uses `dt * rate` (clamp `0..8`) for script, physics, nav crowd, and BT. Trace header and frame snapshots keep recorded (undilated) `dt` |
+| `freecam [on\|off]` | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stay off the game ring; 2D pinch zooms ortho; gamepad still forwards |
 | `showfps` / `stat *` | `{ type: "setShowFps" }` / `{ type: "setStat" }`. Opens Stats HUD; `stat` highlights unit (timings), memory, draws, or threads (main vs worker) |
-| `wireframe` / `showbounds` / `showcollision` / `shownav` | Play-scene overlays. Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/polylines) |
+| `wireframe` / `showbounds` / `showcollision` / `shownav` | Play-scene overlays. Collision uses `PhysicsBackend.listDebugColliders()` (boxes/spheres/circles/polylines; body rotation of local offsets and polyline points) |
 | `showaudiodebug` | `{ type: "setShowAudioDebug" }`. DOM overlay of playing AudioV2 voices (applies; not log-only) |
 | `dumpactors` / `inspect [name\|guid]` | Format `inspectWorld()`. Bare `inspect` uses overlay Inspector selection when known, else prints usage |
 | `dumplog` | `dumpLog()` from the log ring |

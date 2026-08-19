@@ -79,7 +79,7 @@ function normalizeWidget(id: string, value: unknown): WidgetNode {
 }
 
 /**
- * Hydrate a UserInterface / EditorUtilityInterface payload into a document
+ * Hydrate a UserInterface payload into a document
  * that always has a root widget, layout, style, props, and children arrays.
  */
 export function normalizeUserInterfaceDocument(value: unknown): UserInterfaceDocument {

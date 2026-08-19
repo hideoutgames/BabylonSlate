@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createDefaultPlayHud, createDefaultUserInterface, createWidget, pinLayout } from "@babylonslate/ui-runtime";
 import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
@@ -58,8 +57,7 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
   window.PointerEvent = PointerEventPolyfill as unknown as typeof PointerEvent;
 }
 
-const { openLiveEditorUtility, collectPlayMaterialLibrary, docs } = vi.hoisted(() => ({
-  openLiveEditorUtility: vi.fn(),
+const { collectPlayMaterialLibrary, docs } = vi.hoisted(() => ({
   collectPlayMaterialLibrary: async () => ({
     documents: new Map(),
     functions: new Map(),
@@ -106,15 +104,6 @@ vi.mock("../context/document-context", () => {
       },
       {
         header: {
-          guid: "eui-1",
-          name: "SceneTools",
-          type: "EditorUtilityInterface",
-          payload: { dockKind: "scene" },
-        },
-        path: "assets/SceneTools.eui.babasset",
-      },
-      {
-        header: {
           guid: "chip-guid",
           name: "Chip",
           type: "UserInterface",
@@ -128,7 +117,6 @@ vi.mock("../context/document-context", () => {
   };
   return {
     useDocuments: () => ({
-      openLiveEditorUtility,
       assetRegistry,
       openDocuments: docs.openDocuments,
       collectPlayUiLibrary,
@@ -153,7 +141,6 @@ vi.mock("../context/document-context", () => {
 afterEach(() => {
   cleanup();
   resetProjectUiAssets();
-  openLiveEditorUtility.mockReset();
   docs.library = {};
   docs.openDocuments = [];
   docs.chipPayload = {};
@@ -443,70 +430,7 @@ describe("UiDesigner", () => {
   it("does not show Open Live on a UserInterface Design toolbar", () => {
     renderHud();
     expect(screen.queryByTestId("ui-open-live")).toBeNull();
-  });
-
-  it("opens the live Editor Utility for the current EditorUtilityInterface", () => {
-    render(
-      <UiDesigner
-        path="assets/SceneTools.eui.babasset"
-        payload={{
-          ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
-          dockKind: "scene",
-        }}
-        onChange={vi.fn()}
-        editorUtilityInterface
-      />,
-    );
-    fireEvent.click(screen.getByTestId("ui-open-live"));
-    expect(openLiveEditorUtility).toHaveBeenCalledWith("eui-1");
-  });
-
-  it("round-trips EditorUtilityInterface dockKind in Settings", () => {
-    const onChange = vi.fn();
-    render(
-      <UiDesigner
-        path="assets/SceneTools.eui.babasset"
-        payload={{
-          ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
-          dockKind: "scene",
-        }}
-        onChange={onChange}
-        editorUtilityInterface
-      />,
-    );
-    expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Scene");
-    fireEvent.click(screen.getByTestId("ui-dock-kind"));
-    const classItem = screen.getByTestId("ui-dock-kind-graph");
-    fireEvent.pointerDown(classItem);
-    fireEvent.click(classItem);
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ dockKind: "graph" }),
-    );
-  });
-
-  it("shows Title Case dock kind labels after a Settings change", () => {
-    function Harness() {
-      const [payload, setPayload] = useState<Record<string, unknown>>({
-        ...(createDefaultPlayHud("HUD") as unknown as Record<string, unknown>),
-        dockKind: "scene",
-      });
-      return (
-        <UiDesigner
-          path="assets/SceneTools.eui.babasset"
-          payload={payload}
-          onChange={setPayload}
-          editorUtilityInterface
-        />
-      );
-    }
-    render(<Harness />);
-    expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Scene");
-    fireEvent.click(screen.getByTestId("ui-dock-kind"));
-    const classItem = screen.getByTestId("ui-dock-kind-graph");
-    fireEvent.pointerDown(classItem);
-    fireEvent.click(classItem);
-    expect(screen.getByTestId("ui-dock-kind").textContent).toContain("Class");
-    expect(screen.getByTestId("ui-dock-kind").textContent).not.toMatch(/graph/i);
+    expect(screen.queryByTestId("ui-dock-kind")).toBeNull();
   });
 
   it("paints nested UserInterface widgets from the UI library", async () => {

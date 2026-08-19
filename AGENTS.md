@@ -12,4 +12,4 @@ Never use or enable GitHub Actions larger runners — standard hosted runners on
 
 PRs stay draft until local `pnpm verify` passes; mark ready once **only if fewer than 2 non-draft PRs target `main`**. If both slots are taken, leave the draft and stop — a human marks ready. Details in [.cursor/rules/github-actions-pr-cadence.mdc](.cursor/rules/github-actions-pr-cadence.mdc).
 
-Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work, and for **UserInterface** / **EditorUtilityInterface** work (both are Babylon GUI). React editor chrome stays on the shadcn / editor-ui-components skills.
+Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work, and for **UserInterface** work (Babylon GUI). React editor chrome stays on the shadcn / editor-ui-components skills.

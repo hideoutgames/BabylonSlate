@@ -24,6 +24,7 @@ export type PlayFreeCamController = {
   setEnabled(enabled: boolean): void;
   fly(forward: number, right: number): void;
   look(deltaYaw: number, deltaPitch: number): void;
+  zoom(factor: number): void;
   dispose(): void;
 };
 
@@ -123,6 +124,17 @@ export function createPlayFreeCamController(
       camera.rotation.set(0, 0, 0);
       camera.computeWorldMatrix();
     },
+    zoom(factor) {
+      if (!camera || mode !== "2d" || factor <= 0) return;
+      const top = Math.abs(camera.orthoTop ?? 5);
+      const right = Math.abs(camera.orthoRight ?? top * (16 / 9));
+      const aspect = top > 0 ? right / top : 16 / 9;
+      const next = Math.max(0.01, top / factor);
+      camera.orthoTop = next;
+      camera.orthoBottom = -next;
+      camera.orthoLeft = -next * aspect;
+      camera.orthoRight = next * aspect;
+    },
     dispose() {
       detach();
     },
@@ -168,7 +180,7 @@ export type PlayFreeCamInputOptions = {
 
 /**
  * WASD flies (viewport fly math). Pointer drag looks in 3D and pans in 2D.
- * No-ops while the free camera is off.
+ * Two-finger pinch zooms 2D ortho. No-ops while the free camera is off.
  */
 export function attachPlayFreeCamInput(
   canvas: HTMLCanvasElement,
@@ -198,6 +210,7 @@ export function attachPlayFreeCamInput(
     : null;
 
   const pointers = new Map<number, { x: number; y: number }>();
+  let lastSpread = 0;
 
   const toCanvas = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect?.() ?? {
@@ -210,10 +223,20 @@ export function attachPlayFreeCamInput(
     };
   };
 
+  const pointerSpread = (): number => {
+    const samples = [...pointers.values()];
+    if (samples.length < 2) return 0;
+    return Math.hypot(
+      samples[0]!.x - samples[1]!.x,
+      samples[0]!.y - samples[1]!.y,
+    );
+  };
+
   const onPointerDown = (event: PointerEvent) => {
     if (!enabled()) return;
     pointers.set(event.pointerId, toCanvas(event));
     canvas.setPointerCapture?.(event.pointerId);
+    lastSpread = pointerSpread();
   };
 
   const onPointerMove = (event: PointerEvent) => {
@@ -224,6 +247,16 @@ export function attachPlayFreeCamInput(
     const dx = point.x - previous.x;
     const dy = point.y - previous.y;
     pointers.set(event.pointerId, point);
+    if (pointers.size >= 2) {
+      const currentSpread = pointerSpread();
+      if (mode === "2d" && lastSpread > 0 && currentSpread > 0) {
+        const factor = currentSpread / lastSpread;
+        if (Math.abs(factor - 1) > 0.001) controller.zoom(factor);
+      }
+      lastSpread = currentSpread;
+      return;
+    }
+    lastSpread = 0;
     if (dx === 0 && dy === 0) return;
     if (mode === "2d") {
       controller.fly(-dy * panScale, -dx * panScale);
@@ -234,6 +267,7 @@ export function attachPlayFreeCamInput(
 
   const endPointer = (event: PointerEvent) => {
     pointers.delete(event.pointerId);
+    lastSpread = pointerSpread();
   };
 
   canvas.addEventListener("pointerdown", onPointerDown);

@@ -43,7 +43,7 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 ## shadcn/ui
 
 - Follow `.cursor/skills/editor-ui-components/SKILL.md` before composing Editor UI — read `docs/architecture/components.md` and reuse catalog components.
-- Follow `.cursor/skills/shadcn/SKILL.md` for React editor chrome. UserInterface and EditorUtilityInterface are Babylon GUI — see BabylonJS below.
+- Follow `.cursor/skills/shadcn/SKILL.md` for React editor chrome. UserInterface is Babylon GUI — see BabylonJS below.
 - Use `@babylonslate/ui` components; run `npx shadcn@latest add <component> -c apps/editor` to add new ones.
 
 ## BabylonJS
@@ -51,7 +51,6 @@ Package boundaries (enforced by `no-restricted-imports` in `eslint.config.js`):
 - Follow `.cursor/skills/BabylonJS/SKILL.md` (read it before implementing) for:
   - Engine and scene work
   - **UserInterface** assets and runtime (game HUD, viewport-layer apply, designer canvas — Babylon GUI)
-  - **EditorUtilityInterface** assets and runtime (**Windows → Editor Utilities** widgets — Babylon GUI)
 - React editor chrome (Dockview, shadcn, `@babylonslate/ui`, editor-kit) still uses the editor-ui-components and shadcn skills. Those are not Babylon GUI.
 
 ## Subagent models

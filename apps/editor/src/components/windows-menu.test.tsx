@@ -15,7 +15,6 @@ const docs = vi.hoisted(() => ({
     };
   }>,
   toggleDockWindow: vi.fn(),
-  openLiveEditorUtility: vi.fn(),
   isDockWindowOpen: vi.fn(() => false),
   getOpenDockWindowCount: vi.fn(() => 3),
 }));
@@ -36,7 +35,6 @@ vi.mock("../context/document-context", () => ({
     ],
     activeDocumentId: `${docs.kind}:${docs.path}`,
     toggleDockWindow: docs.toggleDockWindow,
-    openLiveEditorUtility: docs.openLiveEditorUtility,
     isDockWindowOpen: docs.isDockWindowOpen,
     getOpenDockWindowCount: docs.getOpenDockWindowCount,
     assetRegistry: { list: () => docs.assets },
@@ -53,100 +51,16 @@ afterEach(() => {
   docs.path = "assets/main.scene.babasset";
   docs.assets = [];
   docs.toggleDockWindow.mockReset();
-  docs.openLiveEditorUtility.mockReset();
   docs.isDockWindowOpen.mockReset();
   docs.isDockWindowOpen.mockReturnValue(false);
   docs.getOpenDockWindowCount.mockReset();
   docs.getOpenDockWindowCount.mockReturnValue(3);
 });
 
-function openEditorUtilitiesMenu(): void {
-  render(<WindowsMenu />);
-  fireEvent.click(screen.getByTestId("windows-menu"));
-  fireEvent.click(screen.getByTestId("windows-editor-utilities"));
-}
-
-describe("WindowsMenu Editor Utilities", () => {
-  it("says the project has no Editor Utility Interfaces", () => {
-    openEditorUtilitiesMenu();
-    expect(screen.getByTestId("windows-editor-utilities-empty").textContent).toBe(
-      "No Editor Utility Interfaces In This Project",
-    );
-  });
-
-  it("says none match this document when EUIs exist for the other dock", () => {
-    docs.assets = [
-      {
-        path: "assets/ClassTools.eui.babasset",
-        header: {
-          guid: "eui-class",
-          name: "ClassTools",
-          type: "EditorUtilityInterface",
-          payload: { dockKind: "class" },
-        },
-      },
-    ];
-    openEditorUtilitiesMenu();
-    expect(screen.getByTestId("windows-editor-utilities-empty").textContent).toBe(
-      "None For This Document",
-    );
-  });
-
-  it("lists project Editor Utility Interfaces on a UI authoring tab and opens live on the host", () => {
-    docs.kind = "ui";
-    docs.path = "assets/SceneTools.eui.babasset";
-    docs.assets = [
-      {
-        path: "assets/SceneTools.eui.babasset",
-        header: {
-          guid: "eui-scene",
-          name: "SceneTools",
-          type: "EditorUtilityInterface",
-          payload: { dockKind: "scene" },
-        },
-      },
-    ];
-    openEditorUtilitiesMenu();
-    expect(screen.queryByTestId("windows-editor-utilities-empty")).toBeNull();
-    fireEvent.click(screen.getByTestId("windows-menu-eui-eui-scene"));
-    expect(docs.openLiveEditorUtility).toHaveBeenCalledWith("eui-scene");
-    expect(docs.toggleDockWindow).not.toHaveBeenCalled();
-  });
-
-  it("toggles a matching Editor Utility on the Scene dock", () => {
-    docs.assets = [
-      {
-        path: "assets/SceneTools.eui.babasset",
-        header: {
-          guid: "eui-scene",
-          name: "SceneTools",
-          type: "EditorUtilityInterface",
-          payload: { dockKind: "scene" },
-        },
-      },
-    ];
-    openEditorUtilitiesMenu();
-    fireEvent.click(screen.getByTestId("windows-menu-eui-eui-scene"));
-    expect(docs.toggleDockWindow).toHaveBeenCalledWith("eui-eui-scene");
-    expect(docs.openLiveEditorUtility).not.toHaveBeenCalled();
-  });
-
-  it("lists a sprite-dock Editor Utility on a Sprite document", () => {
-    docs.kind = "sprite";
-    docs.path = "assets/Hero.sprite.babasset";
-    docs.assets = [
-      {
-        path: "assets/SpriteTools.eui.babasset",
-        header: {
-          guid: "eui-sprite",
-          name: "SpriteTools",
-          type: "EditorUtilityInterface",
-          payload: { dockKind: "sprite" },
-        },
-      },
-    ];
-    openEditorUtilitiesMenu();
-    fireEvent.click(screen.getByTestId("windows-menu-eui-eui-sprite"));
-    expect(docs.toggleDockWindow).toHaveBeenCalledWith("eui-eui-sprite");
+describe("WindowsMenu", () => {
+  it("does not list Editor Utilities", () => {
+    render(<WindowsMenu />);
+    fireEvent.click(screen.getByTestId("windows-menu"));
+    expect(screen.queryByTestId("windows-editor-utilities")).toBeNull();
   });
 });

@@ -53,7 +53,7 @@ import {
   collectOverridableFunctionRows,
   type NestedUiLogicGraph,
 } from "../lib/overridable-functions";
-import { collectNestedUtilityLogicSources } from "../lib/editor-utility-interface-runtime";
+import { collectNestedUiLogicSources } from "../lib/nested-ui-logic";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -946,7 +946,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
   });
   const nestedUis =
     doc?.ref.kind === "ui" && doc.content
-      ? collectNestedUtilityLogicSources(doc.content, (guid) => {
+      ? collectNestedUiLogicSources(doc.content, (guid) => {
           const asset = (assetRegistry?.list() ?? []).find(
             (entry) => entry.header.guid === guid,
           );

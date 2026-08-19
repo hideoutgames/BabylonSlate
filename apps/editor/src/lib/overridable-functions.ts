@@ -299,10 +299,7 @@ function customEventsFromGraph(
 }
 
 function isWidgetEventHost(options?: { assetType?: string | null }): boolean {
-  return (
-    options?.assetType === "UserInterface" ||
-    options?.assetType === "EditorUtilityInterface"
-  );
+  return options?.assetType === "UserInterface";
 }
 
 export function collectOverridableEventRows(options: {

@@ -68,21 +68,21 @@ describe("AssetRegistry", () => {
 
   it("reindexes a saved header payload without remounting", async () => {
     const storage = await createStorage();
-    const path = "assets/tools.eui.babasset";
+    const path = "assets/hud.ui.babasset";
     const dir = "assets";
     await storage.mkdir(dir, true);
-    const write = async (dockKind: string) => {
+    const write = async (name: string) => {
       const bytes = await encodeBabasset({
         header: {
-          guid: "eui-1",
-          type: "EditorUtilityInterface",
-          name: "tools",
+          guid: "ui-1",
+          type: "UserInterface",
+          name,
           engineVersion: "0.0.0",
           version: 1,
           mode: "thin",
           dependencies: [],
           parentClass: null,
-          payload: { dockKind },
+          payload: { name },
         },
         chunks: [
           {
@@ -95,13 +95,13 @@ describe("AssetRegistry", () => {
       });
       await storage.writeBinary(path, bytes);
     };
-    await write("scene");
+    await write("HUD");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    expect(registry.getByGuid("eui-1")?.header.payload.dockKind).toBe("scene");
-    await write("class");
+    expect(registry.getByGuid("ui-1")?.header.payload.name).toBe("HUD");
+    await write("Menu");
     await registry.reindexPath(path);
-    expect(registry.getByGuid("eui-1")?.header.payload.dockKind).toBe("class");
+    expect(registry.getByGuid("ui-1")?.header.payload.name).toBe("Menu");
   });
 
   it("mounts a second synthetic root and resolves references across roots", async () => {

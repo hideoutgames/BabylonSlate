@@ -128,16 +128,15 @@ describe("focusKeepCandidates", () => {
     );
   });
 
-  it("merges EditorUtilityInterface windows into Focus keep candidates", () => {
-    const utilities = [{ id: "eui-scene-tools", title: "SceneTools" }];
+  it("lists Designer Design, Hierarchy, and Details — not Settings", () => {
     expect(
-      focusKeepCandidates("scene", { editorUtilities: utilities }).map(
-        (panel) => panel.id,
-      ),
-    ).toEqual([
-      ...listDockWindows("scene").map((entry) => entry.id),
-      "eui-scene-tools",
-    ]);
+      focusKeepCandidates("ui").map((panel) => panel.id),
+    ).toEqual(
+      listDockWindows("ui").map((entry) => entry.id),
+    );
+    expect(focusKeepCandidates("ui").some((panel) => panel.id === "ui-settings")).toBe(
+      false,
+    );
   });
 });
 
@@ -202,22 +201,6 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(FOCUS_PRIMARY_PANEL["skybox-creator"]).toBe(
       "skybox-creator-preview",
     );
-  });
-
-  it("keeps already-open Editor Utility tabs when the keep list is the default", () => {
-    expect(
-      resolveFocusKeepPanelIds("scene", [], {
-        openUtilityIds: ["eui-scene-tools"],
-      }),
-    ).toEqual(["viewport", "eui-scene-tools"]);
-  });
-
-  it("unions already-open Editor Utility tabs into a non-empty keep list", () => {
-    expect(
-      resolveFocusKeepPanelIds("scene", ["viewport"], {
-        openUtilityIds: ["eui-scene-tools"],
-      }),
-    ).toEqual(["viewport", "eui-scene-tools"]);
   });
 
   it("keeps an explicit list as-is", () => {
@@ -292,15 +275,6 @@ describe("applyFocusLayout", () => {
     expect(api.getPanel("scene-details")!.api.close).toHaveBeenCalled();
     expect(api.getPanel("output-log")!.api.close).toHaveBeenCalled();
   });
-
-  it("does not close an open Editor Utility when Focus uses the default keep list", () => {
-    const api = fakeApi(["viewport", "eui-scene-tools"]);
-    applyFocusLayout("scene", api, [], {
-      openUtilityIds: ["eui-scene-tools"],
-    });
-    expect(api.getPanel("viewport")!.api.close).not.toHaveBeenCalled();
-    expect(api.getPanel("eui-scene-tools")!.api.close).not.toHaveBeenCalled();
-  });
 });
 
 describe("migrateRestoredLayout", () => {
@@ -310,10 +284,11 @@ describe("migrateRestoredLayout", () => {
     expect(api.getPanel("mini-asset-browser")!.api.close).toHaveBeenCalled();
   });
 
-  it("closes the retired UI Logic dock when restoring a Designer layout", () => {
-    const api = fakeApi(["ui-design", "ui-logic", "ui-details"]);
+  it("closes leftover UI Settings and UI Logic docks when restoring a Designer layout", () => {
+    const api = fakeApi(["ui-design", "ui-logic", "ui-settings", "ui-details"]);
     migrateRestoredLayout(api);
     expect(api.getPanel("ui-logic")!.api.close).toHaveBeenCalled();
+    expect(api.getPanel("ui-settings")!.api.close).toHaveBeenCalled();
     expect(api.getPanel("ui-design")!.api.close).not.toHaveBeenCalled();
   });
 

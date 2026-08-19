@@ -162,7 +162,7 @@ export function builtinCommands(): RegisteredCommand[] {
         }
         const scale = Number(args.scale);
         host.setResolutionScale(scale);
-        return ok(`resolutionscale ${scale}`);
+        return ok(`resolutionscale ${host.getResolutionScale?.() ?? scale}`);
       },
     },
     {
@@ -219,7 +219,7 @@ export function builtinCommands(): RegisteredCommand[] {
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),
-      "Detached fly camera; simulation keeps running",
+      "Detached fly camera; pointer/WASD stolen, gamepad still forwards; simulation keeps running",
     ),
     flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled)),
     flagCommand("showaudiodebug", (host, enabled) =>

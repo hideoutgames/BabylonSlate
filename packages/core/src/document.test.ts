@@ -49,10 +49,10 @@ describe("P9 document kinds", () => {
 
   it("maps UserInterface / Sprite / AnimationGraph kinds", () => {
     expect(documentKindForAssetType("UserInterface")).toBe("ui");
-    expect(documentKindForAssetType("EditorUtilityInterface")).toBe("ui");
+    expect(documentKindForAssetType("EditorUtilityInterface")).toBeNull();
     expect(assetTypeForDocumentKind("ui")).toBe("UserInterface");
     expect(assetTypeForDocumentSave("ui", "EditorUtilityInterface")).toBe(
-      "EditorUtilityInterface",
+      "UserInterface",
     );
     expect(assetTypeForDocumentSave("ui", null)).toBe("UserInterface");
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");

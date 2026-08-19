@@ -27,16 +27,11 @@ import {
   DropdownMenuTrigger,
 } from "@babylonslate/ui/components/dropdown-menu";
 import { PlusIcon, XIcon } from "lucide-react";
-import { useDocuments } from "../context/document-context";
 import {
   focusKeepCandidates,
   type FocusDocumentKind,
 } from "../shell/layout-ops";
 import type { DockWindowOptions } from "../shell/window-catalog";
-import {
-  editorUtilityAssetsFromIndexed,
-  listEditorUtilityWindows,
-} from "../shell/editor-utility-windows";
 
 type FocusKeepSettingKey = keyof EngineSettings["focusKeepPanels"];
 
@@ -73,7 +68,6 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     kind: "ui",
     keepKey: "ui",
     label: "User Interface Designer",
-    options: { editorUtilityInterface: true },
   },
   {
     kind: "ui",
@@ -418,13 +412,11 @@ export function EngineSettingsForm({
 function focusKeepTitle(
   kind: FocusDocumentKind,
   id: string,
-  editorUtilities: { id: string; title: string }[],
   options?: DockWindowOptions,
 ): string {
   return (
-    focusKeepCandidates(kind, { ...options, editorUtilities }).find(
-      (candidate) => candidate.id === id,
-    )?.title ?? id
+    focusKeepCandidates(kind, options).find((candidate) => candidate.id === id)
+      ?.title ?? id
   );
 }
 
@@ -443,18 +435,9 @@ function FocusKeepPanelList({
   onChange: (ids: string[]) => void;
   options?: DockWindowOptions;
 }) {
-  const { assetRegistry, openDocuments } = useDocuments();
-  const editorUtilities = listEditorUtilityWindows({
-    kind,
-    assets: editorUtilityAssetsFromIndexed(
-      assetRegistry?.list() ?? [],
-      openDocuments,
-    ),
-  }).map((entry) => ({ id: entry.id, title: entry.title }));
-  const remaining = focusKeepCandidates(kind, {
-    ...options,
-    editorUtilities,
-  }).filter((candidate) => !ids.includes(candidate.id));
+  const remaining = focusKeepCandidates(kind, options).filter(
+    (candidate) => !ids.includes(candidate.id),
+  );
   return (
     <FieldSet>
       <FieldLegend>{label}</FieldLegend>
@@ -465,7 +448,7 @@ function FocusKeepPanelList({
         </FieldDescription>
       </Field>
       {ids.map((id) => {
-        const title = focusKeepTitle(kind, id, editorUtilities, options);
+        const title = focusKeepTitle(kind, id, options);
         return (
           <Field
             key={id}
