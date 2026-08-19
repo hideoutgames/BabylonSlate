@@ -526,6 +526,16 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(screen.getByTestId("ui-resize-se-visual").className).toMatch(/border/);
   });
 
+  it("does not retrigger paint from a default adtIdeal object identity", () => {
+    const surface = mockSurface();
+    createUiSurfaceMock.mockReturnValue(surface);
+    const props = hudCanvasProps();
+    const { adtIdeal: _ignored, ...rest } = props;
+    render(<UiDesignCanvas {...rest} />);
+    expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
+    expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
+  });
+
   it("does not resize the ADT while a layout stroke is in progress", () => {
     const surface = mockSurface();
     createUiSurfaceMock.mockReturnValue(surface);
