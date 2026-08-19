@@ -127,34 +127,42 @@
 
 .anim-state-handle-source.anim-state-handle-top {
   top: -12px !important;
+  z-index: 2;
 }
 
 .anim-state-handle-target.anim-state-handle-top {
   top: -4px !important;
+  z-index: 1;
 }
 
 .anim-state-handle-source.anim-state-handle-bottom {
   bottom: -12px !important;
+  z-index: 2;
 }
 
 .anim-state-handle-target.anim-state-handle-bottom {
   bottom: -4px !important;
+  z-index: 1;
 }
 
 .anim-state-handle-source.anim-state-handle-left {
   left: -12px !important;
+  z-index: 2;
 }
 
 .anim-state-handle-target.anim-state-handle-left {
   left: -4px !important;
+  z-index: 1;
 }
 
 .anim-state-handle-source.anim-state-handle-right {
   right: -12px !important;
+  z-index: 2;
 }
 
 .anim-state-handle-target.anim-state-handle-right {
   right: -4px !important;
+  z-index: 1;
 }
 
 .anim-state-handle-source::after {

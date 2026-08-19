@@ -1043,7 +1043,7 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("play-overlay-close").click();
 
     await showContentBrowser(page);
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Mannequin.class.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     const prefabMesh = createMeshComponent("prefab-material", "box");
     prefabMesh.properties.materialGuid = materialGuid;

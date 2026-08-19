@@ -122,7 +122,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -147,7 +147,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -177,7 +177,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -197,7 +197,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -247,7 +247,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -286,7 +286,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       await page.getByTestId("content-browser-search").fill("hero");
       await expect(heroTile).toBeVisible({ timeout: 15_000 });
     }
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -312,7 +312,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -333,7 +333,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });

@@ -23,6 +23,9 @@ import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
 import { DocumentService } from "./document-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
+import { MANNEQUIN_CLASS_FILE } from "../lib/scaffold-empty-3d";
+
+const DEFAULT_3D_CLASS_FILE = `assets/${MANNEQUIN_CLASS_FILE}`;
 
 async function scaffolded() {
   const storage = new MemoryStorageAdapter("documents");
@@ -37,7 +40,9 @@ describe("project documents as .babasset", () => {
     const { storage, loaded } = await scaffolded();
     expect(loaded.document.scenes).toEqual([MAIN_SCENE_FILE]);
     expect(await storage.exists(MAIN_SCENE_FILE)).toBe(true);
-    expect(await storage.exists(MAIN_CLASS_FILE)).toBe(true);
+    expect(await storage.exists(DEFAULT_3D_CLASS_FILE)).toBe(true);
+    expect(await storage.exists(MAIN_CLASS_FILE)).toBe(false);
+    expect(loaded.document.graphs).toEqual([DEFAULT_3D_CLASS_FILE]);
     expect(await storage.exists("assets/.blobs")).toBe(true);
     expect(await storage.exists(PROJECT_FILE)).toBe(true);
     const sceneGuid = readAssetDocumentHeader(
@@ -73,17 +78,20 @@ describe("project documents as .babasset", () => {
       "scene",
       MAIN_SCENE_FILE,
     )) as SerializedScene;
-    const graph = await service.loadDocument("graph", MAIN_CLASS_FILE);
+    const graph = (await service.loadDocument(
+      "graph",
+      DEFAULT_3D_CLASS_FILE,
+    )) as { name?: string; components?: unknown[] };
     expect(scene.actors.find((actor) => actor.id === "actor-1")?.name).toBe(
       "Mannequin",
     );
-    expect(graph).toEqual(createDefaultLogicGraphSerialized());
+    expect(graph.components?.length).toBeGreaterThan(0);
     const classHeader = readAssetDocumentHeader(
-      await storage.readBinary(MAIN_CLASS_FILE),
+      await storage.readBinary(DEFAULT_3D_CLASS_FILE),
     );
     expect(classHeader.type).toBe("Class");
     expect(classHeader.parentClass).toBe("Actor");
-    expect(classHeader.name).toBe("main");
+    expect(classHeader.name).toBe("Mannequin");
   });
 
   it("keeps an asset guid stable across saves", async () => {
@@ -207,14 +215,13 @@ describe("project documents as .babasset", () => {
     );
     expect(idle).toBeTruthy();
 
-    expect(await storage.exists("assets/Mannequin/Mannequin.class.babasset")).toBe(
-      true,
-    );
+    expect(await storage.exists("assets/Mannequin.class.babasset")).toBe(true);
+    expect(await storage.exists("assets/main.class.babasset")).toBe(false);
     expect(await storage.exists("assets/Mannequin/Mannequin.anim.babasset")).toBe(
       true,
     );
     const classHeader = readAssetDocumentHeader(
-      await storage.readBinary("assets/Mannequin/Mannequin.class.babasset"),
+      await storage.readBinary("assets/Mannequin.class.babasset"),
     );
     expect(classHeader.type).toBe("Class");
     expect(classHeader.parentClass).toBe("Actor");

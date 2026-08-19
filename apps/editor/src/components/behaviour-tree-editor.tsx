@@ -408,6 +408,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           nodeDragHandle=".bt-node-drag-handle"
           connectEndMode="add-node"
           replaceIncomingOnConnect
+          deleteKeyCode={null}
+          nodesFocusable={false}
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
           canConnect={(connection) => {

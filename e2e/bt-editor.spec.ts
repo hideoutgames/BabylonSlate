@@ -201,7 +201,7 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
   test("script graph still uses the 96px connect-end cancel", async ({ page }) => {
     test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     const handle = page.locator('[data-handleid="execOut"]').first();
     await expect(handle).toBeVisible();

@@ -203,6 +203,10 @@ export interface GraphEditorProps {
   normalizeConnection?: (connection: Connection) => Connection | null;
   /** React Flow connection mode. Animation Graph uses Loose for side handles. */
   connectionMode?: "strict" | "loose";
+  /** Forwarded to React Flow. Behaviour trees pass null to avoid Delete trapping chrome. */
+  deleteKeyCode?: string | string[] | null;
+  /** Forwarded to React Flow. Default true; BT passes false to avoid focus traps. */
+  nodesFocusable?: boolean;
   contextMenuItemsForNode?: (nodeId: string) => NestedMenuItem[];
   contextMenuItemsForAttachment?: (
     nodeId: string,
@@ -425,6 +429,8 @@ function GraphEditorCanvas({
   canConnect,
   normalizeConnection,
   connectionMode,
+  deleteKeyCode,
+  nodesFocusable = true,
   contextMenuItemsForNode,
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
@@ -1242,6 +1248,7 @@ function GraphEditorCanvas({
       formatted.map((node) => [node.id, node.position]),
     );
     setNodes((current) => {
+      let changed = false;
       const next = current.map((node) => {
         const position = positions.get(node.id);
         if (
@@ -1250,8 +1257,10 @@ function GraphEditorCanvas({
         ) {
           return node;
         }
+        changed = true;
         return { ...node, position };
       });
+      if (!changed) return current;
       emitChange(next, graphStateRef.current.edges);
       return next;
     });
@@ -1747,6 +1756,9 @@ function GraphEditorCanvas({
                 ? ConnectionMode.Strict
                 : undefined
           }
+          deleteKeyCode={deleteKeyCode}
+          nodesFocusable={nodesFocusable}
+          edgesFocusable={nodesFocusable}
           fitView={mountViewport.fitView}
           fitViewOptions={graphViewport.fitViewOptions}
           defaultViewport={mountViewport.defaultViewport}

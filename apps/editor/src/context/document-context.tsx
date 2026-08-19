@@ -2924,6 +2924,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** Open main graph without activating it (avoids GraphEditor stomping edits). */
       ensureMainGraphOpen: async () => {
         const candidates = [
+          "assets/Mannequin.class.babasset",
           "assets/main.class.babasset",
           "assets/main.graph.babasset",
         ];
@@ -3025,6 +3026,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       /** Replace the main graph so Preview compiles a known script. */
       setMainGraphContent: async (graph: SerializedGraph) => {
         const candidates = [
+          "assets/Mannequin.class.babasset",
           "assets/main.class.babasset",
           "assets/main.graph.babasset",
         ];

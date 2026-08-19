@@ -37,7 +37,7 @@ test.describe("BabylonSlate editor smoke", () => {
       .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
       .getByTestId("document-tab-select")
       .click();
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Mannequin.class.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible();
@@ -107,7 +107,7 @@ test.describe("BabylonSlate editor smoke", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page.locator('[data-asset-path="assets/main.class.babasset"]').dblclick();
+    await page.locator('[data-asset-path="assets/Mannequin.class.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
 
     const compile = page.getByTestId("compile-graph");
