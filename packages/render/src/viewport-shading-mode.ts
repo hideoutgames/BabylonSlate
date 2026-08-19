@@ -53,8 +53,11 @@ export class ViewportShadingOverlay {
   private readonly originals = new WeakMap<Material, ShadingRestore>();
   private lightsEnabledRestore = true;
   private capturedLights = false;
+  private readonly scene: Scene;
 
-  constructor(private readonly scene: Scene) {}
+  constructor(scene: Scene) {
+    this.scene = scene;
+  }
 
   get mode(): ViewportShadingMode {
     return this.current;
