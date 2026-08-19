@@ -577,7 +577,6 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   }
   if (isEditorModelPlaceholder(mesh)) {
     hideModelPlaceholder(mesh);
-    const pickable = !actor.locked;
     for (const child of mesh.getChildMeshes()) {
       if (!(child instanceof Mesh)) continue;
       child.isVisible = actor.visible;
