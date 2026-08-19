@@ -84,6 +84,7 @@ import {
   clipForState,
   defaultAnimVariableValue,
   evaluateAnimGraph,
+  type AnimClipCatalogEntry,
   type AnimEvalState,
   type AnimGraphDocument,
   type AnimGraphInputs,
@@ -155,6 +156,8 @@ export interface RuntimeDriverOptions {
   loopCount?: number;
   /** Audio asset guids known to this Play session (BT PlaySound fail-on-missing). */
   audioAssetGuids?: readonly string[];
+  /** Animation / Sprite Animation clip metadata for BT Play Animation. */
+  animClipCatalog?: readonly AnimClipCatalogEntry[];
   /** AnimationGraph documents keyed by asset guid (worker `loadAnimGraphs`). */
   animGraphs?: Readonly<Record<string, AnimGraphDocument>>;
   /** BehaviourTree documents keyed by asset guid (worker `loadBehaviourTrees`). */
@@ -355,6 +358,9 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly navAgentByActor = new Map<string, string>();
   private readonly navYawByActor = new Map<string, number>();
   private readonly audioAssetGuids = new Set<string>();
+  private readonly animClipCatalog = new Map<string, AnimClipCatalogEntry>();
+  private readonly btPlayAnimOwnedSlots = new Set<number>();
+  private readonly btVoiceByActor = new Map<string, string>();
   private lastStatsEmitMs: number | null = null;
   private readonly lastBtStateJson = new Map<number, string>();
 
@@ -436,6 +442,11 @@ class InProcessRuntime implements RuntimeDriver {
     if (options.audioAssetGuids) {
       for (const guid of options.audioAssetGuids) {
         if (guid) this.audioAssetGuids.add(guid);
+      }
+    }
+    if (options.animClipCatalog) {
+      for (const entry of options.animClipCatalog) {
+        if (entry.guid) this.animClipCatalog.set(entry.guid, entry);
       }
     }
     if (options.userInterfaces) {
@@ -1343,6 +1354,7 @@ class InProcessRuntime implements RuntimeDriver {
       if (actor.destroyed) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
+      if (this.btPlayAnimOwnedSlots.has(slotId)) continue;
       const component = actor.components.find(
         (entry) =>
           entry.classId === "AnimationGraphComponent" && !entry.destroyed,
@@ -1493,8 +1505,14 @@ class InProcessRuntime implements RuntimeDriver {
     if (builtinClassId(node.classId) === "bt.task.moveTo") {
       return this.tickMoveTo(actor, node, memory);
     }
+    if (builtinClassId(node.classId) === "bt.task.rotateToFace") {
+      return this.tickRotateToFace(actor, node);
+    }
+    if (builtinClassId(node.classId) === "bt.task.playAnimation") {
+      return this.tickPlayAnimation(actor, node, dtSeconds, memory);
+    }
     if (builtinClassId(node.classId) === "bt.task.playSound") {
-      return this.tickPlaySound(actor, node);
+      return this.tickPlaySound(actor, node, memory);
     }
     if (!this.scriptHost.hasClass(node.classId)) return "failure";
     const extras = {
@@ -1551,9 +1569,127 @@ class InProcessRuntime implements RuntimeDriver {
     return distance <= accept ? "success" : "running";
   }
 
-  private tickPlaySound(
+  private tickRotateToFace(
     actor: Actor,
     node: { properties?: Record<string, unknown> },
+  ): BtResult {
+    const target = navPointFromUnknown(node.properties?.target);
+    if (!target) return "failure";
+    const position = actor.transform.position;
+    const twoD = this.physicsWorldKind === "2d";
+    const yawRad = twoD
+      ? Math.atan2(target.y - position.y, target.x - position.x)
+      : Math.atan2(target.x - position.x, target.z - position.z);
+    const yawDeg = (yawRad * 180) / Math.PI;
+    const euler: [number, number, number] = twoD
+      ? [0, 0, yawDeg]
+      : [0, yawDeg, 0];
+    const quat = eulerDegreesToQuaternion(euler);
+    actor.transform.rotation.x = quat[0];
+    actor.transform.rotation.y = quat[1];
+    actor.transform.rotation.z = quat[2];
+    actor.transform.rotation.w = quat[3];
+    if (this.navAgentByActor.has(actor.guid)) {
+      this.navYawByActor.set(actor.guid, yawRad);
+    }
+    return "success";
+  }
+
+  private resolvePlayAnimationClip(
+    properties: Record<string, unknown> | undefined,
+  ): {
+    guid: string;
+    clipName: string;
+    clipKind: "animation" | "sprite";
+    durationMs: number;
+  } | null {
+    const guid =
+      typeof properties?.clipAssetGuid === "string"
+        ? properties.clipAssetGuid.trim()
+        : "";
+    if (!guid) return null;
+    const entry = this.animClipCatalog.get(guid);
+    if (!entry) return null;
+    const requested =
+      properties?.clipKind === "sprite"
+        ? "sprite"
+        : properties?.clipKind === "animation"
+          ? "animation"
+          : entry.type === "SpriteAnimation"
+            ? "sprite"
+            : "animation";
+    if (requested === "sprite" && entry.type !== "SpriteAnimation") return null;
+    if (requested === "animation" && entry.type !== "Animation") return null;
+    const durationMs = entry.durationMs;
+    if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
+      return null;
+    }
+    const clipName =
+      requested === "animation" && typeof entry.clipName === "string"
+        ? entry.clipName
+        : "";
+    return { guid, clipName, clipKind: requested, durationMs };
+  }
+
+  private tickPlayAnimation(
+    actor: Actor,
+    node: { properties?: Record<string, unknown> },
+    dtSeconds: number,
+    memory: Record<string, unknown>,
+  ): BtResult {
+    const clip = this.resolvePlayAnimationClip(node.properties);
+    const slotId = this.slotByGuid.get(actor.guid);
+    if (!clip || slotId === undefined) {
+      if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
+      return "failure";
+    }
+    const elapsed =
+      (typeof memory.elapsedMs === "number" ? memory.elapsedMs : 0) +
+      dtSeconds * 1000;
+    memory.elapsedMs = elapsed;
+    const normalisedTime = Math.min(1, elapsed / clip.durationMs);
+    const justFinished = normalisedTime >= 1;
+    this.btPlayAnimOwnedSlots.add(slotId);
+    if (clip.clipKind === "sprite") {
+      this.physicsSync.setActorSpriteClip(actor.guid, {
+        assetGuid: clip.guid,
+        clipName: clip.clipName,
+        normalisedTime,
+      });
+    } else {
+      this.physicsSync.setActorSpriteClip(actor.guid, null);
+    }
+    this.emit({
+      type: "animState",
+      slotId,
+      stateId: "bt.playAnimation",
+      normalisedTime,
+      blendWeights: { "bt.playAnimation": 1 },
+      clipName: clip.clipName,
+      clipKind: clip.clipKind,
+      clipAssetGuid: clip.guid,
+      justFinished,
+      justLooped: false,
+      layers: [
+        {
+          stateId: "bt.playAnimation",
+          clipAssetGuid: clip.guid,
+          clipName: clip.clipName,
+          clipKind: clip.clipKind,
+          normalisedTime,
+          weight: 1,
+        },
+      ],
+    });
+    if (!justFinished) return "running";
+    this.btPlayAnimOwnedSlots.delete(slotId);
+    return "success";
+  }
+
+  private tickPlaySound(
+    actor: Actor,
+    node: { id: string; properties?: Record<string, unknown> },
+    memory: Record<string, unknown>,
   ): BtResult {
     const guid =
       typeof node.properties?.audioAssetGuid === "string"
@@ -1564,27 +1700,60 @@ class InProcessRuntime implements RuntimeDriver {
     const volume = Number.isFinite(volumeRaw)
       ? Math.min(1, Math.max(0, volumeRaw))
       : 1;
-    this.emit({
-      type: "playSound",
-      assetGuid: guid,
-      volume,
-      frameId: this.frameId,
-      emitterActorGuid: actor.guid,
-    });
+    const voiceId = `bt:${actor.guid}:${node.id}`;
+    if (memory.__soundPlayed !== true) {
+      memory.__soundPlayed = true;
+      this.btVoiceByActor.set(actor.guid, voiceId);
+      this.emit({
+        type: "playSound",
+        assetGuid: guid,
+        volume,
+        frameId: this.frameId,
+        emitterActorGuid: actor.guid,
+        voiceId,
+      });
+    }
     return "success";
+  }
+
+  private stopBtPlaySound(actorGuid: string, nodeId?: string): void {
+    const voiceId =
+      nodeId !== undefined
+        ? `bt:${actorGuid}:${nodeId}`
+        : this.btVoiceByActor.get(actorGuid);
+    if (!voiceId) return;
+    this.emit({ type: "stopSound", voiceId });
+    this.btVoiceByActor.delete(actorGuid);
+  }
+
+  private abortPlayAnimation(actor: Actor, memory: Record<string, unknown>): void {
+    delete memory.elapsedMs;
+    const slotId = this.slotByGuid.get(actor.guid);
+    if (slotId !== undefined) this.btPlayAnimOwnedSlots.delete(slotId);
+    this.physicsSync.setActorSpriteClip(actor.guid, null);
   }
 
   private abortBtTask(
     actor: Actor,
-    node: { classId: string },
+    node: { id: string; classId: string },
     blackboard: BlackboardValues,
     memory: Record<string, unknown>,
   ): void {
     memory.__activated = false;
     delete memory.__btResult;
     delete memory.__moveRequested;
-    if (builtinClassId(node.classId) === "bt.task.moveTo") {
+    delete memory.__soundPlayed;
+    const classId = builtinClassId(node.classId);
+    if (classId === "bt.task.moveTo") {
       this.stopNavAgent(actor.guid);
+    }
+    if (classId === "bt.task.playAnimation") {
+      this.abortPlayAnimation(actor, memory);
+    }
+    if (classId === "bt.task.playSound") {
+      this.stopBtPlaySound(actor.guid, node.id);
+    } else if (this.btVoiceByActor.has(actor.guid)) {
+      this.stopBtPlaySound(actor.guid);
     }
     this.scriptHost.invokeBtEvent(node.classId, "onAbort", actor, this.simulationDt(), {
       btFinish: () => undefined,
