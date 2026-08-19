@@ -773,7 +773,7 @@ describe("project schema", () => {
     });
   });
 
-  it("keeps a custom 1920×1080 stretch override on new projects", () => {
+  it("keeps a custom 1920×1080 black-bars override on new projects", () => {
     expect(
       createEmptyProject("Demo", {
         render: { customResolution: true, width: 1280, height: 720, blackBars: true },

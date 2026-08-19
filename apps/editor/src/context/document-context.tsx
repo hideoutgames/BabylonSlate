@@ -30,6 +30,8 @@ import {
   ThumbnailDecodeLru,
   truncateJournal,
   collectAudioClipSourceBytes,
+  clearDeletedAssetRefs,
+  clearDeletedRefsFromProjectSettings,
   type AssetRegistry,
   type MigrationPending,
   type PluginDescriptor,
@@ -83,6 +85,7 @@ import {
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
+import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
@@ -314,6 +317,11 @@ interface DocumentContextValue {
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
   closeDocument: (id: string) => void;
+  closeDocumentsForPaths: (paths: Iterable<string>) => void;
+  repairAfterAssetDelete: (
+    deletedGuids: ReadonlySet<string>,
+    deletedClassNames?: ReadonlySet<string>,
+  ) => Promise<void>;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
@@ -370,6 +378,8 @@ interface DocumentContextValue {
     api: DockviewApi,
     surface?: DockviewSurface,
   ) => void;
+  unregisterDockviewApi: (id: string, surface?: DockviewSurface) => void;
+  captureLayoutForId: (id: string) => void;
   uiEditorMode: UiEditorMode;
   setUiEditorMode: (id: string, mode: UiEditorMode) => void;
   animEditorMode: AnimEditorMode;
@@ -737,17 +747,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const recordRecent = useCallback(
-    async (handle: ProjectFolderHandle | null) => {
+    async (handle: ProjectFolderHandle | null, createdAt?: string) => {
       if (!handle) return;
       const settings = await settingsStore.load();
       const next = defaultEngineSettings();
       Object.assign(next, settings);
+      const previous = settings.recents.find((recent) => recent.id === handle.id);
       next.recents = [
         {
           id: handle.id,
           name: handle.name,
           tier: handle.tier,
           lastOpenedAt: new Date().toISOString(),
+          createdAt: createdAt ?? previous?.createdAt,
           bookmark: handle.tier === "external" ? handle.id : null,
         },
         ...settings.recents.filter((r) => r.id !== handle.id),
@@ -1124,7 +1136,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         setRecoveryAvailable(await hasJournal(derived, guid));
       }
-      await recordRecent(projectService.storagePort.getCurrentFolder());
+      await recordRecent(
+        projectService.storagePort.getCurrentFolder(),
+        document.metadata.createdAt,
+      );
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
@@ -1562,6 +1577,73 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
     },
     [bump, disposeDockSubscriptions, documentService],
+  );
+
+  const closeDocumentsForPaths = useCallback(
+    (paths: Iterable<string>) => {
+      const pathSet = paths instanceof Set ? paths : new Set(paths);
+      const ids: string[] = [];
+      for (const doc of documentService.getOpenDocumentsOrdered()) {
+        if (doc.ref.kind === "content-browser") continue;
+        if (pathSet.has(doc.ref.path)) ids.push(doc.id);
+      }
+      for (const id of ids) closeDocument(id);
+    },
+    [closeDocument, documentService],
+  );
+
+  const repairAfterAssetDelete = useCallback(
+    async (
+      deletedGuids: ReadonlySet<string>,
+      deletedClassNames: ReadonlySet<string> = new Set(),
+    ) => {
+      await projectService.clearDeletedAssetReferences(deletedGuids, {
+        deletedClassNames,
+      });
+      for (const doc of documentService.getOpenDocumentsOrdered()) {
+        if (doc.ref.kind === "content-browser" || !doc.content) continue;
+        const walked = clearDeletedAssetRefs(
+          doc.content,
+          deletedGuids,
+          deletedClassNames,
+        );
+        if (!walked.changed) continue;
+        if (doc.dirty) {
+          documentService.patchLoadedContent(doc.id, walked.value);
+        } else {
+          documentService.replaceLoadedContent(doc.id, walked.value);
+        }
+      }
+      const current = projectDocumentRef.current;
+      await projectService.remountRegistry();
+      const paths = projectService.registry?.listDocumentPaths({
+        rootId: "project",
+      });
+      if (current) {
+        const settings = clearDeletedRefsFromProjectSettings(
+          current.settings,
+          deletedGuids,
+          deletedClassNames,
+        ).value;
+        const next = {
+          ...current,
+          settings,
+          ...(paths ? { scenes: paths.scenes, graphs: paths.graphs } : {}),
+        };
+        setProjectDocument(next);
+        captureAllLayouts();
+        await projectService.saveProject(next, documentService.buildLayouts());
+        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+      }
+      bump();
+    },
+    [
+      bump,
+      captureAllLayouts,
+      captureMtimeSnapshot,
+      documentService,
+      projectService,
+    ],
   );
 
   const finishOpenDocument = useCallback(
@@ -2207,6 +2289,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sound-attenuation"
         | "particle-emitter"
         | "particle-system"
+        | "audio"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
@@ -2501,7 +2584,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             ? "audio-channel"
             : asset.header.type === "SoundAttenuation"
               ? "sound-attenuation"
-              : "asset-settings";
+              : "audio";
       const content =
         (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
       payloads.push({
@@ -2714,6 +2797,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+        advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
@@ -2942,6 +3026,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (!openScene) return false;
         return applySceneChange(openScene.id, structuredClone(scene));
+      },
+      advanceIdleClock: (ms: number) => {
+        advanceTestIdleClock(ms);
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
       textureEncodeState: (path: string) => {
@@ -3178,6 +3265,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [bumpDockWindows, documentService, projectService]);
 
+  const unregisterDockviewApi = useCallback(
+    (id: string, surface: DockviewSurface = "default") => {
+      const key = dockviewApiKey(id, surface);
+      dockviewApisRef.current.delete(key);
+      for (const sub of dockSubscriptionsRef.current.get(key) ?? []) {
+        sub.dispose();
+      }
+      dockSubscriptionsRef.current.delete(key);
+    },
+    [],
+  );
+
   const activeDockApi = useCallback((): DockviewApi | undefined => {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return undefined;
@@ -3212,6 +3311,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const setUiEditorMode = useCallback(
     (id: string, mode: UiEditorMode) => {
+      captureLayoutForId(id);
       const doc = documentService.getDocument(id);
       const currentMode = uiEditorModeForDocument(id, uiEditorModes, doc);
       if (currentMode !== mode) {
@@ -3241,11 +3341,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bumpDockWindows();
     },
-    [bumpDockWindows, documentService, uiEditorModes],
+    [bumpDockWindows, captureLayoutForId, documentService, uiEditorModes],
   );
 
   const setAnimEditorMode = useCallback(
     (id: string, mode: AnimEditorMode) => {
+      captureLayoutForId(id);
       const doc = documentService.getDocument(id);
       const currentMode = animEditorModeForDocument(id, animEditorModes, doc);
       if (currentMode !== mode) {
@@ -3275,7 +3376,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bumpDockWindows();
     },
-    [bumpDockWindows, documentService, animEditorModes],
+    [bumpDockWindows, captureLayoutForId, documentService, animEditorModes],
   );
 
   const activateDockPanel = useCallback((panelId: string) => {
@@ -3574,6 +3675,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
+      closeDocumentsForPaths,
+      repairAfterAssetDelete,
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
@@ -3609,6 +3712,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           : false;
       })(),
       registerDockviewApi,
+      unregisterDockviewApi,
+      captureLayoutForId,
       uiEditorMode: (() => {
         const activeId = documentService.getState().activeDocumentId;
         if (!activeId) return "designer" as const;
@@ -3758,6 +3863,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
+      closeDocumentsForPaths,
+      repairAfterAssetDelete,
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
@@ -3781,6 +3888,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
+      unregisterDockviewApi,
+      captureLayoutForId,
       setUiEditorMode,
       uiEditorModes,
       setAnimEditorMode,

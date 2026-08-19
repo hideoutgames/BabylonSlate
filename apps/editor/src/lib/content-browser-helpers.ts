@@ -47,6 +47,7 @@ import {
   resolveTypeVisual,
   walkAncestry,
   type TypeVisual,
+  type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
@@ -1011,6 +1012,7 @@ function contentBrowserDropDestination(
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
   rootPaths: readonly string[],
+  placement: TreeDropPlacement = "into",
 ): { destinationPath: string; destRoot: string; sourceRoot: string } | null {
   const source = rows.find((row) => row.id === dragId);
   if (!source) return null;
@@ -1022,9 +1024,12 @@ function contentBrowserDropDestination(
   if (targetId !== null) {
     const target = rows.find((row) => row.id === targetId);
     if (!target) return null;
+    const around = placement === "before" || placement === "after";
     destinationPath =
       target.kind === "folder"
-        ? target.path
+        ? around
+          ? parentFolderPath(target.path, sourceRoot)
+          : target.path
         : parentFolderPath(target.path, sourceRoot);
   }
   const destRoot = contentRootOfPath(destinationPath, rootPaths);
@@ -1064,9 +1069,16 @@ export function contentBrowserMoveFromDrop(
   targetId: string | null,
   rows: ReadonlyArray<ContentBrowserTreeRow>,
   rootPaths: readonly string[] = [ASSETS_ROOT],
+  placement: TreeDropPlacement = "into",
 ): ContentBrowserDropMove | null {
   const source = rows.find((row) => row.id === dragId);
-  const dest = contentBrowserDropDestination(dragId, targetId, rows, rootPaths);
+  const dest = contentBrowserDropDestination(
+    dragId,
+    targetId,
+    rows,
+    rootPaths,
+    placement,
+  );
   if (!source || !dest) return null;
   const move = contentBrowserDropMoveForRow(
     source,
@@ -1093,6 +1105,7 @@ export function contentBrowserTreeDropMoves(options: {
   selectedFolderPaths: ReadonlySet<string>;
   rootPaths?: readonly string[];
   resolvePath?: (guid: string) => string | undefined;
+  placement?: TreeDropPlacement;
 }): ContentBrowserDropMove[] {
   const {
     dragId,
@@ -1101,12 +1114,25 @@ export function contentBrowserTreeDropMoves(options: {
     selectedGuids,
     selectedFolderPaths,
     rootPaths = [ASSETS_ROOT],
+    placement = "into",
   } = options;
   const source = rows.find((row) => row.id === dragId);
-  const dest = contentBrowserDropDestination(dragId, targetId, rows, rootPaths);
+  const dest = contentBrowserDropDestination(
+    dragId,
+    targetId,
+    rows,
+    rootPaths,
+    placement,
+  );
   if (!source || !dest) return [];
   if (!treeRowInSelection(source, selectedGuids, selectedFolderPaths)) {
-    const move = contentBrowserMoveFromDrop(dragId, targetId, rows, rootPaths);
+    const move = contentBrowserMoveFromDrop(
+      dragId,
+      targetId,
+      rows,
+      rootPaths,
+      placement,
+    );
     return move ? [move] : [];
   }
   const pathOf = (guid: string) =>

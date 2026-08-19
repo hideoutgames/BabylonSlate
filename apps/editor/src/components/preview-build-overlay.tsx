@@ -32,7 +32,7 @@ export function PreviewBuildOverlay({
         ref={iframeRef}
         title="Preview Build"
         src={src}
-        className="absolute inset-0 h-full w-full border-0 bg-black"
+        className="absolute inset-0 h-full w-full border-0 bg-black outline-none focus-visible:outline-none"
         data-testid="preview-build-iframe"
         onLoad={onLoad}
       />

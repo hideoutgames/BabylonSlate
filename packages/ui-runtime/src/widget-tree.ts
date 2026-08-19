@@ -80,28 +80,51 @@ export function removeWidget(
 export function reparentWidget(
   doc: UserInterfaceDocument,
   id: string,
-  newParentId: string,
+  targetId: string,
+  placement: "before" | "into" | "after" = "into",
 ): UserInterfaceDocument {
-  if (id === doc.rootId || id === newParentId) return doc;
+  if (id === doc.rootId || id === targetId) return doc;
   const widget = doc.widgets[id];
-  const newParent = doc.widgets[newParentId];
-  if (!widget || !newParent) return doc;
+  const target = doc.widgets[targetId];
+  if (!widget || !target) return doc;
   const descendants = collectDescendants(doc, id);
-  if (descendants.has(newParentId)) return doc;
+  if (descendants.has(targetId)) return doc;
+
   const oldParentId = widgetParentId(doc, id);
-  if (!oldParentId || oldParentId === newParentId) return doc;
+  if (!oldParentId) return doc;
+
+  const around = placement === "before" || placement === "after";
+  const newParentId = around ? widgetParentId(doc, targetId) : targetId;
+  if (!newParentId || newParentId === id || descendants.has(newParentId)) {
+    return doc;
+  }
+  if (!around && oldParentId === newParentId) return doc;
+
   const oldParent = doc.widgets[oldParentId];
-  if (!oldParent) return doc;
+  const newParent = doc.widgets[newParentId];
+  if (!oldParent || !newParent) return doc;
+
   const next = cloneDoc(doc);
+  const fromParent = next.widgets[oldParentId]!;
   next.widgets[oldParentId] = {
-    ...oldParent,
-    children: oldParent.children.filter((child) => child !== id),
+    ...fromParent,
+    children: fromParent.children.filter((child) => child !== id),
   };
   const dest = next.widgets[newParentId]!;
-  next.widgets[newParentId] = {
-    ...dest,
-    children: [...dest.children, id],
-  };
+  const children = dest.children.filter((child) => child !== id);
+  if (around) {
+    const anchorIndex = children.indexOf(targetId);
+    const insertAt =
+      anchorIndex < 0
+        ? children.length
+        : placement === "before"
+          ? anchorIndex
+          : anchorIndex + 1;
+    children.splice(insertAt, 0, id);
+  } else {
+    children.push(id);
+  }
+  next.widgets[newParentId] = { ...dest, children };
   return next;
 }
 

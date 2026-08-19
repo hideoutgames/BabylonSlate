@@ -26,19 +26,11 @@ export default defineConfig({
     },
     {
       name: "ipad-landscape",
-      // Touch / coarse-pointer / orientation only. Tag those tests with IPAD_TEST_TAG.
+      // Touch / coarse-pointer / landscape viewport. Tag those tests with IPAD_TEST_TAG.
+      // iPad portrait is unsupported — do not add an ipad-portrait project.
       grep: IPAD_TEST_GREP,
       use: {
         ...devices["iPad Pro 11 landscape"],
-        ...IPAD_TOUCH,
-        browserName: "chromium",
-      },
-    },
-    {
-      name: "ipad-portrait",
-      grep: IPAD_TEST_GREP,
-      use: {
-        ...devices["iPad Pro 11"],
         ...IPAD_TOUCH,
         browserName: "chromium",
       },

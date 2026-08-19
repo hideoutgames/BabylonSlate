@@ -211,6 +211,7 @@ describe("loadExportDocuments", () => {
 
   it("packs Audio source with payload so the player can route gain", async () => {
     const { decodePackedAudioAsset } = await import("@babylonslate/assets");
+    const kinds: string[] = [];
     const loaded = await loadExportDocuments({
       assets: [
         {
@@ -238,12 +239,13 @@ describe("loadExportDocuments", () => {
         },
       ],
       loadDocument: async (kind) => {
-        expect(kind).toBe("asset-settings");
+        kinds.push(kind);
         return { volume: 0.5, audioChannelGuid: "sfx", soundAttenuationGuid: null };
       },
       readAssetChunk: async (_path, chunkId) =>
         chunkId === "source" ? new Uint8Array([1, 2, 3, 4]) : null,
     });
+    expect(kinds).toEqual(["audio"]);
     const packed = loaded.bytesByGuid("jump");
     expect(packed).toBeTruthy();
     expect(decodePackedAudioAsset(packed!)).toEqual({

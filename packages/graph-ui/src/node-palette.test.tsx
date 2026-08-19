@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NodePalette } from "./node-palette";
 import type { PaletteNode, SerializedPin } from "./graph-types";
@@ -176,6 +176,108 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-category-all").textContent).toContain("1");
     expect(getByTestId("node-palette-category-Debug").textContent).toContain("1");
     expect(queryByTestId("node-palette-category-Flow")).toBeNull();
+  });
+
+  function paletteItems() {
+    return document.querySelectorAll('[data-testid^="node-palette-item-"]');
+  }
+
+  function manyNodes(count: number): PaletteNode[] {
+    return Array.from({ length: count }, (_, index) => ({
+      id: `n${index}`,
+      title: `Node ${index}`,
+      category: "Math",
+      pins: [],
+    }));
+  }
+
+  const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  );
+
+  function stubPaletteBodyHeight(height: number) {
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        if (
+          (this as HTMLElement).getAttribute?.("data-testid") ===
+          "node-palette-body"
+        ) {
+          return height;
+        }
+        return clientHeightDescriptor?.get?.call(this) ?? 0;
+      },
+    });
+  }
+
+  afterEach(() => {
+    if (clientHeightDescriptor) {
+      Object.defineProperty(
+        HTMLElement.prototype,
+        "clientHeight",
+        clientHeightDescriptor,
+      );
+    }
+  });
+
+  it("mounts every palette item when the catalog body height is 0", () => {
+    const nodes = manyNodes(80);
+    render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={nodes}
+        onAddNode={() => {}}
+      />,
+    );
+    expect(paletteItems()).toHaveLength(80);
+    expect(document.querySelector('[data-testid="node-palette-item-n79"]')).toBeTruthy();
+  });
+
+  it("mounts only viewport-near rows for a ~1000-node palette", () => {
+    stubPaletteBodyHeight(440);
+    const nodes = manyNodes(1000);
+    const { queryByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={nodes}
+        onAddNode={() => {}}
+      />,
+    );
+    const mounted = paletteItems();
+    expect(mounted.length).toBeGreaterThan(0);
+    expect(mounted.length).toBeLessThan(40);
+    expect(queryByTestId("node-palette-item-n0")).toBeTruthy();
+    expect(queryByTestId("node-palette-item-n999")).toBeNull();
+    expect(
+      document.querySelector('[data-testid="node-palette-category-all"]')
+        ?.textContent,
+    ).toContain("1000");
+  });
+
+  it("search finds the last item without mounting the full palette", () => {
+    stubPaletteBodyHeight(440);
+    const nodes = manyNodes(1000);
+    const { getByPlaceholderText, getByTestId, queryByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={nodes}
+        onAddNode={() => {}}
+      />,
+    );
+
+    act(() => {
+      fireEvent.change(getByPlaceholderText("Search nodes"), {
+        target: { value: "Node 999" },
+      });
+    });
+
+    expect(getByTestId("node-palette-item-n999")).toBeTruthy();
+    expect(queryByTestId("node-palette-item-n0")).toBeNull();
+    expect(paletteItems()).toHaveLength(1);
   });
 
   it("keeps Context Sensitive off after close and reopen", () => {

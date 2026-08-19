@@ -216,6 +216,26 @@ describe("useContextMenu", () => {
       ),
     ).toBeNull();
   });
+
+  it("forwards a custom overlay content test id", () => {
+    function CustomHost() {
+      const { menu, closeMenu, bind } = useContextMenu({
+        items: [{ id: "a", label: "Action", onSelect: vi.fn() }],
+      });
+      return (
+        <div data-testid="target" {...bind}>
+          <ContextMenuOverlay
+            menu={menu}
+            onClose={closeMenu}
+            contentTestId="homepage-project-menu"
+          />
+        </div>
+      );
+    }
+    const { getByTestId } = render(<CustomHost />);
+    fireEvent.contextMenu(getByTestId("target"));
+    expect(getByTestId("homepage-project-menu")).toBeTruthy();
+  });
 });
 
 describe("resolveHoldPointerPhase", () => {

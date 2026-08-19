@@ -59,6 +59,9 @@ function recordingHost(): ConsoleCommandHost & { calls: string[] } {
     setShowNav: (enabled) => {
       calls.push(`shownav:${enabled}`);
     },
+    setShowAudioDebug: (enabled) => {
+      calls.push(`showaudiodebug:${enabled}`);
+    },
     dumpActors: () => "actor-dump",
     inspectActor: (query) => `inspect:${query || "(selection)"}`,
     getInspectSelection: () => null,
@@ -203,6 +206,27 @@ describe("createCommandRegistry", () => {
       output: "inspect:(selection)",
     });
     expect(host.calls).toEqual(["shownav:true"]);
+  });
+
+  it("toggles showaudiodebug with true/false and on/off", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("showaudiodebug true", host)).toEqual({
+      success: true,
+      output: "showaudiodebug on",
+    });
+    expect(registry.execute("showaudiodebug false", host)).toEqual({
+      success: true,
+      output: "showaudiodebug off",
+    });
+    expect(registry.execute("showaudiodebug on", host).success).toBe(true);
+    expect(registry.execute("showaudiodebug off", host).success).toBe(true);
+    expect(host.calls).toEqual([
+      "showaudiodebug:true",
+      "showaudiodebug:false",
+      "showaudiodebug:true",
+      "showaudiodebug:false",
+    ]);
   });
 
   it("coerces types and rejects bad enum values", () => {

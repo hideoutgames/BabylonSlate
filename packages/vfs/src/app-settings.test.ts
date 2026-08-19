@@ -31,6 +31,7 @@ describe("app settings", () => {
       "anim-graph": ["anim-graph-graph"],
       animGraphObject: ["anim-object-graph"],
       "behaviour-tree": ["behaviour-tree-graph"],
+      audio: ["audio-preview"],
       "audio-mixer": ["audio-mixer-details"],
       "audio-channel": ["audio-channel-details"],
       "sound-attenuation": ["sound-attenuation-details"],
@@ -184,6 +185,22 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels["script-interface"]).toEqual([
       "script-interface-preview",
     ]);
+    expect(parsed.focusKeepPanels.audio).toEqual(["audio-preview"]);
+  });
+
+  it("accepts optional createdAt on recents", () => {
+    const parsed = engineSettingsSchema.parse({
+      recents: [
+        {
+          id: "opfs:Game.babproject",
+          name: "Game.babproject",
+          tier: "opfs",
+          lastOpenedAt: "2026-08-18T12:00:00.000Z",
+          createdAt: "2026-03-15T12:00:00.000Z",
+        },
+      ],
+    });
+    expect(parsed.recents[0]?.createdAt).toBe("2026-03-15T12:00:00.000Z");
   });
 
   it("round-trips through the memory store", async () => {

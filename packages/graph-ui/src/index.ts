@@ -1,6 +1,10 @@
 export { animTransitionEdgeMarkers } from "./anim-transition-markers";
 export * from "./graph-editor";
-export { resolveGraphViewport } from "./graph-viewport";
+export { resolveGraphViewport, resolveGraphMountViewport } from "./graph-viewport";
+export {
+  GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  selectVisibleGraphElements,
+} from "./graph-virtualize";
 export * from "./graph-connect";
 export * from "./graph-canvas-api";
 export * from "./graph-model";

@@ -121,8 +121,10 @@ export interface RenderProjectSettings {
   width: number;
   height: number;
   /**
-   * Stored on the project. A locked framebuffer is always letterboxed
-   * (`fitContainedRect`); this flag no longer stretches to fill.
+   * When true with `customResolution`, Play/export lock the framebuffer to
+   * width×height and letterbox (`fitContainedRect`). When false, the host
+   * fills at the window size; cameras stay centered at the live aspect
+   * (never CSS stretch).
    */
   blackBars: boolean;
 }
@@ -138,7 +140,7 @@ export const DEFAULT_RENDER_PROJECT_SETTINGS: RenderProjectSettings = {
   blackBars: false,
 };
 
-/** New projects lock Play/runtime to 1920×1080 and letterbox the framebuffer. */
+/** New projects default 1920×1080 custom resolution with Black Bars off (fill). */
 export const NEW_PROJECT_RENDER_SETTINGS: RenderProjectSettings = {
   customResolution: true,
   width: DEFAULT_RENDER_WIDTH,
