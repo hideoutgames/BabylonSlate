@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | `selectVisibleGraphElements` dropped off-screen `focusedNodeId`, so search / compiler / Play navigate `fitView` no-oped. `keepIds` now mounts the focused node and its incident edges | Resolved |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | Hidden warm graphs (`display: none` → 0×0) turned virtualisation off and remounted every node. `GraphEditor` now freezes the last positive host size | Resolved |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-content-browser-virtualize | Standards | `asset-registry.md` still described CSS Grid overflow; the grid is windowed absolute tiles plus a spacer | Resolved |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Standards | GraphEditor catalog omitted `sessionViewport` remount restore and focus keep-mount | Resolved |
 | 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Spec | Origin collider `isVisible = true` also entered marquee (`meshNamesInCanvasRect`), so Drag Select listed a helper twice (icon + origin) and Details could show "2 Actors" | Resolved |
 | 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Standards | `pickWorld` pre-refreshed camera-dependent matrices, so tests would pass without `pickAtCanvas`'s refresh loop | Resolved |
 | 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Context-sensitive Add Node filtered compatible nodes but did not prefer matching Make/Break/Switch/Equal rows | Resolved |

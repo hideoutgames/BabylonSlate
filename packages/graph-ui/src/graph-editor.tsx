@@ -101,6 +101,7 @@ import {
 } from "./graph-viewport";
 import { formatGraphNodes } from "./graph-format";
 import {
+  GRAPH_VIRTUALIZE_OVERSCAN_PX,
   selectVisibleGraphElements,
 } from "./graph-virtualize";
 import {
@@ -1497,9 +1498,12 @@ function GraphEditorCanvas({
     const element = wrapperRef.current;
     if (!element || typeof ResizeObserver === "undefined") return;
     const read = () => {
-      setHostSize({
-        width: element.clientWidth,
-        height: element.clientHeight,
+      const width = element.clientWidth;
+      const height = element.clientHeight;
+      setHostSize((prev) => {
+        if (width <= 0 || height <= 0) return prev;
+        if (prev.width === width && prev.height === height) return prev;
+        return { width, height };
       });
     };
     read();
@@ -1512,14 +1516,21 @@ function GraphEditorCanvas({
   const viewportZoom = useStore((state) => state.transform[2]);
   const visibleGraph = useMemo(
     () =>
-      selectVisibleGraphElements(nodes, styledEdges, {
-        x: viewportX,
-        y: viewportY,
-        zoom: viewportZoom,
-        width: hostSize.width,
-        height: hostSize.height,
-      }),
+      selectVisibleGraphElements(
+        nodes,
+        styledEdges,
+        {
+          x: viewportX,
+          y: viewportY,
+          zoom: viewportZoom,
+          width: hostSize.width,
+          height: hostSize.height,
+        },
+        GRAPH_VIRTUALIZE_OVERSCAN_PX,
+        focusedNodeId ? [focusedNodeId] : [],
+      ),
     [
+      focusedNodeId,
       nodes,
       styledEdges,
       viewportX,

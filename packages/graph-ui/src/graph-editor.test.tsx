@@ -456,6 +456,196 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("keeps a focused off-screen node mounted when virtualizing", () => {
+    const previous = globalThis.ResizeObserver;
+    class ImmediateResizeObserver {
+      callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe(target: Element) {
+        const isEditor = target.getAttribute("data-testid") === "graph-editor";
+        if (isEditor) {
+          Object.defineProperty(target, "clientWidth", {
+            configurable: true,
+            value: 500,
+          });
+          Object.defineProperty(target, "clientHeight", {
+            configurable: true,
+            value: 400,
+          });
+        }
+        const width = isEditor ? 500 : 0;
+        const height = isEditor ? 400 : 0;
+        this.callback(
+          [
+            {
+              target,
+              contentRect: {
+                width,
+                height,
+                top: 0,
+                left: 0,
+                right: width,
+                bottom: height,
+                x: 0,
+                y: 0,
+                toJSON: () => ({}),
+              },
+            } as ResizeObserverEntry,
+          ],
+          this as unknown as ResizeObserver,
+        );
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver =
+      ImmediateResizeObserver as unknown as typeof ResizeObserver;
+    const nodes = Array.from({ length: 200 }, (_, index) => ({
+      id: `n${index}`,
+      type: "debug.log",
+      position: { x: (index % 20) * 400, y: Math.floor(index / 20) * 400 },
+      data: { message: String(index), __pins: debugLogPins },
+    }));
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{ nodes, edges: [] }}
+          focusedNodeId="n199"
+        />,
+      );
+      expect(getByTestId("graph-editor").getAttribute("data-virtualize")).toBe(
+        "true",
+      );
+      const mounted = container.querySelectorAll(".react-flow__node").length;
+      expect(mounted).toBeGreaterThan(0);
+      expect(mounted).toBeLessThan(80);
+      expect(container.querySelector('[data-id="n199"]')).not.toBeNull();
+    } finally {
+      globalThis.ResizeObserver = previous;
+    }
+  });
+
+  it("keeps virtualizing after a later 0×0 host size (hidden tab)", () => {
+    const previous = globalThis.ResizeObserver;
+    const observers: Array<{
+      callback: ResizeObserverCallback;
+      target: Element | null;
+    }> = [];
+    class ControllableResizeObserver {
+      callback: ResizeObserverCallback;
+      target: Element | null = null;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+        observers.push(this);
+      }
+      observe(target: Element) {
+        this.target = target;
+        const isEditor = target.getAttribute("data-testid") === "graph-editor";
+        if (isEditor) {
+          Object.defineProperty(target, "clientWidth", {
+            configurable: true,
+            value: 500,
+          });
+          Object.defineProperty(target, "clientHeight", {
+            configurable: true,
+            value: 400,
+          });
+        }
+        const width = isEditor ? 500 : 0;
+        const height = isEditor ? 400 : 0;
+        this.callback(
+          [
+            {
+              target,
+              contentRect: {
+                width,
+                height,
+                top: 0,
+                left: 0,
+                right: width,
+                bottom: height,
+                x: 0,
+                y: 0,
+                toJSON: () => ({}),
+              },
+            } as ResizeObserverEntry,
+          ],
+          this as unknown as ResizeObserver,
+        );
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver =
+      ControllableResizeObserver as unknown as typeof ResizeObserver;
+    const nodes = Array.from({ length: 200 }, (_, index) => ({
+      id: `n${index}`,
+      type: "debug.log",
+      position: { x: (index % 20) * 400, y: Math.floor(index / 20) * 400 },
+      data: { message: String(index), __pins: debugLogPins },
+    }));
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor initialGraph={{ nodes, edges: [] }} />,
+      );
+      expect(getByTestId("graph-editor").getAttribute("data-virtualize")).toBe(
+        "true",
+      );
+      const mountedWhileVisible = container.querySelectorAll(
+        ".react-flow__node",
+      ).length;
+      expect(mountedWhileVisible).toBeGreaterThan(0);
+      expect(mountedWhileVisible).toBeLessThan(80);
+
+      act(() => {
+        for (const observer of observers) {
+          if (observer.target?.getAttribute("data-testid") !== "graph-editor") {
+            continue;
+          }
+          Object.defineProperty(observer.target, "clientWidth", {
+            configurable: true,
+            value: 0,
+          });
+          Object.defineProperty(observer.target, "clientHeight", {
+            configurable: true,
+            value: 0,
+          });
+          observer.callback(
+            [
+              {
+                target: observer.target,
+                contentRect: {
+                  width: 0,
+                  height: 0,
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  x: 0,
+                  y: 0,
+                  toJSON: () => ({}),
+                },
+              } as ResizeObserverEntry,
+            ],
+            observer as unknown as ResizeObserver,
+          );
+        }
+      });
+
+      expect(getByTestId("graph-editor").getAttribute("data-virtualize")).toBe(
+        "true",
+      );
+      const mountedWhileHidden = container.querySelectorAll(
+        ".react-flow__node",
+      ).length;
+      expect(mountedWhileHidden).toBe(mountedWhileVisible);
+    } finally {
+      globalThis.ResizeObserver = previous;
+    }
+  });
+
   it("renders the log message body so authors can read it on the canvas", () => {
     const graph = createDefaultGraph();
     const message = String(graph.nodes[0]?.data.message ?? "");
