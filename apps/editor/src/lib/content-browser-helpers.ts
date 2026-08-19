@@ -254,6 +254,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
     id: "animation",
     label: "Animation",
     types: ["AnimationGraph", "SpriteAnimation"],
+    hint: "Animation Graph is the state machine; Sprite Animation is a 2D clip (also under 2D).",
   },
   {
     id: "rendering",

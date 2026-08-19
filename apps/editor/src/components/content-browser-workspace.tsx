@@ -89,8 +89,6 @@ import {
   ASSETS_ROOT,
   addSelectedAssetGuid,
   addSelectedFolderPath,
-  exclusiveSelectAsset,
-  exclusiveSelectFolder,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
   buildNewAssetResult,

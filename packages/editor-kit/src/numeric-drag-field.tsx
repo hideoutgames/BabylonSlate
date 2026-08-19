@@ -106,7 +106,8 @@ export function NumericDragField({
     <div className="flex min-h-[var(--chrome-row,28px)] min-w-0 items-center gap-1">
       <span
         className={cn(
-          "w-3 shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
+          "shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold",
+          !label || label.length <= 1 ? "w-3" : null,
           accent === "x" && "text-axis-x",
           accent === "y" && "text-axis-y",
           accent === "z" && "text-axis-z",

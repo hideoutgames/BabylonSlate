@@ -25,6 +25,10 @@ export interface SearchDropdownProps {
   placeholder?: string;
   emptyLabel?: string;
   children: ReactElement;
+  /** When true, outside clicks are captured so chrome behind the menu is not hit. Default true. */
+  modal?: boolean;
+  /** Max height class for the scrollable list. Default max-h-80. */
+  contentClassName?: string;
   "data-testid"?: string;
 }
 
@@ -39,6 +43,8 @@ export function SearchDropdown({
   placeholder = "Search",
   emptyLabel = "No matches",
   children,
+  modal = true,
+  contentClassName,
   "data-testid": testId,
 }: SearchDropdownProps) {
   const [query, setQuery] = useState("");
@@ -47,6 +53,7 @@ export function SearchDropdown({
 
   return (
     <DropdownMenu
+      modal={modal}
       open={open}
       onOpenChange={(next) => {
         if (!next) setQuery("");
@@ -56,7 +63,10 @@ export function SearchDropdown({
       <DropdownMenuTrigger render={children} />
       <DropdownMenuContent
         align="start"
-        className="max-h-80 w-max min-w-64 max-w-sm overflow-y-auto"
+        className={
+          contentClassName ??
+          "max-h-96 w-max min-w-64 max-w-sm overflow-y-auto"
+        }
         data-testid={testId}
       >
         <DropdownMenuGroup>

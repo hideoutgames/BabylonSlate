@@ -791,7 +791,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             kind: "asset" as const,
             label: field.label,
             value: guid || null,
-            placeholder: field.assetType ?? "None",
+            placeholder: "None",
             onPick: () =>
               setAssetPick({
                 key: field.key,
