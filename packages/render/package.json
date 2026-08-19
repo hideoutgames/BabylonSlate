@@ -20,6 +20,7 @@
     "@babylonslate/bridge": "workspace:*",
     "@babylonslate/core": "workspace:*",
     "@babylonslate/navigation": "workspace:*",
+    "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
     "@babylonslate/ui-runtime": "workspace:*"
   },
