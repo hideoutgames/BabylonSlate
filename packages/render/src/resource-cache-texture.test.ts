@@ -25,6 +25,34 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
+  it("rebuilds after releaseGpuTextures keeps the blob URL", () => {
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const first = cache.getTexture("tex", engine, bytes);
+    cache.releaseGpuTextures();
+    const second = cache.getTexture("tex", engine, bytes);
+    expect(second).not.toBe(first);
+    expect(second.getInternalTexture()).not.toBeNull();
+    cache.dispose();
+    engine.dispose();
+  });
+
+  it("rebuilds a material texture after the cached instance was disposed", () => {
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const first = getMaterialTexture(cache, "tex", engine, bytes);
+    expect(first).not.toBeNull();
+    first!.dispose();
+    const second = getMaterialTexture(cache, "tex", engine, bytes);
+    expect(second).not.toBeNull();
+    expect(second).not.toBe(first);
+    expect(second!.getInternalTexture()).not.toBeNull();
+    cache.dispose();
+    engine.dispose();
+  });
+
   it("rebuilds when sampling flags change (cache key includes flags)", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
