@@ -70,6 +70,21 @@ describe("staticBlockerBakeParts", () => {
     ).toEqual([]);
   });
 
+  it("drops static blockers whose AABB misses bake bounds", () => {
+    const parts = staticBlockerBakeParts(
+      [
+        blocker({ kind: "box" }, [0, 1, 0], [2, 2, 2]),
+        blocker({ kind: "box" }, [40, 1, 0], [2, 2, 2]),
+      ],
+      "3d",
+      {
+        min: { x: -2, y: -2, z: -2 },
+        max: { x: 2, y: 4, z: 2 },
+      },
+    );
+    expect(parts).toHaveLength(1);
+  });
+
   it("remaps 2D blocker pose onto Recast XZ with fixed height", () => {
     const parts = staticBlockerBakeParts(
       [blocker({ kind: "cylinder" }, [4, 6, 9], [2, 3, 5])],

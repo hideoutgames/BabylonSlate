@@ -232,14 +232,74 @@ export type BlockerActorBakeInput = {
   components: Array<{ classId: string; properties: Record<string, unknown> }>;
 };
 
+export type NavBakeBounds = {
+  min: { x: number; y: number; z: number };
+  max: { x: number; y: number; z: number };
+};
+
 function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function aabbIntersects(
+  minA: { x: number; y: number; z: number },
+  maxA: { x: number; y: number; z: number },
+  bounds: NavBakeBounds,
+): boolean {
+  const minX = Math.min(bounds.min.x, bounds.max.x);
+  const maxX = Math.max(bounds.min.x, bounds.max.x);
+  const minY = Math.min(bounds.min.y, bounds.max.y);
+  const maxY = Math.max(bounds.min.y, bounds.max.y);
+  const minZ = Math.min(bounds.min.z, bounds.max.z);
+  const maxZ = Math.max(bounds.min.z, bounds.max.z);
+  return (
+    minA.x <= maxX &&
+    maxA.x >= minX &&
+    minA.y <= maxY &&
+    maxA.y >= minY &&
+    minA.z <= maxZ &&
+    maxA.z >= minZ
+  );
+}
+
+function blockerIntersectsBakeBounds(
+  position: [number, number, number],
+  scale: [number, number, number],
+  viewportMode: "2d" | "3d",
+  bounds: NavBakeBounds,
+): boolean {
+  const sx = Math.abs(scale[0] ?? 1);
+  const sy = Math.abs(scale[1] ?? 1);
+  const sz = Math.abs(scale[2] ?? 1);
+  if (viewportMode === "2d") {
+    const hx = sx / 2;
+    const hy = sy / 2;
+    return aabbIntersects(
+      { x: position[0] - hx, y: position[1] - hy, z: -1 },
+      { x: position[0] + hx, y: position[1] + hy, z: 1 },
+      bounds,
+    );
+  }
+  return aabbIntersects(
+    {
+      x: position[0] - sx / 2,
+      y: position[1] - sy / 2,
+      z: position[2] - sz / 2,
+    },
+    {
+      x: position[0] + sx / 2,
+      y: position[1] + sy / 2,
+      z: position[2] + sz / 2,
+    },
+    bounds,
+  );
 }
 
 /** Static unwalkable blockers become bake solids. Dynamic / cost are skipped. */
 export function staticBlockerBakeParts(
   actors: readonly BlockerActorBakeInput[],
   viewportMode: "2d" | "3d",
+  bakeBounds?: NavBakeBounds,
 ): NavBakeMeshPart[] {
   const parts: NavBakeMeshPart[] = [];
   for (const actor of actors) {
@@ -251,6 +311,12 @@ export function staticBlockerBakeParts(
         component.properties.kind === "cylinder" ? "cylinder" : "box";
       const position = actor.transform.position;
       const scale = actor.transform.scale ?? [1, 1, 1];
+      if (
+        bakeBounds &&
+        !blockerIntersectsBakeBounds(position, scale, viewportMode, bakeBounds)
+      ) {
+        continue;
+      }
       if (viewportMode === "2d") {
         const recast = worldToRecast({
           x: position[0],

@@ -3,6 +3,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  identitySerializedTransform,
   type SerializedScene,
 } from "@babylonslate/core";
 import { generateNavMesh } from "@babylonslate/navigation";
@@ -228,6 +229,206 @@ describe("collectNavBakeGeometry", () => {
     const withSkybox = collectNavBakeGeometry(sync, withSky);
     expect(withSkybox.positions.length).toBe(baseline.positions.length);
     expect(withSkybox.indices.length).toBe(baseline.indices.length);
+    sync.dispose();
+  });
+
+  it("reverses MeshComponent triangle winding for Recast +Y", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const sync = new EditorSceneSync(handle.scene);
+    const sceneData: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("ground", "Ground", {
+          components: [createMeshComponent("mesh", "ground")],
+        }),
+      ],
+    };
+    sync.apply(sceneData);
+    const mesh = sync.meshForActor("ground");
+    expect(mesh).toBeTruthy();
+    const raw = mesh!.getIndices();
+    expect(raw).toBeTruthy();
+    expect(raw!.length).toBeGreaterThanOrEqual(3);
+    const geometry = collectNavBakeGeometry(sync, sceneData);
+    expect(geometry.indices.slice(0, 3)).toEqual([
+      Number(raw![0]),
+      Number(raw![2]),
+      Number(raw![1]),
+    ]);
+    sync.dispose();
+  });
+
+  it("collects origin-root MeshComponent children instead of the pick sphere", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const sync = new EditorSceneSync(handle.scene);
+    const offsetBox = createMeshComponent("box", "box");
+    offsetBox.transform = {
+      ...identitySerializedTransform(),
+      position: [0, 1, 0],
+    };
+    const sceneData: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("compound", "Compound", {
+          components: [createMeshComponent("ground", "ground"), offsetBox],
+        }),
+      ],
+    };
+    sync.apply(sceneData);
+    const geometry = collectNavBakeGeometry(sync, sceneData);
+    let maxAbs = 0;
+    for (let i = 0; i < geometry.positions.length; i += 3) {
+      maxAbs = Math.max(
+        maxAbs,
+        Math.abs(geometry.positions[i]!),
+        Math.abs(geometry.positions[i + 2]!),
+      );
+    }
+    expect(maxAbs).toBeGreaterThan(2);
+    sync.dispose();
+  });
+
+  it("clips the 2D walkable quad and drops out-of-box colliders", () => {
+    const near = createActor("near", "Near", {
+      transform: {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      },
+      components: [
+        {
+          id: "col",
+          classId: "ColliderComponent",
+          properties: {
+            shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
+          },
+        },
+      ],
+    });
+    const far = createActor("far", "Far", {
+      transform: {
+        position: [40, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      },
+      components: [
+        {
+          id: "col-far",
+          classId: "ColliderComponent",
+          properties: {
+            shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
+          },
+        },
+      ],
+    });
+    const sceneData: SerializedScene = {
+      ...createDefaultScene("2d"),
+      viewportMode: "2d",
+      actors: [near, far],
+    };
+    const bounds = {
+      min: { x: -2, y: -2, z: -2 },
+      max: { x: 2, y: 2, z: 2 },
+    };
+    const all = collectNavBakeGeometry({ meshForActor: () => null }, sceneData);
+    const clipped = collectNavBakeGeometry(
+      { meshForActor: () => null },
+      sceneData,
+      { bakeBounds: bounds },
+    );
+    expect(all.positions.length).toBeGreaterThan(clipped.positions.length);
+    for (let i = 0; i < clipped.positions.length; i += 3) {
+      expect(clipped.positions[i]).toBeGreaterThanOrEqual(-3);
+      expect(clipped.positions[i]).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("drops 2D tilemap chains whose XY misses bake bounds", () => {
+    const sceneData: SerializedScene = {
+      ...createDefaultScene("2d"),
+      viewportMode: "2d",
+      actors: [
+        createActor("hero", "Hero", {
+          transform: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        }),
+      ],
+    };
+    const clipped = collectNavBakeGeometry(
+      { meshForActor: () => null },
+      sceneData,
+      {
+        bakeBounds: {
+          min: { x: -2, y: -2, z: -2 },
+          max: { x: 2, y: 2, z: 2 },
+        },
+        tilemapChains: [
+          { points: [{ x: 0, y: 0 }, { x: 1, y: 0 }], loop: false },
+          { points: [{ x: 40, y: 0 }, { x: 41, y: 0 }], loop: false },
+        ],
+      },
+    );
+    for (let i = 0; i < clipped.positions.length; i += 3) {
+      expect(clipped.positions[i]).toBeGreaterThanOrEqual(-4);
+      expect(clipped.positions[i]).toBeLessThanOrEqual(4);
+    }
+  });
+
+  it("drops static blockers whose AABB misses bake bounds", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const sync = new EditorSceneSync(handle.scene);
+    const ground = createActor("ground", "Ground", {
+      components: [createMeshComponent("mesh", "ground")],
+    });
+    const inside = createActor("in", "In", {
+      transform: {
+        position: [0, 1, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [2, 2, 2],
+      },
+      components: [
+        {
+          id: "blocker",
+          classId: "NavMeshBlockerComponent",
+          properties: { dynamic: false, kind: "box", area: "unwalkable" },
+        },
+      ],
+    });
+    const outside = createActor("out", "Out", {
+      transform: {
+        position: [40, 1, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [2, 2, 2],
+      },
+      components: [
+        {
+          id: "blocker-far",
+          classId: "NavMeshBlockerComponent",
+          properties: { dynamic: false, kind: "box", area: "unwalkable" },
+        },
+      ],
+    });
+    const sceneData: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [ground, inside, outside],
+    };
+    sync.apply(sceneData);
+    const clipped = collectNavBakeGeometry(sync, sceneData, {
+      bakeBounds: {
+        min: { x: -4, y: -2, z: -4 },
+        max: { x: 4, y: 4, z: 4 },
+      },
+    });
+    for (let i = 0; i < clipped.positions.length; i += 3) {
+      expect(clipped.positions[i]).toBeGreaterThanOrEqual(-6);
+      expect(clipped.positions[i]).toBeLessThanOrEqual(6);
+    }
     sync.dispose();
   });
 });
