@@ -839,7 +839,7 @@ export class ScriptHost {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       },
       gamepadConnections: tick?.gamepadConnections ?? [],
-      lineTrace: (start, end, _channel) => {
+      lineTrace: (start, end) => {
         const hit = services.lineTrace?.(start, end) ?? {
           hit: false,
           location: null,
@@ -856,12 +856,12 @@ export class ScriptHost {
           actor: hit.actorId,
         };
       },
-      sphereOverlap: (center, radius, _channel) =>
+      sphereOverlap: (center, radius) =>
         services.sphereOverlap?.(center, radius) ?? {
           actorIds: [],
           bodyIds: [],
         },
-      shapeSweep: (shape, start, end, _channel) => {
+      shapeSweep: (shape, start, end) => {
         const hit = services.shapeSweep?.(shape, start, end) ?? {
           hit: false,
           location: null,
