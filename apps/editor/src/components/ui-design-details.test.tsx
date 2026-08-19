@@ -6,7 +6,12 @@ import {
   defaultAddLayout,
   stretchLayout,
 } from "@babylonslate/ui-runtime";
+import { createUiDesignerSession } from "../lib/ui-designer-session";
 import { UiDesignDetails } from "./ui-design-details";
+
+vi.mock("@babylonslate/render", () => ({
+  uiHostStats: { apply: 0, create: 0, present: 0, commit: 0 },
+}));
 
 afterEach(() => {
   cleanup();
@@ -129,6 +134,8 @@ describe("UiDesignDetails layout fields", () => {
     const width = screen.getByTestId("property-width");
     fireEvent.change(width, { target: { value: "240" } });
     expect(onPreviewLayout).toHaveBeenCalled();
+    const origin = onPreviewLayout.mock.calls[0]![1] as { width: number };
+    expect(origin.width).toBe(button.layout.width);
     const previewed = onPreviewLayout.mock.calls.at(-1)![1] as { width: number };
     expect(previewed.width).toBe(240);
     expect(onPatchLayout).not.toHaveBeenCalled();
@@ -163,6 +170,75 @@ describe("UiDesignDetails layout fields", () => {
     unmount();
     expect(onCommitLayout).toHaveBeenCalledTimes(1);
     expect((onCommitLayout.mock.calls[0]![1] as { width: number }).width).toBe(240);
+  });
+
+  it("unlocks a layout session when Details unmounts after a Width preview", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => null,
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    const ui = createDefaultUserInterface();
+    ui.widgets[button.id] = button;
+    ui.widgets.canvas!.children = [button.id];
+    const { unmount } = render(
+      <UiDesignDetails
+        ui={ui}
+        selected={button}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={() => {}}
+        onPatchLayout={() => {}}
+        onPreviewLayout={(id, layout) => session.preview(id, layout)}
+        onCommitLayout={(id, layout) => session.commit(layout)}
+        onPickAsset={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-width"), { target: { value: "240" } });
+    expect(session.locked).toBe(true);
+    unmount();
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
+    expect((commitLayout.mock.calls[0]![1] as { width: number }).width).toBe(240);
+  });
+
+  it("lets session cancel restore the Width from before the scrub", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    const originWidth = button.layout.width;
+    const patchLiveLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({ patchLiveLayout, markAsDirty: vi.fn(), setGestureLocked: vi.fn() }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout: vi.fn(),
+    });
+    const ui = createDefaultUserInterface();
+    ui.widgets[button.id] = button;
+    ui.widgets.canvas!.children = [button.id];
+    render(
+      <UiDesignDetails
+        ui={ui}
+        selected={button}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={() => {}}
+        onPatchLayout={() => {}}
+        onPreviewLayout={(id, layout) => session.preview(id, layout)}
+        onCommitLayout={(id, layout) => session.commit(layout)}
+        onPickAsset={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-width"), { target: { value: "240" } });
+    fireEvent.change(screen.getByTestId("property-width"), { target: { value: "280" } });
+    session.cancel();
+    expect(session.locked).toBe(false);
+    const restored = patchLiveLayout.mock.calls.at(-1)![1] as { width: number };
+    expect(restored.width).toBe(originWidth);
   });
 });
 
@@ -235,5 +311,34 @@ describe("UiDesignDetails Grid tracks", () => {
     };
     expect(patch.props.columns).toBe(3);
     expect(patch.props.gridColumns).toHaveLength(3);
+    expect(patch.props.gridColumns[2]).toEqual({ value: 1, isPixel: false });
+  });
+
+  it("resizes gridRows when Rows changes", () => {
+    const grid = createWidget("grid", "Grid", "Grid", defaultAddLayout("Grid"));
+    const onPatchWidget = vi.fn();
+    const ui = createDefaultUserInterface();
+    ui.widgets[grid.id] = grid;
+    ui.widgets.canvas!.children = [grid.id];
+    render(
+      <UiDesignDetails
+        ui={ui}
+        selected={grid}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={onPatchWidget}
+        onPatchLayout={() => {}}
+        onPickAsset={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-rows"), { target: { value: "4" } });
+    expect(onPatchWidget).toHaveBeenCalled();
+    const patch = onPatchWidget.mock.calls.at(-1)![1] as {
+      props: { rows: number; gridRows: Array<{ value: number; isPixel: boolean }> };
+    };
+    expect(patch.props.rows).toBe(4);
+    expect(patch.props.gridRows).toHaveLength(4);
+    expect(patch.props.gridRows[3]).toEqual({ value: 1, isPixel: false });
   });
 });
