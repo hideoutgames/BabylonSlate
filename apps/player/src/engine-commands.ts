@@ -22,6 +22,7 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setShowNav",
   "setShowAudioDebug",
   "debugColliders",
+  "debugDraw",
   "assignParticle",
   "setParticlePlaying",
 ]);

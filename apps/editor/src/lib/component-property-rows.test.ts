@@ -33,9 +33,11 @@ function rowsFor(
                   ? "Overworld"
                   : guid === "sfx-1"
                     ? "Jump"
-                    : guid === "fx-1"
-                      ? "Fire"
-                      : undefined,
+                      : guid === "fx-1"
+                        ? "Fire"
+                        : guid === "font-1"
+                          ? "Display"
+                          : undefined,
       assetType: (guid) =>
         guid === "mesh-1"
           ? "Mesh"
@@ -55,7 +57,9 @@ function rowsFor(
                         ? "Audio"
                         : guid === "fx-1"
                           ? "ParticleSystem"
-                          : undefined,
+                          : guid === "font-1"
+                            ? "Font"
+                            : undefined,
       physicsWorld: "3d",
       collisionLayers: ["Default"],
       onPickAsset,
@@ -91,6 +95,90 @@ describe("componentPropertyRows", () => {
         allowedTypes: ["Mesh", "Model"],
       }),
     );
+  });
+
+  it("exposes 3D Text text, size, depth, color, and Font picker", () => {
+    const text3d = rowsFor(
+      {
+        id: "label",
+        classId: "Text3DComponent",
+        properties: {
+          text: "Hello",
+          size: 2,
+          depth: 0.25,
+          color: [0.2, 0.4, 0.6],
+          fontAssetGuid: "font-1",
+        },
+      },
+      {
+        fontHasFacetype: (guid) => guid === "font-1",
+      },
+    );
+    expect(text3d.rows.find((row) => row.id.endsWith("-text"))).toMatchObject({
+      kind: "text",
+      label: "Text",
+      value: "Hello",
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-size"))).toMatchObject({
+      kind: "slider",
+      label: "Size",
+      value: 2,
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-depth"))).toMatchObject({
+      kind: "slider",
+      label: "Depth",
+      value: 0.25,
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({
+      kind: "color",
+      label: "Color",
+      value: [0.2, 0.4, 0.6],
+    });
+    const font = text3d.rows.find((row) => row.id.endsWith("-fontAssetGuid"));
+    expect(font).toMatchObject({
+      kind: "asset",
+      label: "Font",
+      value: "font-1",
+      displayLabel: "Display",
+      displayType: "Font",
+    });
+    if (font?.kind === "asset") font.onPick();
+    expect(text3d.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property: "fontAssetGuid",
+        allowedTypes: ["Font"],
+      }),
+    );
+    expect(text3d.rows.find((row) => row.id.endsWith("-typeface-note"))).toBeUndefined();
+
+    const bundled = rowsFor({
+      id: "label",
+      classId: "Text3DComponent",
+      properties: defaultPropertiesFor("Text3DComponent"),
+    });
+    expect(bundled.rows.find((row) => row.id.endsWith("-typeface-note"))).toMatchObject({
+      kind: "text",
+      label: "Typeface",
+      value: "Bundled ASCII (no Font facetype chunk)",
+      disabled: true,
+    });
+
+    const missing = rowsFor(
+      {
+        id: "label",
+        classId: "Text3DComponent",
+        properties: {
+          ...defaultPropertiesFor("Text3DComponent"),
+          fontAssetGuid: "font-1",
+        },
+      },
+      { fontHasFacetype: () => false },
+    );
+    expect(missing.rows.find((row) => row.id.endsWith("-typeface-note"))).toMatchObject({
+      kind: "text",
+      value: "Bundled ASCII (no Font facetype chunk)",
+      disabled: true,
+    });
   });
 
   it("uses Sprite and Tilemap pickers plus project sorting layers", () => {

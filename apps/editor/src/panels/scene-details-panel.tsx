@@ -51,6 +51,7 @@ import {
 } from "../lib/scene-component-entries";
 import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { fontAssetHasFacetype } from "../lib/play-fonts";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -98,6 +99,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       assetRegistry?.getByGuid?.(guid)?.header.type ??
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
+  };
+  const fontHasFacetype = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -703,6 +708,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   collisionLayers,
                   assetLabel,
                   assetType,
+                  fontHasFacetype,
                   physicsWorld: scene.settings.physicsWorld,
                   onPickAsset: setAssetPick,
                 },

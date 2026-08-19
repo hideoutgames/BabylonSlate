@@ -22,7 +22,8 @@
     "@babylonslate/navigation": "workspace:*",
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
-    "@babylonslate/ui-runtime": "workspace:*"
+    "@babylonslate/ui-runtime": "workspace:*",
+    "earcut": "^3.2.3"
   },
   "devDependencies": {
     "@babylonslate/test-kit": "workspace:*",

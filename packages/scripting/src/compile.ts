@@ -5,6 +5,7 @@ import { defaultValueLiteral } from "./types";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
+import { entryNodes } from "./compiled-nodes";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 
 export type CompileAnchor = {
@@ -179,28 +180,34 @@ function pinForCodegen(
   );
 }
 
-function entryNodes(graph: LogicGraph): GraphNode[] {
-  const hasIncoming = new Set(
-    graph.edges
-      .filter((e) => {
-        const src = findNode(graph, e.sourceNodeId);
-        const sp = src && findPin(src, e.sourcePinId);
-        return sp?.kind === "exec";
-      })
-      .map((e) => e.targetNodeId),
-  );
-  return graph.nodes.filter((n) => {
-    if (n.typeId.startsWith("flow.event") || n.typeId === "flow.entry") {
-      return true;
-    }
-    const hasExecIn = n.pins.some(
-      (p) => p.kind === "exec" && p.direction === "in",
-    );
-    const hasExecOut = n.pins.some(
-      (p) => p.kind === "exec" && p.direction === "out",
-    );
-    return hasExecOut && !hasExecIn && !hasIncoming.has(n.id);
-  });
+function catalogPinDefault(
+  node: GraphNode,
+  dataPin: GraphPin,
+  registry: NodeRegistry,
+): unknown {
+  if (dataPin.defaultValue !== undefined) return dataPin.defaultValue;
+  const def = registry.get(node.typeId);
+  if (!def) return undefined;
+  const catalogPins = def.pins(node.properties);
+  const catalogPin =
+    catalogPins.find((pin) => pin.id === dataPin.id) ??
+    catalogPins.find((pin) => pin.name === dataPin.name);
+  return catalogPin?.defaultValue;
+}
+
+function disconnectedPinLiteral(
+  node: GraphNode,
+  dataPin: GraphPin,
+  registry: NodeRegistry,
+  fallbackLiteral?: string,
+): string {
+  const prop = readPinDefaultForPin(node.properties, dataPin);
+  if (prop !== undefined && !pinRejectsStoredDefault(dataPin.type)) {
+    return JSON.stringify(prop);
+  }
+  const catalog = catalogPinDefault(node, dataPin, registry);
+  if (catalog !== undefined) return JSON.stringify(catalog);
+  return fallbackLiteral ?? defaultValueLiteral(dataPin.type);
 }
 
 /**
@@ -269,11 +276,7 @@ export function compileGraph(
         return varName;
       }
     }
-    const prop = readPinDefaultForPin(node.properties, dataPin);
-    const lit =
-      prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
-        ? JSON.stringify(prop)
-        : defaultValueLiteral(dataPin.type);
+    const lit = disconnectedPinLiteral(node, dataPin, options.registry);
     exprCache.set(key, lit);
     return lit;
   }
@@ -680,11 +683,12 @@ export function compileTransitionRuleGraph(
         return varName;
       }
     }
-    const prop = readPinDefaultForPin(node.properties, dataPin);
-    const lit =
-      prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
-        ? JSON.stringify(prop)
-        : (disconnectedLiteral ?? defaultValueLiteral(dataPin.type));
+    const lit = disconnectedPinLiteral(
+      node,
+      dataPin,
+      options.registry,
+      disconnectedLiteral,
+    );
     exprCache.set(key, lit);
     return lit;
   }

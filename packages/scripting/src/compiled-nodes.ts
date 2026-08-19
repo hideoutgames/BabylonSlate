@@ -2,11 +2,13 @@ import type { GraphNode, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
 
 /**
- * Must match `entryNodes` in compile.ts: catalog events, `flow.entry`, and
- * exec-out-only nodes with no incoming exec (function Input, input/BT/anim
- * events). Compile emits one export per entry; validation uses the same set.
+ * Trigger entries `compileGraph` emits one export for. Keep this as the
+ * single source of truth used by compile.ts.
+ *
+ * Catalog events, `flow.entry`, and exec-out-only nodes with no incoming
+ * exec (function Input, input/BT/anim events).
  */
-function triggerableEntryNodes(graph: LogicGraph): GraphNode[] {
+export function entryNodes(graph: LogicGraph): GraphNode[] {
   const hasIncoming = new Set(
     graph.edges
       .filter((e) => {
@@ -73,7 +75,7 @@ export function compiledNodeIds(graph: LogicGraph): Set<string> {
     queue.push(id);
   };
 
-  for (const entry of triggerableEntryNodes(graph)) {
+  for (const entry of entryNodes(graph)) {
     seed(entry.id);
   }
   for (const node of graph.nodes) {

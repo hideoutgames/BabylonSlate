@@ -80,6 +80,7 @@ export interface ScriptHostServices {
     duration: number,
     color: ScriptColor,
   ): void;
+  drawDebug?(payload: Record<string, unknown>): void;
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
@@ -153,6 +154,7 @@ export interface ScriptContext {
     duration: number,
     color: ScriptColor,
   ): void;
+  drawDebug(payload: Record<string, unknown>): void;
   getVariable(name: string): unknown;
   setVariable(name: string, value: unknown): void;
   getVariableFrom(target: BObject | null | undefined, name: string): unknown;
@@ -640,6 +642,9 @@ export class ScriptHost {
         services.log(severity, category, message),
       print: (message, key, duration, color) =>
         services.print(message, key, duration, color),
+      drawDebug: (payload) => {
+        services.drawDebug?.(payload);
+      },
       getVariable: (name) => store?.getVariable(name),
       setVariable: (name, value) => {
         store?.setVariable(name, value);

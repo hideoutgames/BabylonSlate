@@ -337,6 +337,7 @@ describe("shouldForwardPlayEngineCommand", () => {
     expect(shouldForwardPlayEngineCommand("debugColliders")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setShowAudioDebug")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("debugDraw")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });
 });

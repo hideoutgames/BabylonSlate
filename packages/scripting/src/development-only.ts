@@ -4,12 +4,37 @@ import type { GraphNode } from "./ir";
  * Unreal-style Development Only: the node runs in editor Play, but export
  * compiles skip it (exec continues at `then` / Sequence `then_*`).
  *
- * Print defaults to development-only so shipping builds do not keep on-screen
- * debug text unless the author opts out.
+ * Print / Print String / Draw Debug default on so shipping builds omit them
+ * unless the author unchecks Development Only.
  */
+const developmentOnlyByDefaultTypeIds = new Set<string>([
+  "debug.print",
+  "debug.printString",
+  "debug.drawLine",
+  "debug.drawPoint",
+  "debug.drawBox",
+  "debug.drawSphere",
+  "debug.drawCircle",
+  "debug.drawRectangle",
+  "debug.drawSquare",
+  "debug.drawCone",
+  "debug.drawCylinder",
+  "debug.drawArrow",
+  "debug.drawFrustum",
+  "debug.drawCoordinateSystem",
+]);
+
+export function registerDevelopmentOnlyByDefaultTypeId(typeId: string): void {
+  developmentOnlyByDefaultTypeIds.add(typeId);
+}
+
+export function isDevelopmentOnlyByDefaultTypeId(typeId: string): boolean {
+  return developmentOnlyByDefaultTypeIds.has(typeId);
+}
+
 export function isDevelopmentOnlyNode(node: GraphNode): boolean {
   const flag = node.properties.developmentOnly;
   if (flag === true) return true;
   if (flag === false) return false;
-  return node.typeId === "debug.print";
+  return isDevelopmentOnlyByDefaultTypeId(node.typeId);
 }

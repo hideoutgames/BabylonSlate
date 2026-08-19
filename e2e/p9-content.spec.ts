@@ -1,7 +1,12 @@
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
+import {
+  createContentBrowserAsset,
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+} from "./open-test-project";
 import { readUiHostStats } from "./page-failures";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
@@ -31,17 +36,18 @@ async function createAsset(
     | "MaterialFunction",
   name: string,
 ): Promise<void> {
-  await showContentBrowser(page);
-  const assetsRoot = page.getByTestId("tree-row-assets");
-  if ((await assetsRoot.count()) > 0) {
-    await assetsRoot.click();
-  }
-  await page.getByTestId("content-browser-new-asset").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toBeVisible();
-  await page.getByTestId(`new-asset-type-${type}`).click();
-  await page.getByTestId("new-asset-name").fill(name);
-  await page.getByTestId("content-browser-new-asset-create").click();
-  await expect(page.getByTestId("content-browser-new-asset-dialog")).toHaveCount(0);
+  await createContentBrowserAsset(page, type, name);
+}
+
+async function addNestedUserInterface(
+  page: Page,
+  workspace: Locator,
+  assetName: string,
+): Promise<void> {
+  await workspace.getByTestId("ui-add-widget").click();
+  await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+  await page.getByTestId("ui-widget-catalog-search").fill(assetName);
+  await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
 }
 
 async function openWindowsMenu(page: Page): Promise<void> {
@@ -1478,7 +1484,7 @@ test.describe("P9 content systems", () => {
     await openTestProject(page);
     await createAsset(page, "UserInterface", "HUD");
     await createAsset(page, "UserInterface", "Panel");
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
     const workspace = page.locator(
       '[data-testid="document-workspace-ui"]:visible',
     );
@@ -1500,7 +1506,7 @@ test.describe("P9 content systems", () => {
   }) => {
     await openTestProject(page);
     await createAsset(page, "UserInterface", "Panel");
-    await page.locator('[data-asset-path="assets/Panel.ui.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/Panel.ui.babasset");
     const panelWorkspace = page.locator(
       '[data-testid="document-workspace-ui"]:visible',
     );
@@ -1512,15 +1518,12 @@ test.describe("P9 content systems", () => {
     ).toBeVisible();
 
     await createAsset(page, "UserInterface", "HUD");
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
     const hudWorkspace = page.locator(
       '[data-testid="document-workspace-ui"]:visible',
     );
     await expect(hudWorkspace).toBeVisible();
-    await hudWorkspace.getByTestId("ui-add-widget").click();
-    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
-    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
-    await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
+    await addNestedUserInterface(page, hudWorkspace, "Panel");
     await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     await expect(
       hudWorkspace.locator('[data-testid^="ui-widget-"][data-kind="Button"]'),

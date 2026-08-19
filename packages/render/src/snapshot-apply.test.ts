@@ -1262,6 +1262,30 @@ describe("createPlayMesh", () => {
     expect(mesh!.isVisible).toBe(true);
   });
 
+  it("creates a 3D Text mesh for meshKind text3d", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "text3d",
+      text3d: {
+        text: "Hi",
+        size: 1,
+        depth: 0.1,
+        color: [1, 0, 0],
+        fontAssetGuid: null,
+      },
+    });
+    const mesh = scene.getMeshByName("actor-4") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect((mesh!.metadata as { text3d?: boolean }).text3d).toBe(true);
+    expect(isPlayHelperMeshKind("text3d")).toBe(false);
+  });
+
   it("hides a RigidBody Play helper instead of drawing a white cube", () => {
     const handle = createTestEngine();
     handles.push(handle);

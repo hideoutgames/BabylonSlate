@@ -54,27 +54,34 @@ function buildAdjacency(graph: LogicGraph): {
 
 function hasCycle(
   adj: Map<string, string[]>,
-  roots: ReadonlySet<string>,
+  compiled: ReadonlySet<string>,
 ): string | null {
   const visiting = new Set<string>();
   const visited = new Set<string>();
+  const stack: string[] = [];
 
   function dfs(id: string): string | null {
-    if (visiting.has(id)) return id;
+    if (visiting.has(id)) {
+      const start = stack.indexOf(id);
+      const cycle = start >= 0 ? stack.slice(start) : [id];
+      return cycle.find((nodeId) => compiled.has(nodeId)) ?? null;
+    }
     if (visited.has(id)) return null;
     visiting.add(id);
+    stack.push(id);
     for (const next of adj.get(id) ?? []) {
       const hit = dfs(next);
       if (hit) return hit;
     }
+    stack.pop();
     visiting.delete(id);
     visited.add(id);
     return null;
   }
 
-  for (const id of roots) {
+  for (const id of compiled) {
     const hit = dfs(id);
-    if (hit) return roots.has(hit) ? hit : id;
+    if (hit) return hit;
   }
   return null;
 }
@@ -760,11 +767,28 @@ function validateTypeRefs(
   return out;
 }
 
+const EDGE_DIAGNOSTIC_CODES = new Set([
+  "type.mismatch",
+  "pin.direction",
+  "pin.duplicate_connection",
+  "ref.missing_pin",
+  "ref.missing_node",
+  "type.wildcard_group",
+]);
+
 function keepCompiledNodeDiagnostics(
   diagnostics: readonly Diagnostic[],
   compiled: ReadonlySet<string>,
 ): Diagnostic[] {
-  return diagnostics.filter((d) => !d.nodeId || compiled.has(d.nodeId));
+  return diagnostics.filter((d) => {
+    if (!d.nodeId || compiled.has(d.nodeId)) return true;
+    const related = d.relatedNodeId;
+    return (
+      !!related &&
+      compiled.has(related) &&
+      EDGE_DIAGNOSTIC_CODES.has(d.code)
+    );
+  });
 }
 
 export function validateGraphs(

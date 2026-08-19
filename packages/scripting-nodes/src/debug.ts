@@ -73,6 +73,21 @@ function readPinRows(
     .filter((x): x is PinRow => x !== null);
 }
 
+const PRINT_COLOR_DEFAULT = { x: 1, y: 1, z: 1, w: 1 };
+
+function printHudPins(
+  valuePin: ReturnType<typeof pin>,
+): ReturnType<typeof pin>[] {
+  return [
+    pin("execIn", "exec", "in", EXEC),
+    pin("execOut", "then", "out", EXEC),
+    valuePin,
+    pin("key", "Key", "in", STRING, "data", true, ""),
+    pin("duration", "Duration", "in", FLOAT, "data", true, 2),
+    pin("color", "Color", "in", COLOR, "data", true, PRINT_COLOR_DEFAULT),
+  ];
+}
+
 export const debugNodes: NodeDefinition[] = [
   {
     id: "debug.log",
@@ -97,17 +112,27 @@ export const debugNodes: NodeDefinition[] = [
     id: "debug.print",
     title: "Print",
     category: "debug",
-    pins: () => [
-      pin("execIn", "exec", "in", EXEC),
-      pin("execOut", "then", "out", EXEC),
-      pin("value", "value", "in", BOXED_WILDCARD),
-      pin("key", "key", "in", STRING, "data", true),
-      pin("duration", "duration", "in", FLOAT, "data", true),
-      pin("color", "color", "in", COLOR, "data", true),
-    ],
+    developmentOnlyByDefault: true,
+    pins: () =>
+      printHudPins(
+        pin("value", "Value", "in", BOXED_WILDCARD, "data", true, ""),
+      ),
     codegen: (ctx) => {
       ctx.emit(
         `ctx.print(ctx.formatValue(${ctx.input("value")}), ${ctx.input("key")}, ${ctx.input("duration")}, ${ctx.input("color")});`,
+      );
+    },
+  },
+  {
+    id: "debug.printString",
+    title: "Print String",
+    category: "debug",
+    developmentOnlyByDefault: true,
+    pins: () =>
+      printHudPins(pin("inString", "In String", "in", STRING, "data", true, "")),
+    codegen: (ctx) => {
+      ctx.emit(
+        `ctx.print(${ctx.input("inString")}, ${ctx.input("key")}, ${ctx.input("duration")}, ${ctx.input("color")});`,
       );
     },
   },
