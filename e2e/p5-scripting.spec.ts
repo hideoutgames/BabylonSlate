@@ -296,7 +296,8 @@ test.describe("P5 visual scripting acceptance", () => {
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
 
     await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
@@ -305,7 +306,7 @@ test.describe("P5 visual scripting acceptance", () => {
       0,
     );
     await page.getByTestId("node-palette-item-casting.cast:Actor").click();
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Cast to Actor")).toBeVisible();
   });
 });

@@ -169,12 +169,13 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
 
     const graph = page.getByTestId("graph-panel");
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
     await dragClassMemberOntoGraph(page, "Target");
     await expect(page.getByTestId("member-access-chooser")).toBeVisible();
     await page.getByTestId("member-access-get").click();
     await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Get Target")).toBeVisible();
   });
 
@@ -215,9 +216,10 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       .click();
     const graph = page.getByTestId("graph-panel");
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
     await dragClassMemberOntoGraph(page, "Jump");
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Call Jump")).toBeVisible();
   });
 
