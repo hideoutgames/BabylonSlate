@@ -76,6 +76,12 @@ function wrapTileCacheBytes(bytes: Uint8Array): Uint8Array {
   return out;
 }
 
+function recastGenerateErrorMessage(error: string | undefined): Error {
+  return new Error(
+    error ? `generateNavMesh failed: ${error}` : "generateNavMesh failed",
+  );
+}
+
 function unwrapTileCacheBytes(bytes: Uint8Array): Uint8Array | null {
   if (bytes.byteLength < TILE_CACHE_MAGIC.length) return null;
   for (let i = 0; i < TILE_CACHE_MAGIC.length; i += 1) {
@@ -98,10 +104,8 @@ export async function generateNavMesh(
       tileCacheMeshProcess: walkableTileCacheMeshProcess(),
     });
     if (!result.success) {
-      throw new Error(
-        result.error
-          ? `generateNavMesh failed: ${result.error}`
-          : "generateNavMesh failed",
+      throw recastGenerateErrorMessage(
+        "error" in result ? result.error : undefined,
       );
     }
     try {
@@ -117,10 +121,8 @@ export async function generateNavMesh(
     toRecastConfig(settings),
   );
   if (!result.success) {
-    throw new Error(
-      result.error
-        ? `generateNavMesh failed: ${result.error}`
-        : "generateNavMesh failed",
+    throw recastGenerateErrorMessage(
+      "error" in result ? result.error : undefined,
     );
   }
   try {
