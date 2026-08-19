@@ -16,7 +16,7 @@ GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 9 Verify 
 
 ## Vitest projects
 
-Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace sets `maxWorkers: 4` (and coverage sets `VITEST_MAX_WORKERS=4`) because this environment's `availableParallelism` is 2, so Vitest's default `cpus - 1` is a single fork. `VITEST_COVERAGE=1` drops `apps/editor` from the jsdom include so v8 instrumentation cannot fill a 4GB heap; `pnpm test:coverage` then runs those tests in a second process without coverage.
+Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace sets `maxWorkers: 4` (and coverage sets `VITEST_MAX_WORKERS=4`) because this environment's `availableParallelism` is 2, so Vitest's default `cpus - 1` is a single fork. `VITEST_COVERAGE=1` drops `apps/editor` from the jsdom include so v8 instrumentation cannot fill a 4GB heap; `pnpm test:coverage` then runs `pnpm test:editor-unit` (four sequential Vitest shards, no coverage) so those tests still execute without one fork holding the whole suite.
 
 | Project | Environment | Covers |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vites
 
 ## Coverage gates
 
-Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests in a second Vitest process without coverage. `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
+Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests as four sequential shards without coverage. `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
 
 Excluded, each for a stated reason:
 
@@ -65,7 +65,7 @@ When a gate cannot be met, add tests or split the untestable part into its own f
 These have already produced false-passing tests, so check against them before trusting a green unit test:
 
 - **jsdom has no `PointerEvent`.** `fireEvent.pointerDown` degrades to a bare `Event` with `clientX`, `pointerId` and `pointerType` all `undefined`, so pointer-gesture assertions silently pass without exercising anything. Use `dispatchPointerEvent` from `packages/editor-kit/src/test-support/pointer-events.ts`, which dispatches a `MouseEvent` with the pointer fields defined.
-- **jsdom has no `ResizeObserver` or `DOMMatrixReadOnly`.** React Flow touches both on mount; `vitest.setup.jsdom.ts` installs minimal stand-ins. Anything genuinely layout-dependent belongs in Playwright.
+- **jsdom has no `ResizeObserver` or `DOMMatrixReadOnly`.** React Flow touches both on mount; `vitest.setup.jsdom.ts` installs minimal stand-ins. It also stubs `HTMLCanvasElement.getContext` (`measureText` width 8) so FontEditor glyph checks do not throw per character. Anything genuinely layout-dependent belongs in Playwright.
 - **`vi.stubEnv` does not reach `import.meta.env`.** The `VITE_TEST_MODE` branch of `isTestModeEnabled` is therefore covered by Playwright, which builds with `VITE_TEST_MODE=true`, not by a unit test.
 
 ## Playwright
