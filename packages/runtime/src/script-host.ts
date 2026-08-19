@@ -1,4 +1,22 @@
-import { formatValue } from "@babylonslate/core";
+import {
+  combineRotators,
+  createSeededRng,
+  deltaRotator,
+  formatValue,
+  inverseQuat,
+  inverseRotator,
+  lerpRotator,
+  lookAtRotator,
+  multiplyQuats,
+  quatRotateVector,
+  quatToRotator,
+  rotatorForward,
+  rotatorRight,
+  rotatorToQuat,
+  rotatorUp,
+  slerpQuats,
+  type Rng,
+} from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   Actor,
@@ -147,6 +165,74 @@ export interface ScriptContext {
     actor: BObject | null | undefined,
     location: { x: number; y: number; z: number },
   ): void;
+  setActorRotation(
+    actor: BObject | null | undefined,
+    rotation: { pitch: number; yaw: number; roll: number },
+  ): void;
+  setActorScale(
+    actor: BObject | null | undefined,
+    scale: { x: number; y: number; z: number },
+  ): void;
+  setActorTransform(
+    actor: BObject | null | undefined,
+    transform: {
+      position?: { x: number; y: number; z: number };
+      rotation?: { x: number; y: number; z: number; w: number };
+      scale?: { x: number; y: number; z: number };
+    } | null | undefined,
+  ): void;
+  rotatorToQuat(
+    rotator: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { x: number; y: number; z: number; w: number };
+  quatToRotator(
+    quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+  ): { pitch: number; yaw: number; roll: number };
+  combineRotators(
+    a: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+    b: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { pitch: number; yaw: number; roll: number };
+  inverseRotator(
+    rotator: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { pitch: number; yaw: number; roll: number };
+  deltaRotator(
+    from: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+    to: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { pitch: number; yaw: number; roll: number };
+  lerpRotator(
+    a: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+    b: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+    alpha: number,
+  ): { pitch: number; yaw: number; roll: number };
+  rotatorForward(
+    rotator: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { x: number; y: number; z: number };
+  rotatorRight(
+    rotator: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { x: number; y: number; z: number };
+  rotatorUp(
+    rotator: { pitch?: number; yaw?: number; roll?: number } | null | undefined,
+  ): { x: number; y: number; z: number };
+  lookAtRotator(
+    from: { x?: number; y?: number; z?: number } | null | undefined,
+    target: { x?: number; y?: number; z?: number } | null | undefined,
+  ): { pitch: number; yaw: number; roll: number };
+  multiplyQuats(
+    a: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+    b: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+  ): { x: number; y: number; z: number; w: number };
+  inverseQuat(
+    quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+  ): { x: number; y: number; z: number; w: number };
+  slerpQuats(
+    a: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+    b: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+    alpha: number,
+  ): { x: number; y: number; z: number; w: number };
+  quatRotateVector(
+    quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+    vector: { x?: number; y?: number; z?: number } | null | undefined,
+  ): { x: number; y: number; z: number };
+  randomFloat(): number;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
@@ -293,6 +379,7 @@ export class ScriptHost {
   private readonly pending = new WeakMap<BObject, Set<string>>();
   private readonly services: ScriptHostServices;
   private commandResult = { success: true, output: "" };
+  private readonly rng: Rng = createSeededRng(1);
 
   constructor(services: ScriptHostServices) {
     this.services = services;
@@ -559,6 +646,57 @@ export class ScriptHost {
         target.transform.position.y = Number(location.y ?? 0);
         target.transform.position.z = Number(location.z ?? 0);
       },
+      setActorRotation: (actor, rotation) => {
+        const target = asActor(actor ?? self);
+        if (!target) return;
+        const quat = rotatorToQuat(rotation);
+        target.transform.rotation.x = quat.x;
+        target.transform.rotation.y = quat.y;
+        target.transform.rotation.z = quat.z;
+        target.transform.rotation.w = quat.w;
+      },
+      setActorScale: (actor, scale) => {
+        const target = asActor(actor ?? self);
+        if (!target || !scale) return;
+        target.transform.scale.x = Number(scale.x ?? 1);
+        target.transform.scale.y = Number(scale.y ?? 1);
+        target.transform.scale.z = Number(scale.z ?? 1);
+      },
+      setActorTransform: (actor, transform) => {
+        const target = asActor(actor ?? self);
+        if (!target || !transform) return;
+        if (transform.position) {
+          target.transform.position.x = Number(transform.position.x ?? 0);
+          target.transform.position.y = Number(transform.position.y ?? 0);
+          target.transform.position.z = Number(transform.position.z ?? 0);
+        }
+        if (transform.rotation) {
+          target.transform.rotation.x = Number(transform.rotation.x ?? 0);
+          target.transform.rotation.y = Number(transform.rotation.y ?? 0);
+          target.transform.rotation.z = Number(transform.rotation.z ?? 0);
+          target.transform.rotation.w = Number(transform.rotation.w ?? 1);
+        }
+        if (transform.scale) {
+          target.transform.scale.x = Number(transform.scale.x ?? 1);
+          target.transform.scale.y = Number(transform.scale.y ?? 1);
+          target.transform.scale.z = Number(transform.scale.z ?? 1);
+        }
+      },
+      rotatorToQuat,
+      quatToRotator,
+      combineRotators,
+      inverseRotator,
+      deltaRotator,
+      lerpRotator,
+      rotatorForward,
+      rotatorRight,
+      rotatorUp,
+      lookAtRotator,
+      multiplyQuats,
+      inverseQuat,
+      slerpQuats,
+      quatRotateVector,
+      randomFloat: () => this.rng.nextFloat(),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
       delay: (seconds) => services.delay(seconds),

@@ -22,4 +22,25 @@ describe("math nodes", () => {
       ]),
     );
   });
+
+  it("registers scalar lerp, clamp, trig, and seeded random", () => {
+    expect(mathNodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining([
+        "math.lerp",
+        "math.clamp",
+        "math.min",
+        "math.max",
+        "math.sin",
+        "math.cos",
+        "math.degrees",
+        "math.radians",
+        "math.floor",
+        "math.ceil",
+        "math.random",
+      ]),
+    );
+    expect(mathNodes.find((node) => node.id === "math.random")?.title).toBe(
+      "Random Float",
+    );
+  });
 });

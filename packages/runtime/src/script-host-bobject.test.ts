@@ -151,7 +151,28 @@ describe("ScriptHost BObject receivers", () => {
     const ctx = new ScriptHost(stubServices()).createContext(actor, 0, 0);
     ctx.setActorLocation(actor, { x: 4, y: 5, z: 6 });
     expect(actor.transform.position).toEqual({ x: 4, y: 5, z: 6 });
+    ctx.setActorRotation(actor, { pitch: 0, yaw: 90, roll: 0 });
+    expect(actor.transform.rotation.w).not.toBe(1);
+    ctx.setActorScale(actor, { x: 2, y: 2, z: 2 });
+    expect(actor.transform.scale).toEqual({ x: 2, y: 2, z: 2 });
     expect(ctx.getComponent(actor, "MeshComponent")).toBeNull();
+  });
+
+  it("does not rotate or scale a UserInterface through actor transform writes", () => {
+    const ui = new UserInterface({
+      classId: "UserInterface:hud",
+      assetGuid: "hud",
+    });
+    const ctx = new ScriptHost(stubServices()).createContext(ui, 0, 0);
+    expect(() => {
+      ctx.setActorRotation(ui, { pitch: 10, yaw: 20, roll: 30 });
+      ctx.setActorScale(ui, { x: 2, y: 2, z: 2 });
+      ctx.setActorTransform(ui, {
+        position: { x: 1, y: 2, z: 3 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 2, y: 2, z: 2 },
+      });
+    }).not.toThrow();
   });
 
   it("getWidget is scoped to a UserInterface self and ignores Widget receivers", () => {

@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  combineRotators,
   eulerDegreesToQuaternion,
+  inverseRotator,
   lookAtRotation,
+  lookAtRotator,
+  quatRotateVector,
+  quatToRotator,
   quaternionToEulerDegrees,
+  rotatorForward,
+  rotatorRight,
+  rotatorToQuat,
+  rotatorUp,
 } from "./euler";
 
 const SQRT_HALF = Math.SQRT1_2;
@@ -58,5 +67,60 @@ describe("quaternionToEulerDegrees", () => {
     const authored: [number, number, number] = [10, 20, 30];
     const quat = eulerDegreesToQuaternion(authored);
     close(quaternionToEulerDegrees(quat), authored, 4);
+  });
+});
+
+describe("rotator object helpers", () => {
+  it("round-trips rotator objects through quaternions", () => {
+    const rotator = { pitch: 10, yaw: 20, roll: 30 };
+    const back = quatToRotator(rotatorToQuat(rotator));
+    expect(back.pitch).toBeCloseTo(10, 4);
+    expect(back.yaw).toBeCloseTo(20, 4);
+    expect(back.roll).toBeCloseTo(30, 4);
+  });
+
+  it("combines a 90 yaw with identity as 90 yaw", () => {
+    const combined = combineRotators(
+      { pitch: 0, yaw: 90, roll: 0 },
+      { pitch: 0, yaw: 0, roll: 0 },
+    );
+    expect(combined.yaw).toBeCloseTo(90, 4);
+  });
+
+  it("inverts a yaw so combining returns identity", () => {
+    const yaw = { pitch: 0, yaw: 45, roll: 0 };
+    const identity = combineRotators(yaw, inverseRotator(yaw));
+    expect(identity.pitch).toBeCloseTo(0, 4);
+    expect(identity.yaw).toBeCloseTo(0, 4);
+    expect(identity.roll).toBeCloseTo(0, 4);
+  });
+
+  it("rotates Babylon forward +Z by 90 yaw toward +X", () => {
+    const forward = rotatorForward({ pitch: 0, yaw: 90, roll: 0 });
+    expect(forward.x).toBeCloseTo(1, 4);
+    expect(forward.y).toBeCloseTo(0, 4);
+    expect(forward.z).toBeCloseTo(0, 4);
+    const right = rotatorRight({ pitch: 0, yaw: 0, roll: 0 });
+    expect(right.x).toBeCloseTo(1, 4);
+    const up = rotatorUp({ pitch: 0, yaw: 0, roll: 0 });
+    expect(up.y).toBeCloseTo(1, 4);
+  });
+
+  it("looks at a point along +Z as identity rotator", () => {
+    const rotator = lookAtRotator(
+      { x: 0, y: 0, z: -8 },
+      { x: 0, y: 0, z: 0 },
+    );
+    expect(rotator.pitch).toBeCloseTo(0, 4);
+    expect(rotator.yaw).toBeCloseTo(0, 4);
+    expect(rotator.roll).toBeCloseTo(0, 4);
+  });
+
+  it("rotates a vector by a quaternion", () => {
+    const q = rotatorToQuat({ pitch: 0, yaw: 90, roll: 0 });
+    const rotated = quatRotateVector(q, { x: 0, y: 0, z: 1 });
+    expect(rotated.x).toBeCloseTo(1, 4);
+    expect(rotated.y).toBeCloseTo(0, 4);
+    expect(rotated.z).toBeCloseTo(0, 4);
   });
 });
