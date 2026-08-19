@@ -38,12 +38,7 @@ describe("isViewportShadingTarget", () => {
       { width: 1, height: 1 },
       scene,
     );
-    const frustum = MeshBuilder.CreateLines("debugFrustum:cam:0", {
-      points: [
-        { x: 0, y: 0, z: 0 },
-        { x: 1, y: 0, z: 0 },
-      ],
-    }, scene);
+    const frustum = MeshBuilder.CreateBox("debugFrustum:cam:0", { size: 1 }, scene);
 
     expect(isViewportShadingTarget(actor)).toBe(true);
     expect(isViewportShadingTarget(billboard)).toBe(false);
@@ -53,7 +48,7 @@ describe("isViewportShadingTarget", () => {
     expect(isViewportShadingTarget(placeholder)).toBe(false);
     expect(isViewportShadingTarget(grid)).toBe(false);
     expect(isViewportShadingTarget(bounds)).toBe(false);
-    expect(isViewportShadingTarget(frustum as Mesh)).toBe(false);
+    expect(isViewportShadingTarget(frustum)).toBe(false);
     engine.dispose();
   });
 });
