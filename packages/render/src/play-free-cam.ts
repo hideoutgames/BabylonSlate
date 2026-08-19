@@ -262,7 +262,7 @@ export function attachPlayFreeCamInput(
       controller.fly(-dy * panScale, -dx * panScale);
       return;
     }
-    controller.look(-dx * orbitScale, -dy * orbitScale);
+    controller.look(dx * orbitScale, dy * orbitScale);
   };
 
   const endPointer = (event: PointerEvent) => {

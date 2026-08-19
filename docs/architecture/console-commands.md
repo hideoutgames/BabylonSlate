@@ -41,7 +41,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `resume` / `unpause` | yes | **yes** | Idempotent. Emits `sessionPaused: false`. Does not stop free cam. |
 | `step` | yes | **yes** | Overlay Step: `resume()` → `tick()` → `pause()` if it was paused. |
 | `slomo` | yes | **yes** | `RuntimeDriver.timeDilation` clamp `0..8`. `tick` uses `dt * rate` for script, physics, nav, BT. Trace header and frame snapshots store undilated `dt`. No arg → print current. |
-| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Off / `changescene` / `possessCamera` restore. |
+| `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
 | `showcollision` / `showbounds` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/polylines, including body rotation of local offsets and polyline points). Overlay meshes reuse by id when pose changes. Skip helper/debug meshes. |
@@ -128,9 +128,9 @@ Constraints:
 
 - Does **not** call `pause`. Overlay Pause stays independent (free-cam a running fight, or a paused tableau).
 - Worker emits `{ type: "setFreeCam"; enabled }`. Main thread owns the camera: 3D fly (`UniversalCamera` with look + WASD/stick), 2D pan/pinch on an ortho camera. Game cameras stay detached and keep receiving snapshot TRS; they are just not `scene.activeCamera`.
-- While enabled, Play canvas look/move (pointer, touch, WASD) drive the debug camera and are **not** forwarded into the input ring. Gamepad can keep feeding the worker so a pad-controlled pawn still moves while the operator flies. Document that split in the command help string.
+- While enabled, Play canvas look/move (pointer, touch, WASD) drive the debug camera and are **not** forwarded into the input ring. Gamepad can keep feeding the worker so a pad-controlled pawn still moves while the operator flies. Overlay Play mounts the editor fly stick (`ViewportJoystick`) while free cam is on. Document that split in the command help string.
 - Re-possess / `changescene` turns free cam off (new scene owns the camera, same as today’s `cameraPossessedByScript` reset).
-- Touch-first: one-finger look (3D) or pan (2D), pinch zoom, 44px is not required on the canvas itself (existing Play canvas rules).
+- Touch-first: one-finger look (3D) or pan (2D), pinch zoom, on-screen fly stick in overlay Play. 44px is not required on the canvas itself (existing Play canvas rules). Drag right looks right; drag up looks up.
 
 This is the missing “spectate without pausing” tool. It is not a Possess Camera graph node and must not write actor transforms.
 

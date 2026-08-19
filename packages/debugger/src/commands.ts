@@ -219,7 +219,7 @@ export function builtinCommands(): RegisteredCommand[] {
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),
-      "Detached fly camera; pointer/WASD stolen, gamepad still forwards; simulation keeps running",
+      "Detached fly camera; pointer/WASD stolen, gamepad still forwards; overlay Play shows a fly stick; simulation keeps running",
     ),
     flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled)),
     flagCommand("showaudiodebug", (host, enabled) =>

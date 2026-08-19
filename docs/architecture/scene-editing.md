@@ -48,6 +48,7 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 - `snapEnabled` / `setSnapEnabled` — live viewport settings; persisted via `settings.grid.snapEnabled`
 - `gridVisible` / `setGridVisible` — live viewport settings; persisted via `settings.grid.showGrid` (default true)
 - `joystickEnabled` / `setJoystickEnabled` — live viewport settings; persisted via `settings.editorJoystickEnabled` (default true)
+- Overlay Play **freecam** mounts the same fly stick (`PlayFreeCamJoystick`) while the debug camera is on; it is not the scene `editorJoystickEnabled` flag.
 - `viewportMode` / `setViewportMode` — live mode synced from `documentViewportMode` so undo/redo of `SetViewportModeCommand` restores the camera, not only the serialized field
 
 Panels never mutate selection independently — they consume `useSceneEditing()`.

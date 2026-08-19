@@ -164,6 +164,7 @@ export function applyPlayHudConsoleCommand(
   handlers: {
     onShowFps?: (enabled: boolean) => void;
     onStat?: (name: string, enabled: boolean) => void;
+    onFreeCam?: (enabled: boolean) => void;
   },
 ): boolean {
   if (command.type === "setShowFps") {
@@ -173,6 +174,10 @@ export function applyPlayHudConsoleCommand(
   if (command.type === "setStat") {
     handlers.onShowFps?.(true);
     handlers.onStat?.(command.name, command.enabled);
+    return true;
+  }
+  if (command.type === "setFreeCam") {
+    handlers.onFreeCam?.(command.enabled);
     return true;
   }
   return false;
@@ -532,6 +537,7 @@ export function startPlaySession(options: {
   onSessionPaused?: (paused: boolean) => void;
   onShowFps?: (enabled: boolean) => void;
   onStatHighlight?: (name: string, enabled: boolean) => void;
+  onFreeCam?: (enabled: boolean) => void;
   onSetRenderResolution?: (width: number, height: number) => void;
   onBtState?: (state: {
     slotId: number;
@@ -699,6 +705,7 @@ export function startPlaySession(options: {
     applyPlayHudConsoleCommand(command, {
       onShowFps: options.onShowFps,
       onStat: options.onStatHighlight,
+      onFreeCam: options.onFreeCam,
     });
     if (
       applyPlayInputModeCommand(command, (mode) => {

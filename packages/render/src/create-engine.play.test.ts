@@ -796,6 +796,16 @@ describe("Play createEngine view", () => {
     expect(handle.isFreeCamEnabled()).toBe(false);
   });
 
+  it("steers the free camera while it is enabled", () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({ type: "setFreeCam", enabled: true });
+    const start = handle.scene.activeCamera!.position.clone();
+    handle.steerPlayFreeCam?.(1, 0);
+    expect(
+      handle.scene.activeCamera!.position.equalsWithEpsilon(start, 1e-4),
+    ).toBe(false);
+  });
+
   it("applies setRenderQuality on Play views only, not the editor viewport", () => {
     const play = playHandle(sharedEngine());
     const editor = editorHandle(sharedEngine());

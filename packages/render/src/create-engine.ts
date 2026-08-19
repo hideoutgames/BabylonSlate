@@ -174,6 +174,8 @@ export interface EngineHandle {
   resetParticleSession: () => void;
   /** Debug free camera is the Play active camera. */
   isFreeCamEnabled: () => boolean;
+  /** Fly the Play free camera; no-op while it is off. */
+  steerPlayFreeCam: (forward: number, right: number) => void;
 }
 
 export interface CreateEngineOptions {
@@ -1258,6 +1260,9 @@ export function createEngine(
       particleService?.resetSession();
     },
     isFreeCamEnabled: () => playFreeCam?.enabled() ?? false,
+    steerPlayFreeCam: (forward, right) => {
+      playFreeCam?.fly(forward, right);
+    },
   };
 }
 

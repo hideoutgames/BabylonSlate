@@ -34,6 +34,7 @@ import { PrintOverlay, usePrintRegistry } from "./print-overlay";
 import { DebugConsole } from "./debug-console";
 import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
+import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
 import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands, playConsoleCompletionContext } from "../lib/play-console";
@@ -219,7 +220,7 @@ export function PlayOverlay({
   const [audioDebugText, setAudioDebugText] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [paused, setPaused] = useState(pauseOnPlay);
+  const [freeCamEnabled, setFreeCamEnabled] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [statsHighlight, setStatsHighlight] = useState<StatsHudHighlight | null>(
     null,
@@ -425,6 +426,9 @@ export function PlayOverlay({
         setStatsOpen(enabled);
         if (!enabled) setStatsHighlight(null);
       },
+      onFreeCam: (enabled) => {
+        setFreeCamEnabled(enabled);
+      },
       onStatHighlight: (name, enabled) => {
         setStatsOpen(true);
         setStatsHighlight(
@@ -532,6 +536,7 @@ export function PlayOverlay({
         setBridgeRate(current.bridgeMessagesPerSec());
         setPostProcessPasses(current.handle.postProcessPassCount());
         setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
+        setFreeCamEnabled(current.handle.isFreeCamEnabled());
         const recorded = current.lastTrace();
         if (recorded) setTrace(recorded);
       }
@@ -679,6 +684,12 @@ export function PlayOverlay({
           playPreview.followSystem && "h-full w-full",
         )}
         data-testid="play-canvas"
+      />
+      <PlayFreeCamJoystick
+        enabled={freeCamEnabled}
+        onFly={(forward, right) =>
+          sessionRef.current?.handle.steerPlayFreeCam(forward, right)
+        }
       />
       <PlayHudOverlay
         instances={resolvePlayHudDocuments(hudInstances, uiLibrary)}
