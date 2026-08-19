@@ -100,7 +100,7 @@ glTF character content is two rigs:
 
 Root-only object clips, two independent animated meshes, and static meshes create no Skeleton. Browse import (`classifyGltfRig`) requires parented mesh parts that share an ancestor; `boneNames` is that tree, not every mesh in the file. Do not invent vertex weights. Native Play/preview of a hierarchy Model does not retarget and does not skin the character meshes.
 
-Helpers live in `@babylonslate/render` (`node-rig.ts`) because `@babylonslate/assets` cannot import Babylon. Editor Skeleton / Animation previews reuse `attachMaterialPreviewGestures` and `aimPreviewCameraAtMesh`.
+Helpers live in `@babylonslate/render` (`node-rig.ts`) because `@babylonslate/assets` cannot import Babylon. Linked bones skip loader `__root__` and the hidden `materialPreviewMesh` placeholder. Skeleton / Animation previews attach the viewer to `previewRigRoot` (first glTF child of that placeholder). Content Browser Retarget probes via `animationRetargetHasMatches(engine, …)` which owns a throwaway Scene. Editor previews reuse `attachMaterialPreviewGestures` and `aimPreviewCameraAtMesh`.
 
 See [asset-registry.md](asset-registry.md) and [anim-graph.md](anim-graph.md).
 

@@ -1,5 +1,5 @@
 import "./gltf-loader";
-import type { AbstractMesh, AnimationGroup, Material } from "@babylonjs/core";
+import type { AbstractMesh, AnimationGroup, Material, TransformNode } from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { ModelMaterialSlot } from "@babylonslate/assets";
@@ -94,6 +94,14 @@ export function createModelPreviewScene(
     host.scene.clearColor = new Color4(0, 0, 0, 0);
   }
   return host;
+}
+
+/** glTF container root under the hidden preview placeholder (not the placeholder mesh). */
+export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
+  const child = host.mesh.getChildTransformNodes(true).find(
+    (node) => !node.name.endsWith("_overlay"),
+  );
+  return child ?? host.mesh;
 }
 
 export async function loadModelPreviewSource(

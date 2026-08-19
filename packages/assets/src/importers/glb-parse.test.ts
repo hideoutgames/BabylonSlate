@@ -105,6 +105,7 @@ describe("parseGlbForBrowse", () => {
     );
     expect(browse!.rigKind).toBe("hierarchy");
     expect(browse!.boneNames).toEqual(["character", "root", "torso", "head"]);
+    expect(browse!.boneNames).not.toContain("__root__");
     expect(browse!.animations[0]).toEqual({ name: "idle", durationMs: 500 });
   });
 
@@ -178,6 +179,56 @@ describe("parseGlbForBrowse", () => {
         ],
       }),
     );
+    expect(browse!.rigKind).toBe("none");
+    expect(browse!.boneNames).toEqual([]);
+  });
+
+  it("omits a glTF node named __root__ from catalog boneNames", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "__root__", children: [1, 2] },
+          { name: "torso", mesh: 0 },
+          { name: "head", mesh: 1 },
+        ],
+        meshes: [{ primitives: [] }, { primitives: [] }],
+        animations: [
+          {
+            name: "idle",
+            channels: [
+              { target: { node: 1, path: "rotation" }, sampler: 0 },
+              { target: { node: 2, path: "rotation" }, sampler: 0 },
+            ],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+      }),
+    );
+    expect(browse!.rigKind).toBe("hierarchy");
+    expect(browse!.boneNames).toEqual(["torso", "head"]);
+  });
+
+  it("does not invent a hierarchy skeleton from one targeted ancestor and a single mesh descendant", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "character", children: [1] },
+          { name: "empty", children: [2] },
+          { name: "torso", mesh: 0 },
+        ],
+        meshes: [{ primitives: [] }],
+        animations: [
+          {
+            name: "idle",
+            channels: [{ target: { node: 0, path: "rotation" }, sampler: 0 }],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+      }),
+    );
+    // #361: hierarchy needs two or more parented Mesh parts that share an ancestor.
     expect(browse!.rigKind).toBe("none");
     expect(browse!.boneNames).toEqual([]);
   });

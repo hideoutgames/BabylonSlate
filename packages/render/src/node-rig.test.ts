@@ -66,6 +66,22 @@ describe("node-rig helpers", () => {
     expect(arm.skeleton).toBeNull();
     expect(overlay?.skeleton).toBe(skeleton);
     expect(overlay?.getVerticesData("matricesIndices")).not.toBeNull();
+    expect(skeleton.bones.map((bone) => bone.name)).not.toContain("__root__");
+  });
+
+  it("walks descendants of __root__ without creating a __root__ bone", () => {
+    const { engine, scene } = makeScene();
+    engines.push(engine);
+    const loaderRoot = new TransformNode("__root__", scene);
+    const { torso } = makeHierarchy(scene);
+    torso.parent!.parent = loaderRoot;
+    const { skeleton } = createLinkedSkeletonFromNodeRig(loaderRoot, {
+      createMesh: true,
+    });
+    expect(skeleton.bones.map((bone) => bone.name)).toEqual(
+      expect.arrayContaining(["character-d", "torso", "arm-left"]),
+    );
+    expect(skeleton.bones.map((bone) => bone.name)).not.toContain("__root__");
   });
 
   it("parents a hierarchy overlay used for SkeletonViewer", () => {

@@ -6,11 +6,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { embedGlbExternalImages } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { encodeTriangleGlb, isGltfModelBytes } from "./model-mesh";
-import { attachSkeletonPreview } from "./node-rig";
+import { attachSkeletonPreview, createLinkedSkeletonFromNodeRig } from "./node-rig";
+import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
 import {
   applyModelMaterialSlots,
   createModelPreviewScene,
   loadModelPreviewSource,
+  previewRigRoot,
 } from "./model-preview";
 
 const KENNEY_MANNEQUIN_DIR = join(
@@ -171,9 +173,21 @@ describe("loadModelPreviewSource", () => {
     expect(loaded?.animationGroups.some((group) => group.name === "idle")).toBe(
       true,
     );
-    const preview = attachSkeletonPreview(host.mesh, host.scene, "hierarchy");
+    const rigRoot = previewRigRoot(host);
+    expect(rigRoot.name).not.toBe(MATERIAL_PREVIEW_MESH_NAME);
+    const { skeleton } = createLinkedSkeletonFromNodeRig(rigRoot, {
+      createMesh: true,
+    });
+    expect(skeleton.bones.map((bone) => bone.name)).not.toContain(
+      MATERIAL_PREVIEW_MESH_NAME,
+    );
+    const preview = attachSkeletonPreview(rigRoot, host.scene, "hierarchy");
     expect(
       host.scene.meshes.some((mesh) => mesh.name.endsWith("_overlay")),
+    ).toBe(true);
+    expect(
+      host.scene.transformNodes.some((node) => node.name === MATERIAL_PREVIEW_MESH_NAME) ||
+        host.mesh.name === MATERIAL_PREVIEW_MESH_NAME,
     ).toBe(true);
     preview.dispose();
     loaded?.dispose();
