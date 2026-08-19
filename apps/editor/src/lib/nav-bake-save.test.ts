@@ -54,6 +54,20 @@ describe("nav bake save flush", () => {
     expect(startBake).not.toHaveBeenCalled();
   });
 
+  it("runs multiple registered flushes in registration order", async () => {
+    const order: string[] = [];
+    const first = registerNavBakeSaveFlush(async () => {
+      order.push("a");
+    });
+    const second = registerNavBakeSaveFlush(async () => {
+      order.push("b");
+    });
+    await flushNavBakeForSave();
+    expect(order).toEqual(["a", "b"]);
+    first();
+    second();
+  });
+
   it("records the last bake result for the Save / Playwright hatch", () => {
     recordNavBakeSaveResult({
       ok: true,

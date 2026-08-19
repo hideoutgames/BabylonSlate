@@ -38,6 +38,7 @@ export {
   solidBlockerMesh,
   staticBlockerBakeParts,
   xyBoundsFromActors,
+  type NavBakeBounds,
   type NavBlockerArea,
   type SolidBlockerInput,
   type XyBounds,

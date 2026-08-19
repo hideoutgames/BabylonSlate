@@ -1,4 +1,4 @@
-import { Vector3, VertexBuffer, type Mesh } from "@babylonjs/core";
+import { Mesh, Vector3, VertexBuffer } from "@babylonjs/core";
 import type { SerializedScene } from "@babylonslate/core";
 import {
   mergeNavBakeMeshes,
@@ -7,17 +7,16 @@ import {
   recastWallsFromXyChains,
   staticBlockerBakeParts,
   xyBoundsFromActors,
+  type NavBakeBounds,
   type NavBakeMeshPart,
   type XyChain,
 } from "@babylonslate/navigation";
 import type { EditorSceneSync } from "./editor-scene-sync";
+import { visualMeshes } from "./visual-meshes";
 
 export type NavBakeCollectExtras = {
   tilemapChains?: readonly XyChain[];
-  bakeBounds?: {
-    min: { x: number; y: number; z: number };
-    max: { x: number; y: number; z: number };
-  };
+  bakeBounds?: NavBakeBounds;
 };
 
 /**
@@ -55,7 +54,12 @@ export function collectNavBakeGeometry(
       }
     }
     if (extras?.tilemapChains && extras.tilemapChains.length > 0) {
-      parts.push(recastWallsFromXyChains(extras.tilemapChains, 2));
+      const chains = bounds
+        ? extras.tilemapChains.filter((chain) =>
+            xyChainIntersectsBounds(chain, bounds),
+          )
+        : extras.tilemapChains;
+      if (chains.length > 0) parts.push(recastWallsFromXyChains(chains, 2));
     }
   } else {
     for (const actor of sceneData.actors) {
@@ -64,20 +68,52 @@ export function collectNavBakeGeometry(
       ) {
         continue;
       }
-      const mesh = sync.meshForActor(actor.id);
-      if (!mesh) continue;
-      if (bounds && !meshAabbIntersects(mesh, bounds)) continue;
-      const part = meshPart(mesh, scratch);
-      if (part) parts.push(part);
+      const root = sync.meshForActor(actor.id);
+      if (!root) continue;
+      for (const mesh of bakeVisualMeshes(root)) {
+        if (bounds && !meshAabbIntersects(mesh, bounds)) continue;
+        const part = meshPart(mesh, scratch);
+        if (part) parts.push(part);
+      }
     }
   }
-  parts.push(...staticBlockerBakeParts(sceneData.actors, mode));
+  parts.push(...staticBlockerBakeParts(sceneData.actors, mode, bounds));
   return mergeNavBakeMeshes(parts);
+}
+
+function bakeVisualMeshes(root: Mesh): Mesh[] {
+  return visualMeshes(root).filter((mesh): mesh is Mesh => {
+    if (!(mesh instanceof Mesh)) return false;
+    const meta = mesh.metadata as { editorPickProxy?: boolean } | null;
+    return !meta?.editorPickProxy;
+  });
+}
+
+function xyChainIntersectsBounds(
+  chain: XyChain,
+  bounds: NavBakeBounds,
+): boolean {
+  if (chain.points.length === 0) return false;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const point of chain.points) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  const boxMinX = Math.min(bounds.min.x, bounds.max.x);
+  const boxMaxX = Math.max(bounds.min.x, bounds.max.x);
+  const boxMinY = Math.min(bounds.min.y, bounds.max.y);
+  const boxMaxY = Math.max(bounds.min.y, bounds.max.y);
+  return minX <= boxMaxX && maxX >= boxMinX && minY <= boxMaxY && maxY >= boxMinY;
 }
 
 function pointInXyBounds(
   point: { x: number; y: number },
-  bounds: NonNullable<NavBakeCollectExtras["bakeBounds"]>,
+  bounds: NavBakeBounds,
 ): boolean {
   const minX = Math.min(bounds.min.x, bounds.max.x);
   const maxX = Math.max(bounds.min.x, bounds.max.x);
@@ -88,7 +124,7 @@ function pointInXyBounds(
 
 function intersectXyBounds(
   xy: { minX: number; minY: number; maxX: number; maxY: number },
-  bounds: NonNullable<NavBakeCollectExtras["bakeBounds"]>,
+  bounds: NavBakeBounds,
 ): { minX: number; minY: number; maxX: number; maxY: number } | null {
   const minX = Math.max(xy.minX, Math.min(bounds.min.x, bounds.max.x));
   const minY = Math.max(xy.minY, Math.min(bounds.min.y, bounds.max.y));
@@ -100,7 +136,7 @@ function intersectXyBounds(
 
 function meshAabbIntersects(
   mesh: Mesh,
-  bounds: NonNullable<NavBakeCollectExtras["bakeBounds"]>,
+  bounds: NavBakeBounds,
 ): boolean {
   mesh.computeWorldMatrix(true);
   mesh.refreshBoundingInfo();

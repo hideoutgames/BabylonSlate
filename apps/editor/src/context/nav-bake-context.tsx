@@ -90,6 +90,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
       setPhase("showing");
       setCancellable(false);
       const worker = createNavBakeWorker();
+      let failed = false;
       try {
         const bytes = await runNavBake({
           waitPaintedFrame,
@@ -139,6 +140,7 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
           error: null,
         });
       } catch (caught) {
+        failed = true;
         const message =
           caught instanceof Error ? caught.message : String(caught);
         recordNavBakeSaveResult({
@@ -150,12 +152,14 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
         if (!controller.signal.aborted && !/abort/i.test(message)) {
           setError(message);
           console.error("[nav-bake]", message);
+        } else {
+          failed = false;
         }
       } finally {
         worker.terminate();
         abortRef.current = null;
-        setPhase(null);
         setCancellable(false);
+        if (!failed) setPhase(null);
       }
     },
     [collectPlayTilemapContent, documentId, openDocuments, projectDocument, writeSceneNavmeshChunk],
@@ -185,13 +189,21 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
   return (
     <NavBakeContext.Provider value={value}>
       {children}
-      {phase ? (
+      {phase || error ? (
         <NavBakeDialog
           open
-          phase={phase}
-          cancellable={cancellable}
+          phase={phase ?? "writing"}
+          cancellable={cancellable && !error}
           error={error}
           onCancel={() => abortRef.current?.abort()}
+          onDismiss={
+            error
+              ? () => {
+                  setError(null);
+                  setPhase(null);
+                }
+              : undefined
+          }
         />
       ) : null}
     </NavBakeContext.Provider>
