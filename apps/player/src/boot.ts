@@ -13,7 +13,7 @@ import {
 } from "@babylonslate/runtime";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { createEngine, audioStats, particleStats, type EngineHandle } from "@babylonslate/render";
-import type { SerializedScene } from "@babylonslate/core";
+import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { guiTextureBytesFromGame, type LoadedGame } from "./artifact";
@@ -150,12 +150,7 @@ export function startPlayer(options: {
       window as { __babylonslateParticleStats?: typeof particleStats }
     ).__babylonslateParticleStats = particleStats;
   }
-  const framebuffer = manifest.render.customResolution
-    ? {
-        width: manifest.render.width,
-        height: manifest.render.height,
-      }
-    : null;
+  const framebuffer = playFramebufferSize(manifest.render);
   if (framebuffer) {
     handle.setSize(framebuffer.width, framebuffer.height);
   } else {

@@ -40,14 +40,15 @@ export function applyPlayPreviewCanvasLayout(options: {
     canvas.style.objectFit = "";
     return;
   }
-  overlay.classList.toggle("bg-black", !followSystem);
-  overlay.classList.toggle("bg-background", followSystem);
-  overlay.classList.toggle("items-center", !followSystem);
-  overlay.classList.toggle("justify-center", !followSystem);
-  canvas.classList.toggle("h-full", followSystem);
-  canvas.classList.toggle("w-full", followSystem);
+  const fillHost = followSystem || options.render?.customResolution === true;
+  overlay.classList.toggle("bg-black", !fillHost);
+  overlay.classList.toggle("bg-background", fillHost);
+  overlay.classList.toggle("items-center", !fillHost);
+  overlay.classList.toggle("justify-center", !fillHost);
+  canvas.classList.toggle("h-full", fillHost);
+  canvas.classList.toggle("w-full", fillHost);
   canvas.style.objectFit = "";
-  if (followSystem) {
+  if (fillHost) {
     canvas.style.width = "";
     canvas.style.height = "";
     return;
