@@ -373,10 +373,9 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
     await expectDesignerReady(page);
     await saveAllIfEnabled(page);
-    const hudTab = page.locator("[data-testid='document-tab']").filter({
-      hasText: /^HUD( \*)?$/,
-    });
+    const hudTab = page.getByTestId("document-tab-active");
     await expect(hudTab).toBeVisible();
+    await expect(hudTab).toContainText("HUD");
     await expect(hudTab).not.toContainText("*");
     await visibleUiWorkspace(page).getByTestId("ui-device-preset").click();
     await page.getByTestId("ui-preset-desktop-4-3").click();
