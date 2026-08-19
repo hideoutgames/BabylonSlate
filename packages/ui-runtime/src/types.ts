@@ -14,22 +14,20 @@ export type SizeUnit = "px" | "percent";
 
 export const WIDGET_KINDS = [
   "Canvas",
-  "HorizontalBox",
-  "VerticalBox",
+  "Rectangle",
+  "StackPanel",
   "Grid",
-  "ScrollBox",
-  "Overlay",
-  "SizeBox",
-  "Border",
+  "ScrollViewer",
+  "Ellipse",
+  "Container",
   "Button",
-  "Text",
-  "TextInput",
+  "TextBlock",
+  "InputText",
   "Slider",
-  "CheckBox",
+  "Checkbox",
   "Image",
   "Material",
   "ProgressBar",
-  "Spacer",
   "TouchJoystick",
   "TouchButton",
   "TouchDPad",
@@ -38,17 +36,45 @@ export const WIDGET_KINDS = [
 
 export type WidgetKind = (typeof WIDGET_KINDS)[number];
 
+/** v2 payload aliases rewritten by schema v3. */
+export const LEGACY_WIDGET_KIND_ALIASES: Record<string, WidgetKind> = {
+  HorizontalBox: "StackPanel",
+  VerticalBox: "StackPanel",
+  ScrollBox: "ScrollViewer",
+  Text: "TextBlock",
+  TextInput: "InputText",
+  CheckBox: "Checkbox",
+  Border: "Rectangle",
+  Overlay: "Rectangle",
+  SizeBox: "Rectangle",
+  Spacer: "Container",
+};
+
+export function canonicalWidgetKind(value: unknown): WidgetKind {
+  if (typeof value === "string" && (WIDGET_KINDS as readonly string[]).includes(value)) {
+    return value as WidgetKind;
+  }
+  if (typeof value === "string" && value in LEGACY_WIDGET_KIND_ALIASES) {
+    return LEGACY_WIDGET_KIND_ALIASES[value]!;
+  }
+  return "Rectangle";
+}
+
 export const CONTAINER_KINDS: ReadonlySet<WidgetKind> = new Set([
   "Canvas",
-  "HorizontalBox",
-  "VerticalBox",
+  "Rectangle",
+  "StackPanel",
   "Grid",
-  "ScrollBox",
-  "Overlay",
-  "SizeBox",
-  "Border",
+  "ScrollViewer",
+  "Ellipse",
+  "Container",
   "UserInterface",
 ]);
+
+export interface GridTrackDef {
+  value: number;
+  isPixel: boolean;
+}
 
 export interface WidgetLayout {
   horizontalAlignment: HorizontalAlignment;
@@ -59,19 +85,23 @@ export interface WidgetLayout {
   heightUnit: SizeUnit;
   /** Offset from the aligned edge (Babylon `left`, always added). */
   left: number;
-  /** Offset from the aligned edge (Babylon `top`, always added, Y-down). */
   top: number;
+  leftUnit: SizeUnit;
+  topUnit: SizeUnit;
   /** Layout insets on the control (`Control.padding*`). */
   padding: EdgeInsets;
   /** Babylon `transformCenterX/Y` in [0, 1]. */
   transformCenter: Vec2;
+  /** Authored rotation in degrees (Babylon `rotation` is radians). */
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
 }
 
 export interface WidgetStyle {
   background?: string;
   color?: string;
   borderRadius?: number;
-  padding?: EdgeInsets;
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: number | string;
@@ -79,6 +109,12 @@ export interface WidgetStyle {
   opacity?: number;
   pressedBackground?: string;
   disabledBackground?: string;
+  hoverBackground?: string;
+}
+
+export interface WidgetExposedProperty {
+  key: string;
+  label: string;
 }
 
 export interface WidgetNode {
@@ -90,14 +126,21 @@ export interface WidgetNode {
   children: string[];
   style: WidgetStyle;
   props: Record<string, unknown>;
-  /** Nested UserInterface asset guid. */
+  /** Nested UserInterface asset guid (instance slot). */
   nestedUiGuid?: string | null;
-  /** Visual override UserInterface for Button / TouchJoystick / TouchButton. */
+  /** @deprecated Migrated onto Button image/style or a nested Touch skin. */
   visualOverrideGuid?: string | null;
   /** When true, a Canvas child parents to the full-bleed canvas, not the SafeArea container. */
   ignoreSafeArea?: boolean;
   /** When true, the control can receive GUI pointer hits and block widgets behind it. */
   hitTestable: boolean;
+  gridColumn?: number;
+  gridRow?: number;
+  zIndex?: number;
+  /** Host-document opt-in for instance Details overrides. */
+  exposed?: WidgetExposedProperty | null;
+  /** Instance-slot patches keyed by nested widget id. */
+  overrides?: Record<string, Record<string, unknown>>;
 }
 
 export interface UserInterfaceDocument {
@@ -160,8 +203,13 @@ export function stretchLayout(insets: EdgeInsets = ZERO_INSETS): WidgetLayout {
     heightUnit: "percent",
     left: 0,
     top: 0,
+    leftUnit: "px",
+    topUnit: "px",
     padding: { ...insets },
     transformCenter: { x: 0.5, y: 0.5 },
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
   };
 }
 
@@ -182,8 +230,13 @@ export function pinLayout(
     heightUnit: "px",
     left,
     top,
+    leftUnit: "px",
+    topUnit: "px",
     padding: { ...ZERO_INSETS },
     transformCenter: { x: 0.5, y: 0.5 },
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
   };
 }
 
@@ -193,7 +246,6 @@ export function defaultWidgetStyle(): WidgetStyle {
   return {
     fontSize: 18,
     opacity: 1,
-    padding: { ...ZERO_INSETS },
   };
 }
 
@@ -234,31 +286,38 @@ export function createWidget(
 
 export function defaultPropsFor(kind: WidgetKind): Record<string, unknown> {
   switch (kind) {
-    case "Text":
+    case "TextBlock":
       return { text: "Text" };
     case "Button":
       return { text: "Button" };
-    case "TextInput":
+    case "InputText":
       return { text: "", placeholder: "Enter Text" };
     case "Slider":
       return { value: 0, min: 0, max: 1 };
-    case "CheckBox":
+    case "Checkbox":
       return { checked: false };
     case "ProgressBar":
       return { value: 0 };
     case "Image":
-      return { imageGuid: null };
+      return { imageGuid: null, stretch: 0 };
     case "Material":
       return { materialGuid: null };
-    case "Spacer":
-      return { flex: 1 };
-    case "SizeBox":
-      return { width: 100, height: 100 };
     case "Grid":
-      return { columns: 2, rows: 2, gap: 8 };
-    case "HorizontalBox":
-    case "VerticalBox":
-      return { gap: 8 };
+      return {
+        columns: 2,
+        rows: 2,
+        gap: 8,
+        gridColumns: [
+          { value: 1, isPixel: false },
+          { value: 1, isPixel: false },
+        ],
+        gridRows: [
+          { value: 1, isPixel: false },
+          { value: 1, isPixel: false },
+        ],
+      };
+    case "StackPanel":
+      return { gap: 8, isVertical: true };
     case "TouchJoystick":
       return {
         origin: "fixed",
@@ -295,7 +354,7 @@ export function createDefaultUserInterface(name = "HUD"): UserInterfaceDocument 
 /** Sample viewport HUD (joystick + title) for layout and designer tests. */
 export function createDefaultPlayHud(name = "HUD"): UserInterfaceDocument {
   const doc = createDefaultUserInterface(name);
-  const header = createWidget("header", "Text", "Title", {
+  const header = createWidget("header", "TextBlock", "Title", {
     ...stretchLayout({ left: 24, right: 24, top: 16, bottom: 0 }),
     height: 40,
     heightUnit: "px",

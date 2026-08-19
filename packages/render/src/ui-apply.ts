@@ -1,4 +1,10 @@
-import type { UiControlDescriptor } from "@babylonslate/ui-runtime";
+import type {
+  DescribeUiControlsOptions,
+  UiControlDescriptor,
+  UserInterfaceDocument,
+  WidgetLayout,
+} from "@babylonslate/ui-runtime";
+import { describeUiControls } from "@babylonslate/ui-runtime";
 
 export const uiHostStats = {
   apply: 0,
@@ -20,6 +26,8 @@ export interface UiApplyHost {
   setVisible(widgetId: string, visible: boolean): void;
   markAsDirty(): void;
   reconcile?(controls: readonly UiControlDescriptor[]): void;
+  setGestureLocked?(locked: boolean): void;
+  patchLiveLayout?(id: string, layout: WidgetLayout): void;
 }
 
 export interface TouchAxisSample {
@@ -54,6 +62,15 @@ export function applyUiControlsIfUnfrozen(
 ): void {
   if (frozen) return;
   applyUiControls(host, controls);
+}
+
+/** Describe + apply one document (or nested skip-root slot) without layoutUserInterface. */
+export function applyUiDocument(
+  host: UiApplyHost,
+  doc: UserInterfaceDocument,
+  options?: DescribeUiControlsOptions,
+): void {
+  applyUiControls(host, describeUiControls(doc, options));
 }
 
 export function applyWidgetVisible(

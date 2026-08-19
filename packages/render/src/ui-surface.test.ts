@@ -5,6 +5,8 @@ import {
   attachFullscreenGuiPointerMoves,
   isHardUiPresentFailure,
   presentAdtToCanvas,
+  presentHostedAdt,
+  tryHostAdtBackingCanvas,
   blitIfUnfrozen,
 } from "./ui-surface";
 
@@ -548,5 +550,61 @@ describe("attachFullscreenGuiPointerMoves", () => {
       preventDefault: vi.fn(),
     } as unknown as Event);
     expect(pick).not.toHaveBeenCalled();
+  });
+});
+
+describe("presentHostedAdt", () => {
+  it("marks dirty and redraws without copying onto a destination canvas", () => {
+    const order: string[] = [];
+    const adt = {
+      useInvalidateRectOptimization: true,
+      markAsDirty: vi.fn(() => order.push("dirty")),
+      _checkUpdate: vi.fn(() => order.push("check")),
+      getSize: () => ({ width: 8, height: 8 }),
+    } as unknown as AdvancedDynamicTexture;
+    presentHostedAdt(adt);
+    expect(adt.useInvalidateRectOptimization).toBe(true);
+    expect(order).toEqual(["dirty", "check"]);
+  });
+
+  it("skips a 0×0 ADT", () => {
+    const adt = {
+      useInvalidateRectOptimization: true,
+      markAsDirty: vi.fn(),
+      _checkUpdate: vi.fn(),
+      getSize: () => ({ width: 0, height: 0 }),
+    } as unknown as AdvancedDynamicTexture;
+    presentHostedAdt(adt);
+    expect(adt._checkUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("tryHostAdtBackingCanvas", () => {
+  it("appends the ADT backing canvas into the host frame", () => {
+    const backing = {
+      style: {} as Record<string, string>,
+      parentElement: null as unknown,
+    };
+    const appended: unknown[] = [];
+    const host = {
+      appendChild: (node: unknown) => {
+        appended.push(node);
+        backing.parentElement = host;
+        return node;
+      },
+    } as unknown as HTMLElement;
+    const adt = {
+      getContext: () => ({ canvas: backing }),
+    } as unknown as AdvancedDynamicTexture;
+    expect(tryHostAdtBackingCanvas(adt, host)).toBe(backing);
+    expect(appended).toEqual([backing]);
+  });
+
+  it("returns null when the backing store cannot be hosted", () => {
+    const host = { appendChild: vi.fn() } as unknown as HTMLElement;
+    const adt = {
+      getContext: () => ({ canvas: {} }),
+    } as unknown as AdvancedDynamicTexture;
+    expect(tryHostAdtBackingCanvas(adt, host)).toBeNull();
   });
 });

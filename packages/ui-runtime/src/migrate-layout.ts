@@ -76,11 +76,16 @@ export function migrateLegacyLayout(raw: LegacyLayout): WidgetLayout {
     heightUnit: stretchY ? "percent" : "px",
     left: 0,
     top: 0,
+    leftUnit: "px",
+    topUnit: "px",
     padding,
     transformCenter: {
       x: clamp01(num(raw.pivot?.x, 0.5)),
       y: clamp01(num(raw.pivot?.y, 0.5)),
     },
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
   };
   if (!stretchX || !stretchY) {
     const target = { x: left, y: guiY, width, height };

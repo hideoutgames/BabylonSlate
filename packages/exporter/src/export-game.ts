@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_UI_PROJECT_SETTINGS, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -60,6 +60,35 @@ function packedUiDesignerPresets(
     });
   }
   return rows.length > 0 ? rows : undefined;
+}
+
+function packedUiSettings(
+  value: unknown,
+): NonNullable<GameManifest["ui"]> {
+  const record =
+    value && typeof value === "object"
+      ? (value as {
+          designResolution?: { width?: unknown; height?: unknown };
+          scaleRule?: unknown;
+        })
+      : undefined;
+  const width = Number(record?.designResolution?.width);
+  const height = Number(record?.designResolution?.height);
+  const scaleRule =
+    record?.scaleRule === "fitWidth" || record?.scaleRule === "fitHeight"
+      ? record.scaleRule
+      : DEFAULT_UI_PROJECT_SETTINGS.scaleRule;
+  return {
+    designResolution: {
+      width:
+        width >= 1 ? Math.round(width) : DEFAULT_UI_PROJECT_SETTINGS.designResolution.width,
+      height:
+        height >= 1
+          ? Math.round(height)
+          : DEFAULT_UI_PROJECT_SETTINGS.designResolution.height,
+    },
+    scaleRule,
+  };
 }
 
 const JSON_TYPES = new Set([
@@ -281,6 +310,7 @@ export async function exportGame(
     physicsWorld: options.physicsWorld ?? "3d",
     assets: packed.index,
     ...(designerPresets ? { uiDesignerPresets: designerPresets } : {}),
+    ui: packedUiSettings(options.ui),
     ...(options.bundleDebugger
       ? {
           infiniteLoopDetection: options.infiniteLoopDetection !== false,
@@ -336,6 +366,7 @@ export function parseGameManifest(source: string): GameManifest {
   const designerPresets = packedUiDesignerPresets(parsed.uiDesignerPresets);
   const rest = { ...parsed };
   delete rest.uiDesignerPresets;
+  delete rest.ui;
   return {
     ...rest,
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
@@ -351,6 +382,7 @@ export function parseGameManifest(source: string): GameManifest {
         : 100,
     pixelPerfect: parsed.pixelPerfect === true,
     ...(designerPresets ? { uiDesignerPresets: designerPresets } : {}),
+    ui: packedUiSettings(parsed.ui),
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,

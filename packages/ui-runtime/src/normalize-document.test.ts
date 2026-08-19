@@ -51,10 +51,10 @@ describe("normalizeUserInterfaceDocument", () => {
       },
     });
     expect(doc.widgets.canvas?.children).toEqual(["btn"]);
-    expect(doc.widgets.btn?.kind).toBe("Border");
+    expect(doc.widgets.btn?.kind).toBe("Rectangle");
   });
 
-  it("keeps string nested and visual-override guids and drops non-strings", () => {
+  it("migrates Button visualOverride onto imageGuid and drops invalid nested guids", () => {
     const doc = normalizeUserInterfaceDocument({
       rootId: "canvas",
       widgets: {
@@ -76,6 +76,7 @@ describe("normalizeUserInterfaceDocument", () => {
     expect(doc.widgets.host?.nestedUiGuid).toBe("chip-guid");
     expect(doc.widgets.host?.visualOverrideGuid).toBeNull();
     expect(doc.widgets.btn?.nestedUiGuid).toBeNull();
-    expect(doc.widgets.btn?.visualOverrideGuid).toBe("skin-guid");
+    expect(doc.widgets.btn?.visualOverrideGuid).toBeNull();
+    expect(doc.widgets.btn?.style.imageGuid).toBe("skin-guid");
   });
 });

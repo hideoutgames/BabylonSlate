@@ -9,6 +9,7 @@ import {
 import {
   applyUiControls,
   applyUiControlsIfUnfrozen,
+  applyUiDocument,
   applyWidgetVisible,
   joystickAxesFromLocal,
   joystickAxisValue,
@@ -71,5 +72,16 @@ describe("UI apply", () => {
     applyUiControls(host, describeUiControls(doc, layout));
     expect(uiHostStats.apply).toBe(1);
     expect(uiHostStats.commit).toBe(0);
+  });
+
+  it("applies a document tree without calling the layout solver", () => {
+    const host = new RecordingUiHost();
+    const doc = createDefaultUserInterface();
+    const button = createWidget("play", "Button", "Play", pinLayout("left", "top", 80, 32));
+    doc.widgets.canvas!.children = ["play"];
+    doc.widgets.play = button;
+    applyUiDocument(host, doc, { applySafeArea: true });
+    expect(host.controls.find((row) => row.id === "play")?.parentId).toBe("__safeArea");
+    expect(host.controls.find((row) => row.id === "canvas")).toBeTruthy();
   });
 });

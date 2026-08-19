@@ -8,6 +8,8 @@ export type UserInterfaceWidgetMeta = {
   name?: string;
   kind: string;
   nestedUiGuid?: string;
+  exposed?: { key: string; label: string };
+  overrides?: Record<string, Record<string, unknown>>;
 };
 
 /** UserInterface document metadata shipped on `loadUserInterfaces`. */

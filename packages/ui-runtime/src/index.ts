@@ -10,6 +10,7 @@ export {
 export type { DesignerCanvasId, DevicePreset } from "./presets";
 export type {
   EdgeInsets,
+  GridTrackDef,
   HorizontalAlignment,
   LaidOutWidget,
   LayoutResult,
@@ -20,6 +21,7 @@ export type {
   UserInterfaceDocument,
   Vec2,
   VerticalAlignment,
+  WidgetExposedProperty,
   WidgetKind,
   WidgetLayout,
   WidgetNode,
@@ -30,8 +32,10 @@ export {
   DEFAULT_BUTTON_BACKGROUND,
   DEFAULT_DESIGN_RESOLUTION,
   DEFAULT_DESIRED_SIZE,
+  LEGACY_WIDGET_KIND_ALIASES,
   WIDGET_KINDS,
   ZERO_INSETS,
+  canonicalWidgetKind,
   createDefaultPlayHud,
   createDefaultUserInterface,
   createWidget,
@@ -65,6 +69,7 @@ export {
   migrateLegacyLayout,
   migrateUserInterfacePayload,
 } from "./migrate-layout";
+export { migrateUserInterfaceV3 } from "./migrate-v3";
 export { normalizeUserInterfaceDocument } from "./normalize-document";
 export {
   compileFontStack,
@@ -79,8 +84,10 @@ export {
 } from "./cycle-check";
 export {
   describeUiControls,
+  scopeUiControlIds,
   type UiControlDescriptor,
   type UiLayoutMode,
+  type DescribeUiControlsOptions,
 } from "./controls";
 export {
   guiControlType,
@@ -101,6 +108,7 @@ export {
   parentOwnsChildLayout,
   preferredWidgetSize,
   laidOutParentRect,
+  authoringParentRect,
   widgetAllowsDesignerTransform,
 } from "./layout-authoring";
 export type {
@@ -117,5 +125,14 @@ export {
   reparentWidget,
   widgetParentId,
 } from "./widget-tree";
+export { resolveUiAdtIdeal } from "./adt-ideal";
+export type { UiAdtIdeal } from "./adt-ideal";
+export {
+  projectUiSettingsOmitted,
+  seedUiProjectSettings,
+} from "./seed-project-ui";
+export type { UiSeedDocument } from "./seed-project-ui";
+export { extractWidgetAsPrefab } from "./extract-instance";
+export type { ExtractWidgetAsPrefabResult } from "./extract-instance";
 export { collectImageGuidsFromUiDocuments } from "./image-guids";
 export { collectMaterialGuidsFromUiDocuments } from "./material-guids";

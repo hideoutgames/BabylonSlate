@@ -31,6 +31,8 @@ export function normalizeLayout(
     heightUnit: slot.heightUnit === "percent" ? "percent" : "px",
     left: Number.isFinite(slot.left) ? slot.left : 0,
     top: Number.isFinite(slot.top) ? slot.top : 0,
+    leftUnit: slot.leftUnit === "percent" ? "percent" : "px",
+    topUnit: slot.topUnit === "percent" ? "percent" : "px",
     padding: {
       left: Number.isFinite(slot.padding?.left) ? slot.padding.left : 0,
       right: Number.isFinite(slot.padding?.right) ? slot.padding.right : 0,
@@ -41,6 +43,9 @@ export function normalizeLayout(
       x: clamp01(slot.transformCenter?.x ?? 0.5),
       y: clamp01(slot.transformCenter?.y ?? 0.5),
     },
+    rotation: Number.isFinite(slot.rotation) ? slot.rotation : 0,
+    scaleX: Number.isFinite(slot.scaleX) ? slot.scaleX : 1,
+    scaleY: Number.isFinite(slot.scaleY) ? slot.scaleY : 1,
   };
 }
 
@@ -111,15 +116,9 @@ function preferredSize(
   const fontSize =
     typeof widget.style.fontSize === "number" ? widget.style.fontSize : 18;
   const fontStack = widget.style.fontFamily ?? "sans-serif";
-  if (widget.kind === "Text" || widget.kind === "Button") {
+  if (widget.kind === "TextBlock" || widget.kind === "Button") {
     const text = typeof widget.props.text === "string" ? widget.props.text : "";
     return measurer.measure(text, fontStack, fontSize);
-  }
-  if (widget.kind === "SizeBox") {
-    return {
-      width: numberProp(widget.props, "width", 100),
-      height: numberProp(widget.props, "height", 100),
-    };
   }
   if (widget.kind === "UserInterface") {
     const nested =
@@ -128,9 +127,6 @@ function preferredSize(
         : null;
     if (nested) return contentDesiredSize(nested, { measurer, resolveNested });
     return { ...DEFAULT_DESIRED_SIZE };
-  }
-  if (widget.kind === "Spacer") {
-    return { width: 0, height: 0 };
   }
   if (widget.kind === "TouchJoystick") {
     return { width: 160, height: 160 };
@@ -152,7 +148,7 @@ function intrinsicWidgetSize(
 ): { width: number; height: number } {
   const childIds = widget.children.filter((id) => doc.widgets[id]);
   const gap = numberProp(widget.props, "gap", 0);
-  if (widget.kind === "HorizontalBox" && childIds.length > 0) {
+  if (widget.kind === "StackPanel" && widget.props.isVertical === false && childIds.length > 0) {
     const sizes = childIds.map((id) =>
       intrinsicWidgetSize(doc.widgets[id]!, doc, measurer, resolveNested),
     );
@@ -163,7 +159,7 @@ function intrinsicWidgetSize(
       height: sizes.reduce((max, size) => Math.max(max, size.height), 0),
     };
   }
-  if (widget.kind === "VerticalBox" && childIds.length > 0) {
+  if (widget.kind === "StackPanel" && widget.props.isVertical !== false && childIds.length > 0) {
     const sizes = childIds.map((id) =>
       intrinsicWidgetSize(doc.widgets[id]!, doc, measurer, resolveNested),
     );
@@ -327,7 +323,7 @@ function layoutChildren(
   options: LayoutOptions,
   childParent: Rect,
 ): LaidOutWidget[] {
-  const padding = parent.style.padding ?? ZERO_INSETS;
+  const padding = parent.layout.padding ?? ZERO_INSETS;
   const inner = insetRect(childParent, padding);
   const gap = numberProp(parent.props, "gap", 0);
   const childIds = parent.children.filter((id) => doc.widgets[id]);
@@ -335,9 +331,10 @@ function layoutChildren(
 
   if (
     parent.kind === "Canvas" ||
-    parent.kind === "Overlay" ||
-    parent.kind === "ScrollBox" ||
-    parent.kind === "Border"
+    parent.kind === "Rectangle" ||
+    parent.kind === "ScrollViewer" ||
+    parent.kind === "Container" ||
+    parent.kind === "Ellipse"
   ) {
     return childIds.map((id) => {
       const child = doc.widgets[id]!;
@@ -352,20 +349,7 @@ function layoutChildren(
     });
   }
 
-  if (parent.kind === "SizeBox") {
-    const size = preferredSize(parent, measurer, resolveNested);
-    const box: Rect = {
-      x: inner.x,
-      y: inner.y,
-      width: size.width,
-      height: size.height,
-    };
-    return childIds.map((id) =>
-      layoutWidget(doc.widgets[id]!, box, doc, measurer, options, true),
-    );
-  }
-
-  if (parent.kind === "HorizontalBox") {
+  if (parent.kind === "StackPanel" && parent.props.isVertical === false) {
     let x = inner.x;
     return childIds.map((id) => {
       const child = doc.widgets[id]!;
@@ -379,7 +363,7 @@ function layoutChildren(
     });
   }
 
-  if (parent.kind === "VerticalBox") {
+  if (parent.kind === "StackPanel" && parent.props.isVertical !== false) {
     let y = inner.y;
     return childIds.map((id) => {
       const child = doc.widgets[id]!;
