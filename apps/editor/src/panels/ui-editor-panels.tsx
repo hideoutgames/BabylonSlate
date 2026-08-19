@@ -108,6 +108,14 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
           >
             Fit
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="ui-design-frame"
+            onClick={editing.frameSelection}
+          >
+            Frame Selection
+          </Button>
           <span className="text-xs text-muted-foreground" data-testid="ui-design-zoom">
             {Math.round(editing.view.zoom * 100)}%
           </span>
@@ -136,6 +144,8 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
             onLayoutChange={(id, nextLayout, mergeKey) =>
               editing.patchLayout(id, nextLayout, mergeKey)
             }
+            layoutSession={editing.layoutSession}
+            registerDesignerHost={editing.registerDesignerHost}
           />
         </div>
       </div>
@@ -175,6 +185,7 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
     patchLayout,
     setAssetPick,
     resolveNested,
+    layoutSession,
   } = useUiEditing();
   if (!selected) {
     return (
@@ -194,6 +205,8 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
         assetLabels={assetLabels}
         onPatchWidget={patchWidget}
         onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
+        onPreviewLayout={(id, nextLayout) => layoutSession.preview(id, nextLayout)}
+        onCommitLayout={(id, nextLayout) => layoutSession.commit(nextLayout)}
         onPickAsset={setAssetPick}
         resolveNested={resolveNested}
       />

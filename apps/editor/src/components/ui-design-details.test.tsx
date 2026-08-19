@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import {
   createDefaultUserInterface,
   createWidget,
   defaultAddLayout,
+  stretchLayout,
 } from "@babylonslate/ui-runtime";
 import { UiDesignDetails } from "./ui-design-details";
 
@@ -82,6 +83,60 @@ describe("UiDesignDetails layout fields", () => {
     expect(screen.getByTestId("property-rotation")).toBeTruthy();
     expect(screen.getByTestId("property-scale-x")).toBeTruthy();
     expect(screen.getByTestId("property-scale-y")).toBeTruthy();
+  });
+
+  it("shows stretch insets instead of a 100% width field", () => {
+    const button = createWidget("btn", "Button", "Play", stretchLayout({ left: 16, right: 24, top: 8, bottom: 12 }));
+    renderDetails(button);
+    expect(screen.queryByTestId("property-width")).toBeNull();
+    expect(screen.queryByTestId("property-height")).toBeNull();
+    expect(screen.getByTestId("property-inset-left")).toBeTruthy();
+    expect(screen.getByTestId("property-inset-right")).toBeTruthy();
+    expect(screen.getByTestId("property-inset-top")).toBeTruthy();
+    expect(screen.getByTestId("property-inset-bottom")).toBeTruthy();
+  });
+
+  it("does not expose Rectangle box width and height", () => {
+    const box = createWidget("panel", "Rectangle", "Panel", defaultAddLayout("Rectangle"));
+    renderDetails(box);
+    expect(screen.queryByTestId("property-box-width")).toBeNull();
+    expect(screen.queryByTestId("property-box-height")).toBeNull();
+    expect(screen.getByTestId("property-width")).toBeTruthy();
+  });
+
+  it("previews a Width scrub and commits the previewed layout on blur", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    const onPatchLayout = vi.fn();
+    const onPreviewLayout = vi.fn();
+    const onCommitLayout = vi.fn();
+    const ui = createDefaultUserInterface();
+    ui.widgets[button.id] = button;
+    ui.widgets.canvas!.children = [button.id];
+    render(
+      <UiDesignDetails
+        ui={ui}
+        selected={button}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={() => {}}
+        onPatchLayout={onPatchLayout}
+        onPreviewLayout={onPreviewLayout}
+        onCommitLayout={onCommitLayout}
+        onPickAsset={() => {}}
+      />,
+    );
+    const width = screen.getByTestId("property-width");
+    fireEvent.change(width, { target: { value: "240" } });
+    expect(onPreviewLayout).toHaveBeenCalled();
+    const previewed = onPreviewLayout.mock.calls.at(-1)![1] as { width: number };
+    expect(previewed.width).toBe(240);
+    expect(onPatchLayout).not.toHaveBeenCalled();
+    fireEvent.blur(width);
+    expect(onCommitLayout).toHaveBeenCalledTimes(1);
+    const committed = onCommitLayout.mock.calls[0]![1] as { width: number };
+    expect(committed.width).toBe(240);
+    expect(onPatchLayout).not.toHaveBeenCalled();
   });
 });
 

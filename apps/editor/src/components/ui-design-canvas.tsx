@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type PointerEvent,
@@ -14,7 +13,6 @@ import {
   createUiSurface,
   FontRegistry,
   isHardUiPresentFailure,
-  uiHostStats,
   type UiSurface,
 } from "@babylonslate/render";
 import {
@@ -25,8 +23,8 @@ import {
 } from "@babylonslate/ui/components/empty";
 import {
   applyWidgetResize,
-  describeUiControls,
   designScale,
+  previewRect,
   widgetAllowsDesignerTransform,
   type UiControlDescriptor,
   type UserInterfaceDocument,
@@ -34,6 +32,8 @@ import {
 } from "@babylonslate/ui-runtime";
 import {
   UI_DESIGN_HANDLE_HIT_SIZE_PX,
+  UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
+  applyScreenRect,
   applyWidgetDragOffset,
   designerControlHitRect,
   designerGestureAt,
@@ -46,6 +46,7 @@ import {
   pivotToScreen,
   pointerCentroid,
   pointerSpan,
+  resizeHandleHitRects,
   resizeHandleRects,
   zoomAtPoint,
   type DesignView,
@@ -58,6 +59,7 @@ import {
   presentLiveUiIfVisible,
 } from "../lib/live-ui-present";
 import { createUiFrameScheduler } from "../lib/schedule-ui-frame";
+import { createUiDesignerSession, type UiDesignerSession } from "../lib/ui-designer-session";
 import { UiImageIssueAlert } from "./ui-image-issue";
 import type { UiImageIssue } from "../lib/play-ui-images";
 import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
@@ -89,6 +91,8 @@ export function UiDesignCanvas({
   panelVisible = true,
   documentActive = true,
   resolveNested,
+  layoutSession: layoutSessionProp,
+  registerDesignerHost,
 }: {
   ui: UserInterfaceDocument;
   viewport: {
@@ -118,6 +122,12 @@ export function UiDesignCanvas({
   panelVisible?: boolean;
   documentActive?: boolean;
   resolveNested?: (guid: string) => UserInterfaceDocument | null;
+  layoutSession?: UiDesignerSession;
+  registerDesignerHost?: (
+    host: import("../lib/ui-designer-session").UiDesignerLiveHost | null,
+    present: (() => void) | null,
+    onOverlay?: ((id: string, layout: WidgetLayout) => void) | null,
+  ) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hostFrameRef = useRef<HTMLDivElement>(null);
@@ -149,13 +159,68 @@ export function UiDesignCanvas({
     strokeId: string;
     previewLayout?: WidgetLayout;
   } | null>(null);
-  const [previewLayouts, setPreviewLayouts] = useState<Record<string, WidgetLayout>>(
-    {},
-  );
-  const previewLayoutsRef = useRef(previewLayouts);
-  previewLayoutsRef.current = previewLayouts;
   const paintSchedulerRef = useRef(createUiFrameScheduler());
-  const gestureLockedRef = useRef(false);
+  const strokeSchedulerRef = useRef(createUiFrameScheduler());
+  const outlineRef = useRef<HTMLDivElement | null>(null);
+  const handleHitRefs = useRef<Partial<Record<HandleEdge, HTMLButtonElement | null>>>({});
+  const handleVisualRefs = useRef<Partial<Record<HandleEdge, HTMLSpanElement | null>>>({});
+  const onLayoutChangeRef = useRef(onLayoutChange);
+  onLayoutChangeRef.current = onLayoutChange;
+  const panelVisibleRef = useRef(panelVisible);
+  panelVisibleRef.current = panelVisible;
+  const documentActiveRef = useRef(documentActive);
+  documentActiveRef.current = documentActive;
+  const previewScaleRef = useRef(previewScale);
+  previewScaleRef.current = previewScale;
+  const controlsRef = useRef(controls);
+  controlsRef.current = controls;
+  const viewportRefSize = useRef(viewport);
+  viewportRefSize.current = viewport;
+  const applyOverlay = useCallback((id: string, layout: WidgetLayout) => {
+    const parentControl = controlsRef.current.find((row) => row.id === id);
+    const parent = parentControl?.parentId
+      ? controlsRef.current.find((row) => row.id === parentControl.parentId)
+      : undefined;
+    const parentRect = parent?.guiRect ?? {
+      x: 0,
+      y: 0,
+      width: viewportRefSize.current.width,
+      height: viewportRefSize.current.height,
+    };
+    const screen = designRectToScreen(
+      previewRect(parentRect, layout),
+      viewRef.current,
+      previewScaleRef.current,
+    );
+    applyScreenRect(outlineRef.current, screen);
+    const visuals = resizeHandleRects(screen, UI_DESIGN_HANDLE_VISUAL_SIZE_PX);
+    const hits = resizeHandleHitRects(screen, UI_DESIGN_HANDLE_HIT_SIZE_PX);
+    for (const edge of Object.keys(hits) as HandleEdge[]) {
+      applyScreenRect(handleHitRefs.current[edge] ?? null, hits[edge]!);
+      applyScreenRect(handleVisualRefs.current[edge] ?? null, visuals[edge]!);
+    }
+  }, []);
+  const localSessionRef = useRef<UiDesignerSession | null>(null);
+  if (!layoutSessionProp && !localSessionRef.current) {
+    localSessionRef.current = createUiDesignerSession({
+      getHost: () => surfaceRef.current?.host,
+      present: () => {
+        const live = surfaceRef.current;
+        if (!live) return;
+        presentLiveUiIfVisible({
+          panelVisible: panelVisibleRef.current,
+          documentActive: documentActiveRef.current,
+          present: () => live.present(),
+        });
+      },
+      schedule: (work) => strokeSchedulerRef.current.schedule(work),
+      commitLayout: (id, layout, mergeKey) => {
+        onLayoutChangeRef.current(id, layout, mergeKey);
+      },
+      onOverlay: applyOverlay,
+    });
+  }
+  const session = layoutSessionProp ?? localSessionRef.current!;
   const resolveImageUrlRef = useRef(resolveImageUrl);
   resolveImageUrlRef.current = resolveImageUrl;
   const boundResolveImageUrl = useCallback(
@@ -184,26 +249,7 @@ export function UiDesignCanvas({
     designResolution: adtIdeal.designResolution,
     scaleRule: adtIdeal.scaleRule,
   });
-  const previewUi = useMemo(() => {
-    const ids = Object.keys(previewLayouts);
-    if (ids.length === 0) return ui;
-    const widgets = { ...ui.widgets };
-    for (const id of ids) {
-      const widget = widgets[id];
-      const layout = previewLayouts[id];
-      if (!widget || !layout) continue;
-      widgets[id] = { ...widget, layout };
-    }
-    return { ...ui, widgets };
-  }, [previewLayouts, ui]);
-  const displayControls = useMemo(() => {
-    if (Object.keys(previewLayouts).length === 0) return controls;
-    return describeUiControls(previewUi, {
-      parentSize: { width: viewport.width, height: viewport.height },
-      resolveNested,
-      applySafeArea: previewUi.viewportLayer,
-    });
-  }, [controls, previewLayouts, previewUi, resolveNested, viewport.height, viewport.width]);
+  const displayControls = controls;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -237,8 +283,20 @@ export function UiDesignCanvas({
     freezeLiveUiSurface(surface, { panelVisible, documentActive });
     setPreviewError(null);
     setGuiLive(true);
+    registerDesignerHost?.(
+      surface.host,
+      () => {
+        presentLiveUiIfVisible({
+          panelVisible: panelVisibleRef.current,
+          documentActive: documentActiveRef.current,
+          present: () => surfaceRef.current?.present(),
+        });
+      },
+      applyOverlay,
+    );
     const paintScheduler = paintSchedulerRef.current;
     return () => {
+      registerDesignerHost?.(null, null, null);
       surface?.dispose();
       surfaceRef.current = null;
       setGuiLive(false);
@@ -285,13 +343,13 @@ export function UiDesignCanvas({
       try {
         const frozen = !panelVisible || !documentActive;
         if (viewport.width < 1 || viewport.height < 1) return;
+        if (session.locked) return;
         live.resizeDesign(
           viewport.width,
           viewport.height,
           adtIdeal.scaleRule,
           adtIdeal.designResolution,
         );
-        if (gestureLockedRef.current) return;
         applyUiControlsIfUnfrozen(frozen, live.host, displayControls);
         presentLiveUiIfVisible({
           panelVisible,
@@ -322,7 +380,7 @@ export function UiDesignCanvas({
     adtIdeal.scaleRule,
   ]);
 
-  const selected = previewUi.widgets[selectedId];
+  const selected = ui.widgets[selectedId];
   const selectedControl = displayControls.find((row) => row.id === selectedId);
   const canTransform = selected
     ? widgetAllowsDesignerTransform(ui, selected.id)
@@ -330,7 +388,18 @@ export function UiDesignCanvas({
   const selectedHit = selectedControl
     ? designerControlHitRect(
         selectedControl,
-        liveRects[selectedControl.id],
+        session.locked && session.layout
+          ? previewRect(
+              displayControls.find((row) => row.id === selectedControl.parentId)
+                ?.guiRect ?? {
+                x: 0,
+                y: 0,
+                width: viewport.width,
+                height: viewport.height,
+              },
+              session.layout,
+            )
+          : liveRects[selectedControl.id],
         viewport,
         bitmapScale,
         ui.rootId,
@@ -339,9 +408,13 @@ export function UiDesignCanvas({
   const selectedScreen = selectedHit
     ? designRectToScreen(selectedHit, view, previewScale)
     : null;
-  const handles =
+  const handleHits =
     canTransform && selectedScreen
-      ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_HIT_SIZE_PX)
+      ? resizeHandleHitRects(selectedScreen, UI_DESIGN_HANDLE_HIT_SIZE_PX)
+      : null;
+  const handleVisuals =
+    canTransform && selectedScreen
+      ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_VISUAL_SIZE_PX)
       : null;
   const pivotScreen =
     selected && selectedHit
@@ -367,13 +440,10 @@ export function UiDesignCanvas({
   );
 
   const lockGesture = () => {
-    gestureLockedRef.current = true;
-    surfaceRef.current?.host.setGestureLocked?.(true);
-  };
-
-  const unlockGesture = () => {
-    gestureLockedRef.current = false;
-    surfaceRef.current?.host.setGestureLocked?.(false);
+    const current = latestUiRef.current.widgets[dragRef.current?.id ?? ""]?.layout;
+    if (dragRef.current && current) {
+      session.preview(dragRef.current.id, current);
+    }
   };
 
   const capturePointer = (event: PointerEvent<HTMLDivElement>) => {
@@ -545,7 +615,6 @@ export function UiDesignCanvas({
       return;
     }
     drag.armed = true;
-    lockGesture();
     const screenDelta = {
       x: event.clientX - drag.lastX,
       y: event.clientY - drag.lastY,
@@ -553,7 +622,7 @@ export function UiDesignCanvas({
     if (screenDelta.x === 0 && screenDelta.y === 0) return;
     const current = latestUiRef.current;
     const baseLayout =
-      previewLayoutsRef.current[drag.id] ?? current.widgets[drag.id]?.layout;
+      drag.previewLayout ?? current.widgets[drag.id]?.layout;
     if (!baseLayout) return;
     const delta = canvasDeltaToLayoutDelta(screenDelta, viewScale);
     const parentControl = displayControls.find((row) => row.id === drag.id);
@@ -569,34 +638,25 @@ export function UiDesignCanvas({
     const nextLayout =
       drag.mode === "resize" && drag.handle
         ? applyWidgetResize(baseLayout, parentRect, delta, handleEdges(drag.handle))
-        : applyWidgetDragOffset(baseLayout, delta);
+        : applyWidgetDragOffset(baseLayout, delta, parentRect);
     drag.lastX = event.clientX;
     drag.lastY = event.clientY;
     drag.previewLayout = nextLayout;
-    surfaceRef.current?.host.patchLiveLayout?.(drag.id, nextLayout);
-    previewLayoutsRef.current = {
-      ...previewLayoutsRef.current,
-      [drag.id]: nextLayout,
-    };
-    setPreviewLayouts(previewLayoutsRef.current);
+    session.preview(drag.id, nextLayout);
   };
 
   const onViewportPointerUp = (event: PointerEvent<HTMLDivElement>) => {
     pointersRef.current.delete(eventPointerId(event));
     const drag = dragRef.current;
     if (pointersRef.current.size < 2 && drag?.armed && (drag.mode === "move" || drag.mode === "resize")) {
-      const nextLayout = drag.previewLayout ?? previewLayoutsRef.current[drag.id];
-      if (nextLayout) {
-        onLayoutChange(drag.id, nextLayout);
-        uiHostStats.commit += 1;
+      if (drag.previewLayout) {
+        session.commit(drag.previewLayout);
+      } else if (session.locked) {
+        session.cancel();
       }
-      previewLayoutsRef.current = {};
-      setPreviewLayouts({});
-      unlockGesture();
     }
     if (pointersRef.current.size < 2) {
       dragRef.current = null;
-      unlockGesture();
     }
     if (pointersRef.current.size >= 2) beginTwoFinger();
   };
@@ -678,6 +738,8 @@ export function UiDesignCanvas({
             data-kind={control.kind}
             data-gui-x={String(Math.round(hit.x))}
             data-gui-y={String(Math.round(hit.y))}
+            data-gui-width={String(Math.round(hit.width))}
+            data-gui-height={String(Math.round(hit.height))}
             className="absolute"
             style={{
               left: `${(hit.x / viewport.width) * 100}%`,
@@ -699,11 +761,7 @@ export function UiDesignCanvas({
       <div className="pointer-events-none absolute inset-0">
         {hasSafeArea ? (
           <div
-            className={
-              guiLive
-                ? "absolute"
-                : "absolute border border-dashed border-primary/40"
-            }
+            className="absolute border border-dashed border-primary/40"
             data-testid="ui-safe-area"
             style={{
               left: safeScreen.x,
@@ -715,7 +773,8 @@ export function UiDesignCanvas({
         ) : null}
         {selectedScreen ? (
           <div
-            className={guiLive ? "absolute" : "absolute border-2 border-primary"}
+            ref={outlineRef}
+            className="absolute border-2 border-primary"
             data-testid="ui-selection-outline"
             style={{
               left: selectedScreen.x,
@@ -735,17 +794,36 @@ export function UiDesignCanvas({
             }}
           />
         ) : null}
-        {handles
-          ? (Object.entries(handles) as Array<[HandleEdge, (typeof handles)["n"]]>).map(
+        {handleVisuals
+          ? (Object.entries(handleVisuals) as Array<[HandleEdge, ScreenRect]>).map(
+              ([edge, rect]) => (
+                <span
+                  key={`visual-${edge}`}
+                  ref={(node) => {
+                    handleVisualRefs.current[edge] = node;
+                  }}
+                  className="absolute border border-primary bg-background"
+                  data-testid={`ui-resize-${edge}-visual`}
+                  style={{
+                    left: rect.x,
+                    top: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                  }}
+                />
+              ),
+            )
+          : null}
+        {handleHits
+          ? (Object.entries(handleHits) as Array<[HandleEdge, ScreenRect]>).map(
               ([edge, rect]) => (
                 <button
                   key={edge}
                   type="button"
-                  className={
-                    guiLive
-                      ? "pointer-events-auto absolute bg-transparent"
-                      : "pointer-events-auto absolute border border-primary bg-background"
-                  }
+                  ref={(node) => {
+                    handleHitRefs.current[edge] = node;
+                  }}
+                  className="pointer-events-auto absolute bg-transparent"
                   data-testid={`ui-resize-${edge}`}
                   data-resize-handle={edge}
                   aria-label={`Resize ${edge}`}
