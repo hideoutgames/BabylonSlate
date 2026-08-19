@@ -9,13 +9,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Engine, Texture } from "@babylonjs/core";
+import type { Engine } from "@babylonjs/core";
 import {
   MaterialLibrary,
   ResourceCache,
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
+  getMaterialTexture,
   materialUnavailable,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
@@ -174,9 +175,7 @@ export function MaterialEditingProvider({
         const engine = engineRef.current;
         const cache = resourceCacheRef.current;
         if (!bytes || !engine || !cache) return null;
-        const texture = cache.getTexture(guid, engine, bytes);
-        if ((texture as { isCube?: boolean }).isCube) return null;
-        return texture as Texture;
+        return getMaterialTexture(cache, guid, engine, bytes);
       },
     });
   }, []);

@@ -291,3 +291,23 @@ export class ResourceCache {
     }
   }
 }
+
+/** glTF / NodeMaterial albedo: do not invert Y (Babylon glTF loader convention). */
+export const MATERIAL_TEXTURE_SAMPLING: TextureSamplingOptions = {
+  invertY: false,
+};
+
+export function getMaterialTexture(
+  cache: ResourceCache,
+  assetGuid: string,
+  engine: AbstractEngine,
+  bytes: Uint8Array | Blob,
+): Texture | null {
+  const texture = cache.getTexture(
+    assetGuid,
+    engine,
+    bytes,
+    MATERIAL_TEXTURE_SAMPLING,
+  );
+  return texture instanceof Texture ? texture : null;
+}

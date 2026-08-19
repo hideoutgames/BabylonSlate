@@ -71,6 +71,9 @@ describe("importers", () => {
     expect(
       results.filter((result) => result.type === "Animation"),
     ).toHaveLength(27);
+    expect(
+      results.find((result) => result.type === "Material")?.payload.shadingModel,
+    ).toBe("unlit");
   });
 
   it("rejects OBJ, STL, FBX, and invalid GLB bytes", async () => {

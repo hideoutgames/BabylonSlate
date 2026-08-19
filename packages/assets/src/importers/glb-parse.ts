@@ -16,6 +16,8 @@ export interface GlbBrowseMaterial {
   name: string;
   /** Index into `images` when a baseColor / metallicRoughness texture is present. */
   albedoImageIndex: number | null;
+  /** True when the glTF material uses `KHR_materials_unlit`. */
+  unlit: boolean;
 }
 
 export interface GlbBrowseAnimation {
@@ -296,7 +298,14 @@ function browseFromGltfJson(
         albedoImageIndex = texture.source as number;
       }
     }
-    return { name, albedoImageIndex };
+    return {
+      name,
+      albedoImageIndex,
+      unlit: Boolean(
+        (material.extensions as Record<string, unknown> | undefined)
+          ?.KHR_materials_unlit,
+      ),
+    };
   });
 
   const accessorsJson = Array.isArray(json.accessors) ? json.accessors : [];
