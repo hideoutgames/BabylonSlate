@@ -221,6 +221,7 @@ export function PlayOverlay({
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [freeCamEnabled, setFreeCamEnabled] = useState(false);
+  const [paused, setPaused] = useState(pauseOnPlay);
   const [statsOpen, setStatsOpen] = useState(false);
   const [statsHighlight, setStatsHighlight] = useState<StatsHudHighlight | null>(
     null,
