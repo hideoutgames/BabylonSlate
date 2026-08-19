@@ -530,10 +530,10 @@ Spec: [engineplan.md](../engineplan.md) §7, §18 P12, Appendix A `p12-editor-ex
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | EditorUtilityObject | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, export strip | P11 done |
-| UserInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
+| UserInterface **authoring** editors | Done (`p12-ui-editors` + fundamentals rework) | `apps/editor` (designer Dockview host), `render` (`createUiSurface` hosts ADT canvas), `ui-runtime` schema v3 | `p12-editor-extensions` |
 | Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
-UserInterface authoring (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a healthy Engine. Do not rebuild `@babylonslate/ui-runtime`.
+UserInterface authoring (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a hosted ADT canvas. Schema v3 Babylon kinds; nested UserInterface is a slot.
 
 Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
 
