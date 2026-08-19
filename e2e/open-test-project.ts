@@ -49,16 +49,6 @@ export async function openTestProject(
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 
-/** Click the TestProject row on the homepage (name may omit `.babproject`). */
-export async function clickListedTestProject(page: Page): Promise<void> {
-  const listed = page.getByTestId("open-listed-project-TestProject");
-  if ((await listed.count()) > 0) {
-    await listed.click();
-    return;
-  }
-  await page.getByTestId("open-listed-project-TestProject.babproject").click();
-}
-
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */
 export async function submitCreateOrOpenListed(
   page: Page,
