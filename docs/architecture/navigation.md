@@ -63,7 +63,7 @@ Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx
 ## Honest residuals
 
 - Auto-bake-on-save default **off**. Unmounted P18 scene workspaces have no bake collector, so Save will not open the modal for those tabs.
-- Geometry collect is one-shot on the painted modal frame, not chunked across frames. The blocking modal still covers that stall.
+- Geometry collect runs on the painted modal frame and retries a few extra frames if the first collect is empty (Viewport meshes can lag the Save click). It is not chunked across frames; the blocking modal still covers that stall.
 - Cost volumes mark overlapping Recast polygons (`queryPolygons` AABB → `setPolyArea`). Large simplified polys can extend the expensive region past the authored box. Unwalkable obstacles still carve; cost does not call `addObstacle`.
 - Tiled generate without `supportDynamicObstacles` still uses solo unless the dynamic-obstacles toggle is on.
 - §18 editor e2e does not Play-patrol in the viewport; 2D/3D patrol and obstacle close are the headless harness. Auto Bake On Save is covered in `e2e/p11-ai.spec.ts`.

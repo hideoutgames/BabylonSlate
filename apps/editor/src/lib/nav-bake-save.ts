@@ -3,6 +3,24 @@ import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 
 const flushes = new Set<() => Promise<void>>();
 
+export type NavBakeSaveResult = {
+  ok: boolean;
+  path: string | null;
+  byteLength: number;
+  error: string | null;
+};
+
+let lastBake: NavBakeSaveResult | null = null;
+
+/** Playwright / Save diagnostics: last `startBake` outcome (success or error). */
+export function recordNavBakeSaveResult(result: NavBakeSaveResult): void {
+  lastBake = result;
+}
+
+export function lastNavBakeSaveResult(): NavBakeSaveResult | null {
+  return lastBake;
+}
+
 /** Register a mounted scene workspace bake flush. Returns unregister. */
 export function registerNavBakeSaveFlush(flush: () => Promise<void>): () => void {
   flushes.add(flush);

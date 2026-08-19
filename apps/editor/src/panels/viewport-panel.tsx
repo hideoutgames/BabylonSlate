@@ -137,9 +137,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     sceneRef.current = scene;
   }, [scene]);
 
+  const registerNavBakeCollector = navBake?.registerCollector;
   useEffect(() => {
-    if (!navBake) return;
-    navBake.registerCollector((extras) => {
+    if (!registerNavBakeCollector) return;
+    registerNavBakeCollector((extras) => {
       const handle = engineRef.current;
       const current = sceneRef.current;
       if (!handle?.editor || !current) {
@@ -147,8 +148,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       }
       return collectNavBakeGeometry(handle.editor.sync, current, extras);
     });
-    return () => navBake.registerCollector(null);
-  }, [navBake]);
+    return () => registerNavBakeCollector(null);
+  }, [registerNavBakeCollector]);
 
   useEffect(() => {
     const overlay = navDebugRef.current;

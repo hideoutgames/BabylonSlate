@@ -156,6 +156,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     );
     await expect(autoBake).toBeVisible();
     await autoBake.click();
+    await expect(autoBake).toBeChecked();
     const save = page.getByTestId("save-all-project");
     await expect(save).toBeEnabled();
     await save.click({ force: true });
@@ -166,7 +167,21 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
       timeout: 30_000,
     });
     await saveAllIfEnabled(page);
-    const byteLength = await page.evaluate(async () => {
+    const bake = await page.evaluate(() => {
+      const host = globalThis as {
+        __babylonslateTest?: {
+          lastNavBake?: () => {
+            ok: boolean;
+            path: string | null;
+            byteLength: number;
+            error: string | null;
+          } | null;
+        };
+      };
+      return host.__babylonslateTest?.lastNavBake?.() ?? null;
+    });
+    expect(bake, JSON.stringify(bake)).toMatchObject({ ok: true });
+    const byteLength = await page.evaluate(async (bakePath) => {
       const host = globalThis as {
         __babylonslateTest?: {
           readAssetChunk?: (
@@ -176,10 +191,12 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
         };
       };
       const paths = [
+        bakePath,
         "assets/main.scene.babasset",
         "assets/Main.scene.babasset",
-      ];
-      for (const path of paths) {
+      ].filter((path): path is string => Boolean(path));
+      const unique = [...new Set(paths)];
+      for (const path of unique) {
         const bytes = await host.__babylonslateTest?.readAssetChunk?.(
           path,
           "navmesh",
@@ -187,7 +204,7 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
         if (bytes && bytes.byteLength > 0) return bytes.byteLength;
       }
       return 0;
-    });
+    }, bake?.path ?? null);
     expect(byteLength).toBeGreaterThan(0);
   });
 

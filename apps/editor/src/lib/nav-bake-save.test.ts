@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene } from "@babylonslate/core";
 import {
   flushNavBakeForSave,
+  lastNavBakeSaveResult,
   navMeshAutoBakeProperties,
+  recordNavBakeSaveResult,
   registerNavBakeSaveFlush,
 } from "./nav-bake-save";
 
@@ -50,5 +52,20 @@ describe("nav bake save flush", () => {
     startBake.mockClear();
     await flushNavBakeForSave();
     expect(startBake).not.toHaveBeenCalled();
+  });
+
+  it("records the last bake result for the Save / Playwright hatch", () => {
+    recordNavBakeSaveResult({
+      ok: true,
+      path: "assets/main.scene.babasset",
+      byteLength: 12,
+      error: null,
+    });
+    expect(lastNavBakeSaveResult()).toEqual({
+      ok: true,
+      path: "assets/main.scene.babasset",
+      byteLength: 12,
+      error: null,
+    });
   });
 });

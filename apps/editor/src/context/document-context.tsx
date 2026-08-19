@@ -109,7 +109,10 @@ import {
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
-import { flushNavBakeForSave } from "../lib/nav-bake-save";
+import {
+  flushNavBakeForSave,
+  lastNavBakeSaveResult,
+} from "../lib/nav-bake-save";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -2839,6 +2842,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
         readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+        lastNavBake: () => {
+          ok: boolean;
+          path: string | null;
+          byteLength: number;
+          error: string | null;
+        } | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
         enginePluginLoad: () => {
@@ -3073,6 +3082,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       guidForPath: (path: string) => projectService.guidForPath(path),
       readAssetChunk: (path: string, chunkId: string) =>
         projectService.readAssetChunk(path, chunkId),
+      lastNavBake: () => lastNavBakeSaveResult(),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()
