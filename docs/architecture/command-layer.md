@@ -110,4 +110,4 @@ See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 
 ## Tests
 
-Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas.
+Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas; `e2e/p18-editor-opt.spec.ts` covers idle-unmount (2-minute grace, cap 3, Play with an unmounted scene viewport) plus Prefab/Play sharing the app-lifetime Engine.

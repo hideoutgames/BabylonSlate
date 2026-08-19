@@ -68,6 +68,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
+import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 
 function asTree(payload: Record<string, unknown>): BehaviourTreeDocument {
   return parseBehaviourTreeDocument(payload) ?? createDefaultBehaviourTree();
@@ -284,6 +285,7 @@ function useBehaviourTreeDocument() {
     openDocument,
     openDocuments,
     applyAssetDocumentChange,
+    documentId: workspaceDocumentId,
   };
 }
 
@@ -297,7 +299,10 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
     paletteNodes,
     diagnostics,
     openClass,
+    documentId,
   } = useBehaviourTreeDocument();
+  const { sessionViewport, onSessionViewportChange } =
+    useGraphSessionViewport(documentId);
   const {
     selectedId,
     attachmentId,
@@ -396,6 +401,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           nodeDragHandle=".bt-node-drag-handle"
           connectEndMode="add-node"
           replaceIncomingOnConnect
+          sessionViewport={sessionViewport}
+          onSessionViewportChange={onSessionViewportChange}
           canConnect={(connection) => {
             if (connection.sourceHandle !== BT_CHILDREN_HANDLE) return false;
             if (connection.targetHandle !== BT_PARENT_HANDLE) return false;

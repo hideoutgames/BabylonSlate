@@ -585,21 +585,24 @@ Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-
 
 ## P18 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **Next phase.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **P18 is Done.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Idle-unmount background chrome tabs (2 min grace, cap 3) | `p18-inactive-documents` | `apps/editor` (`document-workspace`, UI/Anim docks) | P17 done |
-| Off-screen node virtualisation for every `GraphEditor` host | `p18-graph-virtualize` | `graph-ui`, hosts in `apps/editor` | P17 done (can parallel) |
-| Windowed Add Node catalog body (~1000 nodes) | `p18-add-node-virtualize` | `graph-ui` (`NodePalette`); optional `editor-kit` list helper | P17 done (can parallel) |
-| Windowed Content Browser grid + revoke off-screen thumbs | `p18-content-browser-virtualize` | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |
-| Prefab Preview on the app-lifetime Engine | `p18-shared-prefab-engine` | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
+| Idle-unmount background chrome tabs (2 min grace, cap 3) | Done (`p18-inactive-documents`) | `apps/editor` (`document-workspace`, UI/Anim docks) | P17 done |
+| Off-screen node virtualisation for every `GraphEditor` host | Done (`p18-graph-virtualize`) | `graph-ui`, hosts in `apps/editor` | P17 done (can parallel) |
+| Windowed Add Node catalog body (~1000 nodes) | Done (`p18-add-node-virtualize`) | `graph-ui` (`NodePalette`); `editor-kit` `windowedSlice` | P17 done (can parallel) |
+| Windowed Content Browser grid + revoke off-screen thumbs | Done (`p18-content-browser-virtualize`) | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |
+| Prefab Preview on the app-lifetime Engine | Done (`p18-shared-prefab-engine`) | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
+| Architecture docs + Playwright + verify | Done | unit + `e2e/p18-editor-opt.spec.ts` | all P18 slices |
 
 Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers; **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
 
+**P18 is Done.** Idle-unmount, GraphEditor virtualisation, windowed Add Node, windowed Content Browser grid, and Prefab on the app-lifetime Engine all landed. Playwright: `e2e/p18-editor-opt.spec.ts`.
+
 ## P19 Behaviour tree hosts and navigation leftovers
 
-Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. Do not start until P18 is marked Done. **P20** may run in parallel (editor/runtime perf, not a P19 reopen).
+Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. **P18** is Done. **P20** may run in parallel (editor/runtime perf, not a P19 reopen).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -610,7 +613,7 @@ Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; r
 
 ## P20 Editor/runtime follow-on optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. Do **not** start until P18 is marked Done. May parallel P19 (different packages). No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. **P18** is Done. May parallel P19 (different packages). No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |

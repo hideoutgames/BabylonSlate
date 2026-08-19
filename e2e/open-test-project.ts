@@ -49,6 +49,12 @@ export async function openTestProject(
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 
+/** Click the homepage TestProject row after Close / reload, then wait for chrome. */
+export async function openListedTestProject(page: Page): Promise<void> {
+  await clickListedTestProject(page);
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */
 export async function submitCreateOrOpenListed(
   page: Page,
@@ -82,6 +88,20 @@ export async function openContentBrowser(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Grid search is the current folder only; click the project assets root. */
+export async function selectContentBrowserAssetsFolder(
+  page: Page,
+): Promise<void> {
+  const tree = page.getByTestId("content-browser-folder-tree");
+  await expect(tree).toBeVisible();
+  await tree.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  const assetsRow = page.getByTestId("tree-row-assets");
+  await expect(assetsRow).toBeVisible();
+  await assetsRow.click();
+}
+
 /** Create an authored asset from the Content Browser New Asset dialog. */
 export async function createContentBrowserAsset(
   page: Page,
@@ -89,6 +109,7 @@ export async function createContentBrowserAsset(
   name: string,
 ): Promise<void> {
   await openContentBrowser(page);
+  await selectContentBrowserAssetsFolder(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(
     page.getByTestId("content-browser-new-asset-dialog"),
@@ -108,7 +129,17 @@ export async function openAssetFromBrowser(
   assetPath: string,
 ): Promise<void> {
   await openContentBrowser(page);
-  await page.locator(`[data-asset-path="${assetPath}"]`).dblclick();
+  await selectContentBrowserAssetsFolder(page);
+  const tile = page.locator(`[data-asset-path="${assetPath}"]`);
+  if (!(await tile.isVisible())) {
+    const stem = (assetPath.split("/").pop() ?? assetPath).replace(
+      /\.babasset$/,
+      "",
+    );
+    await page.getByTestId("content-browser-search").fill(stem);
+  }
+  await expect(tile).toBeVisible({ timeout: 15_000 });
+  await tile.dblclick();
 }
 
 export async function openMainScene(page: Page): Promise<void> {

@@ -19,6 +19,18 @@ export type GraphViewport = {
   };
 };
 
+export type GraphSessionViewport = { x: number; y: number; zoom: number };
+
+export function resolveGraphMountViewport(
+  session: GraphSessionViewport | null | undefined,
+  graphViewport: GraphViewport,
+): { fitView: boolean; defaultViewport: GraphSessionViewport } {
+  if (session) {
+    return { fitView: false, defaultViewport: session };
+  }
+  return { fitView: true, defaultViewport: graphViewport.defaultViewport };
+}
+
 export function resolveGraphViewport(
   defaultZoom = GRAPH_DEFAULT_ZOOM,
 ): GraphViewport {
