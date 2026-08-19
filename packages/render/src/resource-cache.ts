@@ -309,5 +309,6 @@ export function getMaterialTexture(
     bytes,
     MATERIAL_TEXTURE_SAMPLING,
   );
-  return texture instanceof Texture ? texture : null;
+  if (!texture || texture.isCube) return null;
+  return texture as Texture;
 }
