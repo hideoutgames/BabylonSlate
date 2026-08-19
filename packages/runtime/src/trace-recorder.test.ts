@@ -40,4 +40,26 @@ describe("runtime trace recorder", () => {
     expect(replaySnap).toBe(recordedSnap);
     replay.stop();
   });
+
+  it("records undilated dt while slomo is active", () => {
+    const recorded = createInProcessRuntime({
+      seed: 3,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      dt: 1 / 60,
+    });
+    recorded.start();
+    recorded.executeConsoleCommand("slomo 2");
+    recorded.executeConsoleCommand("snapshot start");
+    recorded.tick();
+    recorded.executeConsoleCommand("snapshot stop");
+    const payload = recorded.stopTrace();
+    expect(recorded.getWorld().clock.dt).toBeCloseTo(2 / 60);
+    expect(payload?.dt).toBeCloseTo(1 / 60);
+    const frame = JSON.parse(payload!.frames[0]!.snapshotText ?? "{}") as {
+      dt: number;
+    };
+    expect(frame.dt).toBeCloseTo(1 / 60);
+    recorded.stop();
+  });
 });

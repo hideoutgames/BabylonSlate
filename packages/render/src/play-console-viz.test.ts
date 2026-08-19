@@ -39,7 +39,7 @@ describe("play console visualization", () => {
         id: "box",
         shape: "box",
         position: { x: 0, y: 0, z: 0 },
-        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        rotation: { x: 0, y: 1, z: 0, w: 0 },
         halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
       },
       {
@@ -67,12 +67,34 @@ describe("play console visualization", () => {
         ],
       },
     ]);
-    expect(scene.getMeshByName("playConsoleViz:box")).not.toBeNull();
+    const box = scene.getMeshByName("playConsoleViz:box");
+    expect(box).not.toBeNull();
+    expect(box?.rotationQuaternion?.y).toBeCloseTo(1);
     expect(scene.getMeshByName("playConsoleViz:sphere")).not.toBeNull();
     expect(scene.getMeshByName("playConsoleViz:circle")).not.toBeNull();
     expect(scene.getMeshByName("playConsoleViz:line")).not.toBeNull();
     overlay.sync([]);
     expect(scene.getMeshByName("playConsoleViz:box")).toBeNull();
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("reuses collision overlay meshes when pose changes", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    const box = {
+      id: "box",
+      shape: "box" as const,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+    };
+    overlay.sync([box]);
+    const first = scene.getMeshByName("playConsoleViz:box");
+    overlay.sync([{ ...box, position: { x: 3, y: 0, z: 0 } }]);
+    const second = scene.getMeshByName("playConsoleViz:box");
+    expect(second?.uniqueId).toBe(first?.uniqueId);
+    expect(second?.position.x).toBeCloseTo(3);
     overlay.dispose();
     engine.dispose();
   });

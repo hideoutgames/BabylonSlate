@@ -19,6 +19,16 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-slomo | Spec | Trace frame `snapshotText` baked `world.clock.dt` (`dt * rate`) instead of recorded `dt` | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Standards | `showcollision` disposed and rebuilt overlay meshes every tick | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale 8` printed and emitted 8 while Play clamped to 2 | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam | Spec | `help freecam` omitted the pointer/WASD steal vs gamepad-still-forwards split | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Debug collider listing added local translation without rotating by the body quaternion | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-hud | Spec | `stat threads` highlights fps (main) plus script/physics (worker); HUD has no separate render-ms row | Accepted |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-freecam / p8-console-apply / p8-console-viz | Spec | 2D `freecam` panned per finger instead of pinch-zooming ortho | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `setRenderQuality` applied on the editor viewport `HardwareScalingController`, not Play-only | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale` followed Play valve max 4 instead of clamping 1..2 | Resolved |
+| 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Spec | Collision debug boxes ignored listed world rotation | Resolved |
 | 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Spec | Origin collider `isVisible = true` also entered marquee (`meshNamesInCanvasRect`), so Drag Select listed a helper twice (icon + origin) and Details could show "2 Actors" | Resolved |
 | 2026-08-18 | cursor/viewport-pick-review-1ebb | viewport pick vs gizmo/Outliner | Standards | `pickWorld` pre-refreshed camera-dependent matrices, so tests would pass without `pickAtCanvas`'s refresh loop | Resolved |
 | 2026-08-18 | cursor/typed-struct-enum-followup-bc2a | Typed structures and enums in the node graph | Spec | Context-sensitive Add Node filtered compatible nodes but did not prefer matching Make/Break/Switch/Equal rows | Resolved |

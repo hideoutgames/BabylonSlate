@@ -218,4 +218,30 @@ describe("attachPlayFreeCamInput", () => {
     freeCam.dispose();
     engine.dispose();
   });
+
+  it("pinch-zooms 2D ortho and does not pan while two pointers are down", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const binding = createSnapshotSceneBinding();
+    const freeCam = createPlayFreeCamController(scene, { binding, mode: "2d" });
+    const canvas = new FakeCanvas();
+    freeCam.setEnabled(true);
+    const camera = scene.activeCamera as UniversalCamera;
+    const start = camera.position.clone();
+    const startTop = camera.orthoTop ?? 5;
+    const input = attachPlayFreeCamInput(
+      canvas as unknown as HTMLCanvasElement,
+      freeCam,
+      { mode: "2d", panScale: 0.01 },
+    );
+    canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+    canvas.emit("pointerdown", { pointerId: 2, clientX: 200, clientY: 100 });
+    canvas.emit("pointermove", { pointerId: 1, clientX: 50, clientY: 100 });
+    canvas.emit("pointermove", { pointerId: 2, clientX: 250, clientY: 100 });
+    expect(camera.orthoTop).toBeCloseTo(startTop / 2);
+    expect(camera.position.equalsWithEpsilon(start, 1e-4)).toBe(true);
+    input.dispose();
+    freeCam.dispose();
+    engine.dispose();
+  });
 });

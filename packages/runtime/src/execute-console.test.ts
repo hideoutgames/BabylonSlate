@@ -194,6 +194,20 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
     expect(runtime.executeConsoleCommand("resolutionscale").output).toBe(
       "resolutionscale 1.5",
     );
+    expect(runtime.executeConsoleCommand("resolutionscale 8")).toEqual({
+      success: true,
+      output: "resolutionscale 2",
+    });
+    expect(runtime.executeConsoleCommand("resolutionscale 0.25").output).toBe(
+      "resolutionscale 1",
+    );
+    expect(
+      commands.filter((command) => command.type === "setResolutionScale"),
+    ).toEqual([
+      { type: "setResolutionScale", scale: 1.5 },
+      { type: "setResolutionScale", scale: 2 },
+      { type: "setResolutionScale", scale: 1 },
+    ]);
     runtime.stop();
   });
 
