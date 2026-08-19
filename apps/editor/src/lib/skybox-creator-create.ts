@@ -40,7 +40,12 @@ export async function writeSkyboxCreatorFaceAssets(options: {
   deleteAsset: (guid: string) => Promise<void>;
 }): Promise<SkyboxFaces> {
   const helper = normalizeSkyboxCreatorPayload(options.payload);
-  const sliced = fitSourceIntoSkyboxNet(options.rgba, options.width, options.height);
+  const sliced = fitSourceIntoSkyboxNet(
+    options.rgba,
+    options.width,
+    options.height,
+    helper.sourcePlacement,
+  );
   const writes = planSkyboxCreatorFaceWrites({
     helperPath: options.helperPath,
     generatedFaces: helper.generatedFaces,

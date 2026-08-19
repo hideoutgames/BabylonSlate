@@ -1341,6 +1341,7 @@ describe("content-browser-helpers", () => {
     expect(helper.type).toBe("SkyboxCreator");
     expect(helper.payload).toEqual({
       sourceTextureGuid: null,
+      sourcePlacement: null,
       generatedFaces: {
         px: null,
         py: null,
