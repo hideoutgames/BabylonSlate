@@ -117,6 +117,7 @@ export function MaterialEditingProvider({
   const generationRef = useRef(0);
   const manualRenderPendingRef = useRef(false);
   const renderCooldownTimerRef = useRef<number | null>(null);
+  const [previewSceneEpoch, setPreviewSceneEpoch] = useState(0);
   const frozen = !active || play.playing;
 
   const finishManualRender = useCallback(() => {
@@ -204,9 +205,11 @@ export function MaterialEditingProvider({
     registerMaterialPreviewCameraRadius(
       () => hostRef.current?.camera.radius ?? null,
     );
+    setPreviewSceneEpoch((current) => current + 1);
     return () => {
       gestures?.dispose();
       presenter?.dispose();
+      if (host) libraryRef.current?.releaseScene(host.scene);
       host?.dispose();
       hostRef.current = null;
       presenterRef.current = null;
@@ -320,14 +323,29 @@ export function MaterialEditingProvider({
     };
   }, [assetRegistry, readAssetChunk, textureGuidsKey]);
 
-  // Keyed on the lowered plan hash (positions excluded), not document identity.
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;
+
+  useEffect(() => {
+    const restored = sharedEngine?.onContextRestoredObservable;
+    if (!restored?.add) return;
+    const observer = restored.add(() => {
+      libraryRef.current?.invalidate();
+      resourceCacheRef.current?.releaseGpuTextures();
+      if (!compileKey) return;
+      dispatch({ type: "edit", cost: costClassRef.current });
+      presenterRef.current?.present({ force: true });
+    });
+    return () => {
+      restored.remove(observer);
+    };
+  }, [compileKey, sharedEngine]);
+
   useEffect(() => {
     if (!compileKey) return;
     generationRef.current += 1;
     dispatch({ type: "edit", cost: costClassRef.current });
-  }, [compileKey]);
+  }, [compileKey, previewSceneEpoch]);
 
   // Trailing debounce so the final edit still compiles.
   useEffect(() => {
@@ -378,12 +396,14 @@ export function MaterialEditingProvider({
   useEffect(() => {
     if (previewState.status !== "queued") return;
     if (!texturesReady) return;
+    if (!hostRef.current) return;
     const generation = previewState.queuedGeneration ?? previewState.generation;
     // Yield so the pointer/keyboard event that queued this can finish first.
     const handle = window.setTimeout(() => compile(generation), 0);
     return () => window.clearTimeout(handle);
   }, [
     compile,
+    previewSceneEpoch,
     previewState.generation,
     previewState.queuedGeneration,
     previewState.status,

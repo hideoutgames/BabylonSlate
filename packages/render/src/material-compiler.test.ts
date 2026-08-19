@@ -855,6 +855,37 @@ describe("material compiler", () => {
     );
   });
 
+  it("reports a disposed Texture the same as a missing one", () => {
+    const scene = host();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push({
+      id: "sample",
+      type: "texture.sample",
+      position: { x: 0, y: 0 },
+      properties: { textureGuid: "tex-1" },
+    });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push({
+      id: "e-sample",
+      sourceNodeId: "sample",
+      sourcePinId: "rgb",
+      targetNodeId: "output",
+      targetPinId: "baseColor",
+    });
+    const disposed = new Texture(null, scene, true, false);
+    disposed.dispose();
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: () => disposed,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics.map((row) => row.code)).toContain(
+      "material.missingTexture",
+    );
+  });
+
   it("assigns the Texture Parameter asset onto the sampling TextureBlock", () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);

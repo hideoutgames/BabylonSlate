@@ -5,6 +5,7 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
+import { isDisposedNodeMaterial } from "./gpu-resource-live";
 import {
   compileMaterialPlan,
   materialCompileFailed,
@@ -86,7 +87,11 @@ export class MaterialLibrary {
     const lowered = this.planFor(doc);
     if (!lowered.ok) return false;
     const entry = this.entriesFor(scene).get(assetGuid);
-    return entry?.hash === lowered.plan.hash;
+    return (
+      entry !== undefined &&
+      entry.hash === lowered.plan.hash &&
+      !isDisposedNodeMaterial(entry.material, scene)
+    );
   }
 
   /**
@@ -104,7 +109,11 @@ export class MaterialLibrary {
     }
     const entries = this.entriesFor(scene);
     const existing = entries.get(assetGuid);
-    if (existing && existing.hash === lowered.plan.hash) {
+    if (
+      existing &&
+      existing.hash === lowered.plan.hash &&
+      !isDisposedNodeMaterial(existing.material, scene)
+    ) {
       existing.refCount += 1;
       return { ok: true, material: existing.material, hash: existing.hash };
     }
@@ -149,6 +158,14 @@ export class MaterialLibrary {
     entries.clear();
     this.scenes.delete(scene);
     this.tracked.delete(scene);
+  }
+
+  /**
+   * Drop every cached material so the next `acquire` rebuilds. Used after a
+   * WebGL context restore, when NodeMaterials are still JS-alive but GPU-dead.
+   */
+  invalidate(): void {
+    for (const scene of [...this.tracked]) this.releaseScene(scene);
   }
 
   /** Compile shaders before first draw so a mobile GPU does not stall. */

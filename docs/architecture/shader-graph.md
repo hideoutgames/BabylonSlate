@@ -115,7 +115,11 @@ is derivatives plus absolute values plus an add, `log2` is a scaled natural log,
 refcounts instances. A Babylon material belongs to one Scene, so the editor
 viewport, a preview tab and a Play session each hold their own. A new material
 replaces the old one only after it builds, so a failed edit leaves the previous
-material on screen.
+material on screen. `acquire` rebuilds when the cached `NodeMaterial` is
+already disposed (removed from `scene.materials` — NodeMaterial has no
+`isDisposed()`). `invalidate()` drops every cached instance so the next acquire
+compiles onto live GPU state. WebGL restore also calls `releaseGpuTextures()`
+so Texture Parameters bind new InternalTextures instead of a white cube.
 
 ## Preview and the Render button
 
@@ -132,7 +136,14 @@ Play overlay, which share that Engine. Prefab Preview is on that Engine too
 only (`attachMaterialPreviewGestures`); never `camera.attachControl`, which
 Babylon binds to the Engine input element (Scene / Play). Vertical orbit matches
 the Scene viewport (`beta -= dy`; dragging down looks up). Hidden Material tabs
-and in-editor Play freeze present.
+and in-editor Play freeze present. Recreating the preview Scene (canvas remount,
+tab remount after idle-unmount, WebGL context restore) bumps a scene epoch so
+the graph recompiles onto the new Scene even when the compile key is unchanged.
+`ResourceCache.getTexture` / `getMaterialTexture` also replace a cached Texture
+whose GPU object is gone (Babylon Texture has no `isDisposed()`; scene-owned
+wrappers lose `getScene()`, engine-owned ones lose `_engine`) — otherwise
+Render would bind a dead GPU object and the preview would stay a white cube
+until the Material tab closed.
 
 The compact `material-preview-overlay` contains only the viewport-style mesh
 `ToggleGroup`. Cube is the document default and the runtime fallback for
