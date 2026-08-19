@@ -294,6 +294,79 @@ test.describe("P5 visual scripting acceptance", () => {
     await page.getByTestId("play-overlay-close").click();
   });
 
+  test("For Loop executes its body and exposes the final Index in Preview", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    const installed = await page.evaluate(async () => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          setMainGraphContent: (g: unknown) => Promise<boolean>;
+        };
+      };
+      return host.__babylonslateTest?.setMainGraphContent({
+        nodes: [
+          {
+            id: "tick",
+            type: "flow.event.tick",
+            position: { x: 40, y: 80 },
+            data: {},
+          },
+          {
+            id: "loop",
+            type: "flow.forLoop",
+            position: { x: 300, y: 80 },
+            data: {
+              "default:firstIndex": 0,
+              "default:lastIndex": 2,
+            },
+          },
+          {
+            id: "print",
+            type: "debug.print",
+            position: { x: 580, y: 80 },
+            data: {
+              key: "for-loop",
+              duration: 30,
+              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: "start",
+            source: "tick",
+            target: "loop",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "body",
+            source: "loop",
+            target: "print",
+            sourceHandle: "loopBody",
+            targetHandle: "execIn",
+          },
+          {
+            id: "index",
+            source: "loop",
+            target: "print",
+            sourceHandle: "index",
+            targetHandle: "value",
+          },
+        ],
+      }) ?? false;
+    });
+    expect(installed).toBe(true);
+
+    await openMainScene(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("print-overlay")).toContainText("2", {
+      timeout: 15_000,
+    });
+    await page.getByTestId("play-overlay-close").click();
+  });
+
   test("the node palette can add Get Axis 2D on the Class graph", async ({
     page,
   }) => {
