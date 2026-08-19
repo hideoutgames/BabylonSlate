@@ -23,14 +23,21 @@ export function UiDesignHierarchy({
   selectedId,
   onSelect,
   onChange,
+  resolveNested,
+  onExtract,
+  onOpenAsset,
 }: {
   ui: UserInterfaceDocument;
   selectedId: string;
   onSelect: (id: string) => void;
   onChange: (next: UserInterfaceDocument) => void;
+  resolveNested?: (guid: string) => UserInterfaceDocument | null;
+  onExtract?: (widgetId: string, name: string) => void;
+  onOpenAsset?: (guid: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [extractTarget, setExtractTarget] = useState<string | null>(null);
 
   const widgetMenuItems = useCallback(
     (id: string): NestedMenuItem[] => {
@@ -83,6 +90,22 @@ export function UiDesignHierarchy({
       items.push(
         { type: "separator", id: "actions" },
         {
+          id: "open-asset",
+          label: "Open Asset",
+          testId: "ui-widget-open-asset",
+          disabled: widget.kind !== "UserInterface" || !widget.nestedUiGuid,
+          onSelect: () => {
+            if (widget.nestedUiGuid) onOpenAsset?.(widget.nestedUiGuid);
+          },
+        },
+        {
+          id: "extract",
+          label: "Extract",
+          testId: "ui-widget-extract",
+          disabled: isRoot || widget.kind === "UserInterface",
+          onSelect: () => setExtractTarget(id),
+        },
+        {
           id: "duplicate",
           label: "Duplicate",
           testId: "ui-widget-duplicate",
@@ -119,20 +142,52 @@ export function UiDesignHierarchy({
       );
       return items;
     },
-    [onChange, onSelect, selectedId, ui],
+    [onChange, onOpenAsset, onSelect, selectedId, ui],
   );
 
   const nodes = useMemo(() => {
     const rows: TreeViewNode[] = [];
+    const walkNested = (
+      nested: UserInterfaceDocument,
+      prefix: string,
+      depth: number,
+    ) => {
+      const visit = (id: string, nestedDepth: number) => {
+        const widget = nested.widgets[id];
+        if (!widget || id === nested.rootId) {
+          if (widget) {
+            for (const child of widget.children) visit(child, nestedDepth);
+          }
+          return;
+        }
+        const rowId = `${prefix}/${widget.id}`;
+        const expanded = !collapsed.has(rowId);
+        rows.push({
+          id: rowId,
+          label: widget.name,
+          depth: nestedDepth,
+          hasChildren: widget.children.length > 0,
+          expanded,
+          muted: true,
+        });
+        if (!expanded) return;
+        for (const child of widget.children) visit(child, nestedDepth + 1);
+      };
+      visit(nested.rootId, depth);
+    };
     const walk = (id: string, depth: number) => {
       const widget = ui.widgets[id];
       if (!widget) return;
+      const nested =
+        widget.kind === "UserInterface" && widget.nestedUiGuid
+          ? resolveNested?.(widget.nestedUiGuid)
+          : null;
       const expanded = !collapsed.has(id);
       rows.push({
         id,
         label: widget.name,
         depth,
-        hasChildren: widget.children.length > 0,
+        hasChildren: widget.children.length > 0 || !!nested,
         expanded,
         muted: !widget.visible,
         icon: (
@@ -157,19 +212,27 @@ export function UiDesignHierarchy({
       });
       if (!expanded) return;
       for (const child of widget.children) walk(child, depth + 1);
+      if (nested) walkNested(nested, id, depth + 1);
     };
     walk(ui.rootId, 0);
     return rows;
-  }, [collapsed, ui, widgetMenuItems]);
+  }, [collapsed, resolveNested, ui, widgetMenuItems]);
 
   const renameWidget = renameTarget ? ui.widgets[renameTarget] : undefined;
+  const extractWidget = extractTarget ? ui.widgets[extractTarget] : undefined;
 
   return (
     <>
       <TreeView
         nodes={nodes}
         selectedId={selectedId}
-        onSelect={onSelect}
+        onSelect={(id) => onSelect(id.includes("/") ? (id.split("/")[0] ?? id) : id)}
+        onActivate={(id) => {
+          const widget = ui.widgets[id];
+          if (widget?.kind === "UserInterface" && widget.nestedUiGuid) {
+            onOpenAsset?.(widget.nestedUiGuid);
+          }
+        }}
         onToggleExpanded={(id) => {
           setCollapsed((current) => {
             const next = new Set(current);
@@ -179,7 +242,7 @@ export function UiDesignHierarchy({
           });
         }}
         onReparent={(dragId, targetId, placement) => {
-          if (!targetId) return;
+          if (!targetId || dragId.includes("/") || targetId.includes("/")) return;
           onChange(reparentWidget(ui, dragId, targetId, placement));
         }}
         reparentArm="immediate"
@@ -204,6 +267,23 @@ export function UiDesignHierarchy({
                 [renameTarget]: { ...renameWidget, name },
               },
             });
+          }}
+        />
+      ) : null}
+      {extractWidget && extractTarget ? (
+        <NamePromptDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setExtractTarget(null);
+          }}
+          title="Extract User Interface"
+          label="Name"
+          description={`Create a prefab from ${extractWidget.name}.`}
+          confirmLabel="Extract"
+          data-testid="ui-extract-widget"
+          onSubmit={(name) => {
+            onExtract?.(extractTarget, name);
+            setExtractTarget(null);
           }}
         />
       ) : null}

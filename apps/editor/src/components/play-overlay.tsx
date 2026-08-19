@@ -9,6 +9,7 @@ import {
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
+  type UiProjectSettings,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
@@ -96,6 +97,7 @@ export interface PlayOverlayProps {
   /** Project render size; snapshotted when the session starts. */
   render?: RenderProjectSettings;
   uiLibrary?: Record<string, UserInterfaceDocument>;
+  uiSettings?: UiProjectSettings;
   fontEntries?: readonly FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
@@ -160,6 +162,7 @@ export function PlayOverlay({
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   uiLibrary = {},
+  uiSettings,
   fontEntries = [],
   resolveImageUrl,
   animGraphs,
@@ -669,6 +672,7 @@ export function PlayOverlay({
       <PlayHudOverlay
         instances={resolvePlayHudDocuments(hudInstances, uiLibrary)}
         uiLibrary={uiLibrary}
+      uiSettings={uiSettings}
         fontEntries={fontEntries}
         resolveImageUrl={resolveImageUrl}
         resolveInterfaceMaterial={(guid) =>

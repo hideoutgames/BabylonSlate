@@ -171,6 +171,7 @@ export function startPlayer(options: {
       height: Math.max(1, canvas.height || canvas.clientHeight || 1),
     },
     designerPresets: manifest.uiDesignerPresets,
+    uiSettings: manifest.ui,
     fontEntries: packedFontEntries({
       fontBytes: game.fontBytes,
       fontFamilies: game.fontFamilies,

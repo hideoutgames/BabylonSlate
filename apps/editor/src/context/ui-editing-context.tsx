@@ -20,16 +20,15 @@ import {
   describeUiControls,
   designerViewport,
   insertWidget,
-  layoutUserInterface,
   mergeDevicePresets,
   collectImageGuidsFromUiDocuments,
   nestedUiPickableGuids,
   parentOwnsChildLayout,
+  resolveUiAdtIdeal,
+  extractWidgetAsPrefab,
   type DesignerCanvasId,
-  type LayoutResult,
   type UiControlDescriptor,
   type UserInterfaceDocument,
-  type WidgetKind,
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
 import { normalizeInputMappings } from "@babylonslate/input";
@@ -63,9 +62,16 @@ import {
   previewScaleToFit,
   type DesignView,
 } from "../components/ui-design-gestures";
-import { UiWidgetCatalog } from "../components/ui-widget-catalog";
+import { UiWidgetCatalog, type WidgetCatalogSelection } from "../components/ui-widget-catalog";
 import type { UiAssetPickKind } from "../components/ui-design-details";
 import { isInterfaceMaterialForPicker } from "../lib/content-browser-helpers";
+import {
+  buildUserInterfacePrefabResult,
+  newAssetFileName,
+  siblingAssetRelativePath,
+} from "../lib/content-browser-helpers";
+import { newAssetGuid } from "@babylonslate/assets";
+import { createDocumentRef } from "@babylonslate/core";
 
 export interface UiEditingContextValue {
   path: string;
@@ -82,7 +88,7 @@ export interface UiEditingContextValue {
   viewportSize: { width: number; height: number };
   setViewportSize: (size: { width: number; height: number }) => void;
   viewport: ReturnType<typeof designerViewport>;
-  layout: LayoutResult;
+  adtIdeal: { designResolution: { width: number; height: number }; scaleRule: import("@babylonslate/ui-runtime").ScaleRule };
   controls: readonly UiControlDescriptor[];
   previewScale: number;
   bitmapScale: number;
@@ -109,9 +115,12 @@ export interface UiEditingContextValue {
     patch: Partial<UserInterfaceDocument["widgets"][string]>,
   ) => void;
   patchLayout: (id: string, nextLayout: WidgetLayout, mergeKey?: string) => void;
-  addWidget: (kind: WidgetKind) => void;
+  addWidget: (selection: WidgetCatalogSelection) => void;
+  extractWidget: (widgetId: string, prefabName: string) => Promise<void>;
+  openNestedAsset: (guid: string) => void;
   setAssetPick: (kind: UiAssetPickKind | null) => void;
   fitView: () => void;
+  nestedUiAssets: ReadonlyArray<{ guid: string; name: string }>;
 }
 
 const UiEditingContext = createContext<UiEditingContextValue | null>(null);
@@ -137,6 +146,8 @@ export function UiEditingProvider({
     projectName,
     readAssetChunk,
     applyAssetDocumentChange,
+    openDocument,
+    refreshAssetRegistry,
   } = useDocuments();
   const play = useOptionalPlay();
   const doc = workspace
@@ -319,23 +330,32 @@ export function UiEditingProvider({
   const viewport = useMemo(
     () =>
       designerViewport(
-        presetId,
+        ui.viewportLayer ? presetId : "desired",
         contentDesiredSize(ui, { resolveNested }),
         extras,
       ),
     [extras, presetId, resolveNested, ui],
   );
-  const layout = useMemo(
+  const projectUi = projectDocument?.settings.ui;
+  const adtIdeal = useMemo(
     () =>
-      layoutUserInterface(
-        ui,
-        { width: viewport.width, height: viewport.height },
-        { safeArea: viewport.safeArea, resolveNested, designSpace: true },
-      ),
-    [resolveNested, ui, viewport.height, viewport.safeArea.bottom, viewport.safeArea.left, viewport.safeArea.right, viewport.safeArea.top, viewport.width],
+      resolveUiAdtIdeal({
+        viewportLayer: ui.viewportLayer,
+        project: projectUi,
+        bitmap: { width: viewport.width, height: viewport.height },
+      }),
+    [projectUi, ui.viewportLayer, viewport.height, viewport.width],
   );
   const bitmapScale = 1;
-  const controls = useMemo(() => describeUiControls(ui, layout), [layout, ui]);
+  const controls = useMemo(
+    () =>
+      describeUiControls(ui, {
+        parentSize: { width: viewport.width, height: viewport.height },
+        resolveNested,
+        applySafeArea: ui.viewportLayer,
+      }),
+    [resolveNested, ui, viewport.height, viewport.width],
+  );
   const previewScale = useMemo(
     () =>
       previewScaleToFit(viewportSize, {
@@ -420,24 +440,82 @@ export function UiEditingProvider({
   );
 
   const addWidget = useCallback(
-    (kind: WidgetKind) => {
+    (selection: WidgetCatalogSelection) => {
+      const kind = selection.kind;
       const id = `${kind.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}`;
       const current = asUiDocument(latestPayloadRef.current);
       const parent = current.widgets[selectedId] ?? current.widgets[current.rootId];
       if (!parent) return;
-      const widget = parentOwnsChildLayout(parent.kind)
-        ? createWidget(id, kind, humanizePropertyLabel(kind))
-        : createWidget(
-            id,
-            kind,
-            humanizePropertyLabel(kind),
-            defaultAddLayout(kind, parent.children.length),
-          );
+      const widget = createWidget(
+        id,
+        kind,
+        humanizePropertyLabel(kind),
+        defaultAddLayout(
+          kind,
+          parentOwnsChildLayout(parent.kind) ? 0 : parent.children.length,
+          parent.kind,
+          parent.props.isVertical !== false,
+        ),
+      );
+      if (kind === "StackPanel" && typeof selection.isVertical === "boolean") {
+        widget.props.isVertical = selection.isVertical;
+      }
+      if (kind === "UserInterface") {
+        if (!selection.nestedUiGuid) return;
+        widget.nestedUiGuid = selection.nestedUiGuid;
+        if (selection.label) widget.name = selection.label;
+      }
       const next = insertWidget(current, widget, parent.id);
       commit({ ...latestPayloadRef.current, ...next });
       setSelectedId(widget.id);
     },
     [commit, selectedId],
+  );
+
+  const nestedUiAssets = pickerAssets.map((asset) => ({
+    guid: asset.guid,
+    name: asset.name,
+  }));
+
+  const extractWidget = useCallback(
+    async (widgetId: string, prefabName: string) => {
+      if (!assetRegistry) return;
+      const current = asUiDocument(latestPayloadRef.current);
+      const { prefab, nextHost, slotId } = extractWidgetAsPrefab(
+        current,
+        widgetId,
+        prefabName,
+      );
+      const guid = newAssetGuid();
+      const fileName = newAssetFileName("UserInterface", prefabName);
+      if (!fileName) return;
+      const relativePath = siblingAssetRelativePath(path, fileName);
+      const indexed = assetRegistry.list().find((asset) => asset.path === path);
+      const rootId = indexed?.rootId;
+      if (!rootId) return;
+      const created = await assetRegistry.createAsset(
+        rootId,
+        relativePath,
+        buildUserInterfacePrefabResult(prefab, guid),
+      );
+      const slot = nextHost.widgets[slotId];
+      if (slot) slot.nestedUiGuid = created.header.guid;
+      commit({ ...latestPayloadRef.current, ...nextHost });
+      setSelectedId(slotId);
+      await refreshAssetRegistry();
+    },
+    [assetRegistry, commit, path, refreshAssetRegistry],
+  );
+
+  const openNestedAsset = useCallback(
+    (guid: string) => {
+      const asset = (assetRegistry?.list() ?? []).find(
+        (entry) => entry.header.guid === guid,
+      );
+      if (!asset) return;
+      void openDocument(createDocumentRef("ui", asset.path, { name: asset.header.name }));
+    },
+    [assetRegistry, openDocument],
   );
 
   const fitView = useCallback(() => {
@@ -492,7 +570,7 @@ export function UiEditingProvider({
       viewportSize,
       setViewportSize,
       viewport,
-      layout,
+      adtIdeal,
       controls,
       previewScale,
       bitmapScale,
@@ -511,12 +589,19 @@ export function UiEditingProvider({
       patchWidget,
       patchLayout,
       addWidget,
+      extractWidget,
+      openNestedAsset,
+      nestedUiAssets,
       setAssetPick,
       fitView,
     }),
     [
       actionNames,
       addWidget,
+      extractWidget,
+      openNestedAsset,
+      nestedUiAssets,
+      adtIdeal,
       assetLabels,
       bitmapScale,
       catalogOpen,
@@ -530,7 +615,6 @@ export function UiEditingProvider({
       resolveNested,
       materialFunctions,
       imageIssues,
-      layout,
       patchLayout,
       patchWidget,
       payload,
@@ -554,6 +638,7 @@ export function UiEditingProvider({
         open={catalogOpen}
         onOpenChange={setCatalogOpen}
         onSelect={addWidget}
+        nestedUiAssets={nestedUiAssets}
       />
       <AssetPicker
         open={assetPick !== null}

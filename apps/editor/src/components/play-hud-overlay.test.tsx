@@ -26,7 +26,7 @@ afterEach(() => {
 });
 
 function hudWith(
-  kind: "TouchButton" | "TouchDPad" | "TouchJoystick" | "Button" | "Image" | "Slider" | "CheckBox" | "TextInput",
+  kind: "TouchButton" | "TouchDPad" | "TouchJoystick" | "Button" | "Image" | "Slider" | "Checkbox" | "InputText",
   name?: string,
 ) {
   const doc = createDefaultUserInterface("HUD");
@@ -193,8 +193,8 @@ describe("PlayHudOverlay widget events", () => {
   it("emits value/checked/text from DOM fallback controls", () => {
     const onWidgetEvent = vi.fn();
     const sliderDoc = hudWith("Slider");
-    const checkDoc = hudWith("CheckBox");
-    const inputDoc = hudWith("TextInput");
+    const checkDoc = hudWith("Checkbox");
+    const inputDoc = hudWith("InputText");
     const { getByTestId, rerender } = render(
       <PlayHudOverlay
         width={400}
@@ -505,5 +505,48 @@ describe("PlayHudOverlay fullscreen GUI persistence", () => {
     expect(attached.dispose).not.toHaveBeenCalled();
     const controls = attached.host.reconcile.mock.calls.at(-1)?.[0] as unknown[];
     expect(controls).toEqual([]);
+  });
+
+  it("scopes overlay control ids and parent ids together", () => {
+    const attached = mockAttachedGui();
+    render(
+      <PlayHudOverlay
+        scene={{} as never}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "ui-1", document: hudWith("Button") }]}
+        onTouchAxis={() => {}}
+      />,
+    );
+    const controls = attached.host.reconcile.mock.calls.at(-1)?.[0] as Array<{
+      id: string;
+      parentId: string | null;
+    }>;
+    const button = controls.find((control) => control.id === "ui-1:ctrl");
+    expect(button?.parentId).toBe("ui-1:__safeArea");
+  });
+
+  it("applies the project ADT ideal instead of the first HUD document", () => {
+    mockAttachedGui();
+    const hud = hudWith("Button");
+    hud.designResolution = { width: 800, height: 600 };
+    hud.scaleRule = "fitHeight";
+    render(
+      <PlayHudOverlay
+        scene={{} as never}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "ui-1", document: hud }]}
+        uiSettings={{
+          designResolution: { width: 1280, height: 720 },
+          scaleRule: "fitWidth",
+        }}
+        onTouchAxis={() => {}}
+      />,
+    );
+    expect(attachFullscreenGuiMock.mock.calls[0]?.[1]).toMatchObject({
+      designResolution: { width: 1280, height: 720 },
+      scaleRule: "fitWidth",
+    });
   });
 });

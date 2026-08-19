@@ -89,6 +89,10 @@ export type CollectExportGameParams = {
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
   uiDesignerPresets?: readonly PackedUiDesignerPreset[];
+  ui?: {
+    designResolution: { width: number; height: number };
+    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
+  };
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
 };
 
@@ -290,6 +294,7 @@ export async function collectAndExportGame(
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
     uiDesignerPresets: params.uiDesignerPresets,
+    ui: params.ui,
   });
 }
 

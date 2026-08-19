@@ -32,7 +32,8 @@ export function collectNestedUiLogicSources(
   const visit = (docPayload: unknown, prefix: string) => {
     const doc = asUiDocument(docPayload);
     for (const widget of Object.values(doc.widgets)) {
-      const nestedGuid = widget.nestedUiGuid?.trim();
+      const nestedGuid =
+        widget.kind === "UserInterface" ? widget.nestedUiGuid?.trim() : undefined;
       if (!nestedGuid || seen.has(nestedGuid)) continue;
       seen.add(nestedGuid);
       const resolved = resolve(nestedGuid);

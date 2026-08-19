@@ -11,7 +11,8 @@ import {
 import {
   describeUiControls,
   devicePresetForViewport,
-  layoutUserInterface,
+  resolveUiAdtIdeal,
+  scopeUiControlIds,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
 import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
@@ -56,6 +57,11 @@ export interface PlayHudOverlayProps {
   resolveImageUrl?: (guid: string) => string | null;
   resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
   materialFunctions?: () => Record<string, MaterialFunctionDocument>;
+  /** Project Settings User Interface design space (Play ADT ideal). */
+  uiSettings?: {
+    designResolution: { width: number; height: number };
+    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
+  };
 }
 
 function numberProp(
@@ -115,6 +121,7 @@ export function PlayHudOverlay({
   resolveImageUrl = defaultResolveImageUrl,
   resolveInterfaceMaterial = defaultResolveInterfaceMaterial,
   materialFunctions,
+  uiSettings,
 }: PlayHudOverlayProps) {
   const pointerIdRef = useRef<number | null>(null);
   const onTouchAxisRef = useRef(onTouchAxis);
@@ -149,21 +156,27 @@ export function PlayHudOverlay({
     (guid: string) => uiLibrary[guid] ?? null,
     [uiLibrary],
   );
+  const playIdeal = useMemo(
+    () =>
+      resolveUiAdtIdeal({
+        viewportLayer: true,
+        project: uiSettings,
+        bitmap: { width: Math.max(1, width), height: Math.max(1, height) },
+      }),
+    [uiSettings, width, height],
+  );
   const controls = useMemo(() => {
-    const viewport = { width: Math.max(1, width), height: Math.max(1, height) };
-    return instances.flatMap((entry) => {
-      const layout = layoutUserInterface(entry.document, viewport, {
-        safeArea: preset.safeArea,
-        resolveNested,
-      });
-      return describeUiControls(entry.document, layout).map(
-        (control) => ({
-          ...control,
-          id: `${entry.instanceId}:${control.id}`,
+    return instances.flatMap((entry) =>
+      scopeUiControlIds(
+        describeUiControls(entry.document, {
+          parentSize: { width: Math.max(1, width), height: Math.max(1, height) },
+          resolveNested,
+          applySafeArea: entry.document.viewportLayer !== false,
         }),
-      );
-    });
-  }, [instances, width, height, preset, resolveNested]);
+        entry.instanceId,
+      ),
+    );
+  }, [instances, width, height, resolveNested]);
 
   const visibleControls = useMemo(
     () =>
@@ -179,8 +192,8 @@ export function PlayHudOverlay({
   );
   const sizeRef = useRef({ width, height });
   sizeRef.current = { width, height };
-  const instancesRef = useRef(instances);
-  instancesRef.current = instances;
+  const playIdealRef = useRef(playIdeal);
+  playIdealRef.current = playIdeal;
   const safeAreaRef = useRef(preset.safeArea);
   safeAreaRef.current = preset.safeArea;
 
@@ -192,17 +205,14 @@ export function PlayHudOverlay({
     }
     try {
       const { width: attachWidth, height: attachHeight } = sizeRef.current;
-      const first = instancesRef.current[0]?.document;
+      const ideal = playIdealRef.current;
       const attached = attachFullscreenGui(scene, {
         name: "play-hud",
         interactive: true,
         width: Math.max(1, attachWidth),
         height: Math.max(1, attachHeight),
-        designResolution: first?.designResolution ?? {
-          width: Math.max(1, attachWidth),
-          height: Math.max(1, attachHeight),
-        },
-        scaleRule: first?.scaleRule ?? "shortestSide",
+        designResolution: ideal.designResolution,
+        scaleRule: ideal.scaleRule,
         safeArea: safeAreaRef.current,
         resolveImageUrl: boundResolveImageUrl,
         resolveInterfaceMaterial: boundResolveInterfaceMaterial,
@@ -239,14 +249,13 @@ export function PlayHudOverlay({
   useEffect(() => {
     const attached = attachedRef.current;
     if (!attached) return;
-    const first = instances[0]?.document;
     applyAdtIdeal(
       attached.adt,
-      first?.designResolution ?? { width: Math.max(1, width), height: Math.max(1, height) },
-      first?.scaleRule ?? "shortestSide",
+      playIdeal.designResolution,
+      playIdeal.scaleRule,
     );
     applyUiControls(attached.host, visibleControls);
-  }, [visibleControls, width, height, scene, instances, resolveImageUrl]);
+  }, [visibleControls, width, height, scene, playIdeal, resolveImageUrl]);
 
   useEffect(() => {
     const attached = attachedRef.current;
@@ -314,8 +323,8 @@ export function PlayHudOverlay({
         const isButton = control.kind === "TouchButton";
         const isUiButton = control.kind === "Button";
         const isSlider = control.kind === "Slider";
-        const isCheck = control.kind === "CheckBox";
-        const isText = control.kind === "TextInput";
+        const isCheck = control.kind === "Checkbox";
+        const isText = control.kind === "InputText";
         const analog = isStick || isPad;
         const deadZone = numberProp(control.props, "deadZone", analog ? 0.15 : 0);
         const controlIdX = stringProp(

@@ -6,14 +6,13 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
-  ZERO_INSETS,
   applyAnchorPreset,
+  authoringParentRect,
   clamp01,
-  laidOutParentRect,
   matchAnchorPreset,
   parentOwnsChildLayout,
   widgetParentId,
-  type LayoutResult,
+  type UiControlDescriptor,
   type UserInterfaceDocument,
   type WidgetLayout,
   type WidgetNode,
@@ -25,16 +24,23 @@ export type UiAssetPickKind = "nestedUi" | "image" | "font" | "visualOverride" |
 export function UiDesignDetails({
   ui,
   selected,
-  layout,
+  viewport,
+  controls = [],
   actionNames,
   assetLabels,
   onPatchWidget,
   onPatchLayout,
   onPickAsset,
+  resolveNested,
 }: {
   ui: UserInterfaceDocument;
   selected: WidgetNode;
-  layout: LayoutResult;
+  viewport: {
+    width: number;
+    height: number;
+    safeArea: { left: number; right: number; top: number; bottom: number };
+  };
+  controls?: readonly UiControlDescriptor[];
   actionNames: readonly string[];
   assetLabels: {
     nestedUi?: string;
@@ -46,13 +52,46 @@ export function UiDesignDetails({
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void;
   onPatchLayout: (id: string, next: WidgetLayout) => void;
   onPickAsset: (kind: UiAssetPickKind) => void;
+  resolveNested?: (guid: string) => UserInterfaceDocument | null;
 }) {
   const parentId = widgetParentId(ui, selected.id);
   const parent = parentId ? ui.widgets[parentId] : null;
   const slotOwned = parent ? parentOwnsChildLayout(parent.kind) : false;
-  const parentRect = laidOutParentRect(layout, selected.id);
+  const parentRect = authoringParentRect(ui, selected.id, {
+    viewport: { width: viewport.width, height: viewport.height },
+    safeArea: ui.viewportLayer ? viewport.safeArea : undefined,
+    controls,
+  });
   const presetId = matchAnchorPreset(selected.layout);
-  const padding = selected.style.padding ?? ZERO_INSETS;
+  const nested =
+    selected.kind === "UserInterface" && selected.nestedUiGuid
+      ? resolveNested?.(selected.nestedUiGuid)
+      : null;
+  const overrideRows: PropertyRow[] = [];
+  if (nested) {
+    for (const widget of Object.values(nested.widgets)) {
+      if (!widget.exposed) continue;
+      const patch = selected.overrides?.[widget.id] ?? {};
+      overrideRows.push({
+        id: `override-${widget.id}-text`,
+        kind: "text",
+        label: widget.exposed.label,
+        value:
+          typeof patch.text === "string"
+            ? patch.text
+            : typeof widget.props.text === "string"
+              ? widget.props.text
+              : "",
+        onChange: (text) =>
+          onPatchWidget(selected.id, {
+            overrides: {
+              ...selected.overrides,
+              [widget.id]: { ...patch, text },
+            },
+          }),
+      });
+    }
+  }
 
   const identity: PropertyRow[] = [
     {
@@ -81,50 +120,26 @@ export function UiDesignDetails({
       onChange: (value) =>
         onPatchWidget(selected.id, { hitTestable: value === "enabled" }),
     },
-    ...kindRows(selected, actionNames, assetLabels, onPatchWidget, onPickAsset),
+    ...kindRows(selected, actionNames, assetLabels, onPatchWidget, onPickAsset, parent),
+    ...(selected.id === ui.rootId
+      ? []
+      : [
+          {
+            id: "exposed",
+            kind: "boolean" as const,
+            label: "Expose",
+            value: Boolean(selected.exposed),
+            onChange: (value: boolean) =>
+              onPatchWidget(selected.id, {
+                exposed: value
+                  ? { key: selected.id, label: selected.name }
+                  : null,
+              }),
+          },
+        ]),
   ];
 
-  const layoutRows: PropertyRow[] = slotOwned
-    ? []
-    : [
-        {
-          id: "horizontal-alignment",
-          kind: "enum",
-          label: "Horizontal",
-          value: selected.layout.horizontalAlignment,
-          options: [
-            { value: "left", label: "Left" },
-            { value: "center", label: "Center" },
-            { value: "right", label: "Right" },
-          ],
-          onChange: (horizontalAlignment) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              horizontalAlignment: horizontalAlignment as WidgetLayout["horizontalAlignment"],
-            }),
-        },
-        {
-          id: "vertical-alignment",
-          kind: "enum",
-          label: "Vertical",
-          value: selected.layout.verticalAlignment,
-          options: [
-            { value: "top", label: "Top" },
-            { value: "center", label: "Center" },
-            { value: "bottom", label: "Bottom" },
-          ],
-          onChange: (verticalAlignment) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              verticalAlignment: verticalAlignment as WidgetLayout["verticalAlignment"],
-            }),
-        },
-        numberRow("left", "Left", selected.layout.left, (left) =>
-          onPatchLayout(selected.id, { ...selected.layout, left }),
-        ),
-        numberRow("top", "Top", selected.layout.top, (top) =>
-          onPatchLayout(selected.id, { ...selected.layout, top }),
-        ),
+  const sizeRows: PropertyRow[] = [
         numberRow("width", "Width", selected.layout.width, (width) =>
           onPatchLayout(selected.id, { ...selected.layout, width }),
         ),
@@ -161,6 +176,80 @@ export function UiDesignDetails({
               heightUnit: heightUnit as WidgetLayout["heightUnit"],
             }),
         },
+      ];
+
+  const layoutRows: PropertyRow[] = slotOwned
+    ? sizeRows
+    : [
+        {
+          id: "horizontal-alignment",
+          kind: "enum",
+          label: "Horizontal",
+          value: selected.layout.horizontalAlignment,
+          options: [
+            { value: "left", label: "Left" },
+            { value: "center", label: "Center" },
+            { value: "right", label: "Right" },
+          ],
+          onChange: (horizontalAlignment) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              horizontalAlignment: horizontalAlignment as WidgetLayout["horizontalAlignment"],
+            }),
+        },
+        {
+          id: "vertical-alignment",
+          kind: "enum",
+          label: "Vertical",
+          value: selected.layout.verticalAlignment,
+          options: [
+            { value: "top", label: "Top" },
+            { value: "center", label: "Center" },
+            { value: "bottom", label: "Bottom" },
+          ],
+          onChange: (verticalAlignment) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              verticalAlignment: verticalAlignment as WidgetLayout["verticalAlignment"],
+            }),
+        },
+        numberRow("left", "Left", selected.layout.left, (left) =>
+          onPatchLayout(selected.id, { ...selected.layout, left }),
+        ),
+        {
+          id: "left-unit",
+          kind: "enum",
+          label: "Left Unit",
+          value: selected.layout.leftUnit,
+          options: [
+            { value: "px", label: "px" },
+            { value: "percent", label: "%" },
+          ],
+          onChange: (leftUnit) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              leftUnit: leftUnit as WidgetLayout["leftUnit"],
+            }),
+        },
+        numberRow("top", "Top", selected.layout.top, (top) =>
+          onPatchLayout(selected.id, { ...selected.layout, top }),
+        ),
+        {
+          id: "top-unit",
+          kind: "enum",
+          label: "Top Unit",
+          value: selected.layout.topUnit,
+          options: [
+            { value: "px", label: "px" },
+            { value: "percent", label: "%" },
+          ],
+          onChange: (topUnit) =>
+            onPatchLayout(selected.id, {
+              ...selected.layout,
+              topUnit: topUnit as WidgetLayout["topUnit"],
+            }),
+        },
+        ...sizeRows,
         numberRow("layout-padding-left", "Padding Left", selected.layout.padding.left, (left) =>
           onPatchLayout(selected.id, {
             ...selected.layout,
@@ -224,26 +313,6 @@ export function UiDesignDetails({
       onChange: (opacity) =>
         onPatchWidget(selected.id, { style: { ...selected.style, opacity } }),
     },
-    numberRow("padding-left", "Padding Left", padding.left, (left) =>
-      onPatchWidget(selected.id, {
-        style: { ...selected.style, padding: { ...padding, left } },
-      }),
-    ),
-    numberRow("padding-right", "Padding Right", padding.right, (right) =>
-      onPatchWidget(selected.id, {
-        style: { ...selected.style, padding: { ...padding, right } },
-      }),
-    ),
-    numberRow("padding-top", "Padding Top", padding.top, (top) =>
-      onPatchWidget(selected.id, {
-        style: { ...selected.style, padding: { ...padding, top } },
-      }),
-    ),
-    numberRow("padding-bottom", "Padding Bottom", padding.bottom, (bottom) =>
-      onPatchWidget(selected.id, {
-        style: { ...selected.style, padding: { ...padding, bottom } },
-      }),
-    ),
     ...containerPropRows(selected, onPatchWidget),
   ];
 
@@ -260,11 +329,26 @@ export function UiDesignDetails({
           transformCenter: { x: clamp01(x), y: clamp01(y) },
         }),
     },
+    numberRow("z-index", "Z-Index", selected.zIndex ?? 0, (zIndex) =>
+      onPatchWidget(selected.id, { zIndex }),
+    ),
+    numberRow("rotation", "Rotation", selected.layout.rotation, (rotation) =>
+      onPatchLayout(selected.id, { ...selected.layout, rotation }),
+    ),
+    numberRow("scale-x", "Scale X", selected.layout.scaleX, (scaleX) =>
+      onPatchLayout(selected.id, { ...selected.layout, scaleX }),
+    ),
+    numberRow("scale-y", "Scale Y", selected.layout.scaleY, (scaleY) =>
+      onPatchLayout(selected.id, { ...selected.layout, scaleY }),
+    ),
   ];
 
   return (
     <div className="flex min-h-0 flex-col">
       <PropertyGrid title="Identity" rows={identity} />
+      {overrideRows.length > 0 ? (
+        <PropertyGrid title="Overrides" rows={overrideRows} />
+      ) : null}
       <AnchorPresetPicker
         value={presetId}
         disabled={slotOwned}
@@ -273,9 +357,12 @@ export function UiDesignDetails({
         }
       />
       {slotOwned ? (
-        <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="ui-slot-layout-note">
-          Parent slot owns layout. Move and resize are disabled.
-        </p>
+        <>
+          <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="ui-slot-layout-note">
+            Parent slot owns position. Stack-axis size stays authored in pixels.
+          </p>
+          <PropertyGrid title="Layout" rows={layoutRows} />
+        </>
       ) : (
         <PropertyGrid title="Layout" rows={layoutRows} />
       )}
@@ -324,8 +411,19 @@ function kindRows(
   },
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void,
   onPickAsset: (kind: UiAssetPickKind) => void,
+  parent: WidgetNode | null,
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
+  if (parent?.kind === "Grid") {
+    rows.push(
+      numberRow("grid-column", "Grid Column", selected.gridColumn ?? 0, (gridColumn) =>
+        onPatchWidget(selected.id, { gridColumn }),
+      ),
+      numberRow("grid-row", "Grid Row", selected.gridRow ?? 0, (gridRow) =>
+        onPatchWidget(selected.id, { gridRow }),
+      ),
+    );
+  }
   if (selected.kind === "UserInterface") {
     rows.push({
       id: "nestedUi",
@@ -343,9 +441,9 @@ function kindRows(
     });
   }
   if (
-    selected.kind === "Text" ||
+    selected.kind === "TextBlock" ||
     selected.kind === "Button" ||
-    selected.kind === "TextInput"
+    selected.kind === "InputText"
   ) {
     rows.push({
       id: "text",
@@ -355,6 +453,28 @@ function kindRows(
       onChange: (value) =>
         onPatchWidget(selected.id, { props: { ...selected.props, text: value } }),
     });
+    if (selected.kind === "TextBlock") {
+      rows.push({
+        id: "text-wrapping",
+        kind: "boolean",
+        label: "Wrapping",
+        value: Boolean(selected.props.textWrapping),
+        onChange: (textWrapping) =>
+          onPatchWidget(selected.id, {
+            props: { ...selected.props, textWrapping },
+          }),
+      });
+      rows.push({
+        id: "resize-to-fit",
+        kind: "boolean",
+        label: "Resize To Fit",
+        value: Boolean(selected.props.resizeToFit),
+        onChange: (resizeToFit) =>
+          onPatchWidget(selected.id, {
+            props: { ...selected.props, resizeToFit },
+          }),
+      });
+    }
     rows.push({
       id: "font",
       kind: "asset",
@@ -399,6 +519,22 @@ function kindRows(
           : undefined,
       ),
     });
+    rows.push({
+      id: "image-stretch",
+      kind: "enum",
+      label: "Stretch",
+      value: String(selected.props.stretch ?? 0),
+      options: [
+        { value: "0", label: "None" },
+        { value: "1", label: "Fill" },
+        { value: "2", label: "Uniform" },
+        { value: "3", label: "Extend" },
+      ],
+      onChange: (value) =>
+        onPatchWidget(selected.id, {
+          props: { ...selected.props, stretch: Number(value) },
+        }),
+    });
   }
   if (selected.kind === "Material") {
     rows.push({
@@ -423,21 +559,21 @@ function kindRows(
     });
   }
   if (
-    selected.kind === "Button" ||
     selected.kind === "TouchJoystick" ||
-    selected.kind === "TouchButton"
+    selected.kind === "TouchButton" ||
+    selected.kind === "TouchDPad"
   ) {
     rows.push({
-      id: "visual-override",
+      id: "nested-skin",
       kind: "asset",
-      label: "Visual Override",
-      value: selected.visualOverrideGuid ?? null,
+      label: "Skin",
+      value: selected.nestedUiGuid ?? null,
       placeholder: "None",
-      onPick: () => onPickAsset("visualOverride"),
-      onChange: (value) => onPatchWidget(selected.id, { visualOverrideGuid: value }),
+      onPick: () => onPickAsset("nestedUi"),
+      onChange: (value) => onPatchWidget(selected.id, { nestedUiGuid: value }),
       ...assetRowIdentity(
-        assetLabels.visualOverride
-          ? { name: assetLabels.visualOverride, type: "UserInterface" }
+        assetLabels.nestedUi
+          ? { name: assetLabels.nestedUi, type: "UserInterface" }
           : undefined,
       ),
     });
@@ -463,7 +599,7 @@ function kindRows(
         }),
     });
   }
-  if (selected.kind === "CheckBox") {
+  if (selected.kind === "Checkbox") {
     rows.push({
       id: "checked",
       kind: "boolean",
@@ -546,9 +682,23 @@ function containerPropRows(
   selected: WidgetNode,
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void,
 ): PropertyRow[] {
-  if (selected.kind === "HorizontalBox" || selected.kind === "VerticalBox") {
+  if (selected.kind === "StackPanel") {
     return [
-      numberRow("gap", "Gap", Number(selected.props.gap ?? 8), (gap) =>
+      {
+        id: "orientation",
+        kind: "enum",
+        label: "Orientation",
+        value: selected.props.isVertical === false ? "horizontal" : "vertical",
+        options: [
+          { value: "vertical", label: "Vertical" },
+          { value: "horizontal", label: "Horizontal" },
+        ],
+        onChange: (value) =>
+          onPatchWidget(selected.id, {
+            props: { ...selected.props, isVertical: value === "vertical" },
+          }),
+      },
+      numberRow("gap", "Spacing", Number(selected.props.gap ?? 8), (gap) =>
         onPatchWidget(selected.id, { props: { ...selected.props, gap } }),
       ),
     ];
@@ -561,12 +711,12 @@ function containerPropRows(
       numberRow("rows", "Rows", Number(selected.props.rows ?? 2), (rows) =>
         onPatchWidget(selected.id, { props: { ...selected.props, rows } }),
       ),
-      numberRow("gap", "Gap", Number(selected.props.gap ?? 8), (gap) =>
+      numberRow("gap", "Spacing", Number(selected.props.gap ?? 8), (gap) =>
         onPatchWidget(selected.id, { props: { ...selected.props, gap } }),
       ),
     ];
   }
-  if (selected.kind === "SizeBox") {
+  if (selected.kind === "Rectangle") {
     return [
       numberRow("box-width", "Box Width", Number(selected.props.width ?? 100), (width) =>
         onPatchWidget(selected.id, { props: { ...selected.props, width } }),

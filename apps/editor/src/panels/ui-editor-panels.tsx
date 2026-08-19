@@ -13,7 +13,6 @@ import {
 import {
   DESIRED_CANVAS_ID,
   type DesignerCanvasId,
-  type ScaleRule,
 } from "@babylonslate/ui-runtime";
 import { useDocuments } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
@@ -21,12 +20,6 @@ import { useUiEditing } from "../context/ui-editing-context";
 import { UiDesignCanvas } from "../components/ui-design-canvas";
 import { UiDesignHierarchy } from "../components/ui-design-hierarchy";
 import { UiDesignDetails } from "../components/ui-design-details";
-
-const SCALE_RULES: Array<{ value: ScaleRule; label: string }> = [
-  { value: "shortestSide", label: "Shortest Side" },
-  { value: "fitWidth", label: "Fit Width" },
-  { value: "fitHeight", label: "Fit Height" },
-];
 
 function useDockPanelVisible(props: IDockviewPanelProps): boolean {
   const [panelVisible, setPanelVisible] = useState(props.api?.isVisible ?? true);
@@ -107,29 +100,6 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
               </SelectGroup>
             </SelectContent>
           </Select>
-          <Select
-            value={editing.ui.scaleRule}
-            onValueChange={(value) =>
-              editing.commit({
-                ...editing.payload,
-                ...editing.ui,
-                scaleRule: value as ScaleRule,
-              })
-            }
-          >
-            <SelectTrigger className="w-40" data-testid="ui-scale-rule">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {SCALE_RULES.map((row) => (
-                  <SelectItem key={row.value} value={row.value}>
-                    {row.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
           <Button
             size="sm"
             variant="outline"
@@ -146,7 +116,7 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
           <UiDesignCanvas
             ui={editing.ui}
             viewport={editing.viewport}
-            layout={editing.layout}
+            adtIdeal={editing.adtIdeal}
             controls={editing.controls}
             selectedId={editing.selectedId}
             view={editing.view}
@@ -175,7 +145,8 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
 
 export function UiHierarchyPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { ui, selectedId, setSelectedId, commit, payload } = useUiEditing();
+  const { ui, selectedId, setSelectedId, commit, payload, resolveNested, extractWidget, openNestedAsset } =
+    useUiEditing();
   return (
     <PanelFrame data-testid="ui-hierarchy-panel">
       <UiDesignHierarchy
@@ -183,6 +154,9 @@ export function UiHierarchyPanel(_props: IDockviewPanelProps) {
         selectedId={selectedId}
         onSelect={setSelectedId}
         onChange={(next) => commit({ ...payload, ...next })}
+        resolveNested={resolveNested}
+        onExtract={(id, name) => void extractWidget(id, name)}
+        onOpenAsset={openNestedAsset}
       />
     </PanelFrame>
   );
@@ -193,12 +167,14 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
   const {
     ui,
     selected,
-    layout,
+    viewport,
+    controls,
     actionNames,
     assetLabels,
     patchWidget,
     patchLayout,
     setAssetPick,
+    resolveNested,
   } = useUiEditing();
   if (!selected) {
     return (
@@ -212,12 +188,14 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
       <UiDesignDetails
         ui={ui}
         selected={selected}
-        layout={layout}
+        viewport={viewport}
+        controls={controls}
         actionNames={actionNames}
         assetLabels={assetLabels}
         onPatchWidget={patchWidget}
         onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
         onPickAsset={setAssetPick}
+        resolveNested={resolveNested}
       />
     </PanelFrame>
   );

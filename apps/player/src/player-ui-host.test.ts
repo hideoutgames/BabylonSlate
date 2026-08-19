@@ -137,7 +137,14 @@ describe("createPlayerUiHost", () => {
     expect(host.instances()).toEqual([]);
   });
 
-  it("uses packed designer presets for Safe Area when the viewport matches", () => {
+  it("scopes instance ids and parent ids together", () => {
+    const host = createTestHost();
+    host.apply("ui-1", "hud-1");
+    const logo = host.recording.controls.find((control) => control.id === "ui-1:logo");
+    expect(logo?.parentId).toBe("ui-1:__safeArea");
+  });
+
+  it("uses packed designer presets for Safe Area on the fullscreen GUI host", () => {
     const phone = {
       id: "custom-phone",
       label: "Phone",
@@ -145,23 +152,50 @@ describe("createPlayerUiHost", () => {
       height: 844,
       safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
     };
-    const without = createTestHost({
-      viewport: { width: 390, height: 844 },
-    });
-    without.apply("ui-1", "hud-1");
-    const logoWithout = without.recording.controls.find(
-      (control) => control.id === "ui-1:logo",
-    );
-    const withPreset = createTestHost({
+    const attachGui = vi.fn(() => ({
+      adt: { markAsDirty: vi.fn(), idealWidth: 0, idealHeight: 0, useSmallestIdeal: false },
+      host: new RecordingUiHost(),
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    }));
+    const host = createPlayerUiHost({
+      library: new Map([["hud-1", hudDocument()]]),
+      scene: {} as never,
+      attachGui: attachGui as never,
       viewport: { width: 390, height: 844 },
       designerPresets: [phone],
     });
-    withPreset.apply("ui-1", "hud-1");
-    const logoWith = withPreset.recording.controls.find(
-      (control) => control.id === "ui-1:logo",
-    );
-    expect(logoWithout?.guiRect.y).toBeDefined();
-    expect(logoWith?.guiRect.y).toBeGreaterThan(logoWithout!.guiRect.y);
+    host.apply("ui-1", "hud-1");
+    expect((attachGui.mock.calls[0] as unknown[] | undefined)?.[1]).toMatchObject({
+      safeArea: phone.safeArea,
+    });
+  });
+
+  it("applies the project ADT ideal instead of the first HUD document", () => {
+    const attachGui = vi.fn(() => ({
+      adt: { markAsDirty: vi.fn(), idealWidth: 0, idealHeight: 0, useSmallestIdeal: false },
+      host: new RecordingUiHost(),
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    }));
+    const hud = hudDocument();
+    hud.designResolution = { width: 800, height: 600 };
+    hud.scaleRule = "fitHeight";
+    const host = createPlayerUiHost({
+      library: new Map([["hud-1", hud]]),
+      scene: {} as never,
+      attachGui: attachGui as never,
+      viewport: { width: 800, height: 600 },
+      uiSettings: {
+        designResolution: { width: 1280, height: 720 },
+        scaleRule: "fitWidth",
+      },
+    });
+    host.apply("ui-1", "hud-1");
+    expect((attachGui.mock.calls[0] as unknown[] | undefined)?.[1]).toMatchObject({
+      designResolution: { width: 1280, height: 720 },
+      scaleRule: "fitWidth",
+    });
   });
 
   it("dirties the HUD ADT after packed fonts register", async () => {
@@ -202,7 +236,8 @@ describe("createPlayerUiHost", () => {
     const firstCall = attachGui.mock.calls[0] as unknown[] | undefined;
     expect(firstCall?.[1]).toMatchObject({
       interactive: true,
-      designResolution: hudDocument().designResolution,
+      designResolution: { width: 1920, height: 1080 },
+      scaleRule: "shortestSide",
     });
   });
 

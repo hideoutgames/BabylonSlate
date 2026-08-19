@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pinLayout } from "@babylonslate/ui-runtime";
+import { designScale, pinLayout } from "@babylonslate/ui-runtime";
 import {
   applyWidgetDragOffset,
   canvasDeltaToLayoutDelta,
+  designerLayoutViewScale,
   centeredFitView,
   clampDesignZoom,
   designRectToBitmap,
@@ -44,6 +45,22 @@ describe("ui-design-gestures", () => {
       x: 100,
       y: 40,
     });
+  });
+
+  it("maps device-bitmap drags into project design pixels", () => {
+    const bitmap = { width: 390, height: 844 };
+    const designResolution = { width: 1920, height: 1080 };
+    const viewScale = designerLayoutViewScale({
+      previewScale: 1,
+      zoom: 1,
+      bitmap,
+      designResolution,
+      scaleRule: "shortestSide",
+    });
+    const adtScale = designScale(bitmap, designResolution, "shortestSide");
+    const delta = canvasDeltaToLayoutDelta({ x: adtScale, y: 0 }, viewScale);
+    expect(delta.x).toBeCloseTo(1);
+    expect(delta.y).toBe(0);
   });
 
   it("clamps designer zoom", () => {

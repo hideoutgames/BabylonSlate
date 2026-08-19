@@ -15,7 +15,6 @@ import {
   FontRegistry,
   isHardUiPresentFailure,
   uiHostStats,
-  type DesignerGizmoState,
   type UiSurface,
 } from "@babylonslate/render";
 import {
@@ -27,20 +26,18 @@ import {
 import {
   applyWidgetResize,
   describeUiControls,
-  laidOutParentRect,
-  layoutUserInterface,
+  designScale,
   widgetAllowsDesignerTransform,
-  type LayoutResult,
   type UiControlDescriptor,
   type UserInterfaceDocument,
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
 import {
   UI_DESIGN_HANDLE_HIT_SIZE_PX,
-  UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
   applyWidgetDragOffset,
   designerControlHitRect,
   designerGestureAt,
+  designerLayoutViewScale,
   canvasDeltaToLayoutDelta,
   clampDesignZoom,
   designRectToScreen,
@@ -71,7 +68,10 @@ const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
 export function UiDesignCanvas({
   ui,
   viewport,
-  layout,
+  adtIdeal = {
+    designResolution: { width: 1920, height: 1080 },
+    scaleRule: "shortestSide",
+  },
   controls,
   selectedId,
   view,
@@ -97,7 +97,10 @@ export function UiDesignCanvas({
     height: number;
     safeArea: { left: number; right: number; top: number; bottom: number };
   };
-  layout: LayoutResult;
+  adtIdeal?: {
+    designResolution: { width: number; height: number };
+    scaleRule: import("@babylonslate/ui-runtime").ScaleRule;
+  };
   controls: readonly UiControlDescriptor[];
   selectedId: string;
   view: DesignView;
@@ -117,7 +120,7 @@ export function UiDesignCanvas({
   resolveNested?: (guid: string) => UserInterfaceDocument | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gizmoCanvasRef = useRef<HTMLCanvasElement>(null);
+  const hostFrameRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<UiSurface | null>(null);
   const [guiLive, setGuiLive] = useState(false);
@@ -152,7 +155,7 @@ export function UiDesignCanvas({
   const previewLayoutsRef = useRef(previewLayouts);
   previewLayoutsRef.current = previewLayouts;
   const paintSchedulerRef = useRef(createUiFrameScheduler());
-  const gizmoSchedulerRef = useRef(createUiFrameScheduler());
+  const gestureLockedRef = useRef(false);
   const resolveImageUrlRef = useRef(resolveImageUrl);
   resolveImageUrlRef.current = resolveImageUrl;
   const boundResolveImageUrl = useCallback(
@@ -173,7 +176,14 @@ export function UiDesignCanvas({
   );
   latestUiRef.current = ui;
   viewRef.current = view;
-  const viewScale = previewScale * view.zoom * bitmapScale;
+  const viewScale = designerLayoutViewScale({
+    previewScale,
+    zoom: view.zoom,
+    bitmapScale,
+    bitmap: { width: viewport.width, height: viewport.height },
+    designResolution: adtIdeal.designResolution,
+    scaleRule: adtIdeal.scaleRule,
+  });
   const previewUi = useMemo(() => {
     const ids = Object.keys(previewLayouts);
     if (ids.length === 0) return ui;
@@ -186,22 +196,18 @@ export function UiDesignCanvas({
     }
     return { ...ui, widgets };
   }, [previewLayouts, ui]);
-  const displayLayout = useMemo(() => {
-    if (Object.keys(previewLayouts).length === 0) return layout;
-    return layoutUserInterface(
-      previewUi,
-      { width: viewport.width, height: viewport.height },
-      { safeArea: viewport.safeArea, resolveNested, designSpace: true },
-    );
-  }, [layout, previewLayouts, previewUi, resolveNested, viewport.height, viewport.safeArea, viewport.width]);
   const displayControls = useMemo(() => {
     if (Object.keys(previewLayouts).length === 0) return controls;
-    return describeUiControls(previewUi, displayLayout);
-  }, [controls, displayLayout, previewLayouts, previewUi]);
+    return describeUiControls(previewUi, {
+      parentSize: { width: viewport.width, height: viewport.height },
+      resolveNested,
+      applySafeArea: previewUi.viewportLayer,
+    });
+  }, [controls, previewLayouts, previewUi, resolveNested, viewport.height, viewport.width]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const gizmoCanvas = gizmoCanvasRef.current;
+    const hostFrame = hostFrameRef.current;
     const engine = sharedEngine;
     if (!canvas || !engine) return;
     let surface: UiSurface | null = null;
@@ -209,13 +215,12 @@ export function UiDesignCanvas({
       surface = createUiSurface(canvas, engine, {
         name: "ui-designer",
         interactive: false,
-        designResolution: {
-          width: viewport.width,
-          height: viewport.height,
-        },
-        scaleRule: "shortestSide",
-        gizmoCanvas: gizmoCanvas ?? undefined,
-        safeArea: viewport.safeArea,
+        designResolution: adtIdeal.designResolution,
+        scaleRule: adtIdeal.scaleRule,
+        bitmapWidth: viewport.width,
+        bitmapHeight: viewport.height,
+        hostFrame: hostFrame ?? undefined,
+        safeArea: ui.viewportLayer ? viewport.safeArea : undefined,
         resolveImageUrl: boundResolveImageUrl,
         resolveInterfaceMaterial: boundResolveInterfaceMaterial,
         materialFunctions: boundMaterialFunctions,
@@ -233,14 +238,12 @@ export function UiDesignCanvas({
     setPreviewError(null);
     setGuiLive(true);
     const paintScheduler = paintSchedulerRef.current;
-    const gizmoScheduler = gizmoSchedulerRef.current;
     return () => {
       surface?.dispose();
       surfaceRef.current = null;
       setGuiLive(false);
       setLiveRects({});
       paintScheduler.cancel();
-      gizmoScheduler.cancel();
     };
     // Recreate only when the shared Engine identity changes. Viewport, scale
     // rule, and design resolution go through resizeDesign on the paint path.
@@ -281,12 +284,14 @@ export function UiDesignCanvas({
       if (!live) return;
       try {
         const frozen = !panelVisible || !documentActive;
+        if (viewport.width < 1 || viewport.height < 1) return;
         live.resizeDesign(
           viewport.width,
           viewport.height,
-          "shortestSide",
-          { width: viewport.width, height: viewport.height },
+          adtIdeal.scaleRule,
+          adtIdeal.designResolution,
         );
+        if (gestureLockedRef.current) return;
         applyUiControlsIfUnfrozen(frozen, live.host, displayControls);
         presentLiveUiIfVisible({
           panelVisible,
@@ -313,6 +318,8 @@ export function UiDesignCanvas({
     panelVisible,
     viewport.height,
     viewport.width,
+    adtIdeal.designResolution,
+    adtIdeal.scaleRule,
   ]);
 
   const selected = previewUi.widgets[selectedId];
@@ -335,10 +342,6 @@ export function UiDesignCanvas({
   const handles =
     canTransform && selectedScreen
       ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_HIT_SIZE_PX)
-      : null;
-  const visualHandles =
-    canTransform && selectedScreen
-      ? resizeHandleRects(selectedScreen, UI_DESIGN_HANDLE_VISUAL_SIZE_PX)
       : null;
   const pivotScreen =
     selected && selectedHit
@@ -363,63 +366,15 @@ export function UiDesignCanvas({
     previewScale,
   );
 
-  useEffect(() => {
-    const surface = surfaceRef.current;
-    if (!surface?.gizmoAdt) return;
-    const state: DesignerGizmoState = {
-      selection: selectedScreen,
-      handles: visualHandles,
-      safeArea: hasSafeArea ? safeScreen : null,
-      pivot: canTransform ? pivotScreen : null,
-    };
-    gizmoSchedulerRef.current.schedule(() => {
-      try {
-        presentLiveUiIfVisible({
-          panelVisible,
-          documentActive,
-          present: () => surface.presentGizmos(state),
-        });
-      } catch (error) {
-        if (isHardUiPresentFailure(error)) {
-          console.error("UI designer gizmos failed", error);
-        }
-      }
-    });
-  }, [
-    canTransform,
-    documentActive,
-    guiLive,
-    hasSafeArea,
-    panelVisible,
-    pivotScreen,
-    safeScreen,
-    selectedScreen,
-    visualHandles,
-  ]);
+  const lockGesture = () => {
+    gestureLockedRef.current = true;
+    surfaceRef.current?.host.setGestureLocked?.(true);
+  };
 
-  useEffect(() => {
-    const host = viewportRef.current;
-    const canvas = gizmoCanvasRef.current;
-    if (!host || !canvas || typeof ResizeObserver === "undefined") return;
-    const apply = () => {
-      const rect = host.getBoundingClientRect();
-      const width = Math.max(1, Math.floor(rect.width));
-      const height = Math.max(1, Math.floor(rect.height));
-      canvas.width = width;
-      canvas.height = height;
-      surfaceRef.current?.resizeGizmos(width, height);
-    };
-    apply();
-    const gizmoScheduler = gizmoSchedulerRef.current;
-    const observer = new ResizeObserver(() => {
-      gizmoScheduler.schedule(apply);
-    });
-    observer.observe(host);
-    return () => {
-      gizmoScheduler.cancel();
-      observer.disconnect();
-    };
-  }, [guiLive]);
+  const unlockGesture = () => {
+    gestureLockedRef.current = false;
+    surfaceRef.current?.host.setGestureLocked?.(false);
+  };
 
   const capturePointer = (event: PointerEvent<HTMLDivElement>) => {
     if (typeof event.currentTarget.setPointerCapture !== "function") return;
@@ -500,41 +455,41 @@ export function UiDesignCanvas({
           armed: true,
           strokeId: newStrokeId(),
         };
+        lockGesture();
         return;
       }
     }
     const host = (event.target as Element | null)?.closest("[data-widget-id]");
     const widgetId = host?.getAttribute("data-widget-id");
-    if (widgetId && ui.widgets[widgetId]) {
-      onSelect(widgetId);
-      if (widgetAllowsDesignerTransform(ui, widgetId)) {
+    if (widgetId) {
+      const slotId = widgetId.split("/")[0] ?? widgetId;
+      if (ui.widgets[slotId]) {
+        onSelect(slotId);
+        if (widgetAllowsDesignerTransform(ui, slotId)) {
+          dragRef.current = {
+            mode: "move",
+            id: slotId,
+            startX: event.clientX,
+            startY: event.clientY,
+            lastX: event.clientX,
+            lastY: event.clientY,
+            armed: false,
+            strokeId: newStrokeId(),
+          };
+          return;
+        }
         dragRef.current = {
-          mode: "move",
-          id: widgetId,
+          mode: "pan",
+          id: ui.rootId,
           startX: event.clientX,
           startY: event.clientY,
           lastX: event.clientX,
           lastY: event.clientY,
-          armed: false,
+          armed: true,
           strokeId: newStrokeId(),
         };
         return;
       }
-      dragRef.current = {
-        mode: "pan",
-        id: ui.rootId,
-        startX: event.clientX,
-        startY: event.clientY,
-        lastX: event.clientX,
-        lastY: event.clientY,
-        armed: true,
-        strokeId: newStrokeId(),
-      };
-      return;
-    }
-    if (widgetId) {
-      onSelect(widgetId.split("/")[0] ?? ui.rootId);
-      return;
     }
     onSelect(ui.rootId);
     dragRef.current = {
@@ -590,6 +545,7 @@ export function UiDesignCanvas({
       return;
     }
     drag.armed = true;
+    lockGesture();
     const screenDelta = {
       x: event.clientX - drag.lastX,
       y: event.clientY - drag.lastY,
@@ -600,7 +556,16 @@ export function UiDesignCanvas({
       previewLayoutsRef.current[drag.id] ?? current.widgets[drag.id]?.layout;
     if (!baseLayout) return;
     const delta = canvasDeltaToLayoutDelta(screenDelta, viewScale);
-    const parentRect = laidOutParentRect(displayLayout, drag.id);
+    const parentControl = displayControls.find((row) => row.id === drag.id);
+    const parent = parentControl?.parentId
+      ? displayControls.find((row) => row.id === parentControl.parentId)
+      : undefined;
+    const parentRect = parent?.guiRect ?? {
+      x: 0,
+      y: 0,
+      width: viewport.width,
+      height: viewport.height,
+    };
     const nextLayout =
       drag.mode === "resize" && drag.handle
         ? applyWidgetResize(baseLayout, parentRect, delta, handleEdges(drag.handle))
@@ -608,6 +573,7 @@ export function UiDesignCanvas({
     drag.lastX = event.clientX;
     drag.lastY = event.clientY;
     drag.previewLayout = nextLayout;
+    surfaceRef.current?.host.patchLiveLayout?.(drag.id, nextLayout);
     previewLayoutsRef.current = {
       ...previewLayoutsRef.current,
       [drag.id]: nextLayout,
@@ -626,9 +592,11 @@ export function UiDesignCanvas({
       }
       previewLayoutsRef.current = {};
       setPreviewLayouts({});
+      unlockGesture();
     }
     if (pointersRef.current.size < 2) {
       dragRef.current = null;
+      unlockGesture();
     }
     if (pointersRef.current.size >= 2) beginTwoFinger();
   };
@@ -660,7 +628,13 @@ export function UiDesignCanvas({
         className="absolute shadow-sm"
         data-testid="ui-design-canvas"
         data-preset={viewport.id}
-        data-scale={String(layout.scale)}
+        data-scale={String(
+          designScale(
+            { width: viewport.width, height: viewport.height },
+            adtIdeal.designResolution,
+            adtIdeal.scaleRule,
+          ),
+        )}
         data-zoom={String(view.zoom)}
         data-pan-x={String(view.panX)}
         data-pan-y={String(view.panY)}
@@ -676,12 +650,18 @@ export function UiDesignCanvas({
           backgroundSize: "16px 16px",
         }}
       >
-        <canvas
-          ref={canvasRef}
-          className="pointer-events-none absolute inset-0 size-full"
-          width={viewport.width}
-          height={viewport.height}
-        />
+        <div
+          ref={hostFrameRef}
+          className="absolute inset-0 size-full"
+          data-testid="ui-adt-host"
+        >
+          <canvas
+            ref={canvasRef}
+            className="pointer-events-none absolute inset-0 size-full"
+            width={viewport.width}
+            height={viewport.height}
+          />
+        </div>
         {displayControls.map((control) => {
           const hit = designerControlHitRect(
             control,
@@ -716,11 +696,6 @@ export function UiDesignCanvas({
           );
         })}
       </div>
-      <canvas
-        ref={gizmoCanvasRef}
-        className="pointer-events-none absolute inset-0 size-full"
-        data-testid="ui-gizmo-canvas"
-      />
       <div className="pointer-events-none absolute inset-0">
         {hasSafeArea ? (
           <div
@@ -747,6 +722,16 @@ export function UiDesignCanvas({
               top: selectedScreen.y,
               width: selectedScreen.width,
               height: selectedScreen.height,
+            }}
+          />
+        ) : null}
+        {pivotScreen && canTransform ? (
+          <div
+            className="absolute size-3 rounded-full border-2 border-orange-500 bg-background"
+            data-testid="ui-transform-center"
+            style={{
+              left: pivotScreen.x - 6,
+              top: pivotScreen.y - 6,
             }}
           />
         ) : null}

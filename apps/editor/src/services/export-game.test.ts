@@ -139,6 +139,38 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.uiDesignerPresets).toEqual([phone]);
   });
 
+  it("packs Project Settings User Interface design space onto game.json", async () => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
+      plugins: [],
+      projectPluginOverrides: {},
+      preset: defaultExportPreset(),
+      parentOf: () => null,
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: () => null,
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : null,
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+      ui: {
+        designResolution: { width: 1280, height: 720 },
+        scaleRule: "fitWidth",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.manifest.ui).toEqual({
+      designResolution: { width: 1280, height: 720 },
+      scaleRule: "fitWidth",
+    });
+  });
+
   it("packs a project Game Instance when the startup scene omits one", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({

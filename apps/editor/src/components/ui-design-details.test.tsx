@@ -4,7 +4,6 @@ import {
   createDefaultUserInterface,
   createWidget,
   defaultAddLayout,
-  layoutUserInterface,
 } from "@babylonslate/ui-runtime";
 import { UiDesignDetails } from "./ui-design-details";
 
@@ -12,20 +11,21 @@ afterEach(() => {
   cleanup();
 });
 
+const viewport = {
+  width: 800,
+  height: 600,
+  safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+};
+
 function renderDetails(selected: ReturnType<typeof createWidget>) {
   const ui = createDefaultUserInterface();
   ui.widgets[selected.id] = selected;
   ui.widgets.canvas!.children = [selected.id];
-  const layout = layoutUserInterface(
-    ui,
-    { width: 800, height: 600 },
-    { designSpace: true },
-  );
   render(
     <UiDesignDetails
       ui={ui}
       selected={selected}
-      layout={layout}
+      viewport={viewport}
       actionNames={[]}
       assetLabels={{}}
       onPatchWidget={() => {}}
@@ -34,6 +34,56 @@ function renderDetails(selected: ReturnType<typeof createWidget>) {
     />,
   );
 }
+
+describe("UiDesignDetails layout fields", () => {
+  it("authors left/top units next to offsets", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    renderDetails(button);
+    expect(screen.getByTestId("property-left-unit").textContent).toMatch(/px/i);
+    expect(screen.getByTestId("property-top-unit").textContent).toMatch(/px/i);
+  });
+
+  it("does not treat style.padding as layout", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    renderDetails(button);
+    expect(screen.queryByTestId("property-padding-left")).toBeNull();
+    expect(screen.getByTestId("property-layout-padding-left")).toBeTruthy();
+  });
+
+  it("keeps stack-axis size on slot-owned children and hides position", () => {
+    const ui = createDefaultUserInterface();
+    const stack = createWidget("stack", "StackPanel", "Stack", defaultAddLayout("StackPanel"));
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button", 0, "StackPanel"));
+    stack.children = ["btn"];
+    ui.widgets.stack = stack;
+    ui.widgets.btn = button;
+    ui.widgets.canvas!.children = ["stack"];
+    render(
+      <UiDesignDetails
+        ui={ui}
+        selected={button}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={() => {}}
+        onPatchLayout={() => {}}
+        onPickAsset={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("ui-slot-layout-note")).toBeTruthy();
+    expect(screen.queryByTestId("property-left")).toBeNull();
+    expect(screen.getByTestId("property-height")).toBeTruthy();
+  });
+
+  it("authors z-index, rotation, and scale", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    renderDetails(button);
+    expect(screen.getByTestId("property-z-index")).toBeTruthy();
+    expect(screen.getByTestId("property-rotation")).toBeTruthy();
+    expect(screen.getByTestId("property-scale-x")).toBeTruthy();
+    expect(screen.getByTestId("property-scale-y")).toBeTruthy();
+  });
+});
 
 describe("UiDesignDetails style colors", () => {
   it("shows the authored Button background instead of a fake default", () => {
