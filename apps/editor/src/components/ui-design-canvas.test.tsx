@@ -571,7 +571,7 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(screen.getByTestId("ui-resize-se-visual").className).toMatch(/border/);
   });
 
-  it("does not retrigger paint from a default adtIdeal object identity", () => {
+  it("does not retrigger paint from a default adtIdeal object identity", async () => {
     const surface = mockSurface();
     createUiSurfaceMock.mockReturnValue(surface);
     const props = hudCanvasProps();
@@ -590,11 +590,12 @@ describe("UiDesignCanvas preview fallback", () => {
         onLayoutChange={props.onLayoutChange}
       />,
     );
+    await flushUiFrame();
     expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
     expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
   });
 
-  it("does not resize the ADT while a layout stroke is in progress", () => {
+  it("does not resize the ADT while a layout stroke is in progress", async () => {
     const surface = mockSurface();
     createUiSurfaceMock.mockReturnValue(surface);
     const ui = createDefaultUserInterface();
@@ -629,7 +630,9 @@ describe("UiDesignCanvas preview fallback", () => {
         onLayoutChange={() => {}}
       />,
     );
+    await flushUiFrame();
     const afterPaint = surface.resizeDesign.mock.calls.length;
+    expect(afterPaint).toBeGreaterThan(0);
     const hit = screen.getByTestId("ui-widget-btn");
     act(() => {
       dispatchPointerEvent(hit, "pointerdown", { clientX: 120, clientY: 58 });
