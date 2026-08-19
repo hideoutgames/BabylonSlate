@@ -33,7 +33,6 @@ describe("collider visual", () => {
     });
     expect(isColliderVisualMesh(mesh)).toBe(true);
     expect(mesh).not.toBeInstanceOf(LinesMesh);
-    expect(mesh.overlay).toBe(false);
     expect(mesh.isPickable).toBe(false);
     expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
     const dashes = mesh.getChildMeshes().filter((child): child is Mesh => child instanceof Mesh);

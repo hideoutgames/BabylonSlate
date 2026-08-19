@@ -299,7 +299,6 @@ describe("scene-loader", () => {
     );
     expect(dashes!.scaling.x).toBe(2);
     expect(dashes!.renderingGroupId).toBe(1);
-    expect(dashes!.overlay).toBe(false);
     expect(dashes!.getChildMeshes().length).toBeGreaterThan(0);
   });
 

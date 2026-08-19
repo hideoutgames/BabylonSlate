@@ -32,7 +32,6 @@ export function createColliderVisualMesh(
   const root = new Mesh(name, scene);
   root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
   root.isPickable = false;
-  root.overlay = false;
   root.renderingGroupId = RENDERING_GROUP.world;
   const material = colliderMaterial(scene);
   for (const [from, to] of shapeEdges(shape)) {
@@ -89,7 +88,6 @@ function addDashedEdge(
     dash.rotationQuaternion = rotation.clone();
     dash.material = material;
     dash.isPickable = false;
-    dash.overlay = false;
     dash.renderingGroupId = RENDERING_GROUP.world;
     offset += period;
     index += 1;

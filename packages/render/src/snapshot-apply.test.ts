@@ -1298,7 +1298,6 @@ describe("createPlayMesh", () => {
     expect(
       (mesh!.metadata as { editorColliderVisual?: boolean }).editorColliderVisual,
     ).toBe(true);
-    expect(mesh!.overlay).toBe(false);
     expect(mesh!.getChildMeshes().length).toBeGreaterThan(0);
   });
 });
