@@ -113,8 +113,16 @@ export function CatalogDialog({
         </DialogHeader>
         <div
           className="shrink-0 border-b px-4 py-3"
-          onKeyDown={(event) => event.stopPropagation()}
-          onKeyUp={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            // Keep Escape free so the CatalogDialog can dismiss; block other
+            // keystrokes from leaking into the graph behind the modal.
+            if (event.key === "Escape") return;
+            event.stopPropagation();
+          }}
+          onKeyUp={(event) => {
+            if (event.key === "Escape") return;
+            event.stopPropagation();
+          }}
         >
           <SearchInput
             ref={searchRef}
