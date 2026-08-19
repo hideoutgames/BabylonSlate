@@ -1,5 +1,18 @@
 import { expect, type Page } from "@playwright/test";
 
+/** Click the Homepage TestProject row (name with or without `.babproject`). */
+export async function clickListedTestProject(page: Page): Promise<void> {
+  const listed = page.getByTestId("open-listed-project-TestProject");
+  const listedLegacy = page.getByTestId(
+    "open-listed-project-TestProject.babproject",
+  );
+  if ((await listed.count()) > 0) {
+    await listed.click();
+    return;
+  }
+  await listedLegacy.click();
+}
+
 /** Homepage → Create Project dialog (test-mode name TestProject) → editor chrome.
  *  If TestProject is already listed (shared OPFS), open it instead of Create.
  */

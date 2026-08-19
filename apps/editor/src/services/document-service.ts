@@ -234,10 +234,26 @@ export class DocumentService {
 
     this.state.openDocuments.delete(id);
     this.state.tabOrder = this.state.tabOrder.filter((tabId) => tabId !== id);
+    delete this.state.panelPlacements[id];
     if (this.state.activeDocumentId === id) {
       this.state.activeDocumentId = this.state.tabOrder[0] ?? CONTENT_BROWSER_ID;
     }
     this.pinStickyTabs();
+  }
+
+  /**
+   * Close every open asset tab whose file path is in `paths`.
+   * Content Browser stays open. Returns the closed document ids.
+   */
+  closeDocumentsForPaths(paths: Iterable<string>): string[] {
+    const pathSet = paths instanceof Set ? paths : new Set(paths);
+    const ids: string[] = [];
+    for (const doc of this.state.openDocuments.values()) {
+      if (doc.ref.kind === "content-browser") continue;
+      if (pathSet.has(doc.ref.path)) ids.push(doc.id);
+    }
+    for (const id of ids) this.closeDocument(id);
+    return ids;
   }
 
   /**
@@ -399,6 +415,13 @@ export class DocumentService {
     if (!doc || doc.ref.kind === "content-browser") return;
     doc.content = content;
     doc.dirty = false;
+  }
+
+  /** Update in-memory content without changing the dirty flag. */
+  patchLoadedContent(id: string, content: DocumentContent): void {
+    const doc = this.state.openDocuments.get(id);
+    if (!doc || doc.ref.kind === "content-browser") return;
+    doc.content = content;
   }
 
   buildLayouts(): ProjectLayouts {
