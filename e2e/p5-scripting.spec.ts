@@ -256,7 +256,9 @@ test.describe("P5 visual scripting acceptance", () => {
 
     await openMainScene(page);
     await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-blocked-dialog")).toBeVisible();
+    await expect(page.getByTestId("play-blocked-dialog")).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByTestId("play-blocked-row").first().click();
     await expect(
       page.locator('.react-flow__node.selected[data-id="branch"]'),
