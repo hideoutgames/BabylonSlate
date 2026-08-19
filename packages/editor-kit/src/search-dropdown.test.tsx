@@ -57,6 +57,24 @@ describe("SearchDropdown", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("lets Escape close the menu even when the search field is focused", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <SearchDropdown
+        open
+        onOpenChange={onOpenChange}
+        title="Keys"
+        items={items}
+        onSelect={() => {}}
+        data-testid="palette"
+      >
+        <button type="button">Palette</button>
+      </SearchDropdown>,
+    );
+    fireEvent.keyDown(screen.getByTestId("palette-query"), { key: "Escape" });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("renders group headers for consecutive items that share a group", () => {
     render(
       <SearchDropdown

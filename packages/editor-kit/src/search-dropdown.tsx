@@ -77,7 +77,10 @@ export function SearchDropdown({
         ) : null}
         <div
           className="px-1 pb-1"
-          onKeyDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") return;
+            event.stopPropagation();
+          }}
           onClick={(event) => event.stopPropagation()}
         >
           <SearchInput
