@@ -1,6 +1,7 @@
 import "./gltf-loader";
-import type { AbstractMesh, Node, Scene, TransformNode } from "@babylonjs/core";
+import type { AbstractEngine, AbstractMesh, Node, TransformNode } from "@babylonjs/core";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { Scene } from "@babylonjs/core/scene";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
@@ -207,6 +208,25 @@ export function beginSlotModelAnimLoad(
 
 /** True when name-match retarget keeps at least one channel. */
 export async function animationRetargetHasMatches(
+  engine: AbstractEngine,
+  sourceBytes: Uint8Array,
+  targetBytes: Uint8Array,
+  clipName: string,
+): Promise<boolean> {
+  const scene = new Scene(engine);
+  try {
+    return await animationRetargetHasMatchesOnScene(
+      scene,
+      sourceBytes,
+      targetBytes,
+      clipName,
+    );
+  } finally {
+    scene.dispose();
+  }
+}
+
+async function animationRetargetHasMatchesOnScene(
   scene: Scene,
   sourceBytes: Uint8Array,
   targetBytes: Uint8Array,

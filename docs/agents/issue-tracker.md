@@ -19,6 +19,8 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-19 | cursor/dual-skeleton-preview-root-e48e | dual glTF skeleton kinds | Spec | Hierarchy preview used the material-preview placeholder as the rig root (extra bone); catalog `boneNames` kept a JSON `__root__` node | Resolved |
+| 2026-08-19 | cursor/dual-skeleton-preview-root-e48e | dual glTF skeleton kinds | Standards | Content Browser constructed a Babylon `Scene` for Retarget probes | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | `selectVisibleGraphElements` dropped off-screen `focusedNodeId`, so search / compiler / Play navigate `fitView` no-oped. `keepIds` now mounts the focused node and its incident edges | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | Hidden warm graphs (`display: none` → 0×0) turned virtualisation off and remounted every node. `GraphEditor` now freezes the last positive host size | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-content-browser-virtualize | Standards | `asset-registry.md` still described CSS Grid overflow; the grid is windowed absolute tiles plus a spacer | Resolved |

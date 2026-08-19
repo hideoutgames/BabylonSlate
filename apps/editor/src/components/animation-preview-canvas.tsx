@@ -8,6 +8,7 @@ import {
   createMaterialPreviewPresenter,
   createModelPreviewScene,
   loadModelPreviewSource,
+  previewRigRoot,
   retargetAnimationGroupWithMeshProxy,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
@@ -75,7 +76,10 @@ export function AnimationPreviewCanvas({
             (entry) => entry.name === clipName,
           );
           if (sourceGroup) {
-            group = retargetAnimationGroupWithMeshProxy(sourceGroup, host.mesh);
+            group = retargetAnimationGroupWithMeshProxy(
+              sourceGroup,
+              previewRigRoot(host),
+            );
           }
           sourceLoaded?.dispose();
           sourceLoaded = null;
@@ -147,7 +151,7 @@ export function AnimationPreviewCanvas({
       return;
     }
     bonesRef.current = attachSkeletonPreview(
-      host.mesh,
+      previewRigRoot(host),
       host.scene,
       skeletonKind,
     );

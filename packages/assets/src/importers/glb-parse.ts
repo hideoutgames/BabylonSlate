@@ -320,6 +320,10 @@ function browseFromGltfJson(
   return { materials, images: images_out, animations, rigKind, boneNames };
 }
 
+function isCatalogBoneName(name: string): boolean {
+  return name !== "__root__";
+}
+
 function nodeName(nodes: unknown[], index: number): string {
   const node = nodes[index] as Record<string, unknown> | undefined;
   if (typeof node?.name === "string" && node.name.length > 0) return node.name;
@@ -362,7 +366,7 @@ function classifyGltfRig(
       for (const joint of joints) {
         if (typeof joint !== "number") continue;
         const name = nodeName(nodes, joint);
-        if (seen.has(name)) continue;
+        if (!isCatalogBoneName(name) || seen.has(name)) continue;
         seen.add(name);
         boneNames.push(name);
       }
@@ -406,7 +410,7 @@ function hierarchyBoneNames(nodes: unknown[]): string[] {
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
     if (!hasMesh && !hasChildren) continue;
     const name = nodeName(nodes, i);
-    if (seen.has(name)) continue;
+    if (!isCatalogBoneName(name) || seen.has(name)) continue;
     seen.add(name);
     names.push(name);
   }
