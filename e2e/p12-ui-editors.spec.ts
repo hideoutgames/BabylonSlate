@@ -77,9 +77,7 @@ async function expectDesignerHostStats(page: Page): Promise<void> {
 }
 
 async function selectCanvasRoot(page: Page): Promise<void> {
-  await visibleUiWorkspace(page)
-    .getByTestId("ui-widget-canvas")
-    .click({ position: { x: 8, y: 8 } });
+  await visibleUiWorkspace(page).getByTestId("tree-row-canvas").click();
 }
 
 async function setUiEditorMode(

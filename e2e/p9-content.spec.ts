@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
+import { readUiHostStats } from "./page-failures";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import {
@@ -273,10 +274,7 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     const button = page.locator('[data-testid^="ui-widget-button-"]');
     await expect(button).toBeVisible();
-    // Add Widget selects the control. 44px screen-space handles then cover a
-    // 36px-tall Button on a fitted 1920 canvas, so a center press would resize.
-    await page.getByTestId("ui-widget-canvas").click({ position: { x: 8, y: 8 } });
-    await expect(page.getByTestId("ui-resize-se")).toHaveCount(0);
+    await expect(page.getByTestId("ui-resize-se")).toBeVisible();
     const before = await button.getAttribute("data-gui-x");
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
@@ -303,6 +301,54 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("property-left")).toBeVisible();
     await expect(page.getByTestId("property-top")).toBeVisible();
     await expect(page.getByTestId("property-width")).toBeVisible();
+  });
+
+  test("UserInterface designer resizes a selected Button without deselecting", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
+    await expect(page.getByTestId("ui-design-viewport")).toBeVisible();
+    await page.getByTestId("ui-add-widget").click();
+    await page.getByTestId("ui-add-widget-Button").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
+    const button = page.locator('[data-testid^="ui-widget-button-"]');
+    await expect(button).toBeVisible();
+    await expect(page.getByTestId("ui-resize-se")).toBeVisible();
+    await expect
+      .poll(async () => (await readUiHostStats(page)).apply, { timeout: 15_000 })
+      .toBeGreaterThan(0);
+
+    const widthBefore = await button.getAttribute("data-gui-width");
+    const applyBefore = (await readUiHostStats(page)).apply;
+    const handle = page.getByTestId("ui-resize-se");
+    const handleBox = await handle.boundingBox();
+    expect(handleBox).not.toBeNull();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2,
+      handleBox!.y + handleBox!.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      handleBox!.x + handleBox!.width / 2 + 48,
+      handleBox!.y + handleBox!.height / 2 + 24,
+      { steps: 8 },
+    );
+    expect((await readUiHostStats(page)).apply).toBe(applyBefore);
+    await page.mouse.up();
+    await expect
+      .poll(async () => button.getAttribute("data-gui-width"))
+      .not.toBe(widthBefore);
+
+    const widthAfterResize = await button.getAttribute("data-gui-width");
+    const widthField = page.getByTestId("property-width");
+    await expect(widthField).toBeVisible();
+    await widthField.fill("240");
+    await widthField.blur();
+    await expect
+      .poll(async () => button.getAttribute("data-gui-width"))
+      .not.toBe(widthAfterResize);
   });
 
   test("UserInterface designer lists a custom Engine Settings preset", async ({
