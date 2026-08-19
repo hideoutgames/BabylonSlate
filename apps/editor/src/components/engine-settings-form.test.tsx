@@ -229,8 +229,8 @@ describe("EngineSettingsForm focus", () => {
     });
   });
 
-  it("offers Settings on the User Interface Designer keep list", () => {
-    const { getByTestId } = render(
+  it("does not offer Settings on the User Interface Designer keep list", () => {
+    const { getByTestId, queryByTestId } = render(
       <EngineSettingsForm
         settings={defaultEngineSettings()}
         onChange={() => {}}
@@ -238,7 +238,8 @@ describe("EngineSettingsForm focus", () => {
       />,
     );
     fireEvent.click(getByTestId("focus-keep-ui-add"));
-    expect(getByTestId("focus-keep-ui-add-ui-settings")).toBeTruthy();
+    expect(queryByTestId("focus-keep-ui-add-ui-settings")).toBeNull();
+    expect(getByTestId("focus-keep-ui-add-ui-hierarchy")).toBeTruthy();
   });
 
   it("removes a keep tab", () => {

@@ -54,7 +54,6 @@ describe("mode DockView unmount", () => {
       <UiDocumentDocks
         id="ui:hud"
         layout={null}
-        editorUtilityInterface={false}
       />,
     );
     expect(screen.getByTestId("mock-dock-designer")).toBeTruthy();
@@ -64,7 +63,6 @@ describe("mode DockView unmount", () => {
       <UiDocumentDocks
         id="ui:hud"
         layout={null}
-        editorUtilityInterface={false}
       />,
     );
     expect(screen.queryByTestId("mock-dock-designer")).toBeNull();

@@ -10,7 +10,7 @@ import {
 
 const E2E_TIMEOUT_MS = 90_000;
 
-type UiAssetType = "UserInterface" | "EditorUtilityInterface";
+type UiAssetType = "UserInterface";
 type AddableWidgetKind =
   | "Button"
   | "CheckBox"
@@ -134,7 +134,7 @@ async function discardCloseIfNeeded(page: Page): Promise<void> {
   await expect(page.getByTestId("homepage")).toBeVisible();
 }
 
-test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => {
+test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () => {
   test("UserInterface designer paints on Dockview without Preview Unavailable", async ({
     page,
   }) => {
@@ -152,32 +152,6 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
     await expect(page.getByTestId("ui-hierarchy-panel")).toBeVisible();
     await expect(page.getByTestId("ui-details-panel")).toBeVisible();
-  });
-
-  test("EditorUtilityInterface authoring round-trips dockKind and paints GUI", async ({
-    page,
-  }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await createAsset(page, "EditorUtilityInterface", "SceneTools");
-    await page
-      .locator('[data-asset-path="assets/SceneTools.eui.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
-    await expect(page.getByTestId("ui-design-canvas")).toBeVisible();
-    await expect(page.getByTestId("ui-gui-preview-error")).toHaveCount(0);
-    await expect(page.getByTestId("ui-settings-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-dock-kind")).toContainText("Scene");
-    await page.getByTestId("ui-dock-kind").click();
-    await page.getByTestId("ui-dock-kind-graph").click();
-    await expect(page.getByTestId("ui-dock-kind")).toContainText("Class");
-    await page
-      .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
-      .click();
-    await page
-      .locator('[data-asset-path="assets/SceneTools.eui.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("ui-dock-kind")).toContainText("Class");
   });
 
   test("Designer is the default mode and Logic switches Windows to Class docks", async ({
@@ -231,35 +205,7 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await closeWindowsMenu(page);
   });
 
-  test("EditorUtilityInterface Settings stay on Designer", async ({ page }) => {
-    test.setTimeout(E2E_TIMEOUT_MS);
-    await openTestProject(page);
-    await createAsset(page, "EditorUtilityInterface", "SceneTools");
-    await page
-      .locator('[data-asset-path="assets/SceneTools.eui.babasset"]')
-      .dblclick();
-    await expect(page.getByTestId("ui-settings-panel")).toBeVisible();
-    await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-menu-ui-settings")).toBeVisible();
-    await closeWindowsMenu(page);
-
-    await page.getByTestId("ui-editor-mode-logic").click();
-    await expect(page.getByTestId("graph-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-dock-surface-designer")).toHaveAttribute(
-      "data-active",
-      "false",
-    );
-    await expect(page.getByTestId("ui-dock-surface-logic")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    await openWindowsMenu(page);
-    await expect(page.getByTestId("windows-menu-ui-settings")).toHaveCount(0);
-    await expect(page.getByTestId("windows-menu-graph")).toBeVisible();
-    await closeWindowsMenu(page);
-  });
-
-  test("two UserInterface and two EditorUtilityInterface documents switch Designer and Logic without page failures", async ({
+  test("two UserInterface documents switch Designer and Logic without page failures", async ({
     page,
   }) => {
     test.setTimeout(E2E_TIMEOUT_MS);
@@ -269,8 +215,6 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
 
     await createAsset(page, "UserInterface", "HUD");
     await createAsset(page, "UserInterface", "HUD2");
-    await createAsset(page, "EditorUtilityInterface", "SceneTools");
-    await createAsset(page, "EditorUtilityInterface", "ClassTools");
 
     await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
     await expectDesignerReady(page);
@@ -285,19 +229,6 @@ test.describe("P12 UI and EUI authoring editors", { tag: IPAD_TEST_TAG }, () => 
     await addWidget(page, "Slider");
     await setUiEditorMode(page, "logic");
     await expect(visibleUiWorkspace(page).getByTestId("graph-panel")).toBeVisible();
-
-    await switchToAsset(page, "assets/SceneTools.eui.babasset", "SceneTools");
-    await expectDesignerReady(page);
-    await expect(
-      visibleUiWorkspace(page).getByTestId("ui-settings-panel"),
-    ).toBeVisible();
-    await addWidget(page, "CheckBox");
-    await setUiEditorMode(page, "logic");
-    await expect(visibleUiWorkspace(page).getByTestId("graph-panel")).toBeVisible();
-
-    await switchToAsset(page, "assets/ClassTools.eui.babasset", "ClassTools");
-    await expectDesignerReady(page);
-    await addWidget(page, "TextInput");
 
     await switchToAsset(page, "assets/HUD.ui.babasset", "HUD");
     await expect(

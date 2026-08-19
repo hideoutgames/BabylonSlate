@@ -19,7 +19,6 @@ export interface DockviewShellProps {
   onReady?: (api: DockviewApi) => void;
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
-  editorUtilityInterface?: boolean;
   sourceControl?: boolean;
   uiEditorMode?: UiEditorMode;
   animEditorMode?: AnimEditorMode;
@@ -30,7 +29,6 @@ export function DockviewShell({
   onReady,
   initialLayout,
   actorPrefab = true,
-  editorUtilityInterface = false,
   sourceControl = false,
   uiEditorMode,
   animEditorMode,
@@ -49,7 +47,6 @@ export function DockviewShell({
       restoreDockviewLayout(event.api, initialLayoutRef.current, () => {
         createDefaultLayoutForKind(event.api, documentKind, {
           actorPrefab,
-          editorUtilityInterface,
           sourceControl,
           uiEditorMode,
           animEditorMode,
@@ -59,9 +56,6 @@ export function DockviewShell({
       if (!actorPrefab) {
         event.api.getPanel("prefab-viewport")?.api.close();
         event.api.getPanel("actor-prefab")?.api.close();
-      }
-      if (!editorUtilityInterface) {
-        event.api.getPanel("ui-settings")?.api.close();
       }
       if (!sourceControl) {
         event.api.getPanel("locks")?.api.close();
@@ -75,7 +69,7 @@ export function DockviewShell({
 
       onReadyRef.current?.(event.api);
     },
-    [documentKind, actorPrefab, editorUtilityInterface, sourceControl, uiEditorMode, animEditorMode, platformOptions.disableFloatingGroups],
+    [documentKind, actorPrefab, sourceControl, uiEditorMode, animEditorMode, platformOptions.disableFloatingGroups],
   );
 
   return (

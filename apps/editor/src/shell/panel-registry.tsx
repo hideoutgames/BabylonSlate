@@ -41,7 +41,6 @@ import {
   UiDesignPanel,
   UiDetailsPanel,
   UiHierarchyPanel,
-  UiSettingsPanel,
 } from "../panels/ui-editor-panels";
 import {
   MaterialCompilerResultsPanel,
@@ -51,7 +50,6 @@ import {
   MaterialGraphPanel,
   MaterialPreviewPanel,
 } from "../components/material-editor";
-import { EditorUtilityPanel } from "../panels/editor-utility-panel";
 import { PluginSettingsDetailsPanel } from "../panels/plugin-settings-details-panel";
 import {
   AudioChannelDetailsPanel,
@@ -159,7 +157,6 @@ export const panelComponents = {
     <UiHierarchyPanel {...props} />
   ),
   "ui-details": (props: IDockviewPanelProps) => <UiDetailsPanel {...props} />,
-  "ui-settings": (props: IDockviewPanelProps) => <UiSettingsPanel {...props} />,
   "material-graph": (props: IDockviewPanelProps) => (
     <MaterialGraphPanel {...props} />
   ),
@@ -177,9 +174,6 @@ export const panelComponents = {
   ),
   "material-function-interface": (props: IDockviewPanelProps) => (
     <MaterialFunctionInterfacePanel {...props} />
-  ),
-  "editor-utility": (props: IDockviewPanelProps) => (
-    <EditorUtilityPanel {...props} />
   ),
   "plugin-settings-details": (props: IDockviewPanelProps) => (
     <PluginSettingsDetailsPanel {...props} />

@@ -100,7 +100,7 @@ Gizmo drags coalesce via `SetActorTransformCommand.mergeKey` (`transform:{actorI
 | `@babylonslate/edit` | Scene commands + `diffSceneCommands`; journal revivers |
 | `@babylonslate/render` | Editor tools: camera, gizmos, grid, outline, sync, gestures |
 | `@babylonslate/editor-kit` | Property grid, tree view, panel frame, toolbar, asset picker, class picker, input mapping editor |
-| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them; reopen restores addPanel-relative last placement. P12 live Editor Utility tabs (`p12-editor-extensions`) are extra Dockview panels that present Babylon GUI (`createUiSurface`); they are not the UserInterface designer. UserInterface / EditorUtilityInterface **authoring** is a Dockview document (`p12-ui-editors`). |
+| `apps/editor` | Viewport, Outliner, Details, Place Actors catalog, Actor prefab tab; `applySceneChange`. **Windows** (global toolbar, left of Focus) lists these dock tabs and toggles them; reopen restores addPanel-relative last placement. UserInterface **authoring** is a Dockview document (`p12-ui-editors`). |
 
 ## Outliner and Details visuals
 

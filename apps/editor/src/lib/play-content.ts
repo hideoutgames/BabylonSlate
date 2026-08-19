@@ -665,7 +665,7 @@ export function materialGuidsFromScenes(
   return guids;
 }
 
-/** Interface Material guids referenced by HUD / EUI Material widgets. */
+/** Interface Material guids referenced by HUD Material widgets. */
 export function interfaceMaterialGuidsFromUiDocuments(
   documents: Iterable<UserInterfaceDocument>,
   resolveNested?: (guid: string) => UserInterfaceDocument | null,

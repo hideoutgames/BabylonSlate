@@ -32,7 +32,6 @@ import {
   type WidgetKind,
   type WidgetLayout,
 } from "@babylonslate/ui-runtime";
-import { normalizeEditorUtilityDockKind } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import { useDocuments } from "./document-context";
 import {
@@ -72,8 +71,6 @@ export interface UiEditingContextValue {
   path: string;
   payload: Record<string, unknown>;
   ui: UserInterfaceDocument;
-  isEditorUtilityInterface: boolean;
-  dockKind: ReturnType<typeof normalizeEditorUtilityDockKind>;
   selectedId: string;
   setSelectedId: (id: string) => void;
   selected: UserInterfaceDocument["widgets"][string];
@@ -186,8 +183,6 @@ export function UiEditingProvider({
   latestPayloadRef.current = payload;
 
   const indexed = (assetRegistry?.list() ?? []).find((asset) => asset.path === path);
-  const isEditorUtilityInterface = indexed?.header.type === "EditorUtilityInterface";
-  const dockKind = normalizeEditorUtilityDockKind(payload.dockKind);
   const selfGuid = indexed?.header.guid ?? path;
 
   useEffect(() => {
@@ -486,8 +481,6 @@ export function UiEditingProvider({
       path,
       payload,
       ui,
-      isEditorUtilityInterface,
-      dockKind,
       selectedId,
       setSelectedId,
       selected,
@@ -530,7 +523,6 @@ export function UiEditingProvider({
       commit,
       controls,
       devicePresets,
-      dockKind,
       fitView,
       fontEntries,
       resolveImageUrl,
@@ -538,7 +530,6 @@ export function UiEditingProvider({
       resolveNested,
       materialFunctions,
       imageIssues,
-      isEditorUtilityInterface,
       layout,
       patchLayout,
       patchWidget,

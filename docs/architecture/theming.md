@@ -103,7 +103,7 @@ Content Browser, Outliner, catalogs, search, and document tabs resolve **icons**
 | Token | Kind | Distinct icons |
 | --- | --- | --- |
 | `--asset-scene` | Scene, AudioMixer (yellow, Unreal Level) | Scene, AudioMixer (`Volume2`) |
-| `--asset-graph` | Graph / UserInterface / EditorUtilityInterface (cyan) | Graph, UserInterface (`PanelTop`), EditorUtilityInterface (widget glyph) |
+| `--asset-graph` | Graph / UserInterface (cyan) | Graph, UserInterface (`PanelTop`) |
 | `--asset-texture` | Texture, Sprite, Tileset, Tilemap (magenta) | Texture |
 | `--asset-material` | Material, Material Function, Shader (green, former Audio) | Material |
 | `--asset-model` | Model (orange) | Model |
