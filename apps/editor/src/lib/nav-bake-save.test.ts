@@ -37,7 +37,9 @@ describe("nav bake save flush", () => {
   });
 
   it("invokes registered startBake flushes sequentially and skips when none are registered", async () => {
-    const startBake = vi.fn(async () => {});
+    const startBake = vi.fn(
+      async (_properties: Record<string, unknown>) => {},
+    );
     await flushNavBakeForSave();
     expect(startBake).not.toHaveBeenCalled();
     const unregister = registerNavBakeSaveFlush(async () => {

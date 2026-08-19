@@ -13,6 +13,7 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
+import type { TracePayload } from "@babylonslate/debugger";
 import { applyInspectSelectionToConsoleLine } from "@babylonslate/runtime";
 import type { Engine } from "@babylonjs/core";
 import {
