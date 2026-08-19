@@ -55,7 +55,7 @@ describe("editor place position", () => {
     expect(Vector3.Cross(offset.normalize(), toTarget.normalize()).length()).toBeLessThan(
       0.05,
     );
-    expect(DEFAULT_CAMERA_RADIUS).toBe(8);
+    expect(DEFAULT_CAMERA_RADIUS).toBe(12);
   });
 
   it("keeps a zoomed-out 3D spawn near the look-at instead of 4 units from the lens", () => {

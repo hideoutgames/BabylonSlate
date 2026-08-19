@@ -438,6 +438,8 @@ describe("Homepage Create Project dialog", () => {
       projects: [listedProject("MyGame.babproject", "opfs")],
     });
     screen.getByTestId("create-project").click();
+    const name = await screen.findByTestId("create-project-name");
+    fireEvent.change(name, { target: { value: "MyGame" } });
     expect(
       (await screen.findByTestId("create-project-name-issue")).textContent,
     ).toBe("Name already exists.");
@@ -446,32 +448,48 @@ describe("Homepage Create Project dialog", () => {
     ).toBe(true);
   });
 
-  it("drops template copy, says On this device, and explains Black Bars", async () => {
+  it("opens Create Project with an empty Name on the live Homepage", async () => {
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+    const name = await screen.findByTestId("create-project-name");
+    expect((name as HTMLInputElement).value).toBe("");
+    expect(screen.getByTestId("create-project-name-issue").textContent).toBe(
+      "Name required.",
+    );
+    expect(
+      (screen.getByTestId("create-project-submit") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("drops template copy, On this device, and Black Bars helper", async () => {
     renderHomepage();
     screen.getByTestId("create-project").click();
     const dialog = await screen.findByTestId("create-project-dialog");
     expect(dialog.textContent).not.toMatch(/or a template/i);
-    expect(screen.getByTestId("create-project-location").textContent).toBe(
-      "On this device.",
-    );
+    expect(screen.queryByTestId("create-project-location")).toBeNull();
+    expect(dialog.textContent).not.toMatch(/On this device/i);
     expect(dialog.textContent).not.toMatch(/opfs/i);
     expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
     expect(dialog.textContent).toContain(
       `Play and export resolution (default ${DEFAULT_RENDER_WIDTH}×${DEFAULT_RENDER_HEIGHT}).`,
     );
     expect(dialog.textContent).not.toMatch(/letterboxes/i);
-    expect(dialog.textContent).toContain(
-      "On locks WxH with bars. Off fills without stretching.",
+    expect(dialog.textContent).not.toMatch(
+      /On locks WxH with bars\. Off fills without stretching\./,
     );
+    expect(screen.getByTestId("create-project-black-bars")).toBeTruthy();
   });
 
   it("does not pass pickFolder when creating on web", async () => {
     const onCreateEmpty = vi.fn(async () => {});
     renderHomepage({ onCreateEmpty });
     screen.getByTestId("create-project").click();
-    fireEvent.click(await screen.findByTestId("create-project-submit"));
+    fireEvent.change(await screen.findByTestId("create-project-name"), {
+      target: { value: "WebGame" },
+    });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
     expect(onCreateEmpty).toHaveBeenCalledWith(
-      expect.any(String),
+      "WebGame",
       expect.not.objectContaining({ pickFolder: true }),
     );
   });
@@ -524,9 +542,12 @@ describe("Homepage Create Project dialog", () => {
     expect(screen.getByTestId("create-project-location").textContent).toMatch(
       /Choose a folder/,
     );
+    fireEvent.change(screen.getByTestId("create-project-name"), {
+      target: { value: "IpadGame" },
+    });
     fireEvent.click(screen.getByTestId("create-project-submit"));
     expect(onCreateEmpty).toHaveBeenCalledWith(
-      expect.any(String),
+      "IpadGame",
       expect.objectContaining({ pickFolder: true }),
     );
   });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
 import {
   createDefaultPlayHud,
@@ -8,6 +8,7 @@ import {
   describeUiControls,
   pinLayout,
 } from "@babylonslate/ui-runtime";
+import { createUiDesignerSession } from "../lib/ui-designer-session";
 import { UiDesignCanvas } from "./ui-design-canvas";
 
 const { createUiSurfaceMock, uiHostStats, resetUiHostStats } = vi.hoisted(() => {
@@ -273,6 +274,7 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(<UiDesignCanvas {...props} />);
     await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(resizeDesign).toHaveBeenCalled());
     rerender(
       <UiDesignCanvas
         {...props}
@@ -282,10 +284,12 @@ describe("UiDesignCanvas preview fallback", () => {
     await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
-    expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
-      width: 1920,
-      height: 1080,
-    });
+    await waitFor(() =>
+      expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
+        width: 1920,
+        height: 1080,
+      }),
+    );
   });
 
   it("re-applies when returning from Logic to Designer", async () => {
@@ -315,6 +319,151 @@ describe("UiDesignCanvas preview fallback", () => {
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
     await flushPaint();
     expect(addControl).toHaveBeenCalled();
+  });
+
+  it("re-applies when a locked session unlocks after a skipped controls paint", async () => {
+    const reconcile = vi.fn();
+    const present = vi.fn();
+    createUiSurfaceMock.mockReturnValue({
+      present,
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        reconcile,
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout: vi.fn(),
+    });
+    const props = hudCanvasProps();
+    const { rerender } = render(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(reconcile).toHaveBeenCalled();
+    expect(present).toHaveBeenCalled();
+    const afterFirstPaint = {
+      reconcile: reconcile.mock.calls.length,
+      present: present.mock.calls.length,
+    };
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    expect(session.locked).toBe(true);
+    const nextControls = [...props.controls];
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        controls={nextControls}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(reconcile.mock.calls.length).toBe(afterFirstPaint.reconcile);
+    expect(present.mock.calls.length).toBe(afterFirstPaint.present);
+    session.cancel();
+    expect(session.locked).toBe(false);
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        controls={nextControls}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(reconcile.mock.calls.length).toBeGreaterThan(afterFirstPaint.reconcile);
+    expect(present.mock.calls.length).toBeGreaterThan(afterFirstPaint.present);
+  });
+
+  it("commits a locked session when Designer becomes inactive", async () => {
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    expect(session.locked).toBe(true);
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const props = hudCanvasProps();
+    const { rerender } = render(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(session.locked).toBe(true);
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive={false}
+      />,
+    );
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
+    expect(commitLayout.mock.calls[0]![0]).toBe("stick");
+  });
+
+  it("commits a locked session when the canvas unmounts", async () => {
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const { unmount } = render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(session.locked).toBe(true);
+    unmount();
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
   });
 
   it("commits a widget drag once on pointer up", () => {
@@ -650,6 +799,58 @@ describe("UiDesignCanvas preview fallback", () => {
     });
     expect(surface.resizeDesign.mock.calls.length).toBe(afterPaint);
     expect(surface.host.patchLiveLayout).toHaveBeenCalled();
+  });
+
+  it("pinches zoom around the finger centroid", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const onViewChange = vi.fn();
+    render(
+      <UiDesignCanvas {...hudCanvasProps()} onViewChange={onViewChange} />,
+    );
+    const viewport = screen.getByTestId("ui-design-viewport");
+    viewport.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        bottom: 300,
+        right: 400,
+        width: 400,
+        height: 300,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    dispatchPointerEvent(viewport, "pointerdown", {
+      pointerId: 1,
+      clientX: 50,
+      clientY: 40,
+    });
+    dispatchPointerEvent(viewport, "pointerdown", {
+      pointerId: 2,
+      clientX: 150,
+      clientY: 40,
+    });
+    dispatchPointerEvent(viewport, "pointermove", {
+      pointerId: 1,
+      clientX: 0,
+      clientY: 40,
+    });
+    dispatchPointerEvent(viewport, "pointermove", {
+      pointerId: 2,
+      clientX: 200,
+      clientY: 40,
+    });
+    expect(onViewChange).toHaveBeenCalled();
+    const view = onViewChange.mock.calls.at(-1)![0] as {
+      zoom: number;
+      panX: number;
+      panY: number;
+    };
+    expect(view.zoom).toBe(2);
+    expect(view.panX).toBe(-100);
+    expect(view.panY).toBe(-40);
   });
 
   it("surfaces missing texture chunk feedback instead of a silent blank Image", () => {

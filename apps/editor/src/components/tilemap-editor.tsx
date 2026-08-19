@@ -566,6 +566,7 @@ export function TilemapPaint({
   const [cssSize, setCssSize] = useState({ width: 256, height: 256 });
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pendingPickerRef = useRef<{ x: number; y: number } | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchStartRef = useRef<{
     panX: number;
@@ -832,6 +833,17 @@ export function TilemapPaint({
           onSelect={() => {}}
           testId="tilemap-selected-tile"
         />
+        <span
+          className="truncate text-sm text-muted-foreground"
+          data-testid="tilemap-selected-label"
+        >
+          {decoded
+            ? `${
+                assets.find((asset) => asset.guid === decoded.guid)?.name ??
+                "Tileset"
+              } · Tile ${localTileId}`
+            : `GID ${selectedGid}`}
+        </span>
       </div>
       <div ref={hostRef} className="relative min-h-0 flex-1">
         <canvas
@@ -881,6 +893,7 @@ export function TilemapPaint({
                 strokeRef.current = null;
               }
               panDragRef.current = null;
+              pendingPickerRef.current = null;
               pinchActiveRef.current = true;
               const points = [...pointersRef.current.values()];
               const spread = Math.hypot(
@@ -909,7 +922,8 @@ export function TilemapPaint({
             const cell = cellAt(event.clientX, event.clientY);
             if (!cell || !layer) return;
             if (tool === "picker") {
-              setSelectedGid(pickTileId(tilemap, layer.id, cell.x, cell.y));
+              // Defer until pointerup so a second-finger pinch keeps the palette GID.
+              pendingPickerRef.current = cell;
               return;
             }
             paintAt(cell, "down");
@@ -977,6 +991,18 @@ export function TilemapPaint({
             }
             if (pointersRef.current.size < 2) pinchStartRef.current = null;
             if (pointersRef.current.size === 0) {
+              const pending = pendingPickerRef.current;
+              pendingPickerRef.current = null;
+              if (
+                pending &&
+                !pinchActiveRef.current &&
+                tool === "picker" &&
+                layer
+              ) {
+                setSelectedGid(
+                  pickTileId(tilemap, layer.id, pending.x, pending.y),
+                );
+              }
               strokeRef.current = null;
               pinchActiveRef.current = false;
             }
@@ -989,6 +1015,7 @@ export function TilemapPaint({
             }
             if (pointersRef.current.size < 2) pinchStartRef.current = null;
             if (pointersRef.current.size === 0) {
+              pendingPickerRef.current = null;
               strokeRef.current = null;
               pinchActiveRef.current = false;
             }

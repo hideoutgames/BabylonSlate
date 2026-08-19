@@ -106,6 +106,7 @@ export function BindingCodePicker({
 
   return (
     <SearchDropdown
+      modal
       open={open}
       onOpenChange={onOpenChange}
       title={pickerTitle(device)}

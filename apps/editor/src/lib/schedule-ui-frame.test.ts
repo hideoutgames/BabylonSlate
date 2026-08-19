@@ -22,6 +22,25 @@ describe("createUiFrameScheduler", () => {
     expect(frames).toHaveLength(2);
   });
 
+  it("runs the latest scheduled work when several callbacks queue before the frame", () => {
+    const frames: FrameRequestCallback[] = [];
+    const scheduler = createUiFrameScheduler({
+      now: (callback) => {
+        frames.push(callback);
+        return frames.length;
+      },
+      cancel: vi.fn(),
+    });
+    const first = vi.fn();
+    const second = vi.fn();
+    scheduler.schedule(first);
+    scheduler.schedule(second);
+    expect(frames).toHaveLength(1);
+    frames[0]?.(0);
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
   it("cancel drops a pending frame without running work", () => {
     const cancel = vi.fn();
     const frames: FrameRequestCallback[] = [];

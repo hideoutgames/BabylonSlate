@@ -15,8 +15,10 @@ export function createUiFrameScheduler(clock: UiFrameClock = defaultClock()) {
   let handle = 0;
   let scheduled = false;
   let generation = 0;
+  let pending: (() => void) | undefined;
   return {
     schedule(work: () => void): void {
+      pending = work;
       if (scheduled) return;
       scheduled = true;
       const token = ++generation;
@@ -24,7 +26,9 @@ export function createUiFrameScheduler(clock: UiFrameClock = defaultClock()) {
         scheduled = false;
         handle = 0;
         if (token !== generation) return;
-        work();
+        const run = pending;
+        pending = undefined;
+        run?.();
       });
     },
     cancel(): void {
@@ -32,6 +36,7 @@ export function createUiFrameScheduler(clock: UiFrameClock = defaultClock()) {
       clock.cancel(handle);
       scheduled = false;
       handle = 0;
+      pending = undefined;
       generation += 1;
     },
   };

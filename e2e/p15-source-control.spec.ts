@@ -7,7 +7,7 @@ import {
 } from "./open-test-project";
 
 const SCENE_PATH = "assets/main.scene.babasset";
-const CLASS_PATH = "assets/main.class.babasset";
+const CLASS_PATH = "assets/Mannequin.class.babasset";
 
 async function closeSettings(page: Page): Promise<void> {
   await page
@@ -110,7 +110,7 @@ test.describe("P15 source-control locking", () => {
         };
       };
       const sc = host.__babylonslateSourceControl;
-      sc?.fakeProvider?.addTheirs("assets/main.class.babasset", "Teammate");
+      sc?.fakeProvider?.addTheirs("assets/Mannequin.class.babasset", "Teammate");
       await sc?.refresh();
     });
 

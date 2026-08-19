@@ -72,7 +72,7 @@ describe("createUiDesignerSession", () => {
     expect(host.setGestureLocked).toHaveBeenLastCalledWith(false);
   });
 
-  it("cancel restores the layout from the first preview of the stroke", () => {
+  it("cancel restores the committed layout from the first preview of the stroke", () => {
     const { host, commitLayout, onOverlay, session } = createHarness();
     const original = pinLayout("left", "top", 160, 36, 12, 8);
     const moved = pinLayout("left", "top", 160, 36, 40, 8);

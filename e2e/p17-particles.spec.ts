@@ -168,7 +168,7 @@ test.describe("P17 particles", () => {
   }) => {
     test.setTimeout(240_000);
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });

@@ -138,7 +138,7 @@ describe("project schema", () => {
       actor.components.some((component) => component.classId === "CameraComponent"),
     );
     expect(camera).toBeDefined();
-    expect(camera!.transform.position).toEqual([0, 0, -8]);
+    expect(camera!.transform.position).toEqual([0, 0, -12]);
     expect(
       camera!.components[0]?.properties.attemptPossessViewTarget,
     ).toBe(true);

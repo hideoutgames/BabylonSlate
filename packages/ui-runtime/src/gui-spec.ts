@@ -51,8 +51,8 @@ export interface GuiControlSpec {
     spacing?: number;
     gridColumns?: number;
     gridRows?: number;
-    columnDefs?: Array<{ value: number; isPixel: boolean }>;
-    rowDefs?: Array<{ value: number; isPixel: boolean }>;
+    columnDefs?: GridTrackDef[];
+    rowDefs?: GridTrackDef[];
     zIndex?: number;
     rotation?: number;
     scaleX?: number;

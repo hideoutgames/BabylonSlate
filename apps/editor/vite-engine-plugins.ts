@@ -79,7 +79,8 @@ function packPluginZip(files: TreeFile[]): Uint8Array {
     version: 1,
   };
   record["plugin.json"] = new TextEncoder().encode(`${JSON.stringify(manifest)}\n`);
-  return zipSync(record, { level: 6, mtime: new Date(Date.UTC(1980, 0, 1)) });
+  // Local noon: fflate DOS dates use local getters; UTC midnight 1980 fails west of UTC.
+  return zipSync(record, { level: 6, mtime: new Date(1980, 0, 1, 12, 0, 0) });
 }
 
 /** Pack repo engine-plugins/ folders to public/engine-plugins for static hosts. */
