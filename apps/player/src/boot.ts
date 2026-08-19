@@ -12,7 +12,13 @@ import {
   type RuntimeDriver,
 } from "@babylonslate/runtime";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
-import { createEngine, audioStats, particleStats, type EngineHandle } from "@babylonslate/render";
+import {
+  audioStats,
+  createEngine,
+  navDebugBlockersFromActors,
+  particleStats,
+  type EngineHandle,
+} from "@babylonslate/render";
 import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
@@ -115,6 +121,7 @@ export function startPlayer(options: {
     environmentColor: scene.settings.environmentColor,
     viewportMode: scene.viewportMode,
     navmeshBytes: content.navmeshBytes,
+    navBlockers: navDebugBlockersFromActors(scene.actors),
     ktx2BasePath: ktx2BasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
       diagnostics.push({

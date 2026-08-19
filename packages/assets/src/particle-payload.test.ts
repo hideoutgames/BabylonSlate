@@ -145,7 +145,18 @@ describe("particle payloads", () => {
       space: "world",
       looping: true,
       duration: 2,
+      previewSkybox: true,
     });
+  });
+
+  it("treats a missing Preview Skybox field as on and keeps an explicit off", () => {
+    expect(normalizeParticleSystemPayload({}).previewSkybox).toBe(true);
+    expect(
+      normalizeParticleSystemPayload({ previewSkybox: false }).previewSkybox,
+    ).toBe(false);
+    expect(
+      normalizeParticleSystemPayload({ previewSkybox: true }).previewSkybox,
+    ).toBe(true);
   });
 
   it("clamps capacity, rate, and inverted lifetimes on normalize", () => {

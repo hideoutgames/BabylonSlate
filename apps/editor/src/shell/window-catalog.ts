@@ -507,6 +507,15 @@ const SKYBOX_CREATOR_WINDOWS: DockWindowDefinition[] = [
     title: "Preview",
   },
   {
+    id: "skybox-creator-cubemap",
+    component: "skybox-creator-cubemap",
+    title: "Cubemap",
+    defaultPosition: {
+      referencePanelId: "skybox-creator-preview",
+      direction: "below",
+    },
+  },
+  {
     id: "skybox-creator-details",
     component: "skybox-creator-details",
     title: "Details",
@@ -750,7 +759,7 @@ const ANIM_GRAPH_OBJECT_WINDOWS: DockWindowDefinition[] = [
   {
     id: "anim-object-inspector",
     component: "anim-object-inspector",
-    title: "Inspector",
+    title: "Details",
     defaultPosition: {
       referencePanelId: "anim-object-graph",
       direction: "right",

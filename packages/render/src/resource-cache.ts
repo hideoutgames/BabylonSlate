@@ -1,6 +1,7 @@
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
 
 export interface ResourceCacheOptions {
@@ -40,6 +41,20 @@ export function createEngineCubeTextureFromImages(
   noMipmap = false,
 ): CubeTexture {
   return new CubeTexture(files.join(""), engine, { files, noMipmap });
+}
+
+/** Engine-static PNG (editor billboards). Not a project asset guid. */
+export function createEngineTextureFromUrl(
+  engine: AbstractEngine,
+  url: string,
+): Texture {
+  const texture = new Texture(url, engine, {
+    noMipmap: false,
+    invertY: true,
+    samplingMode: Texture.BILINEAR_SAMPLINGMODE,
+  });
+  texture.hasAlpha = true;
+  return texture;
 }
 
 function samplingKey(options: TextureSamplingOptions = {}): string {
@@ -120,9 +135,12 @@ export class ResourceCache {
     const key = samplingKey(options);
     const existing = this.entries.get(assetGuid);
     if (existing?.texture && existing.samplingKey === key) {
-      existing.refCount += 1;
-      existing.lastUsed = ++this.clock;
-      return existing.texture as Texture | CubeTexture;
+      if (!isDisposedGpuTexture(existing.texture)) {
+        existing.refCount += 1;
+        existing.lastUsed = ++this.clock;
+        return existing.texture as Texture | CubeTexture;
+      }
+      existing.texture = undefined;
     }
     const url = this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(assetGuid)!;
@@ -160,9 +178,12 @@ export class ResourceCache {
     const key = ["cube6", noMipmap ? "1" : "0", ...files].join(":");
     const existing = this.entries.get(assetGuid);
     if (existing?.texture && existing.samplingKey === key) {
-      existing.refCount += 1;
-      existing.lastUsed = ++this.clock;
-      return existing.texture as CubeTexture;
+      if (!isDisposedGpuTexture(existing.texture)) {
+        existing.refCount += 1;
+        existing.lastUsed = ++this.clock;
+        return existing.texture as CubeTexture;
+      }
+      existing.texture = undefined;
     }
     if (existing?.texture) {
       existing.texture.dispose();
@@ -190,6 +211,18 @@ export class ResourceCache {
       texture,
     });
     return texture;
+  }
+
+  /**
+   * Drop GPU Texture wrappers but keep blob URLs so the next `getTexture`
+   * rebuilds. Used after WebGL context restore.
+   */
+  releaseGpuTextures(): void {
+    for (const entry of this.entries.values()) {
+      if (!entry.texture) continue;
+      entry.texture.dispose();
+      entry.texture = undefined;
+    }
   }
 
   account(

@@ -144,6 +144,7 @@ afterEach(() => {
   docs.library = {};
   docs.openDocuments = [];
   docs.chipPayload = {};
+  vi.restoreAllMocks();
 });
 
 function renderHud() {
@@ -264,6 +265,35 @@ describe("UiDesigner", () => {
     expect(button!.layout.verticalAlignment).toBe("center");
     expect(button!.style?.background).toBe("#333333");
     expect(screen.getByTestId("ui-design-frame")).toBeTruthy();
+  });
+
+  it("keeps pan and zoom when adding a widget", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: 600,
+      right: 800,
+      width: 800,
+      height: 600,
+      toJSON() {
+        return {};
+      },
+    });
+    renderHud();
+    const viewport = screen.getByTestId("ui-design-viewport");
+    const canvas = screen.getByTestId("ui-design-canvas");
+    fireEvent.wheel(viewport, { deltaY: -120, clientX: 80, clientY: 40 });
+    const zoom = canvas.getAttribute("data-zoom");
+    const panX = canvas.getAttribute("data-pan-x");
+    const panY = canvas.getAttribute("data-pan-y");
+    expect(Number(zoom)).toBeGreaterThan(1);
+    fireEvent.click(screen.getByTestId("ui-add-widget"));
+    fireEvent.click(screen.getByTestId("ui-add-widget-Button"));
+    expect(canvas.getAttribute("data-zoom")).toBe(zoom);
+    expect(canvas.getAttribute("data-pan-x")).toBe(panX);
+    expect(canvas.getAttribute("data-pan-y")).toBe(panY);
   });
 
   it("deletes a widget from the hierarchy settings menu", () => {

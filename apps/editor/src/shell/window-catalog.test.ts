@@ -241,8 +241,17 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("animation")).toBe("animation-preview");
     expect(listDockWindows("skybox-creator").map((entry) => entry.id)).toEqual([
       "skybox-creator-preview",
+      "skybox-creator-cubemap",
       "skybox-creator-details",
     ]);
+    expect(
+      listDockWindows("skybox-creator").find(
+        (entry) => entry.id === "skybox-creator-cubemap",
+      )?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "skybox-creator-preview",
+      direction: "below",
+    });
     expect(
       listDockWindows("skybox-creator").find(
         (entry) => entry.id === "skybox-creator-details",
@@ -522,7 +531,7 @@ describe("animation graph and behaviour tree dock catalogs", () => {
     ]);
   });
 
-  it("lists Graph, Variables, Inspector, and Compiler Results for Animation Object mode", () => {
+  it("lists Graph, Variables, Details, and Compiler Results for Animation Object mode", () => {
     const windows = listDockWindows("anim-graph", {
       animEditorMode: "animationObject",
     });
@@ -531,6 +540,12 @@ describe("animation graph and behaviour tree dock catalogs", () => {
       "anim-object-variables",
       "anim-object-inspector",
       "anim-graph-compiler-results",
+    ]);
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "Graph",
+      "Variables",
+      "Details",
+      "Compiler Results",
     ]);
     expect(primaryDockPanel("anim-graph", { animEditorMode: "animationObject" })).toBe(
       "anim-object-graph",

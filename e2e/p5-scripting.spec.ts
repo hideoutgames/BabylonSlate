@@ -70,6 +70,11 @@ const SCRIPTED_GRAPH = {
   ],
 };
 
+
+async function classGraphNodeCount(page: import("@playwright/test").Page) {
+  return page.getByTestId("graph-panel").locator(".react-flow__node").count();
+}
+
 test.describe("P5 visual scripting acceptance", () => {
   test("a scripted actor compiles and runs in Preview", async ({ page }) => {
     await openTestProject(page);
@@ -86,7 +91,7 @@ test.describe("P5 visual scripting acceptance", () => {
     expect(installed).toBe(true);
 
     await openMainScene(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("compile-graph")).toBeVisible();
     await expect(page.getByTestId("compilation-error")).toHaveCount(0);
 
@@ -179,17 +184,18 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
 
     await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Get Axis 2D");
     await page.getByTestId("node-palette-item-input.getAxis2D").click();
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
   });
 
   test("a type mismatch blocks Preview and tap-to-navigate focuses the node", async ({
@@ -237,7 +243,7 @@ test.describe("P5 visual scripting acceptance", () => {
       });
     });
 
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("compiler-results")).toBeVisible();
     await expect(page.getByTestId("compiler-result-row").first()).toBeVisible({
       timeout: 15_000,
@@ -250,7 +256,9 @@ test.describe("P5 visual scripting acceptance", () => {
 
     await openMainScene(page);
     await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("play-blocked-dialog")).toBeVisible();
+    await expect(page.getByTestId("play-blocked-dialog")).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByTestId("play-blocked-row").first().click();
     await expect(
       page.locator('.react-flow__node.selected[data-id="branch"]'),
@@ -261,35 +269,37 @@ test.describe("P5 visual scripting acceptance", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
 
     const pane = graph.locator(".react-flow__pane");
     await pane.dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
     await page.getByTestId("node-palette-search").fill("Log");
     await page.getByTestId("node-palette-item-debug.log").click();
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
 
     await expect(page.getByTestId("undo-document")).toBeEnabled();
     await page.getByTestId("undo-document").click();
-    await expect(nodes).toHaveCount(2);
+    await expect(nodes).toHaveCount(baseline);
 
     await expect(page.getByTestId("redo-document")).toBeEnabled();
     await page.getByTestId("redo-document").click();
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
   });
 
   test("Add Node search finds Cast to Actor", async ({ page }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
 
     await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });
     await expect(page.getByTestId("node-palette")).toBeVisible();
@@ -298,7 +308,7 @@ test.describe("P5 visual scripting acceptance", () => {
       0,
     );
     await page.getByTestId("node-palette-item-casting.cast:Actor").click();
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Cast to Actor")).toBeVisible();
   });
 });

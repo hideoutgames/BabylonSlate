@@ -10,7 +10,7 @@ async function openClassAndOverflowClosableTabs(page: Page) {
     .getByTestId("document-tab-select")
     .click();
   await page
-    .locator('[data-asset-path="assets/main.class.babasset"]')
+    .locator('[data-asset-path="assets/Mannequin.class.babasset"]')
     .dblclick();
   const graphTab = page.locator(
     '[data-testid="document-tab"][data-document-kind="graph"]',

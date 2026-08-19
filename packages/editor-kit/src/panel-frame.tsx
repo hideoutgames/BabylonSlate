@@ -37,7 +37,9 @@ export function PanelFrame({
           ) : null}
         </header>
       ) : null}
-      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain touch-pan-y">
+        {children}
+      </div>
     </section>
   );
 }

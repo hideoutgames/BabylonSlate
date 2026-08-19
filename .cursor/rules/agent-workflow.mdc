@@ -89,7 +89,7 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 - No unresolved merge conflicts.
 - User has **not** explicitly asked to hold the PR open, keep it draft, or skip merge.
 - Session is not read-only (e.g. Plan mode).
-- A Verify **slot** is free (fewer than 2 non-draft PRs targeting `main`). If not, stay draft and stop — see [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
+- A Verify **slot** is free (fewer than 2 counted non-draft PRs targeting `main`; **[#271](https://github.com/hideoutgames/BabylonSlate/pull/271) does not count**). If not, stay draft and stop — see [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
 
 ### When merge is not reasonable (exceptions)
 
@@ -97,12 +97,12 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 - CI failures that cannot be fixed in-session.
 - Merge conflicts needing human judgment.
 - User explicitly requested "PR only", "don't merge", or "wait for review".
-- No Verify slot: two non-draft PRs already target `main`. Leave the draft and stop.
+- No Verify slot: two counted non-draft PRs already target `main` (#271 excluded). Leave the draft and stop.
 
 ### Workflow
 
 1. Open or update a PR targeting `main` (use `ManagePullRequest`, not `gh` for create/update/merge). Open it **draft**.
-2. Keep the PR draft until local `pnpm verify` passes. Then mark ready **once** — not on the first push, and not if **2** non-draft PRs already target `main`. If there is no slot, leave the draft and **stop**. Detail: [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
+2. Keep the PR draft until local `pnpm verify` passes. Then mark ready **once** — not on the first push, and not if **2** counted non-draft PRs already target `main` (**#271 does not count**). If there is no slot, leave the draft and **stop**. Detail: [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
 3. After ready, avoid extra pushes; each synchronize restarts sharded Verify (`static` + `unit` + 7 e2e = 9 jobs). Fix any failing CI before merging.
 4. **Merge the PR into `main` automatically** when all merge gates pass.
 5. Prefer merge commits (not squash) when the PR contains multiple logical commits, unless the user specifies otherwise.

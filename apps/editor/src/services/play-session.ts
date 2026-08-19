@@ -29,6 +29,7 @@ import type {
 import { playLoadSpritesControl, playLoadTilemapsControl, playSceneByGuid } from "../lib/play-content";
 import {
   createEngine,
+  navDebugBlockersFromActors,
   type AudioLibrary,
   type EngineHandle,
   type ParticleLibrary,
@@ -585,6 +586,9 @@ export function startPlaySession(options: {
     environmentColor: options.scene?.settings.environmentColor,
     viewportMode: options.scene?.viewportMode,
     navmeshBytes: options.navmeshBytes,
+    navBlockers: options.scene
+      ? navDebugBlockersFromActors(options.scene.actors)
+      : undefined,
     ktx2BasePath: editorKtx2PublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");

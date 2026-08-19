@@ -45,17 +45,18 @@ function nestedScene(): SerializedScene {
 }
 
 describe("scene schema", () => {
-  it("creates a default scene with a cube and a possessing camera", () => {
+  it("creates a default scene with an empty actor and a possessing camera", () => {
     const scene = createDefaultScene();
     expect(scene.viewportMode).toBe("3d");
     expect(scene.settings.physicsWorld).toBe("3d");
+    expect(scene.settings.showNavmesh).toBe(false);
     expect(scene.actors.map((actor) => actor.name)).toEqual([
-      "Cube",
+      "Actor",
       "Skybox",
       "Directional Light",
       "Camera",
     ]);
-    expect(scene.actors[0]?.components[0]?.classId).toBe("MeshComponent");
+    expect(scene.actors[0]?.components).toEqual([]);
     expect(scene.actors[3]?.components[0]?.classId).toBe("CameraComponent");
   });
 
@@ -78,6 +79,7 @@ describe("scene schema", () => {
     expect(scene.settings.grid.showGrid).toBe(true);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
     expect(scene.settings.editorJoystickEnabled).toBe(true);
+    expect(scene.settings.showNavmesh).toBe(false);
   });
 
   it("coerces malformed actors and components so Details can open old projects", () => {
@@ -241,6 +243,55 @@ describe("scene schema", () => {
     expect(
       normalizeScene({ settings: { editorJoystickEnabled: false } }).settings
         .editorJoystickEnabled,
+    ).toBe(false);
+  });
+
+  it("keeps the navmesh overlay off unless showNavmesh is explicitly true", () => {
+    expect(normalizeScene({}).settings.showNavmesh).toBe(false);
+    expect(
+      normalizeScene({ settings: { showNavmesh: true } }).settings.showNavmesh,
+    ).toBe(true);
+    expect(
+      normalizeScene({ settings: { showNavmesh: "yes" } }).settings.showNavmesh,
+    ).toBe(false);
+    expect(
+      normalizeScene({ settings: { showNavmesh: false } }).settings.showNavmesh,
+    ).toBe(false);
+  });
+
+  it("migrates a leftover NavMesh debugOverlay flag onto showNavmesh when the key is missing", () => {
+    expect(
+      normalizeScene({
+        actors: [
+          {
+            id: "nav",
+            components: [
+              {
+                id: "nav",
+                classId: "NavMeshComponent",
+                properties: { debugOverlay: true },
+              },
+            ],
+          },
+        ],
+      }).settings.showNavmesh,
+    ).toBe(true);
+    expect(
+      normalizeScene({
+        settings: { showNavmesh: false },
+        actors: [
+          {
+            id: "nav",
+            components: [
+              {
+                id: "nav",
+                classId: "NavMeshComponent",
+                properties: { debugOverlay: true },
+              },
+            ],
+          },
+        ],
+      }).settings.showNavmesh,
     ).toBe(false);
   });
 

@@ -32,6 +32,7 @@ export {
 } from "./settings";
 export { mergeNavBakeMeshes, type NavBakeGeometry, type NavBakeMeshPart } from "./geometry";
 export {
+  rotatedBoxWorldAabb,
   recastMeshesFromCollider2d,
   recastWalkableQuadFromXy,
   recastWallsFromXyChains,

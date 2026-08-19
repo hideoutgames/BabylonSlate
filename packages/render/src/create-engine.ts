@@ -4,7 +4,6 @@ import {
   Mesh,
   Scene,
   ScenePerformancePriority,
-  Texture,
 } from "@babylonjs/core";
 import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
@@ -66,6 +65,7 @@ import {
   createPlayConsoleViz,
   type PlayConsoleVizController,
 } from "./play-console-viz";
+import type { NavDebugBlockerPose } from "./nav-debug-overlay";
 import {
   createPlayDebugDraw,
   type PlayDebugDrawController,
@@ -296,6 +296,8 @@ export interface CreateEngineOptions {
   }) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
+  /** NavMesh Blocker volumes drawn with Play `shownav`. */
+  navBlockers?: readonly NavDebugBlockerPose[] | null;
 }
 
 export interface EditorTools {
@@ -552,7 +554,10 @@ export function createEngine(
       })
     : null;
   const playViz: PlayConsoleVizController | null = options.playMode
-    ? createPlayConsoleViz(scene, { navmeshBytes: options.navmeshBytes })
+    ? createPlayConsoleViz(scene, {
+        navmeshBytes: options.navmeshBytes,
+        navBlockers: options.navBlockers,
+      })
     : null;
   const playDebugDraw: PlayDebugDrawController | null = options.playMode
     ? createPlayDebugDraw(scene)
@@ -588,8 +593,7 @@ export function createEngine(
         resolveTexture: (guid) => {
           const bytes = binding.textureBytes?.get(guid);
           if (!bytes) return null;
-          const texture = resourceCache.getTexture(guid, engine, bytes);
-          return texture instanceof Texture ? texture : null;
+          return getMaterialTexture(resourceCache, guid, engine, bytes);
         },
         resolveMaterial: (guid) => {
           const live = binding.resolveMaterial?.(guid);
@@ -889,8 +893,8 @@ export function createEngine(
     };
   }
 
-  // Play renders snapshot proxy meshes only. Seeding the default Cube here
-  // stacks it under those proxies at the origin (z-fighting / additive look).
+  // Play renders snapshot proxy meshes only. Seeding the default scene here
+  // stacks editor helpers under those proxies at the origin (z-fighting / additive look).
   if (!options.playMode) {
     loadScene(createDefaultScene());
   }

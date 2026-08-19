@@ -136,13 +136,13 @@ describe("attachViewportGestures", () => {
 
   it("pans 2D one-finger drags 1:1 with the orthographic frustum", () => {
     const { controller } = attach("2d");
-    // FakeCanvas is 800×600; default 2D frustum is 8×8 (half-height 4, aspect 1).
+    // FakeCanvas is 800×600; default 2D frustum is 12×12 (half-height 6, aspect 1).
     canvas.emit("pointerdown", pointer(1, 100, 100));
     canvas.emit("pointermove", pointer(1, 60, 140));
     canvas.emit("pointerup", pointer(1, 60, 140));
 
-    expect(controller.camera.target.x).toBeCloseTo(40 * (8 / 800), 5);
-    expect(controller.camera.target.y).toBeCloseTo(40 * (8 / 600), 5);
+    expect(controller.camera.target.x).toBeCloseTo(40 * (12 / 800), 5);
+    expect(controller.camera.target.y).toBeCloseTo(40 * (12 / 600), 5);
   });
 
   it("pans a larger world delta in 2D when the frustum is zoomed out", () => {
@@ -350,7 +350,7 @@ describe("attachViewportGestures", () => {
     canvas.emit("pointermove", pointer(3, 150, 240));
 
     expect(controller.camera.target.x).toBeCloseTo(0, 5);
-    expect(controller.camera.target.y).toBeCloseTo(60 * (8 / 600), 5);
+    expect(controller.camera.target.y).toBeCloseTo(60 * (12 / 600), 5);
   });
 
   it("zooms when the pinch spread changes", () => {

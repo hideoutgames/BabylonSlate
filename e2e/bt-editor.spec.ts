@@ -201,7 +201,7 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
   test("script graph still uses the 96px connect-end cancel", async ({ page }) => {
     test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("graph-panel")).toBeVisible();
     const handle = page.locator('[data-handleid="execOut"]').first();
     await expect(handle).toBeVisible();
@@ -214,5 +214,27 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
     await page.mouse.move(x + 20, y + 16, { steps: 3 });
     await page.mouse.up();
     await expect(page.getByTestId("node-palette")).toHaveCount(0);
+  });
+
+  test("switches away from a focused Behaviour Tree tab and closes it", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await openPatrolTree(page);
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await page.getByTestId("document-tab-pinned").click();
+    await expect(page.getByTestId("content-browser-asset-grid")).toBeVisible();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="behaviour-tree"]')
+      .getByTestId("document-tab-select")
+      .click();
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="behaviour-tree"]')
+      .getByTestId("document-tab-close")
+      .click();
+    await expect(page.getByTestId("behaviour-tree-editor")).toHaveCount(0);
+    await expect(page.getByTestId("content-browser-asset-grid")).toBeVisible();
   });
 });

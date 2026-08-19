@@ -76,7 +76,7 @@ async function openOrCreateAsset(
 }
 
 async function openClassPrefab(page: Page): Promise<void> {
-  await openAssetFromBrowser(page, "assets/main.class.babasset");
+  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
   await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
   await page.locator(".dv-tab").filter({ hasText: "Prefab" }).click();
   await expect(page.getByTestId("prefab-viewport-panel")).toBeVisible();
@@ -114,7 +114,7 @@ test.describe("P18 iPad editor optimisation", () => {
   }) => {
     test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const classGraph = page
       .getByTestId("document-workspace-graph")
       .getByTestId("graph-editor");
@@ -161,7 +161,7 @@ test.describe("P18 iPad editor optimisation", () => {
     test.setTimeout(E2E_TIMEOUT_MS);
     await openTestProject(page);
     await openMainScene(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
 
     await openMainScene(page);

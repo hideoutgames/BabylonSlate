@@ -54,7 +54,7 @@ Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, the
 
 The Play `load` control message carries `sceneAssetGuid`, optional authored `scene` (`SerializedScene`), `physicsWorld`, `gravity`, and `havokWasmUrl`. The editor vendors `HavokPhysics.wasm` at `/havok/HavokPhysics.wasm` (same self-host pattern as the KTX2 transcoder) so browser Play does not silently keep the AABB backend. Details / Actor Prefab Add Component lists include `RigidBodyComponent` and `ColliderComponent`.
 
-Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` **plus** `ColliderComponent`, and a static body plus merged chain colliders for `TilemapComponent` (see [tilemaps.md](tilemaps.md)). Collider-only actors are skipped (`if (!rigid && !tilemap) return`). RigidBody-only actors spawn a body with **no shapes**. Actors with `SpriteComponent` + `box2d` `ColliderComponent` rebuild the box from the current Sprite / Sprite Animation frame AABB each tick ([sprites.md](sprites.md)); leaving a sprite clip restores the Sprite default box. Circle / capsule / polygon stay authored. Graph-only spawns skip class ids that already exist as scene actors. `createPlayBootCoordinator` still `start`/`resume`s if `loadPhysics` rejects, and reports `loadScripts` failures without blocking Play.
+Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld()` (after scripts load so Begin Play binds on spawn). Demo actors are not seeded when a scene payload is present. `PhysicsWorldSync` then creates bodies for authored `RigidBodyComponent` **plus** `ColliderComponent`, a static body plus merged chain colliders for `TilemapComponent` (see [tilemaps.md](tilemaps.md)), and a **static** body plus box collider for `BlockingVolumeComponent` (half-extents `|scale|/2`, world rotation from actor TRS; no RigidBody required). Collider-only actors are skipped (`if (!rigid && !tilemap && !blocking) return`). RigidBody-only actors spawn a body with **no shapes**. Actors with `SpriteComponent` + `box2d` `ColliderComponent` rebuild the box from the current Sprite / Sprite Animation frame AABB each tick ([sprites.md](sprites.md)); leaving a sprite clip restores the Sprite default box. Circle / capsule / polygon stay authored. Graph-only spawns skip class ids that already exist as scene actors. `createPlayBootCoordinator` still `start`/`resume`s if `loadPhysics` rejects, and reports `loadScripts` failures without blocking Play.
 
 ## Components
 
@@ -62,14 +62,15 @@ Play instantiates the open `SerializedScene` on `RuntimeDriver.realizePlayWorld(
 | --- | --- |
 | `RigidBodyComponent` | `motionType` (`static` \| `kinematic` \| `dynamic`), `mass`, `linearDamping`, `angularDamping`, `gravityScale` |
 | `ColliderComponent` | `shape` (3D or 2D variant), `friction`, `restitution`, `isTrigger`, `layer`, `mask`, `renderInGame` (default **false**). Local `component.transform` is baked into `ColliderDesc` (translation, rotation, scaled sizes). |
+| `BlockingVolumeComponent` | No authored properties. Place Actors **Physics → Blocking Volume** only (hidden from Add Component / Search). Editor: blue dotted unit box + `default.png` at the center. Play: helper hidden; static physics box from actor TRS. Not a navmesh input. |
 
-Simulation needs **both** a rigid body and at least one collider on the same actor (tilemaps are the exception: they create an implicit static body). That pairing is the authored workflow — not a Play blocker. Compile warnings:
+Simulation needs **both** a rigid body and at least one collider on the same actor (tilemaps and **blocking volumes** are the exception: they create an implicit static body). That pairing is the authored workflow — not a Play blocker. Compile warnings:
 
 | Case | Code | Severity |
 | --- | --- | --- |
-| Collider, no RigidBody, no Tilemap | `physics.collider_without_body` | warning (one per collider) |
-| RigidBody, no Collider, no Tilemap | `physics.body_without_collider` | warning |
-| Tilemap with or without RigidBody | none | OK |
+| Collider, no RigidBody, no Tilemap, no Blocking Volume | `physics.collider_without_body` | warning (one per collider) |
+| RigidBody, no Collider, no Tilemap, no Blocking Volume | `physics.body_without_collider` | warning |
+| Tilemap or Blocking Volume with or without RigidBody | none | OK |
 
 `physicsActorDiagnostics` in `@babylonslate/physics` is the pure check (no React). Scene **Compiler Results** (Output Log tab) lists them; tap selects the actor. Prefab / Class Compiler Results merge the same warnings for `SerializedGraph.components` (`actorId` = Prefab Root). Diagnostics may carry `actorId` / `componentId`.
 
@@ -89,14 +90,14 @@ Project Settings → **Physics** stores `settings.physics.collisionLayers` (`Nam
 
 ### Editor / Play visuals
 
-RigidBody-only actors use a camera-facing **billboard** (procedural cube glyph in `EDITOR_BILLBOARD_ICONS`, Play `playHelperVisual`) — never the empty-actor 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes. Play/export draws them only when `renderInGame` is true (`meshKind` `collider:{json}`). Console `showcollision` stays a **global** Play overlay (`listDebugColliders()`, including capsules); it does not replace the per-collider property. See [render.md](render.md) and [scene-editing.md](scene-editing.md).
+RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes. Play/export draws them only when `renderInGame` is true (`meshKind` `collider:{json}`). Console `showcollision` stays a **global** Play overlay (`listDebugColliders()`, including capsules and Blocking Volume static boxes); it does not replace the per-collider property. See [render.md](render.md) and [scene-editing.md](scene-editing.md).
 
 ### Shapes
 
 - **3D:** box, sphere, capsule, convex hull, triangle mesh
 - **2D:** box, circle, capsule, polygon, chain (tilemap chunks emit merged chains via `tilemapChunkChains`)
 
-Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; Mesh / Sprite / Tilemap stay the pick target when present. Physics-only actors pick via the RigidBody origin proxy. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent` (or a Tilemap). Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule (`radius` 0.5, `halfHeight` 1, Y offset `radius + halfHeight` so it sits on the feet origin). New Empty 3D projects only — existing scenes are not migrated. Users add colliders on any other mesh the same way.
+Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; Mesh / Sprite / Tilemap stay the pick target when present. Physics-only actors pick via the origin proxy / default billboard. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent` (or a Tilemap, or a Blocking Volume). Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule (`radius` 0.5, `halfHeight` 1, Y offset `radius + halfHeight` so it sits on the feet origin). New Empty 3D projects only — existing scenes are not migrated. Users add colliders on any other mesh the same way.
 
 ## Scripting
 

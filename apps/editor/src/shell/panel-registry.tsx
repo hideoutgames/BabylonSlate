@@ -75,6 +75,7 @@ import {
   AnimationPreviewPanel,
 } from "../components/animation-editor";
 import {
+  SkyboxCreatorCubemapPanel,
   SkyboxCreatorDetailsPanel,
   SkyboxCreatorPreviewPanel,
 } from "../components/skybox-creator-editor";
@@ -231,6 +232,9 @@ export const panelComponents = {
   ),
   "skybox-creator-preview": (props: IDockviewPanelProps) => (
     <SkyboxCreatorPreviewPanel {...props} />
+  ),
+  "skybox-creator-cubemap": (props: IDockviewPanelProps) => (
+    <SkyboxCreatorCubemapPanel {...props} />
   ),
   "skybox-creator-details": (props: IDockviewPanelProps) => (
     <SkyboxCreatorDetailsPanel {...props} />

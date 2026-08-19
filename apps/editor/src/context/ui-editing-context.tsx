@@ -24,7 +24,6 @@ import {
   collectImageGuidsFromUiDocuments,
   nestedUiPickableGuids,
   parentOwnsChildLayout,
-  previewRect,
   resolveUiAdtIdeal,
   extractWidgetAsPrefab,
   type DesignerCanvasId,
@@ -526,31 +525,8 @@ export function UiEditingProvider({
       const next = insertWidget(current, widget, parent.id);
       commit({ ...latestPayloadRef.current, ...next });
       setSelectedId(widget.id);
-      if (viewportSize.width >= 2 && viewportSize.height >= 2) {
-        const parentRect = {
-          x: 0,
-          y: 0,
-          width: viewport.width,
-          height: viewport.height,
-        };
-        setView(
-          frameRectView(
-            viewportSize,
-            previewRect(parentRect, widget.layout),
-            previewScale,
-            UI_DESIGN_FIT_PADDING_PX + UI_DESIGN_HANDLE_HIT_SIZE_PX,
-          ),
-        );
-      }
     },
-    [
-      commit,
-      previewScale,
-      selectedId,
-      viewport.height,
-      viewport.width,
-      viewportSize,
-    ],
+    [commit, selectedId],
   );
 
   const nestedUiAssets = pickerAssets.map((asset) => ({

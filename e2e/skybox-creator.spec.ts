@@ -170,6 +170,9 @@ test.describe("Skybox Creator helper", () => {
       page.getByTestId("windows-menu-skybox-creator-preview"),
     ).toBeVisible();
     await expect(
+      page.getByTestId("windows-menu-skybox-creator-cubemap"),
+    ).toBeVisible();
+    await expect(
       page.getByTestId("windows-menu-skybox-creator-details"),
     ).toBeVisible();
     await closeWindowsMenu(page);
@@ -195,9 +198,25 @@ test.describe("Skybox Creator helper", () => {
     await openAssetFromBrowser(page, HELPER_PATH);
     await expect(page.getByTestId("property-source")).toContainText(/albedo/i);
     await expect(page.getByTestId("skybox-creator-empty")).toHaveCount(0);
-    await expect(
-      page.getByTestId("skybox-creator-preview-canvas"),
-    ).toBeVisible();
+    const netBox = await page.getByTestId("skybox-creator-net").boundingBox();
+    expect(netBox).toBeTruthy();
+    expect(netBox!.width / netBox!.height).toBeCloseTo(4 / 3, 1);
+    expect(netBox!.y).toBeGreaterThanOrEqual(0);
+    const cubemap = page.getByTestId("skybox-creator-cubemap-panel");
+    const canvas = cubemap.getByTestId("skybox-creator-preview-canvas");
+    await expect(canvas).toBeVisible();
+    const canvasBox = await canvas.boundingBox();
+    const cubemapBox = await cubemap.boundingBox();
+    expect(canvasBox).toBeTruthy();
+    expect(cubemapBox).toBeTruthy();
+    expect(canvasBox!.x).toBeGreaterThanOrEqual(cubemapBox!.x - 1);
+    expect(canvasBox!.y).toBeGreaterThanOrEqual(cubemapBox!.y - 1);
+    expect(canvasBox!.x + canvasBox!.width).toBeLessThanOrEqual(
+      cubemapBox!.x + cubemapBox!.width + 1,
+    );
+    expect(canvasBox!.y + canvasBox!.height).toBeLessThanOrEqual(
+      cubemapBox!.y + cubemapBox!.height + 1,
+    );
     await saveAllIfEnabled(page);
 
     await closeProjectViaSettings(page);

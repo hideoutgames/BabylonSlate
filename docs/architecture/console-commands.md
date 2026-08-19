@@ -45,7 +45,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
 | `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines, including body rotation of local offsets and polyline points). Overlay meshes reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
-| `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene with the session navmesh bytes. |
+| `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene with the session navmesh bytes **and** NavMesh Blocker volumes. Blocking Volumes are physics, not nav, and stay off this overlay. |
 | `showaudiodebug` | yes | **yes** | DOM voice overlay from `AudioService` `debugVoices` (`setShowAudioDebug`). Flag default is **on**. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
@@ -144,7 +144,7 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
 | `actorboundingbox [on\|off]` | Same host as `showbounds` (`setShowBounds`). Keep `showbounds` as the existing alias. |
 | `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/capsules/polylines from `listDebugColliders()`; local collider offsets and polyline points use body world rotation. Capsule total height is `2 * halfHeight + 2 * radius`. Not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
-| `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene when a nav chunk is loaded. |
+| `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene (baked nav chunk when present, plus NavMesh Blocker volumes). |
 | `showaudiodebug [on\|off]` | DOM overlay of playing voices (guid, clip, gain, pitch, loop, spatial, distance, radii, inside radius). Empty list: `No playing voices`. Off unmounts the overlay. Polls with `requestAnimationFrame` so it still draws while sim is paused. |
 | `dumpactors` | One line per actor: name, class, guid, world position. |
 | `inspect [name\|guid]` | Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |

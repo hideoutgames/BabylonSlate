@@ -137,4 +137,25 @@ describe("play console visualization", () => {
     viz.dispose();
     engine.dispose();
   });
+
+  it("shownav draws NavMesh Blocker volumes even without baked bytes", () => {
+    const { engine, scene } = createTestEngine();
+    const viz = createPlayConsoleViz(scene, {
+      navBlockers: [
+        {
+          id: "door",
+          kind: "box",
+          position: [1, 0, 2],
+          rotation: [0, 0, 0, 1],
+          scale: [2, 3, 4],
+        },
+      ],
+    });
+    expect(viz.applyCommand({ type: "setShowNav", enabled: true })).toBe(true);
+    expect(scene.getMeshByName("navmeshDebug:blocker:door")).not.toBeNull();
+    expect(viz.applyCommand({ type: "setShowNav", enabled: false })).toBe(true);
+    expect(scene.getMeshByName("navmeshDebug:blocker:door")).toBeNull();
+    viz.dispose();
+    engine.dispose();
+  });
 });

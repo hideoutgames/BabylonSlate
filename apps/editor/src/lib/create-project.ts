@@ -2,7 +2,7 @@ import { displayProjectName } from "./display-project-name";
 
 /** Display name shown in the Create Project dialog. */
 export function defaultCreateProjectDisplayName(testMode: boolean): string {
-  return testMode ? "TestProject" : "MyGame";
+  return testMode ? "TestProject" : "";
 }
 
 /** Folder name written to storage; empty when the display name is blank. */

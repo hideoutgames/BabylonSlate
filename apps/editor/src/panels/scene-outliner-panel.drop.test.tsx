@@ -104,7 +104,7 @@ describe("SceneOutlinerPanel viewport drop", () => {
     dragRowOutside(screen.getByTestId(`tree-row-${actorRowId("actor-1")}`));
     expect(applySceneChange).toHaveBeenCalled();
     const next = applySceneChange.mock.calls[0]?.[1] as SerializedScene;
-    const copy = next.actors.find((actor) => actor.name === "Cube Copy");
+    const copy = next.actors.find((actor) => actor.name === "Actor Copy");
     expect(copy).toMatchObject({
       id: "actor-2",
       parentId: null,
@@ -123,7 +123,7 @@ describe("SceneOutlinerPanel viewport drop", () => {
     });
     const hint = screen.getByTestId("outliner-drop-hint");
     expect(hint.getAttribute("data-allowed")).toBe("true");
-    expect(hint.textContent).toContain("Cube");
+    expect(hint.textContent).toContain("Actor");
   });
 
   it("does not duplicate when the pointer is not over the viewport", () => {

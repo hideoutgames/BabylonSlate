@@ -144,7 +144,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.fogEnd).toBe(40);
   });
 
-  it("does not seed the default Cube into a Play scene", () => {
+  it("does not seed the default scene actors into a Play scene", () => {
     const { handle } = playHandle(sharedEngine());
     const actorMeshes = handle.scene.meshes.filter((mesh) =>
       mesh.name.startsWith("editorActor:"),
@@ -153,7 +153,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).toBeNull();
   });
 
-  it("still seeds the default Cube into a non-Play view", () => {
+  it("still seeds the default scene into a non-Play view", () => {
     const { handle } = editorHandle(sharedEngine());
     expect(handle.scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
   });

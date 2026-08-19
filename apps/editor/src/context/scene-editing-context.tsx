@@ -39,6 +39,9 @@ export interface SceneEditingContextValue {
   setJoystickEnabled: (enabled: boolean) => void;
   gridVisible: boolean;
   setGridVisible: (visible: boolean) => void;
+  /** Live viewport navmesh overlay; persisted via `settings.showNavmesh`. */
+  navmeshVisible: boolean;
+  setNavmeshVisible: (visible: boolean) => void;
   /** One-shot Drag Select; unpresses after the next tap or marquee. */
   dragSelectActive: boolean;
   setDragSelectActive: (active: boolean) => void;
@@ -119,6 +122,7 @@ export function SceneEditingProvider({
   documentSnapEnabled,
   documentJoystickEnabled,
   documentGridVisible,
+  documentNavmeshVisible,
 }: {
   children: ReactNode;
   /** When set, camera pose survives workspace unmount for this document. */
@@ -132,6 +136,8 @@ export function SceneEditingProvider({
   documentJoystickEnabled?: boolean;
   /** When the scene document's grid.showGrid changes, sync the toolbar toggle. */
   documentGridVisible?: boolean;
+  /** When the scene document's showNavmesh changes, sync the toolbar toggle. */
+  documentNavmeshVisible?: boolean;
 }) {
   const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
   const [gizmoTool, setGizmoTool] = useState<GizmoTool>("translate");
@@ -143,6 +149,9 @@ export function SceneEditingProvider({
   );
   const [gridVisible, setGridVisible] = useState(
     documentGridVisible ?? true,
+  );
+  const [navmeshVisible, setNavmeshVisible] = useState(
+    documentNavmeshVisible ?? false,
   );
   const [dragSelectActive, setDragSelectActive] = useState(false);
   const [viewportMode, setViewportMode] = useState<ViewportMode>(
@@ -175,6 +184,11 @@ export function SceneEditingProvider({
     if (documentGridVisible === undefined) return;
     setGridVisible(documentGridVisible);
   }, [documentGridVisible]);
+
+  useEffect(() => {
+    if (documentNavmeshVisible === undefined) return;
+    setNavmeshVisible(documentNavmeshVisible);
+  }, [documentNavmeshVisible]);
 
   const selectActor = useCallback(
     (actorId: string | null, additive = false) => {
@@ -242,6 +256,8 @@ export function SceneEditingProvider({
       setJoystickEnabled,
       gridVisible,
       setGridVisible,
+      navmeshVisible,
+      setNavmeshVisible,
       dragSelectActive,
       setDragSelectActive,
       viewportMode,
@@ -264,6 +280,7 @@ export function SceneEditingProvider({
       gridVisible,
       joystickEnabled,
       loadEditorCameraPose,
+      navmeshVisible,
       saveEditorCameraPose,
       selectActor,
       selectedActorIds,

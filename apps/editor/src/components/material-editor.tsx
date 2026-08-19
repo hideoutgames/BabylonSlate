@@ -366,7 +366,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     editing.attachPreviewCanvas(canvasRef.current);
     return () => editing.attachPreviewCanvas(null);
-  }, [editing]);
+  }, [editing.attachPreviewCanvas]);
 
   const modelAssets = useMemo(
     () =>

@@ -131,6 +131,17 @@ test.describe("P17 particles", () => {
     expect(emitterGuid.length).toBeGreaterThan(0);
     await page.getByTestId("property-emitter-0").click();
     await pickAsset(page, "particle-system-emitter-picker", emitterGuid);
+    await expect(page.getByText("Preview Skybox")).toBeVisible();
+    await saveAllIfEnabled(page);
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="particle-emitter"]')
+      .getByTestId("document-tab-close")
+      .click();
+    await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("particle-preview-empty")).toHaveCount(0);
+    await expect(
+      page.getByTestId("particle-system-preview-canvas"),
+    ).toBeVisible();
 
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -168,7 +179,7 @@ test.describe("P17 particles", () => {
   }) => {
     test.setTimeout(240_000);
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const graph = page.getByTestId("graph-panel");
     await expect(graph).toBeVisible();
     await graph.locator(".react-flow__pane").dblclick({ position: { x: 24, y: 24 } });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -30,7 +30,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
 import {
   emitterPreviewLibrary,
-  emittersFromRegistry,
+  loadEmittersForPreview,
   systemPreviewLibrary,
 } from "../lib/play-particles";
 import { ParticlePreviewCanvas } from "./particle-preview-canvas";
@@ -328,15 +328,48 @@ export function ParticleSystemPreview({
   payload: Record<string, unknown>;
 }) {
   const system = normalizeParticleSystemPayload(payload);
-  const { assetRegistry, openDocuments } = useDocuments();
+  const { assetRegistry, openDocuments, loadAssetDocument } = useDocuments();
   const assets = assetRegistry?.list() ?? [];
+  const [emitters, setEmitters] = useState<Map<
+    string,
+    ParticleEmitterPayload
+  > | null>(null);
+
   const openPayloads = new Map<string, unknown>();
   for (const asset of assets) {
     if (asset.header.type !== "ParticleEmitter") continue;
     const doc = openDocuments?.find((entry) => entry.ref.path === asset.path);
     if (doc?.content) openPayloads.set(asset.header.guid, doc.content);
   }
-  const emitters = emittersFromRegistry(assets, openPayloads);
+  const openKey = JSON.stringify([...openPayloads.entries()]);
+  const guidKey = system.emitterGuids.join(",");
+
+  useEffect(() => {
+    if (system.emitterGuids.length === 0) {
+      setEmitters(new Map());
+      return;
+    }
+    let cancelled = false;
+    setEmitters(null);
+    void loadEmittersForPreview({
+      system,
+      assets,
+      openPayloads,
+      loadDocument: (kind, path) =>
+        loadAssetDocument
+          ? loadAssetDocument(kind, path)
+          : Promise.resolve(null),
+    }).then((next) => {
+      if (!cancelled) setEmitters(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // assets/openPayloads are rebuilt each render; keys capture the inputs that
+    // should refetch Emitter documents.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guidKey, openKey, loadAssetDocument]);
+
   return (
     <div className="flex h-full flex-col p-3" data-testid="particle-system-preview">
       {system.emitterGuids.length === 0 ? (
@@ -349,11 +382,21 @@ export function ParticleSystemPreview({
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
+      ) : emitters === null ? (
+        <Empty data-testid="particle-preview-loading">
+          <EmptyHeader>
+            <EmptyTitle>Loading Preview</EmptyTitle>
+            <EmptyDescription>
+              Loading Particle Emitter documents for Preview.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ParticlePreviewCanvas
           library={systemPreviewLibrary(system, emitters)}
           systemGuid="preview-sys"
           testId="particle-system-preview-canvas"
+          showSkybox={system.previewSkybox}
         />
       )}
     </div>
@@ -677,6 +720,13 @@ export function ParticleSystemEditor({
       value: system.duration,
       min: 0,
       onChange: (duration) => commit({ ...system, duration }),
+    },
+    {
+      id: "previewSkybox",
+      kind: "boolean",
+      label: "Preview Skybox",
+      value: system.previewSkybox,
+      onChange: (previewSkybox) => commit({ ...system, previewSkybox }),
     },
   ];
 

@@ -926,7 +926,11 @@ describe("scene-referenced Play content", () => {
 
   it("closes over surface materials, stack materials, functions, and textures", () => {
     const scene = createDefaultScene();
-    scene.actors[0]!.components[0]!.properties.materialGuid = "mat-rock";
+    scene.actors[0]!.components.push({
+      id: "mesh",
+      classId: "MeshComponent",
+      properties: { meshKind: "box", materialGuid: "mat-rock" },
+    });
     scene.settings.postProcessStack = [{ materialGuid: "pp-blur", enabled: true }];
     const docs: Record<string, unknown> = {
       "mat-rock": {

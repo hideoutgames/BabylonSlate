@@ -99,7 +99,10 @@ import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "
 import { normalizeProjectFolderName } from "../lib/create-project";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
-import { applyKenneyMannequinEmptyScaffold } from "../lib/scaffold-empty-3d";
+import {
+  applyKenneyMannequinEmptyScaffold,
+  MANNEQUIN_CLASS_FILE,
+} from "../lib/scaffold-empty-3d";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
 function headerMetaForSave(
@@ -1082,7 +1085,11 @@ export class ProjectService {
     await this.storage.mkdir("assets/.blobs", true);
     await this.storage.mkdir("plugins", true);
     await this.saveDocument("scene", MAIN_SCENE_FILE, scene);
-    await this.saveDocument("graph", MAIN_CLASS_FILE, graph);
+    if (kind === "2d") {
+      await this.saveDocument("graph", MAIN_CLASS_FILE, graph);
+    } else {
+      document.graphs = [];
+    }
     document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(
@@ -1095,7 +1102,7 @@ export class ProjectService {
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
     if (kind !== "2d") {
-      await this.scaffoldKenneyMannequinEmpty();
+      await this.scaffoldKenneyMannequinEmpty(document);
     }
     return {
       document,
@@ -1104,7 +1111,9 @@ export class ProjectService {
     };
   }
 
-  private async scaffoldKenneyMannequinEmpty(): Promise<void> {
+  private async scaffoldKenneyMannequinEmpty(
+    document: ProjectDocument,
+  ): Promise<void> {
     const registry = this.assetRegistry;
     if (!registry) {
       throw new Error("Asset registry is not mounted.");
@@ -1119,6 +1128,12 @@ export class ProjectService {
       mannequinBytes: await loadKenneyMannequinGlb(),
     });
     await this.saveDocument("scene", MAIN_SCENE_FILE, next);
+    if (await this.storage.exists(MAIN_CLASS_FILE)) {
+      await this.storage.remove(MAIN_CLASS_FILE);
+    }
+    const classPath = `assets/${MANNEQUIN_CLASS_FILE}`;
+    document.graphs = [classPath];
+    await this.saveProject(document, createEmptyLayouts());
     if (this.projectSearchIndex) {
       await this.projectSearchIndex.rebuild(registry);
     }

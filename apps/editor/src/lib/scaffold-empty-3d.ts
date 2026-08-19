@@ -26,7 +26,7 @@ import {
   newAssetFileName,
 } from "./content-browser-helpers";
 
-export const MANNEQUIN_CLASS_FILE = "Mannequin/Mannequin.class.babasset";
+export const MANNEQUIN_CLASS_FILE = "Mannequin.class.babasset";
 export const MANNEQUIN_ANIM_GRAPH_FILE = "Mannequin/Mannequin.anim.babasset";
 export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
@@ -141,7 +141,8 @@ function replaceDefaultCubeActor(
 
 /**
  * Import Kenney Mannequin (hierarchy rig), write Class + idle Anim Graph, and
- * replace the default Cube actor. `createDefaultScene()` itself stays Cube.
+ * replace the default empty Actor. `createDefaultScene()` itself stays an
+ * empty Actor (editor `default.png` at the pivot).
  */
 export async function applyKenneyMannequinEmptyScaffold(options: {
   registry: AssetRegistry;
@@ -231,7 +232,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   );
   await options.registry.createAsset(
     "project",
-    `${MANNEQUIN_ASSET_FOLDER}/${newAssetFileName("Class", MANNEQUIN_CLASS_ID)}`,
+    newAssetFileName("Class", MANNEQUIN_CLASS_ID),
     classResult,
   );
 

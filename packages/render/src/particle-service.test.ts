@@ -1,4 +1,4 @@
-import { Color4, MeshBuilder, NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
+import { Color4, Mesh, MeshBuilder, NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   PARTICLE_BLENDMODE_ONEONE,
@@ -85,6 +85,98 @@ describe("ParticleService", () => {
     service.dispose();
     expect(scene.particleSystems).toHaveLength(0);
     expect(service.stats().systems).toBe(0);
+  });
+
+  it("keeps the Play emitter enabled at zero visibility and marks particleTexture hasAlpha", () => {
+    const { scene, service } = host();
+    service.setLibrary({
+      emitters: new Map([
+        [
+          "em-1",
+          normalizeParticleEmitterPayload({
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          }),
+        ],
+      ]),
+      systems: new Map([
+        [
+          "sys-1",
+          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
+        ],
+      ]),
+    });
+    service.handleCommand({
+      type: "assignParticle",
+      slotId: 1,
+      actorGuid: "fx",
+      componentId: "particle-1",
+      particleSystemGuid: "sys-1",
+      play: true,
+    });
+    const system = scene.particleSystems[0] as ParticleSystem;
+    const emitter = system.emitter as Mesh;
+    expect(emitter.isEnabled()).toBe(true);
+    expect(emitter.isVisible).toBe(true);
+    expect(emitter.visibility).toBe(0);
+    expect(emitter.alwaysSelectAsActiveMesh).toBe(true);
+    expect(emitter.isPickable).toBe(false);
+    expect(system.particleTexture?.hasAlpha).toBe(true);
+    service.dispose();
+  });
+
+  it("does not start until particleTexture is ready", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const texture = RawTexture.CreateRGBATexture(
+      new Uint8Array([255, 255, 255, 255]),
+      1,
+      1,
+      handle.scene,
+    );
+    let ready = false;
+    Object.defineProperty(texture, "url", {
+      configurable: true,
+      get: () => "blob:particle-pending",
+    });
+    texture.isReady = () => ready;
+    const service = new ParticleService({
+      scene: handle.scene,
+      gpuSupported: false,
+      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
+    });
+    service.setLibrary({
+      emitters: new Map([
+        [
+          "em-1",
+          normalizeParticleEmitterPayload({
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          }),
+        ],
+      ]),
+      systems: new Map([
+        [
+          "sys-1",
+          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
+        ],
+      ]),
+    });
+    service.handleCommand({
+      type: "assignParticle",
+      slotId: 1,
+      actorGuid: "fx",
+      componentId: "particle-1",
+      particleSystemGuid: "sys-1",
+      play: true,
+    });
+    expect(handle.scene.particleSystems).toHaveLength(1);
+    const system = handle.scene.particleSystems[0] as ParticleSystem;
+    expect(system.isStarted()).toBe(false);
+    ready = true;
+    texture.onLoadObservable.notifyObservers(texture);
+    expect(system.isStarted()).toBe(true);
+    service.dispose();
   });
 
   it("caps CPU fallback capacity at 512", () => {

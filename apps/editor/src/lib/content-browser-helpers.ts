@@ -254,6 +254,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
     id: "animation",
     label: "Animation",
     types: ["AnimationGraph", "SpriteAnimation"],
+    hint: "Animation Graph is the state machine; Sprite Animation is a 2D clip (also under 2D).",
   },
   {
     id: "rendering",
@@ -390,6 +391,81 @@ export function exclusiveSelectAsset(guid: string): ContentBrowserSelection {
 /** Single tap / click replaces the whole Content Browser selection with one folder. */
 export function exclusiveSelectFolder(path: string): ContentBrowserSelection {
   return { guids: new Set(), folderPaths: new Set([path]) };
+}
+
+function tileHitKey(hit: ContentBrowserPaintHit): string {
+  return hit.kind === "asset" ? `a:${hit.guid}` : `f:${hit.path}`;
+}
+
+function hitFromKey(
+  key: string,
+  ordered: readonly ContentBrowserPaintHit[],
+): ContentBrowserPaintHit | null {
+  return (
+    ordered.find((hit) => tileHitKey(hit) === key) ??
+    (key.startsWith("a:")
+      ? { kind: "asset", guid: key.slice(2) }
+      : key.startsWith("f:")
+        ? { kind: "folder", path: key.slice(2) }
+        : null)
+  );
+}
+
+/**
+ * Grid card select: exclusive replace, Ctrl/Meta toggle, or Shift range across
+ * the visible ordered tiles (same order as the asset grid).
+ */
+export function applyContentBrowserTileSelect(
+  hit: ContentBrowserPaintHit,
+  options: { additive?: boolean; range?: boolean } | undefined,
+  orderedHits: readonly ContentBrowserPaintHit[],
+  current: {
+    selectedGuids: ReadonlySet<string>;
+    selectedFolderPaths: ReadonlySet<string>;
+    anchorKey?: string | null;
+  },
+): ContentBrowserSelection & { anchorKey: string } {
+  const key = tileHitKey(hit);
+  if (options?.range) {
+    const keys = orderedHits.map(tileHitKey);
+    const range = rangeSelectTreeIds(keys, current.anchorKey ?? null, key);
+    const selectedGuids = new Set<string>();
+    const selectedFolderPaths = new Set<string>();
+    for (const id of range) {
+      const entry = hitFromKey(id, orderedHits);
+      if (!entry) continue;
+      if (entry.kind === "asset") selectedGuids.add(entry.guid);
+      else selectedFolderPaths.add(entry.path);
+    }
+    return {
+      guids: selectedGuids,
+      folderPaths: selectedFolderPaths,
+      anchorKey: current.anchorKey ?? key,
+    };
+  }
+  if (options?.additive) {
+    const selectedGuids = new Set(current.selectedGuids);
+    const selectedFolderPaths = new Set(current.selectedFolderPaths);
+    if (hit.kind === "asset") {
+      if (selectedGuids.has(hit.guid)) selectedGuids.delete(hit.guid);
+      else selectedGuids.add(hit.guid);
+    } else if (selectedFolderPaths.has(hit.path)) {
+      selectedFolderPaths.delete(hit.path);
+    } else {
+      selectedFolderPaths.add(hit.path);
+    }
+    return { guids: selectedGuids, folderPaths: selectedFolderPaths, anchorKey: key };
+  }
+  if (hit.kind === "asset") {
+    return {
+      ...exclusiveSelectAsset(hit.guid),
+      anchorKey: key,
+    };
+  }
+  return {
+    ...exclusiveSelectFolder(hit.path),
+    anchorKey: key,
+  };
 }
 
 /** Exclusive folder tap sets the grid folder; additive/range keep it. */
@@ -747,6 +823,7 @@ export function isValidSelectionMoveDestination(options: {
 }
 
 export type ContentBrowserContextAction =
+  | "open"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -772,7 +849,11 @@ export function contentBrowserContextActions(options: {
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
-  const actions: ContentBrowserContextAction[] = ["duplicate"];
+  const actions: ContentBrowserContextAction[] = [];
+  if (options.assetCount === 1 && options.folderCount === 0) {
+    actions.push("open");
+  }
+  actions.push("duplicate");
   if (total === 1) actions.push("rename");
   if (options.canRetarget && options.assetCount > 0 && options.folderCount === 0) {
     actions.push("retarget");

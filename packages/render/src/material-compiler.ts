@@ -36,6 +36,7 @@ import {
   type BlockRealization,
   type MaterialPlumbing,
 } from "./material-block-registry";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 
 export interface CompileMaterialOptions {
   scene: Scene;
@@ -456,7 +457,7 @@ function bindTexture(
     plan.textures.find((entry) => entry.operationId === operation.id);
   if (!binding) return true;
   const texture = options.resolveTexture?.(binding.textureGuid) ?? null;
-  if (!texture) {
+  if (!texture || isDisposedGpuTexture(texture)) {
     diagnostics.push({
       code: "material.missingTexture",
       message: `Texture "${binding.textureGuid}" could not be loaded`,

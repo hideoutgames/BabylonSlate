@@ -727,3 +727,36 @@ describe("PhysicsWorldSync sprite collision", () => {
     sync.dispose();
   });
 });
+
+describe("PhysicsWorldSync blocking volume", () => {
+  it("creates a static box collider from actor TRS without a RigidBody", () => {
+    const world = createWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "wall",
+      transform: {
+        ...identityTransform(),
+        position: { x: 2, y: 0, z: 0 },
+        scale: { x: 4, y: 2, z: 2 },
+      },
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "BlockingVolumeComponent",
+        guid: "vol",
+        variables: {},
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+
+    expect(backend.sphereOverlap({ x: 2, y: 0, z: 0 }, 0.2).actorIds).toContain(
+      "wall",
+    );
+    expect(backend.sphereOverlap({ x: 5, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
+    sync.dispose();
+  });
+});
