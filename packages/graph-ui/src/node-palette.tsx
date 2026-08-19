@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { CatalogDialog } from "@babylonslate/editor-kit";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CatalogDialog, windowedSlice } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
@@ -10,6 +10,9 @@ import {
   type PinCompatibilityRule,
 } from "./graph-connect";
 import { nodeRoleClass, nodeVisualRole } from "./node-theme";
+
+/** Matches `--touch-target` so header and item rows share one window. */
+export const NODE_PALETTE_ROW_HEIGHT = 44;
 
 export interface NodePaletteProps {
   open: boolean;
@@ -22,6 +25,10 @@ export interface NodePaletteProps {
   pinCompatibility?: PinCompatibilityRule;
 }
 
+type PaletteRow =
+  | { kind: "header"; key: string; category: string }
+  | { kind: "item"; key: string; node: PaletteNode };
+
 function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return nodes;
@@ -30,6 +37,116 @@ function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
   );
 }
 
+function flattenPaletteRows(
+  grouped: Array<[string, PaletteNode[]]>,
+): PaletteRow[] {
+  const rows: PaletteRow[] = [];
+  for (const [category, nodes] of grouped) {
+    rows.push({ kind: "header", key: `header:${category}`, category });
+    for (const node of nodes) {
+      rows.push({ kind: "item", key: node.id, node });
+    }
+  }
+  return rows;
+}
+
+function PaletteWindowedList({
+  rows,
+  onAddNode,
+  onOpenChange,
+}: {
+  rows: PaletteRow[];
+  onAddNode: (node: PaletteNode) => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [viewportHeight, setViewportHeight] = useState(0);
+  const [scrollTop, setScrollTop] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const body = listRef.current?.closest(
+      '[data-testid="node-palette-body"]',
+    );
+    if (!(body instanceof HTMLElement)) return;
+    const read = () => {
+      setViewportHeight(body.clientHeight);
+      setScrollTop(body.scrollTop);
+    };
+    read();
+    const onScroll = () => setScrollTop(body.scrollTop);
+    body.addEventListener("scroll", onScroll, { passive: true });
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(read);
+    observer?.observe(body);
+    return () => {
+      body.removeEventListener("scroll", onScroll);
+      observer?.disconnect();
+    };
+  }, [rows.length]);
+
+  const { firstIndex, lastIndex } = windowedSlice({
+    itemCount: rows.length,
+    rowHeight: NODE_PALETTE_ROW_HEIGHT,
+    scrollTop,
+    viewportHeight,
+  });
+  const visibleRows = rows.slice(firstIndex, lastIndex);
+
+  return (
+    <div
+      ref={listRef}
+      className="relative"
+      style={{ height: rows.length * NODE_PALETTE_ROW_HEIGHT }}
+    >
+      {visibleRows.map((row, index) => {
+        const top = (firstIndex + index) * NODE_PALETTE_ROW_HEIGHT;
+        if (row.kind === "header") {
+          return (
+            <h3
+              key={row.key}
+              className="absolute right-0 left-0 flex items-center px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+              style={{ top, height: NODE_PALETTE_ROW_HEIGHT }}
+            >
+              {row.category}
+            </h3>
+          );
+        }
+        const node = row.node;
+        return (
+          <Button
+            key={row.key}
+            type="button"
+            variant="outline"
+            className="absolute right-0 left-0 h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 touch-manipulation"
+            style={{ top, height: NODE_PALETTE_ROW_HEIGHT }}
+            data-testid={`node-palette-item-${node.id}`}
+            onClick={() => {
+              onAddNode(node);
+              onOpenChange(false);
+            }}
+          >
+            <span
+              className={cn(
+                "size-2.5 shrink-0 rounded-sm",
+                nodeRoleClass(
+                  nodeVisualRole({
+                    nodeType: node.id,
+                    title: node.title,
+                    category: node.category,
+                    pure: node.pure,
+                    latent: node.latent,
+                  }),
+                ),
+              )}
+              aria-hidden="true"
+            />
+            {node.title}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
 export function NodePalette({
   open,
   onOpenChange,
@@ -98,6 +215,8 @@ export function NodePalette({
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [filtered]);
 
+  const rows = useMemo(() => flattenPaletteRows(grouped), [grouped]);
+
   if (!paletteNodes?.length) return null;
 
   return (
@@ -140,47 +259,11 @@ export function NodePalette({
       {grouped.length === 0 ? (
         <p className="text-sm text-muted-foreground">No matches</p>
       ) : (
-        <div className="flex flex-col gap-4">
-          {grouped.map(([category, nodes]) => (
-            <section key={category}>
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {category}
-              </h3>
-              <div className="flex flex-col gap-2">
-                {nodes.map((node) => (
-                  <Button
-                    key={node.id}
-                    type="button"
-                    variant="outline"
-                    className="h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 touch-manipulation"
-                    data-testid={`node-palette-item-${node.id}`}
-                    onClick={() => {
-                      onAddNode(node);
-                      onOpenChange(false);
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        "size-2.5 shrink-0 rounded-sm",
-                        nodeRoleClass(
-                          nodeVisualRole({
-                            nodeType: node.id,
-                            title: node.title,
-                            category: node.category,
-                            pure: node.pure,
-                            latent: node.latent,
-                          }),
-                        ),
-                      )}
-                      aria-hidden="true"
-                    />
-                    {node.title}
-                  </Button>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+        <PaletteWindowedList
+          rows={rows}
+          onAddNode={onAddNode}
+          onOpenChange={onOpenChange}
+        />
       )}
     </CatalogDialog>
   );

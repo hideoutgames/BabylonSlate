@@ -85,6 +85,7 @@ import {
 } from "../lib/document-lock-apply";
 import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
+import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
@@ -377,6 +378,8 @@ interface DocumentContextValue {
     api: DockviewApi,
     surface?: DockviewSurface,
   ) => void;
+  unregisterDockviewApi: (id: string, surface?: DockviewSurface) => void;
+  captureLayoutForId: (id: string) => void;
   uiEditorMode: UiEditorMode;
   setUiEditorMode: (id: string, mode: UiEditorMode) => void;
   animEditorMode: AnimEditorMode;
@@ -2794,6 +2797,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
+        advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
@@ -3022,6 +3026,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (!openScene) return false;
         return applySceneChange(openScene.id, structuredClone(scene));
+      },
+      advanceIdleClock: (ms: number) => {
+        advanceTestIdleClock(ms);
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
       textureEncodeState: (path: string) => {
@@ -3258,6 +3265,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
   }, [bumpDockWindows, documentService, projectService]);
 
+  const unregisterDockviewApi = useCallback(
+    (id: string, surface: DockviewSurface = "default") => {
+      const key = dockviewApiKey(id, surface);
+      dockviewApisRef.current.delete(key);
+      for (const sub of dockSubscriptionsRef.current.get(key) ?? []) {
+        sub.dispose();
+      }
+      dockSubscriptionsRef.current.delete(key);
+    },
+    [],
+  );
+
   const activeDockApi = useCallback((): DockviewApi | undefined => {
     const { activeDocumentId } = documentService.getState();
     if (!activeDocumentId) return undefined;
@@ -3292,6 +3311,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const setUiEditorMode = useCallback(
     (id: string, mode: UiEditorMode) => {
+      captureLayoutForId(id);
       const doc = documentService.getDocument(id);
       const currentMode = uiEditorModeForDocument(id, uiEditorModes, doc);
       if (currentMode !== mode) {
@@ -3321,11 +3341,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bumpDockWindows();
     },
-    [bumpDockWindows, documentService, uiEditorModes],
+    [bumpDockWindows, captureLayoutForId, documentService, uiEditorModes],
   );
 
   const setAnimEditorMode = useCallback(
     (id: string, mode: AnimEditorMode) => {
+      captureLayoutForId(id);
       const doc = documentService.getDocument(id);
       const currentMode = animEditorModeForDocument(id, animEditorModes, doc);
       if (currentMode !== mode) {
@@ -3355,7 +3376,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       bumpDockWindows();
     },
-    [bumpDockWindows, documentService, animEditorModes],
+    [bumpDockWindows, captureLayoutForId, documentService, animEditorModes],
   );
 
   const activateDockPanel = useCallback((panelId: string) => {
@@ -3691,6 +3712,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           : false;
       })(),
       registerDockviewApi,
+      unregisterDockviewApi,
+      captureLayoutForId,
       uiEditorMode: (() => {
         const activeId = documentService.getState().activeDocumentId;
         if (!activeId) return "designer" as const;
@@ -3865,6 +3888,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       undoActiveDocument,
       redoActiveDocument,
       registerDockviewApi,
+      unregisterDockviewApi,
+      captureLayoutForId,
       setUiEditorMode,
       uiEditorModes,
       setAnimEditorMode,

@@ -1,6 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
-import { openMainScene, openTestProject } from "./open-test-project";
+import {
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+} from "./open-test-project";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -118,9 +122,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -145,9 +147,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -177,9 +177,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -199,9 +197,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -251,9 +247,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -283,15 +277,16 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await openTestProject(page);
     await showContentBrowser(page);
     const heroTile = page.locator('[data-asset-path="assets/hero.babasset"]');
+    await page.getByTestId("content-browser-search").fill("hero");
     if ((await heroTile.count()) === 0) {
+      await page.getByTestId("content-browser-search").fill("");
       await page
         .getByTestId("content-browser-import-input")
         .setInputFiles([path.join(process.cwd(), "e2e/fixtures/hero.glb")]);
+      await page.getByTestId("content-browser-search").fill("hero");
       await expect(heroTile).toBeVisible({ timeout: 15_000 });
     }
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -317,9 +312,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -340,9 +333,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });

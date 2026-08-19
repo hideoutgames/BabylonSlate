@@ -4,6 +4,7 @@ import {
   GRAPH_MAX_ZOOM,
   GRAPH_MIN_ZOOM,
   GRAPH_ZOOM_ON_DOUBLE_CLICK,
+  resolveGraphMountViewport,
   resolveGraphViewport,
 } from "./graph-viewport";
 
@@ -58,5 +59,24 @@ describe("resolveGraphViewport", () => {
     const viewport = resolveGraphViewport();
     expect(GRAPH_ZOOM_ON_DOUBLE_CLICK).toBe(false);
     expect(viewport.zoomOnDoubleClick).toBe(false);
+  });
+});
+
+describe("resolveGraphMountViewport", () => {
+  it("fits the graph on mount when no session pose exists", () => {
+    const graphViewport = resolveGraphViewport();
+    expect(resolveGraphMountViewport(null, graphViewport)).toEqual({
+      fitView: true,
+      defaultViewport: graphViewport.defaultViewport,
+    });
+  });
+
+  it("skips mount fitView when a session pose exists", () => {
+    const graphViewport = resolveGraphViewport();
+    const session = { x: 40, y: -12, zoom: 0.8 };
+    expect(resolveGraphMountViewport(session, graphViewport)).toEqual({
+      fitView: false,
+      defaultViewport: session,
+    });
   });
 });

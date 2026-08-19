@@ -58,6 +58,7 @@ import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { useValidation } from "../context/validation-context";
+import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
   defaultNodeRegistry,
   hydrateSerializedGraphForEditor,
@@ -436,6 +437,13 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     closeTransitionRule,
   } = useAnimGraphEditing();
   const { activeDocumentId, animEditorMode } = useDocuments();
+  const ruleSurface = openTransitionId
+    ? `rule:${openTransitionId}`
+    : animEditorMode;
+  const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
+    documentId,
+    ruleSurface,
+  );
   const { setDiagnostics, diagnostics, focusDiagnostic } = useValidation();
   const graphDiagnostics = useMemo(
     () =>
@@ -536,6 +544,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             initialGraph={ruleGraph}
             paletteNodes={rulePalette}
             diagnostics={graphDiagnostics}
+            sessionViewport={sessionViewport}
+            onSessionViewportChange={onSessionViewportChange}
             onChange={(next) => {
               const nextRule = { nodes: next.nodes, edges: next.edges };
               const transitionId = openTransition.id;
@@ -557,6 +567,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={animPaletteNodes()}
           nodeTypes={animGraphNodeTypes}
           edgeTypes={animGraphEdgeTypes}
+          sessionViewport={sessionViewport}
+          onSessionViewportChange={onSessionViewportChange}
           defaultEdgeOptions={{
             type: "animTransition",
           }}
