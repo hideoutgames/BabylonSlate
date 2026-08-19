@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-19 | cursor/validate-compiled-nodes-f8d7 | Validate only compiled nodes | Spec | `hasCycle` blamed compiled consumers for dead data loops reachable through an uncompiled impure | Resolved |
+| 2026-08-19 | cursor/validate-compiled-nodes-f8d7 | Validate only compiled nodes | Spec | Source-stamped edge codes (`pin.direction`) into a compiled pin were dropped | Resolved |
+| 2026-08-19 | cursor/validate-compiled-nodes-f8d7 | Validate only compiled nodes | Standards | Duplicated `entryNodes` in compile.ts and compiled-nodes.ts; compile now imports the shared helper | Resolved |
 | 2026-08-19 | cursor/audit-mannequin-preview-4245 | Mannequin preview / #367 | Spec | `aimPreviewCameraAtMesh` included the hidden placeholder cube in hierarchy bounds | Resolved |
 | 2026-08-19 | cursor/audit-mannequin-preview-4245 | Mannequin preview / #367 | Spec | Missing Kenney browse `unlit`, compiled `TextureBlock` invertY, and editor/Prefab Kenney adopt tests | Resolved |
 | 2026-08-19 | cursor/audit-mannequin-preview-4245 | Mannequin preview / p9 Prefab materials | Spec | Prefab viewport remade mesh-asset loads whenever `openDocuments` identity changed, cancelling material binds | Resolved |
