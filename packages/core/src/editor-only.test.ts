@@ -208,6 +208,56 @@ describe("editor-only assets", () => {
     });
   });
 
+  it("indexes Array and Map container fields on Class header variables", () => {
+    expect(
+      classHeaderMeta({
+        members: [
+          {
+            id: "var-scores",
+            kind: "variable",
+            name: "Scores",
+            typeId: "float",
+            container: "array",
+          },
+          {
+            id: "var-names",
+            kind: "variable",
+            name: "Names",
+            typeId: "string",
+            container: "map",
+            keyTypeId: "int",
+          },
+          {
+            id: "var-single",
+            kind: "variable",
+            name: "Health",
+            typeId: "float",
+            container: "single",
+          },
+        ],
+      }).variables,
+    ).toEqual([
+      {
+        id: "var-scores",
+        name: "Scores",
+        typeId: "float",
+        container: "array",
+      },
+      {
+        id: "var-names",
+        name: "Names",
+        typeId: "string",
+        container: "map",
+        keyTypeId: "int",
+      },
+      {
+        id: "var-single",
+        name: "Health",
+        typeId: "float",
+      },
+    ]);
+  });
+
   it("indexes prefab components on Class headers", () => {
     expect(
       classHeaderMeta({

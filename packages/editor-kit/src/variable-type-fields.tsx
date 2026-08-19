@@ -11,7 +11,6 @@ import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
 import { Button } from "@babylonslate/ui/components/button";
 import {
-  PickerIdentity,
   assetRowIdentity,
   classRowIdentity,
   selectedPickerIdentity,
@@ -185,7 +184,7 @@ export function VariableTypeFields({
           <ClassPicker
             open={keyClassOpen}
             onOpenChange={setKeyClassOpen}
-            classes={classEntries}
+            classes={[...classEntries]}
             allowNone={false}
             title="Pick Key Class Type"
             onPick={(classId) => {
@@ -198,7 +197,7 @@ export function VariableTypeFields({
           <AssetPicker
             open={keyAssetOpen}
             onOpenChange={setKeyAssetOpen}
-            assets={typeAssets}
+            assets={[...typeAssets]}
             allowedTypes={keyTypeId === "enum" ? ["Enum"] : ["Structure"]}
             allowNone
             title={keyTypeId === "enum" ? "Pick Key Enum Type" : "Pick Key Structure Type"}

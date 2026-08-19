@@ -183,6 +183,9 @@ export function classHeaderMeta(graph: {
     name: string;
     typeId?: string;
     typeClassId?: string;
+    container?: "single" | "array" | "map";
+    keyTypeId?: string;
+    keyTypeClassId?: string;
     functionId?: string;
     pins?: ClassHeaderPin[];
     assetGuid?: string;
