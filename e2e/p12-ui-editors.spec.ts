@@ -77,9 +77,7 @@ async function expectDesignerHostStats(page: Page): Promise<void> {
 }
 
 async function selectCanvasRoot(page: Page): Promise<void> {
-  await visibleUiWorkspace(page)
-    .getByTestId("ui-widget-canvas")
-    .click({ position: { x: 8, y: 8 } });
+  await visibleUiWorkspace(page).getByTestId("tree-row-canvas").click();
 }
 
 async function setUiEditorMode(
@@ -374,7 +372,7 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await expectDesignerReady(page);
     await saveAllIfEnabled(page);
     const hudTab = page.locator("[data-testid='document-tab']").filter({
-      hasText: /^HUD( \*)?$/,
+      has: page.locator("span", { hasText: /^HUD( \*)?$/ }),
     });
     await expect(hudTab).toBeVisible();
     await expect(hudTab).not.toContainText("*");

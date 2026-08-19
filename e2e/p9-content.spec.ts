@@ -1481,7 +1481,9 @@ test.describe("P9 content systems", () => {
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
     await page.getByTestId("ui-add-widget").click();
-    await page.getByTestId("ui-add-widget-UserInterface").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
+    await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
     await page.getByTestId("property-nestedUi").click();
     await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
     await expect(
@@ -1515,7 +1517,9 @@ test.describe("P9 content systems", () => {
     );
     await expect(hudWorkspace).toBeVisible();
     await hudWorkspace.getByTestId("ui-add-widget").click();
-    await page.getByTestId("ui-add-widget-UserInterface").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
+    await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
     await page.getByTestId("property-nestedUi").click();
     await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
     await page
