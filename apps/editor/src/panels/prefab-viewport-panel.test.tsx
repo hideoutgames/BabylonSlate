@@ -14,6 +14,7 @@ const {
   collectPlaySpritePayloads,
   collectPlayTilemapContent,
   collectPlayTextureBytes,
+  collectPlayFontFacetypeBytes,
   collectPlayModelBytes,
   collectPlayModelPayloads,
 } = vi.hoisted(() => {
@@ -70,6 +71,7 @@ const {
       tilemaps: [],
     })),
     collectPlayTextureBytes: vi.fn(async () => new Map()),
+    collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
     collectPlayModelBytes: vi.fn(async () => new Map()),
     collectPlayModelPayloads: vi.fn(async () => new Map()),
     prefabState: {
@@ -126,6 +128,7 @@ vi.mock("../context/document-context", () => ({
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayFontFacetypeBytes,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,

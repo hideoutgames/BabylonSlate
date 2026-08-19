@@ -4,6 +4,7 @@ import {
   identitySerializedTransform,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText3DProperties,
   SKYBOX_FACE_KEYS,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
@@ -19,6 +20,7 @@ import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
+import { createText3DMesh } from "./text3d-mesh";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -144,6 +146,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "CameraComponent",
   "AudioComponent",
   "SkyboxComponent",
+  "Text3DComponent",
   "ParticleComponent",
 ]);
 
@@ -207,6 +210,10 @@ function componentVisualKind(component: SerializedComponent): string {
     const size = parseSkyboxSize(component.properties.size);
     const faces = parseSkyboxFaces(component.properties.faces);
     return `skybox:${size}:${SKYBOX_FACE_KEYS.map((key) => faces[key] ?? "").join(",")}`;
+  }
+  if (component.classId === "Text3DComponent") {
+    const parsed = parseText3DProperties(component.properties);
+    return `text3d:${parsed.text}:${parsed.size}:${parsed.depth}:${parsed.color.join(",")}:${parsed.fontAssetGuid ?? ""}`;
   }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
@@ -301,6 +308,10 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
     (component) => component.classId === "SkyboxComponent",
   );
   if (skyboxComponent) return componentVisualKind(skyboxComponent);
+  const text3dComponent = actor.components.find(
+    (component) => component.classId === "Text3DComponent",
+  );
+  if (text3dComponent) return componentVisualKind(text3dComponent);
   if (
     actor.components.some((component) => component.classId === "ParticleComponent")
   ) {
@@ -342,6 +353,9 @@ export function createMeshForComponent(
       component.properties.size,
       assets,
     );
+  }
+  if (component.classId === "Text3DComponent") {
+    return createText3DMesh(scene, name, component.properties, assets);
   }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
@@ -450,6 +464,9 @@ export function createActorMesh(
   const skyboxComponent = actor.components.find(
     (component) => component.classId === "SkyboxComponent",
   );
+  const text3dComponent = actor.components.find(
+    (component) => component.classId === "Text3DComponent",
+  );
   if (!meshComponent && spriteComponent) {
     return createSpriteComponentMesh(scene, name, spriteComponent, assets);
   }
@@ -458,6 +475,15 @@ export function createActorMesh(
   }
   if (!meshComponent && !spriteComponent && !tilemapComponent && skyboxComponent) {
     return createMeshForComponent(scene, name, actor, skyboxComponent, assets);
+  }
+  if (
+    !meshComponent &&
+    !spriteComponent &&
+    !tilemapComponent &&
+    !skyboxComponent &&
+    text3dComponent
+  ) {
+    return createMeshForComponent(scene, name, actor, text3dComponent, assets);
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
   if (assetGuid && assets?.modelBytes?.has(assetGuid)) {

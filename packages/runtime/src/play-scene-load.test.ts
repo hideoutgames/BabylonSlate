@@ -11,6 +11,7 @@ import {
   createDefaultSceneSettings,
   createMeshComponent,
   createSkyboxComponent,
+  createText3DComponent,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
@@ -1235,6 +1236,54 @@ describe("p7-play-scene-load", () => {
             ny: null,
             nz: null,
           },
+        },
+      },
+    ]);
+    runtime.stop();
+  });
+
+  it("emits assignMesh meshKind text3d with authored text properties", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/text.scene.babasset",
+        scene: {
+          name: "Text",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("label", "3D Text", {
+              components: [
+                {
+                  ...createText3DComponent("text-comp"),
+                  properties: {
+                    ...createText3DComponent("text-comp").properties,
+                    text: "Hi",
+                    fontAssetGuid: "font-1",
+                  },
+                },
+              ],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
+      {
+        type: "assignMesh",
+        slotId: 0,
+        meshAssetGuid: "font-1",
+        meshKind: "text3d",
+        text3d: {
+          text: "Hi",
+          size: 1,
+          depth: 0.1,
+          color: [1, 1, 1],
+          fontAssetGuid: "font-1",
         },
       },
     ]);

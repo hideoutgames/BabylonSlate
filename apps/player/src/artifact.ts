@@ -17,6 +17,8 @@ import {
   textureGuidFromUiImageExport,
   AUDIO_REVERB_EXPORT_TYPE,
   sceneGuidFromAudioReverbExport,
+  FONT_FACETYPE_EXPORT_TYPE,
+  fontGuidFromFontFacetypeExport,
   type GameManifest,
   type PackSource,
 } from "@babylonslate/exporter";
@@ -38,6 +40,7 @@ export type LoadedGame = {
   guiImageBytes: Map<string, Uint8Array>;
   modelBytes: Map<string, Uint8Array>;
   fontBytes: Map<string, Uint8Array>;
+  fontFacetypeBytes: Map<string, Uint8Array>;
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
   audioPayloads: Map<string, AudioPayload>;
@@ -96,6 +99,7 @@ export async function loadGameFromFiles(
   const guiImageBytes = new Map<string, Uint8Array>();
   const modelBytes = new Map<string, Uint8Array>();
   const fontBytes = new Map<string, Uint8Array>();
+  const fontFacetypeBytes = new Map<string, Uint8Array>();
   const fontFamilies = new Map<string, string>();
   const audioBytes = new Map<string, Uint8Array>();
   const audioPayloads = new Map<string, AudioPayload>();
@@ -131,6 +135,11 @@ export async function loadGameFromFiles(
     if (entry.type === "Font") {
       fontBytes.set(entry.guid, bytes);
       if (entry.name?.trim()) fontFamilies.set(entry.guid, entry.name.trim());
+      continue;
+    }
+    if (entry.type === FONT_FACETYPE_EXPORT_TYPE) {
+      const fontGuid = fontGuidFromFontFacetypeExport(entry.guid) ?? entry.guid;
+      fontFacetypeBytes.set(fontGuid, bytes);
       continue;
     }
     if (entry.type === "Audio") {
@@ -178,6 +187,7 @@ export async function loadGameFromFiles(
     guiImageBytes,
     modelBytes,
     fontBytes,
+    fontFacetypeBytes,
     fontFamilies,
     audioBytes,
     audioPayloads,

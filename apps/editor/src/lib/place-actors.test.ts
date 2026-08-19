@@ -116,6 +116,17 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.size).toBe(1000);
   });
 
+  it("spawns an unlocked 3D Text actor with a Text3DComponent", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "text3d")!;
+    expect(item.category).toBe("Environment");
+    expect(visualForPlaceActor(item).iconKey).toBe("Text3DComponent");
+    const actor = spawnPlacedActor(createDefaultScene(), item, "actor-text", ORIGIN);
+    expect(actor.name).toBe("3D Text");
+    expect(actor.locked).toBeFalsy();
+    expect(actor.components[0]?.classId).toBe("Text3DComponent");
+    expect(actor.components[0]?.properties.text).toBe("Text");
+  });
+
   it("spawns a NavMesh actor with Recast settings", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh")!;
     const actor = spawnPlacedActor(scene, item, "actor-nav", ORIGIN);

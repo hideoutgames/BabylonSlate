@@ -14,7 +14,7 @@ import {
   type ShadowGenerator,
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
-import { emptySkyboxFaces, type SkyboxFaces } from "@babylonslate/core";
+import { emptySkyboxFaces, parseText3DProperties, type SkyboxFaces, type Text3DProperties } from "@babylonslate/core";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
@@ -42,6 +42,7 @@ import {
 } from "./tilemap-mesh";
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
+import { createText3DMesh } from "./text3d-mesh";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -60,6 +61,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   lightProps: Map<number, AuthoredLightProperties>;
   cameraProps: Map<number, AuthoredCameraProperties>;
   skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
+  text3dProps: Map<number, Text3DProperties>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
@@ -115,6 +117,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     lightProps: new Map(),
     cameraProps: new Map(),
     skyboxProps: new Map(),
+    text3dProps: new Map(),
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
@@ -334,6 +337,11 @@ export function applyAssignMesh(
       faces: emptySkyboxFaces(),
     });
   }
+  if (command.text3d) {
+    binding.text3dProps.set(command.slotId, command.text3d);
+  } else if (meshKind === "text3d") {
+    binding.text3dProps.set(command.slotId, parseText3DProperties({}));
+  }
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
     if (command.camera.isDefault) {
@@ -474,6 +482,7 @@ function disposeSlotVisuals(
   binding.cameras.get(slotId)?.dispose();
   binding.cameras.delete(slotId);
   binding.skyboxProps.delete(slotId);
+  binding.text3dProps.delete(slotId);
   if (binding.shadowOwnerSlot === slotId) {
     binding.shadow?.dispose();
     binding.shadow = null;
@@ -505,6 +514,7 @@ function createPlayVisual(
       part.meshAssetGuid,
       binding,
       playComponentMeshName(slotId, part.componentId),
+      part.text3d,
     );
     applyPartTransform(child, part);
     meshes.set(part.componentId, child);
@@ -525,6 +535,7 @@ export function createPlayMesh(
   assetGuid?: string | null,
   binding?: SnapshotSceneBinding,
   meshName?: string,
+  partText3d?: Text3DProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -593,6 +604,16 @@ export function createPlayMesh(
       binding,
     );
     return createSkyboxMesh(scene, name, texture, props?.size ?? 1000);
+  }
+  if (meshKind === "text3d") {
+    const fromPart =
+      partText3d ??
+      binding?.meshParts
+        .get(slotId)
+        ?.find((part) => playComponentMeshName(slotId, part.componentId) === name)
+        ?.text3d;
+    const props = fromPart ?? binding?.text3dProps.get(slotId);
+    return createText3DMesh(scene, name, props ?? {}, binding);
   }
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
@@ -706,6 +727,7 @@ export function applySnapshotToScene(
         binding.lightProps.delete(slotId);
         binding.cameraProps.delete(slotId);
         binding.skyboxProps.delete(slotId);
+        binding.text3dProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
         binding.lights.delete(slotId);
         binding.cameras.get(slotId)?.dispose();

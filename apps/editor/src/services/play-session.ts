@@ -494,6 +494,7 @@ export function startPlaySession(options: {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -558,6 +559,7 @@ export function startPlaySession(options: {
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
+    fontFacetypeBytes: options.fontFacetypeBytes,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,

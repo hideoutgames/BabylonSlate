@@ -229,6 +229,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
+  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
@@ -507,6 +509,7 @@ export function createEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.modelBytes = options.modelBytes;
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
@@ -1160,6 +1163,7 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;

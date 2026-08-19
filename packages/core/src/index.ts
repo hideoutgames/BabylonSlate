@@ -2,6 +2,7 @@ export * from "./storage-port";
 export * from "./command-bus";
 export * from "./scene";
 export * from "./skybox";
+export * from "./text3d";
 export * from "./project";
 export * from "./document";
 export * from "./class-metadata";

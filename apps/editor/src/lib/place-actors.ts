@@ -2,6 +2,7 @@ import {
   createActor,
   createMeshComponent,
   createSkyboxComponent,
+  createText3DComponent,
   identitySerializedTransform,
   type SerializedActor,
   type SerializedComponent,
@@ -25,6 +26,7 @@ export type PlaceActorKind =
   | { type: "light"; lightKind: string }
   | { type: "camera" }
   | { type: "skybox" }
+  | { type: "text3d" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
   | { type: "audio" }
@@ -73,6 +75,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Skybox",
     category: "Environment",
     kind: { type: "skybox" },
+  },
+  {
+    id: "text3d",
+    title: "3D Text",
+    category: "Environment",
+    kind: { type: "text3d" },
   },
   {
     id: "empty",
@@ -176,6 +184,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "skybox") {
     return resolveTypeVisual({ classId: "SkyboxComponent", family: "class" });
   }
+  if (kind.type === "text3d") {
+    return resolveTypeVisual({ classId: "Text3DComponent", family: "class" });
+  }
   if (kind.type === "navmesh") {
     return resolveTypeVisual({ classId: "NavMeshComponent", family: "class" });
   }
@@ -262,6 +273,12 @@ export function spawnPlacedActor(
       transform,
       locked: true,
       components: [createSkyboxComponent(`${id}-skybox`)],
+    });
+  }
+  if (kind.type === "text3d") {
+    return createActor(id, "3D Text", {
+      transform,
+      components: [createText3DComponent(`${id}-text3d`)],
     });
   }
   if (kind.type === "navmesh") {

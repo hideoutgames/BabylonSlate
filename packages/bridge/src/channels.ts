@@ -270,6 +270,13 @@ export type CommandMessage =
         position: [number, number, number];
         rotation: [number, number, number, number];
         scale: [number, number, number];
+        text3d?: {
+          text: string;
+          size: number;
+          depth: number;
+          color: [number, number, number];
+          fontAssetGuid: string | null;
+        };
       }>;
       skybox?: {
         size: number;
@@ -281,6 +288,13 @@ export type CommandMessage =
           ny: string | null;
           nz: string | null;
         };
+      };
+      text3d?: {
+        text: string;
+        size: number;
+        depth: number;
+        color: [number, number, number];
+        fontAssetGuid: string | null;
       };
     }
   | { type: "possessCamera"; slotId: number }

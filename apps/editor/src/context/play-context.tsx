@@ -276,6 +276,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playTextureBytes, setPlayTextureBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
+  const [playFontFacetypeBytes, setPlayFontFacetypeBytes] = useState<
+    Map<string, Uint8Array>
+  >(() => new Map());
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
@@ -323,6 +326,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlaySpriteAnimationPayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayFontFacetypeBytes,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayAudio,
@@ -928,6 +932,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         setPlaySpriteAnimationPayloads(spriteAnimations);
 
         try {
+          setPlayFontFacetypeBytes(
+            await collectPlayFontFacetypeBytes(
+              resolvedScene?.scene,
+              playLibrary.map((entry) => entry.scene),
+            ),
+          );
+        } catch (error) {
+          appendLog(
+            `3D Text font load failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setPlayFontFacetypeBytes(new Map());
+        }
+
+        try {
           const audio = await collectPlayAudio();
           setPlayAudioBytes(audio.bytes);
           setPlayAudioLibrary(audio.library);
@@ -994,6 +1012,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
+      collectPlayFontFacetypeBytes,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
@@ -1214,6 +1233,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
+            fontFacetypeBytes={playFontFacetypeBytes}
             modelBytes={playModelBytes}
             modelPayloads={playModelPayloads}
             modelClipAnimationGuids={playModelClipAnimationGuids}

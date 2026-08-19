@@ -15,6 +15,7 @@ describe("search catalog class ids", () => {
   it("advertises Audio, Skybox, and Particle once they are addable", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("AudioComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("SkyboxComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("Text3DComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("ParticleComponent");
   });
 

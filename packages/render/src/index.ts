@@ -44,6 +44,8 @@ export * from "./model-thumbnail";
 export * from "./png-encode";
 export * from "./scene-illumination";
 export * from "./skybox";
+export * from "./text3d-mesh";
+export * from "./default-typeface";
 export * from "./material-block-registry";
 export * from "./material-compiler";
 export * from "./material-library";

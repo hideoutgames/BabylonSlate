@@ -120,6 +120,25 @@ describe("UserInterface command and control contracts", () => {
     expect(release.kind).toBe("pointerUp");
   });
 
+  it("assignMesh can carry a 3D Text payload", () => {
+    const command = {
+      type: "assignMesh",
+      slotId: 3,
+      meshAssetGuid: null,
+      meshKind: "text3d",
+      text3d: {
+        text: "Hello",
+        size: 1,
+        depth: 0.1,
+        color: [1, 1, 1],
+        fontAssetGuid: "font-1",
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("assignMesh");
+    expect(command.text3d?.text).toBe("Hello");
+    expect(command.text3d?.fontAssetGuid).toBe("font-1");
+  });
+
   it("assignMesh can carry a skybox payload", () => {
     const command = {
       type: "assignMesh",

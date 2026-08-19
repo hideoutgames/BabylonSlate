@@ -33,6 +33,7 @@ import {
   normalizeUserInterfaceClassRef,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText3DProperties,
   parseInputMode,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
@@ -2074,7 +2075,8 @@ class InProcessRuntime implements RuntimeDriver {
         (component.classId === "MeshComponent" ||
           component.classId === "SpriteComponent" ||
           component.classId === "TilemapComponent" ||
-          component.classId === "SkyboxComponent"),
+          component.classId === "SkyboxComponent" ||
+          component.classId === "Text3DComponent"),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
@@ -2099,6 +2101,9 @@ class InProcessRuntime implements RuntimeDriver {
       const skyboxComp = renderables.find(
         (component) => component.classId === "SkyboxComponent",
       );
+      const text3dComp = renderables.find(
+        (component) => component.classId === "Text3DComponent",
+      );
       this.emit({
         type: "assignMesh",
         slotId,
@@ -2110,6 +2115,17 @@ class InProcessRuntime implements RuntimeDriver {
                 size: parseSkyboxSize(skyboxComp.getVariable("size")),
                 faces: parseSkyboxFaces(skyboxComp.getVariable("faces")),
               },
+            }
+          : {}),
+        ...(text3dComp
+          ? {
+              text3d: parseText3DProperties({
+                text: text3dComp.getVariable("text"),
+                size: text3dComp.getVariable("size"),
+                depth: text3dComp.getVariable("depth"),
+                color: text3dComp.getVariable("color"),
+                fontAssetGuid: text3dComp.getVariable("fontAssetGuid"),
+              }),
             }
           : {}),
         ...(parts ? { parts } : {}),
@@ -2916,6 +2932,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
+  if (component.classId === "Text3DComponent") return "text3d";
   if (component.classId === "LightComponent") {
     const kind = component.getVariable("lightKind");
     return `light:${typeof kind === "string" ? kind : "point"}`;
@@ -2964,6 +2981,17 @@ function playMeshPartOf(
     position: [position.x, position.y, position.z],
     rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
     scale: [scale.x, scale.y, scale.z],
+    ...(component.classId === "Text3DComponent"
+      ? {
+          text3d: parseText3DProperties({
+            text: component.getVariable("text"),
+            size: component.getVariable("size"),
+            depth: component.getVariable("depth"),
+            color: component.getVariable("color"),
+            fontAssetGuid: component.getVariable("fontAssetGuid"),
+          }),
+        }
+      : {}),
   };
 }
 

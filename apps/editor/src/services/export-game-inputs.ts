@@ -7,6 +7,7 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   collectPackedAudioClipBlobs,
   encodePackedAudioAsset,
+  FONT_FACETYPE_CHUNK_ID,
   normalizeAudioPayload,
   selectGuiImageChunk,
   selectTextureChunk,
@@ -53,6 +54,7 @@ export type LoadedExportDocuments = {
   payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
   guiImageBytesByGuid: (guid: string) => Uint8Array | null;
+  fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
   audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
@@ -86,7 +88,7 @@ async function bytesForAsset(
     );
   }
   for (const chunk of asset.header.chunks) {
-    if (chunk.id === "document") continue;
+    if (chunk.id === "document" || chunk.id === FONT_FACETYPE_CHUNK_ID) continue;
     const bytes = await readAssetChunk(asset.path, chunk.id);
     if (bytes) return bytes;
   }
@@ -113,6 +115,19 @@ async function guiImageBytesForAsset(
   }
 }
 
+async function fontFacetypeBytesForAsset(
+  asset: IndexedAsset,
+  readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
+): Promise<Uint8Array | null> {
+  if (asset.header.type !== "Font") return null;
+  try {
+    const bytes = await readAssetChunk(asset.path, FONT_FACETYPE_CHUNK_ID);
+    return bytes && bytes.byteLength > 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadExportDocuments(
   loaders: ExportDocumentLoaders,
 ): Promise<LoadedExportDocuments> {
@@ -121,6 +136,7 @@ export async function loadExportDocuments(
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
   const guiImages = new Map<string, Uint8Array>();
+  const fontFacetypes = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
   for (const asset of loaders.assets) {
@@ -158,6 +174,8 @@ export async function loadExportDocuments(
     if (payload) bytes.set(asset.header.guid, payload);
     const guiImage = await guiImageBytesForAsset(asset, loaders.readAssetChunk);
     if (guiImage) guiImages.set(asset.header.guid, guiImage);
+    const facetype = await fontFacetypeBytesForAsset(asset, loaders.readAssetChunk);
+    if (facetype) fontFacetypes.set(asset.header.guid, facetype);
     if (asset.header.type === "Scene") {
       try {
         const nav = await loaders.readAssetChunk(asset.path, NAVMESH_CHUNK_ID);
@@ -186,6 +204,7 @@ export async function loadExportDocuments(
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => bytes.get(guid) ?? null,
     guiImageBytesByGuid: (guid) => guiImages.get(guid) ?? null,
+    fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
     audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,
   };

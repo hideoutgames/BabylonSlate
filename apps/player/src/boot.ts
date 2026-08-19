@@ -95,6 +95,7 @@ export function startPlayer(options: {
     pixelsPerUnit: content.pixelsPerUnit,
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
+    fontFacetypeBytes: game.fontFacetypeBytes,
     modelBytes: game.modelBytes,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
