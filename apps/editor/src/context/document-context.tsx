@@ -30,6 +30,8 @@ import {
   ThumbnailDecodeLru,
   truncateJournal,
   collectAudioClipSourceBytes,
+  clearDeletedAssetRefs,
+  clearDeletedRefsFromProjectSettings,
   type AssetRegistry,
   type MigrationPending,
   type PluginDescriptor,
@@ -314,6 +316,11 @@ interface DocumentContextValue {
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
   closeDocument: (id: string) => void;
+  closeDocumentsForPaths: (paths: Iterable<string>) => void;
+  repairAfterAssetDelete: (
+    deletedGuids: ReadonlySet<string>,
+    deletedClassNames?: ReadonlySet<string>,
+  ) => Promise<void>;
   setActiveDocument: (id: string) => void;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   reorderClosableTabs: (fromIndex: number, toIndex: number) => void;
@@ -737,17 +744,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const recordRecent = useCallback(
-    async (handle: ProjectFolderHandle | null) => {
+    async (handle: ProjectFolderHandle | null, createdAt?: string) => {
       if (!handle) return;
       const settings = await settingsStore.load();
       const next = defaultEngineSettings();
       Object.assign(next, settings);
+      const previous = settings.recents.find((recent) => recent.id === handle.id);
       next.recents = [
         {
           id: handle.id,
           name: handle.name,
           tier: handle.tier,
           lastOpenedAt: new Date().toISOString(),
+          createdAt: createdAt ?? previous?.createdAt,
           bookmark: handle.tier === "external" ? handle.id : null,
         },
         ...settings.recents.filter((r) => r.id !== handle.id),
@@ -1124,7 +1133,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         setRecoveryAvailable(await hasJournal(derived, guid));
       }
-      await recordRecent(projectService.storagePort.getCurrentFolder());
+      await recordRecent(
+        projectService.storagePort.getCurrentFolder(),
+        document.metadata.createdAt,
+      );
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
@@ -1562,6 +1574,73 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       bump();
     },
     [bump, disposeDockSubscriptions, documentService],
+  );
+
+  const closeDocumentsForPaths = useCallback(
+    (paths: Iterable<string>) => {
+      const pathSet = paths instanceof Set ? paths : new Set(paths);
+      const ids: string[] = [];
+      for (const doc of documentService.getOpenDocumentsOrdered()) {
+        if (doc.ref.kind === "content-browser") continue;
+        if (pathSet.has(doc.ref.path)) ids.push(doc.id);
+      }
+      for (const id of ids) closeDocument(id);
+    },
+    [closeDocument, documentService],
+  );
+
+  const repairAfterAssetDelete = useCallback(
+    async (
+      deletedGuids: ReadonlySet<string>,
+      deletedClassNames: ReadonlySet<string> = new Set(),
+    ) => {
+      await projectService.clearDeletedAssetReferences(deletedGuids, {
+        deletedClassNames,
+      });
+      for (const doc of documentService.getOpenDocumentsOrdered()) {
+        if (doc.ref.kind === "content-browser" || !doc.content) continue;
+        const walked = clearDeletedAssetRefs(
+          doc.content,
+          deletedGuids,
+          deletedClassNames,
+        );
+        if (!walked.changed) continue;
+        if (doc.dirty) {
+          documentService.patchLoadedContent(doc.id, walked.value);
+        } else {
+          documentService.replaceLoadedContent(doc.id, walked.value);
+        }
+      }
+      const current = projectDocumentRef.current;
+      await projectService.remountRegistry();
+      const paths = projectService.registry?.listDocumentPaths({
+        rootId: "project",
+      });
+      if (current) {
+        const settings = clearDeletedRefsFromProjectSettings(
+          current.settings,
+          deletedGuids,
+          deletedClassNames,
+        ).value;
+        const next = {
+          ...current,
+          settings,
+          ...(paths ? { scenes: paths.scenes, graphs: paths.graphs } : {}),
+        };
+        setProjectDocument(next);
+        captureAllLayouts();
+        await projectService.saveProject(next, documentService.buildLayouts());
+        await refreshMtimeSnapshotAfterEditorSave(captureMtimeSnapshot);
+      }
+      bump();
+    },
+    [
+      bump,
+      captureAllLayouts,
+      captureMtimeSnapshot,
+      documentService,
+      projectService,
+    ],
   );
 
   const finishOpenDocument = useCallback(
@@ -3575,6 +3654,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
+      closeDocumentsForPaths,
+      repairAfterAssetDelete,
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,
@@ -3759,6 +3840,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
       closeDocument,
+      closeDocumentsForPaths,
+      repairAfterAssetDelete,
       setActiveDocument,
       reorderTabs,
       reorderClosableTabs,

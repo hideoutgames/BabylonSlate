@@ -88,6 +88,7 @@ export function UiDesignCanvas({
   onLayoutChange,
   panelVisible = true,
   documentActive = true,
+  resolveNested,
 }: {
   ui: UserInterfaceDocument;
   viewport: {
@@ -113,6 +114,7 @@ export function UiDesignCanvas({
   onLayoutChange: (id: string, next: WidgetLayout, mergeKey?: string) => void;
   panelVisible?: boolean;
   documentActive?: boolean;
+  resolveNested?: (guid: string) => UserInterfaceDocument | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gizmoCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -189,9 +191,9 @@ export function UiDesignCanvas({
     return layoutUserInterface(
       previewUi,
       { width: viewport.width, height: viewport.height },
-      { safeArea: viewport.safeArea, designSpace: true },
+      { safeArea: viewport.safeArea, resolveNested, designSpace: true },
     );
-  }, [layout, previewLayouts, previewUi, viewport.height, viewport.safeArea, viewport.width]);
+  }, [layout, previewLayouts, previewUi, resolveNested, viewport.height, viewport.safeArea, viewport.width]);
   const displayControls = useMemo(() => {
     if (Object.keys(previewLayouts).length === 0) return controls;
     return describeUiControls(previewUi, displayLayout);

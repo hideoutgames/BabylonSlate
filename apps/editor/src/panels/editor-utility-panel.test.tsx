@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { EditorUtilityPanel } from "./editor-utility-panel";
 
@@ -63,6 +63,15 @@ afterEach(() => {
   createHostMock.mockReset();
   docs.loadAssetDocument.mockClear();
   docs.openDocuments = [];
+  vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal("cancelAnimationFrame", () => {});
 });
 
 describe("EditorUtilityPanel", () => {
@@ -211,6 +220,98 @@ describe("EditorUtilityPanel", () => {
     await waitFor(() => expect(createUiSurfaceMock).toHaveBeenCalled());
     try {
       expect(await screen.findByTestId("ui-image-issue")).toBeTruthy();
+    } finally {
+      docs.assetRegistry.list = list;
+    }
+  });
+
+  it("applies nested UserInterface controls onto the live utility surface", async () => {
+    docs.openDocuments = [
+      {
+        ref: { path: "assets/Tools.eui.babasset" },
+        content: {
+          rootId: "canvas",
+          widgets: {
+            canvas: { id: "canvas", kind: "Canvas", children: ["host"] },
+            host: {
+              id: "host",
+              kind: "UserInterface",
+              nestedUiGuid: "chip-guid",
+              children: [],
+            },
+          },
+        },
+      },
+    ];
+    const list = docs.assetRegistry.list;
+    docs.assetRegistry.list = () => [
+      ...list(),
+      {
+        path: "assets/Chip.ui.babasset",
+        header: {
+          guid: "chip-guid",
+          type: "UserInterface",
+          payload: {
+            rootId: "canvas",
+            widgets: {
+              canvas: { id: "canvas", kind: "Canvas", children: ["label"] },
+              label: {
+                id: "label",
+                kind: "Text",
+                children: [],
+                props: { text: "HP" },
+              },
+            },
+          },
+        },
+      },
+    ];
+    const addControl = vi.fn();
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl,
+        markAsDirty: vi.fn(),
+        setVisible: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    createHostMock.mockReturnValue({
+      loadAll: async () => {},
+      beginPlay: vi.fn(),
+      tick: vi.fn(),
+      dispose: vi.fn(),
+      host: { classIds: () => [], invokeEvent: vi.fn() },
+    });
+    try {
+      render(
+        <EditorUtilityPanel
+          api={
+            {
+              id: "eui-tools-guid",
+              isVisible: true,
+              onDidVisibilityChange: () => ({ dispose: () => {} }),
+            } as never
+          }
+          containerApi={{} as never}
+          params={{}}
+        />,
+      );
+      await waitFor(() => expect(createUiSurfaceMock).toHaveBeenCalled());
+      await waitFor(() => {
+        const ids = addControl.mock.calls.map(
+          (call) => (call[0] as { id?: string } | undefined)?.id,
+        );
+        expect(ids).toContain("host/label");
+      });
     } finally {
       docs.assetRegistry.list = list;
     }

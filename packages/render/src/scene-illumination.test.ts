@@ -1,6 +1,7 @@
 import {
   Camera,
   DirectionalLight,
+  MeshBuilder,
   PointLight,
   Quaternion,
   Scene,
@@ -462,6 +463,106 @@ describe("syncAuthoredIllumination", () => {
     ).toBe(1024);
     expect(bounce?.getShadowGenerator()).toBeNull();
     expect(diagnostics.some((line) => /castShadows/i.test(line))).toBe(true);
+  });
+
+  it("keeps game meshes on the shadow map and excludes helpers", () => {
+    const { scene } = createHandle();
+    const cube = MeshBuilder.CreateBox("cube", { size: 1.5 }, scene);
+    const ground = MeshBuilder.CreateGround("ground", { width: 10, height: 10 }, scene);
+    const origin = MeshBuilder.CreateSphere("editorActor:sun", { diameter: 0.75 }, scene);
+    origin.metadata = { editorActorOrigin: true, editorPickProxy: true };
+    origin.receiveShadows = true;
+    const billboard = MeshBuilder.CreatePlane(
+      "editorActor:sun|component-sun",
+      { size: 0.5 },
+      scene,
+    );
+    billboard.metadata = { editorBillboard: "light" };
+    billboard.receiveShadows = true;
+    const playHelper = MeshBuilder.CreateBox("actor-3", { size: 0.25 }, scene);
+    playHelper.metadata = { playHelperVisual: true };
+    playHelper.receiveShadows = true;
+    const playOrigin = MeshBuilder.CreateBox("actor-4", { size: 0.25 }, scene);
+    playOrigin.metadata = { playActorOrigin: true };
+    const playDebug = MeshBuilder.CreateBox("playConsoleViz:col", { size: 0.25 }, scene);
+    playDebug.metadata = { playDebugOverlay: true };
+    const sky = MeshBuilder.CreateBox("skybox", { size: 10 }, scene);
+    sky.metadata = { skybox: true };
+    const debugShaft = MeshBuilder.CreateDashedLines(
+      "debugLight:sun:shaft",
+      { points: [Vector3.Zero(), new Vector3(0, 1, 0)], dashNb: 8 },
+      scene,
+    );
+    debugShaft.receiveShadows = true;
+    const gizmoLine = MeshBuilder.CreateLines(
+      "gizmo-line",
+      { points: [Vector3.Zero(), new Vector3(1, 0, 0)] },
+      scene,
+    );
+    const nav = MeshBuilder.CreateBox("navmeshDebug", { size: 1 }, scene);
+    const grid = MeshBuilder.CreateGround("__editor-grid__", { width: 1, height: 1 }, scene);
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("key", {
+          lightKind: "directional",
+          intensity: 1,
+          castShadows: true,
+        }),
+      ]),
+      { stealActiveCamera: false, shadowQuality: "1024" },
+    );
+    const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
+    const list =
+      (key!.getShadowGenerator() as ShadowGenerator).getShadowMap()?.renderList ?? [];
+    const names = new Set(list.map((mesh) => mesh.name));
+    expect(names.has("cube")).toBe(true);
+    expect(names.has("ground")).toBe(true);
+    expect(cube.receiveShadows).toBe(true);
+    expect(ground.receiveShadows).toBe(true);
+    for (const mesh of [
+      origin,
+      billboard,
+      playHelper,
+      playOrigin,
+      playDebug,
+      sky,
+      debugShaft,
+      gizmoLine,
+      nav,
+      grid,
+    ]) {
+      expect(names.has(mesh.name), mesh.name).toBe(false);
+      expect(mesh.receiveShadows, mesh.name).toBe(false);
+    }
+  });
+
+  it("uses PCF, bias, frustum falloff, and auto Z bounds on directional shadows", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        lightActor("key", {
+          lightKind: "directional",
+          intensity: 1,
+          castShadows: true,
+        }),
+      ]),
+      { stealActiveCamera: false, shadowQuality: "1024" },
+    );
+    const key = scene.getLightByName(
+      `${AUTHORED_LIGHT_PREFIX}key`,
+    ) as DirectionalLight;
+    const generator = key.getShadowGenerator() as ShadowGenerator;
+    // PCF is requested; NullEngine / WebGL1 falls back to Poisson.
+    expect(
+      generator.usePercentageCloserFiltering || generator.usePoissonSampling,
+    ).toBe(true);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_LOW);
+    expect(generator.bias).toBeCloseTo(0.001);
+    expect(generator.normalBias).toBeCloseTo(0.01);
+    expect(generator.frustumEdgeFalloff).toBe(1);
+    expect(key.autoCalcShadowZBounds).toBe(true);
   });
 
   it("disables the shadow map when shadowquality is off", () => {

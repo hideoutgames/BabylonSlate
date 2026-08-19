@@ -1,33 +1,52 @@
-import { useState } from "react";
-import { FolderOpenIcon, LayoutTemplateIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  ArrowUpDownIcon,
+  BoxIcon,
+  FolderOpenIcon,
+  Grid2x2Icon,
+  LayoutTemplateIcon,
+  ListFilterIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 import {
   DEFAULT_RENDER_HEIGHT,
   DEFAULT_RENDER_WIDTH,
   type ProjectFolderHandle,
 } from "@babylonslate/core";
-import { NumberField } from "@babylonslate/editor-kit";
+import {
+  ContextMenuOverlay,
+  SearchInput,
+  useContextMenu,
+} from "@babylonslate/editor-kit";
 import {
   getHostPlatform,
   isTestModeEnabled,
   type HostPlatform,
 } from "@babylonslate/vfs";
 import { Alert, AlertDescription, AlertTitle } from "@babylonslate/ui/components/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
 import { Button } from "@babylonslate/ui/components/button";
+import { Card } from "@babylonslate/ui/components/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@babylonslate/ui/components/card";
-import { Checkbox } from "@babylonslate/ui/components/checkbox";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuGroup,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@babylonslate/ui/components/context-menu";
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@babylonslate/ui/components/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -45,16 +64,19 @@ import {
 } from "@babylonslate/ui/components/empty";
 import {
   Field,
-  FieldDescription,
-  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
-import { cn } from "@babylonslate/ui/lib/utils";
 import { displayProjectName } from "../lib/display-project-name";
 import {
+  filterListedProjects,
+  HOMEPAGE_PROJECT_SORT_OPTIONS,
   listedProjectLocationLabel,
+  listedProjectMetaParts,
+  sortListedProjects,
+  type HomepageProjectLocationFilter,
+  type HomepageProjectSortMode,
   type ListedProject,
 } from "../lib/listed-projects";
 import {
@@ -63,8 +85,12 @@ import {
   normalizeProjectFolderName,
   type CreateProjectOptions,
 } from "../lib/create-project";
-import { BrandLogo } from "./brand-logo";
+import { BrandIcon } from "./brand-icon";
+import { HomepageCreateDialog } from "./homepage-create-dialog";
+import { TemplatePickCard } from "./homepage-template-card";
+import { IconActionButton } from "./icon-action-button";
 import { SettingsModal } from "./settings-modal";
+import "./homepage.css";
 
 function createProjectCardDescription(
   templateCount: number,
@@ -77,6 +103,139 @@ function createProjectCardDescription(
     return "Start with Empty or 2D.";
   }
   return "Start with Empty or 2D. Optional templates appear when a templates folder is set in Engine Settings.";
+}
+
+const HOMEPAGE_LOCATION_FILTERS: ReadonlyArray<{
+  id: HomepageProjectLocationFilter;
+  label: string;
+}> = [
+  { id: "on-this-device", label: "On this device" },
+  { id: "chosen-folder", label: "Chosen folder" },
+];
+
+function HomepageProjectRow({
+  project,
+  projects,
+  busy,
+  onOpen,
+  onRename,
+  onRequestRemove,
+}: {
+  project: ListedProject;
+  projects: ListedProject[];
+  busy: boolean;
+  onOpen: (project: ListedProject) => void;
+  onRename: (project: ListedProject) => void;
+  onRequestRemove: (project: ListedProject) => void;
+}) {
+  const skipOpenRef = useRef(false);
+  const { menu, closeMenu, bind } = useContextMenu({
+    enabled: !busy,
+    items: [
+      {
+        id: "open",
+        label: "Open",
+        testId: "homepage-project-open",
+        onSelect: () => onOpen(project),
+      },
+      {
+        id: "rename",
+        label: "Rename",
+        testId: "homepage-project-rename",
+        onSelect: () => onRename(project),
+      },
+      {
+        id: "remove",
+        label: "Remove from list",
+        testId: "homepage-project-remove",
+        onSelect: () => onRequestRemove(project),
+      },
+    ],
+  });
+
+  useEffect(() => {
+    if (menu?.open) {
+      skipOpenRef.current = true;
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      skipOpenRef.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [menu?.open]);
+
+  const meta = listedProjectMetaParts(projects, project);
+  const openProject = () => {
+    if (busy) return;
+    onOpen(project);
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openProject();
+    }
+  };
+
+  return (
+    <li>
+      <Card
+        size="sm"
+        tabIndex={0}
+        data-testid={`open-listed-project-${project.name}`}
+        className="homepage-project-row flex cursor-pointer flex-row items-center gap-3 px-3 py-2 min-h-[var(--touch-target,44px)]"
+        {...bind}
+        onClick={(event) => {
+          if (skipOpenRef.current) {
+            skipOpenRef.current = false;
+            return;
+          }
+          if ((event.target as HTMLElement).closest("button")) return;
+          openProject();
+        }}
+        onKeyDown={onKeyDown}
+      >
+        <span
+          data-testid="project-card-well"
+          className="homepage-project-well rounded-md"
+        >
+          <span aria-hidden="true" className="homepage-mark-diamond" />
+          <BoxIcon />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+          <span className="font-medium">
+            {displayProjectName(project.label)}
+          </span>
+          {meta.length > 0 ? (
+            <span className="text-xs text-muted-foreground">
+              {meta.join(" · ")}
+            </span>
+          ) : null}
+        </span>
+        <IconActionButton
+          type="button"
+          variant="ghost"
+          size="touch-icon"
+          label="Remove from list"
+          disabled={busy}
+          data-testid={`remove-listed-project-${project.name}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onRequestRemove(project);
+          }}
+        >
+          <XIcon />
+        </IconActionButton>
+      </Card>
+      <ContextMenuOverlay
+        menu={menu}
+        onClose={closeMenu}
+        contentTestId="homepage-project-menu"
+      />
+    </li>
+  );
 }
 
 interface HomepageProps {
@@ -121,6 +280,7 @@ export function Homepage({
   const [busy, setBusy] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ListedProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<ListedProject | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createTemplateId, setCreateTemplateId] = useState<string>("empty");
@@ -128,10 +288,30 @@ export function Homepage({
   const [createHeight, setCreateHeight] = useState(DEFAULT_RENDER_HEIGHT);
   const [createBlackBars, setCreateBlackBars] = useState(false);
   const [pickFolder, setPickFolder] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [locationFilters, setLocationFilters] = useState<
+    HomepageProjectLocationFilter[]
+  >([]);
+  const [sortMode, setSortMode] =
+    useState<HomepageProjectSortMode>("last-opened-desc");
   const hostPlatform = getHostPlatform();
   const nameIssue = createProjectNameIssue(
     createName,
     projects.map((project) => project.name),
+  );
+  const mixedLocations =
+    projects.length > 0 &&
+    listedProjectLocationLabel(projects, projects[0]!) !== null;
+  const visibleProjects = useMemo(
+    () =>
+      sortListedProjects(
+        filterListedProjects(projects, {
+          search: projectSearch,
+          locationFilters,
+        }),
+        sortMode,
+      ),
+    [projects, projectSearch, locationFilters, sortMode],
   );
 
   const run = async (fn: () => Promise<void>) => {
@@ -146,19 +326,27 @@ export function Homepage({
     }
   };
 
+  const openCreate = (templateId: string) => {
+    setCreateName(defaultCreateProjectDisplayName(isTestModeEnabled()));
+    setCreateTemplateId(templateId);
+    setPickFolder(false);
+    setCreateWidth(DEFAULT_RENDER_WIDTH);
+    setCreateHeight(DEFAULT_RENDER_HEIGHT);
+    setCreateBlackBars(false);
+    setCreateOpen(true);
+  };
+
   return (
     <div
-      className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground"
+      className="homepage flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground lg:flex-row"
       data-testid="homepage"
     >
-      <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="m-0">
-            <BrandLogo />
+      <aside className="homepage-rail flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4 lg:h-full lg:w-[min(22rem,34vw)] lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-b-0 lg:px-10 lg:py-12">
+        <div className="flex items-center gap-4 lg:flex-col lg:items-start lg:gap-8">
+          <BrandIcon className="homepage-brand-icon size-12 lg:size-40" />
+          <h1 className="m-0 font-heading text-xl tracking-tight lg:text-3xl">
+            BabylonSlate
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Create or open a project to start editing
-          </p>
         </div>
         <Button
           variant="outline"
@@ -168,9 +356,9 @@ export function Homepage({
         >
           Engine Settings
         </Button>
-      </header>
+      </aside>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-8 overflow-y-auto overscroll-y-contain px-6 py-8">
+      <main className="homepage-main mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col gap-10 overflow-hidden px-6 py-8 lg:px-10 lg:py-12">
         {needsReconnect ? (
           <Alert variant="destructive" data-testid="reconnect-banner">
             <AlertTitle>Project folder unavailable</AlertTitle>
@@ -218,123 +406,232 @@ export function Homepage({
           </Alert>
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Create Project</CardTitle>
-            <CardDescription data-testid="create-project-description">
-              {createProjectCardDescription(templates.length, hostPlatform)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              data-testid="create-project"
-              disabled={busy}
-              onClick={() => {
-                setCreateName(
-                  defaultCreateProjectDisplayName(isTestModeEnabled()),
-                );
-                setCreateTemplateId("empty");
-                setPickFolder(false);
-                setCreateOpen(true);
-              }}
-            >
-              Create Project
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <section className="flex shrink-0 flex-col gap-4" data-testid="homepage-start">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex flex-col gap-1">
-              <CardTitle>Projects</CardTitle>
-              <CardDescription>Recently opened projects on this device.</CardDescription>
+              <h2 className="m-0 font-heading text-lg">Start</h2>
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="create-project-description"
+              >
+                {createProjectCardDescription(templates.length, hostPlatform)}
+              </p>
             </div>
-            <Button
-              variant="secondary"
-              data-testid="open-project"
-              disabled={busy}
-              onClick={() => void run(onOpenExternal)}
+            <div
+              className="flex flex-wrap items-center gap-2"
+              data-testid="homepage-start-actions"
             >
-              <FolderOpenIcon data-icon="inline-start" />
-              Open folder…
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {projects.length === 0 ? (
-              <Empty data-testid="no-projects">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <FolderOpenIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>No projects yet</EmptyTitle>
-                  <EmptyDescription>
-                    Create an Empty project to get started.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <ul className="flex flex-col gap-2" data-testid="project-list">
-                {projects.map((project) => {
-                  const location = listedProjectLocationLabel(
-                    projects,
-                    project,
-                  );
-                  return (
-                    <li key={project.id}>
-                      <ContextMenu>
-                        <ContextMenuTrigger className="block">
-                          <Button
-                            variant="outline"
-                            className="h-auto min-h-[var(--touch-target,44px)] w-full justify-between px-4 py-3"
-                            data-testid={`open-listed-project-${project.name}`}
-                            disabled={busy}
-                            onClick={() => void run(() => onOpenProject(project))}
+              <Button
+                size="touch"
+                data-testid="create-project"
+                disabled={busy}
+                onClick={() => openCreate("empty")}
+              >
+                <PlusIcon data-icon="inline-start" />
+                Create Project
+              </Button>
+              <Button
+                variant="outline"
+                size="touch"
+                data-testid="open-project"
+                disabled={busy}
+                onClick={() => void run(onOpenExternal)}
+              >
+                <FolderOpenIcon data-icon="inline-start" />
+                Open Folder…
+              </Button>
+            </div>
+          </div>
+          <div
+            className="homepage-stagger flex flex-nowrap gap-3 overflow-x-auto overscroll-x-contain pb-1"
+            data-testid="homepage-start-gallery"
+          >
+            <TemplatePickCard
+              title="Empty"
+              description="Blank 3D project"
+              testId="homepage-start-empty"
+              icon={BoxIcon}
+              onSelect={() => openCreate("empty")}
+            />
+            <TemplatePickCard
+              title="2D"
+              description="Pixel-perfect Rapier"
+              testId="homepage-start-2d"
+              icon={Grid2x2Icon}
+              onSelect={() => openCreate("2d")}
+            />
+            {templates.map((template) => (
+              <TemplatePickCard
+                key={template.id}
+                title={template.name}
+                testId={`homepage-start-template-${template.id}`}
+                icon={LayoutTemplateIcon}
+                onSelect={() => openCreate(template.id)}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex shrink-0 flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <h2 className="m-0 font-heading text-lg">Projects</h2>
+              <p className="text-sm text-muted-foreground">
+                Recently opened projects on this device.
+              </p>
+            </div>
+            {projects.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <SearchInput
+                  value={projectSearch}
+                  onChange={setProjectSearch}
+                  placeholder="Search projects…"
+                  className="min-h-[var(--touch-target,44px)] min-w-40"
+                  data-testid="homepage-project-search"
+                />
+                {mixedLocations ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="touch"
+                          data-testid="homepage-project-filter"
+                          aria-label="Filter"
+                        />
+                      }
+                    >
+                      <ListFilterIcon data-icon="inline-start" />
+                      Filter
+                      {locationFilters.length > 0
+                        ? ` (${locationFilters.length})`
+                        : ""}
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      className="min-w-44"
+                      data-testid="homepage-project-filter-menu"
+                    >
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>Location</DropdownMenuLabel>
+                        {HOMEPAGE_LOCATION_FILTERS.map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.id}
+                            checked={locationFilters.includes(option.id)}
+                            data-testid={`homepage-project-filter-${option.id}`}
+                            onCheckedChange={(checked) => {
+                              setLocationFilters((current) =>
+                                checked === true
+                                  ? current.includes(option.id)
+                                    ? current
+                                    : [...current, option.id]
+                                  : current.filter(
+                                      (entry) => entry !== option.id,
+                                    ),
+                              );
+                            }}
                           >
-                            <span className="font-medium">
-                              {displayProjectName(project.label)}
-                            </span>
-                            {location ? (
-                              <span className="text-xs text-muted-foreground">
-                                {location}
-                              </span>
-                            ) : null}
-                          </Button>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent data-testid="homepage-project-menu">
-                          <ContextMenuGroup>
-                            <ContextMenuItem
-                              data-testid="homepage-project-open"
-                              onClick={() => void run(() => onOpenProject(project))}
-                            >
-                              Open
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              data-testid="homepage-project-rename"
-                              onClick={() => {
-                                setRenameTarget(project);
-                                setRenameValue(displayProjectName(project.label));
-                              }}
-                            >
-                              Rename
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              data-testid="homepage-project-remove"
-                              onClick={() =>
-                                void run(() => onRemoveFromList(project))
-                              }
-                            >
-                              Remove from list
-                            </ContextMenuItem>
-                          </ContextMenuGroup>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="touch"
+                        data-testid="homepage-project-sort"
+                        aria-label="Sort"
+                      />
+                    }
+                  >
+                    <ArrowUpDownIcon data-icon="inline-start" />
+                    Sort
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="min-w-44"
+                    data-testid="homepage-project-sort-menu"
+                  >
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Sort By</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={sortMode}
+                        onValueChange={(value) => {
+                          const next = HOMEPAGE_PROJECT_SORT_OPTIONS.find(
+                            (option) => option.mode === value,
+                          );
+                          if (next) setSortMode(next.mode);
+                        }}
+                      >
+                        {HOMEPAGE_PROJECT_SORT_OPTIONS.map((option) => (
+                          <DropdownMenuRadioItem
+                            key={option.mode}
+                            value={option.mode}
+                            data-testid={`homepage-project-sort-${option.mode}`}
+                          >
+                            {option.label}
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : null}
+          </div>
+          {projects.length === 0 ? (
+            <Empty data-testid="no-projects">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FolderOpenIcon />
+                </EmptyMedia>
+                <EmptyTitle>No projects yet</EmptyTitle>
+                <EmptyDescription>
+                  Create an Empty project to get started.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : visibleProjects.length === 0 ? (
+            <Empty data-testid="no-matching-projects">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FolderOpenIcon />
+                </EmptyMedia>
+                <EmptyTitle>No matching projects</EmptyTitle>
+                <EmptyDescription>
+                  Clear search or filters to see recents again.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <ul
+              className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-y-contain touch-pan-y"
+              data-testid="project-list"
+            >
+              {visibleProjects.map((project) => (
+                <HomepageProjectRow
+                  key={project.id}
+                  project={project}
+                  projects={projects}
+                  busy={busy}
+                  onOpen={(next) => void run(() => onOpenProject(next))}
+                  onRename={(next) => {
+                    setRenameTarget(next);
+                    setRenameValue(displayProjectName(next.label));
+                  }}
+                  onRequestRemove={setRemoveTarget}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
 
         {error ? (
           <Alert variant="destructive" data-testid="homepage-error">
@@ -344,246 +641,50 @@ export function Homepage({
         ) : null}
       </main>
 
-      <Dialog
+      <HomepageCreateDialog
         open={createOpen}
-        onOpenChange={(open) => {
-          if (!open) setCreateOpen(false);
+        onOpenChange={setCreateOpen}
+        busy={busy}
+        name={createName}
+        onNameChange={setCreateName}
+        nameIssue={nameIssue}
+        templateId={createTemplateId}
+        onTemplateIdChange={setCreateTemplateId}
+        templates={templates}
+        hostPlatform={hostPlatform}
+        pickFolder={pickFolder}
+        onPickFolderChange={setPickFolder}
+        width={createWidth}
+        onWidthChange={setCreateWidth}
+        height={createHeight}
+        onHeightChange={setCreateHeight}
+        blackBars={createBlackBars}
+        onBlackBarsChange={setCreateBlackBars}
+        onSubmit={() => {
+          if (nameIssue) return;
+          const folderName = normalizeProjectFolderName(createName);
+          if (!folderName) return;
+          const options: CreateProjectOptions = {
+            renderWidth: createWidth,
+            renderHeight: createHeight,
+            blackBars: createBlackBars,
+            ...(hostPlatform === "web" ? {} : { pickFolder }),
+          };
+          setCreateOpen(false);
+          if (createTemplateId === "empty" || createTemplateId === "2d") {
+            void run(() =>
+              onCreateEmpty(folderName, {
+                ...options,
+                kind: createTemplateId,
+              }),
+            );
+          } else {
+            void run(() =>
+              onCreateFromTemplate(createTemplateId, folderName, options),
+            );
+          }
         }}
-      >
-        <DialogContent
-          className="sm:max-w-lg"
-          data-testid="create-project-dialog"
-        >
-          <DialogHeader>
-            <DialogTitle>Create Project</DialogTitle>
-            <DialogDescription>
-              Name the project, pick Empty or 2D, then create.
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup>
-            <Field data-invalid={Boolean(nameIssue) || undefined}>
-              <FieldLabel htmlFor="create-project-name">Name</FieldLabel>
-              <Input
-                id="create-project-name"
-                data-testid="create-project-name"
-                autoFocus
-                aria-invalid={Boolean(nameIssue) || undefined}
-                value={createName}
-                onChange={(event) => setCreateName(event.target.value)}
-              />
-              {nameIssue ? (
-                <FieldError data-testid="create-project-name-issue">
-                  {nameIssue}
-                </FieldError>
-              ) : null}
-            </Field>
-            <Field>
-              <FieldLabel>Template</FieldLabel>
-              <div
-                className="flex flex-wrap gap-2"
-                data-testid="create-project-templates"
-              >
-                <Card
-                  size="sm"
-                  role="button"
-                  tabIndex={0}
-                  data-testid="create-project-empty"
-                  data-selected={createTemplateId === "empty" ? "true" : "false"}
-                  className={cn(
-                    "min-w-28 cursor-pointer",
-                    createTemplateId === "empty" ? "ring-2 ring-primary" : "",
-                  )}
-                  onClick={() => setCreateTemplateId("empty")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setCreateTemplateId("empty");
-                    }
-                  }}
-                >
-                  <CardHeader>
-                    <CardTitle>Empty</CardTitle>
-                    <CardDescription>Blank 3D project</CardDescription>
-                  </CardHeader>
-                </Card>
-                <Card
-                  size="sm"
-                  role="button"
-                  tabIndex={0}
-                  data-testid="create-project-2d"
-                  data-selected={createTemplateId === "2d" ? "true" : "false"}
-                  className={cn(
-                    "min-w-28 cursor-pointer",
-                    createTemplateId === "2d" ? "ring-2 ring-primary" : "",
-                  )}
-                  onClick={() => setCreateTemplateId("2d")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setCreateTemplateId("2d");
-                    }
-                  }}
-                >
-                  <CardHeader>
-                    <CardTitle>2D</CardTitle>
-                    <CardDescription>Pixel-perfect Rapier</CardDescription>
-                  </CardHeader>
-                </Card>
-                {templates.map((template) => (
-                  <Card
-                    key={template.id}
-                    size="sm"
-                    role="button"
-                    tabIndex={0}
-                    data-testid={`create-project-template-${template.id}`}
-                    data-selected={
-                      createTemplateId === template.id ? "true" : "false"
-                    }
-                    className={cn(
-                      "min-w-28 cursor-pointer",
-                      createTemplateId === template.id
-                        ? "ring-2 ring-primary"
-                        : "",
-                    )}
-                    onClick={() => setCreateTemplateId(template.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setCreateTemplateId(template.id);
-                      }
-                    }}
-                  >
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-1">
-                        <LayoutTemplateIcon data-icon="inline-start" />
-                        {template.name}
-                      </CardTitle>
-                    </CardHeader>
-                  </Card>
-                ))}
-              </div>
-            </Field>
-            <Field>
-              <FieldLabel>Location</FieldLabel>
-              <p
-                className="text-sm text-muted-foreground"
-                data-testid="create-project-location"
-              >
-                {hostPlatform === "web"
-                  ? "On this device."
-                  : pickFolder
-                    ? "Choose a folder when you create"
-                    : "App Documents"}
-              </p>
-              {hostPlatform !== "web" ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="create-project-choose-folder"
-                  onClick={() => setPickFolder((current) => !current)}
-                >
-                  {pickFolder ? "Use App Documents" : "Choose folder…"}
-                </Button>
-              ) : null}
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="create-project-width">
-                Render Size
-              </FieldLabel>
-              <div className="flex items-center gap-2">
-                <NumberField
-                  id="create-project-width"
-                  min={1}
-                  step={1}
-                  className="min-h-[var(--touch-target,44px)]"
-                  value={createWidth}
-                  onChange={setCreateWidth}
-                  data-testid="create-project-width"
-                  aria-label="Render Width"
-                />
-                <span aria-hidden="true">×</span>
-                <NumberField
-                  id="create-project-height"
-                  min={1}
-                  step={1}
-                  className="min-h-[var(--touch-target,44px)]"
-                  value={createHeight}
-                  onChange={setCreateHeight}
-                  data-testid="create-project-height"
-                  aria-label="Render Height"
-                />
-              </div>
-              <FieldDescription>
-                Play and packaged builds use this design size (default
-                1920×1080). Black Bars letterboxes that framebuffer; off fills
-                the host without stretching.
-              </FieldDescription>
-            </Field>
-            <Field orientation="horizontal">
-              <Checkbox
-                id="create-project-black-bars"
-                checked={createBlackBars}
-                onCheckedChange={(checked) =>
-                  setCreateBlackBars(checked === true)
-                }
-                data-testid="create-project-black-bars"
-              />
-              <FieldLabel htmlFor="create-project-black-bars">
-                Black Bars
-              </FieldLabel>
-            </Field>
-            <FieldDescription>
-              On letterboxes the locked WxH framebuffer; unused overlay space
-              is black. Off fills the host at the window size without
-              stretching. The camera stays centered.
-            </FieldDescription>
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCreateOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              data-testid="create-project-submit"
-              disabled={busy || Boolean(nameIssue)}
-              onClick={() => {
-                if (nameIssue) return;
-                const folderName = normalizeProjectFolderName(createName);
-                if (!folderName) return;
-                const options: CreateProjectOptions = {
-                  pickFolder,
-                  renderWidth: createWidth,
-                  renderHeight: createHeight,
-                  blackBars: createBlackBars,
-                };
-                setCreateOpen(false);
-                if (createTemplateId === "empty" || createTemplateId === "2d") {
-                  void run(() =>
-                    onCreateEmpty(folderName, {
-                      ...options,
-                      kind: createTemplateId,
-                    }),
-                  );
-                } else {
-                  void run(() =>
-                    onCreateFromTemplate(
-                      createTemplateId,
-                      folderName,
-                      options,
-                    ),
-                  );
-                }
-              }}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
 
       <Dialog
         open={renameTarget !== null}
@@ -635,6 +736,39 @@ export function Homepage({
         </DialogContent>
       </Dialog>
 
+      <AlertDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <AlertDialogContent data-testid="homepage-remove-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from List?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The project files stay on disk. This only drops the recent from
+              the Homepage list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="homepage-remove-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="homepage-remove-confirm"
+              onClick={() => {
+                const target = removeTarget;
+                if (!target) return;
+                void run(() => onRemoveFromList(target));
+                setRemoveTarget(null);
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <SettingsModal
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
@@ -645,4 +779,3 @@ export function Homepage({
     </div>
   );
 }
-

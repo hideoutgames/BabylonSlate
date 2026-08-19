@@ -4,7 +4,7 @@ test.describe("Editor appearance theme", () => {
   test("Engine Settings Light and Dark toggle html.dark", async ({ page }) => {
     await page.goto("/?test=1");
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await expect(page.getByTestId("brand-logo")).toBeVisible();
+    await expect(page.getByTestId("brand-icon")).toBeVisible();
 
     await page.getByTestId("engine-settings").click();
     await expect(page.getByTestId("engine-settings-modal")).toBeVisible();

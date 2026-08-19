@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  BRAND_ICON_ON_DARK,
+  BRAND_ICON_ON_LIGHT,
   BRAND_LOGO_ON_DARK,
   BRAND_LOGO_ON_LIGHT,
   BRAND_NAME,
+  brandIconSrc,
   brandLogoSrc,
   publicAssetUrl,
 } from "./branding";
@@ -23,5 +26,12 @@ describe("branding", () => {
     expect(brandLogoSrc("dark")).toBe(`/${BRAND_LOGO_ON_DARK}`);
     expect(BRAND_LOGO_ON_LIGHT).toContain("SlateLogoDark");
     expect(BRAND_LOGO_ON_DARK).toContain("SlateLogoLight");
+  });
+
+  it("uses dark-ink icon on light chrome and light-ink icon on dark chrome", () => {
+    expect(brandIconSrc("light")).toBe("/branding/SlateIconDark.png");
+    expect(brandIconSrc("dark")).toBe("/branding/SlateIconLight.png");
+    expect(BRAND_ICON_ON_LIGHT).toBe("branding/SlateIconDark.png");
+    expect(BRAND_ICON_ON_DARK).toBe("branding/SlateIconLight.png");
   });
 });

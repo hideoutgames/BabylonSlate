@@ -15,20 +15,16 @@ import {
   parseSkyboxFaces,
   parseSkyboxSize,
   skyboxFaceGuids,
-  type SkyboxFaceKey,
   type SkyboxFaces,
 } from "@babylonslate/core";
-import {
-  DEFAULT_SKYBOX_FACE_SIZE,
-  generateDefaultSkyboxFaceRgba,
-} from "./default-skybox/faces";
-import { encodePngRgba } from "./default-skybox/png";
-export { encodePngRgba };
+import { engineDefaultSkyboxFaceUrl } from "./default-skybox/faces";
 import type { MeshAssetContext } from "./mesh-assets";
 import {
   createEngineCubeTextureFromImages,
   type ResourceCache,
 } from "./resource-cache";
+
+export { encodePngRgba } from "./default-skybox/png";
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
 
@@ -38,29 +34,15 @@ export function isSkyboxMesh(mesh: AbstractMesh): boolean {
   return Boolean((mesh.metadata as { skybox?: boolean } | null)?.skybox);
 }
 
-export function createGeometricDaylightCubeTexture(
+export function createEngineDefaultCubeTexture(
   scene: Scene,
   cache?: ResourceCache,
 ): CubeTexture {
-  const files = SKYBOX_FACE_KEYS.map((key) =>
-    urlForBytes(
-      `${ENGINE_DEFAULT_SKYBOX_GUID}:${key}`,
-      defaultFacePng(key),
-      cache,
-    ),
-  );
+  const files = SKYBOX_FACE_KEYS.map((key) => engineDefaultSkyboxFaceUrl(key));
   if (cache) {
     return cache.getCubeTextureFromImages(ENGINE_DEFAULT_SKYBOX_GUID, scene, files);
   }
   return createEngineCubeTextureFromImages(scene.getEngine(), files);
-}
-
-function defaultFacePng(face: SkyboxFaceKey): Uint8Array {
-  return encodePngRgba(
-    DEFAULT_SKYBOX_FACE_SIZE,
-    DEFAULT_SKYBOX_FACE_SIZE,
-    generateDefaultSkyboxFaceRgba(face, DEFAULT_SKYBOX_FACE_SIZE),
-  );
 }
 
 function urlForBytes(
@@ -81,12 +63,12 @@ function defaultSkyboxCubeTexture(
   cache?: ResourceCache,
 ): CubeTexture {
   if (cache) {
-    return createGeometricDaylightCubeTexture(scene, cache);
+    return createEngineDefaultCubeTexture(scene, cache);
   }
   const engine = scene.getEngine();
   const existing = defaultCubeByEngine.get(engine);
   if (existing?.getInternalTexture()) return existing;
-  const texture = createGeometricDaylightCubeTexture(scene);
+  const texture = createEngineDefaultCubeTexture(scene);
   defaultCubeByEngine.set(engine, texture);
   return texture;
 }
@@ -107,11 +89,7 @@ export function resolveSkyboxCubeTexture(
     if (guid && bytes) {
       return urlForBytes(guid, bytes, cache);
     }
-    return urlForBytes(
-      `${ENGINE_DEFAULT_SKYBOX_GUID}:${key}`,
-      defaultFacePng(key),
-      cache,
-    );
+    return engineDefaultSkyboxFaceUrl(key);
   });
   const cacheKey = `skybox:${SKYBOX_FACE_KEYS.map((key) => parsed[key] ?? "default").join(",")}`;
   if (cache) {
