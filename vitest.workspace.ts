@@ -1,11 +1,13 @@
 import { defineConfig } from "vitest/config";
 
+/** Package coverage (`pnpm test:coverage`) skips editor jsdom tests; a second process runs them. */
+const packageCoverageOnly = process.env.VITEST_COVERAGE === "1";
+
 export default defineConfig({
   test: {
     // This VM reports 2 logical CPUs (`availableParallelism`), so Vitest's
-    // default `cpus - 1` is a single worker. Coverage of the jsdom editor
-    // suite then fills that fork past Node's ~4GB heap. Four forks stay on
-    // standard GitHub-hosted runners.
+    // default `cpus - 1` is a single worker. Four forks stay on standard
+    // GitHub-hosted runners.
     pool: "forks",
     fileParallelism: true,
     maxWorkers: 4,
@@ -50,7 +52,7 @@ export default defineConfig({
             "packages/editor-kit/**/*.test.tsx",
             "packages/graph-ui/**/*.test.{ts,tsx}",
             "packages/vfs/**/*.test.ts",
-            "apps/editor/**/*.test.{ts,tsx}",
+            ...(packageCoverageOnly ? [] : ["apps/editor/**/*.test.{ts,tsx}"]),
           ],
         },
       },
