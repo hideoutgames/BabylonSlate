@@ -5,6 +5,7 @@ import {
   createParticleMaterialResolver,
   createParticlePreviewScene,
 } from "./particle-preview";
+import { isSkyboxMesh } from "./skybox";
 
 describe("createParticlePreviewScene", () => {
   const handles: Array<{ engine: { dispose: () => void } }> = [];
@@ -22,6 +23,18 @@ describe("createParticlePreviewScene", () => {
     expect(host.scene).toBeTruthy();
     expect(host.camera).toBeTruthy();
     expect(host.mesh.isVisible).toBe(false);
+    expect(host.scene.meshes.some((mesh) => isSkyboxMesh(mesh))).toBe(false);
+    host.dispose();
+  });
+
+  it("adds an unpickable infinite default skybox when skybox is on", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createParticlePreviewScene(handle.engine, { skybox: true });
+    const skybox = host.scene.meshes.find((mesh) => isSkyboxMesh(mesh));
+    expect(skybox).toBeTruthy();
+    expect(skybox!.infiniteDistance).toBe(true);
+    expect(skybox!.isPickable).toBe(false);
     host.dispose();
   });
 

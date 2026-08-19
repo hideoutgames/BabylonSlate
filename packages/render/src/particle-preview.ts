@@ -17,6 +17,10 @@ import {
   MaterialLibrary,
   materialUnavailable,
 } from "./material-library";
+import {
+  createEngineDefaultCubeTexture,
+  createSkyboxMesh,
+} from "./skybox";
 
 /**
  * Disposable particle Preview Scene on the app-lifetime Engine.
@@ -26,10 +30,18 @@ import {
  */
 export function createParticlePreviewScene(
   engine: Engine,
+  options?: { skybox?: boolean },
 ): MaterialPreviewScene {
   const host = createMaterialPreviewScene(engine);
   host.mesh.isVisible = false;
   host.mesh.isPickable = false;
+  if (options?.skybox) {
+    createSkyboxMesh(
+      host.scene,
+      "particlePreviewSkybox",
+      createEngineDefaultCubeTexture(host.scene),
+    );
+  }
   return host;
 }
 

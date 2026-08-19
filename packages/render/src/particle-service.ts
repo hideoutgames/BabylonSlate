@@ -1,11 +1,11 @@
 import {
   MeshBuilder,
+  Texture,
   type AbstractMesh,
   type IParticleSystem,
   type Mesh,
   type NodeMaterial,
   type Scene,
-  type Texture,
 } from "@babylonjs/core";
 import type {
   ParticleEmitterPayload,
@@ -172,8 +172,10 @@ export class ParticleService {
       return;
     }
     const node = MeshBuilder.CreateBox(`particleEmitter:${key}`, { size: 0.01 }, this.scene);
-    node.isVisible = false;
+    node.isVisible = true;
+    node.visibility = 0;
     node.isPickable = false;
+    node.alwaysSelectAsActiveMesh = true;
     const parent =
       this.slotMeshes.get(command.slotId) ??
       this.resolveEmitter?.(command.slotId) ??
@@ -200,6 +202,7 @@ export class ParticleService {
         });
         return;
       }
+      texture.hasAlpha = true;
       const capacity = particleCapacityFor(emitter, this.gpu);
       const system = createBabylonParticleSystem(
         `particle:${key}:${index}`,
@@ -278,10 +281,32 @@ export class ParticleService {
 
   private startEntry(entry: LiveComponent): void {
     for (const system of entry.systems) {
-      system.reset();
-      system.start();
+      this.startWhenTextureReady(system, entry);
     }
     entry.playing = true;
+  }
+
+  private startWhenTextureReady(
+    system: IParticleSystem,
+    entry: LiveComponent,
+  ): void {
+    const begin = () => {
+      if (!this.live.has(liveKey(entry.actorGuid, entry.componentId))) return;
+      system.reset();
+      system.start();
+    };
+    const texture = system.particleTexture;
+    if (
+      !(texture instanceof Texture) ||
+      texture.isReady() ||
+      !texture.url
+    ) {
+      begin();
+      return;
+    }
+    texture.onLoadObservable.addOnce(() => {
+      begin();
+    });
   }
 
   private stopEntry(entry: LiveComponent): void {

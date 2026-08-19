@@ -121,3 +121,40 @@ export function emittersFromRegistry(
   }
   return emitters;
 }
+
+/**
+ * Resolve Emitters for Particle System Preview from open tabs or document
+ * chunks. Registry headers do not store Emitter look (`textureGuid`, shape).
+ */
+export async function loadEmittersForPreview(options: {
+  system: ParticleSystemPayload;
+  assets: ReadonlyArray<{
+    header: { guid: string; type: string; payload?: Record<string, unknown> };
+    path: string;
+  }>;
+  openPayloads: ReadonlyMap<string, unknown>;
+  loadDocument: (
+    kind: "particle-emitter",
+    path: string,
+  ) => Promise<unknown | null>;
+}): Promise<Map<string, ParticleEmitterPayload>> {
+  const byGuid = new Map(
+    options.assets
+      .filter((asset) => asset.header.type === "ParticleEmitter")
+      .map((asset) => [asset.header.guid, asset] as const),
+  );
+  const emitters = new Map<string, ParticleEmitterPayload>();
+  for (const guid of options.system.emitterGuids) {
+    const open = options.openPayloads.get(guid);
+    if (open != null) {
+      emitters.set(guid, normalizeParticleEmitterPayload(asRecord(open)));
+      continue;
+    }
+    const asset = byGuid.get(guid);
+    if (!asset) continue;
+    const loaded = await options.loadDocument("particle-emitter", asset.path);
+    if (loaded == null) continue;
+    emitters.set(guid, normalizeParticleEmitterPayload(asRecord(loaded)));
+  }
+  return emitters;
+}

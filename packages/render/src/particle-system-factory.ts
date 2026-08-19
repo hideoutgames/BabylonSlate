@@ -9,6 +9,7 @@ import {
   type Scene,
   type Texture,
 } from "@babylonjs/core";
+import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import {
   applyParticleEmitterPayload,
   resolveParticleEmitterCapacity,
@@ -212,9 +213,23 @@ export function applyParticleLook(options: {
     options.system.particleTexture = options.texture;
   }
   if (options.material && options.material.mode === NodeMaterialModes.Particle) {
+    if (options.texture) {
+      bindParticleTextureBlocks(options.material, options.texture);
+    }
     options.material.createEffectForParticles(options.system);
     if (options.texture) {
       options.system.particleTexture = options.texture;
+    }
+  }
+}
+
+function bindParticleTextureBlocks(
+  material: NodeMaterial,
+  texture: Texture,
+): void {
+  for (const block of material.attachedBlocks ?? []) {
+    if (block instanceof ParticleTextureBlock) {
+      block.texture = texture;
     }
   }
 }
