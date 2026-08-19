@@ -359,9 +359,16 @@ export function PlayOverlay({
         height: overlay.clientHeight || 720,
       });
     };
-    const resizeIfSized = createCanvasResizeGuard(() => {
-      sessionRef.current?.handle.resize();
-    });
+    const resizeIfSized = createCanvasResizeGuard(
+      () => {
+        sessionRef.current?.handle.resize();
+      },
+      {
+        onHoldChange: (holding) => {
+          sessionRef.current?.handle.scheduler.setResizing(holding);
+        },
+      },
+    );
     const syncFramebuffer = (sessionHandle: { setSize: (w: number, h: number) => void; resize: () => void }) => {
       const framebuffer = playFramebufferSize(
         initialRenderRef.current,
@@ -545,6 +552,7 @@ export function PlayOverlay({
     window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
     return () => {
       window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+      resizeIfSized.dispose();
       resizeObserver.disconnect();
       window.clearInterval(movePoll);
       detachLifecycle();

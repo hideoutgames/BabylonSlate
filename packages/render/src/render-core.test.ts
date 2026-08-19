@@ -110,6 +110,15 @@ describe("render scheduler", () => {
     expect(scheduler.shouldRender(0)).toBe(false);
   });
 
+  it("does not render while the canvas is resizing", () => {
+    const scheduler = new RenderScheduler();
+    scheduler.setAlwaysRender(true);
+    scheduler.setResizing(true);
+    expect(scheduler.shouldRender(0)).toBe(false);
+    scheduler.setResizing(false);
+    expect(scheduler.shouldRender(0)).toBe(true);
+  });
+
   it("does not cap frames until setFrameCap is called", () => {
     const scheduler = new RenderScheduler();
     scheduler.acquireContinuous("play");
