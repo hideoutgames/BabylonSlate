@@ -19,6 +19,13 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | p18-graph-virtualize / #328 / #358 | Spec | Off-screen XYFlow selection (`node.selected` / `selectedNodeId`) was omitted from `keepIds`, so Copy / Delete / `SelectedNodeSync` followed a cleared selection while Inspector still showed a node. `keepIds` now mounts focused + selected ids | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | p18-graph-virtualize / #358 | Spec | Custom spatial filter and xyflow `onlyRenderVisibleElements={virtualize}` both ran, so keep-mounted nodes could skip paint. Spatial filter is the source of truth; `onlyRenderVisibleElements` stays false | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | p18-graph-virtualize / #358 | Standards | Duplicate ResizeObserver test hosts in `graph-editor.test.tsx`; extracted `installImmediateGraphHostSize` | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | dual glTF skeleton / #344 | Spec | `classifyGltfRig` treated any 2+ animation targets as hierarchy and listed every mesh/parent as `boneNames`. Hierarchy requires parented Mesh parts that share an ancestor; `boneNames` is that tree | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | dual glTF skeleton / #344 | Standards | `glb-parse.ts` header still said full runtime mesh/skin fidelity stays deferred after dual-skeleton Play/preview | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | Create Project / #355 / #349 | Spec | #349 replaced the iPad one-line Black Bars helper with two sentences. Restored `On locks WxH with bars. Off fills without stretching.` | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | 2D Z-Order / #331 | Spec | Label “Z-Order” can sound like sprite draw order; Details writes `transform.position.z` and scene-editing.md distinguishes sorting-layer `alphaIndex`. No rename | Accepted |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | `selectVisibleGraphElements` dropped off-screen `focusedNodeId`, so search / compiler / Play navigate `fitView` no-oped. `keepIds` now mounts the focused node and its incident edges | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | Hidden warm graphs (`display: none` → 0×0) turned virtualisation off and remounted every node. `GraphEditor` now freezes the last positive host size | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-content-browser-virtualize | Standards | `asset-registry.md` still described CSS Grid overflow; the grid is windowed absolute tiles plus a spacer | Resolved |
