@@ -56,6 +56,52 @@ describe("hydrateSerializedGraphForEditor", () => {
     );
   });
 
+  it("rehydrates Print catalog defaultValue onto stored pins that lack it", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "print-1",
+          type: "debug.print",
+          position: { x: 0, y: 0 },
+          data: {
+            __nodeType: "debug.print",
+            "default:key": "hp",
+            __pins: [
+              {
+                id: "duration",
+                name: "Duration",
+                kind: "data",
+                direction: "in",
+                type: { kind: "float" },
+              },
+              {
+                id: "color",
+                name: "Color",
+                kind: "data",
+                direction: "in",
+                type: { kind: "color" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      defaultValue?: unknown;
+    }>;
+    expect(hydrated.nodes[0]?.data["default:key"]).toBe("hp");
+    expect(pins.find((pin) => pin.id === "duration")?.defaultValue).toBe(2);
+    expect(pins.find((pin) => pin.id === "color")?.defaultValue).toEqual({
+      x: 1,
+      y: 1,
+      z: 1,
+      w: 1,
+    });
+  });
+
   it("maps legacy logMessage to debug.log with Log pins", () => {
     const graph: SerializedGraph = {
       nodes: [

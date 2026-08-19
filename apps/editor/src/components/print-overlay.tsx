@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   applyPrintHudCommand,
+  nextPrintHudTimeoutMs,
   visiblePrintHudEntries,
   type PrintHudColor,
   type PrintHudEntry,
@@ -14,9 +15,16 @@ export type PrintOverlayProps = {
 
 /** Keyed on-screen prints (P5). Entries with the same key replace in place. */
 export function PrintOverlay({ entries }: PrintOverlayProps) {
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const delay = nextPrintHudTimeoutMs(entries);
+    if (delay === null) return;
+    const id = window.setTimeout(() => setClock((tick) => tick + 1), delay);
+    return () => window.clearTimeout(id);
+  }, [entries, clock]);
   const visible = useMemo(
     () => visiblePrintHudEntries(entries),
-    [entries],
+    [entries, clock],
   );
   if (visible.length === 0) return null;
   return (
