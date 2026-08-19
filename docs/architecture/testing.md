@@ -34,7 +34,7 @@ The `jsdom` project sets `css: true` so `?raw` stylesheet imports resolve; Vites
 
 ## Coverage gates
 
-Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
+Coverage is scoped to `packages/*/src/**` and gated **per package** at 60% (lines, functions, branches, statements), including `@babylonslate/exporter` and `@babylonslate/source-control`. `apps/editor` is outside the gate (Playwright). `pnpm test:coverage` therefore instruments packages without the editor jsdom suite (that suite OOMs a 4GB Node heap under v8 coverage) and then runs `apps/editor` unit tests in a second Vitest process without coverage. `apps/player` and `apps/desktop` are outside the gate (export/Preview e2e and source-read host tests). `apps/docs` is outside the gate (VitePress build + unit tests for sidebar coverage and the repo-link rewriter).
 
 Excluded, each for a stated reason:
 

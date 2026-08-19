@@ -10,7 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "vitest run --config vitest.workspace.ts",
-    "test:coverage": "VITEST_MAX_WORKERS=4 vitest run --config vitest.workspace.ts --coverage",
+    "test:coverage": "VITEST_MAX_WORKERS=4 vitest run --config vitest.workspace.ts --coverage --exclude apps/editor/** && vitest run --config vitest.workspace.ts --project jsdom apps/editor",
     "test:watch": "vitest --config vitest.workspace.ts",
     "test:e2e": "playwright test",
     "verify": "pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm test:e2e && pnpm --filter docs-site build"
