@@ -76,6 +76,7 @@ import {
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
 import { classParentLookup } from "../lib/content-browser-helpers";
+import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
   commitLogicGraph,
   collectGraphTypeAssets,
@@ -609,6 +610,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const typeAssets = typeAssetPickerEntries(typeCatalog);
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const physicsWorld = physicsWorldFromOpenDocuments(openDocuments);
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -652,7 +654,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         <PrefabComponentDetails
           component={selectedPrefabComponent}
           sortingLayers={sortingLayers}
-          physicsWorld="3d"
+          physicsWorld={physicsWorld}
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}
           assetLabel={assetLabel}

@@ -5,6 +5,7 @@ import {
   createContentBrowserAsset,
   openAssetFromBrowser,
   openContentBrowser,
+  openListedTestProject,
   openTestProject,
 } from "./open-test-project";
 import { saveAllIfEnabled } from "./save-all";
@@ -143,6 +144,7 @@ test.describe("Skybox Creator helper", () => {
     await page
       .getByTestId("content-browser-import-input")
       .setInputFiles([ALBEDO_PNG]);
+    await page.getByTestId("content-browser-search").fill("albedo");
     await expect(
       page.locator('[data-asset-path="assets/albedo.babasset"]'),
     ).toBeVisible({ timeout: 30_000 });
@@ -183,6 +185,7 @@ test.describe("Skybox Creator helper", () => {
       .click();
 
     await openContentBrowser(page);
+    await page.getByTestId("content-browser-search").fill("DaySky");
     for (const key of FACE_KEYS) {
       await expect(
         page.locator(`[data-asset-path="assets/DaySky_${key}.babasset"]`),
@@ -201,11 +204,9 @@ test.describe("Skybox Creator helper", () => {
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
-    await page
-      .getByTestId("open-listed-project-TestProject.babproject")
-      .click();
-    await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+    await openListedTestProject(page);
     await openContentBrowser(page);
+    await page.getByTestId("content-browser-search").fill("DaySky");
     await expect(page.locator(`[data-asset-path="${HELPER_PATH}"]`)).toBeVisible();
     await openAssetFromBrowser(page, HELPER_PATH);
     await expect(page.getByTestId("property-source")).toContainText(/albedo/i);

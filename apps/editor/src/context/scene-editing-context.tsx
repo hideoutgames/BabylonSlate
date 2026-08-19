@@ -61,15 +61,30 @@ export interface SceneEditingContextValue {
   loadEditorCameraPose: () => EditorCameraSessionState | null;
 }
 
-/** In-memory editor camera pose for one document workspace. */
-export function createEditorCameraPoseStore() {
-  let pose: EditorCameraSessionState | null = null;
+/** In-memory editor camera pose. Pass `documentId` so remounts restore. */
+const editorCameraPosesByDocumentId = new Map<
+  string,
+  EditorCameraSessionState | null
+>();
+
+export function createEditorCameraPoseStore(documentId?: string) {
+  if (!documentId) {
+    let pose: EditorCameraSessionState | null = null;
+    return {
+      save(state: EditorCameraSessionState | null | undefined) {
+        pose = state ?? null;
+      },
+      load(): EditorCameraSessionState | null {
+        return pose;
+      },
+    };
+  }
   return {
     save(state: EditorCameraSessionState | null | undefined) {
-      pose = state ?? null;
+      editorCameraPosesByDocumentId.set(documentId, state ?? null);
     },
     load(): EditorCameraSessionState | null {
-      return pose;
+      return editorCameraPosesByDocumentId.get(documentId) ?? null;
     },
   };
 }
@@ -98,6 +113,7 @@ export function selectionAfterLockChange(
 
 export function SceneEditingProvider({
   children,
+  documentId,
   initialViewportMode = "3d",
   documentViewportMode,
   documentSnapEnabled,
@@ -105,6 +121,8 @@ export function SceneEditingProvider({
   documentGridVisible,
 }: {
   children: ReactNode;
+  /** When set, camera pose survives workspace unmount for this document. */
+  documentId?: string;
   initialViewportMode?: ViewportMode;
   /** When the scene document's viewportMode changes (undo/redo/load), sync live mode. */
   documentViewportMode?: ViewportMode;
@@ -136,7 +154,7 @@ export function SceneEditingProvider({
     null,
   );
   const viewportDropApiRef = useRef<ViewportDropApi | null>(null);
-  const cameraPoseStoreRef = useRef(createEditorCameraPoseStore());
+  const cameraPoseStoreRef = useRef(createEditorCameraPoseStore(documentId));
 
   useEffect(() => {
     if (documentViewportMode === undefined) return;

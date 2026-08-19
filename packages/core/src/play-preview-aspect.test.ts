@@ -33,7 +33,18 @@ describe("playFramebufferSize", () => {
     ).toBeNull();
   });
 
-  it("returns locked WxH, preferring a live override", () => {
+  it("does not lock WxH when custom resolution is on and black bars are off", () => {
+    expect(
+      playFramebufferSize({
+        customResolution: true,
+        width: 1920,
+        height: 1080,
+        blackBars: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("returns locked WxH when black bars are on, preferring a live override", () => {
     expect(
       playFramebufferSize({
         customResolution: true,

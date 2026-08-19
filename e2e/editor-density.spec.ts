@@ -245,6 +245,24 @@ test.describe("Editor density and IA", () => {
     await expect(listed).toContainText("Renamed Game");
   });
 
+  test("homepage project row X confirms Remove from list", async ({ page }) => {
+    await openTestProject(page);
+    await saveAllIfEnabled(page);
+    await closeProjectViaSettings(page);
+    await expect(page.getByTestId("homepage")).toBeVisible();
+
+    const listed = page.getByTestId("open-listed-project-TestProject");
+    await expect(listed).toBeVisible();
+    await page.getByTestId("remove-listed-project-TestProject").click();
+    await expect(page.getByTestId("homepage-remove-dialog")).toBeVisible();
+    await page.getByTestId("homepage-remove-cancel").click();
+    await expect(listed).toBeVisible();
+
+    await page.getByTestId("remove-listed-project-TestProject").click();
+    await page.getByTestId("homepage-remove-confirm").click();
+    await expect(listed).toHaveCount(0);
+  });
+
   test("Save All is disabled when clean and shows a dirty dot after an edit", async ({
     page,
   }) => {

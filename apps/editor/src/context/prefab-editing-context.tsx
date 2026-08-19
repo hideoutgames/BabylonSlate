@@ -13,8 +13,10 @@ import {
   type SerializedGraph,
   type SerializedTransform,
 } from "@babylonslate/core";
+import type { TreeDropPlacement } from "@babylonslate/editor-kit";
 import { useDocuments } from "./document-context";
 import { useDocumentWorkspace } from "./document-workspace-context";
+import { useOptionalSceneEditing } from "./scene-editing-context";
 import {
   applyPrefabComponentTransform,
   applyPrefabPivotDelta,
@@ -26,7 +28,11 @@ import {
   reparentPrefabComponents,
   type PrefabComponentView,
 } from "../lib/prefab-preview";
-import { defaultPropertiesFor } from "../panels/add-component-catalog";
+import {
+  defaultPropertiesFor,
+  physicsWorldFromOpenDocuments,
+  type AddComponentSelection,
+} from "../panels/add-component-catalog";
 import { classParentLookup } from "../lib/content-browser-helpers";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
@@ -37,9 +43,13 @@ interface PrefabEditingContextValue {
   selectedIds: string[];
   setSelectedId: (id: string | null) => void;
   setSelectedIds: (ids: string[]) => void;
-  addComponent: (classId: string) => void;
+  addComponent: (selection: AddComponentSelection) => void;
   removeSelected: () => void;
-  reparentComponent: (dragId: string, targetId: string | null) => void;
+  reparentComponent: (
+    dragId: string,
+    targetId: string | null,
+    placement?: TreeDropPlacement,
+  ) => void;
   updateComponent: (
     componentId: string,
     property: string,
@@ -83,6 +93,11 @@ export function PrefabEditingProvider({
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applyGraphChange, assetRegistry } = useDocuments();
+  const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
+  const physicsWorld = useMemo(
+    () => physicsWorldFromOpenDocuments(openDocuments),
+    [openDocuments],
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>(() => {
     if (initialSelectedIds && initialSelectedIds.length > 0) {
       return [...initialSelectedIds];
@@ -173,20 +188,39 @@ export function PrefabEditingProvider({
   );
 
   const addComponent = useCallback(
-    (classIdToAdd: string) => {
+    (selection: AddComponentSelection) => {
+      const id = nextPrefabComponentId(components);
+      const selectedComponent =
+        selectedId && selectedId !== PREFAB_ROOT_ID
+          ? components.find((component) => component.id === selectedId)
+          : undefined;
       const next: PrefabComponentView[] = [
         ...components,
         {
-          id: nextPrefabComponentId(components),
-          classId: classIdToAdd,
-          properties: defaultPropertiesFor(classIdToAdd),
-          parentId: null,
+          id,
+          classId: selection.classId,
+          properties: {
+            ...defaultPropertiesFor(
+              selection.classId,
+              physicsWorld,
+              viewportMode,
+            ),
+            ...selection.properties,
+          },
+          parentId: selectedComponent ? selectedComponent.id : null,
           transform: identitySerializedTransform(),
         },
       ];
       upsertLocalFromViews(next);
+      setSelectedIds([id]);
     },
-    [components, upsertLocalFromViews],
+    [
+      components,
+      physicsWorld,
+      selectedId,
+      upsertLocalFromViews,
+      viewportMode,
+    ],
   );
 
   const removeSelected = useCallback(() => {
@@ -213,9 +247,19 @@ export function PrefabEditingProvider({
   }, [components, selectedIds, upsertLocalFromViews]);
 
   const reparentComponent = useCallback(
-    (dragId: string, targetId: string | null) => {
+    (
+      dragId: string,
+      targetId: string | null,
+      placement?: TreeDropPlacement,
+    ) => {
       upsertLocalFromViews(
-        reparentPrefabComponents(components, dragId, targetId, selectedIds),
+        reparentPrefabComponents(
+          components,
+          dragId,
+          targetId,
+          selectedIds,
+          placement,
+        ),
       );
     },
     [components, selectedIds, upsertLocalFromViews],

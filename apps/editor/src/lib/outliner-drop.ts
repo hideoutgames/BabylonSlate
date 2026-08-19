@@ -1,4 +1,4 @@
-import { rangeSelectTreeIds, type TreeSelectOptions } from "@babylonslate/editor-kit";
+import { rangeSelectTreeIds, type TreeDropPlacement, type TreeSelectOptions } from "@babylonslate/editor-kit";
 import {
   actorSubtree,
   findActor,
@@ -77,8 +77,36 @@ export function applyOutlinerRowSelect(
 }
 
 export type OutlinerDropMove =
-  | { kind: "folder"; id: string; parentFolderId: string | null }
-  | { kind: "actor"; id: string; parentId: string | null; folderId: string | null };
+  | {
+      kind: "folder";
+      id: string;
+      parentFolderId: string | null;
+      beforeId?: string;
+      afterId?: string;
+    }
+  | {
+      kind: "actor";
+      id: string;
+      parentId: string | null;
+      folderId: string | null;
+      beforeId?: string;
+      afterId?: string;
+    };
+
+function moveIdsRelativeTo<T extends { id: string }>(
+  items: readonly T[],
+  ids: readonly string[],
+  anchorId: string,
+  placement: "before" | "after",
+): T[] {
+  const movingSet = new Set(ids);
+  const moving = items.filter((item) => movingSet.has(item.id));
+  const rest = items.filter((item) => !movingSet.has(item.id));
+  const index = rest.findIndex((item) => item.id === anchorId);
+  if (index < 0) return [...rest, ...moving];
+  const insertAt = placement === "before" ? index : index + 1;
+  return [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
+}
 
 function ancestorFolderSelected(
   scene: SerializedScene,
@@ -130,16 +158,43 @@ function actorMoveForTarget(
   scene: SerializedScene,
   actorId: string,
   target: OutlinerRowTarget | null,
+  placement: TreeDropPlacement,
 ): OutlinerDropMove | null {
-  if (target?.kind === "folder") {
-    return { kind: "actor", id: actorId, parentId: null, folderId: target.id };
+  const around = placement === "before" || placement === "after";
+  if (!around) {
+    if (target?.kind === "folder") {
+      return { kind: "actor", id: actorId, parentId: null, folderId: target.id };
+    }
+    const parentId = target?.kind === "actor" ? target.id : null;
+    if (parentId && wouldCreateCycle(scene, actorId, parentId)) return null;
+    const folderId = parentId
+      ? (findActor(scene, parentId)?.folderId ?? null)
+      : null;
+    return { kind: "actor", id: actorId, parentId, folderId };
   }
-  const parentId = target?.kind === "actor" ? target.id : null;
-  if (parentId && wouldCreateCycle(scene, actorId, parentId)) return null;
-  const folderId = parentId
-    ? (findActor(scene, parentId)?.folderId ?? null)
-    : null;
-  return { kind: "actor", id: actorId, parentId, folderId };
+  if (!target) {
+    return { kind: "actor", id: actorId, parentId: null, folderId: null };
+  }
+  if (target.kind === "folder") {
+    const folder = findFolder(scene, target.id);
+    if (!folder) return null;
+    return {
+      kind: "actor",
+      id: actorId,
+      parentId: null,
+      folderId: folder.parentFolderId,
+    };
+  }
+  const anchor = findActor(scene, target.id);
+  if (!anchor) return null;
+  if (wouldCreateCycle(scene, actorId, anchor.parentId)) return null;
+  return {
+    kind: "actor",
+    id: actorId,
+    parentId: anchor.parentId,
+    folderId: anchor.folderId,
+    ...(placement === "before" ? { beforeId: anchor.id } : { afterId: anchor.id }),
+  };
 }
 
 function folderMoveForTarget(
@@ -147,15 +202,40 @@ function folderMoveForTarget(
   folderId: string,
   target: OutlinerRowTarget | null,
   rejectActorTarget: boolean,
+  placement: TreeDropPlacement,
 ): OutlinerDropMove | null {
-  if (target?.kind === "actor") {
-    if (rejectActorTarget) return null;
+  const around = placement === "before" || placement === "after";
+  if (!around) {
+    if (target?.kind === "actor") {
+      if (rejectActorTarget) return null;
+      return { kind: "folder", id: folderId, parentFolderId: null };
+    }
+    const parentFolderId = target?.kind === "folder" ? target.id : null;
+    if (parentFolderId === folderId) return null;
+    if (wouldCreateFolderCycle(scene, folderId, parentFolderId)) return null;
+    return { kind: "folder", id: folderId, parentFolderId };
+  }
+  if (!target) {
     return { kind: "folder", id: folderId, parentFolderId: null };
   }
-  const parentFolderId = target?.kind === "folder" ? target.id : null;
+  if (target.kind === "actor") {
+    return {
+      kind: "folder",
+      id: folderId,
+      parentFolderId: findActor(scene, target.id)?.folderId ?? null,
+    };
+  }
+  const anchor = findFolder(scene, target.id);
+  if (!anchor) return null;
+  const parentFolderId = anchor.parentFolderId;
   if (parentFolderId === folderId) return null;
   if (wouldCreateFolderCycle(scene, folderId, parentFolderId)) return null;
-  return { kind: "folder", id: folderId, parentFolderId };
+  return {
+    kind: "folder",
+    id: folderId,
+    parentFolderId,
+    ...(placement === "before" ? { beforeId: anchor.id } : { afterId: anchor.id }),
+  };
 }
 
 export function outlinerTreeDropMoves(options: {
@@ -163,8 +243,11 @@ export function outlinerTreeDropMoves(options: {
   targetRowId: string | null;
   selectedRowIds: readonly string[];
   scene: SerializedScene;
+  placement?: TreeDropPlacement;
 }): OutlinerDropMove[] {
   const { dragRowId, targetRowId, scene } = options;
+  const placement = options.placement ?? "into";
+  const around = placement === "before" || placement === "after";
   if (!outlinerRowTarget(dragRowId)) return [];
   const inSelection = options.selectedRowIds.includes(dragRowId);
   const selected = splitOutlinerRowIds(
@@ -183,7 +266,12 @@ export function outlinerTreeDropMoves(options: {
   );
 
   const target = outlinerRowTarget(targetRowId);
-  if (inSelection && folderRoots.length > 0 && target?.kind === "actor") {
+  if (
+    inSelection &&
+    folderRoots.length > 0 &&
+    target?.kind === "actor" &&
+    !around
+  ) {
     return [];
   }
 
@@ -197,12 +285,18 @@ export function outlinerTreeDropMoves(options: {
 
   const moves: OutlinerDropMove[] = [];
   for (const folderId of folderRoots) {
-    const move = folderMoveForTarget(scene, folderId, target, inSelection);
+    const move = folderMoveForTarget(
+      scene,
+      folderId,
+      target,
+      inSelection,
+      placement,
+    );
     if (!move) return [];
     moves.push(move);
   }
   for (const actorId of actorRoots) {
-    const move = actorMoveForTarget(scene, actorId, target);
+    const move = actorMoveForTarget(scene, actorId, target, placement);
     if (!move) return [];
     moves.push(move);
   }
@@ -219,18 +313,50 @@ export function applyOutlinerDropMoves(
     if (move.kind === "folder") folderParent.set(move.id, move.parentFolderId);
     else actorMove.set(move.id, move);
   }
+  let folders = scene.folders.map((folder) =>
+    folderParent.has(folder.id)
+      ? { ...folder, parentFolderId: folderParent.get(folder.id)! }
+      : folder,
+  );
+  let actors = scene.actors.map((actor) => {
+    const move = actorMove.get(actor.id);
+    return move
+      ? { ...actor, parentId: move.parentId, folderId: move.folderId }
+      : actor;
+  });
+  const folderAnchor = moves.find(
+    (move): move is Extract<OutlinerDropMove, { kind: "folder" }> =>
+      move.kind === "folder" && Boolean(move.beforeId || move.afterId),
+  );
+  if (folderAnchor) {
+    const ids = moves
+      .filter((move) => move.kind === "folder")
+      .map((move) => move.id);
+    folders = moveIdsRelativeTo(
+      folders,
+      ids,
+      folderAnchor.beforeId ?? folderAnchor.afterId!,
+      folderAnchor.beforeId ? "before" : "after",
+    );
+  }
+  const actorAnchor = moves.find(
+    (move): move is Extract<OutlinerDropMove, { kind: "actor" }> =>
+      move.kind === "actor" && Boolean(move.beforeId || move.afterId),
+  );
+  if (actorAnchor) {
+    const ids = moves
+      .filter((move) => move.kind === "actor")
+      .map((move) => move.id);
+    actors = moveIdsRelativeTo(
+      actors,
+      ids,
+      actorAnchor.beforeId ?? actorAnchor.afterId!,
+      actorAnchor.beforeId ? "before" : "after",
+    );
+  }
   return {
     ...scene,
-    folders: scene.folders.map((folder) =>
-      folderParent.has(folder.id)
-        ? { ...folder, parentFolderId: folderParent.get(folder.id)! }
-        : folder,
-    ),
-    actors: scene.actors.map((actor) => {
-      const move = actorMove.get(actor.id);
-      return move
-        ? { ...actor, parentId: move.parentId, folderId: move.folderId }
-        : actor;
-    }),
+    folders,
+    actors,
   };
 }

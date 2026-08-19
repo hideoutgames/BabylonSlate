@@ -1,5 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import path from "node:path";
+import {
+  openAssetFromBrowser,
+  openMainScene,
+  openTestProject,
+} from "./open-test-project";
 
 async function showContentBrowser(page: Page): Promise<void> {
   await page
@@ -117,9 +122,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -144,9 +147,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -176,9 +177,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -198,9 +197,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -250,9 +247,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -276,13 +271,48 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(child).toHaveAttribute("data-depth", "2");
   });
 
+  test("Add Component binds a project Model onto MeshComponent", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await showContentBrowser(page);
+    const heroTile = page.locator('[data-asset-path="assets/hero.babasset"]');
+    await page.getByTestId("content-browser-search").fill("hero");
+    if ((await heroTile.count()) === 0) {
+      await page.getByTestId("content-browser-search").fill("");
+      await page
+        .getByTestId("content-browser-import-input")
+        .setInputFiles([path.join(process.cwd(), "e2e/fixtures/hero.glb")]);
+      await page.getByTestId("content-browser-search").fill("hero");
+      await expect(heroTile).toBeVisible({ timeout: 15_000 });
+    }
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("prefab-add-component").click();
+    await page
+      .getByTestId("prefab-add-component-catalog-search")
+      .fill("hero");
+    await page
+      .locator('[data-testid^="prefab-add-component-catalog-item-asset-"]')
+      .click();
+    await expect(page.getByTestId("prefab-add-component-catalog")).toHaveCount(
+      0,
+    );
+    await expect(
+      page.getByTestId("prefab-tree").getByText("Mesh (hero)"),
+    ).toBeVisible();
+    await expect(page.getByTestId("inspector-prefab-component")).toContainText(
+      "hero",
+    );
+  });
+
   test("selecting a prefab component shows Position Rotation and Scale", async ({
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -303,9 +333,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page
-      .locator('[data-asset-path="assets/main.class.babasset"]')
-      .dblclick();
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });

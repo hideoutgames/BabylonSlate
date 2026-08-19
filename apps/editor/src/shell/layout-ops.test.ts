@@ -43,6 +43,7 @@ describe("canFocusLayout", () => {
     expect(canFocusLayout("script-interface")).toBe(true);
     expect(canFocusLayout("enum")).toBe(true);
     expect(canFocusLayout("sprite")).toBe(true);
+    expect(canFocusLayout("audio")).toBe(true);
     expect(canFocusLayout("sprite-animation")).toBe(true);
     expect(canFocusLayout("anim-graph")).toBe(true);
     expect(canFocusLayout("behaviour-tree")).toBe(true);
@@ -175,6 +176,8 @@ describe("resolveFocusKeepPanelIds", () => {
     expect(resolveFocusKeepPanelIds("behaviour-tree", [])).toEqual([
       "behaviour-tree-graph",
     ]);
+    expect(resolveFocusKeepPanelIds("audio", [])).toEqual(["audio-preview"]);
+    expect(FOCUS_PRIMARY_PANEL.audio).toBe("audio-preview");
     expect(resolveFocusKeepPanelIds("audio-mixer", [])).toEqual([
       "audio-mixer-details",
     ]);

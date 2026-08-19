@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createMeshComponent } from "@babylonslate/core";
+import {
+  createDefaultScene,
+  createDefaultSceneSettings,
+  createMeshComponent,
+  createSkyboxComponent,
+} from "@babylonslate/core";
 import {
   PREFAB_ROOT_ID,
   defaultPrefabComponents,
@@ -145,6 +150,30 @@ describe("reparentPrefabComponents", () => {
       reparentPrefabComponents([a, nested, c], "c", "b", ["a", "c"]),
     ).toEqual([a, nested, c]);
   });
+
+  it("inserts before a sibling without changing parent", () => {
+    expect(
+      reparentPrefabComponents([a, b, c], "c", "a", [], "before"),
+    ).toEqual([c, a, b]);
+    const nested = { ...c, parentId: "b" };
+    expect(
+      reparentPrefabComponents([a, b, nested], "c", "a", [], "before"),
+    ).toEqual([
+      { ...nested, parentId: null },
+      a,
+      b,
+    ]);
+  });
+
+  it("inserts after a sibling and treats Prefab Root as unparent", () => {
+    expect(
+      reparentPrefabComponents([a, b, c], "a", "b", [], "after"),
+    ).toEqual([b, a, c]);
+    const nested = { ...c, parentId: "a" };
+    expect(
+      reparentPrefabComponents([a, b, nested], "c", PREFAB_ROOT_ID, [], "before"),
+    ).toEqual([a, b, { ...nested, parentId: null }]);
+  });
 });
 
 describe("componentSubtreeIds", () => {
@@ -201,6 +230,29 @@ describe("previewSceneFor", () => {
     });
     expect(scene.actors[2]?.parentId).toBe("prefab-mesh");
     expect(scene.actors[2]?.transform).toEqual(child.transform);
+  });
+
+  it("keeps the near-black studio clear and omits the default 3D skybox", () => {
+    const scene = previewSceneFor([createMeshComponent("prefab-mesh", "box")]);
+    expect(scene.settings.environmentColor).toEqual(
+      createDefaultSceneSettings().environmentColor,
+    );
+    expect(scene.settings.environmentColor).not.toEqual(
+      createDefaultScene().settings.environmentColor,
+    );
+    const ids = scene.actors.map((actor) => actor.id);
+    expect(ids).not.toContain("actor-skybox");
+    expect(ids).not.toContain("actor-sun");
+  });
+
+  it("still previews an authored SkyboxComponent", () => {
+    const sky = createSkyboxComponent("hero-sky");
+    const scene = previewSceneFor([sky]);
+    expect(scene.actors.map((actor) => actor.id)).toEqual([
+      PREFAB_ROOT_ID,
+      "hero-sky",
+    ]);
+    expect(scene.actors[1]?.components[0]?.classId).toBe("SkyboxComponent");
   });
 });
 

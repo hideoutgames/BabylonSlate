@@ -124,8 +124,19 @@ describe("Class and settings documents", () => {
     ).toBe("Hero Class");
   });
 
+  it("opens imported Audio as a DockView document", () => {
+    expect(documentKindForAssetType("Audio")).toBe("audio");
+    expect(assetTypeForDocumentKind("audio")).toBe("Audio");
+    expect(documentKindLabel("audio")).toBe("Audio");
+    expect(isAssetDocumentKind("audio")).toBe(true);
+    expect(labelFromPath("assets/jump.babasset")).toBe("Jump");
+    expect(
+      createDocumentRef("audio", "assets/jump.babasset", { name: "Jump" }).label,
+    ).toBe("Jump Audio");
+  });
+
   it("opens import assets as settings tabs", () => {
-    for (const type of ["Texture", "Model", "Audio", "Animation"]) {
+    for (const type of ["Texture", "Model", "Animation"]) {
       expect(documentKindForAssetType(type)).toBe("asset-settings");
     }
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");
