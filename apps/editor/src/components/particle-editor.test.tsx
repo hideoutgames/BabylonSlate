@@ -8,7 +8,10 @@ import {
   ParticleEmitterEditor,
   ParticleEmitterPreview,
   ParticleSystemEditor,
+  ParticleSystemPreview,
 } from "./particle-editor";
+
+const loadAssetDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
@@ -43,11 +46,13 @@ vi.mock("../context/document-context", () => ({
       ],
     },
     openDocuments: [],
+    loadAssetDocument,
   }),
 }));
 
 afterEach(() => {
   cleanup();
+  loadAssetDocument.mockReset();
 });
 
 describe("ParticleEmitterEditor", () => {
@@ -133,5 +138,35 @@ describe("ParticleSystemEditor", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ emitterGuids: ["em-1"] }),
     );
+  });
+});
+
+describe("ParticleSystemPreview", () => {
+  it("loads closed Emitter documents instead of empty registry headers", async () => {
+    loadAssetDocument.mockResolvedValue({
+      ...createDefaultParticleEmitterPayload(),
+      textureGuid: "tex-1",
+    });
+    render(
+      <ParticleSystemPreview
+        payload={
+          {
+            ...createDefaultParticleSystemPayload(),
+            emitterGuids: ["em-1"],
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    expect(screen.getByTestId("particle-preview-loading")).toBeTruthy();
+    expect(screen.getByText("Loading Preview")).toBeTruthy();
+    await waitFor(() => {
+      expect(loadAssetDocument).toHaveBeenCalledWith(
+        "particle-emitter",
+        "assets/Sparks.emitter.babasset",
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("particle-system-preview-canvas")).toBeTruthy();
+    });
   });
 });
