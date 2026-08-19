@@ -31,6 +31,7 @@ import { usePlay } from "../context/play-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
+import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
@@ -40,6 +41,11 @@ import {
   modelSlotMaterialGuidsFromPayloads,
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
+import {
+  isSceneViewportRemountLoad,
+  runSceneViewportBlockingLoad,
+  type SceneViewportLoadPhase,
+} from "../lib/scene-viewport-load";
 
 export function ViewportPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -104,6 +110,13 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   setDragSelectActiveRef.current = setDragSelectActive;
   const setMarqueeRectRef = useRef(setMarqueeRect);
   setMarqueeRectRef.current = setMarqueeRect;
+  const engineGenerationRef = useRef(0);
+  const completedLoadGenerationRef = useRef(-1);
+  const [sceneLoad, setSceneLoad] = useState<{
+    open: boolean;
+    progress: number;
+    phase: SceneViewportLoadPhase;
+  }>({ open: false, progress: 0, phase: "Collecting Assets" });
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -209,6 +222,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    engineGenerationRef.current += 1;
 
     const handle = createEngine(canvas, {
       editor: true,
@@ -344,8 +358,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     if (!scene || !handle) return;
     handle.loadScene(scene);
     let cancelled = false;
+    const generation = engineGenerationRef.current;
+    const blocking = isSceneViewportRemountLoad(
+      generation,
+      completedLoadGenerationRef.current,
+    );
+    if (blocking) {
+      setSceneLoad({ open: true, progress: 0, phase: "Collecting Assets" });
+    }
     void (async () => {
-      try {
+      const applyCollectedAssets = async () => {
         const sprites = await collectPlaySpritePayloads(scene);
         const tileContent = await collectPlayTilemapContent(scene);
         const modelBytes = await collectPlayModelBytes(scene);
@@ -374,8 +396,34 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
         });
+      };
+      try {
+        if (blocking) {
+          await runSceneViewportBlockingLoad({
+            collect: applyCollectedAssets,
+            whenModelsReady: async () => {
+              if (cancelled || engineRef.current !== handle) return;
+              await handle.whenEditorModelsReady();
+            },
+            onProgress: (progress, phase) => {
+              if (cancelled) return;
+              setSceneLoad({ open: true, progress, phase });
+            },
+          });
+        } else {
+          await applyCollectedAssets();
+        }
       } catch (error) {
         console.error("[viewport] failed to load mesh assets", error);
+      } finally {
+        if (!cancelled && blocking) {
+          completedLoadGenerationRef.current = generation;
+          setSceneLoad({
+            open: false,
+            progress: 100,
+            phase: "Loading Models",
+          });
+        }
       }
     })();
     return () => {
@@ -621,6 +669,11 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         </div>
       ) : null}
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
+      <SceneLoadingDialog
+        open={sceneLoad.open}
+        progress={sceneLoad.progress}
+        phase={sceneLoad.phase}
+      />
     </div>
   );
 }

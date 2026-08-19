@@ -176,6 +176,8 @@ export interface EngineHandle {
   isFreeCamEnabled: () => boolean;
   /** Fly the Play free camera; no-op while it is off. */
   steerPlayFreeCam: (forward: number, right: number) => void;
+  /** Resolves when editor GLB instantiations from the last apply have finished. */
+  whenEditorModelsReady: () => Promise<void>;
 }
 
 export interface CreateEngineOptions {
@@ -1263,6 +1265,8 @@ export function createEngine(
     steerPlayFreeCam: (forward, right) => {
       playFreeCam?.fly(forward, right);
     },
+    whenEditorModelsReady: () =>
+      editorSync?.whenEditorModelsReady() ?? Promise.resolve(),
   };
 }
 

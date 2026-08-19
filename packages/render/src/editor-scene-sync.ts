@@ -233,6 +233,12 @@ export class EditorSceneSync {
     return this.meshes.size;
   }
 
+  whenEditorModelsReady(): Promise<void> {
+    const loads = [...this.modelLoadBinding.slotAnimLoads.values()];
+    if (loads.length === 0) return Promise.resolve();
+    return Promise.all(loads).then(() => undefined);
+  }
+
   /**
    * Bind `MeshComponent.materialGuid` onto editor visuals every apply so a
    * Details edit or a late Material-document load does not need a mesh rebuild.

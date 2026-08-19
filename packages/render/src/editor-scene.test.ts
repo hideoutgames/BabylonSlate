@@ -824,6 +824,31 @@ describe("EditorSceneSync", () => {
     });
   });
 
+  it("resolves whenEditorModelsReady immediately when the scene has no models", async () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
+      ]),
+    );
+    await expect(sync.whenEditorModelsReady()).resolves.toBeUndefined();
+  });
+
+  it("whenEditorModelsReady waits until pending GLB instantiations finish", async () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    const root = sync.meshForActor("a");
+    await sync.whenEditorModelsReady();
+    expect(visualMeshes(root!).length).toBeGreaterThan(0);
+  });
+
   it("loads a Model guid once for two actors on the same scene", async () => {
     const { scene } = createHandle();
     const bytes = encodeTriangleGlb();
