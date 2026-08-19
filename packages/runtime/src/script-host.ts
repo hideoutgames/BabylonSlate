@@ -8,6 +8,7 @@ import {
   lerpRotator,
   lookAtRotator,
   multiplyQuats,
+  normalizeQuat,
   quatRotateVector,
   quatToRotator,
   rotatorForward,
@@ -232,6 +233,9 @@ export interface ScriptContext {
     quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
     vector: { x?: number; y?: number; z?: number } | null | undefined,
   ): { x: number; y: number; z: number };
+  normalizeQuat(
+    quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
+  ): { x: number; y: number; z: number; w: number };
   randomFloat(): number;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
@@ -289,17 +293,27 @@ export interface ScriptContext {
   lineTrace(
     start: Vec3,
     end: Vec3,
+    channel?: string,
   ): {
     hit: boolean;
     location: Vec3 | null;
+    normal: Vec3 | null;
+    distance: number;
     actor: string | null;
   };
-  sphereOverlap(center: Vec3, radius: number): OverlapResult;
+  sphereOverlap(center: Vec3, radius: number, channel?: string): OverlapResult;
   shapeSweep(
     shape: ColliderShape,
     start: PhysicsTransform,
     end: PhysicsTransform,
-  ): HitResult;
+    channel?: string,
+  ): {
+    hit: boolean;
+    location: Vec3 | null;
+    normal: Vec3 | null;
+    distance: number;
+    actor: string | null;
+  };
   addImpulse(
     actor: BObject | null | undefined,
     impulse: Vec3,
@@ -696,6 +710,7 @@ export class ScriptHost {
       inverseQuat,
       slerpQuats,
       quatRotateVector,
+      normalizeQuat,
       randomFloat: () => this.rng.nextFloat(),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
@@ -824,7 +839,7 @@ export class ScriptHost {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       },
       gamepadConnections: tick?.gamepadConnections ?? [],
-      lineTrace: (start, end) => {
+      lineTrace: (start, end, _channel) => {
         const hit = services.lineTrace?.(start, end) ?? {
           hit: false,
           location: null,
@@ -836,23 +851,33 @@ export class ScriptHost {
         return {
           hit: hit.hit,
           location: hit.location,
+          normal: hit.normal,
+          distance: hit.distance,
           actor: hit.actorId,
         };
       },
-      sphereOverlap: (center, radius) =>
+      sphereOverlap: (center, radius, _channel) =>
         services.sphereOverlap?.(center, radius) ?? {
           actorIds: [],
           bodyIds: [],
         },
-      shapeSweep: (shape, start, end) =>
-        services.shapeSweep?.(shape, start, end) ?? {
+      shapeSweep: (shape, start, end, _channel) => {
+        const hit = services.shapeSweep?.(shape, start, end) ?? {
           hit: false,
           location: null,
           normal: null,
           distance: 0,
           actorId: null,
           bodyId: null,
-        },
+        };
+        return {
+          hit: hit.hit,
+          location: hit.location,
+          normal: hit.normal,
+          distance: hit.distance,
+          actor: hit.actorId,
+        };
+      },
       addImpulse: (actor, impulse, strength) => {
         const target = asActor(actor ?? self);
         if (!target) return;

@@ -12,6 +12,9 @@ describe("map nodes", () => {
       "map.remove",
       "map.size",
       "map.keys",
+      "map.make",
+      "map.values",
+      "map.clear",
     ]);
     expect(mapNodes.every((node) => node.category === "map")).toBe(true);
     const getPins = mapNodes[0]!.pins({});

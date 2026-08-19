@@ -17,7 +17,26 @@ export type VariableDef = {
   name: string;
   type: string;
   defaultValue?: unknown;
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
 };
+
+/** Resolve a Class variable's spawn value, including empty Array / Map. */
+export function hydrateClassVariableValue(variable: VariableDef): unknown {
+  if (variable.container === "array") {
+    return Array.isArray(variable.defaultValue)
+      ? [...variable.defaultValue]
+      : [];
+  }
+  if (variable.container === "map") {
+    if (variable.defaultValue instanceof Map) {
+      return new Map(variable.defaultValue);
+    }
+    return new Map();
+  }
+  return variable.defaultValue;
+}
 
 export type ClassKind =
   | "object"

@@ -7,6 +7,7 @@ import {
   EXEC,
   FLOAT,
   INT,
+  QUAT,
   ROTATOR,
   STRING,
   TRANSFORM,
@@ -49,6 +50,7 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(VEC2)).toBe(true);
     expect(pinAcceptsLiteralDefault(VEC3)).toBe(true);
     expect(pinAcceptsLiteralDefault(ROTATOR)).toBe(true);
+    expect(pinAcceptsLiteralDefault(QUAT)).toBe(true);
     expect(pinAcceptsLiteralDefault(COLOR)).toBe(true);
     expect(pinAcceptsLiteralDefault(VEC4)).toBe(true);
     expect(pinAcceptsLiteralDefault(enumRef("e1"))).toBe(true);

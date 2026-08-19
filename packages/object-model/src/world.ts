@@ -4,7 +4,7 @@ import {
   type GuidFactory,
   type Rng,
 } from "@babylonslate/core";
-import type { ClassRegistry } from "./class-registry";
+import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
 import { InterfaceRegistry } from "./interfaces";
 import {
   Actor,
@@ -295,8 +295,9 @@ export class World {
   } {
     const variables: Record<string, unknown> = {};
     for (const variable of this.classRegistry.inheritedVariables(classId)) {
-      if (variable.defaultValue !== undefined) {
-        variables[variable.name] = variable.defaultValue;
+      const value = hydrateClassVariableValue(variable);
+      if (value !== undefined) {
+        variables[variable.name] = value;
       }
     }
     Object.assign(variables, options.variables ?? {});

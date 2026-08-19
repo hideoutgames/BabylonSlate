@@ -2,14 +2,18 @@ import {
   pin,
   defaultValueLiteral,
   pinTypeForMember,
+  pinTypeForVariable,
 } from "@babylonslate/scripting";
 
 export {
   pinTypeForMember,
+  pinTypeForVariable,
   typeIdFromPinType,
   typeClassIdFromPinType,
   keepsTypeClassId,
   isStructOrEnumTypeId,
+  normalizeVariableContainer,
+  variableTypeFromPinType,
 } from "@babylonslate/scripting";
 
 export type MemberPinRow = {
@@ -64,15 +68,27 @@ export function localVariablePreamble(
     name: string;
     typeId?: string;
     typeClassId?: string;
+    container?: string;
+    keyTypeId?: string;
+    keyTypeClassId?: string;
     defaultValue?: unknown;
   }>,
 ): string[] {
   return locals.map((local) => {
     const ident = localVariableIdent(local.name);
+    const type = pinTypeForVariable({
+      typeId: local.typeId,
+      typeClassId: local.typeClassId,
+      container: local.container,
+      keyTypeId: local.keyTypeId,
+      keyTypeClassId: local.keyTypeClassId,
+    });
     const value =
-      local.defaultValue !== undefined
-        ? JSON.stringify(local.defaultValue)
-        : defaultValueLiteral(pinTypeForMember(local.typeId, local.typeClassId));
+      type.kind === "map"
+        ? "new Map()"
+        : local.defaultValue !== undefined
+          ? JSON.stringify(local.defaultValue)
+          : defaultValueLiteral(type);
     return `  let ${ident} = ${value};`;
   });
 }

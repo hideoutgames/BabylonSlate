@@ -106,6 +106,9 @@ export type ClassHeaderVariable = {
   name: string;
   typeId?: string;
   typeClassId?: string;
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
 };
 
 export type ClassHeaderEvent = {
@@ -231,6 +234,11 @@ export function classHeaderMeta(graph: {
         typeId: member.typeId,
       };
       if (member.typeClassId) variable.typeClassId = member.typeClassId;
+      if (member.container && member.container !== "single") {
+        variable.container = member.container;
+      }
+      if (member.keyTypeId) variable.keyTypeId = member.keyTypeId;
+      if (member.keyTypeClassId) variable.keyTypeClassId = member.keyTypeClassId;
       variables.push(variable);
       continue;
     }

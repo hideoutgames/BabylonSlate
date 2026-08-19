@@ -30,6 +30,7 @@ import { enumNodes } from "./enum";
 import { literalNodes } from "./literal";
 import { rotatorNodes } from "./rotator";
 import { colorNodes } from "./color";
+import { quatNodes } from "./quat";
 
 export * from "./flow";
 export * from "./math";
@@ -63,6 +64,7 @@ export * from "./enum";
 export * from "./literal";
 export * from "./rotator";
 export * from "./color";
+export * from "./quat";
 
 export const ALL_NODE_CATEGORIES = [
   "flow",
@@ -97,6 +99,7 @@ export const ALL_NODE_CATEGORIES = [
   "literal",
   "rotator",
   "color",
+  "quaternion",
 ] as const;
 
 export function allNodeDefinitions(): NodeDefinition[] {
@@ -132,6 +135,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...literalNodes,
     ...rotatorNodes,
     ...colorNodes,
+    ...quatNodes,
   ];
 }
 

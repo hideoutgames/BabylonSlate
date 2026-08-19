@@ -70,7 +70,7 @@ Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops back
 
 ## Scripting
 
-Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
+Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. Line Trace / Shape Sweep / Sphere Overlap output engine Structure **Hit Result** (`Hit`, `Location`, `Normal`, `Actor`, `Distance`) plus exploded alias pins on Line Trace / Shape Sweep, and an optional **Collision Channel** pin (default All). `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
 
 `ScriptHost` binds `ctx.lineTrace` / overlap / sweep / impulse to the active backend.
 

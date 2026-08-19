@@ -55,6 +55,12 @@ describe("PinTypePicker", () => {
     expect(isPinPickerType("rotator")).toBe(true);
     expect(isPinPickerType("color")).toBe(true);
     expect(isPinPickerType("transform")).toBe(true);
+    expect(isPinPickerType("actor")).toBe(true);
+    expect(isPinPickerType("asset")).toBe(true);
+    expect(isPinPickerType("wildcard")).toBe(true);
+    expect(isPinPickerType("quat")).toBe(true);
+    expect(isPinPickerType("array")).toBe(false);
+    expect(isPinPickerType("map")).toBe(false);
     expect(isPinPickerType("widget")).toBe(false);
   });
 });

@@ -10,6 +10,7 @@ export type PrimitivePinType =
   | { kind: "vec3" }
   | { kind: "vec4" }
   | { kind: "rotator" }
+  | { kind: "quat" }
   | { kind: "transform" }
   | { kind: "color" }
   | { kind: "resolvingWildcard"; group?: string }
@@ -40,6 +41,7 @@ export const VEC2: PinType = { kind: "vec2" };
 export const VEC3: PinType = { kind: "vec3" };
 export const VEC4: PinType = { kind: "vec4" };
 export const ROTATOR: PinType = { kind: "rotator" };
+export const QUAT: PinType = { kind: "quat" };
 export const TRANSFORM: PinType = { kind: "transform" };
 export const COLOR: PinType = { kind: "color" };
 export const RESOLVING_WILDCARD: PinType = { kind: "resolvingWildcard" };
@@ -148,6 +150,14 @@ export function isAssignable(
     return options.hierarchy?.isSubclassOf(from.classId, to.classId) ?? false;
   }
 
+  if (from.kind === "assetRef" && to.kind === "assetRef") {
+    return (
+      from.assetType.trim() === "" ||
+      to.assetType.trim() === "" ||
+      from.assetType === to.assetType
+    );
+  }
+
   if (
     (from.kind === "objectRef" || from.kind === "actorRef") &&
     (to.kind === "objectRef" || to.kind === "actorRef")
@@ -201,6 +211,8 @@ export function defaultValueLiteral(type: PinType): string {
       return "{ x: 0, y: 0, z: 0, w: 0 }";
     case "rotator":
       return "{ pitch: 0, yaw: 0, roll: 0 }";
+    case "quat":
+      return "{ x: 0, y: 0, z: 0, w: 1 }";
     case "transform":
       return "{ position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } }";
     case "array":
@@ -260,6 +272,7 @@ export const CONCRETE_WILDCARD_TARGETS: readonly PinType[] = [
   VEC3,
   VEC4,
   ROTATOR,
+  QUAT,
   TRANSFORM,
   COLOR,
   objectRef("BObject"),

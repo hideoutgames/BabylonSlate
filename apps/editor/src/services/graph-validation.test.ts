@@ -316,6 +316,46 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(hydrated.nodes[0]?.data.__editorOnly).toBe(true);
     expect(hydrated.nodes[1]?.data.__editorOnly).toBeUndefined();
   });
+
+  it("drops Get Variable wires whose types no longer assign after a container change", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "get",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            variableName: "Health",
+            typeId: "float",
+            container: "array",
+            implicitSelf: true,
+          },
+        },
+        {
+          id: "add",
+          type: "math.add",
+          position: { x: 200, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "get",
+          target: "add",
+          sourceHandle: "value",
+          targetHandle: "a",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string };
+    }>;
+    expect(pins.find((pin) => pin.id === "value")?.type.kind).toBe("array");
+    expect(hydrated.edges).toEqual([]);
+  });
 });
 
 describe("createDefaultLogicGraphSerialized", () => {
@@ -1925,6 +1965,37 @@ describe("scriptPaletteNodes", () => {
         (pin) =>
           pin.id === "value" &&
           (pin.type as { kind?: string; guid?: string }).guid === "struct-stats",
+      ),
+    ).toBe(true);
+  });
+
+  it("stamps Array container onto Get palette pins", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Hits",
+            typeId: "rotator",
+            container: "array",
+          },
+        ],
+      },
+    });
+    const get = nodes.find((node) => node.id === "variables.get:Hero:Hits");
+    expect(get?.defaultData).toMatchObject({
+      typeId: "rotator",
+      container: "array",
+    });
+    expect(
+      get?.pins?.some(
+        (pin) =>
+          pin.id === "value" && (pin.type as { kind?: string }).kind === "array",
       ),
     ).toBe(true);
   });

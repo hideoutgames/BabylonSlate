@@ -73,6 +73,32 @@ describe("physics nodes", () => {
     expect(emits.join("\n")).not.toContain("ctx.log");
   });
 
+  it("Line Trace and Shape Sweep output Hit Result plus a Collision Channel pin", () => {
+    const registry = createDefaultNodeRegistry();
+    const line = registry.get("physics.lineTrace")!;
+    const pins = line.pins({});
+    expect(pins.find((pin) => pin.id === "hitResult")?.type).toEqual({
+      kind: "structRef",
+      guid: "engine:HitResult",
+    });
+    expect(pins.find((pin) => pin.id === "channel")?.type).toEqual({
+      kind: "enumRef",
+      guid: "engine:CollisionChannel",
+    });
+    expect(pins.map((pin) => pin.id)).toEqual(
+      expect.arrayContaining(["hit", "location", "actor"]),
+    );
+    const sweep = registry.get("physics.shapeSweep")!;
+    expect(sweep.pins({}).find((pin) => pin.id === "hitResult")?.type).toEqual({
+      kind: "structRef",
+      guid: "engine:HitResult",
+    });
+    const overlap = registry.get("physics.sphereOverlap")!;
+    expect(overlap.pins({}).map((pin) => pin.id)).toEqual(
+      expect.arrayContaining(["hitResult", "channel", "count"]),
+    );
+  });
+
   it("compiled LineTrace returns on the same tick from ctx.lineTrace", () => {
     const registry: NodeRegistry = createDefaultNodeRegistry();
     const def = registry.get("physics.lineTrace");

@@ -12,6 +12,7 @@ import {
   rotatorRight,
   rotatorToQuat,
   rotatorUp,
+  normalizeQuat,
 } from "./euler";
 
 const SQRT_HALF = Math.SQRT1_2;
@@ -122,5 +123,13 @@ describe("rotator object helpers", () => {
     expect(rotated.x).toBeCloseTo(1, 4);
     expect(rotated.y).toBeCloseTo(0, 4);
     expect(rotated.z).toBeCloseTo(0, 4);
+  });
+
+  it("normalizes a quaternion to unit length", () => {
+    const normalized = normalizeQuat({ x: 0, y: 0, z: 0, w: 2 });
+    expect(normalized.x).toBeCloseTo(0, 4);
+    expect(normalized.y).toBeCloseTo(0, 4);
+    expect(normalized.z).toBeCloseTo(0, 4);
+    expect(normalized.w).toBeCloseTo(1, 4);
   });
 });

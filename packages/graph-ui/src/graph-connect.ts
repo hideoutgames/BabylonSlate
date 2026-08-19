@@ -237,6 +237,12 @@ function palettePreferenceScore(
   ) {
     return 2;
   }
+  if (
+    kind === "quat" &&
+    (node.id === "quat.make" || node.id === "quat.break")
+  ) {
+    return 2;
+  }
   if (node.id === literalMakeIdForKind(kind)) {
     return 2;
   }
@@ -255,6 +261,10 @@ function literalMakeIdForKind(kind: string): string | undefined {
       return "literal.makeString";
     case "classRef":
       return "literal.makeClass";
+    case "assetRef":
+      return "literal.makeAsset";
+    case "quat":
+      return "literal.makeQuat";
     default:
       return undefined;
   }

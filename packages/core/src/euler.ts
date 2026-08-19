@@ -251,6 +251,15 @@ export function lookAtRotator(
   );
 }
 
+export function normalizeQuat(
+  quat: Partial<QuatObject> | null | undefined,
+): QuatObject {
+  const q = readQuat(quat);
+  const length = Math.hypot(q.x, q.y, q.z, q.w);
+  if (length < 1e-8) return { x: 0, y: 0, z: 0, w: 1 };
+  return { x: q.x / length, y: q.y / length, z: q.z / length, w: q.w / length };
+}
+
 function tupleToQuat(tuple: QuaternionTuple): QuatObject {
   return { x: tuple[0], y: tuple[1], z: tuple[2], w: tuple[3] };
 }

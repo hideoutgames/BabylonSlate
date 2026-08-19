@@ -21,6 +21,7 @@ import {
   Widget,
   createWidgetForKind,
   userInterfaceAssetClassDef,
+  hydrateClassVariableValue,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickContext,
@@ -831,6 +832,13 @@ class InProcessRuntime implements RuntimeDriver {
         name: variable.name,
         type: variable.type,
         defaultValue: variable.defaultValue,
+        ...(variable.container === "array" || variable.container === "map"
+          ? { container: variable.container }
+          : {}),
+        ...(variable.keyTypeId ? { keyTypeId: variable.keyTypeId } : {}),
+        ...(variable.keyTypeClassId
+          ? { keyTypeClassId: variable.keyTypeClassId }
+          : {}),
       })),
       implementedInterfaces: [...(script.implementedInterfaces ?? [])],
     });
@@ -2708,8 +2716,9 @@ class InProcessRuntime implements RuntimeDriver {
   } {
     const variables: Record<string, unknown> = {};
     for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
-      if (variable.defaultValue !== undefined) {
-        variables[variable.name] = variable.defaultValue;
+      const value = hydrateClassVariableValue(variable);
+      if (value !== undefined) {
+        variables[variable.name] = value;
       }
     }
     return {

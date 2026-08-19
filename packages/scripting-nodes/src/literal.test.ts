@@ -43,6 +43,8 @@ describe("literal nodes", () => {
         "literal.makeFloat",
         "literal.makeString",
         "literal.makeClass",
+        "literal.makeAsset",
+        "literal.makeQuat",
       ]),
     );
     expect(literalNodes.every((entry) => entry.category === "literal")).toBe(
@@ -71,6 +73,11 @@ describe("literal nodes", () => {
     expect(registry.get("literal.makeClass")!.pins({})[0]?.type).toEqual(
       classRef("BObject"),
     );
+    expect(registry.get("literal.makeAsset")!.title).toBe("Make Asset");
+    expect(registry.get("literal.makeQuat")!.title).toBe("Make Quaternion");
+    expect(registry.get("literal.makeQuat")!.pins({})[0]?.type).toEqual({
+      kind: "quat",
+    });
   });
 
   it("compiles an unconnected Make String from the pin default", () => {
