@@ -26,6 +26,8 @@ import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
+import { createColliderVisualMesh, isColliderVisualMesh } from "./collider-visual";
+import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
 import {
   applyWorldVisualGroup,
@@ -144,6 +146,30 @@ function createPivotMarkerMesh(scene: Scene, name: string): Mesh {
   return root;
 }
 
+function colliderWorldKindFromShape(value: unknown): "3d" | "2d" | null {
+  if (!value || typeof value !== "object") return null;
+  const kind = (value as { kind?: unknown }).kind;
+  if (
+    kind === "box2d" ||
+    kind === "circle" ||
+    kind === "capsule2d" ||
+    kind === "polygon" ||
+    kind === "chain"
+  ) {
+    return "2d";
+  }
+  if (
+    kind === "box" ||
+    kind === "sphere" ||
+    kind === "capsule" ||
+    kind === "convex" ||
+    kind === "mesh"
+  ) {
+    return "3d";
+  }
+  return null;
+}
+
 function stringProp(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -159,6 +185,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "Text3DComponent",
   "ParticleComponent",
   "RigidBodyComponent",
+  "ColliderComponent",
 ]);
 
 function visualComponentsOf(actor: SerializedActor): SerializedComponent[] {
@@ -200,7 +227,8 @@ export function needsOriginRoot(actor: SerializedActor): boolean {
   return (
     visuals.length > 1 ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
-    visuals.some(isBillboardComponent)
+    visuals.some(isBillboardComponent) ||
+    visuals.some((component) => component.classId === "ColliderComponent")
   );
 }
 
@@ -232,6 +260,9 @@ function componentVisualKind(component: SerializedComponent): string {
   }
   if (component.classId === "RigidBodyComponent") {
     return editorBillboardKind("rigidbody");
+  }
+  if (component.classId === "ColliderComponent") {
+    return `collider:${JSON.stringify(component.properties.shape ?? {})}`;
   }
   return component.classId;
 }
@@ -383,6 +414,15 @@ export function createMeshForComponent(
   if (component.classId === "RigidBodyComponent") {
     return createEditorBillboard(scene, name, "rigidbody");
   }
+  if (component.classId === "ColliderComponent") {
+    const world =
+      colliderWorldKindFromShape(component.properties.shape) ?? "3d";
+    return createColliderVisualMesh(
+      scene,
+      name,
+      parseColliderProperties(component.properties, world).shape,
+    );
+  }
   const assetGuid = stringProp(component.properties.assetGuid);
   if (assetGuid) {
     return createModelActorRoot(scene, name);
@@ -409,6 +449,11 @@ function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
   root.isVisible = actor.visible;
   root.isPickable = !actor.locked;
   return root;
+}
+
+function visualIsPickable(mesh: Mesh, locked: boolean): boolean {
+  if (isSkyboxMesh(mesh) || isColliderVisualMesh(mesh)) return false;
+  return !locked;
 }
 
 function parentVisualMeshId(
@@ -448,7 +493,7 @@ function createActorOriginHierarchy(
       component.transform ?? identitySerializedTransform(),
     );
     mesh.isVisible = actor.visible;
-    mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
+    mesh.isPickable = visualIsPickable(mesh, actor.locked);
     meshes.set(component.id, mesh);
   }
   for (const component of visuals) {
@@ -558,16 +603,15 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   }
   if (isEditorModelPlaceholder(mesh)) {
     hideModelPlaceholder(mesh);
-    const pickable = !actor.locked;
     for (const child of mesh.getChildMeshes()) {
       if (!(child instanceof Mesh)) continue;
       child.isVisible = actor.visible;
-      child.isPickable = isSkyboxMesh(child) ? false : pickable;
+      child.isPickable = visualIsPickable(child, actor.locked);
     }
     return;
   }
   mesh.isVisible = actor.visible;
-  mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
+  mesh.isPickable = visualIsPickable(mesh, actor.locked);
   if (!origin) return;
   for (const child of childMeshesOf(mesh)) {
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) continue;
@@ -576,7 +620,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     );
     if (afterPipe.includes(":")) continue;
     child.isVisible = actor.visible;
-    child.isPickable = isSkyboxMesh(child) ? false : !actor.locked;
+    child.isPickable = visualIsPickable(child, actor.locked);
   }
 }
 

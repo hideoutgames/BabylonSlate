@@ -30,6 +30,7 @@ describe("project schema", () => {
     expect(project.settings.twoD.sortingLayers).toEqual([
       ...DEFAULT_SORTING_LAYERS,
     ]);
+    expect(project.settings.physics.collisionLayers).toEqual(["Default"]);
     expect(project.settings.input.actions.some((a) => a.name === "Jump")).toBe(
       true,
     );
@@ -478,6 +479,28 @@ describe("project schema", () => {
     expect(settings.twoD.pixelsPerUnit).toBe(100);
     expect(settings.twoD.pixelPerfect).toBe(true);
     expect(settings.twoD.sortingLayers).toEqual(["Default", "UI"]);
+  });
+
+  it("defaults physics collision layers to Default and caps at 32 unique names", () => {
+    expect(normalizeProjectSettings(undefined).physics.collisionLayers).toEqual([
+      "Default",
+    ]);
+    const settings = normalizeProjectSettings({
+      physics: {
+        collisionLayers: [
+          "Default",
+          " Default ",
+          "",
+          "Enemy",
+          "Default",
+          ...Array.from({ length: 40 }, (_, i) => `Layer${i}`),
+        ],
+      },
+    });
+    expect(settings.physics.collisionLayers[0]).toBe("Default");
+    expect(settings.physics.collisionLayers).toContain("Enemy");
+    expect(settings.physics.collisionLayers).toHaveLength(32);
+    expect(new Set(settings.physics.collisionLayers).size).toBe(32);
   });
 
   it("defaults playFrameCap to 60 and keeps a positive override", () => {

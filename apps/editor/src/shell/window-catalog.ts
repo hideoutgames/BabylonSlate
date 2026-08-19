@@ -230,6 +230,15 @@ const SCENE_WINDOWS: DockWindowDefinition[] = [
       initialHeight: 160,
     },
   },
+  {
+    id: "compiler-results",
+    component: "compiler-results",
+    title: "Compiler Results",
+    defaultPosition: {
+      referencePanelId: "output-log",
+      direction: "within",
+    },
+  },
 ];
 
 const GRAPH_WINDOWS: DockWindowDefinition[] = [

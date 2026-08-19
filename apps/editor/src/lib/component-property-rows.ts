@@ -32,10 +32,6 @@ const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
 const SHAPE_KINDS_3D = ["box", "sphere", "capsule"] as const;
 const SHAPE_KINDS_2D = ["box2d", "circle", "capsule2d"] as const;
 const POINT_CLOUD_KINDS = new Set(["convex", "mesh", "polygon", "chain"]);
-const PHYSICS_LAYER_LABELS = Array.from(
-  { length: 32 },
-  (_, bit) => `Layer ${bit}`,
-);
 
 export type AssetPickRequest = {
   componentId: string;
@@ -46,6 +42,7 @@ export type AssetPickRequest = {
 
 export type ComponentPropertyContext = {
   sortingLayers: readonly string[];
+  collisionLayers: readonly string[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
@@ -175,22 +172,61 @@ function sliderRow(
   };
 }
 
-function flagsRow(
+function collisionLayerNames(
+  layers: readonly string[] | undefined,
+): string[] {
+  const names = (layers ?? []).map((name) => name.trim()).filter(Boolean);
+  return names.length > 0 ? names : ["Default"];
+}
+
+function layerNameFromBitmask(
+  layer: number,
+  names: readonly string[],
+): string {
+  for (let bit = 0; bit < names.length; bit++) {
+    if ((layer & (1 << bit)) !== 0) return names[bit]!;
+  }
+  return names[0] ?? "Default";
+}
+
+function collisionLayerRow(
   actorId: string,
-  componentId: string,
-  key: string,
-  label: string,
-  value: number,
+  component: SerializedComponent,
   update: (property: string, value: unknown) => void,
+  collisionLayers: readonly string[],
 ): PropertyRow {
+  const names = collisionLayerNames(collisionLayers);
+  const layer = asNumber(component.properties.layer, 1);
+  const value = layerNameFromBitmask(layer, names);
+  const options = names.includes(value) ? names : [...names, value];
+  return {
+    kind: "enum",
+    id: rowId(actorId, component.id, "layer"),
+    label: "Layer",
+    value,
+    options: options.map((name) => ({ value: name, label: name })),
+    onChange: (next) => {
+      const bit = names.indexOf(next);
+      update("layer", bit >= 0 ? 1 << bit : 1);
+    },
+  };
+}
+
+function collidesWithRow(
+  actorId: string,
+  component: SerializedComponent,
+  update: (property: string, value: unknown) => void,
+  collisionLayers: readonly string[],
+): PropertyRow {
+  const names = collisionLayerNames(collisionLayers);
   return {
     kind: "flags",
-    id: rowId(actorId, componentId, key),
-    label,
-    value,
-    bitCount: 32,
-    labels: PHYSICS_LAYER_LABELS,
-    onChange: (next) => update(key, next),
+    id: rowId(actorId, component.id, "mask"),
+    label: "Collides With",
+    value: asNumber(component.properties.mask, 0xffffffff),
+    bitCount: names.length,
+    labels: names,
+    onChange: (next) => update("mask", next),
   };
 }
 
@@ -915,27 +951,37 @@ export function componentPropertyRows(
           1,
           update,
         ),
-        flagsRow(
-          actorId,
-          component.id,
-          "layer",
-          "Layer",
-          asNumber(component.properties.layer, 1),
-          update,
-        ),
-        flagsRow(
-          actorId,
-          component.id,
-          "mask",
-          "Mask",
-          asNumber(component.properties.mask, 0xffffffff),
-          update,
-        ),
+        collisionLayerRow(actorId, component, update, context.collisionLayers),
+        collidesWithRow(actorId, component, update, context.collisionLayers),
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "isTrigger"),
+          label: "Is Trigger",
+          value: component.properties.isTrigger === true,
+          defaultValue: false,
+          onChange: (next) => update("isTrigger", next),
+        },
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "renderInGame"),
+          label: "Render In Game",
+          value: component.properties.renderInGame === true,
+          defaultValue: false,
+          onChange: (next) => update("renderInGame", next),
+        },
         ...genericRows(
           actorId,
           component,
           update,
-          new Set(["shape", "friction", "restitution", "layer", "mask"]),
+          new Set([
+            "shape",
+            "friction",
+            "restitution",
+            "layer",
+            "mask",
+            "isTrigger",
+            "renderInGame",
+          ]),
         ),
       ];
     case "SkyboxComponent": {

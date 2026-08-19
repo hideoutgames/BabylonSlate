@@ -1,18 +1,39 @@
 import type { IDockviewPanelProps } from "dockview-react";
+import { useEffect } from "react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { Card } from "@babylonslate/ui/components/card";
 import { Button } from "@babylonslate/ui/components/button";
 import { PanelFrame, SelectableText } from "@babylonslate/editor-kit";
+import type { SerializedScene } from "@babylonslate/core";
 import { useValidation } from "../context/validation-context";
 import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
+import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
+import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { documentIdToRevealForDiagnostic } from "../services/diagnostic-navigation";
+import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 
 export function CompilerResultsPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { diagnostics, setFocusDiagnostic } = useValidation();
+  const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const { clearFocusedNode } = usePlay();
-  const { openDocuments, setActiveDocument } = useDocuments();
+  const { openDocuments, setActiveDocument, activeDocumentId } = useDocuments();
+  const workspace = useOptionalDocumentWorkspace();
+  const sceneEditing = useOptionalSceneEditing();
+  const documentId = workspace?.documentId;
+
+  useEffect(() => {
+    if (!documentId || documentId !== activeDocumentId) return;
+    const doc = openDocuments.find((entry) => entry.id === documentId);
+    if (doc?.ref.kind !== "scene") return;
+    const scene = doc.content as SerializedScene | null;
+    setDiagnostics(
+      physicsPairingDiagnostics(scene?.actors ?? [], {
+        assetGuid: doc.ref.path,
+        graphId: documentId,
+      }),
+    );
+  }, [activeDocumentId, documentId, openDocuments, setDiagnostics]);
 
   const grouped = new Map<string, typeof diagnostics>();
   for (const d of diagnostics) {
@@ -44,6 +65,7 @@ export function CompilerResultsPanel(_props: IDockviewPanelProps) {
                     onClick={() => {
                       clearFocusedNode();
                       setFocusDiagnostic(d);
+                      if (d.actorId) sceneEditing?.selectActor(d.actorId);
                       const revealId = documentIdToRevealForDiagnostic(
                         d,
                         openDocuments.map((doc) => doc.id),

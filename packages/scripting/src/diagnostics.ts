@@ -11,6 +11,8 @@ export type Diagnostic = {
   relatedNodeId?: string;
   bodyLine?: number;
   bodyColumn?: number;
+  actorId?: string;
+  componentId?: string;
 };
 
 export function diagnostic(
@@ -27,6 +29,8 @@ export function diagnostic(
     relatedNodeId: partial.relatedNodeId,
     bodyLine: partial.bodyLine,
     bodyColumn: partial.bodyColumn,
+    actorId: partial.actorId,
+    componentId: partial.componentId,
   };
 }
 

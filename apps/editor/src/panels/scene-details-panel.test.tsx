@@ -162,6 +162,33 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByDisplayValue("[object Object]")).toBeNull();
   });
 
+  it("shows ColliderComponent local Transform rows", () => {
+    scene().actors = [
+      createActor("actor-1", "Body", {
+        components: [
+          {
+            id: "col-1",
+            classId: "ColliderComponent",
+            properties: {
+              shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+              friction: 0.5,
+              restitution: 0,
+              isTrigger: false,
+              layer: 1,
+              mask: 1,
+            },
+          },
+        ],
+      }),
+    ];
+    harness.selectedActorIds = ["actor-1"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("collider-transform-grid-col-1")).toBeTruthy();
+    expect(screen.getByTestId("property-actor-1-col-1-position-x")).toBeTruthy();
+    expect(screen.getByTestId("property-actor-1-col-1-rotation-x")).toBeTruthy();
+    expect(screen.getByTestId("property-actor-1-col-1-scale-x")).toBeTruthy();
+  });
+
   it("shows a Bake NavMesh action on NavMeshComponent details", () => {
     scene().actors = [
       createActor("nav", "NavMesh", {

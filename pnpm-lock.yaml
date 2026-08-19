@@ -560,6 +560,9 @@ importers:
       '@babylonslate/navigation':
         specifier: workspace:*
         version: link:../navigation
+      '@babylonslate/physics':
+        specifier: workspace:*
+        version: link:../physics
       '@babylonslate/shader-graph':
         specifier: workspace:*
         version: link:../shader-graph

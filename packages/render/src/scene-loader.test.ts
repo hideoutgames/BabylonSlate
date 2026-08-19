@@ -260,6 +260,48 @@ describe("scene-loader", () => {
     );
   });
 
+  it("draws a ColliderComponent as world-space dashed geometry parented with local TRS", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("body", "Body", {
+          components: [
+            {
+              id: "rb",
+              classId: "RigidBodyComponent",
+              properties: { motionType: "dynamic" },
+            },
+            {
+              id: "col",
+              classId: "ColliderComponent",
+              properties: {
+                shape: { kind: "box", halfExtents: { x: 0.5, y: 0.25, z: 0.5 } },
+              },
+              transform: {
+                position: [1, 2, 3],
+                rotation: [0, 0, 0, 1],
+                scale: [2, 1, 1],
+              },
+            },
+          ],
+        }),
+      ]),
+    );
+    const origin = scene.getMeshByName(editorMeshName("body"));
+    const dashes = scene.getMeshByName(editorComponentMeshName("body", "col"));
+    expect(origin!.visibility).toBe(0);
+    expect(dashes).not.toBeNull();
+    expect(dashes!.parent).toBe(origin);
+    expect(dashes!.isPickable).toBe(false);
+    expect([dashes!.position.x, dashes!.position.y, dashes!.position.z]).toEqual(
+      [1, 2, 3],
+    );
+    expect(dashes!.scaling.x).toBe(2);
+    expect(dashes!.renderingGroupId).toBe(1);
+    expect(dashes!.getChildMeshes().length).toBeGreaterThan(0);
+  });
+
   it("parents camera, light, and audio billboards under a non-billboard origin", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(

@@ -2084,7 +2084,9 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "SpriteComponent" ||
           component.classId === "TilemapComponent" ||
           component.classId === "SkyboxComponent" ||
-          component.classId === "Text3DComponent"),
+          component.classId === "Text3DComponent" ||
+          (component.classId === "ColliderComponent" &&
+            component.getVariable("renderInGame") === true)),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
@@ -2956,6 +2958,10 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "Text3DComponent") return "text3d";
+  if (component.classId === "ColliderComponent") {
+    const shape = component.getVariable("shape");
+    return `collider:${JSON.stringify(shape ?? {})}`;
+  }
   if (component.classId === "LightComponent") {
     const kind = component.getVariable("lightKind");
     return `light:${typeof kind === "string" ? kind : "point"}`;

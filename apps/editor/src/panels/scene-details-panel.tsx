@@ -14,9 +14,11 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
+  DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
   findActor,
+  identitySerializedTransform,
   patchComponentProperties,
   type SerializedActor,
   type SerializedScene,
@@ -82,6 +84,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const collisionLayers =
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -701,6 +705,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   })),
                 {
                   sortingLayers,
+                  collisionLayers,
                   assetLabel,
                   assetType,
                   fontHasFacetype,
@@ -709,6 +714,26 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 },
               )}
             />
+            {component.classId === "ColliderComponent" ? (
+              <PropertyGrid
+                title="Transform"
+                rows={spatialTransformPropertyRows(
+                  `${actor.id}-${component.id}`,
+                  scene.viewportMode,
+                  component.transform ?? identitySerializedTransform(),
+                  (transform) =>
+                    updateActor((entry) => ({
+                      ...entry,
+                      components: entry.components.map((candidate) =>
+                        candidate.id === component.id
+                          ? { ...candidate, transform }
+                          : candidate,
+                      ),
+                    })),
+                )}
+                data-testid={`collider-transform-grid-${component.id}`}
+              />
+            ) : null}
             {component.classId === "NavMeshComponent" ? (
               <div className="p-2">
                 <Button

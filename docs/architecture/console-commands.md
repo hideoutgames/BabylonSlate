@@ -142,7 +142,7 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means main vs worker timings (script/physics vs render), not OS threads. |
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
-| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/polylines from `listDebugColliders()`; local collider offsets and polyline points use body world rotation. Not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. |
+| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/polylines from `listDebugColliders()`; local collider offsets and polyline points use body world rotation. Not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
 | `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene when a nav chunk is loaded. |
 | `showaudiodebug [on\|off]` | DOM overlay of playing voices (guid, clip, gain, pitch, loop, spatial, distance, radii, inside radius). Empty list: `No playing voices`. Off unmounts the overlay. Polls with `requestAnimationFrame` so it still draws while sim is paused. |
 | `dumpactors` | One line per actor: name, class, guid, world position. |

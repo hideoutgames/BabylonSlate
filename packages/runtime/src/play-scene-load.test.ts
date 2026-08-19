@@ -252,6 +252,91 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("does not assign collider dashes in Play unless renderInGame is on", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "HiddenCollider",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("body", "Body", {
+            components: [
+              {
+                id: "rb",
+                classId: "RigidBodyComponent",
+                properties: { motionType: "dynamic" },
+              },
+              {
+                id: "col",
+                classId: "ColliderComponent",
+                properties: {
+                  shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+                },
+              },
+            ],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    const assigned = commands.filter((c) => c.type === "assignMesh");
+    expect(assigned).toEqual([
+      expect.objectContaining({ meshKind: "rigidbody" }),
+    ]);
+    runtime.stop();
+  });
+
+  it("assigns collider dashes in Play when renderInGame is on", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "VisibleCollider",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("body", "Body", {
+            components: [
+              {
+                id: "rb",
+                classId: "RigidBodyComponent",
+                properties: { motionType: "dynamic" },
+              },
+              {
+                id: "col",
+                classId: "ColliderComponent",
+                properties: {
+                  shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+                  renderInGame: true,
+                },
+              },
+            ],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    const assigned = commands.filter((c) => c.type === "assignMesh");
+    expect(assigned[0]).toEqual(
+      expect.objectContaining({
+        meshKind: expect.stringMatching(/^collider:/),
+      }),
+    );
+    runtime.stop();
+  });
+
   it("assigns a cube primitive and a class actor mesh as separate visible slots", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

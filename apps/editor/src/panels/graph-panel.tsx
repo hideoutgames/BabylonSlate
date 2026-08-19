@@ -37,6 +37,8 @@ import {
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
+import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
@@ -252,8 +254,9 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       return;
     }
     const handle = window.setTimeout(() => {
-      setDiagnostics(
-        validateSerializedGraph(graphContent ?? graph, {
+      const graphPayload = graphContent ?? graph;
+      setDiagnostics([
+        ...validateSerializedGraph(graphPayload, {
           assetGuid,
           graphId: documentId,
           hierarchy,
@@ -276,7 +279,16 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
         }),
-      );
+        ...physicsPairingDiagnostics(
+          [
+            {
+              id: PREFAB_ROOT_ID,
+              components: graphContent?.components ?? [],
+            },
+          ],
+          { assetGuid, graphId: documentId },
+        ),
+      ]);
     }, VALIDATION_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [
