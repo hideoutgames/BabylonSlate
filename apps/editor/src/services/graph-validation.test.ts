@@ -2299,3 +2299,70 @@ describe("Format String and Select hydration", () => {
     ]);
   });
 });
+
+describe("container constructor hydration", () => {
+  it.each([
+    {
+      type: "array.make",
+      count: 2,
+      stalePin: "item2",
+      expectedPins: ["item0", "item1", "out"],
+    },
+    {
+      type: "map.make",
+      count: 2,
+      stalePin: "key2",
+      expectedPins: ["key0", "value0", "key1", "value1", "out"],
+    },
+  ])("regenerates $type pins and prunes removed pair edges", ({
+    type,
+    count,
+    stalePin,
+    expectedPins,
+  }) => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "make",
+          type,
+          position: { x: 0, y: 0 },
+          data: {
+            count,
+            __pins: [
+              { id: "item0", name: "Item 0", direction: "in", kind: "data", type: { kind: "float" } },
+              { id: stalePin, name: stalePin, direction: "in", kind: "data", type: { kind: "float" } },
+              { id: "out", name: "Out", direction: "out", kind: "data", type: { kind: "array", element: { kind: "float" } } },
+            ],
+          },
+        },
+        {
+          id: "literal",
+          type: "literal.makeFloat",
+          position: { x: 0, y: 40 },
+          data: { "default:in": 1 },
+        },
+      ],
+      edges: [
+        {
+          id: "keep",
+          source: "literal",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: type === "map.make" ? "key0" : "item0",
+        },
+        {
+          id: "drop",
+          source: "literal",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: stalePin,
+        },
+      ],
+    };
+
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual(expectedPins);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep"]);
+  });
+});

@@ -68,6 +68,7 @@ import {
   commandParameterRows,
   commandParametersFromRows,
   connectedEnumGuidFromSerialized,
+  containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   enumNodePropertyRows,
   inspectorLiteralPinDefaults,
@@ -947,6 +948,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const logRows = isLog
     ? logNodePropertyRows(selectedNode.data, updateNodeData)
     : [];
+  const containerConstructorRows = containerConstructorPropertyRows(
+    selectedNode.type,
+    selectedNode.data,
+    updateNodeData,
+  );
   const developmentOnlyRows = developmentOnlyPropertyRows(
     selectedNode.type,
     selectedNode.data,
@@ -968,6 +974,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           <PropertyGrid
             rows={enumNodeRows}
             data-testid="inspector-enum-properties"
+          />
+        ) : null}
+        {containerConstructorRows.length > 0 ? (
+          <PropertyGrid
+            rows={containerConstructorRows}
+            data-testid="inspector-container-constructor"
           />
         ) : null}
         {pinDefaultRows.length > 0 ? (

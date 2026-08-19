@@ -4,6 +4,7 @@ import {
   collectEnumMemberNames,
   connectedEnumGuidFromSerialized,
   connectedInputPinIds,
+  containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   enumNodePropertyRows,
   inspectorLiteralPinDefaults,
@@ -16,6 +17,32 @@ import {
   pinsFromNodeData,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
+
+describe("containerConstructorPropertyRows", () => {
+  it.each(["array.make", "map.make"])("edits the dynamic pin count for %s", (typeId) => {
+    const onPatch = vi.fn();
+    const rows = containerConstructorPropertyRows(typeId, { count: 3 }, onPatch);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: "count",
+      kind: "number",
+      label: typeId === "array.make" ? "Items" : "Pairs",
+      value: 3,
+      defaultValue: 0,
+      min: 0,
+      max: 64,
+      step: 1,
+    });
+
+    rows[0]!.onChange(5);
+    expect(onPatch).toHaveBeenCalledWith({ count: 5 });
+  });
+
+  it("returns no rows for static node types", () => {
+    expect(containerConstructorPropertyRows("array.length", {}, vi.fn())).toEqual([]);
+  });
+});
 
 describe("connectedInputPinIds", () => {
   it("collects target handles on the inspected node", () => {

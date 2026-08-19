@@ -548,6 +548,31 @@ export function enumNodePropertyRows(
   return rows;
 }
 
+export function containerConstructorPropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  if (typeId !== "array.make" && typeId !== "map.make") return [];
+  const raw = typeof data.count === "number" && Number.isFinite(data.count)
+    ? data.count
+    : 0;
+  return [
+    {
+      kind: "number",
+      id: "count",
+      label: typeId === "array.make" ? "Items" : "Pairs",
+      value: Math.max(0, Math.min(64, Math.floor(raw))),
+      defaultValue: 0,
+      min: 0,
+      max: 64,
+      step: 1,
+      onChange: (value) =>
+        onPatch({ count: Math.max(0, Math.min(64, Math.floor(value))) }),
+    },
+  ];
+}
+
 export function connectedEnumGuidFromSerialized(
   graph: {
     nodes: ReadonlyArray<{

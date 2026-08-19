@@ -178,6 +178,8 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "enum.switch" ||
     typeId === "enum.select" ||
     typeId === "string.format" ||
+    typeId === "array.make" ||
+    typeId === "map.make" ||
     typeId === uiGetWidgetNodeId ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
