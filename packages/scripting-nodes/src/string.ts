@@ -6,7 +6,118 @@ import {
   FLOAT,
   BOOL,
   arrayOf,
+  BOXED_WILDCARD,
+  readPinDefault,
 } from "@babylonslate/scripting";
+
+export const FORMAT_ARG_PIN_PREFIX = "arg:";
+export const FORMAT_STRING_DEFAULT = "{input}";
+
+export type FormatToken =
+  | { kind: "lit"; text: string }
+  | { kind: "arg"; name: string };
+
+export function formatArgPinId(name: string): string {
+  return `${FORMAT_ARG_PIN_PREFIX}${encodeURIComponent(name)}`;
+}
+
+export function formatArgNameFromPinId(pinId: string): string | undefined {
+  if (!pinId.startsWith(FORMAT_ARG_PIN_PREFIX)) return undefined;
+  try {
+    return decodeURIComponent(pinId.slice(FORMAT_ARG_PIN_PREFIX.length));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Unique nonempty placeholder names in first-appearance order. */
+export function parseFormatPlaceholders(format: string): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const token of parseFormatTokens(format)) {
+    if (token.kind !== "arg") continue;
+    if (seen.has(token.name)) continue;
+    seen.add(token.name);
+    names.push(token.name);
+  }
+  return names;
+}
+
+/**
+ * Tokenize a format string. `{{` / `}}` are escaped braces.
+ * `{name}` captures nonempty placeholder names (any chars except `}`).
+ */
+export function parseFormatTokens(format: string): FormatToken[] {
+  const tokens: FormatToken[] = [];
+  let lit = "";
+  let i = 0;
+  const pushLit = () => {
+    if (!lit) return;
+    tokens.push({ kind: "lit", text: lit });
+    lit = "";
+  };
+  while (i < format.length) {
+    const ch = format[i]!;
+    if (ch === "{" && format[i + 1] === "{") {
+      lit += "{";
+      i += 2;
+      continue;
+    }
+    if (ch === "}" && format[i + 1] === "}") {
+      lit += "}";
+      i += 2;
+      continue;
+    }
+    if (ch === "{") {
+      const end = format.indexOf("}", i + 1);
+      if (end > i + 1) {
+        const name = format.slice(i + 1, end);
+        if (name.length > 0 && !name.includes("{")) {
+          pushLit();
+          tokens.push({ kind: "arg", name });
+          i = end + 1;
+          continue;
+        }
+      }
+    }
+    lit += ch;
+    i += 1;
+  }
+  pushLit();
+  return tokens;
+}
+
+export function formatStringOf(properties: Record<string, unknown>): string {
+  const authored = readPinDefault(properties, "format");
+  if (typeof authored === "string") return authored;
+  return FORMAT_STRING_DEFAULT;
+}
+
+export function isFormatWired(properties: Record<string, unknown>): boolean {
+  return properties.formatWired === true;
+}
+
+function formatStringCodegen(ctx: {
+  input: (pinName: string) => string;
+  node: { properties: Record<string, unknown> };
+}): Record<string, string> {
+  if (isFormatWired(ctx.node.properties)) {
+    return { out: `String(${ctx.input("format")})` };
+  }
+  const format = formatStringOf(ctx.node.properties);
+  const parts: string[] = [];
+  for (const token of parseFormatTokens(format)) {
+    if (token.kind === "lit") {
+      if (token.text.length === 0) continue;
+      parts.push(JSON.stringify(token.text));
+      continue;
+    }
+    parts.push(`ctx.formatValue(${ctx.input(formatArgPinId(token.name))})`);
+  }
+  if (parts.length === 0) return { out: '""' };
+  if (parts.length === 1) return { out: parts[0]! };
+  return { out: `(${parts.join(" + ")})` };
+}
 
 export const stringNodes: NodeDefinition[] = [
   {
@@ -216,5 +327,22 @@ export const stringNodes: NodeDefinition[] = [
         out: `((s => { const n = Number.parseFloat(s); return s !== "" && Number.isFinite(n) ? n : 0; })(${raw}))`,
       };
     },
+  },
+  {
+    id: "string.format",
+    title: "Format String",
+    category: "string",
+    pure: true,
+    pins: (properties) => {
+      const pins = [pin("format", "Format", "in", STRING)];
+      if (!isFormatWired(properties)) {
+        for (const name of parseFormatPlaceholders(formatStringOf(properties))) {
+          pins.push(pin(formatArgPinId(name), name, "in", BOXED_WILDCARD));
+        }
+      }
+      pins.push(pin("out", "Out", "out", STRING));
+      return pins;
+    },
+    codegen: (ctx) => formatStringCodegen(ctx),
   },
 ];

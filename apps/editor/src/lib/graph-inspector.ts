@@ -505,6 +505,8 @@ export function enumNodePropertyRows(
             ? `Make ${next.name}`
             : typeId === "enum.switch"
               ? `Switch on ${next.name}`
+              : typeId === "enum.select"
+                ? `Select ${next.name}`
               : typeId === "enum.equals"
                 ? `Equal ${next.name}`
                 : typeId === "enum.notEquals"
@@ -518,6 +520,9 @@ export function enumNodePropertyRows(
           members: next?.members ?? [],
           ...(typeId === "enum.make"
             ? { value: next?.members[0]?.name ?? "" }
+            : {}),
+          ...(typeId === "enum.select"
+            ? { "default:index": next?.members[0]?.name ?? "" }
             : {}),
           ...(title ? { title } : {}),
         });

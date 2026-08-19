@@ -176,6 +176,8 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "enum.notEquals" ||
     typeId === "enum.toString" ||
     typeId === "enum.switch" ||
+    typeId === "enum.select" ||
+    typeId === "string.format" ||
     typeId === uiGetWidgetNodeId ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
@@ -297,7 +299,8 @@ function isEnumCatalogType(typeId: string): boolean {
     typeId === "enum.equals" ||
     typeId === "enum.notEquals" ||
     typeId === "enum.toString" ||
-    typeId === "enum.switch"
+    typeId === "enum.switch" ||
+    typeId === "enum.select"
   );
 }
 
@@ -313,6 +316,8 @@ function enumNodeTitle(typeId: string, enumName: string): string {
       return `${enumName} to String`;
     case "enum.switch":
       return `Switch on ${enumName}`;
+    case "enum.select":
+      return `Select ${enumName}`;
     default:
       return enumName;
   }
@@ -355,6 +360,24 @@ function applyStructEnumSchema(
           properties.value = schema.members[0]?.name ?? "";
         }
       }
+      if (typeId === "enum.select") {
+        const current =
+          typeof properties["default:index"] === "string"
+            ? properties["default:index"]
+            : "";
+        if (!schema.members.some((member) => member.name === current)) {
+          properties["default:index"] = schema.members[0]?.name ?? "";
+        }
+      }
+    }
+  }
+  if (typeId === "string.format") {
+    const wired = graph.edges.some(
+      (edge) => edge.target === nodeId && edge.targetHandle === "format",
+    );
+    properties.formatWired = wired;
+    if (typeof properties["default:format"] !== "string") {
+      properties["default:format"] = "{input}";
     }
   }
 }
@@ -1214,7 +1237,15 @@ function enumPaletteNodes(
   const notEqualDef = nodeRegistry.get("enum.notEquals");
   const toStringDef = nodeRegistry.get("enum.toString");
   const switchDef = nodeRegistry.get("enum.switch");
-  if (!makeDef || !equalDef || !notEqualDef || !toStringDef || !switchDef) {
+  const selectDef = nodeRegistry.get("enum.select");
+  if (
+    !makeDef ||
+    !equalDef ||
+    !notEqualDef ||
+    !toStringDef ||
+    !switchDef ||
+    !selectDef
+  ) {
     return [];
   }
   const rows: PaletteNode[] = [];
@@ -1274,6 +1305,21 @@ function enumPaletteNodes(
       latent: switchDef.latent,
       defaultData: { ...defaultData, title: `Switch on ${entry.name}` },
     });
+    const selectData: Record<string, unknown> = {
+      enumGuid: entry.guid,
+      members: entry.members,
+      "default:index": entry.members[0]?.name ?? "",
+    };
+    rows.push({
+      id: `enum.select:${entry.guid}`,
+      nodeType: "enum.select",
+      title: `Select ${entry.name}`,
+      category: selectDef.category,
+      pins: selectDef.pins(selectData),
+      pure: selectDef.pure,
+      latent: selectDef.latent,
+      defaultData: { ...selectData, title: `Select ${entry.name}` },
+    });
   }
   return rows;
 }
@@ -1309,6 +1355,9 @@ export function scriptPaletteNodes(
     }
     if (def.developmentOnlyByDefault) {
       defaultData.developmentOnly = true;
+    }
+    if (def.id === "string.format") {
+      defaultData["default:format"] = "{input}";
     }
     if (
       def.id === "audio.play" ||

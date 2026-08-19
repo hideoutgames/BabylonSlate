@@ -746,7 +746,8 @@ function validateTypeRefs(
       node.typeId === "enum.equals" ||
       node.typeId === "enum.notEquals" ||
       node.typeId === "enum.toString" ||
-      node.typeId === "enum.switch"
+      node.typeId === "enum.switch" ||
+      node.typeId === "enum.select"
     ) {
       reportTypeGuid(out, ctx, graph.id, "enumRef", enumGuid, node.id);
     }

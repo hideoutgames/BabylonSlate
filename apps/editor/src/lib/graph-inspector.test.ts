@@ -527,6 +527,40 @@ describe("enumNodePropertyRows", () => {
       ]);
     }
   });
+
+  it("retitles Select and binds Index default when Enum Type changes", () => {
+    const onPatch = vi.fn();
+    const rows = enumNodePropertyRows(
+      "enum.select",
+      { enumGuid: "enum-team" },
+      onPatch,
+      {
+        enums: [
+          {
+            guid: "enum-team",
+            name: "Team",
+            members: [{ name: "Red" }],
+          },
+          {
+            guid: "enum-mode",
+            name: "Mode",
+            members: [{ name: "Idle" }, { name: "Run" }],
+          },
+        ],
+      },
+    );
+    const typeRow = rows[0];
+    expect(typeRow?.kind).toBe("enum");
+    if (typeRow?.kind === "enum") {
+      typeRow.onChange("enum-mode");
+    }
+    expect(onPatch).toHaveBeenCalledWith({
+      enumGuid: "enum-mode",
+      members: [{ name: "Idle" }, { name: "Run" }],
+      "default:index": "Idle",
+      title: "Select Mode",
+    });
+  });
 });
 
 describe("connectedEnumGuidFromSerialized", () => {

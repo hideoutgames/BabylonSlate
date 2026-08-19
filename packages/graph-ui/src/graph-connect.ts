@@ -288,7 +288,8 @@ function isPreferredEnumNode(node: PaletteNode, guid: string): boolean {
     typeId !== "enum.equals" &&
     typeId !== "enum.notEquals" &&
     typeId !== "enum.toString" &&
-    typeId !== "enum.switch"
+    typeId !== "enum.switch" &&
+    typeId !== "enum.select"
   ) {
     return false;
   }

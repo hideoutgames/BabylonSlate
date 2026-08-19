@@ -245,6 +245,24 @@ describe("filterPaletteForPin", () => {
       "enum.equals:enum-team",
       "variables.set:Hero:Team",
     ]);
+    const selectTeam: PaletteNode = {
+      id: "enum.select:enum-team",
+      title: "Select Team",
+      category: "enum",
+      pins: [enumIn],
+      defaultData: { enumGuid: "enum-team" },
+    };
+    expect(
+      filterPaletteForPin(
+        [setTeam, selectTeam, equalTeam],
+        teamOut,
+        assignable,
+      ).map((node) => node.id),
+    ).toEqual([
+      "enum.select:enum-team",
+      "enum.equals:enum-team",
+      "variables.set:Hero:Team",
+    ]);
   });
 
   it("prefers Make String and Make Int for matching literal pins", () => {

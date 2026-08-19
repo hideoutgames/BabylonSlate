@@ -3,6 +3,7 @@ import { flowNodes } from "./flow";
 import { mathNodes } from "./math";
 import { vectorNodes } from "./vector";
 import { stringNodes } from "./string";
+import { selectNodes } from "./select";
 import { arrayMapNodes } from "./array-map";
 import { mapNodes } from "./map";
 import { actorNodes } from "./actor";
@@ -38,6 +39,7 @@ export * from "./flow";
 export * from "./math";
 export * from "./vector";
 export * from "./string";
+export * from "./select";
 export * from "./array-map";
 export * from "./map";
 export * from "./actor";
@@ -74,6 +76,7 @@ export const ALL_NODE_CATEGORIES = [
   "math",
   "vector",
   "string",
+  "select",
   "array",
   "map",
   "actor",
@@ -111,6 +114,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...mathNodes,
     ...vectorNodes,
     ...stringNodes,
+    ...selectNodes,
     ...arrayMapNodes,
     ...mapNodes,
     ...actorNodes,
