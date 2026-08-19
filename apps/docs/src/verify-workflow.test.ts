@@ -54,11 +54,12 @@ describe("Verify GitHub Actions workflow", () => {
     expect(e2e).not.toContain("playwright install chromium --with-deps");
   });
 
-  it("shards Playwright e2e four ways on standard runners", () => {
+  it("shards Playwright e2e eight ways on standard runners", () => {
     const e2e = jobBlock(verifyWorkflow(), "e2e");
     expect(e2e).toMatch(/fail-fast:\s*false/);
-    expect(e2e).toMatch(/shard:\s*\[1,\s*2,\s*3,\s*4\]/);
-    expect(e2e).toContain("playwright test --shard=${{ matrix.shard }}/4");
+    expect(e2e).toMatch(/shard:\s*\[1,\s*2,\s*3,\s*4,\s*5,\s*6,\s*7,\s*8\]/);
+    expect(e2e).toContain("playwright test --shard=${{ matrix.shard }}/8");
+    expect(e2e).not.toContain("playwright test --shard=${{ matrix.shard }}/9");
     expect(e2e).not.toContain("pnpm test:e2e");
   });
 

@@ -5,7 +5,7 @@ alwaysApply: true
 
 # GitHub Actions — PR cadence
 
-GitHub Free public repos cap concurrent jobs at 20. Verify is `unit` plus **four** e2e shards (5 jobs per ready PR). **Ready** PRs consume that pool; **drafts** do not (`.github/workflows/verify.yml` skips draft jobs).
+GitHub Free public repos cap concurrent jobs at 20. Verify is `unit` plus **eight** e2e shards (9 jobs per ready PR). Two ready PRs use 18 jobs — stay **below** 20 so merge-time `main` Verify and Preview can start. Nine e2e shards would fill the cap (2 × 10) with no headroom. **Ready** PRs consume that pool; **drafts** do not (`.github/workflows/verify.yml` skips draft jobs).
 
 ## Stay draft until local verify
 

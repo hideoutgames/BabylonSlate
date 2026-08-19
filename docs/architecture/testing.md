@@ -4,15 +4,15 @@
 
 ## GitHub Actions
 
-[`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into two standard `ubuntu-latest` job templates (`unit` and a 4-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
+[`.github/workflows/verify.yml`](../../.github/workflows/verify.yml) splits that gate into two standard `ubuntu-latest` job templates (`unit` and an 8-way `e2e` shard matrix). [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) deploys GitHub Pages. Do not enable or target [larger runners](https://docs.github.com/en/actions/using-github-hosted-runners/using-larger-runners). Agent rule: [`.cursor/rules/github-actions-standard-runners.mdc`](../../.cursor/rules/github-actions-standard-runners.mdc).
 
-GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 5 Verify jobs (`unit` + 4 e2e shards). Agents wait on Verify before merge, so a backed-up queue stalls every PR.
+GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 9 Verify jobs (`unit` + 8 e2e shards). Stay **below** 20: two ready PRs use 18, leaving room for merge-time `main` Verify and sequential Preview jobs. Nine e2e shards would fill the cap (2 × 10) and queue those extras. Agents wait on Verify before merge, so a backed-up queue stalls every PR.
 
 - **Concurrency.** Verify cancels superseded runs for the same pull request (or `main` ref). Preview already cancels in-progress Pages deploys.
 - **Timeouts.** `unit` is 45 minutes (healthy ~6–7 min). Each `e2e` shard is 25 minutes (healthy ~7–10 min). Playwright Chromium download and OS-deps install each time out at 5 minutes so a hung `apt` or browser fetch cannot occupy a runner for six hours.
 - **Playwright cache.** Each `e2e` shard restores `~/.cache/ms-playwright` keyed on `pnpm-lock.yaml`, then runs `playwright install chromium` and `playwright install-deps chromium` as separate steps (not `--with-deps`).
-- **Shards.** CI runs `playwright test --shard=N/4` with `fail-fast: false`. Local `pnpm test:e2e` / `pnpm verify` stay unsharded. CI keeps `workers: 1` (shared OPFS `TestProject`); shards isolate storage instead of extra workers on one VM.
-- **Drafts.** Draft pull requests skip both jobs. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate. Agents stay draft until that local gate passes, mark ready **once** if fewer than **2** non-draft PRs target `main` (2 × 5 jobs plus `main` Verify and Preview stay under the 20-job cap). If both slots are taken, leave the draft and stop — a human marks ready. Rule: [`.cursor/rules/github-actions-pr-cadence.mdc`](../../.cursor/rules/github-actions-pr-cadence.mdc).
+- **Shards.** CI runs `playwright test --shard=N/8` with `fail-fast: false`. Local `pnpm test:e2e` / `pnpm verify` stay unsharded. CI keeps `workers: 1` (shared OPFS `TestProject`); shards isolate storage instead of extra workers on one VM.
+- **Drafts.** Draft pull requests skip both jobs. Marking a PR ready (`ready_for_review`) or a later non-draft `synchronize` starts Verify. Local `pnpm verify` stays the draft-time gate. Agents stay draft until that local gate passes, mark ready **once** if fewer than **2** non-draft PRs target `main` (2 × 9 jobs plus merge-time `main` Verify and Preview stay under the 20-job cap). If both slots are taken, leave the draft and stop — a human marks ready. Rule: [`.cursor/rules/github-actions-pr-cadence.mdc`](../../.cursor/rules/github-actions-pr-cadence.mdc).
 
 ## Vitest projects
 
