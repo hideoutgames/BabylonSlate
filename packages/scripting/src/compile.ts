@@ -5,6 +5,7 @@ import { defaultValueLiteral } from "./types";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
 import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
+import { entryNodes } from "./compiled-nodes";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
 
 export type CompileAnchor = {
@@ -177,30 +178,6 @@ function pinForCodegen(
     node.pins.find((pin) => pin.direction === direction && pin.id === pinName) ??
     node.pins.find((pin) => pin.direction === direction && pin.name === pinName)
   );
-}
-
-function entryNodes(graph: LogicGraph): GraphNode[] {
-  const hasIncoming = new Set(
-    graph.edges
-      .filter((e) => {
-        const src = findNode(graph, e.sourceNodeId);
-        const sp = src && findPin(src, e.sourcePinId);
-        return sp?.kind === "exec";
-      })
-      .map((e) => e.targetNodeId),
-  );
-  return graph.nodes.filter((n) => {
-    if (n.typeId.startsWith("flow.event") || n.typeId === "flow.entry") {
-      return true;
-    }
-    const hasExecIn = n.pins.some(
-      (p) => p.kind === "exec" && p.direction === "in",
-    );
-    const hasExecOut = n.pins.some(
-      (p) => p.kind === "exec" && p.direction === "out",
-    );
-    return hasExecOut && !hasExecIn && !hasIncoming.has(n.id);
-  });
 }
 
 /**
