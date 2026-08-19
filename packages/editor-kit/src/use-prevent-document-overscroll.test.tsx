@@ -47,6 +47,17 @@ describe("usePreventDocumentOverscroll", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("listens for touchstart in the capture phase", () => {
+    const add = vi.spyOn(document, "addEventListener");
+    render(<Host />);
+    expect(add).toHaveBeenCalledWith(
+      "touchstart",
+      expect.any(Function),
+      expect.objectContaining({ capture: true }),
+    );
+    add.mockRestore();
+  });
+
   it("does nothing when disabled", () => {
     render(<Host enabled={false} />);
     const shell = document.querySelector("[data-testid='shell']")!;

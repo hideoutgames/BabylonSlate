@@ -1125,16 +1125,13 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("play-hud")).toBeVisible();
     await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     // Desktop-chrome also runs @ipad tests (see docs/architecture/testing.md).
-    // iPad Playwright viewports are 1194×834 / 834×1194 and now map to 4:3
+    // iPad Playwright viewport is landscape 1194×834 and maps to 4:3
     // (closest aspect) with zero safe-area insets.
     const preset = await page.getByTestId("play-hud").getAttribute("data-preset");
     const safeTop = Number(
       await page.getByTestId("play-hud").getAttribute("data-safe-top"),
     );
-    if (
-      testInfo.project.name === "ipad-landscape" ||
-      testInfo.project.name === "ipad-portrait"
-    ) {
+    if (testInfo.project.name === "ipad-landscape") {
       expect(preset).toBe("desktop-4-3");
       expect(safeTop).toBe(0);
     } else {

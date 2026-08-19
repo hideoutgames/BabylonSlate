@@ -34,10 +34,15 @@ export function usePreventDocumentOverscroll(enabled = true): void {
       }
     };
 
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchstart", onTouchStart, {
+      passive: true,
+      capture: true,
+    });
     document.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
-      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchstart", onTouchStart, {
+        capture: true,
+      });
       document.removeEventListener("touchmove", onTouchMove);
     };
   }, [enabled]);

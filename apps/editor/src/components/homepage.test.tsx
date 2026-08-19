@@ -1,6 +1,8 @@
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { DEFAULT_RENDER_HEIGHT, DEFAULT_RENDER_WIDTH } from "@babylonslate/core";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
 
@@ -28,23 +30,25 @@ function renderHomepage(
   overrides: Partial<ComponentProps<typeof Homepage>> = {},
 ) {
   return render(
-    <Homepage
-      projects={[]}
-      templates={[]}
-      needsReconnect={false}
-      recoveryAvailable={false}
-      onCreateEmpty={noop}
-      onCreateFromTemplate={noop}
-      onOpenExternal={noop}
-      onOpenProject={noop}
-      onRenameProject={noop}
-      onRemoveFromList={noop}
-      onReconnect={noop}
-      onRecover={noop}
-      onDismissRecovery={() => {}}
-      onSettingsChanged={noop}
-      {...overrides}
-    />,
+    <TooltipProvider>
+      <Homepage
+        projects={[]}
+        templates={[]}
+        needsReconnect={false}
+        recoveryAvailable={false}
+        onCreateEmpty={noop}
+        onCreateFromTemplate={noop}
+        onOpenExternal={noop}
+        onOpenProject={noop}
+        onRenameProject={noop}
+        onRemoveFromList={noop}
+        onReconnect={noop}
+        onRecover={noop}
+        onDismissRecovery={() => {}}
+        onSettingsChanged={noop}
+        {...overrides}
+      />
+    </TooltipProvider>,
   );
 }
 
@@ -300,6 +304,7 @@ describe("Homepage recent project rows", () => {
     expect(screen.getByTestId("project-list").className).toMatch(
       /overscroll-y-contain/,
     );
+    expect(screen.getByTestId("project-list").className).toMatch(/touch-pan-y/);
 
     const list = screen.getByTestId("project-list");
     const names = () =>
@@ -343,6 +348,75 @@ describe("Homepage recent project rows", () => {
     expect(screen.getByTestId("no-matching-projects")).toBeTruthy();
     expect(screen.getByTestId("homepage-project-search")).toBeTruthy();
   });
+
+  it("renders recents as Cards, not full-width buttons", () => {
+    renderHomepage({
+      projects: [listedProject("Game.babproject", "opfs")],
+    });
+    const row = screen.getByTestId("open-listed-project-Game.babproject");
+    expect(row.tagName).toBe("DIV");
+    expect(row.getAttribute("data-slot")).toBe("card");
+  });
+
+  it("opens a project from a row tap and not from the remove control", async () => {
+    const onOpenProject = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game.babproject", "opfs")],
+      onOpenProject,
+    });
+    fireEvent.click(screen.getByTestId("open-listed-project-Game.babproject"));
+    expect(onOpenProject).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByTestId(
+            "remove-listed-project-Game.babproject",
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+
+    onOpenProject.mockClear();
+    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    expect(onOpenProject).not.toHaveBeenCalled();
+    expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
+  });
+
+  it("confirms Remove from list from the row X without deleting files", async () => {
+    const onRemoveFromList = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game.babproject", "opfs")],
+      onRemoveFromList,
+    });
+    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    const dialog = await screen.findByTestId("homepage-remove-dialog");
+    expect(dialog.textContent).toMatch(/Remove from List/);
+    expect(dialog.textContent).toMatch(/files stay|remain on disk|does not delete/i);
+    expect(dialog.getAttribute("data-variant")).not.toBe("destructive");
+
+    fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
+    expect(onRemoveFromList).not.toHaveBeenCalled();
+    expect(screen.getByTestId("open-listed-project-Game.babproject")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
+    expect(onRemoveFromList).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the same remove confirm from the row context menu", async () => {
+    const onRemoveFromList = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game.babproject", "opfs")],
+      onRemoveFromList,
+    });
+    fireEvent.contextMenu(
+      screen.getByTestId("open-listed-project-Game.babproject"),
+    );
+    expect(await screen.findByTestId("homepage-project-menu")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("homepage-project-remove"));
+    expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
+    expect(onRemoveFromList).not.toHaveBeenCalled();
+  });
 });
 
 describe("Homepage Create Project dialog", () => {
@@ -380,7 +454,42 @@ describe("Homepage Create Project dialog", () => {
     expect(screen.getByTestId("create-project-location").textContent).toBe(
       "On this device.",
     );
-    expect(dialog.textContent).toMatch(/letterboxes/i);
+    expect(dialog.textContent).not.toMatch(/opfs/i);
+    expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
+    expect(dialog.textContent).toContain(
+      `Play and export resolution (default ${DEFAULT_RENDER_WIDTH}×${DEFAULT_RENDER_HEIGHT}).`,
+    );
+    expect(dialog.textContent).not.toMatch(/letterboxes/i);
+    expect(dialog.textContent).toContain(
+      "Renders black bars to force desired resolution.",
+    );
+  });
+
+  it("does not pass pickFolder when creating on web", async () => {
+    const onCreateEmpty = vi.fn(async () => {});
+    renderHomepage({ onCreateEmpty });
+    screen.getByTestId("create-project").click();
+    fireEvent.click(await screen.findByTestId("create-project-submit"));
+    expect(onCreateEmpty).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.not.objectContaining({ pickFolder: true }),
+    );
+  });
+
+  it("pins Create footer outside the right-pane form scroll", async () => {
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+    const dialog = await screen.findByTestId("create-project-dialog");
+    expect(dialog.className).toMatch(/90dvh/);
+    const details = screen.getByTestId("create-project-details");
+    expect(details.className).toMatch(/overflow-x-hidden/);
+    expect(details.className).toMatch(/min-w-0/);
+    const form = screen.getByTestId("create-project-form");
+    expect(form.className).toMatch(/overflow-x-hidden/);
+    expect(form.className).toMatch(/overflow-y-auto/);
+    const footer = screen.getByTestId("create-project-footer");
+    expect(form.contains(footer)).toBe(false);
+    expect(details.contains(footer)).toBe(true);
   });
 
   it("gives dialog template cards an image well", async () => {
@@ -395,21 +504,50 @@ describe("Homepage Create Project dialog", () => {
     ).toBeTruthy();
   });
 
-  it("uses App Documents and Choose Folder toggles on native", async () => {
+  it("requires Choose Location on iPad and keeps App Documents as the default", async () => {
+    const onCreateEmpty = vi.fn(async () => {});
     getHostPlatform.mockReturnValue("ios");
-    renderHomepage();
+    renderHomepage({ onCreateEmpty });
     screen.getByTestId("create-project").click();
 
-    expect(await screen.findByTestId("create-project-app-documents")).toBeTruthy();
-    expect(screen.getByTestId("create-project-choose-folder")).toBeTruthy();
+    expect(await screen.findByTestId("create-project-choose-location")).toBeTruthy();
+    expect(screen.getByTestId("create-project-app-documents")).toBeTruthy();
+    expect(screen.queryByTestId("create-project-choose-folder")).toBeNull();
     expect(screen.getByTestId("create-project-location").textContent).toMatch(
       /App Documents/,
     );
+    expect(screen.getByTestId("create-project-dialog").textContent).not.toMatch(
+      /opfs/i,
+    );
 
-    const choose = screen.getByTestId("create-project-choose-folder");
-    fireEvent.click(choose);
+    fireEvent.click(screen.getByTestId("create-project-choose-location"));
     expect(screen.getByTestId("create-project-location").textContent).toMatch(
       /Choose a folder/,
+    );
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    expect(onCreateEmpty).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ pickFolder: true }),
+    );
+  });
+
+  it("requires Choose Location on Electron with a Projects folder default", async () => {
+    getHostPlatform.mockReturnValue("electron");
+    renderHomepage();
+    screen.getByTestId("create-project").click();
+
+    expect(await screen.findByTestId("create-project-choose-location")).toBeTruthy();
+    expect(screen.getByTestId("create-project-app-documents")).toBeTruthy();
+    expect(screen.getByTestId("create-project-location").textContent).toMatch(
+      /Projects folder/,
+    );
+    expect(screen.getByTestId("create-project-dialog").textContent).not.toMatch(
+      /opfs/i,
+    );
+
+    fireEvent.click(screen.getByTestId("create-project-app-documents"));
+    expect(screen.getByTestId("create-project-location").textContent).toMatch(
+      /Projects folder/,
     );
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultScene,
+  documentId,
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   PROJECT_FILE,
@@ -11,11 +12,13 @@ import {
   encodeAssetDocument,
   encodeBabasset,
   readAssetDocumentHeader,
+  clearDeletedAssetRefs,
 } from "@babylonslate/assets";
 import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { ProjectService } from "./project-service";
+import { DocumentService } from "./document-service";
 import { createDefaultLogicGraphSerialized } from "./graph-validation";
 
 async function scaffolded() {
@@ -481,5 +484,165 @@ describe("project documents as .babasset", () => {
     });
     expect(await service.readAssetChunk(path, "source:2")).toBeNull();
     expect(await service.readAssetChunk(path, "source")).toEqual(source);
+  });
+
+  it("rewrites remaining sprites to None after a referenced texture is deleted", async () => {
+    const { storage, service } = await scaffolded();
+    const texPath = "assets/wall.babasset";
+    const spritePath = "assets/hero.sprite.babasset";
+    await storage.writeBinary(
+      texPath,
+      await encodeAssetDocument({
+        type: "Texture",
+        name: "wall",
+        guid: "tex-1",
+        version: 1,
+        payload: { usage: "albedo" },
+      }),
+    );
+    await storage.writeBinary(
+      spritePath,
+      await encodeAssetDocument(
+        {
+          type: "Sprite",
+          name: "hero",
+          guid: "sprite-1",
+          version: 1,
+          payload: {
+            textureGuid: "tex-1",
+            pixelsPerUnit: 100,
+            frames: [],
+            clips: [],
+          },
+        },
+        { dependencies: ["tex-1"] },
+      ),
+    );
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("tex-1");
+    const dangling = (await service.loadDocument(
+      "sprite",
+      spritePath,
+    )) as { textureGuid: string | null };
+    expect(dangling.textureGuid).toBe("tex-1");
+
+    await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+
+    const cleared = (await service.loadDocument(
+      "sprite",
+      spritePath,
+    )) as { textureGuid: string | null };
+    expect(cleared.textureGuid).toBeNull();
+    expect(
+      readAssetDocumentHeader(await storage.readBinary(spritePath)).dependencies,
+    ).toEqual([]);
+  });
+
+  it("resets a Class parentClass to BObject when the parent Class is deleted", async () => {
+    const { storage, service } = await scaffolded();
+    const parentPath = "assets/Hero.class.babasset";
+    const childPath = "assets/Sidekick.class.babasset";
+    const graph = createDefaultLogicGraphSerialized();
+    await storage.writeBinary(
+      parentPath,
+      await encodeAssetDocument(
+        {
+          type: "Class",
+          name: "Hero",
+          guid: "hero-1",
+          version: 1,
+          payload: graph as unknown as Record<string, unknown>,
+        },
+        { parentClass: "Actor" },
+      ),
+    );
+    await storage.writeBinary(
+      childPath,
+      await encodeAssetDocument(
+        {
+          type: "Class",
+          name: "Sidekick",
+          guid: "side-1",
+          version: 1,
+          payload: graph as unknown as Record<string, unknown>,
+        },
+        { parentClass: "Hero" },
+      ),
+    );
+    await service.remountRegistry();
+    await service.registry!.deleteAsset("hero-1");
+    await service.clearDeletedAssetReferences(new Set(["hero-1"]), {
+      deletedClassNames: new Set(["Hero"]),
+    });
+    expect(
+      readAssetDocumentHeader(await storage.readBinary(childPath)).parentClass,
+    ).toBe("BObject");
+  });
+
+  it("clears a dirty open referrer in memory and on disk without dropping dirty", async () => {
+    const { storage, service } = await scaffolded();
+    const texPath = "assets/wall.babasset";
+    const spritePath = "assets/hero.sprite.babasset";
+    await storage.writeBinary(
+      texPath,
+      await encodeAssetDocument({
+        type: "Texture",
+        name: "wall",
+        guid: "tex-1",
+        version: 1,
+        payload: { usage: "albedo" },
+      }),
+    );
+    await storage.writeBinary(
+      spritePath,
+      await encodeAssetDocument(
+        {
+          type: "Sprite",
+          name: "hero",
+          guid: "sprite-1",
+          version: 1,
+          payload: {
+            textureGuid: "tex-1",
+            pixelsPerUnit: 100,
+            frames: [{ name: "idle" }],
+            clips: [],
+          },
+        },
+        { dependencies: ["tex-1"] },
+      ),
+    );
+    await service.remountRegistry();
+    const docs = new DocumentService();
+    docs.ensureContentBrowserTab();
+    await docs.openDocument(service, {
+      kind: "sprite",
+      path: spritePath,
+      label: "hero",
+    });
+    const spriteId = documentId({ kind: "sprite", path: spritePath });
+    docs.updateAssetDocument(spriteId, {
+      textureGuid: "tex-1",
+      pixelsPerUnit: 50,
+      frames: [{ name: "idle" }],
+      clips: [],
+    });
+    expect(docs.getDocument(spriteId)?.dirty).toBe(true);
+
+    await service.registry!.deleteAsset("tex-1");
+    await service.clearDeletedAssetReferences(new Set(["tex-1"]));
+    const disk = (await service.loadDocument("sprite", spritePath)) as {
+      textureGuid: string | null;
+    };
+    expect(disk.textureGuid).toBeNull();
+
+    const walked = clearDeletedAssetRefs(
+      docs.getDocument(spriteId)!.content,
+      new Set(["tex-1"]),
+    );
+    docs.patchLoadedContent(spriteId, walked.value as Record<string, unknown>);
+    const open = docs.getDocument(spriteId);
+    expect(open?.dirty).toBe(true);
+    expect((open?.content as { textureGuid: string | null }).textureGuid).toBeNull();
+    expect((open?.content as { pixelsPerUnit: number }).pixelsPerUnit).toBe(50);
   });
 });

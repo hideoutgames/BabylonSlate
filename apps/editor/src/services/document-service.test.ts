@@ -490,6 +490,93 @@ describe("DocumentService", () => {
       edges: [],
     });
   });
+
+  it("closes open tabs whose paths were deleted and keeps Content Browser", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const scenePath = MAIN_SCENE_FILE;
+    const enumPath = "assets/colors.babasset";
+    await service.openDocument(project, {
+      kind: "scene",
+      path: scenePath,
+      label: "main",
+    });
+    await service.openDocument(project, {
+      kind: "enum",
+      path: enumPath,
+      label: "colors",
+    });
+    const sceneId = documentId({ kind: "scene", path: scenePath });
+    const enumId = documentId({ kind: "enum", path: enumPath });
+    service.setPanelPlacement(enumId, "enum-details", {
+      referencePanelId: "enum-preview",
+      direction: "right",
+      width: 280,
+    });
+    service.setActiveDocument(enumId);
+
+    const closed = service.closeDocumentsForPaths([enumPath]);
+    expect(closed).toEqual([enumId]);
+    expect(service.getState().openDocuments.has(enumId)).toBe(false);
+    expect(service.getState().openDocuments.has(sceneId)).toBe(true);
+    expect(service.getState().tabOrder).toEqual([
+      CONTENT_BROWSER_ID,
+      sceneId,
+    ]);
+    expect(service.getState().activeDocumentId).toBe(CONTENT_BROWSER_ID);
+    expect(service.getState().panelPlacements[enumId]).toBeUndefined();
+  });
+
+  it("closes every open tab under a deleted folder path set", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const spritePath = "assets/fx/spark.sprite.babasset";
+    const graphPath = MAIN_CLASS_FILE;
+    await service.openDocument(project, {
+      kind: "sprite",
+      path: spritePath,
+      label: "spark",
+    });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: graphPath,
+      label: "class",
+    });
+    const spriteId = documentId({ kind: "sprite", path: spritePath });
+    const graphId = documentId({ kind: "graph", path: graphPath });
+
+    service.closeDocumentsForPaths([spritePath]);
+    expect(service.getState().openDocuments.has(spriteId)).toBe(false);
+    expect(service.getState().openDocuments.has(graphId)).toBe(true);
+    expect(service.getState().tabOrder[0]).toBe(CONTENT_BROWSER_ID);
+  });
+
+  it("patches open document content without clearing dirty", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const projectService = createMockProjectService();
+    const graphId = documentId({ kind: "graph", path: MAIN_CLASS_FILE });
+    await service.initializeFromProject(projectService, project, {
+      ...createEmptyLayouts(),
+      tabOrder: [graphId],
+    });
+    service.updateGraph(graphId, {
+      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: {} }],
+      edges: [],
+    } as never);
+    expect(service.getDocument(graphId)?.dirty).toBe(true);
+    service.patchLoadedContent(graphId, {
+      nodes: [{ id: "n1", type: "logMessage", position: { x: 0, y: 0 }, data: { "default:asset": null } }],
+      edges: [],
+    } as never);
+    expect(service.getDocument(graphId)?.dirty).toBe(true);
+    expect(
+      (service.getDocument(graphId)?.content as { nodes: Array<{ data: unknown }> })
+        .nodes[0]?.data,
+    ).toEqual({ "default:asset": null });
+  });
 });
 
 describe("layout migration", () => {
