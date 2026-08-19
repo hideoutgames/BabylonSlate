@@ -19,6 +19,7 @@ import {
   defaultJsValue,
   hydrateStructInstance,
   isDevelopmentOnlyNode,
+  isDevelopmentOnlyByDefaultTypeId,
   listUnconnectedLiteralPinDefaults,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
@@ -311,6 +312,7 @@ export function pinDefaultPropertyRows(
         });
         break;
       case "vec4":
+      case "quat":
         rows.push({
           kind: "vector3",
           id: entry.pinId,
@@ -434,9 +436,19 @@ export function variableDefaultPropertyRows(
     typeClassId?: string;
     schemas?: TypeSchemas;
     enumMembers?: Record<string, readonly string[]>;
+    container?: "single" | "array" | "map";
   },
 ): PropertyRow[] {
-  if (typeId === "object" || typeId === "class") return [];
+  if (options?.container === "array" || options?.container === "map") return [];
+  if (
+    typeId === "object" ||
+    typeId === "class" ||
+    typeId === "actor" ||
+    typeId === "wildcard" ||
+    typeId === "asset"
+  ) {
+    return [];
+  }
   const type = pinTypeForMember(typeId, options?.typeClassId);
   const mapping = {
     enumMembers: options?.enumMembers,
@@ -610,7 +622,7 @@ export function developmentOnlyPropertyRows(
         pins: [],
         properties: data,
       }),
-      defaultValue: typeId === "debug.print",
+      defaultValue: isDevelopmentOnlyByDefaultTypeId(typeId),
       onChange: (value) => onPatch({ developmentOnly: value }),
     },
   ];

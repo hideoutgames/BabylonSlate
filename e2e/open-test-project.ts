@@ -114,6 +114,7 @@ export async function createContentBrowserAsset(
   await expect(
     page.getByTestId("content-browser-new-asset-dialog"),
   ).toBeVisible();
+  await page.getByTestId("new-asset-type-search").fill(type);
   await page.getByTestId(`new-asset-type-${type}`).click();
   await page.getByTestId("new-asset-name").fill(name);
   await page.getByTestId("content-browser-new-asset-create").click();
@@ -140,11 +141,9 @@ export async function openAssetFromBrowser(
   }
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
   if (!(await tile.isVisible())) {
-    const stem = (assetPath.split("/").pop() ?? assetPath).replace(
-      /\.babasset$/,
-      "",
-    );
-    await page.getByTestId("content-browser-search").fill(stem);
+    const fileName = assetPath.split("/").pop() ?? assetPath;
+    const searchNeedle = fileName.replace(/\.babasset$/, "").split(".")[0];
+    await page.getByTestId("content-browser-search").fill(searchNeedle);
   }
   await expect(tile).toBeVisible({ timeout: 15_000 });
   await tile.dblclick();

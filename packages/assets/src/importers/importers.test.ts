@@ -160,6 +160,7 @@ describe("importers", () => {
     );
     expect(attached[0]!.attachToGuid).toBe(font[0]!.guid);
     expect(attached[0]!.chunks[0]!.kind).toBe("font-facetype");
+    expect(attached[0]!.chunks[0]!.id).toBe("facetype-glyphs");
   });
 
   it("imports .babasset and remaps colliding guids", async () => {

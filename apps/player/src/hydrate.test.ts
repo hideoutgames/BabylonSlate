@@ -721,4 +721,58 @@ describe("packedContentFromGame", () => {
     expect(game.guiImageBytes.get("tex-1")).toEqual(pixels);
     expect(guiTextureBytesFromGame(game).get("tex-1")).toEqual(pixels);
   });
+
+  it("includes nestedUiGuid on packed loadUserInterfaces widget rows", async () => {
+    const hud = {
+      name: "HUD",
+      rootId: "canvas",
+      widgets: {
+        canvas: { id: "canvas", kind: "Canvas", name: "Canvas", children: ["chip"] },
+        chip: {
+          id: "chip",
+          kind: "UserInterface",
+          name: "Chip",
+          nestedUiGuid: "chip-1",
+          exposed: { key: "hp", label: "HP" },
+          overrides: { label: { text: "MP" } },
+        },
+      },
+    };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "hud-1",
+          type: "UserInterface",
+          sceneGuid: "scene-1",
+          name: "HUD",
+          bytes: encoder.encode(JSON.stringify(hud)),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    const chip = packedUserInterfaceControl(content)?.documents[0]?.widgets.find(
+      (widget) => widget.id === "chip",
+    );
+    expect(chip).toEqual({
+      id: "chip",
+      kind: "UserInterface",
+      name: "Chip",
+      nestedUiGuid: "chip-1",
+      exposed: { key: "hp", label: "HP" },
+      overrides: { label: { text: "MP" } },
+    });
+  });
 });

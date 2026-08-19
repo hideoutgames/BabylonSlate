@@ -162,4 +162,140 @@ export const mathNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => ({ out: `!(${ctx.input("in")})` }),
   },
+  {
+    id: "math.lerp",
+    title: "Lerp",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "A", "in", FLOAT),
+      pin("b", "B", "in", FLOAT),
+      pin("alpha", "Alpha", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("a")}) + ((${ctx.input("b")}) - (${ctx.input("a")})) * (${ctx.input("alpha")}))`,
+    }),
+  },
+  {
+    id: "math.clamp",
+    title: "Clamp",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("value", "Value", "in", FLOAT),
+      pin("min", "Min", "in", FLOAT),
+      pin("max", "Max", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `Math.min((${ctx.input("max")}), Math.max((${ctx.input("min")}), (${ctx.input("value")})))`,
+    }),
+  },
+  {
+    id: "math.min",
+    title: "Min",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "A", "in", FLOAT),
+      pin("b", "B", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `Math.min((${ctx.input("a")}), (${ctx.input("b")}))`,
+    }),
+  },
+  {
+    id: "math.max",
+    title: "Max",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("a", "A", "in", FLOAT),
+      pin("b", "B", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `Math.max((${ctx.input("a")}), (${ctx.input("b")}))`,
+    }),
+  },
+  {
+    id: "math.sin",
+    title: "Sin",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: `Math.sin(${ctx.input("in")})` }),
+  },
+  {
+    id: "math.cos",
+    title: "Cos",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: `Math.cos(${ctx.input("in")})` }),
+  },
+  {
+    id: "math.degrees",
+    title: "Radians To Degrees",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("in")}) * 180 / Math.PI)`,
+    }),
+  },
+  {
+    id: "math.radians",
+    title: "Degrees To Radians",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `((${ctx.input("in")}) * Math.PI / 180)`,
+    }),
+  },
+  {
+    id: "math.floor",
+    title: "Floor",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: `Math.floor(${ctx.input("in")})` }),
+  },
+  {
+    id: "math.ceil",
+    title: "Ceil",
+    category: "math",
+    pure: true,
+    pins: () => [
+      pin("in", "In", "in", FLOAT),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: `Math.ceil(${ctx.input("in")})` }),
+  },
+  {
+    id: "math.random",
+    title: "Random Float",
+    category: "math",
+    pure: true,
+    pins: () => [pin("out", "Out", "out", FLOAT)],
+    codegen: () => ({ out: `ctx.randomFloat()` }),
+  },
 ];

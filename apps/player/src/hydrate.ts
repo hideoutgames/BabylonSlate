@@ -38,7 +38,7 @@ import {
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { ScenePostProcessEntry } from "@babylonslate/core";
 import { shouldSpawnScriptedActor } from "@babylonslate/runtime";
-import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
+import { widgetRuntimeMeta, type UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -352,11 +352,7 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
 }
 
 function widgetMetaFromDocument(document: UserInterfaceDocument) {
-  return Object.values(document.widgets).map((widget) => ({
-    id: widget.id,
-    kind: widget.kind,
-    ...(widget.name ? { name: widget.name } : {}),
-  }));
+  return Object.values(document.widgets).map(widgetRuntimeMeta);
 }
 
 export function packedUserInterfaceControl(

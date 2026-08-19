@@ -7,6 +7,7 @@ import {
   EXEC,
   FLOAT,
   INT,
+  QUAT,
   ROTATOR,
   STRING,
   TRANSFORM,
@@ -49,6 +50,7 @@ describe("pinAcceptsLiteralDefault", () => {
     expect(pinAcceptsLiteralDefault(VEC2)).toBe(true);
     expect(pinAcceptsLiteralDefault(VEC3)).toBe(true);
     expect(pinAcceptsLiteralDefault(ROTATOR)).toBe(true);
+    expect(pinAcceptsLiteralDefault(QUAT)).toBe(true);
     expect(pinAcceptsLiteralDefault(COLOR)).toBe(true);
     expect(pinAcceptsLiteralDefault(VEC4)).toBe(true);
     expect(pinAcceptsLiteralDefault(enumRef("e1"))).toBe(true);
@@ -151,6 +153,17 @@ describe("listUnconnectedLiteralPinDefaults", () => {
         type: VEC3,
         value: { x: 1, y: 2, z: 3 },
       },
+    ]);
+  });
+
+  it("uses catalog pin defaultValue before the type-table default", () => {
+    const listed = listUnconnectedLiteralPinDefaults(
+      [pin("duration", "Duration", "in", FLOAT, "data", true, 2)],
+      {},
+      new Set(),
+    );
+    expect(listed).toEqual([
+      { pinId: "duration", name: "Duration", type: FLOAT, value: 2 },
     ]);
   });
 });

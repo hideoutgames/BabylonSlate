@@ -226,6 +226,15 @@ function classMetadataFromGraph(
       {
         name: member.name,
         type: member.typeId ?? "float",
+        ...(member.container === "array" || member.container === "map"
+          ? { container: member.container }
+          : {}),
+        ...(member.container === "map"
+          ? { keyTypeId: member.keyTypeId ?? "string" }
+          : {}),
+        ...(member.keyTypeClassId && member.container === "map"
+          ? { keyTypeClassId: member.keyTypeClassId }
+          : {}),
         ...(member.defaultValue !== undefined
           ? { defaultValue: member.defaultValue }
           : {}),

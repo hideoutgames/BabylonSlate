@@ -6,7 +6,34 @@ import {
   BOOL,
   FLOAT,
   actorRef,
+  enumRef,
+  structRef,
+  ENGINE_COLLISION_CHANNEL_ENUM_ID,
+  ENGINE_HIT_RESULT_STRUCT_ID,
 } from "@babylonslate/scripting";
+
+const HIT_RESULT = structRef(ENGINE_HIT_RESULT_STRUCT_ID);
+const COLLISION_CHANNEL = enumRef(ENGINE_COLLISION_CHANNEL_ENUM_ID);
+
+function emitMappedHit(
+  ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
+  expr: string,
+  includeActor: boolean,
+): void {
+  const hitResult = ctx.output("hitResult");
+  const hit = ctx.output("hit");
+  const location = ctx.output("location");
+  const parts = [
+    `const __hit = ${expr};`,
+    `${hitResult} = { Hit: __hit.hit, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 1, z: 0 }, Actor: __hit.actor, Distance: __hit.distance ?? 0 };`,
+    `${hit} = __hit.hit;`,
+    `${location} = __hit.location;`,
+  ];
+  if (includeActor) {
+    parts.push(`${ctx.output("actor")} = __hit.actor;`);
+  }
+  ctx.emit(`{ ${parts.join(" ")} }`);
+}
 
 /** Physics query and impulse nodes — sync on the calling execution pin (P7). */
 export const physicsNodes: NodeDefinition[] = [
@@ -17,18 +44,19 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("start", "start", "in", VEC3),
-      pin("end", "end", "in", VEC3),
-      pin("hit", "hit", "out", BOOL),
-      pin("location", "location", "out", VEC3),
-      pin("actor", "actor", "out", actorRef("Actor")),
+      pin("start", "Start", "in", VEC3),
+      pin("end", "End", "in", VEC3),
+      pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
+      pin("hitResult", "Hit Result", "out", HIT_RESULT),
+      pin("hit", "Hit", "out", BOOL),
+      pin("location", "Location", "out", VEC3),
+      pin("actor", "Actor", "out", actorRef("Actor")),
     ],
     codegen: (ctx) => {
-      const hit = ctx.output("hit");
-      const location = ctx.output("location");
-      const actor = ctx.output("actor");
-      ctx.emit(
-        `({ hit: ${hit}, location: ${location}, actor: ${actor} } = ctx.lineTrace(${ctx.input("start")}, ${ctx.input("end")}));`,
+      emitMappedHit(
+        ctx,
+        `ctx.lineTrace(${ctx.input("start")}, ${ctx.input("end")}, ${ctx.input("channel")})`,
+        true,
       );
     },
   },
@@ -39,14 +67,17 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("center", "center", "in", VEC3),
-      pin("radius", "radius", "in", FLOAT),
-      pin("count", "count", "out", FLOAT),
+      pin("center", "Center", "in", VEC3),
+      pin("radius", "Radius", "in", FLOAT),
+      pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
+      pin("hitResult", "Hit Result", "out", HIT_RESULT),
+      pin("count", "Count", "out", FLOAT),
     ],
     codegen: (ctx) => {
       const count = ctx.output("count");
+      const hitResult = ctx.output("hitResult");
       ctx.emit(
-        `{ const __overlap = ctx.sphereOverlap(${ctx.input("center")}, ${ctx.input("radius")}); ${count} = __overlap.actorIds.length; }`,
+        `{ const __overlap = ctx.sphereOverlap(${ctx.input("center")}, ${ctx.input("radius")}, ${ctx.input("channel")}); ${count} = __overlap.actorIds.length; const __actor = __overlap.actorIds[0] ?? null; ${hitResult} = { Hit: __overlap.actorIds.length > 0, Location: ${ctx.input("center")}, Normal: { x: 0, y: 1, z: 0 }, Actor: __actor, Distance: 0 }; }`,
       );
     },
   },
@@ -57,16 +88,18 @@ export const physicsNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("start", "start", "in", VEC3),
-      pin("end", "end", "in", VEC3),
-      pin("hit", "hit", "out", BOOL),
-      pin("location", "location", "out", VEC3),
+      pin("start", "Start", "in", VEC3),
+      pin("end", "End", "in", VEC3),
+      pin("channel", "Channel", "in", COLLISION_CHANNEL, "data", true),
+      pin("hitResult", "Hit Result", "out", HIT_RESULT),
+      pin("hit", "Hit", "out", BOOL),
+      pin("location", "Location", "out", VEC3),
     ],
     codegen: (ctx) => {
-      const hit = ctx.output("hit");
-      const location = ctx.output("location");
-      ctx.emit(
-        `{ const __sweep = ctx.shapeSweep({ kind: "sphere", radius: 0.25 }, { position: ${ctx.input("start")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }, { position: ${ctx.input("end")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }); ${hit} = __sweep.hit; ${location} = __sweep.location; }`,
+      emitMappedHit(
+        ctx,
+        `ctx.shapeSweep({ kind: "sphere", radius: 0.25 }, { position: ${ctx.input("start")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }, { position: ${ctx.input("end")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }, ${ctx.input("channel")})`,
+        false,
       );
     },
   },

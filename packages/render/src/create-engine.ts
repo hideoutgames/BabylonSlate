@@ -66,6 +66,10 @@ import {
   createPlayConsoleViz,
   type PlayConsoleVizController,
 } from "./play-console-viz";
+import {
+  createPlayDebugDraw,
+  type PlayDebugDrawController,
+} from "./play-debug-draw";
 import { SnapshotInterpolator, writeSampledAudioPoses, type SampledAudioPose } from "./snapshot-sync";
 import {
   applySnapshotToScene,
@@ -226,6 +230,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
+  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
@@ -520,6 +526,7 @@ export function createEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.modelBytes = options.modelBytes;
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
@@ -542,6 +549,9 @@ export function createEngine(
     : null;
   const playViz: PlayConsoleVizController | null = options.playMode
     ? createPlayConsoleViz(scene, { navmeshBytes: options.navmeshBytes })
+    : null;
+  const playDebugDraw: PlayDebugDrawController | null = options.playMode
+    ? createPlayDebugDraw(scene)
     : null;
 
   const materialDocuments = new Map<string, MaterialDocument>(
@@ -997,6 +1007,7 @@ export function createEngine(
       playFreeCamInput?.dispose();
       playFreeCam?.dispose();
       playViz?.dispose();
+      playDebugDraw?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -1043,6 +1054,7 @@ export function createEngine(
       }
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
+      playDebugDraw?.applyCommand(command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
       }
@@ -1176,6 +1188,7 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;

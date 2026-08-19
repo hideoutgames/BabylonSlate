@@ -151,6 +151,28 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["setWireframe", "debugColliders", "setShowNav", "setShowAudioDebug"]);
   });
 
+  it("forwards debugDraw onto the Engine handle without a debugger bundle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "debugDraw",
+        kind: "line",
+        duration: 0,
+        color: { x: 1, y: 1, z: 1, w: 1 },
+        frameId: 1,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+        thickness: 1,
+      }),
+    ).toBe(true);
+    expect(applied).toEqual(["debugDraw"]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

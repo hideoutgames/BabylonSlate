@@ -9,6 +9,8 @@ import {
   uiImageExportGuid,
   AUDIO_REVERB_EXPORT_TYPE,
   audioReverbExportGuid,
+  FONT_FACETYPE_EXPORT_TYPE,
+  fontFacetypeExportGuid,
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
@@ -76,6 +78,7 @@ export type CollectExportGameParams = {
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
   guiImageBytesByGuid?: (guid: string) => Uint8Array | null;
+  fontFacetypeBytesByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
@@ -257,6 +260,20 @@ export async function collectAndExportGame(
       bytes: gui,
       encoding: "bytes",
       name: `${asset.name} UI Image`,
+    });
+  }
+  for (const guid of closure.value) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Font") continue;
+    const facetype = params.fontFacetypeBytesByGuid?.(guid);
+    if (!facetype || facetype.byteLength === 0) continue;
+    exportAssets.push({
+      guid: fontFacetypeExportGuid(guid),
+      type: FONT_FACETYPE_EXPORT_TYPE,
+      sceneGuid: sceneGuidForAsset(guid, startup, params.assets, params.sceneByGuid),
+      bytes: facetype,
+      encoding: "bytes",
+      name: `${asset.name} Facetype`,
     });
   }
 

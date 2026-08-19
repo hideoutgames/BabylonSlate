@@ -68,7 +68,35 @@ vi.mock("../context/document-context", () => ({
               typeId: "struct",
               typeClassId: "struct-stats",
             },
+            {
+              id: "var-actor",
+              kind: "variable",
+              name: "Pawn",
+              typeId: "actor",
+              typeClassId: "Actor",
+            },
+            {
+              id: "var-asset",
+              kind: "variable",
+              name: "Cue",
+              typeId: "asset",
+              typeClassId: "Audio",
+            },
+            {
+              id: "var-array",
+              kind: "variable",
+              name: "Hits",
+              typeId: "rotator",
+              container: "array",
+            },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
+            {
+              id: "loc-1",
+              kind: "variable",
+              name: "Temp",
+              typeId: "float",
+              functionId: "fn-1",
+            },
             {
               id: "fn-impl",
               kind: "function",
@@ -203,5 +231,50 @@ describe("Inspector class member details", () => {
         defaultValue: "GameInstance",
       }),
     );
+  });
+
+  it("shows Single/Array/Map container controls for class variables and locals", () => {
+    renderMemberInspector("var-1");
+    expect(screen.getByTestId("inspector-member-container")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-container-single")).toBeTruthy();
+    cleanup();
+    renderMemberInspector("loc-1");
+    expect(screen.getByTestId("inspector-member-variable")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-container")).toBeTruthy();
+  });
+
+  it("commits Array container and resets the Default for a class variable", () => {
+    renderMemberInspector("var-1");
+    screen.getByTestId("inspector-member-container-array").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.find((member) => member.id === "var-1")).toEqual(
+      expect.objectContaining({
+        typeId: "bool",
+        container: "array",
+        defaultValue: [],
+      }),
+    );
+  });
+
+  it("hides Inspector Default editors for Array variables", () => {
+    renderMemberInspector("var-array");
+    expect(screen.getByTestId("inspector-member-container-array")).toBeTruthy();
+    expect(screen.queryByTestId("property-default")).toBeNull();
+  });
+
+  it("shows Class Type for Actor variables and Asset Type for Asset variables", async () => {
+    renderMemberInspector("var-actor");
+    const classType = screen.getByTestId("inspector-member-class-type");
+    expect(classType.textContent).toContain("Actor");
+    expect(screen.queryByTestId("property-default")).toBeNull();
+    cleanup();
+    renderMemberInspector("var-asset");
+    const assetType = screen.getByTestId("inspector-member-asset-type");
+    expect(assetType.textContent).toContain("Audio");
+    assetType.click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-Texture")).toBeTruthy();
+    });
   });
 });

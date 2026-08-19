@@ -102,4 +102,39 @@ export const mapNodes: NodeDefinition[] = [
       out: `[...(${ctx.input("map")}).keys()]`,
     }),
   },
+  {
+    id: "map.make",
+    title: "Make Map",
+    category: "map",
+    pure: true,
+    pins: () => [pin("out", "Out", "out", mapOf(K, V))],
+    codegen: () => ({ out: "new Map()" }),
+  },
+  {
+    id: "map.values",
+    title: "Map Values",
+    category: "map",
+    pure: true,
+    pins: () => [
+      pin("map", "Map", "in", mapOf(K, V)),
+      pin("out", "Out", "out", arrayOf(V)),
+    ],
+    codegen: (ctx) => ({
+      out: `[...(${ctx.input("map")}).values()]`,
+    }),
+  },
+  {
+    id: "map.clear",
+    title: "Map Clear",
+    category: "map",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("map", "Map", "in", mapOf(K, V)),
+      pin("out", "Out", "out", mapOf(K, V)),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`${ctx.output("out")} = new Map();`);
+    },
+  },
 ];

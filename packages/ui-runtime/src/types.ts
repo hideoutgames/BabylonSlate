@@ -76,6 +76,23 @@ export interface GridTrackDef {
   isPixel: boolean;
 }
 
+/** Keep existing Grid track defs and fill new tracks as star `1`. */
+export function resizeGridTracks(
+  current: readonly GridTrackDef[] | null | undefined,
+  count: number,
+): GridTrackDef[] {
+  const n = Math.max(1, Math.floor(Number(count)) || 1);
+  const src = Array.isArray(current) ? current : [];
+  const next: GridTrackDef[] = [];
+  for (let i = 0; i < n; i++) {
+    const row = src[i];
+    next.push(
+      row ? { value: row.value, isPixel: row.isPixel } : { value: 1, isPixel: false },
+    );
+  }
+  return next;
+}
+
 export interface WidgetLayout {
   horizontalAlignment: HorizontalAlignment;
   verticalAlignment: VerticalAlignment;
@@ -141,6 +158,27 @@ export interface WidgetNode {
   exposed?: WidgetExposedProperty | null;
   /** Instance-slot patches keyed by nested widget id. */
   overrides?: Record<string, Record<string, unknown>>;
+}
+
+/** Slim `loadUserInterfaces` row — nested logic needs `nestedUiGuid` / overrides. */
+export function widgetRuntimeMeta(widget: WidgetNode): {
+  id: string;
+  kind: WidgetKind;
+  name?: string;
+  nestedUiGuid?: string;
+  exposed?: WidgetExposedProperty;
+  overrides?: Record<string, Record<string, unknown>>;
+} {
+  return {
+    id: widget.id,
+    kind: widget.kind,
+    ...(widget.name ? { name: widget.name } : {}),
+    ...(widget.nestedUiGuid ? { nestedUiGuid: widget.nestedUiGuid } : {}),
+    ...(widget.exposed ? { exposed: widget.exposed } : {}),
+    ...(widget.overrides && Object.keys(widget.overrides).length > 0
+      ? { overrides: widget.overrides }
+      : {}),
+  };
 }
 
 export interface UserInterfaceDocument {

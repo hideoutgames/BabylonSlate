@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, printHudCssColor, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -144,6 +144,7 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setShowNav",
   "setShowAudioDebug",
   "debugColliders",
+  "debugDraw",
   "animState",
 ]);
 
@@ -493,6 +494,7 @@ export function startPlaySession(options: {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -557,6 +559,7 @@ export function startPlaySession(options: {
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
+    fontFacetypeBytes: options.fontFacetypeBytes,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
@@ -658,7 +661,7 @@ export function startPlaySession(options: {
         message: command.message,
         key: command.key ?? "",
         duration: command.duration ?? 2,
-        color: cssColor(command.color),
+        color: printHudCssColor(command.color),
       });
     }
     if (command.type === "stats") {
@@ -1038,21 +1041,6 @@ export function startPlaySession(options: {
       return stopResult;
     },
   };
-}
-
-/** Print colors arrive as linear 0..1 RGBA vectors from the graph. */
-function cssColor(color?: {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-}): string {
-  if (!color) return "#ffffff";
-  const channel = (v: number) =>
-    Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255)));
-  return `rgba(${channel(color.x)}, ${channel(color.y)}, ${channel(color.z)}, ${
-    color.w ?? 1
-  })`;
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;

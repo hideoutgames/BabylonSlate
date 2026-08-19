@@ -291,6 +291,12 @@ export interface GraphClassMember {
   typeId?: string;
   /** Object/class constraint, or Structure/Enum asset guid when typeId is struct/enum. */
   typeClassId?: string;
+  /** Variable container. Missing or `"single"` is a scalar. Array/Map wrap `typeId`. */
+  container?: "single" | "array" | "map";
+  /** Map key picker id. Ignored unless `container` is `"map"`. */
+  keyTypeId?: string;
+  /** Map key Class/Structure/Enum/Asset parameter. */
+  keyTypeClassId?: string;
   defaultValue?: unknown;
   /** Function and custom-event signature pins. */
   pins?: GraphClassMemberPin[];
@@ -923,6 +929,12 @@ function optionalTypeClassId(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function optionalVariableContainer(
+  value: unknown,
+): "array" | "map" | undefined {
+  return value === "array" || value === "map" ? value : undefined;
+}
+
 function normalizeMemberPins(value: unknown): GraphClassMemberPin[] {
   if (!Array.isArray(value)) return [];
   const pins: GraphClassMemberPin[] = [];
@@ -972,7 +984,18 @@ export function normalizeGraphMembers(value: unknown): GraphClassMember[] {
           : "float";
       const typeClassId = optionalTypeClassId(row.typeClassId);
       if (typeClassId) member.typeClassId = typeClassId;
-      if (member.typeId === "class") {
+      const container = optionalVariableContainer(row.container);
+      if (container) member.container = container;
+      const keyTypeId =
+        typeof row.keyTypeId === "string" && row.keyTypeId.trim()
+          ? row.keyTypeId.trim()
+          : undefined;
+      if (container === "map") {
+        member.keyTypeId = keyTypeId ?? "string";
+        const keyTypeClassId = optionalTypeClassId(row.keyTypeClassId);
+        if (keyTypeClassId) member.keyTypeClassId = keyTypeClassId;
+      }
+      if (member.typeId === "class" && !container) {
         member.defaultValue = typeClassId ?? "BObject";
       } else if ("defaultValue" in row) {
         member.defaultValue = row.defaultValue;

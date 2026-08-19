@@ -14,6 +14,7 @@ export const EDITOR_BILLBOARD_ICONS = [
   "camera",
   "audio",
   "particle",
+  "rigidbody",
 ] as const;
 export type EditorBillboardIcon = (typeof EDITOR_BILLBOARD_ICONS)[number];
 
@@ -76,7 +77,8 @@ export function applyEditorBillboardFromActor(
     icon !== "light" &&
     icon !== "camera" &&
     icon !== "audio" &&
-    icon !== "particle"
+    icon !== "particle" &&
+    icon !== "rigidbody"
   ) {
     return;
   }
@@ -132,6 +134,7 @@ function rasterizeIcon(icon: EditorBillboardIcon): Uint8Array {
   if (icon === "light") drawLight(data);
   else if (icon === "camera") drawCamera(data);
   else if (icon === "particle") drawParticle(data);
+  else if (icon === "rigidbody") drawRigidBody(data);
   else drawAudio(data);
   return data;
 }
@@ -202,6 +205,12 @@ function drawAudio(data: Uint8Array): void {
   }
   strokeArc(data, 16, 16, 10, 11);
   strokeArc(data, 16, 16, 13, 14);
+}
+
+function drawRigidBody(data: Uint8Array): void {
+  fillRect(data, 8, 10, 24, 26);
+  fillRect(data, 6, 8, 26, 12);
+  fillRect(data, 10, 6, 22, 10);
 }
 
 function drawParticle(data: Uint8Array): void {

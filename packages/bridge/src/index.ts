@@ -30,6 +30,8 @@ export {
   type CommandMessage,
   type ControlMessage,
   type DebugColliderPrimitive,
+  type DebugDrawCommand,
+  type DebugDrawKind,
   type ScriptAnchorPayload,
   type ScriptBundleEntry,
   type ScriptConsoleCommand,

@@ -361,4 +361,49 @@ describe("loadExportDocuments", () => {
       payload,
     );
   });
+
+  it("exposes Font facetype-glyphs chunks separately from Font source bytes", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Display.font.babasset",
+          header: {
+            guid: "font-1",
+            type: "Font",
+            name: "Display",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: { family: "Display" },
+            chunks: [
+              {
+                id: "source",
+                kind: "font",
+                mime: "font/woff2",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 2 } },
+              },
+              {
+                id: "facetype-glyphs",
+                kind: "font-facetype",
+                mime: "application/json",
+                sha256: "bb",
+                locator: { inline: { offset: 2, length: 3 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => ({ family: "Display" }),
+      readAssetChunk: async (_path, chunkId) => {
+        if (chunkId === "source") return new Uint8Array([1, 2]);
+        if (chunkId === "facetype-glyphs") return new Uint8Array([9, 8, 7]);
+        return null;
+      },
+    });
+    expect(loaded.bytesByGuid("font-1")).toEqual(new Uint8Array([1, 2]));
+    expect(loaded.fontFacetypeBytesByGuid("font-1")).toEqual(new Uint8Array([9, 8, 7]));
+  });
 });

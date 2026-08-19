@@ -16,6 +16,7 @@ import { uiNodes } from "./ui";
 import { sceneNodes } from "./scene";
 import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
+import { debugDrawNodes } from "./debug-draw";
 import { interfaceNodes } from "./interface";
 import { variableNodes } from "./variables";
 import { functionCallNodes } from "./functions";
@@ -27,6 +28,10 @@ import { illuminationNodes } from "./illumination";
 import { animationNodes } from "./animation";
 import { structNodes } from "./struct";
 import { enumNodes } from "./enum";
+import { literalNodes } from "./literal";
+import { rotatorNodes } from "./rotator";
+import { colorNodes } from "./color";
+import { quatNodes } from "./quat";
 
 export * from "./flow";
 export * from "./math";
@@ -45,6 +50,7 @@ export * from "./ui";
 export * from "./scene";
 export * from "./render";
 export * from "./debug";
+export * from "./debug-draw";
 export * from "./interface";
 export * from "./variables";
 export * from "./functions";
@@ -57,6 +63,10 @@ export * from "./illumination";
 export * from "./animation";
 export * from "./struct";
 export * from "./enum";
+export * from "./literal";
+export * from "./rotator";
+export * from "./color";
+export * from "./quat";
 
 export const ALL_NODE_CATEGORIES = [
   "flow",
@@ -88,6 +98,10 @@ export const ALL_NODE_CATEGORIES = [
   "animation",
   "struct",
   "enum",
+  "literal",
+  "rotator",
+  "color",
+  "quaternion",
 ] as const;
 
 export function allNodeDefinitions(): NodeDefinition[] {
@@ -109,6 +123,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...sceneNodes,
     ...renderNodes,
     ...debugNodes,
+    ...debugDrawNodes,
     ...interfaceNodes,
     ...variableNodes,
     ...functionCallNodes,
@@ -120,6 +135,10 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...animationNodes,
     ...structNodes,
     ...enumNodes,
+    ...literalNodes,
+    ...rotatorNodes,
+    ...colorNodes,
+    ...quatNodes,
   ];
 }
 

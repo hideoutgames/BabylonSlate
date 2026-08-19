@@ -106,6 +106,48 @@ function pruneEdgesToMissingPins(
   });
 }
 
+function pinTypeFromHydratedPins(
+  data: Record<string, unknown>,
+  pinId: string | undefined,
+): PinType | undefined {
+  if (!pinId) return undefined;
+  const pins = data.__pins;
+  if (!Array.isArray(pins)) return undefined;
+  const pin = pins.find((entry) => {
+    if (!entry || typeof entry !== "object") return false;
+    return (entry as { id?: unknown }).id === pinId;
+  }) as GraphPin | undefined;
+  return pin?.type;
+}
+
+function isVariableAccessTypeId(typeId: string): boolean {
+  return typeId === "variables.get" || typeId === "variables.set";
+}
+
+function pruneIncompatibleEdges(
+  edges: SerializedGraph["edges"],
+  nodes: SerializedGraph["nodes"],
+): SerializedGraph["edges"] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  return edges.filter((edge) => {
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    if (!source || !target) return false;
+    const sourceTypeId = catalogTypeId(source);
+    const targetTypeId = catalogTypeId(target);
+    if (
+      !isVariableAccessTypeId(sourceTypeId) &&
+      !isVariableAccessTypeId(targetTypeId)
+    ) {
+      return true;
+    }
+    const fromType = pinTypeFromHydratedPins(source.data, edge.sourceHandle);
+    const toType = pinTypeFromHydratedPins(target.data, edge.targetHandle);
+    if (!fromType || !toType) return true;
+    return isAssignable(fromType, toType);
+  });
+}
+
 function catalogTypeId(node: {
   type: string;
   data: Record<string, unknown>;
@@ -486,7 +528,10 @@ export function hydrateSerializedGraphForEditor(
   return {
     ...graph,
     nodes,
-    edges: pruneEdgesToMissingPins(graph.edges, nodes),
+    edges: pruneIncompatibleEdges(
+      pruneEdgesToMissingPins(graph.edges, nodes),
+      nodes,
+    ),
   };
 }
 
@@ -945,6 +990,9 @@ type VariableRow = {
   name: string;
   typeId: string;
   typeClassId?: string;
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
   scope: "member" | "local";
   functionId?: string;
 };
@@ -960,6 +1008,11 @@ function classVariableRows(graph?: SerializedGraph): VariableRow[] {
       name: member.name,
       typeId: member.typeId ?? "float",
       ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
+      ...(member.container === "array" || member.container === "map"
+        ? { container: member.container }
+        : {}),
+      ...(member.keyTypeId ? { keyTypeId: member.keyTypeId } : {}),
+      ...(member.keyTypeClassId ? { keyTypeClassId: member.keyTypeClassId } : {}),
       scope: "member",
     });
   }
@@ -985,6 +1038,11 @@ function localVariableRows(
       name: member.name,
       typeId: member.typeId ?? "float",
       ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
+      ...(member.container === "array" || member.container === "map"
+        ? { container: member.container }
+        : {}),
+      ...(member.keyTypeId ? { keyTypeId: member.keyTypeId } : {}),
+      ...(member.keyTypeClassId ? { keyTypeClassId: member.keyTypeClassId } : {}),
       scope: "local",
       functionId,
     });
@@ -1048,6 +1106,15 @@ function variableAccessPaletteNodes(
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
+      if (variable.container === "array" || variable.container === "map") {
+        defaultData.container = variable.container;
+      }
+      if (variable.container === "map") {
+        defaultData.keyTypeId = variable.keyTypeId ?? "string";
+        if (variable.keyTypeClassId) {
+          defaultData.keyTypeClassId = variable.keyTypeClassId;
+        }
+      }
       injected.push({
         id: `variables.${access}:${classId}:${variable.name}`,
         nodeType: `variables.${access}`,
@@ -1238,7 +1305,7 @@ export function scriptPaletteNodes(
       defaultData.severity = "log";
       defaultData.category = "Script";
     }
-    if (def.id === "debug.print") {
+    if (def.developmentOnlyByDefault) {
       defaultData.developmentOnly = true;
     }
     if (
@@ -1417,6 +1484,11 @@ export function classMemberSymbolsFromGraphs(
       if (member.functionId) symbol.functionId = member.functionId;
       if (member.typeId) symbol.typeId = member.typeId;
       if (member.typeClassId) symbol.typeClassId = member.typeClassId;
+      if (member.container === "array" || member.container === "map") {
+        symbol.container = member.container;
+      }
+      if (member.keyTypeId) symbol.keyTypeId = member.keyTypeId;
+      if (member.keyTypeClassId) symbol.keyTypeClassId = member.keyTypeClassId;
       if (member.kind === "function") {
         if (member.pins) symbol.pins = member.pins;
         if (member.implementsInterface) {

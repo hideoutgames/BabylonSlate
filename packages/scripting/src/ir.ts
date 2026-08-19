@@ -10,6 +10,8 @@ export type GraphPin = {
   direction: PinDirection;
   type: PinType;
   optional?: boolean;
+  /** Catalog fallback when the pin is unconnected and has no stored default. */
+  defaultValue?: unknown;
 };
 
 export type GraphNode = {

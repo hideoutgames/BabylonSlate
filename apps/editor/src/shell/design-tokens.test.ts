@@ -21,6 +21,7 @@ const PIN_TOKENS = [
   "--pin-string",
   "--pin-vector",
   "--pin-rotator",
+  "--pin-quat",
   "--pin-transform",
   "--pin-color",
   "--pin-object",

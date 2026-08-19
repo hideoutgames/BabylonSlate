@@ -168,6 +168,67 @@ describe("PinListEditor", () => {
     ]);
   });
 
+  it("shows Class Type for actor pins", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "pawn",
+            type: "actor",
+            direction: "in",
+            typeClassId: "Actor",
+          },
+        ]}
+        selectedId="a"
+        classEntries={[
+          { id: "Actor", name: "Actor" },
+          { id: "Hero", name: "Hero" },
+        ]}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("pin-a-class-type")).toBeTruthy();
+    expect(screen.getByTestId("pin-a-class-type").textContent).toContain("Actor");
+    screen.getByTestId("pin-a-class-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-Hero")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-Hero").click();
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "a", typeClassId: "Hero" }),
+    ]);
+  });
+
+  it("shows Asset Type for asset pins", async () => {
+    const onChange = vi.fn();
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "cue",
+            type: "asset",
+            direction: "in",
+            typeClassId: "Audio",
+          },
+        ]}
+        selectedId="a"
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("pin-a-asset-type").textContent).toContain("Audio");
+    screen.getByTestId("pin-a-asset-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-Texture")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-Texture").click();
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "a", typeClassId: "Texture" }),
+    ]);
+  });
+
   it("adds an input or output pin", () => {
     const onChange = vi.fn();
     render(

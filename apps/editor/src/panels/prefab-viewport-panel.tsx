@@ -51,6 +51,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayFontFacetypeBytes,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
@@ -179,6 +180,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tileContent.tilesets,
           [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
+        const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(
           materials.documents,
@@ -190,6 +192,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilemaps: tileContent.tilemaps,
           tilesets: tileContent.tilesets,
           textureBytes,
+          fontFacetypeBytes,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -210,6 +213,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayFontFacetypeBytes,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,

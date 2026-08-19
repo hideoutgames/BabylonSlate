@@ -63,13 +63,23 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  const pending: FrameRequestCallback[] = [];
+  let flushing = false;
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    return setTimeout(() => callback(0), 0) as unknown as number;
+    pending.push(callback);
+    if (!flushing) {
+      flushing = true;
+      queueMicrotask(() => {
+        flushing = false;
+        const batch = pending.splice(0);
+        for (const cb of batch) cb(0);
+      });
+    }
+    return pending.length;
   });
-  vi.stubGlobal(
-    "cancelAnimationFrame",
-    (handle: number) => clearTimeout(handle),
-  );
+  vi.stubGlobal("cancelAnimationFrame", () => {
+    pending.length = 0;
+  });
 });
 
 function hudCanvasProps() {
@@ -124,9 +134,9 @@ function mockSurface() {
   };
 }
 
-async function flushUiFrame(): Promise<void> {
+async function flushPaint(): Promise<void> {
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
   });
 }
 
@@ -168,7 +178,7 @@ describe("UiDesignCanvas preview fallback", () => {
         }
       />,
     );
-    await flushUiFrame();
+    await flushPaint();
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
@@ -261,7 +271,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
     const props = hudCanvasProps();
     const { rerender } = render(<UiDesignCanvas {...props} />);
-    await flushUiFrame();
+    await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     rerender(
       <UiDesignCanvas
@@ -269,7 +279,7 @@ describe("UiDesignCanvas preview fallback", () => {
         viewport={{ ...props.viewport, width: 800, height: 600 }}
       />,
     );
-    await flushUiFrame();
+    await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
@@ -300,10 +310,10 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(
       <UiDesignCanvas {...props} panelVisible documentActive={false} />,
     );
-    await flushUiFrame();
+    await flushPaint();
     expect(addControl).not.toHaveBeenCalled();
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
-    await flushUiFrame();
+    await flushPaint();
     expect(addControl).toHaveBeenCalled();
   });
 
@@ -590,7 +600,7 @@ describe("UiDesignCanvas preview fallback", () => {
         onLayoutChange={props.onLayoutChange}
       />,
     );
-    await flushUiFrame();
+    await flushPaint();
     expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
     expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
   });
@@ -630,7 +640,7 @@ describe("UiDesignCanvas preview fallback", () => {
         onLayoutChange={() => {}}
       />,
     );
-    await flushUiFrame();
+    await flushPaint();
     const afterPaint = surface.resizeDesign.mock.calls.length;
     expect(afterPaint).toBeGreaterThan(0);
     const hit = screen.getByTestId("ui-widget-btn");
