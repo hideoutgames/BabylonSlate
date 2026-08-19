@@ -1,6 +1,10 @@
 import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
+import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
+import { normalizeModelPayload } from "../model-payload";
+import { normalizeSkeletonPayload } from "../skeleton-payload";
+import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import {
@@ -9,14 +13,15 @@ import {
   type GlbBrowseParse,
 } from "./glb-parse";
 
-export const MODEL_EXTENSIONS = new Set(["glb", "gltf", "obj", "stl"]);
+export const MODEL_EXTENSIONS = new Set(["glb", "gltf"]);
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   glb: "model/gltf-binary",
   gltf: "model/gltf+json",
-  obj: "model/obj",
-  stl: "model/stl",
 };
+
+const UNSUPPORTED_MODEL_FORMAT =
+  "Models must be GLB or glTF. FBX, OBJ, STL, and other DCC formats are not supported.";
 
 /**
  * Models import as a Model asset plus browsable Material / Texture / Animation
@@ -44,21 +49,27 @@ export async function importModel(
   options: ImportOptions,
 ): Promise<ImportResult[]> {
   const extension = extensionOf(options.fileName);
+  if (!MODEL_EXTENSIONS.has(extension)) {
+    throw new Error(UNSUPPORTED_MODEL_FORMAT);
+  }
   const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
   const name = baseName(options.fileName);
 
   const browse =
     extension === "glb"
       ? parseGlbForBrowse(bytes)
-      : extension === "gltf"
-        ? parseGltfJsonForBrowse(new TextDecoder().decode(bytes))
-        : null;
+      : parseGltfJsonForBrowse(new TextDecoder().decode(bytes));
 
-  if (browse && (browse.materials.length > 0 || browse.images.length > 0)) {
-    return importFromBrowse(name, mime, bytes, browse);
+  if (!browse) {
+    throw new Error(UNSUPPORTED_MODEL_FORMAT);
   }
+  return importFromBrowse(name, mime, bytes, browse);
+}
 
-  return importStubDependents(name, mime, bytes);
+function uniqueImportName(base: string, used: string[]): string {
+  const name = nextCopyName(base, used);
+  used.push(name);
+  return name;
 }
 
 function importFromBrowse(
@@ -69,6 +80,7 @@ function importFromBrowse(
 ): ImportResult[] {
   const results: ImportResult[] = [];
   const imageGuids: string[] = [];
+  const usedNames: string[] = [name];
 
   for (const image of browse.images) {
     const guid = newAssetGuid();
@@ -86,7 +98,7 @@ function importFromBrowse(
         : [];
     results.push({
       type: "Texture",
-      name: `${name}_${image.name}`,
+      name: uniqueImportName(`${name}_${image.name}`, usedNames),
       guid,
       version: 1,
       dependencies: [],
@@ -105,7 +117,7 @@ function importFromBrowse(
     if (imageGuids.length === 0) {
       results.push({
         type: "Texture",
-        name: `${name}_Texture`,
+        name: uniqueImportName(`${name}_Texture`, usedNames),
         guid: textureGuid,
         version: 1,
         dependencies: [],
@@ -115,16 +127,17 @@ function importFromBrowse(
       });
       imageGuids.push(textureGuid);
     }
+    const materialName = uniqueImportName(`${name}_Material`, usedNames);
     const materialGuid = newAssetGuid();
     materialGuids.push(materialGuid);
     results.push({
       type: "Material",
-      name: `${name}_Material`,
+      name: materialName,
       guid: materialGuid,
       version: MATERIAL_PAYLOAD_VERSION,
       dependencies: [textureGuid],
       parentClass: null,
-      payload: importedMaterialPayload(`${name}_Material`, textureGuid),
+      payload: importedMaterialPayload(materialName, textureGuid),
       chunks: [],
     });
   } else {
@@ -138,9 +151,13 @@ function importFromBrowse(
           : imageGuids[0]
             ? [imageGuids[0]]
             : [];
+      const materialName = uniqueImportName(
+        `${name}_${material.name}`,
+        usedNames,
+      );
       results.push({
         type: "Material",
-        name: `${name}_${material.name}`,
+        name: materialName,
         guid: materialGuid,
         version: MATERIAL_PAYLOAD_VERSION,
         dependencies: dep,
@@ -148,7 +165,7 @@ function importFromBrowse(
         // The slot index keeps model-to-material assignment stable across
         // re-imports even when material names change.
         payload: {
-          ...importedMaterialPayload(`${name}_${material.name}`, dep[0]),
+          ...importedMaterialPayload(materialName, dep[0]),
           slotIndex: i,
         },
         chunks: [],
@@ -156,101 +173,80 @@ function importFromBrowse(
     }
   }
 
+  const modelGuid = newAssetGuid();
+  const skeletonGuid = browse.rigKind === "none" ? null : newAssetGuid();
+  if (skeletonGuid) {
+    results.push({
+      type: "Skeleton",
+      name: uniqueImportName(`${name}_Skeleton`, usedNames),
+      guid: skeletonGuid,
+      version: 1,
+      dependencies: [modelGuid],
+      parentClass: null,
+      payload: {
+        ...normalizeSkeletonPayload({
+          modelGuid,
+          kind: browse.rigKind,
+          boneNames: browse.boneNames,
+        }),
+      },
+      chunks: [],
+    });
+  }
+
   const animationGuids: string[] = [];
-  const animations =
-    browse.animations.length > 0
-      ? browse.animations
-      : [{ name: "Animation" }];
+  const animations = browse.animations;
   for (const animation of animations) {
     const guid = newAssetGuid();
     animationGuids.push(guid);
     results.push({
       type: "Animation",
-      name: `${name}_${animation.name}`,
+      name: uniqueImportName(`${name}_${animation.name}`, usedNames),
       guid,
       version: 1,
-      dependencies: [],
+      dependencies: [modelGuid, ...(skeletonGuid ? [skeletonGuid] : [])],
       parentClass: null,
-      payload: { clipName: animation.name },
+      payload: {
+        ...normalizeAnimationPayload({
+          clipName: animation.name,
+          modelGuid,
+          skeletonGuid,
+          durationMs: animation.durationMs,
+        }),
+      },
       chunks: [],
     });
   }
 
-  const modelGuid = newAssetGuid();
+  const slotNames =
+    browse.materials.length > 0
+      ? browse.materials.map((material) => material.name)
+      : materialGuids.map(() => "Material");
+
   results.unshift({
     type: "Model",
     name,
     guid: modelGuid,
     version: 1,
-    dependencies: [...materialGuids, ...animationGuids],
+    dependencies: [
+      ...materialGuids,
+      ...animationGuids,
+      ...(skeletonGuid ? [skeletonGuid] : []),
+    ],
     parentClass: null,
     payload: {
-      materialCount: materialGuids.length,
-      textureCount: imageGuids.length,
-      animationCount: animationGuids.length,
-      clipNames: animations.map((animation) => animation.name),
-      // Ordered slots so a MeshComponent can override one material per slot.
-      materialSlots: materialGuids.map((guid, index) => ({
-        index,
-        materialGuid: guid,
-      })),
-    },
+      ...normalizeModelPayload({
+        clipNames: animations.map((animation) => animation.name),
+        materialSlots: materialGuids.map((guid, index) => ({
+          index,
+          name: slotNames[index],
+          materialGuid: guid,
+        })),
+        skeletonGuid,
+      }),
+    } as Record<string, unknown>,
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
   });
 
   return results;
-}
-
-function importStubDependents(
-  name: string,
-  mime: string,
-  bytes: Uint8Array,
-): ImportResult[] {
-  const textureGuid = newAssetGuid();
-  const materialGuid = newAssetGuid();
-  const animationGuid = newAssetGuid();
-  const modelGuid = newAssetGuid();
-
-  return [
-    {
-      type: "Model",
-      name,
-      guid: modelGuid,
-      version: 1,
-      dependencies: [materialGuid, animationGuid],
-      parentClass: null,
-      payload: { clipNames: ["Animation"] },
-      chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],
-    },
-    {
-      type: "Material",
-      name: `${name}_Material`,
-      guid: materialGuid,
-      version: MATERIAL_PAYLOAD_VERSION,
-      dependencies: [textureGuid],
-      parentClass: null,
-      payload: importedMaterialPayload(`${name}_Material`, textureGuid),
-      chunks: [],
-    },
-    {
-      type: "Texture",
-      name: `${name}_Texture`,
-      guid: textureGuid,
-      version: 1,
-      dependencies: [],
-      parentClass: null,
-      payload: { compressionState: "pending", usage: "albedo" },
-      chunks: [],
-    },
-    {
-      type: "Animation",
-      name: `${name}_Animation`,
-      guid: animationGuid,
-      version: 1,
-      dependencies: [],
-      parentClass: null,
-      payload: { clipName: "Animation" },
-      chunks: [],
-    },
-  ];
 }

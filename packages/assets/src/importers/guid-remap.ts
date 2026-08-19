@@ -1,6 +1,9 @@
-import { newAssetGuid } from "../guid";
+import { remapAnimationPayloadGuids } from "../animation-payload";
 import { remapAudioPayloadGuids } from "../audio-payload";
+import { newAssetGuid } from "../guid";
+import { remapModelPayloadGuids } from "../model-payload";
 import { remapParticlePayloadGuids } from "../particle-payload";
+import { remapSkeletonPayloadGuids } from "../skeleton-payload";
 import type { ImportResult } from "./types";
 
 /**
@@ -28,9 +31,21 @@ export function remapImportResultGuids(
     ...result,
     guid: remap.get(result.guid) ?? result.guid,
     dependencies: result.dependencies.map((dep) => remap.get(dep) ?? dep),
-    payload: remapParticlePayloadGuids(
+    payload: remapAnimationPayloadGuids(
       result.type,
-      remapAudioPayloadGuids(result.type, result.payload, remap),
+      remapSkeletonPayloadGuids(
+        result.type,
+        remapModelPayloadGuids(
+          result.type,
+          remapParticlePayloadGuids(
+            result.type,
+            remapAudioPayloadGuids(result.type, result.payload, remap),
+            remap,
+          ),
+          remap,
+        ),
+        remap,
+      ),
       remap,
     ),
     attachToGuid: result.attachToGuid

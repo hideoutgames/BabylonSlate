@@ -227,6 +227,15 @@ export interface CreateEngineOptions {
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Model payloads (material slots / clip names) keyed by Model asset guid. */
+  modelPayloads?: ReadonlyMap<string, import("@babylonslate/assets").ModelPayload>;
+  /** Native clipName → Animation guid, keyed by Model guid. */
+  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  /** Retargeted Animation loads keyed by the actor (target) Model guid. */
+  retargetAnimationLoads?: ReadonlyMap<
+    string,
+    readonly import("@babylonslate/assets").RetargetAnimationLoad[]
+  >;
   /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
   ktx2BasePath?: string;
   /** Compiled Material documents keyed by asset guid. */
@@ -495,6 +504,9 @@ export function createEngine(
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
   binding.modelBytes = options.modelBytes;
+  binding.modelPayloads = options.modelPayloads;
+  binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
+  binding.retargetAnimationLoads = options.retargetAnimationLoads;
   binding.resourceCache = resourceCache;
   binding.slotAnimReady = () => {
     scheduler.invalidate("snapshot");
@@ -1141,6 +1153,9 @@ export function createEngine(
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
       binding.modelBytes = assets.modelBytes;
+      binding.modelPayloads = assets.modelPayloads;
+      binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
+      binding.retargetAnimationLoads = assets.retargetAnimationLoads;
       binding.spritePayloads = assets.spritePayloads ?? binding.spritePayloads;
       binding.spriteAnimations =
         assets.spriteAnimations ?? binding.spriteAnimations;

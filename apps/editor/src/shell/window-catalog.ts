@@ -26,6 +26,9 @@ export type DockviewDocumentKind =
   | "sound-attenuation"
   | "particle-emitter"
   | "particle-system"
+  | "model"
+  | "skeleton"
+  | "animation"
   | "skybox-creator";
 export type { DockWindowDirection };
 
@@ -51,6 +54,9 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "model",
+  "skeleton",
+  "animation",
   "skybox-creator",
 ]);
 
@@ -101,6 +107,9 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   "sound-attenuation": "sound-attenuation-details",
   "particle-emitter": "particle-emitter-preview",
   "particle-system": "particle-system-preview",
+  model: "model-preview",
+  skeleton: "skeleton-preview",
+  animation: "animation-preview",
   "skybox-creator": "skybox-creator-preview",
 };
 
@@ -360,6 +369,48 @@ const SCRIPT_INTERFACE_WINDOWS: DockWindowDefinition[] = [
     title: "Details",
     defaultPosition: {
       referencePanelId: "script-interface-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const MODEL_WINDOWS: DockWindowDefinition[] = [
+  { id: "model-preview", component: "model-preview", title: "Preview" },
+  {
+    id: "model-details",
+    component: "model-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "model-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const SKELETON_WINDOWS: DockWindowDefinition[] = [
+  { id: "skeleton-preview", component: "skeleton-preview", title: "Preview" },
+  {
+    id: "skeleton-details",
+    component: "skeleton-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "skeleton-preview",
+      direction: "right",
+      initialWidth: 280,
+    },
+  },
+];
+
+const ANIMATION_WINDOWS: DockWindowDefinition[] = [
+  { id: "animation-preview", component: "animation-preview", title: "Preview" },
+  {
+    id: "animation-details",
+    component: "animation-details",
+    title: "Details",
+    defaultPosition: {
+      referencePanelId: "animation-preview",
       direction: "right",
       initialWidth: 280,
     },
@@ -760,6 +811,13 @@ export function listDockWindows(
     return withOptionalLocks(kind, SCRIPT_INTERFACE_WINDOWS, options);
   }
   if (kind === "sprite") return withOptionalLocks(kind, SPRITE_WINDOWS, options);
+  if (kind === "model") return withOptionalLocks(kind, MODEL_WINDOWS, options);
+  if (kind === "skeleton") {
+    return withOptionalLocks(kind, SKELETON_WINDOWS, options);
+  }
+  if (kind === "animation") {
+    return withOptionalLocks(kind, ANIMATION_WINDOWS, options);
+  }
   if (kind === "audio") return withOptionalLocks(kind, AUDIO_WINDOWS, options);
   if (kind === "particle-emitter") {
     return withOptionalLocks(kind, PARTICLE_EMITTER_WINDOWS, options);

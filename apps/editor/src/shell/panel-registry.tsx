@@ -63,6 +63,18 @@ import {
   ParticleSystemPreviewPanel,
 } from "../components/particle-editor";
 import {
+  ModelDetailsPanel,
+  ModelPreviewPanel,
+} from "../components/model-editor";
+import {
+  SkeletonDetailsPanel,
+  SkeletonPreviewPanel,
+} from "../components/skeleton-editor";
+import {
+  AnimationDetailsPanel,
+  AnimationPreviewPanel,
+} from "../components/animation-editor";
+import {
   SkyboxCreatorDetailsPanel,
   SkyboxCreatorPreviewPanel,
 } from "../components/skybox-creator-editor";
@@ -198,6 +210,24 @@ export const panelComponents = {
   ),
   "particle-system-details": (props: IDockviewPanelProps) => (
     <ParticleSystemDetailsPanel {...props} />
+  ),
+  "model-preview": (props: IDockviewPanelProps) => (
+    <ModelPreviewPanel {...props} />
+  ),
+  "model-details": (props: IDockviewPanelProps) => (
+    <ModelDetailsPanel {...props} />
+  ),
+  "skeleton-preview": (props: IDockviewPanelProps) => (
+    <SkeletonPreviewPanel {...props} />
+  ),
+  "skeleton-details": (props: IDockviewPanelProps) => (
+    <SkeletonDetailsPanel {...props} />
+  ),
+  "animation-preview": (props: IDockviewPanelProps) => (
+    <AnimationPreviewPanel {...props} />
+  ),
+  "animation-details": (props: IDockviewPanelProps) => (
+    <AnimationDetailsPanel {...props} />
   ),
   "skybox-creator-preview": (props: IDockviewPanelProps) => (
     <SkyboxCreatorPreviewPanel {...props} />

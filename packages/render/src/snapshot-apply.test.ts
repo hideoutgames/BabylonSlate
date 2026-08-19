@@ -7,6 +7,7 @@ import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
 import {
   applyAssignMesh,
+  applyMaterialToActorMeshes,
   applyPossessCamera,
   applySnapshotToScene,
   createPlayMesh,
@@ -56,6 +57,79 @@ describe("createPlayMesh", () => {
     expect(positions!.length).toBe(9);
   });
 
+  it("adopts the full GLB container when the file has no clips", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    const model = createPlayMesh(scene, 2, "box", "model-1", binding);
+    expect(glbClipNames(encodeTriangleGlb())).toEqual([]);
+    await binding.slotAnimLoads?.get(2);
+    expect(model.visibility).toBe(0);
+    expect(model.getChildMeshes().length).toBeGreaterThan(0);
+  });
+
+  it("applies Model material slots after the container loads", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const override = new StandardMaterial("slot-mat", scene);
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelPayloads = new Map([
+      [
+        "model-1",
+        {
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+        },
+      ],
+    ]);
+    binding.resolveMaterial = (guid) => (guid === "mat-1" ? override : null);
+    const model = createPlayMesh(scene, 2, "box", "model-1", binding);
+    await binding.slotAnimLoads?.get(2);
+    const visible = model.getChildMeshes().filter((mesh) => mesh.visibility > 0);
+    expect(visible.length).toBeGreaterThan(0);
+    expect(visible.some((mesh) => mesh.material === override)).toBe(true);
+    expect(model.material).not.toBe(override);
+  });
+
+  it("lets MeshComponent.materialGuid win over Model slots", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const slotMat = new StandardMaterial("slot-mat", scene);
+    const meshMat = new StandardMaterial("mesh-mat", scene);
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    binding.modelPayloads = new Map([
+      [
+        "model-1",
+        {
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
+        },
+      ],
+    ]);
+    binding.resolveMaterial = (guid) => {
+      if (guid === "mat-1") return slotMat;
+      if (guid === "mesh-mat") return meshMat;
+      return null;
+    };
+    binding.materialAssetGuids.set(2, "mesh-mat");
+    const model = createPlayMesh(scene, 2, "box", "model-1", binding);
+    applyMaterialToActorMeshes(binding, 2, model);
+    await binding.slotAnimLoads?.get(2);
+    applyMaterialToActorMeshes(binding, 2, model);
+    expect(model.material).toBe(meshMat);
+    for (const child of model.getChildMeshes()) {
+      expect(child.material).toBe(meshMat);
+    }
+  });
+
   it("registers paused AnimationGroups from an animated GLB onto the slot", async () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -66,6 +140,54 @@ describe("createPlayMesh", () => {
     await binding.slotAnimLoads?.get(2);
     const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
       return entry.name === "Idle" && entry.clipAssetGuid === "hero-model";
+    });
+    expect(group).toBeDefined();
+    expect(group?.from).toBeLessThan(group?.to ?? 0);
+  });
+
+  it("stamps native AnimationGroups with Animation asset guids when mapped", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["hero-model", encodeAnimatedTriangleGlb()]]);
+    binding.modelClipAnimationGuids = new Map([
+      ["hero-model", new Map([["Idle", "hero-idle-anim"]])],
+    ]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+      return entry.name === "Idle" && entry.clipAssetGuid === "hero-idle-anim";
+    });
+    expect(group).toBeDefined();
+  });
+
+  it("stamps retargeted AnimationGroups with the retargeted Animation guid", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const glb = encodeParentedAnimatedTriangleGlb("Idle");
+    binding.modelBytes = new Map([
+      ["hero-model", glb],
+      ["mixamo-model", glb],
+    ]);
+    binding.retargetAnimationLoads = new Map([
+      [
+        "hero-model",
+        [
+          {
+            animationGuid: "retargeted-idle",
+            clipName: "Idle",
+            sourceModelGuid: "mixamo-model",
+          },
+        ],
+      ],
+    ]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const group = binding.slotAnimationGroups?.get(2)?.find((entry) => {
+      return entry.name === "Idle" && entry.clipAssetGuid === "retargeted-idle";
     });
     expect(group).toBeDefined();
     expect(group?.from).toBeLessThan(group?.to ?? 0);
@@ -111,17 +233,6 @@ describe("createPlayMesh", () => {
       (entry) => entry.name === "Idle",
     );
     expect(group).toBeDefined();
-  });
-
-  it("does not start an AnimationGroup load for a GLB with no clips", async () => {
-    const handle = createTestEngine();
-    handles.push(handle);
-    const { scene } = handle;
-    const binding = createSnapshotSceneBinding();
-    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
-    createPlayMesh(scene, 2, "box", "model-1", binding);
-    expect(binding.slotAnimLoads?.get(2)).toBeUndefined();
-    expect(binding.slotAnimationGroups?.get(2)).toBeUndefined();
   });
 
   it("creates a PointLight for light:point mesh kinds", () => {

@@ -40,6 +40,18 @@ describe("panelComponents", () => {
     expect(panelComponents["particle-system-details"]).toBeTypeOf("function");
   });
 
+  it("registers Model Preview and Details docks", () => {
+    expect(panelComponents["model-preview"]).toBeTypeOf("function");
+    expect(panelComponents["model-details"]).toBeTypeOf("function");
+  });
+
+  it("registers Skeleton and Animation Preview and Details docks", () => {
+    expect(panelComponents["skeleton-preview"]).toBeTypeOf("function");
+    expect(panelComponents["skeleton-details"]).toBeTypeOf("function");
+    expect(panelComponents["animation-preview"]).toBeTypeOf("function");
+    expect(panelComponents["animation-details"]).toBeTypeOf("function");
+  });
+
   it("registers Skybox Creator Preview and Details docks", () => {
     expect(panelComponents["skybox-creator-preview"]).toBeTypeOf("function");
     expect(panelComponents["skybox-creator-details"]).toBeTypeOf("function");

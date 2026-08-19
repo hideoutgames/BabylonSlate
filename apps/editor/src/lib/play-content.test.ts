@@ -57,6 +57,8 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  modelGuidsForPlayRetarget,
+  modelSlotMaterialGuidsFromPayloads,
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
   materialGuidsFromScenes,
@@ -466,7 +468,7 @@ describe("playAnimGraphsFromOpenDocuments", () => {
     expect(entries).toEqual([{ guid: "graph-guid", document: graph }]);
   });
 
-  it("rewrites Animation clip guids to the owning Model before Play", () => {
+  it("keeps Animation clip guids and fills the glTF clip name before Play", () => {
     const graph = createDefaultAnimGraph("Loco");
     graph.clips[0] = {
       id: "idle-clip",
@@ -501,7 +503,7 @@ describe("playAnimGraphsFromOpenDocuments", () => {
       ],
     );
     expect((entries[0]!.document as { clips: Array<{ assetGuid: string; clipName: string }> }).clips[0]).toMatchObject({
-      assetGuid: "hero-model",
+      assetGuid: "hero-walk-anim",
       clipName: "Walk",
     });
   });
@@ -779,6 +781,69 @@ describe("scene-referenced Play content", () => {
       }),
     );
     expect(modelAssetGuidsFromScene(scene)).toEqual(["tree-glb"]);
+  });
+
+  it("adds source Model guids needed to Play retargeted Animation rows", () => {
+    expect(
+      modelGuidsForPlayRetarget(
+        ["hero-model"],
+        [
+          {
+            guid: "native",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "hero-model",
+              skeletonGuid: "hero-skel",
+            },
+          },
+          {
+            guid: "src",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "mixamo-model",
+              skeletonGuid: "mixamo-skel",
+            },
+          },
+          {
+            guid: "retargeted",
+            payload: {
+              clipName: "Idle",
+              modelGuid: "hero-model",
+              skeletonGuid: "hero-skel",
+              sourceAnimationGuid: "src",
+            },
+          },
+        ],
+      ).sort(),
+    ).toEqual(["hero-model", "mixamo-model"]);
+  });
+
+  it("collects Model slot material guids for Play compile", () => {
+    const payloads = new Map([
+      [
+        "hero",
+        {
+          clipNames: [],
+          skeletonGuid: null,
+          materialSlots: [
+            { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
+            { index: 1, name: "Eyes", materialGuid: null },
+          ],
+        },
+      ],
+      [
+        "rock",
+        {
+          clipNames: [],
+          skeletonGuid: null,
+          materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }],
+        },
+      ],
+    ]);
+    expect(modelSlotMaterialGuidsFromPayloads(payloads)).toEqual([
+      "mat-hero",
+      "mat-rock",
+    ]);
   });
 
   it("collects override skybox face texture guids and skips engine defaults", () => {

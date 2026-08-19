@@ -29,6 +29,9 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   "sound-attenuation": ["sound-attenuation-details"],
   "particle-emitter": ["particle-emitter-preview"],
   "particle-system": ["particle-system-preview"],
+  model: ["model-preview"],
+  skeleton: ["skeleton-preview"],
+  animation: ["animation-preview"],
   "skybox-creator": ["skybox-creator-preview"],
 } as const;
 
@@ -142,6 +145,9 @@ export const engineSettingsSchema = z.object({
       "particle-system": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["particle-system"],
       ),
+      model: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.model),
+      skeleton: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.skeleton),
+      animation: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.animation),
       "skybox-creator": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["skybox-creator"],
       ),

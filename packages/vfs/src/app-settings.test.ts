@@ -37,6 +37,9 @@ describe("app settings", () => {
       "sound-attenuation": ["sound-attenuation-details"],
       "particle-emitter": ["particle-emitter-preview"],
       "particle-system": ["particle-system-preview"],
+      model: ["model-preview"],
+      skeleton: ["skeleton-preview"],
+      animation: ["animation-preview"],
       "skybox-creator": ["skybox-creator-preview"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
@@ -166,6 +169,9 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels["particle-system"]).toEqual([
       "particle-system-preview",
     ]);
+    expect(parsed.focusKeepPanels.model).toEqual(["model-preview"]);
+    expect(parsed.focusKeepPanels.skeleton).toEqual(["skeleton-preview"]);
+    expect(parsed.focusKeepPanels.animation).toEqual(["animation-preview"]);
     expect(parsed.focusKeepPanels["skybox-creator"]).toEqual([
       "skybox-creator-preview",
     ]);

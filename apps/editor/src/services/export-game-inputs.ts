@@ -36,6 +36,7 @@ const JSON_TYPES = new Set([
   "SoundAttenuation",
   "ParticleEmitter",
   "ParticleSystem",
+  "Animation",
 ]);
 
 const encoder = new TextEncoder();

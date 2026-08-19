@@ -7,8 +7,12 @@ import type {
 import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,
+  modelSlotFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
+import { applyModelMaterialSlots } from "./model-preview";
+import { beginSlotModelAnimLoad } from "./glb-anim";
+import { isGltfModelBytes } from "./model-mesh";
 import {
   actorIdFromMeshName,
   actorVisualFingerprint,
@@ -63,6 +67,7 @@ export class EditorSceneSync {
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
   private lastAssetFingerprint: string | null = null;
+  private lastModelSlotKey = "";
   private lastScene: SerializedScene | null = null;
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
@@ -91,11 +96,17 @@ export class EditorSceneSync {
    */
   setMeshAssets(assets: MeshAssetContext | undefined): boolean {
     const fingerprint = meshAssetFingerprint(assets);
+    const slotKey = modelSlotFingerprint(assets?.modelPayloads);
     this.assets = assets;
     if (fingerprint === this.lastAssetFingerprint) {
+      if (slotKey !== this.lastModelSlotKey) {
+        this.lastModelSlotKey = slotKey;
+        if (this.lastScene) this.apply(this.lastScene);
+      }
       return false;
     }
     this.lastAssetFingerprint = fingerprint;
+    this.lastModelSlotKey = slotKey;
     for (const mesh of this.meshes.values()) mesh.dispose();
     this.meshes.clear();
     this.meshKinds.clear();
@@ -129,6 +140,7 @@ export class EditorSceneSync {
         mesh = createActorMesh(this.scene, actor, this.assets);
         this.meshes.set(actor.id, mesh);
         this.meshKinds.set(actor.id, kind);
+        this.beginEditorModelLoad(actor, mesh);
       }
       applyActorTransform(mesh, actor);
       applyComponentChildTransforms(mesh, actor);
@@ -148,6 +160,8 @@ export class EditorSceneSync {
           applySortingToMesh(target, layer);
         }
       }
+      this.restoreMeshComponentConstruction(actor, mesh);
+      this.applyModelSlots(actor, mesh);
       this.bindActorMeshMaterials(actor, mesh);
     }
 
@@ -208,6 +222,71 @@ export class EditorSceneSync {
    * Details edit or a late Material-document load does not need a mesh rebuild.
    * Pivot markers and non-mesh visuals stay on their construction materials.
    */
+  private meshComponentAssetGuid(actor: SerializedActor): string | null {
+    const component = actor.components.find(
+      (entry) => entry.classId === "MeshComponent",
+    );
+    const guid = component?.properties.assetGuid;
+    return typeof guid === "string" && guid.length > 0 ? guid : null;
+  }
+
+  private applyModelSlots(actor: SerializedActor, root: Mesh): void {
+    const guid = this.meshComponentAssetGuid(actor);
+    const payload = guid ? this.assets?.modelPayloads?.get(guid) : undefined;
+    if (!payload) return;
+    applyModelMaterialSlots(root, payload.materialSlots, (materialGuid) =>
+      this.resolveMaterial?.(materialGuid) ?? null,
+    );
+  }
+
+  private beginEditorModelLoad(actor: SerializedActor, root: Mesh): void {
+    const guid = this.meshComponentAssetGuid(actor);
+    const bytes = guid ? this.assets?.modelBytes?.get(guid) : undefined;
+    if (!guid || !bytes || !isGltfModelBytes(bytes)) return;
+    const meta = (root.metadata ?? {}) as { babylonslateModelLoad?: boolean };
+    if (meta.babylonslateModelLoad) return;
+    root.metadata = { ...meta, babylonslateModelLoad: true };
+    const dummy = {
+      slotAnimEpoch: new Map<number, number>(),
+      slotAnimationGroups: new Map(),
+      slotAnimLoads: new Map<number, Promise<void>>(),
+    } as import("./snapshot-apply").SnapshotSceneBinding;
+    void beginSlotModelAnimLoad(
+      this.scene,
+      dummy,
+      0,
+      guid,
+      bytes,
+      root,
+      () => {
+        if (root.isDisposed()) return;
+        const current =
+          this.lastScene?.actors.find((entry) => entry.id === actor.id) ?? actor;
+        this.restoreMeshComponentConstruction(current, root);
+        this.applyModelSlots(current, root);
+        this.bindActorMeshMaterials(current, root);
+        this.scheduler?.invalidate("asset");
+      },
+    );
+  }
+
+  private restoreMeshComponentConstruction(
+    actor: SerializedActor,
+    root: Mesh,
+  ): void {
+    for (const component of actor.components) {
+      if (component.classId !== "MeshComponent") continue;
+      if (meshKindOf(component) === "pivot") continue;
+      if (authoredMaterialGuid(component.properties.materialGuid)) continue;
+      const visual = visualForMeshComponent(root, actor.id, component.id);
+      if (!visual) continue;
+      for (const target of meshAndDescendantMeshes(visual)) {
+        if (!this.constructionMaterials.has(target)) continue;
+        target.material = this.constructionMaterials.get(target) ?? null;
+      }
+    }
+  }
+
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
     for (const component of actor.components) {
       if (component.classId !== "MeshComponent") continue;
@@ -222,17 +301,12 @@ export class EditorSceneSync {
   }
 
   private bindMaterialOverride(visual: Mesh, guid: string | null): void {
+    if (!guid) return;
     const targets = meshAndDescendantMeshes(visual);
     for (const target of targets) {
       if (!this.constructionMaterials.has(target)) {
         this.constructionMaterials.set(target, target.material);
       }
-    }
-    if (!guid) {
-      for (const target of targets) {
-        target.material = this.constructionMaterials.get(target) ?? null;
-      }
-      return;
     }
     const material = this.resolveMaterial?.(guid) ?? null;
     if (!material) return;

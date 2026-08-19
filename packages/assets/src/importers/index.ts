@@ -14,8 +14,6 @@ const IMPORTERS_BY_EXTENSION: Record<string, Importer> = {
   gif: importImage,
   glb: importModel,
   gltf: importModel,
-  obj: importModel,
-  stl: importModel,
   mp3: importAudio,
   wav: importAudio,
   ogg: importAudio,
@@ -29,6 +27,18 @@ const IMPORTERS_BY_EXTENSION: Record<string, Importer> = {
 
 export function importerForExtension(extension: string): Importer | undefined {
   return IMPORTERS_BY_EXTENSION[extension.toLowerCase()];
+}
+
+/** Comma-separated `accept` for the Content Browser file picker (no OBJ — converted first). */
+export function registeredImportAccept(): string {
+  return Object.keys(IMPORTERS_BY_EXTENSION)
+    .map((extension) => `.${extension}`)
+    .join(",");
+}
+
+/** Picker accept list: registered importers plus OBJ (converted to GLB in the editor). */
+export function pickerImportAccept(): string {
+  return `${registeredImportAccept()},.obj`;
 }
 
 export async function importByExtension(
@@ -51,5 +61,6 @@ export * from "./glb-parse";
 export * from "./guid-remap";
 export * from "./image";
 export * from "./model";
+export * from "./obj-import-batch";
 export * from "./types";
 export * from "./util";

@@ -15,6 +15,7 @@ import {
   isAssetDocumentKind,
   isContentBrowserId,
   labelFromPath,
+  migrateRestoredDocumentId,
   parseDocumentId,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
@@ -142,18 +143,22 @@ export class DocumentService {
     const savedOrder = layouts.tabOrder.filter(
       (id) => !isContentBrowserId(id) && id.includes(":"),
     );
+    const typeForPath = (path: string) =>
+      projectService.registry?.list().find((asset) => asset.path === path)
+        ?.header.type ?? null;
     const lastSceneId = [...savedOrder]
       .reverse()
       .find((id) => parseDocumentId(id)?.kind === "scene");
 
     for (const id of savedOrder) {
-      const parsed = parseDocumentId(id);
+      const restoredId = migrateRestoredDocumentId(id, typeForPath);
+      const parsed = parseDocumentId(restoredId);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
-      if (parsed.kind === "scene" && id !== lastSceneId) continue;
+      if (parsed.kind === "scene" && restoredId !== lastSceneId) continue;
       await this.openDocument(
         projectService,
         { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
-        layouts.documents[id] ?? null,
+        layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
         false,
       );
     }

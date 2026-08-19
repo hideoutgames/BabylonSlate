@@ -609,6 +609,34 @@ describe("anim graph v2 document", () => {
     expect(codes).toContain("anim.duplicateVariable");
     expect(codes).toContain("anim.missingRuleNode");
   });
+
+  it("flags an Animation whose skeleton does not match its Model", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-walk-anim",
+      clipName: "Walk",
+      durationMs: 1000,
+    };
+    const codes = validateAnimGraph(doc, [
+      {
+        guid: "hero-model",
+        type: "Model",
+        name: "Hero",
+        skeletonGuid: "hero-skel",
+      },
+      {
+        guid: "hero-walk-anim",
+        type: "Animation",
+        name: "Hero_Walk",
+        clipName: "Walk",
+        modelGuid: "hero-model",
+        skeletonGuid: "other-skel",
+      },
+    ]).map((row) => row.code);
+    expect(codes).toContain("anim.skeletonMismatch");
+  });
 });
 
 describe("anim graph v2 evaluator", () => {
@@ -834,7 +862,7 @@ describe("resolveAnimGraphClips", () => {
     },
   ];
 
-  it("rewrites an Animation guid to the owning Model and fills the glTF clip name", () => {
+  it("keeps an Animation guid and fills the glTF clip name from that asset", () => {
     const doc = createDefaultAnimGraph();
     doc.clips[0] = {
       id: "idle-clip",
@@ -845,8 +873,34 @@ describe("resolveAnimGraphClips", () => {
     };
     const resolved = resolveAnimGraphClips(doc, catalog);
     expect(resolved.clips[0]).toMatchObject({
-      assetGuid: "hero-model",
+      assetGuid: "hero-walk-anim",
       clipName: "Walk",
+    });
+  });
+
+  it("fills Animation clip duration from the catalog", () => {
+    const doc = createDefaultAnimGraph();
+    doc.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-walk-anim",
+      clipName: "Walk",
+      durationMs: 1000,
+    };
+    const resolved = resolveAnimGraphClips(doc, [
+      ...catalog,
+      {
+        guid: "hero-walk-anim",
+        type: "Animation",
+        name: "Hero_Walk",
+        clipName: "Walk",
+        durationMs: 1800,
+      },
+    ]);
+    expect(resolved.clips[0]).toMatchObject({
+      assetGuid: "hero-walk-anim",
+      clipName: "Walk",
+      durationMs: 1800,
     });
   });
 

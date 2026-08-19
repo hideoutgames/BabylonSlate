@@ -1,3 +1,5 @@
+import { thumbnailMime } from "@babylonslate/assets";
+
 export type ThumbnailUrlMap = Record<string, string>;
 
 export type SyncContentBrowserThumbnailUrlsInput = {
@@ -10,8 +12,9 @@ export type SyncContentBrowserThumbnailUrlsInput = {
 };
 
 /**
- * Decode JPEG thumbnails for mounted Texture cells only. Blob URLs for tiles
- * that left the window are revoked. A CSS-hidden Content Browser skips decode.
+ * Decode Texture JPEG and Model PNG thumbs for mounted grid cells only.
+ * Blob URLs for tiles that left the window are revoked. A CSS-hidden
+ * Content Browser skips decode.
  */
 export async function syncContentBrowserThumbnailUrls({
   mountedTextureGuids,
@@ -35,7 +38,9 @@ export async function syncContentBrowserThumbnailUrls({
     if (next[guid]) continue;
     const bytes = await load(guid);
     if (!bytes) continue;
-    next[guid] = createObjectURL(new Blob([bytes], { type: "image/jpeg" }));
+    next[guid] = createObjectURL(
+      new Blob([bytes], { type: thumbnailMime(bytes) }),
+    );
   }
   return next;
 }

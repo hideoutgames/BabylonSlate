@@ -93,7 +93,9 @@ import {
 } from "../lib/search-catalog";
 import { uniquePluginFolderName, pluginRootId, isPluginDocumentReadOnly } from "../lib/plugin-ui";
 import { normalizeProjectFolderName } from "../lib/create-project";
+import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { editorEncodeWorkerUrl } from "../lib/public-engine-assets";
+import { applyKenneyMannequinEmptyScaffold } from "../lib/scaffold-empty-3d";
 import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "./graph-validation";
 
 function headerMetaForSave(
@@ -1046,11 +1048,34 @@ export class ProjectService {
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
     await this.installEnginePluginDefaultsIfNeeded();
     await this.mountAssetRegistry();
+    if (kind !== "2d") {
+      await this.scaffoldKenneyMannequinEmpty();
+    }
     return {
       document,
       layouts: createEmptyLayouts(),
       migrationPending: [],
     };
+  }
+
+  private async scaffoldKenneyMannequinEmpty(): Promise<void> {
+    const registry = this.assetRegistry;
+    if (!registry) {
+      throw new Error("Asset registry is not mounted.");
+    }
+    const scene = (await this.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    const next = await applyKenneyMannequinEmptyScaffold({
+      registry,
+      scene,
+      mannequinBytes: await loadKenneyMannequinGlb(),
+    });
+    await this.saveDocument("scene", MAIN_SCENE_FILE, next);
+    if (this.projectSearchIndex) {
+      await this.projectSearchIndex.rebuild(registry);
+    }
   }
 
   async loadDocument(
@@ -1170,7 +1195,10 @@ export class ProjectService {
         ? options.parentClass
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     const storeInHeader =
-      kind === "asset-settings" &&
+      (kind === "asset-settings" ||
+        kind === "model" ||
+        kind === "skeleton" ||
+        kind === "animation") &&
       existing !== null &&
       !existing.hasDocumentChunk;
 

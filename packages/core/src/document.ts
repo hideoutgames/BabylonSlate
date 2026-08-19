@@ -25,6 +25,9 @@ export const ASSET_DOCUMENT_KINDS = [
   "sound-attenuation",
   "particle-emitter",
   "particle-system",
+  "model",
+  "skeleton",
+  "animation",
   "skybox-creator",
   "asset-settings",
 ] as const;
@@ -103,6 +106,12 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "ParticleEmitter";
     case "particle-system":
       return "ParticleSystem";
+    case "model":
+      return "Model";
+    case "skeleton":
+      return "Skeleton";
+    case "animation":
+      return "Animation";
     case "skybox-creator":
       return "SkyboxCreator";
     case "asset-settings":
@@ -184,9 +193,13 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "particle-system";
     case "SkyboxCreator":
       return "skybox-creator";
-    case "Texture":
     case "Model":
+      return "model";
+    case "Skeleton":
+      return "skeleton";
     case "Animation":
+      return "animation";
+    case "Texture":
       return "asset-settings";
     default:
       return null;
@@ -245,6 +258,12 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Particle Emitter";
     case "particle-system":
       return "Particle System";
+    case "model":
+      return "Model";
+    case "skeleton":
+      return "Skeleton";
+    case "animation":
+      return "Animation";
     case "skybox-creator":
       return "Skybox Creator";
     case "asset-settings":
@@ -270,6 +289,23 @@ export function parseDocumentId(
   const kind = id.slice(0, colon);
   if (!isAssetDocumentKind(kind)) return null;
   return { kind, path: id.slice(colon + 1) };
+}
+
+/**
+ * Reopen a layout.json `asset-settings:…` tab as the current document kind
+ * when the registry type has since gained its own DockView (Model).
+ */
+export function migrateRestoredDocumentId(
+  id: string,
+  typeForPath: (path: string) => string | null | undefined,
+): string {
+  const parsed = parseDocumentId(id);
+  if (!parsed || parsed.kind !== "asset-settings") return id;
+  const type = typeForPath(parsed.path);
+  if (!type) return id;
+  const kind = documentKindForAssetType(type);
+  if (!kind || kind === parsed.kind) return id;
+  return documentId({ kind, path: parsed.path });
 }
 
 export function isContentBrowserId(id: string): boolean {

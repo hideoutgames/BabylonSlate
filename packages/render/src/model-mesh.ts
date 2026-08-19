@@ -249,6 +249,26 @@ export function createMeshFromModelBytes(
   return mesh;
 }
 
+/** True when bytes are a GLB or glTF JSON document. OBJ/STL return false. */
+export function isGltfModelBytes(
+  bytes: Uint8Array | null | undefined,
+): boolean {
+  if (!bytes || bytes.byteLength < 4) return false;
+  if (splitGlb(bytes)) return true;
+  try {
+    const json = JSON.parse(new TextDecoder().decode(bytes)) as {
+      asset?: unknown;
+    };
+    return Boolean(json && typeof json === "object" && json.asset);
+  } catch {
+    return false;
+  }
+}
+
+export function gltfLoaderExtension(bytes: Uint8Array): ".glb" | ".gltf" {
+  return splitGlb(bytes) ? ".glb" : ".gltf";
+}
+
 function encodeGlb(json: unknown, bin: Uint8Array): Uint8Array {
   const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
   const jsonPad = pad4(jsonBytes.length);
@@ -452,7 +472,7 @@ export function encodeParentedAnimatedTriangleGlb(clipName = "Idle"): Uint8Array
       asset: { version: "2.0" },
       scene: 0,
       scenes: [{ nodes: [0] }],
-      nodes: [{ children: [1] }, { mesh: 0 }],
+      nodes: [{ name: "root", children: [1] }, { name: "part", mesh: 0 }],
       meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
       accessors: [
         {

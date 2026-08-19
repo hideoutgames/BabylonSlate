@@ -130,6 +130,14 @@ export async function openAssetFromBrowser(
 ): Promise<void> {
   await openContentBrowser(page);
   await selectContentBrowserAssetsFolder(page);
+  const segments = assetPath.split("/");
+  for (let index = 1; index < segments.length - 1; index += 1) {
+    const folderPath = segments.slice(0, index + 1).join("/");
+    const folderTile = page.getByTestId(`content-folder-${folderPath}`);
+    if ((await folderTile.count()) > 0) {
+      await folderTile.dblclick();
+    }
+  }
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
   if (!(await tile.isVisible())) {
     const stem = (assetPath.split("/").pop() ?? assetPath).replace(

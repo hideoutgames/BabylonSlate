@@ -5,8 +5,12 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import {
+  modelMaterialGuids,
+  normalizeAnimationPayload,
   parseSpriteAnimationPayload,
+  retargetAnimationLoadsFromAnimations,
   spriteAnimationTextureGuids,
+  type ModelPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
@@ -765,6 +769,37 @@ export function modelAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   return componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]);
+}
+
+/** Scene Models plus source Models required to Play retargeted Animation rows. */
+export function modelGuidsForPlayRetarget(
+  sceneModelGuids: readonly string[],
+  animations: ReadonlyArray<{ guid: string; payload: unknown }>,
+): string[] {
+  const guids = new Set(sceneModelGuids.filter((guid) => guid.length > 0));
+  const loads = retargetAnimationLoadsFromAnimations(
+    animations.map((entry) => ({
+      guid: entry.guid,
+      payload: normalizeAnimationPayload(entry.payload),
+    })),
+  );
+  for (const [targetModelGuid, rows] of loads) {
+    if (!guids.has(targetModelGuid)) continue;
+    for (const row of rows) guids.add(row.sourceModelGuid);
+  }
+  return [...guids];
+}
+
+/** Slot Material guids Play must compile so Model overrides are not pink. */
+export function modelSlotMaterialGuidsFromPayloads(
+  payloads: ReadonlyMap<string, ModelPayload> | undefined,
+): string[] {
+  if (!payloads || payloads.size === 0) return [];
+  const guids = new Set<string>();
+  for (const payload of payloads.values()) {
+    for (const guid of modelMaterialGuids(payload)) guids.add(guid);
+  }
+  return [...guids].sort();
 }
 
 /** Texture guids on SkyboxComponent faces. Engine default faces are not assets. */

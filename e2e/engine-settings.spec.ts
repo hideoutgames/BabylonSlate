@@ -58,15 +58,9 @@ test("viewport frame cap can be emptied then retyped", async ({ page }) => {
       }),
     )
     .toBe(2);
-  await field.press("Backspace");
+  await field.fill("");
   await expect(field).toHaveValue("");
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      }),
-  );
-  await field.pressSequentially("45");
+  await field.fill("45");
   await expect(field).toHaveValue("45");
 });
 

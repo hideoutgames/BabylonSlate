@@ -195,6 +195,65 @@ describe("packedContentFromGame", () => {
     expect(controls.some((entry) => entry.type === "loadBehaviourTrees")).toBe(true);
   });
 
+  it("resolves packed Animation Graph clips from Animation assets and maps clip guids", async () => {
+    const graph = createDefaultAnimGraph("Hero");
+    graph.clips[0] = {
+      id: "idle-clip",
+      kind: "animation",
+      assetGuid: "hero-idle-anim",
+      clipName: "",
+      durationMs: 1000,
+    };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "hero-idle-anim",
+          type: "Animation",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              clipName: "Idle",
+              modelGuid: "hero-model",
+              skeletonGuid: "hero-skel",
+              durationMs: 1800,
+            }),
+          ),
+        },
+        {
+          guid: "anim-1",
+          type: "AnimationGraph",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(graph)),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const content = packedContentFromGame(await loadGameFromFiles(packed.value.files));
+    expect(content.animGraphs.find((entry) => entry.guid === "anim-1")?.document).toMatchObject({
+      clips: [
+        {
+          assetGuid: "hero-idle-anim",
+          clipName: "Idle",
+          durationMs: 1800,
+        },
+      ],
+    });
+    expect(content.modelClipAnimationGuids.get("hero-model")?.get("Idle")).toBe(
+      "hero-idle-anim",
+    );
+  });
+
   it("hydrates Material and Material Function documents from the packed game", async () => {
     const surface = createDefaultMaterialDocument("Rock");
     const postProcess = createDefaultMaterialDocument("Bloom", "postProcess");

@@ -20,8 +20,10 @@ import {
   filterAssets,
   sortAssets,
   sortChildFolders,
+  flattenContentBrowserForest,
   flattenContentBrowserTree,
   flattenFolderTree,
+  withAutoCollapsedNestedFolders,
   filterFolderTreeRows,
   isFolderNameTaken,
   contentBrowserDeleteListNames,
@@ -32,6 +34,7 @@ import {
   isValidMoveDestination,
   isValidSelectionMoveDestination,
   contentBrowserContextActions,
+  canRetargetSelectedAssets,
   contentBrowserMoveDialogTitle,
   contentBrowserMovePreviewName,
   guidsOutsideSelectedFolders,
@@ -444,6 +447,79 @@ describe("content-browser-helpers", () => {
       hasChildren: true,
       expanded: false,
     });
+  });
+
+  it("auto-collapses nested folders so a Mannequin pack does not hide root assets", () => {
+    const trees = [
+      {
+        name: "assets",
+        path: "assets",
+        assets: ["scene-guid"],
+        children: [
+          {
+            name: "Mannequin",
+            path: "assets/Mannequin",
+            assets: ["idle-guid"],
+            children: [],
+          },
+        ],
+      },
+      {
+        name: "starter-content",
+        path: "plugins/starter-content",
+        assets: [],
+        children: [
+          {
+            name: "assets",
+            path: "plugins/starter-content/assets",
+            assets: ["starter-guid"],
+            children: [],
+          },
+        ],
+      },
+    ];
+    const collapsed = withAutoCollapsedNestedFolders(new Set(), trees, new Set());
+    const assets = [
+      asset({
+        guid: "scene-guid",
+        name: "main",
+        path: "assets/main.scene.babasset",
+        type: "Scene",
+      }),
+      asset({
+        guid: "idle-guid",
+        name: "idle",
+        path: "assets/Mannequin/mannequin_idle.babasset",
+        type: "Animation",
+      }),
+      asset({
+        guid: "starter-guid",
+        name: "StarterActor",
+        path: "plugins/starter-content/assets/StarterActor.class.babasset",
+        type: "Class",
+      }),
+    ];
+    const rows = flattenContentBrowserForest(trees, assets, collapsed);
+    expect(rows.map((row) => row.id)).toEqual([
+      "assets",
+      "assets/Mannequin",
+      "assets/main.scene.babasset",
+      "plugins/starter-content",
+      "plugins/starter-content/assets",
+    ]);
+    expect(collapsed.has("assets/Mannequin")).toBe(true);
+    const userExpanded = withAutoCollapsedNestedFolders(
+      new Set(),
+      trees,
+      new Set(["assets/Mannequin"]),
+    );
+    expect(userExpanded.has("assets/Mannequin")).toBe(false);
+    const userCollapsed = withAutoCollapsedNestedFolders(
+      new Set(["assets/Mannequin"]),
+      trees,
+      new Set(["assets/Mannequin"]),
+    );
+    expect(userCollapsed.has("assets/Mannequin")).toBe(true);
   });
 
   it("treats a folder with only assets as having children", () => {
@@ -1568,6 +1644,56 @@ describe("content-browser-helpers", () => {
     expect(
       contentBrowserContextActions({ assetCount: 0, folderCount: 0 }),
     ).toEqual([]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 2,
+        folderCount: 0,
+        canRetarget: true,
+      }),
+    ).toEqual(["duplicate", "retarget", "move", "copy", "delete"]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 1,
+        folderCount: 0,
+        canRetarget: true,
+      }),
+    ).toEqual([
+      "duplicate",
+      "rename",
+      "retarget",
+      "move",
+      "copy",
+      "show-references",
+      "delete",
+    ]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 1,
+        folderCount: 1,
+        canRetarget: true,
+      }),
+    ).toEqual(["duplicate", "move", "copy", "delete"]);
+  });
+
+  it("allows Retarget only when every selected asset is an Animation with a skeleton", () => {
+    expect(
+      canRetargetSelectedAssets([
+        { type: "Animation", payload: { skeletonGuid: "skin-skel" } },
+        { type: "Animation", payload: { skeletonGuid: "hier-skel" } },
+      ]),
+    ).toBe(true);
+    expect(
+      canRetargetSelectedAssets([
+        { type: "Animation", payload: { clipName: "Spin", skeletonGuid: null } },
+      ]),
+    ).toBe(false);
+    expect(
+      canRetargetSelectedAssets([
+        { type: "Animation", payload: { skeletonGuid: "skel-1" } },
+        { type: "Model", payload: { skeletonGuid: "skel-1" } },
+      ]),
+    ).toBe(false);
+    expect(canRetargetSelectedAssets([])).toBe(false);
   });
 
   it("rejects a move destination that is any selected folder or a descendant", () => {
@@ -1720,6 +1846,32 @@ describe("content-browser-helpers", () => {
         emitterGuids: ["em-b", "em-a", "em-b"],
       }),
     ).toEqual(["em-a", "em-b"]);
+    expect(
+      assetHeaderDependencies("Model", {
+        clipNames: ["Walk"],
+        skeletonGuid: "skel-hero",
+        materialSlots: [
+          { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
+          { index: 1, name: "Eyes", materialGuid: null },
+          { index: 2, name: "Alt", materialGuid: "mat-alt" },
+        ],
+      }),
+    ).toEqual(["mat-alt", "mat-hero", "skel-hero"]);
+    expect(
+      assetHeaderDependencies("Skeleton", {
+        modelGuid: "model-1",
+        kind: "hierarchy",
+        boneNames: ["root"],
+      }),
+    ).toEqual(["model-1"]);
+    expect(
+      assetHeaderDependencies("Animation", {
+        clipName: "Walk",
+        modelGuid: "model-1",
+        skeletonGuid: "skel-1",
+        sourceAnimationGuid: "anim-src",
+      }),
+    ).toEqual(["anim-src", "model-1", "skel-1"]);
     expect(
       assetHeaderDependencies("SkyboxCreator", {
         sourceTextureGuid: "src-1",

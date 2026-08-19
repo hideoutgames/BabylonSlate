@@ -18,12 +18,17 @@ export interface GlbBrowseMaterial {
 
 export interface GlbBrowseAnimation {
   name: string;
+  durationMs?: number;
 }
+
+export type GlbRigKind = "skin" | "hierarchy" | "none";
 
 export interface GlbBrowseParse {
   materials: GlbBrowseMaterial[];
   images: GlbBrowseImage[];
   animations: GlbBrowseAnimation[];
+  rigKind: GlbRigKind;
+  boneNames: string[];
 }
 
 const GLB_MAGIC = 0x46546c67;
@@ -39,8 +44,14 @@ function decodeJsonChunk(bytes: Uint8Array): Record<string, unknown> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-/** Parse a `.glb` container into browse metadata + embedded image bytes. */
-export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
+function pad4(length: number): number {
+  return (4 - (length % 4)) % 4;
+}
+
+/** Split a GLB into JSON + BIN, or null when the container is invalid. */
+export function splitGlbJsonBin(
+  bytes: Uint8Array,
+): { json: Record<string, unknown>; bin: Uint8Array } | null {
   if (bytes.byteLength < 12) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (readU32(view, 0) !== GLB_MAGIC) return null;
@@ -49,7 +60,7 @@ export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
 
   let offset = 12;
   let json: Record<string, unknown> | null = null;
-  let bin: Uint8Array | null = null;
+  let bin = new Uint8Array(0);
 
   while (offset + 8 <= bytes.byteLength) {
     const chunkLength = readU32(view, offset);
@@ -70,7 +81,133 @@ export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
   }
 
   if (!json) return null;
-  return browseFromGltfJson(json, bin);
+  return { json, bin };
+}
+
+/** Encode glTF JSON + BIN as a GLB. */
+export function encodeGlbJsonBin(
+  json: Record<string, unknown>,
+  bin: Uint8Array,
+): Uint8Array {
+  const jsonText = JSON.stringify(json);
+  const jsonPad = pad4(jsonText.length);
+  const jsonBytes = new TextEncoder().encode(jsonText + " ".repeat(jsonPad));
+  const binPad = pad4(bin.byteLength);
+  const binBytes = new Uint8Array(bin.byteLength + binPad);
+  binBytes.set(bin, 0);
+  const total = 12 + 8 + jsonBytes.byteLength + 8 + binBytes.byteLength;
+  const out = new Uint8Array(total);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, GLB_MAGIC, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, total, true);
+  let o = 12;
+  view.setUint32(o, jsonBytes.byteLength, true);
+  view.setUint32(o + 4, CHUNK_JSON, true);
+  out.set(jsonBytes, o + 8);
+  o += 8 + jsonBytes.byteLength;
+  view.setUint32(o, binBytes.byteLength, true);
+  view.setUint32(o + 4, CHUNK_BIN, true);
+  out.set(binBytes, o + 8);
+  return out;
+}
+
+function sidecarBytesForUri(
+  uri: string,
+  sidecars: ReadonlyMap<string, Uint8Array>,
+): Uint8Array | null {
+  let decoded = uri;
+  try {
+    decoded = decodeURIComponent(uri);
+  } catch {
+    decoded = uri;
+  }
+  const keys = [
+    uri,
+    decoded,
+    uri.replace(/\\/g, "/"),
+    decoded.replace(/\\/g, "/"),
+  ];
+  for (const key of keys) {
+    const exact = sidecars.get(key);
+    if (exact && exact.byteLength > 0) return exact;
+    const base = key.split("/").pop();
+    if (!base) continue;
+    const byBase = sidecars.get(base);
+    if (byBase && byBase.byteLength > 0) return byBase;
+  }
+  return null;
+}
+
+function mimeFromImageUri(uri: string): string {
+  const lower = uri.toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/png";
+}
+
+/**
+ * Rewrite external image `uri`s into BIN bufferViews so the stored Model is a
+ * self-contained GLB. Unmatched URIs are left as-is.
+ */
+export function embedGlbExternalImages(
+  bytes: Uint8Array,
+  sidecars: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>,
+): Uint8Array {
+  const map =
+    sidecars instanceof Map
+      ? sidecars
+      : new Map(Object.entries(sidecars));
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return bytes;
+  const images = Array.isArray(split.json.images)
+    ? (split.json.images as Record<string, unknown>[])
+    : [];
+  const bufferViews = Array.isArray(split.json.bufferViews)
+    ? [...(split.json.bufferViews as Record<string, unknown>[])]
+    : [];
+  let bin = new Uint8Array(split.bin);
+  let changed = false;
+  for (const image of images) {
+    const uri = typeof image.uri === "string" ? image.uri : "";
+    if (!uri || uri.startsWith("data:")) continue;
+    const sidecar = sidecarBytesForUri(uri, map);
+    if (!sidecar) continue;
+    const byteOffset = bin.byteLength;
+    const pad = pad4(sidecar.byteLength);
+    const next = new Uint8Array(byteOffset + sidecar.byteLength + pad);
+    next.set(bin, 0);
+    next.set(sidecar, byteOffset);
+    bin = next;
+    bufferViews.push({
+      buffer: 0,
+      byteOffset,
+      byteLength: sidecar.byteLength,
+    });
+    image.bufferView = bufferViews.length - 1;
+    image.mimeType =
+      typeof image.mimeType === "string" && image.mimeType.length > 0
+        ? image.mimeType
+        : mimeFromImageUri(uri);
+    delete image.uri;
+    changed = true;
+  }
+  if (!changed) return bytes;
+  split.json.bufferViews = bufferViews;
+  split.json.images = images;
+  const buffers = Array.isArray(split.json.buffers)
+    ? [...(split.json.buffers as Record<string, unknown>[])]
+    : [{}];
+  buffers[0] = { ...buffers[0], byteLength: bin.byteLength };
+  split.json.buffers = buffers;
+  return encodeGlbJsonBin(split.json, bin);
+}
+
+/** Parse a `.glb` container into browse metadata + embedded image bytes. */
+export function parseGlbForBrowse(bytes: Uint8Array): GlbBrowseParse | null {
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return null;
+  return browseFromGltfJson(split.json, split.bin);
 }
 
 /** Parse a `.gltf` JSON document (optional external BIN not resolved here). */
@@ -160,16 +297,120 @@ function browseFromGltfJson(
     return { name, albedoImageIndex };
   });
 
+  const accessorsJson = Array.isArray(json.accessors) ? json.accessors : [];
+  const nodesJson = Array.isArray(json.nodes) ? json.nodes : [];
+  const skinsJson = Array.isArray(json.skins) ? json.skins : [];
+
   const animations: GlbBrowseAnimation[] = animationsJson.map((entry, i) => {
     const animation = entry as Record<string, unknown>;
     const name =
       typeof animation.name === "string" && animation.name.length > 0
         ? animation.name
         : `Animation_${i}`;
-    return { name };
+    const durationMs = clipDurationMs(animation, accessorsJson);
+    return durationMs !== undefined ? { name, durationMs } : { name };
   });
 
-  return { materials, images: images_out, animations };
+  const { rigKind, boneNames } = classifyGltfRig(
+    nodesJson,
+    skinsJson,
+    animationsJson,
+  );
+
+  return { materials, images: images_out, animations, rigKind, boneNames };
+}
+
+function nodeName(nodes: unknown[], index: number): string {
+  const node = nodes[index] as Record<string, unknown> | undefined;
+  if (typeof node?.name === "string" && node.name.length > 0) return node.name;
+  return `Node_${index}`;
+}
+
+function clipDurationMs(
+  animation: Record<string, unknown>,
+  accessors: unknown[],
+): number | undefined {
+  const samplers = Array.isArray(animation.samplers) ? animation.samplers : [];
+  let maxSeconds = 0;
+  let found = false;
+  for (const sampler of samplers) {
+    const row = sampler as Record<string, unknown>;
+    if (typeof row.input !== "number") continue;
+    const accessor = accessors[row.input] as Record<string, unknown> | undefined;
+    const max = Array.isArray(accessor?.max) ? accessor.max : [];
+    const seconds = typeof max[0] === "number" ? max[0] : NaN;
+    if (!Number.isFinite(seconds) || seconds <= 0) continue;
+    found = true;
+    if (seconds > maxSeconds) maxSeconds = seconds;
+  }
+  if (!found) return undefined;
+  return maxSeconds * 1000;
+}
+
+function classifyGltfRig(
+  nodes: unknown[],
+  skins: unknown[],
+  animations: unknown[],
+): { rigKind: GlbRigKind; boneNames: string[] } {
+  if (skins.length > 0) {
+    const boneNames: string[] = [];
+    const seen = new Set<string>();
+    for (const skin of skins) {
+      const joints = Array.isArray((skin as Record<string, unknown>).joints)
+        ? ((skin as Record<string, unknown>).joints as unknown[])
+        : [];
+      for (const joint of joints) {
+        if (typeof joint !== "number") continue;
+        const name = nodeName(nodes, joint);
+        if (seen.has(name)) continue;
+        seen.add(name);
+        boneNames.push(name);
+      }
+    }
+    return { rigKind: "skin", boneNames };
+  }
+
+  const targeted = new Set<number>();
+  for (const animation of animations) {
+    const channels = Array.isArray((animation as Record<string, unknown>).channels)
+      ? ((animation as Record<string, unknown>).channels as unknown[])
+      : [];
+    for (const channel of channels) {
+      const target = (channel as Record<string, unknown>).target as
+        | Record<string, unknown>
+        | undefined;
+      if (typeof target?.node === "number") targeted.add(target.node);
+    }
+  }
+
+  const treeNames = hierarchyBoneNames(nodes);
+  const targetsTree =
+    targeted.size >= 2 ||
+    [...targeted].some((index) => {
+      const node = nodes[index] as Record<string, unknown> | undefined;
+      return Array.isArray(node?.children) && node.children.length > 0;
+    });
+  if (treeNames.length > 0 && targeted.size > 0 && targetsTree) {
+    return { rigKind: "hierarchy", boneNames: treeNames };
+  }
+  return { rigKind: "none", boneNames: [] };
+}
+
+function hierarchyBoneNames(nodes: unknown[]): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i] as Record<string, unknown> | undefined;
+    if (!node) continue;
+    const hasMesh = typeof node.mesh === "number";
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    if (!hasMesh && !hasChildren) continue;
+    const name = nodeName(nodes, i);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 function decodeDataUri(
@@ -222,29 +463,7 @@ export function buildMinimalGlbFixture(options?: {
     scenes: [{ nodes: [] }],
     scene: 0,
   };
-  const jsonText = JSON.stringify(json);
-  const jsonPad = (4 - (jsonText.length % 4)) % 4;
-  const jsonBytes = new TextEncoder().encode(jsonText + " ".repeat(jsonPad));
-  const binPad = (4 - (png.byteLength % 4)) % 4;
-  const binBytes = new Uint8Array(png.byteLength + binPad);
-  binBytes.set(png, 0);
-
-  const total =
-    12 + 8 + jsonBytes.byteLength + 8 + binBytes.byteLength;
-  const out = new Uint8Array(total);
-  const view = new DataView(out.buffer);
-  view.setUint32(0, GLB_MAGIC, true);
-  view.setUint32(4, 2, true);
-  view.setUint32(8, total, true);
-  let o = 12;
-  view.setUint32(o, jsonBytes.byteLength, true);
-  view.setUint32(o + 4, CHUNK_JSON, true);
-  out.set(jsonBytes, o + 8);
-  o += 8 + jsonBytes.byteLength;
-  view.setUint32(o, binBytes.byteLength, true);
-  view.setUint32(o + 4, CHUNK_BIN, true);
-  out.set(binBytes, o + 8);
-  return out;
+  return encodeGlbJsonBin(json, png);
 }
 
 /** Minimal valid 1×1 PNG (red pixel). */

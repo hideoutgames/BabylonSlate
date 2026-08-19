@@ -15,6 +15,7 @@ import {
   isLogicGraphAssetType,
   labelFromPath,
   migrateLegacyLayout,
+  migrateRestoredDocumentId,
   parseDocumentId,
 } from "./document";
 
@@ -124,6 +125,65 @@ describe("Class and settings documents", () => {
     ).toBe("Hero Class");
   });
 
+  it("opens Model as a DockView document", () => {
+    expect(documentKindForAssetType("Model")).toBe("model");
+    expect(assetTypeForDocumentKind("model")).toBe("Model");
+    expect(documentKindLabel("model")).toBe("Model");
+    expect(isAssetDocumentKind("model")).toBe(true);
+    expect(parseDocumentId("model:assets/hero.babasset")).toEqual({
+      kind: "model",
+      path: "assets/hero.babasset",
+    });
+    expect(
+      createDocumentRef("model", "assets/hero.babasset", { name: "Hero" }).label,
+    ).toBe("Hero Model");
+  });
+
+  it("opens Skeleton and Animation as DockView documents", () => {
+    expect(documentKindForAssetType("Skeleton")).toBe("skeleton");
+    expect(assetTypeForDocumentKind("skeleton")).toBe("Skeleton");
+    expect(documentKindLabel("skeleton")).toBe("Skeleton");
+    expect(isAssetDocumentKind("skeleton")).toBe(true);
+    expect(
+      createDocumentRef("skeleton", "assets/hero.skeleton.babasset", {
+        name: "Hero",
+      }).label,
+    ).toBe("Hero Skeleton");
+    expect(documentKindForAssetType("Animation")).toBe("animation");
+    expect(assetTypeForDocumentKind("animation")).toBe("Animation");
+    expect(documentKindLabel("animation")).toBe("Animation");
+    expect(isAssetDocumentKind("animation")).toBe(true);
+    expect(
+      createDocumentRef("animation", "assets/hero_idle.babasset", {
+        name: "Hero_Idle",
+      }).label,
+    ).toBe("Hero_Idle Animation");
+  });
+
+  it("rewrites a saved asset-settings Model tab to the model document kind", () => {
+    expect(
+      migrateRestoredDocumentId(
+        "asset-settings:assets/hero.babasset",
+        (path) => (path === "assets/hero.babasset" ? "Model" : null),
+      ),
+    ).toBe("model:assets/hero.babasset");
+    expect(
+      migrateRestoredDocumentId(
+        "asset-settings:assets/albedo.babasset",
+        () => "Texture",
+      ),
+    ).toBe("asset-settings:assets/albedo.babasset");
+    expect(
+      migrateRestoredDocumentId("model:assets/hero.babasset", () => "Model"),
+    ).toBe("model:assets/hero.babasset");
+    expect(
+      migrateRestoredDocumentId(
+        "asset-settings:assets/hero_idle.babasset",
+        () => "Animation",
+      ),
+    ).toBe("animation:assets/hero_idle.babasset");
+  });
+
   it("opens imported Audio as a DockView document", () => {
     expect(documentKindForAssetType("Audio")).toBe("audio");
     expect(assetTypeForDocumentKind("audio")).toBe("Audio");
@@ -136,7 +196,7 @@ describe("Class and settings documents", () => {
   });
 
   it("opens import assets as settings tabs", () => {
-    for (const type of ["Texture", "Model", "Animation"]) {
+    for (const type of ["Texture"]) {
       expect(documentKindForAssetType(type)).toBe("asset-settings");
     }
     expect(assetTypeForDocumentKind("asset-settings")).toBe("Texture");

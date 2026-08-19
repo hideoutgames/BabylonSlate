@@ -27,6 +27,7 @@ import {
   normalizeTilemapPayload,
   readJournalLines,
   readThumbnail,
+  writeThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
   collectAudioClipSourceBytes,
@@ -42,6 +43,8 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  normalizeModelPayload,
+  type ModelPayload,
   resolvePluginEnabled,
 } from "@babylonslate/assets";
 import {
@@ -203,6 +206,7 @@ import {
   tilesetGuidsFromTilemaps,
   textureGuidsFromPlayPayloads,
   modelAssetGuidsFromScene,
+  modelGuidsForPlayRetarget,
   playMaterialGuidsFromSources,
   materialClosureFromGuids,
   type PlayAnimGraphEntry,
@@ -220,6 +224,7 @@ import {
   recordSaveAllTrace,
   saveAllTrace,
 } from "../lib/dirty-trace";
+import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
 import {
   normalizeMaterialDocument,
@@ -393,6 +398,8 @@ interface DocumentContextValue {
   }>;
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
+  writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
+  thumbnailEpoch: number;
   thumbnailsEnabled: boolean;
   /** Compile every project graph into runtime script bundles for Preview. */
   collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
@@ -444,6 +451,10 @@ interface DocumentContextValue {
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, Uint8Array>>;
+  /** Model material slots for Play and the editor viewport. */
+  collectPlayModelPayloads: (
+    scene?: SerializedScene | null,
+  ) => Promise<Map<string, import("@babylonslate/assets").ModelPayload>>;
   /** Audio source bytes and mixer/channel/attenuation library for Play. */
   collectPlayAudio: () => Promise<{
     bytes: Map<string, Uint8Array>;
@@ -602,6 +613,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const saveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(64));
   const thumbnailsEnabledRef = useRef(true);
+  const [thumbnailEpoch, setThumbnailEpoch] = useState(0);
 
   const [route, setRoute] = useState<AppRoute>("home");
   const [projectDocument, setProjectDocument] = useState<ProjectDocument | null>(
@@ -1242,6 +1254,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments();
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
+      const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
       for (const doc of dirtyDocs) {
         if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
           await projectService.saveDocument(
@@ -1276,6 +1289,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (savedScene) {
         emitEditorUtilityLifecycle(EDITOR_UTILITY_EVENTS.sceneSaved);
       }
+      enqueueModelThumbnailJobs(
+        savedModels.flatMap((doc) => {
+          const guid = projectService.guidForPath(doc.ref.path);
+          if (!guid || !doc.content) return [];
+          return [
+            {
+              guid,
+              path: doc.ref.path,
+              payload: doc.content as Record<string, unknown>,
+            },
+          ];
+        }),
+      );
       flushSync(() => {
         bump();
       });
@@ -2245,6 +2271,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sound-attenuation"
         | "particle-emitter"
         | "particle-system"
+        | "model"
+        | "skeleton"
+        | "animation"
         | "audio"
         | "asset-settings",
       path: string,
@@ -2512,7 +2541,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         assets.map((asset) => [asset.header.guid, asset] as const),
       );
       const bytes = new Map<string, Uint8Array>();
-      for (const guid of modelAssetGuidsFromScene(scene)) {
+      const animationRows = assets
+        .filter((asset) => asset.header.type === "Animation")
+        .map((asset) => ({
+          guid: asset.header.guid,
+          payload: asset.header.payload,
+        }));
+      for (const guid of modelGuidsForPlayRetarget(
+        modelAssetGuidsFromScene(scene),
+        animationRows,
+      )) {
         const asset = byGuid.get(guid);
         if (!asset) continue;
         const source = await projectService.readAssetChunk(asset.path, "source");
@@ -2521,6 +2559,30 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       return bytes;
     },
     [projectService],
+  );
+
+  const collectPlayModelPayloads = useCallback(
+    async (
+      scene?: SerializedScene | null,
+    ): Promise<Map<string, ModelPayload>> => {
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "Model")
+          .map((asset) => [asset.header.guid, asset] as const),
+      );
+      const payloads = new Map<string, ModelPayload>();
+      for (const guid of modelAssetGuidsFromScene(scene)) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const content =
+          (await loadPlayAssetContent("model", asset.path)) ??
+          asset.header.payload;
+        payloads.set(guid, normalizeModelPayload(content ?? {}));
+      }
+      return payloads;
+    },
+    [loadPlayAssetContent, projectService],
   );
 
   const collectPlayAudio = useCallback(async () => {
@@ -2716,6 +2778,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const bytes = await readThumbnail(derived, guid, assetGuid);
       if (bytes) thumbnailLruRef.current.set(assetGuid, bytes);
       return bytes;
+    },
+    [ensureDerived, projectService],
+  );
+
+  const writeAssetThumbnail = useCallback(
+    async (assetGuid: string, bytes: Uint8Array): Promise<void> => {
+      const guid = projectService.guid;
+      if (!guid) return;
+      const derived = await ensureDerived();
+      await writeThumbnail(derived, guid, assetGuid, bytes);
+      thumbnailLruRef.current.delete(assetGuid);
+      setThumbnailEpoch((epoch) => epoch + 1);
     },
     [ensureDerived, projectService],
   );
@@ -3611,6 +3685,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       onSessionDiagnostic,
       sessionDiagnostics: projectService.sessionDiagnostics,
       loadAssetThumbnail,
+      writeAssetThumbnail,
+      thumbnailEpoch,
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
@@ -3625,6 +3701,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayModelPayloads,
       collectPlayAudio,
       collectPlayParticles,
       collectPlayMaterialLibrary,
@@ -3659,6 +3736,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       retryTextureEncoding,
       onSessionDiagnostic,
       loadAssetThumbnail,
+      writeAssetThumbnail,
+      thumbnailEpoch,
       thumbnailsEnabled,
       collectScriptBundles,
       collectPlayPreviewScripts,
@@ -3673,6 +3752,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayModelBytes,
+      collectPlayModelPayloads,
       collectPlayAudio,
       collectPlayParticles,
       collectPlayMaterialLibrary,

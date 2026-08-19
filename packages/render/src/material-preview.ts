@@ -209,6 +209,7 @@ function zoomPreviewCamera(camera: ArcRotateCamera, factor: number): void {
 export function attachMaterialPreviewGestures(
   canvas: HTMLCanvasElement,
   camera: ArcRotateCamera,
+  options?: { onChange?: () => void },
 ): { dispose: () => void } {
   const pointers = new Map<number, PointerSample>();
   let lastPoint: PointerSample | null = null;
@@ -255,6 +256,7 @@ export function attachMaterialPreviewGestures(
           Math.PI - 0.01,
           Math.max(0.01, camera.beta + (point.y - lastPoint.y) * ORBIT_SCALE),
         );
+        options?.onChange?.();
       }
       lastPoint = point;
       return;
@@ -265,6 +267,7 @@ export function attachMaterialPreviewGestures(
         const factor = currentSpread / lastSpread;
         if (Math.abs(factor - 1) > 0.001) {
           zoomPreviewCamera(camera, factor);
+          options?.onChange?.();
         }
       }
       lastSpread = currentSpread;
@@ -289,6 +292,7 @@ export function attachMaterialPreviewGestures(
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
     zoomPreviewCamera(camera, event.deltaY < 0 ? 1.1 : 1 / 1.1);
+    options?.onChange?.();
   };
 
   const onTouch = (event: TouchEvent) => {
@@ -318,7 +322,7 @@ export function attachMaterialPreviewGestures(
 }
 
 export interface MaterialPreviewPresenter {
-  present: () => void;
+  present: (options?: { force?: boolean }) => void;
   setFrozen: (frozen: boolean) => void;
   dispose: () => void;
 }
@@ -407,11 +411,11 @@ export function createMaterialPreviewPresenter(
   };
 
   return {
-    present: () => {
+    present: (options) => {
       canvas.dataset.cameraRadius = String(host.camera.radius);
       if (frozen || blitInFlight) return;
       const at = now();
-      if (at - lastPresentMs < minIntervalMs) return;
+      if (!options?.force && at - lastPresentMs < minIntervalMs) return;
       const size = previewBufferSize(canvas, maxSize);
       if (!size) return;
       lastPresentMs = at;

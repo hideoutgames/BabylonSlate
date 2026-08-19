@@ -171,12 +171,12 @@ test.describe("P6 first-playable scene editing", () => {
     await openMainScene(page);
 
     const cubeRow = page.getByTestId("tree-row-actor:actor-1");
-    await expect(cubeRow).toContainText("Cube");
+    await expect(cubeRow).toContainText("Mannequin");
     const canvas = page.getByTestId("viewport-canvas");
     await expect(canvas).toBeVisible();
 
     const copies = page.locator('[data-testid^="tree-row-actor:"]', {
-      hasText: "Cube Copy",
+      hasText: "Mannequin Copy",
     });
     const before = await copies.count();
 
@@ -195,7 +195,7 @@ test.describe("P6 first-playable scene editing", () => {
     const hint = page.getByTestId("outliner-drop-hint");
     await expect(hint).toBeVisible();
     await expect(hint).toHaveAttribute("data-allowed", "true");
-    await expect(hint).toContainText("Cube");
+    await expect(hint).toContainText("Mannequin");
     await page.mouse.up();
 
     await expect(copies).toHaveCount(before + 1);

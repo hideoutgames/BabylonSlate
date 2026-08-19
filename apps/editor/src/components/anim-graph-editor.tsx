@@ -426,7 +426,7 @@ export function AnimObjectVariablesPanel(_props: IDockviewPanelProps) {
 
 export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   void _props;
-  const { doc, commit, documentId } = useAnimGraphDocument();
+  const { doc, commit, documentId, catalog } = useAnimGraphDocument();
   const {
     selectedId,
     setSelectedId,
@@ -487,7 +487,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     if (activeDocumentId !== documentId) return;
     if (animEditorMode !== "stateMachine") return;
-    const animRows: Diagnostic[] = validateAnimGraph(doc).map((row) => ({
+    const animRows: Diagnostic[] = validateAnimGraph(doc, catalog).map((row) => ({
       severity: row.severity,
       code: row.code,
       message: row.message,
@@ -515,6 +515,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     animEditorMode,
     doc,
     documentId,
+    catalog,
     openTransition,
     ruleGraph,
     ruleMembers,
@@ -675,8 +676,13 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     ? doc.clips.find((row) => row.id === selected.clipId)
     : undefined;
   const clipKind: AnimClipKind = clip?.kind ?? "animation";
+  const clipAssetType = catalog.find((entry) => entry.guid === clip?.assetGuid)
+    ?.type;
   const clipNameOptions = (
-    catalog.find((entry) => entry.guid === clip?.assetGuid)?.clipNames ?? []
+    clipKind === "animation" && clipAssetType === "Model"
+      ? (catalog.find((entry) => entry.guid === clip?.assetGuid)?.clipNames ??
+        [])
+      : []
   ).map((name) => ({ value: name, label: name }));
   const assets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
@@ -696,9 +702,11 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     const nextName =
       clipKind === "sprite"
         ? ""
-        : names.includes(clip?.clipName ?? "")
-          ? clip?.clipName
-          : (names[0] ?? "");
+        : entry?.type === "Animation"
+          ? (entry.clipName ?? "")
+          : names.includes(clip?.clipName ?? "")
+            ? clip?.clipName
+            : (names[0] ?? "");
     commit(
       upsertStateClip(doc, selected.id, {
         assetGuid: guid,
@@ -765,7 +773,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                     : {
                         name: clip.assetGuid,
                         type:
-                          clipKind === "sprite" ? "SpriteAnimation" : "Model",
+                          clipKind === "sprite" ? "SpriteAnimation" : "Animation",
                       };
                 })()
               : undefined,
@@ -801,7 +809,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
       {selected || selectedTransition ? (
         <div data-testid="anim-graph-details">
           {identityRows.length > 0 ? <PropertyGrid rows={identityRows} /> : null}
-          {selected && clipKind === "animation" ? (
+          {selected && clipKind === "animation" && clipAssetType === "Model" ? (
             <Field
               data-testid="property-row-clipName"
               data-disabled={clipNameOptions.length === 0 || undefined}
@@ -892,9 +900,9 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
         open={clipPick}
         onOpenChange={setClipPick}
         assets={assets}
-        allowedTypes={clipKind === "sprite" ? ["SpriteAnimation"] : ["Model"]}
+        allowedTypes={clipKind === "sprite" ? ["SpriteAnimation"] : ["Animation"]}
         title={
-          clipKind === "sprite" ? "Pick Sprite Animation" : "Pick Model"
+          clipKind === "sprite" ? "Pick Sprite Animation" : "Pick Animation"
         }
         allowNone
         onPick={(guid) => {

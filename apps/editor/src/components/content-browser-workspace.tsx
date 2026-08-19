@@ -15,7 +15,16 @@ import {
   UploadIcon,
 } from "lucide-react";
 import type { IndexedAsset } from "@babylonslate/assets";
-import { newAssetGuid, resolvePluginEnabled } from "@babylonslate/assets";
+import {
+  isThumbnailableAssetType,
+  newAssetGuid,
+  normalizeAnimationPayload,
+  normalizeSkeletonPayload,
+  pickerImportAccept,
+  resolvePluginEnabled,
+} from "@babylonslate/assets";
+import { convertObjImportBatch, animationRetargetHasMatches } from "@babylonslate/render";
+import { Scene } from "@babylonjs/core/scene";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -24,9 +33,11 @@ import {
   TypeVisualIcon,
   resolveTypeVisual,
   useContextMenu,
+  AssetPicker,
   type TypeVisual,
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
+import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
@@ -65,6 +76,7 @@ import {
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { useDocuments } from "../context/document-context";
+import { useOptionalPlay } from "../context/play-context";
 import {
   applyLockTransfers,
   containedAssetPaths,
@@ -85,6 +97,7 @@ import {
   classParentLookup,
   collectFolderGuidsFromTrees,
   contentBrowserContextActions,
+  canRetargetSelectedAssets,
   contentBrowserDeleteListNames,
   contentBrowserDeletingGuids,
   contentBrowserMovePreviewName,
@@ -112,6 +125,7 @@ import {
   sortChildFolders,
   uniqueAssetTypes,
   visualForIndexedAsset,
+  withAutoCollapsedNestedFolders,
   type ContentBrowserContextAction,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
@@ -126,6 +140,7 @@ import {
   PROJECT_CONTENT_ROOT_ID,
 } from "../lib/plugin-ui";
 import { revealAssetFromTarget } from "../lib/search-navigation";
+import { writeRetargetedAnimations } from "../lib/animation-retarget";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
@@ -182,12 +197,15 @@ export function ContentBrowserWorkspace({
     setActiveDocument,
     tabOrder,
     loadAssetThumbnail,
+    thumbnailEpoch,
     thumbnailsEnabled,
     pluginDescriptors,
     showPluginContent,
     sourceControl,
     activeDocumentId,
+    readAssetChunk,
   } = useDocuments();
+  const play = useOptionalPlay();
   const { pendingTarget, clearPendingTarget } = useProjectSearch();
   const { diagnostics } = useValidation();
   const compileErrorGuids = useMemo(() => {
@@ -215,6 +233,7 @@ export function ContentBrowserWorkspace({
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     () => new Set(),
   );
+  const userToggledFoldersRef = useRef(new Set<string>());
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [newAssetOpen, setNewAssetOpen] = useState(false);
   const [newAssetType, setNewAssetType] =
@@ -243,6 +262,8 @@ export function ContentBrowserWorkspace({
     currentName: string;
   } | null>(null);
   const [importErrors, setImportErrors] = useState<string[] | null>(null);
+  const [retargetPickerOpen, setRetargetPickerOpen] = useState(false);
+  const [retargetErrors, setRetargetErrors] = useState<string[] | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const thumbnailUrlsRef = useRef(thumbnailUrls);
@@ -327,6 +348,27 @@ export function ContentBrowserWorkspace({
     });
   }, [assetRegistry, browserRoots, registryVersion]);
 
+  useEffect(() => {
+    setCollapsedFolders((current) => {
+      const next = withAutoCollapsedNestedFolders(
+        current,
+        folderTrees,
+        userToggledFoldersRef.current,
+      );
+      if (next.size === current.size) {
+        let same = true;
+        for (const path of next) {
+          if (!current.has(path)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return current;
+      }
+      return next;
+    });
+  }, [folderTrees]);
+
   const allAssets = useMemo(() => {
     if (!assetRegistry) return [];
     return browserRoots.flatMap((root) => {
@@ -334,6 +376,77 @@ export function ContentBrowserWorkspace({
       return assetRegistry.list({ rootId: root.id });
     });
   }, [assetRegistry, browserRoots, registryVersion]);
+
+  const handleRetargetSkeleton = useCallback(
+    async (skeletonGuid: string | null) => {
+      setRetargetPickerOpen(false);
+      if (!skeletonGuid || !assetRegistry) return;
+      const skeleton = assetRegistry.getByGuid(skeletonGuid);
+      if (!skeleton || skeleton.header.type !== "Skeleton") return;
+      const skeletonPayload = normalizeSkeletonPayload(skeleton.header.payload);
+      const sources = menuTargetGuidsRef.current.flatMap((guid) => {
+        const asset = assetRegistry.getByGuid(guid);
+        if (!asset || asset.header.type !== "Animation") return [];
+        return [
+          {
+            guid,
+            name: asset.header.name,
+            payload: normalizeAnimationPayload(asset.header.payload),
+          },
+        ];
+      });
+      const engine = play?.ensureSharedEngine();
+      if (!engine) {
+        setRetargetErrors(["Shared editor Engine is not available."]);
+        return;
+      }
+      const scene = new Scene(engine);
+      setBusy(true);
+      try {
+        const result = await writeRetargetedAnimations({
+          sources,
+          targetSkeletonGuid: skeleton.header.guid,
+          targetSkeletonName: skeleton.header.name,
+          targetModelGuid: skeletonPayload.modelGuid,
+          existingNames: allAssets.map((asset) => asset.header.name),
+          folderRelative: selectedRoot.relative,
+          rootId: selectedRoot.rootId,
+          readModelBytes: async (modelGuid) => {
+            const model = assetRegistry.getByGuid(modelGuid);
+            if (!model) return null;
+            return readAssetChunk(model.path, "source");
+          },
+          probeMatches: (sourceBytes, targetBytes, clipName) =>
+            animationRetargetHasMatches(scene, sourceBytes, targetBytes, clipName),
+          createAsset: (rootId, relativePath, importResult) =>
+            assetRegistry.createAsset(rootId, relativePath, importResult),
+        });
+        await refreshAssetRegistry();
+        if (result.skipped.length > 0) {
+          setRetargetErrors(
+            result.skipped.map(
+              (name) => `${name}: no matching bones on ${skeleton.header.name}`,
+            ),
+          );
+        }
+      } catch (error) {
+        setRetargetErrors([
+          error instanceof Error ? error.message : String(error),
+        ]);
+      } finally {
+        scene.dispose();
+        setBusy(false);
+      }
+    },
+    [
+      allAssets,
+      assetRegistry,
+      play,
+      readAssetChunk,
+      refreshAssetRegistry,
+      selectedRoot,
+    ],
+  );
 
   const refuseTheirsAssetPaths = useCallback(
     (paths: string[]): boolean => {
@@ -414,7 +527,7 @@ export function ContentBrowserWorkspace({
     const guids: string[] = [];
     for (let index = slice.firstIndex; index < slice.lastIndex; index++) {
       const item = gridItems[index];
-      if (item?.kind === "asset" && item.asset.header.type === "Texture") {
+      if (item?.kind === "asset" && isThumbnailableAssetType(item.asset.header.type)) {
         guids.push(item.asset.header.guid);
       }
     }
@@ -512,6 +625,13 @@ export function ContentBrowserWorkspace({
             nameDialog.value,
           )
         : false;
+
+  useEffect(() => {
+    setThumbnailUrls((current) => {
+      for (const url of Object.values(current)) URL.revokeObjectURL(url);
+      return {};
+    });
+  }, [thumbnailEpoch]);
 
   useEffect(() => {
     if (!thumbnailsEnabled) return;
@@ -754,6 +874,12 @@ export function ContentBrowserWorkspace({
         },
       },
       {
+        id: "retarget" as const,
+        label: "Retarget…",
+        testId: "content-browser-retarget",
+        onSelect: () => setRetargetPickerOpen(true),
+      },
+      {
         id: "move" as const,
         label: "Move…",
         onSelect: () => openMoveForSnapshot("move"),
@@ -948,34 +1074,57 @@ export function ContentBrowserWorkspace({
       const incoming = filterBabpluginFiles(files);
       if (incoming.length === 0) return;
       setBusy(true);
+      const { files: prepared, errors: convertErrors } =
+        await convertObjImportBatch(incoming, {
+          engine: play?.ensureSharedEngine() ?? undefined,
+        });
+      errors.push(...convertErrors);
+      if (prepared.length === 0) {
+        setBusy(false);
+        if (errors.length) setImportErrors(errors);
+        return;
+      }
       setImportProgress({
-        total: incoming.length,
+        total: prepared.length,
         done: 0,
-        currentName: incoming[0]!.name,
+        currentName: prepared[0]!.name,
       });
+      const createdModels: Array<{
+        guid: string;
+        path: string;
+        payload: Record<string, unknown>;
+      }> = [];
       try {
         const folder = selectedRoot.relative;
-        for (let index = 0; index < incoming.length; index += 1) {
-          const file = incoming[index]!;
+        for (let index = 0; index < prepared.length; index += 1) {
+          const file = prepared[index]!;
           setImportProgress({
-            total: incoming.length,
+            total: prepared.length,
             done: index,
             currentName: file.name,
           });
           try {
-            await assetRegistry.importFile(
+            const created = await assetRegistry.importFile(
               selectedRoot.rootId,
               folder,
               file.name,
               file.bytes,
             );
+            for (const asset of created) {
+              if (asset.header.type !== "Model") continue;
+              createdModels.push({
+                guid: asset.header.guid,
+                path: asset.path,
+                payload: asset.header.payload ?? {},
+              });
+            }
           } catch (err) {
             errors.push(
               `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
           setImportProgress({
-            total: incoming.length,
+            total: prepared.length,
             done: index + 1,
             currentName: file.name,
           });
@@ -986,8 +1135,9 @@ export function ContentBrowserWorkspace({
         setBusy(false);
         if (errors.length) setImportErrors(errors);
       }
+      enqueueModelThumbnailJobs(createdModels);
     },
-    [assetRegistry, refreshAssetRegistry, selectedRoot],
+    [assetRegistry, play, refreshAssetRegistry, selectedRoot],
   );
 
   const confirmNameDialog = useCallback(async () => {
@@ -1208,7 +1358,10 @@ export function ContentBrowserWorkspace({
   const handleImport = useCallback(async () => {
     if (isMobilePlatform()) {
       try {
-        const files = await pickImportFiles({ multiple: true });
+        const files = await pickImportFiles({
+          multiple: true,
+          accept: pickerImportAccept(),
+        });
         await importPickedFiles(files);
       } catch (err) {
         setImportErrors([
@@ -1304,6 +1457,13 @@ export function ContentBrowserWorkspace({
         contentBrowserContextActions({
           assetCount: guids.length,
           folderCount: folders.length,
+          canRetarget: canRetargetSelectedAssets(
+            guids.flatMap((guid) => {
+              const asset = assetRegistry?.getByGuid(guid);
+              if (!asset) return [];
+              return [{ type: asset.header.type, payload: asset.header.payload }];
+            }),
+          ),
         }),
       );
       const items = tileContextItems.filter((item) =>
@@ -1317,6 +1477,7 @@ export function ContentBrowserWorkspace({
       selectedFolderPaths,
       selectedGuids,
       tileContextItems,
+      assetRegistry,
     ],
   );
 
@@ -1631,6 +1792,7 @@ export function ContentBrowserWorkspace({
           multiple
           className="hidden"
           data-testid="content-browser-import-input"
+          accept={pickerImportAccept()}
           onChange={(event) => {
             void handleImportInputChange(event.target.files);
             event.target.value = "";
@@ -1665,6 +1827,7 @@ export function ContentBrowserWorkspace({
               onToggleExpanded={(id) => {
                 const row = browserRows.find((item) => item.id === id);
                 if (!row || row.kind !== "folder" || !row.hasChildren) return;
+                userToggledFoldersRef.current.add(id);
                 setCollapsedFolders((current) => {
                   const next = new Set(current);
                   if (next.has(id)) next.delete(id);
@@ -2083,6 +2246,55 @@ export function ContentBrowserWorkspace({
           ) : null}
         </DialogContent>
       </Dialog>
+
+      <AssetPicker
+        open={retargetPickerOpen}
+        onOpenChange={setRetargetPickerOpen}
+        assets={allAssets.map((asset) => ({
+          guid: asset.header.guid,
+          name: asset.header.name,
+          type: asset.header.type,
+          path: asset.path,
+        }))}
+        allowedTypes={["Skeleton"]}
+        title="Pick Skeleton"
+        allowNone={false}
+        onPick={(guid) => {
+          void handleRetargetSkeleton(guid);
+        }}
+        data-testid="content-browser-retarget-picker"
+      />
+
+      <AlertDialog
+        open={retargetErrors !== null}
+        onOpenChange={(open) => {
+          if (!open) setRetargetErrors(null);
+        }}
+      >
+        <AlertDialogContent data-testid="content-browser-retarget-errors">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Retarget Failed</AlertDialogTitle>
+            <AlertDialogDescription>
+              No matching bones. The Animation was not created.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+            {retargetErrors?.map((message) => (
+              <li key={message}>
+                <SelectableText>{message}</SelectableText>
+              </li>
+            ))}
+          </ul>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="content-browser-retarget-errors-dismiss"
+              onClick={() => setRetargetErrors(null)}
+            >
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={importErrors !== null}

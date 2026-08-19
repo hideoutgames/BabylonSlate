@@ -19,6 +19,8 @@ import type {
   SpritePayload,
   TilemapPayload,
   TilesetPayload,
+  ModelPayload,
+  RetargetAnimationLoad,
 } from "@babylonslate/assets";
 import type {
   MaterialDocument,
@@ -492,6 +494,9 @@ export function startPlaySession(options: {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
+  modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: AudioLibrary;
   particleLibrary?: ParticleLibrary;
@@ -551,6 +556,9 @@ export function startPlaySession(options: {
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
     modelBytes: options.modelBytes,
+    modelPayloads: options.modelPayloads,
+    modelClipAnimationGuids: options.modelClipAnimationGuids,
+    retargetAnimationLoads: options.retargetAnimationLoads,
     audioBytes: options.audioBytes,
     audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary,

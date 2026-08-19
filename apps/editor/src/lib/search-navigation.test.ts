@@ -81,6 +81,30 @@ describe("documentOpenForTarget", () => {
     expect(
       documentOpenForTarget({
         kind: "asset",
+        path: "assets/hero.babasset",
+        guid: "mesh-1",
+        assetType: "Model",
+      }),
+    ).toEqual({ kind: "model", path: "assets/hero.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
+        path: "assets/hero.skeleton.babasset",
+        guid: "skel-1",
+        assetType: "Skeleton",
+      }),
+    ).toEqual({ kind: "skeleton", path: "assets/hero.skeleton.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
+        path: "assets/hero_idle.babasset",
+        guid: "anim-1",
+        assetType: "Animation",
+      }),
+    ).toEqual({ kind: "animation", path: "assets/hero_idle.babasset" });
+    expect(
+      documentOpenForTarget({
+        kind: "asset",
         path: "assets/jump.babasset",
         guid: "audio-1",
         assetType: "Audio",

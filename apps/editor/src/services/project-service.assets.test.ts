@@ -8,9 +8,12 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import {
+  decodeAssetDocument,
   decodeBabasset,
   encodeAssetDocument,
   encodeBabasset,
+  normalizeAnimationPayload,
+  normalizeSkeletonPayload,
   readAssetDocumentHeader,
   clearDeletedAssetRefs,
 } from "@babylonslate/assets";
@@ -66,9 +69,14 @@ describe("project documents as .babasset", () => {
 
   it("round-trips scene and graph content through the codec", async () => {
     const { storage, service } = await scaffolded();
-    const scene = await service.loadDocument("scene", MAIN_SCENE_FILE);
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
     const graph = await service.loadDocument("graph", MAIN_CLASS_FILE);
-    expect(scene).toEqual(createDefaultScene());
+    expect(scene.actors.find((actor) => actor.id === "actor-1")?.name).toBe(
+      "Mannequin",
+    );
     expect(graph).toEqual(createDefaultLogicGraphSerialized());
     const classHeader = readAssetDocumentHeader(
       await storage.readBinary(MAIN_CLASS_FILE),
@@ -128,13 +136,13 @@ describe("project documents as .babasset", () => {
     ).toBe(3);
   });
 
-  it("rebuilds a search index that finds the default Cube actor", async () => {
+  it("rebuilds a search index that finds the default Mannequin actor", async () => {
     const { service } = await scaffolded();
     expect(service.searchIndex).toBeTruthy();
-    const hits = service.searchIndex!.query("cube");
-    expect(hits.some((hit) => hit.kind === "actor" && hit.label === "Cube")).toBe(
-      true,
-    );
+    const hits = service.searchIndex!.query("mannequin");
+    expect(
+      hits.some((hit) => hit.kind === "actor" && hit.label === "Mannequin"),
+    ).toBe(true);
   });
 
   it("updates search hits after saving a renamed actor", async () => {
@@ -149,10 +157,91 @@ describe("project documents as .babasset", () => {
         actor.id === "actor-1" ? { ...actor, name: "RenamedHero" } : actor,
       ),
     });
-    expect(service.searchIndex!.query("cube")).toEqual([]);
+    expect(
+      service
+        .searchIndex!.query("mannequin")
+        .some((hit) => hit.kind === "actor" && hit.label === "Mannequin"),
+    ).toBe(false);
     expect(
       service.searchIndex!.query("renamedhero").some((hit) => hit.kind === "actor"),
     ).toBe(true);
+  });
+
+  it("scaffolds Kenney Mannequin as a hierarchy rig with idle Anim Graph", async () => {
+    const { storage, service } = await scaffolded();
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    const actor = scene.actors.find((entry) => entry.id === "actor-1");
+    expect(actor?.name).toBe("Mannequin");
+    expect(actor?.classId).toBe("Mannequin");
+    const mesh = actor?.components.find(
+      (component) => component.classId === "MeshComponent",
+    );
+    const animGraph = actor?.components.find(
+      (component) => component.classId === "AnimationGraphComponent",
+    );
+    expect(mesh?.properties.assetGuid).toEqual(expect.any(String));
+    expect(animGraph?.properties.graphGuid).toEqual(expect.any(String));
+
+    const registry = service.registry;
+    expect(registry).toBeTruthy();
+    const model = registry!.list().find((asset) => asset.header.type === "Model");
+    const skeleton = registry!
+      .list()
+      .find((asset) => asset.header.type === "Skeleton");
+    const animations = registry!
+      .list()
+      .filter((asset) => asset.header.type === "Animation");
+    expect(model?.header.name).toBe("mannequin");
+    expect(mesh?.properties.assetGuid).toBe(model?.header.guid);
+    expect(normalizeSkeletonPayload(skeleton?.header.payload).kind).toBe(
+      "hierarchy",
+    );
+    expect(animations).toHaveLength(27);
+    const idle = animations.find(
+      (asset) =>
+        normalizeAnimationPayload(asset.header.payload).clipName.toLowerCase() ===
+        "idle",
+    );
+    expect(idle).toBeTruthy();
+
+    expect(await storage.exists("assets/Mannequin/Mannequin.class.babasset")).toBe(
+      true,
+    );
+    expect(await storage.exists("assets/Mannequin/Mannequin.anim.babasset")).toBe(
+      true,
+    );
+    const classHeader = readAssetDocumentHeader(
+      await storage.readBinary("assets/Mannequin/Mannequin.class.babasset"),
+    );
+    expect(classHeader.type).toBe("Class");
+    expect(classHeader.parentClass).toBe("Actor");
+    expect(classHeader.name).toBe("Mannequin");
+
+    const graphDoc = await decodeAssetDocument(
+      await storage.readBinary("assets/Mannequin/Mannequin.anim.babasset"),
+    );
+    expect(graphDoc.type).toBe("AnimationGraph");
+    const clips = (graphDoc.payload as { clips?: Array<{ assetGuid?: string }> })
+      .clips;
+    expect(clips?.[0]?.assetGuid).toBe(idle!.header.guid);
+    expect(animGraph?.properties.graphGuid).toBe(graphDoc.guid);
+  });
+
+  it("leaves 2D Empty camera-only without a Mannequin Model", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("TwoDEmpty", { kind: "2d" });
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    expect(scene).toEqual(createDefaultScene("2d"));
+    expect(
+      service.registry?.list().some((asset) => asset.header.type === "Model"),
+    ).toBe(false);
   });
 
   it("opens an imported Font (header payload, no document chunk) and keeps source bytes on save", async () => {
@@ -255,6 +344,59 @@ describe("project documents as .babasset", () => {
     expect(saved.header.type).toBe("Texture");
     expect(saved.header.payload.usage).toBe("pixelArt");
     expect(saved.chunks.get("pixels")).toEqual(pixels);
+    expect(
+      saved.header.chunks.some((chunk) => chunk.id === "document"),
+    ).toBe(false);
+  });
+
+  it("saves Model slots onto the header without replacing the source GLB", async () => {
+    const { storage, service } = await scaffolded();
+    const source = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4]);
+    const path = "assets/hero.babasset";
+    await storage.writeBinary(
+      path,
+      await encodeBabasset({
+        header: {
+          guid: "model-guid",
+          type: "Model",
+          name: "hero",
+          engineVersion: "0.0.0",
+          version: 1,
+          mode: "thin",
+          dependencies: ["mat-old"],
+          parentClass: null,
+          payload: {
+            clipNames: ["Walk"],
+            materialSlots: [
+              { index: 0, name: "Hero Mat", materialGuid: "mat-old" },
+            ],
+          },
+        },
+        chunks: [
+          { id: "source", kind: "geometry", mime: "model/gltf-binary", data: source },
+        ],
+      }),
+    );
+
+    const payload = (await service.loadDocument("model", path)) as Record<
+      string,
+      unknown
+    >;
+    await service.saveDocument("model", path, {
+      ...payload,
+      materialSlots: [
+        { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
+      ],
+    });
+
+    const saved = await decodeBabasset(await storage.readBinary(path));
+    expect(saved.header.type).toBe("Model");
+    expect(saved.header.payload.clipNames).toEqual(["Walk"]);
+    expect(saved.header.payload.materialSlots).toEqual([
+      { index: 0, name: "Hero Mat", materialGuid: "mat-new" },
+    ]);
+    expect(saved.header.dependencies).toEqual(["mat-new"]);
+    expect(saved.chunks.get("source")).toEqual(source);
     expect(
       saved.header.chunks.some((chunk) => chunk.id === "document"),
     ).toBe(false);

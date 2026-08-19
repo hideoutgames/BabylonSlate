@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { syncContentBrowserThumbnailUrls } from "./content-browser-thumbnails";
 
 describe("syncContentBrowserThumbnailUrls", () => {
-  it("decodes only mounted Texture cells and revokes URLs that leave the window", async () => {
+  it("decodes only mounted Texture/Model cells and revokes URLs that leave the window", async () => {
     const load = vi.fn(async (guid: string) => new Uint8Array([guid.length]));
     const createObjectURL = vi.fn((blob: Blob) => `blob:${blob.size}`);
     const revokeObjectURL = vi.fn();

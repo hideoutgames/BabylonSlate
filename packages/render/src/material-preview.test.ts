@@ -285,6 +285,25 @@ describe("material preview orbit gestures", () => {
     expect(host.camera.target.equals(targetBefore)).toBe(true);
   });
 
+  it("notifies onChange after orbit, pinch, and wheel", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const onChange = vi.fn();
+    const handle = attachMaterialPreviewGestures(
+      canvas as unknown as HTMLCanvasElement,
+      host.camera,
+      { onChange },
+    );
+    disposers.push(() => handle.dispose());
+    canvas.emit("pointerdown", pointer(1, 160, 90));
+    canvas.emit("pointermove", pointer(1, 220, 110));
+    expect(onChange).toHaveBeenCalled();
+    onChange.mockClear();
+    canvas.emit("wheel", { deltaY: 240 });
+    expect(onChange).toHaveBeenCalled();
+  });
+
   it("attaches listeners only to the preview canvas and drops them on dispose", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
@@ -376,6 +395,37 @@ describe("material preview presenter", () => {
     const render = vi.spyOn(host.scene, "render");
     presenter.present();
     expect(render).not.toHaveBeenCalled();
+  });
+
+  it("skips frames inside a 1 fps interval unless force is set", async () => {
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(new Uint8Array(4));
+    disposers.push(() => readPixels.mockRestore());
+    let now = 0;
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1, now: () => now },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present();
+    await Promise.resolve();
+    await Promise.resolve();
+    const render = vi.spyOn(host.scene, "render");
+    now = 500;
+    presenter.present();
+    expect(render).not.toHaveBeenCalled();
+    presenter.present({ force: true });
+    expect(render).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    await Promise.resolve();
+    now = 1500;
+    presenter.present();
+    expect(render).toHaveBeenCalledTimes(2);
   });
 
   it("caps present to the editor viewport frame cap", async () => {

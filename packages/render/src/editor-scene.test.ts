@@ -20,6 +20,7 @@ import {
   TWO_D_BETA,
 } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { encodeTriangleGlb } from "./model-mesh";
 import {
   createEditorGrid,
   gridCoverageWorld,
@@ -854,6 +855,53 @@ describe("EditorSceneSync", () => {
     const pivotMesh = sync.meshForActor("prefab-root");
     expect(pivotMesh?.material).not.toBe(assigned);
     expect((pivotMesh?.material as StandardMaterial).disableLighting).toBe(true);
+  });
+
+  it("applies Model material slots after the GLB loads and lets materialGuid win", async () => {
+    const { scene } = createHandle();
+    const slotMat = new StandardMaterial("slot-mat", scene);
+    const meshMat = new StandardMaterial("mesh-mat", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => {
+        if (guid === "mat-slot") return slotMat;
+        if (guid === "mat-mesh") return meshMat;
+        return null;
+      },
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+      modelPayloads: new Map([
+        [
+          "model-1",
+          {
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [
+              { index: 0, name: "Hero Mat", materialGuid: "mat-slot" },
+            ],
+          },
+        ],
+      ]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    await vi.waitFor(() => {
+      expect(sync.meshForActor("a")?.visibility).toBe(0);
+      expect(sync.meshForActor("a")?.getChildMeshes().length).toBeGreaterThan(0);
+    });
+    const visible = sync
+      .meshForActor("a")!
+      .getChildMeshes()
+      .filter((child) => child.visibility > 0);
+    expect(visible.some((child) => child.material === slotMat)).toBe(true);
+
+    mesh.properties.materialGuid = "mat-mesh";
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    expect(sync.meshForActor("a")?.material).toBe(meshMat);
+    for (const child of sync.meshForActor("a")!.getChildMeshes()) {
+      expect(child.material).toBe(meshMat);
+    }
   });
 });
 

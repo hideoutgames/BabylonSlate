@@ -256,8 +256,7 @@ only buffers it created.
 
 ## Runtime
 
-`MeshComponent.materialGuid` binds a Material; imported models also carry
-ordered `materialSlots`. Play emits `assignMaterial`, optionally with a
+`MeshComponent.materialGuid` binds a Material (whole-mesh override). Imported models also carry ordered `materialSlots`; Play and the editor viewport apply those after `LoadAssetContainerAsync` (`applyModelMaterialSlots`). Empty/Default guid restores the glTF construction material. Play emits `assignMaterial`, optionally with a
 `componentId` (slot ids / `actor-<slot>` names). The renderer applies a
 whole-actor assignment across a multipart actor's descendants and a component
 assignment to one named mesh, re-applies after a mesh rebuild, and releases

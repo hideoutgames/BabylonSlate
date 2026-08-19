@@ -15,7 +15,7 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 
 | Kind | Source | Open target |
 | --- | --- | --- |
-| `asset` | Header name, type, path, guid, parentClass | Scene/Class → document tab; import/type assets → Settings tab; else Content Browser reveal |
+| `asset` | Header name, type, path, guid, parentClass | Scene/Class/Model/Skeleton/Animation and other DockView types → document tab; Texture / Audio → Settings tab; else Content Browser reveal |
 | `actor` | Scene `actors[]` name, id, classId | Open scene + select actor |
 | `component` | Actor `components[]` classId, id, short string properties | Open scene + select parent actor |
 | `graph-node` | Graph `nodes[]` type, id, catalog title, short string properties | Open class graph + focus node |

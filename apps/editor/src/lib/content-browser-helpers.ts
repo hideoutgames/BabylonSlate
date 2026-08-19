@@ -13,9 +13,13 @@ import {
   createDefaultSoundAttenuationPayload,
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
+  modelAssetGuids,
   createDefaultSkyboxCreatorPayload,
   skyboxCreatorAssetDependencies,
   parseSpriteAnimationPayload,
+  skeletonAssetGuids,
+  animationAssetGuids,
+  normalizeAnimationPayload,
   spriteAnimationTextureGuids,
 } from "@babylonslate/assets";
 import {
@@ -745,19 +749,34 @@ export function isValidSelectionMoveDestination(options: {
 export type ContentBrowserContextAction =
   | "duplicate"
   | "rename"
+  | "retarget"
   | "move"
   | "copy"
   | "show-references"
   | "delete";
 
+export function canRetargetSelectedAssets(
+  assets: ReadonlyArray<{ type: string; payload?: unknown }>,
+): boolean {
+  if (assets.length === 0) return false;
+  return assets.every((asset) => {
+    if (asset.type !== "Animation") return false;
+    return Boolean(normalizeAnimationPayload(asset.payload).skeletonGuid);
+  });
+}
+
 export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
+  canRetarget?: boolean;
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
   const actions: ContentBrowserContextAction[] = ["duplicate"];
   if (total === 1) actions.push("rename");
+  if (options.canRetarget && options.assetCount > 0 && options.folderCount === 0) {
+    actions.push("retarget");
+  }
   actions.push("move", "copy");
   if (options.assetCount === 1 && options.folderCount === 0) {
     actions.push("show-references");
@@ -937,6 +956,37 @@ export function flattenContentBrowserForest(
   return trees.flatMap((tree) =>
     flattenContentBrowserTree(tree, assets, collapsed),
   );
+}
+
+/** Nested folder paths (depth > 0). Forest roots stay expanded. */
+export function nestedFolderPaths(
+  trees: readonly FolderTreeLike[],
+): string[] {
+  const paths: string[] = [];
+  const walk = (node: FolderTreeLike, depth: number) => {
+    if (depth > 0) paths.push(node.path);
+    for (const child of node.children) walk(child, depth + 1);
+  };
+  for (const tree of trees) walk(tree, 0);
+  return paths;
+}
+
+/**
+ * Collapse nested folders by default so a packed character folder cannot
+ * virtualize root assets (and sibling plugin roots) off the tree viewport.
+ * Paths in `userToggled` keep the user's expand/collapse choice.
+ */
+export function withAutoCollapsedNestedFolders(
+  current: ReadonlySet<string>,
+  trees: readonly FolderTreeLike[],
+  userToggled: ReadonlySet<string>,
+): Set<string> {
+  const next = new Set(current);
+  for (const path of nestedFolderPaths(trees)) {
+    if (userToggled.has(path)) continue;
+    next.add(path);
+  }
+  return next;
 }
 
 export function flattenContentBrowserTree(
@@ -1574,6 +1624,9 @@ export function assetHeaderDependencies(
     ...(assetType === "SpriteAnimation"
       ? spriteAnimationTextureGuids(parseSpriteAnimationPayload(payload))
       : []),
+    ...(assetType === "Model" ? modelAssetGuids(payload) : []),
+    ...(assetType === "Skeleton" ? skeletonAssetGuids(payload) : []),
+    ...(assetType === "Animation" ? animationAssetGuids(payload) : []),
   ]);
   return [...unique].sort();
 }
