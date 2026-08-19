@@ -138,6 +138,32 @@ describe("UiDesignDetails layout fields", () => {
     expect(committed.width).toBe(240);
     expect(onPatchLayout).not.toHaveBeenCalled();
   });
+
+  it("commits a previewed Width when Details unmounts without blur", () => {
+    const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));
+    const onCommitLayout = vi.fn();
+    const ui = createDefaultUserInterface();
+    ui.widgets[button.id] = button;
+    ui.widgets.canvas!.children = [button.id];
+    const { unmount } = render(
+      <UiDesignDetails
+        ui={ui}
+        selected={button}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={() => {}}
+        onPatchLayout={() => {}}
+        onPreviewLayout={() => {}}
+        onCommitLayout={onCommitLayout}
+        onPickAsset={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-width"), { target: { value: "240" } });
+    unmount();
+    expect(onCommitLayout).toHaveBeenCalledTimes(1);
+    expect((onCommitLayout.mock.calls[0]![1] as { width: number }).width).toBe(240);
+  });
 });
 
 describe("UiDesignDetails style colors", () => {
@@ -180,5 +206,34 @@ describe("UiDesignDetails Hit Testable", () => {
     expect(screen.getByTestId("property-material").textContent).toContain(
       "mat-glow",
     );
+  });
+});
+
+describe("UiDesignDetails Grid tracks", () => {
+  it("resizes gridColumns when Columns changes", () => {
+    const grid = createWidget("grid", "Grid", "Grid", defaultAddLayout("Grid"));
+    const onPatchWidget = vi.fn();
+    const ui = createDefaultUserInterface();
+    ui.widgets[grid.id] = grid;
+    ui.widgets.canvas!.children = [grid.id];
+    render(
+      <UiDesignDetails
+        ui={ui}
+        selected={grid}
+        viewport={viewport}
+        actionNames={[]}
+        assetLabels={{}}
+        onPatchWidget={onPatchWidget}
+        onPatchLayout={() => {}}
+        onPickAsset={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("property-columns"), { target: { value: "3" } });
+    expect(onPatchWidget).toHaveBeenCalled();
+    const patch = onPatchWidget.mock.calls.at(-1)![1] as {
+      props: { columns: number; gridColumns: Array<{ value: number; isPixel: boolean }> };
+    };
+    expect(patch.props.columns).toBe(3);
+    expect(patch.props.gridColumns).toHaveLength(3);
   });
 });

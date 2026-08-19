@@ -1242,6 +1242,7 @@ describe("createPlayMesh", () => {
     expect(mesh!.infiniteDistance).toBe(true);
     expect(mesh!.ignoreCameraMaxZ).toBe(true);
     expect(isPlayHelperMeshKind("skybox")).toBe(false);
+    expect(isPlayHelperMeshKind("rigidbody")).toBe(true);
     binding.liveSlots.add(3);
     applySnapshotToScene(scene, binding, {
       frameId: 1,
@@ -1283,5 +1284,25 @@ describe("createPlayMesh", () => {
     expect(mesh).not.toBeNull();
     expect((mesh!.metadata as { text3d?: boolean }).text3d).toBe(true);
     expect(isPlayHelperMeshKind("text3d")).toBe(false);
+  });
+
+  it("hides a RigidBody Play helper instead of drawing a white cube", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "rigidbody",
+    });
+    const mesh = scene.getMeshByName("actor-4") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect(mesh!.isVisible).toBe(false);
+    expect(mesh!.isPickable).toBe(false);
+    expect(
+      (mesh!.metadata as { playHelperVisual?: boolean }).playHelperVisual,
+    ).toBe(true);
   });
 });

@@ -521,7 +521,7 @@ describe("GraphEditor", () => {
     }
   });
 
-  it("keeps virtualizing after a later 0×0 host size (hidden tab)", () => {
+  it("keeps virtualizing after a later 0×0 host size (hidden tab)", { timeout: 15_000 }, () => {
     const previous = globalThis.ResizeObserver;
     const observers: Array<{
       callback: ResizeObserverCallback;

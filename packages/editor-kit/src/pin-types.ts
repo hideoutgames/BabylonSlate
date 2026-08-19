@@ -10,11 +10,15 @@ export const PIN_PICKER_TYPES = [
   "vec3",
   "vec4",
   "rotator",
+  "quat",
   "color",
   "transform",
   "object",
+  "actor",
   "class",
+  "asset",
   "struct",
+  "wildcard",
 ] as const;
 
 export type PinPickerType = (typeof PIN_PICKER_TYPES)[number];
@@ -35,11 +39,15 @@ export const PIN_PICKER_LABEL: Record<string, string> = {
   vec3: "Vector 3",
   vec4: "Vector 4",
   rotator: "Rotator",
+  quat: "Quaternion",
   color: "Color",
   transform: "Transform",
   object: "Object",
+  actor: "Actor",
   class: "Class",
+  asset: "Asset",
   struct: "Struct",
+  wildcard: "Wildcard",
 };
 
 const PIN_PICKER_KIND: Record<PinPickerType, string> = {
@@ -52,11 +60,15 @@ const PIN_PICKER_KIND: Record<PinPickerType, string> = {
   vec3: "vec3",
   vec4: "vec4",
   rotator: "rotator",
+  quat: "quat",
   color: "color",
   transform: "transform",
   object: "objectRef",
+  actor: "actorRef",
   class: "classRef",
+  asset: "assetRef",
   struct: "structRef",
+  wildcard: "boxedWildcard",
 };
 
 export function pinPickerColorVar(type: string): string {
@@ -82,8 +94,26 @@ export function isPinPickerType(value: string): value is PinPickerType {
 export function pinPickerKeepsTypeClassId(type: string): boolean {
   return (
     type === "object" ||
+    type === "actor" ||
     type === "class" ||
+    type === "asset" ||
     type === "struct" ||
     type === "enum"
   );
 }
+
+/** Content Browser types stored on `typeClassId` when the picker type is Asset. */
+export const ASSET_REF_PICKER_TYPES = [
+  "Audio",
+  "AudioChannel",
+  "AudioMixer",
+  "Texture",
+  "Material",
+  "Font",
+  "Sprite",
+  "SpriteAnimation",
+  "ParticleEmitter",
+  "ParticleSystem",
+  "Model",
+  "Animation",
+] as const;

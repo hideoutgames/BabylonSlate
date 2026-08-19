@@ -12,6 +12,7 @@ export {
 export {
   ClassRegistry,
   MAX_CLASS_INHERITANCE_DEPTH,
+  hydrateClassVariableValue,
   type ClassDef,
   type ClassKind,
   type ReparentResult,

@@ -97,6 +97,28 @@ describe("variables.get / variables.set", () => {
     expect(pins.some((pin) => pin.id === "name")).toBe(false);
   });
 
+  it("types Get Array/Map containers from container + keyTypeId", () => {
+    const def = createDefaultNodeRegistry().get("variables.get")!;
+    const arrayPins = def.pins({
+      variableName: "Hits",
+      typeId: "rotator",
+      container: "array",
+      implicitSelf: true,
+    });
+    expect(arrayPins[0]?.type).toEqual({
+      kind: "array",
+      element: { kind: "rotator" },
+    });
+    const mapPins = def.pins({
+      variableName: "ByName",
+      typeId: "float",
+      container: "map",
+      keyTypeId: "string",
+      implicitSelf: true,
+    });
+    expect(mapPins[0]?.type.kind).toBe("map");
+  });
+
   it("compiles implicit-self Get/Set to ctx.getVariable / ctx.setVariable", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

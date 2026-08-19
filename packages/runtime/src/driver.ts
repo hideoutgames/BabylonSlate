@@ -21,6 +21,7 @@ import {
   Widget,
   createWidgetForKind,
   userInterfaceAssetClassDef,
+  hydrateClassVariableValue,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickContext,
@@ -839,6 +840,13 @@ class InProcessRuntime implements RuntimeDriver {
         name: variable.name,
         type: variable.type,
         defaultValue: variable.defaultValue,
+        ...(variable.container === "array" || variable.container === "map"
+          ? { container: variable.container }
+          : {}),
+        ...(variable.keyTypeId ? { keyTypeId: variable.keyTypeId } : {}),
+        ...(variable.keyTypeClassId
+          ? { keyTypeClassId: variable.keyTypeClassId }
+          : {}),
       })),
       implementedInterfaces: [...(script.implementedInterfaces ?? [])],
     });
@@ -2212,6 +2220,20 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind: "particle",
         parts: [playMeshPartOf(particle)],
       });
+      return;
+    }
+    const rigid = actor.components.find(
+      (component) =>
+        component.classId === "RigidBodyComponent" && !component.destroyed,
+    );
+    if (rigid) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "rigidbody",
+        parts: [playMeshPartOf(rigid)],
+      });
     }
   }
 
@@ -2731,8 +2753,9 @@ class InProcessRuntime implements RuntimeDriver {
   } {
     const variables: Record<string, unknown> = {};
     for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
-      if (variable.defaultValue !== undefined) {
-        variables[variable.name] = variable.defaultValue;
+      const value = hydrateClassVariableValue(variable);
+      if (value !== undefined) {
+        variables[variable.name] = value;
       }
     }
     return {
@@ -2940,6 +2963,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "CameraComponent") return "camera";
   if (component.classId === "AudioComponent") return "audio";
   if (component.classId === "ParticleComponent") return "particle";
+  if (component.classId === "RigidBodyComponent") return "rigidbody";
   const meshKind = component.getVariable("meshKind");
   return typeof meshKind === "string" ? meshKind : null;
 }

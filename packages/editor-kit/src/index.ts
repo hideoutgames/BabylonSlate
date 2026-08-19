@@ -70,6 +70,13 @@ export {
   type PinTypePickerProps,
 } from "./pin-type-picker";
 export {
+  VariableTypeFields,
+  VARIABLE_CONTAINERS,
+  type VariableContainer,
+  type VariableTypeFieldsProps,
+  type VariableTypeFieldsValue,
+} from "./variable-type-fields";
+export {
   PinListEditor,
   type PinListEditorProps,
   type PinListRow,
@@ -82,6 +89,7 @@ export {
   pinPickerLabel,
   isPinPickerType,
   pinPickerKeepsTypeClassId,
+  ASSET_REF_PICKER_TYPES,
   type PinPickerType,
   type FunctionPinPickerType,
 } from "./pin-types";

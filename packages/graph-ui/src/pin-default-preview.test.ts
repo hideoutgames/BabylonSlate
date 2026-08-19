@@ -148,6 +148,20 @@ describe("pinDefaultPreview", () => {
         false,
       ),
     ).toEqual({ kind: "rotator", text: "10, 20, 30" });
+    const orientation = pin({
+      id: "orientation",
+      name: "orientation",
+      kind: "data",
+      direction: "in",
+      type: { kind: "quat" },
+    });
+    expect(
+      pinDefaultPreview(
+        orientation,
+        { "default:orientation": [0, 0, 0, 1] },
+        false,
+      ),
+    ).toEqual({ kind: "quat", text: "0, 0, 0, 1" });
   });
 
   it("returns an rgb swatch for color defaults", () => {

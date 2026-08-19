@@ -237,7 +237,37 @@ function palettePreferenceScore(
   ) {
     return 2;
   }
+  if (
+    kind === "quat" &&
+    (node.id === "quat.make" || node.id === "quat.break")
+  ) {
+    return 2;
+  }
+  if (node.id === literalMakeIdForKind(kind)) {
+    return 2;
+  }
   return 0;
+}
+
+function literalMakeIdForKind(kind: string): string | undefined {
+  switch (kind) {
+    case "bool":
+      return "literal.makeBool";
+    case "int":
+      return "literal.makeInt";
+    case "float":
+      return "literal.makeFloat";
+    case "string":
+      return "literal.makeString";
+    case "classRef":
+      return "literal.makeClass";
+    case "assetRef":
+      return "literal.makeAsset";
+    case "quat":
+      return "literal.makeQuat";
+    default:
+      return undefined;
+  }
 }
 
 function catalogTypeId(node: PaletteNode): string {

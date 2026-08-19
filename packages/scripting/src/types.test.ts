@@ -98,6 +98,8 @@ describe("pin assignability", () => {
     );
     expect(isAssignable(assetRef("Audio"), STRING)).toBe(false);
     expect(isAssignable(assetRef("Audio"), classRef("Audio"))).toBe(false);
+    expect(isAssignable(assetRef(""), assetRef("Audio"))).toBe(true);
+    expect(isAssignable(assetRef("Audio"), assetRef(""))).toBe(true);
     expect(defaultValueLiteral(assetRef("Audio"))).toBe('""');
     expect(pinTypeTag(assetRef("Audio"))).toBe("assetRef:Audio");
   });

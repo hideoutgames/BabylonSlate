@@ -25,6 +25,7 @@ export type PinDefaultPreview =
         | "vec3"
         | "vec4"
         | "rotator"
+        | "quat"
         | "enumRef"
         | "classRef"
         | "assetRef";
@@ -77,11 +78,12 @@ function coerceLiteralValue(type: PinType, value: unknown): unknown {
       return { x: numbers[0] ?? 0, y: numbers[1] ?? 0, z: numbers[2] ?? 0 };
     case "color":
     case "vec4":
+    case "quat":
       return {
         x: numbers[0] ?? 0,
         y: numbers[1] ?? 0,
         z: numbers[2] ?? 0,
-        w: numbers[3] ?? 0,
+        w: numbers[3] ?? (type.kind === "quat" ? 1 : 0),
       };
     default:
       return value;
@@ -145,8 +147,9 @@ export function pinDefaultPreview(
         ),
       };
     case "vec4":
+    case "quat":
       return {
-        kind: "vec4",
+        kind: type.kind === "quat" ? "quat" : "vec4",
         text: joinNumbers(pinDefaultAsVec4Tuple(value)),
       };
     case "enumRef":

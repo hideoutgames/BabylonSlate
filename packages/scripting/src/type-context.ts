@@ -16,6 +16,9 @@ export type ClassMemberSymbol = {
   functionId?: string;
   typeId?: string;
   typeClassId?: string;
+  container?: "single" | "array" | "map";
+  keyTypeId?: string;
+  keyTypeClassId?: string;
   pins?: Array<{
     name: string;
     typeId: string;

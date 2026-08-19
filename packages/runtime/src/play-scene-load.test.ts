@@ -214,6 +214,44 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("assigns a hidden rigidbody helper for a physics-only actor", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "BodyOnly",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("body", "Body", {
+            components: [
+              {
+                id: "rb",
+                classId: "RigidBodyComponent",
+                properties: { motionType: "dynamic" },
+              },
+            ],
+          }),
+        ],
+      },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    const assigned = commands.filter((c) => c.type === "assignMesh");
+    expect(assigned).toEqual([
+      expect.objectContaining({
+        type: "assignMesh",
+        meshKind: "rigidbody",
+        meshAssetGuid: null,
+      }),
+    ]);
+    runtime.stop();
+  });
+
   it("assigns a cube primitive and a class actor mesh as separate visible slots", () => {
     const commands: CommandMessage[] = [];
     const runtime = createInProcessRuntime({

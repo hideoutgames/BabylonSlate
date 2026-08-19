@@ -454,6 +454,11 @@ function memberDefaults(
     return {
       typeId: extras?.typeId ?? "float",
       ...(extras?.typeClassId ? { typeClassId: extras.typeClassId } : {}),
+      ...(extras?.container === "array" || extras?.container === "map"
+        ? { container: extras.container }
+        : {}),
+      ...(extras?.keyTypeId ? { keyTypeId: extras.keyTypeId } : {}),
+      ...(extras?.keyTypeClassId ? { keyTypeClassId: extras.keyTypeClassId } : {}),
       ...(extras?.defaultValue !== undefined
         ? { defaultValue: extras.defaultValue }
         : {}),
@@ -900,6 +905,31 @@ function isVariableAccessNode(
   );
 }
 
+function stampVariableTypeOnData(
+  data: Record<string, unknown>,
+  member: Pick<
+    GraphClassMember,
+    "typeId" | "typeClassId" | "container" | "keyTypeId" | "keyTypeClassId"
+  >,
+): void {
+  data.typeId = member.typeId ?? "float";
+  if (member.typeClassId) data.typeClassId = member.typeClassId;
+  else delete data.typeClassId;
+  if (member.container === "array" || member.container === "map") {
+    data.container = member.container;
+  } else {
+    delete data.container;
+  }
+  if (member.container === "map") {
+    data.keyTypeId = member.keyTypeId ?? "string";
+    if (member.keyTypeClassId) data.keyTypeClassId = member.keyTypeClassId;
+    else delete data.keyTypeClassId;
+  } else {
+    delete data.keyTypeId;
+    delete data.keyTypeClassId;
+  }
+}
+
 function patchVariableAccessNode(
   node: SerializedGraph["nodes"][number],
   member: GraphClassMember,
@@ -909,12 +939,10 @@ function patchVariableAccessNode(
     ...node.data,
     variableId: member.id,
     variableName: member.name,
-        typeId: member.typeId ?? node.data.typeId ?? "float",
     title: `${access} ${member.name}`,
     scope: member.functionId ? "local" : (node.data.scope ?? "member"),
   };
-  if (member.typeClassId) nextData.typeClassId = member.typeClassId;
-  else delete nextData.typeClassId;
+  stampVariableTypeOnData(nextData, member);
   if (member.functionId) nextData.functionId = member.functionId;
   delete nextData.__pins;
   return { ...node, data: nextData };
@@ -1014,12 +1042,11 @@ export function addVariableAccessNode(
     title,
     variableName: member.name,
     variableId: member.id,
-    typeId: member.typeId ?? "float",
     scope: member.functionId ? "local" : "member",
     implicitSelf: options?.implicitSelf ?? true,
     __nodeType: type,
   };
-  if (member.typeClassId) data.typeClassId = member.typeClassId;
+  stampVariableTypeOnData(data, member);
   if (options?.classId) data.classId = options.classId;
   if (member.functionId) data.functionId = member.functionId;
   return appendGraphNode(

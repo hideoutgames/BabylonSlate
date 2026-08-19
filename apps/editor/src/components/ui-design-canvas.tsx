@@ -71,11 +71,6 @@ const DEFAULT_ADT_IDEAL = {
   scaleRule: "shortestSide" as const,
 };
 
-const DEFAULT_ADT_IDEAL = {
-  designResolution: { width: 1920, height: 1080 },
-  scaleRule: "shortestSide" as const,
-};
-
 export function UiDesignCanvas({
   ui,
   viewport,
@@ -226,6 +221,14 @@ export function UiDesignCanvas({
     });
   }
   const session = layoutSessionProp ?? localSessionRef.current!;
+  useEffect(() => {
+    if (!documentActive && session.locked) session.commit();
+  }, [documentActive, session]);
+  useEffect(() => {
+    return () => {
+      if (session.locked) session.commit();
+    };
+  }, [session]);
   const resolveImageUrlRef = useRef(resolveImageUrl);
   resolveImageUrlRef.current = resolveImageUrl;
   const boundResolveImageUrl = useCallback(

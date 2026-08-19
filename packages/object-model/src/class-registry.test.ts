@@ -6,7 +6,7 @@ import {
   userInterfaceClassId,
   widgetClassIdForKind,
 } from "@babylonslate/core";
-import { ClassRegistry } from "./class-registry";
+import { ClassRegistry, hydrateClassVariableValue } from "./class-registry";
 import {
   ENGINE_COMPONENT_CLASS_IDS,
   ENGINE_WIDGET_CLASS_IDS,
@@ -257,5 +257,36 @@ describe("ClassRegistry", () => {
     if (!reparent.ok) {
       expect(reparent.error).toMatch(/inheritance depth limit/);
     }
+  });
+
+  it("hydrates Array and Map variable defaults at spawn", () => {
+    expect(
+      hydrateClassVariableValue({
+        name: "hits",
+        type: "rotator",
+        container: "array",
+      }),
+    ).toEqual([]);
+    expect(
+      hydrateClassVariableValue({
+        name: "hits",
+        type: "rotator",
+        container: "array",
+        defaultValue: [{ pitch: 1, yaw: 0, roll: 0 }],
+      }),
+    ).toEqual([{ pitch: 1, yaw: 0, roll: 0 }]);
+    const mapValue = hydrateClassVariableValue({
+      name: "byName",
+      type: "float",
+      container: "map",
+    });
+    expect(mapValue).toBeInstanceOf(Map);
+    expect(
+      hydrateClassVariableValue({
+        name: "health",
+        type: "float",
+        defaultValue: 8,
+      }),
+    ).toBe(8);
   });
 });
