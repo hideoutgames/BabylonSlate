@@ -79,6 +79,15 @@ export function pin(
   type: PinType,
   kind: "exec" | "data" = type.kind === "exec" ? "exec" : "data",
   optional = false,
+  defaultValue?: unknown,
 ): GraphPin {
-  return { id, name, direction, type, kind, optional };
+  return {
+    id,
+    name,
+    direction,
+    type,
+    kind,
+    optional,
+    ...(defaultValue !== undefined ? { defaultValue } : {}),
+  };
 }

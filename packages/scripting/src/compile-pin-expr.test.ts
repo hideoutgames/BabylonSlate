@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import { compileGraph } from "./compile";
 import type { LogicGraph } from "./ir";
 import { NodeRegistry, pin } from "./node-registry";
-import { EXEC, actorRef, assetRef, classRef, objectRef, BOXED_WILDCARD } from "./types";
+import {
+  EXEC,
+  FLOAT,
+  COLOR,
+  actorRef,
+  assetRef,
+  classRef,
+  objectRef,
+  BOXED_WILDCARD,
+} from "./types";
 
 function registry(): NodeRegistry {
   const nodes = new NodeRegistry();
@@ -225,5 +234,119 @@ describe("compile pinExpr defaults", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry: registry() });
     expect(compiled.source).toContain('ctx.print("jumped")');
     expect(compiled.source).not.toContain('tag: "null"');
+  });
+
+  it("uses catalog pin defaultValue when the serialized pin has none", () => {
+    const nodes = registry();
+    nodes.register({
+      id: "debug.announce",
+      title: "Announce",
+      category: "debug",
+      pins: () => [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("duration", "Duration", "in", FLOAT, "data", true, 2),
+        pin("color", "Color", "in", COLOR, "data", true, {
+          x: 1,
+          y: 1,
+          z: 1,
+          w: 1,
+        }),
+      ],
+      codegen: (ctx) => {
+        ctx.emit(
+          `ctx.print("x", "", ${ctx.input("duration")}, ${ctx.input("color")});`,
+        );
+      },
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "announce",
+          typeId: "debug.announce",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("duration", "Duration", "in", FLOAT, "data", true),
+            pin("color", "Color", "in", COLOR, "data", true),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "announce",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry: nodes });
+    expect(compiled.source).toContain("ctx.print(\"x\", \"\", 2, {\"x\":1,\"y\":1,\"z\":1,\"w\":1})");
+    expect(compiled.source).not.toContain("ctx.print(\"x\", \"\", 0,");
+  });
+
+  it("prefers a stored pin default over the catalog defaultValue", () => {
+    const nodes = registry();
+    nodes.register({
+      id: "debug.announce",
+      title: "Announce",
+      category: "debug",
+      pins: () => [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("duration", "Duration", "in", FLOAT, "data", true, 2),
+      ],
+      codegen: (ctx) => {
+        ctx.emit(`ctx.wait(${ctx.input("duration")});`);
+      },
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "announce",
+          typeId: "debug.announce",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("duration", "Duration", "in", FLOAT, "data", true),
+          ],
+          properties: { "default:duration": 5 },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "announce",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry: nodes });
+    expect(compiled.source).toContain("ctx.wait(5)");
   });
 });
