@@ -25,6 +25,7 @@ import {
   normalizeIntSwitchCases,
   normalizeStringSwitchCases,
 } from "./flow-switch-pins";
+import { isBreakableLoopKind } from "./structured-flow";
 
 function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
@@ -88,6 +89,76 @@ function hasCycle(
     if (hit) return hit;
   }
   return null;
+}
+
+function validateBreakContext(
+  graph: LogicGraph,
+  ctx: TypeContext,
+  compiled: ReadonlySet<string>,
+  options: ValidateOptions,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const registry = options.registry;
+  const breakNodes = graph.nodes.filter((n) => {
+    if (!compiled.has(n.id)) return false;
+    const meta = registry?.get(n.typeId)?.structuredFlow;
+    return meta?.kind === "break" || n.typeId === "flow.break";
+  });
+  if (breakNodes.length === 0) return out;
+
+  const loopBodyReachable = new Set<string>();
+  for (const node of graph.nodes) {
+    if (!compiled.has(node.id)) continue;
+    const meta = registry?.get(node.typeId)?.structuredFlow;
+    const kind = meta?.kind;
+    const breakable =
+      isBreakableLoopKind(kind) ||
+      node.typeId === "flow.forLoopWithBreak" ||
+      node.typeId === "flow.forEachWithBreak" ||
+      node.typeId === "flow.forEachMapWithBreak";
+    if (!breakable) continue;
+    const loopBodyPin =
+      meta && "loopBodyPin" in meta
+        ? meta.loopBodyPin
+        : "loopBody";
+    const queue: string[] = [];
+    for (const edge of graph.edges) {
+      if (edge.sourceNodeId !== node.id) continue;
+      const srcPin = findPin(node, edge.sourcePinId);
+      if (!srcPin || srcPin.kind !== "exec") continue;
+      if (srcPin.name !== loopBodyPin && srcPin.id !== loopBodyPin) continue;
+      if (!loopBodyReachable.has(edge.targetNodeId)) {
+        loopBodyReachable.add(edge.targetNodeId);
+        queue.push(edge.targetNodeId);
+      }
+    }
+    while (queue.length > 0) {
+      const id = queue.pop()!;
+      for (const edge of graph.edges) {
+        if (edge.sourceNodeId !== id) continue;
+        const src = findNode(graph, id);
+        const sp = src && findPin(src, edge.sourcePinId);
+        if (!sp || sp.kind !== "exec") continue;
+        if (loopBodyReachable.has(edge.targetNodeId)) continue;
+        loopBodyReachable.add(edge.targetNodeId);
+        queue.push(edge.targetNodeId);
+      }
+    }
+  }
+
+  for (const brk of breakNodes) {
+    if (loopBodyReachable.has(brk.id)) continue;
+    out.push(
+      diagnostic({
+        code: "flow.break_outside_loop",
+        message: "Break must be inside a For Loop / For Each With Break body",
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: brk.id,
+      }),
+    );
+  }
+  return out;
 }
 
 function validateStructural(
@@ -836,6 +907,7 @@ export function validateGraphs(
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
     diagnostics.push(...keep(validateStructural(graph, ctx, compiled)));
+    diagnostics.push(...keep(validateBreakContext(graph, ctx, compiled, options)));
     diagnostics.push(...keep(validatePinTyping(graph, ctx)));
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));

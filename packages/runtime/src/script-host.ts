@@ -386,6 +386,11 @@ export interface ScriptContext {
   addObstacle(kind: string, pose: Vec3, size: Vec3): string;
   removeObstacle(id: string): void;
   animFacts?: AnimStateFacts;
+  /**
+   * Per-script-instance / per-node mutable state for Do Once, Do N, Flip Flop,
+   * Gate. Never module-global — keyed by the receiving BObject.
+   */
+  flowState(nodeId: string): Record<string, unknown>;
 }
 
 export type VariableStore = {
@@ -417,6 +422,14 @@ type LoadedScript = {
 export class ScriptHost {
   private readonly byClassId = new Map<string, LoadedScript[]>();
   private readonly pending = new WeakMap<BObject, Set<string>>();
+  private readonly flowStates = new WeakMap<
+    BObject,
+    Map<string, Record<string, unknown>>
+  >();
+  private readonly orphanFlowStates = new Map<
+    string,
+    Record<string, unknown>
+  >();
   private readonly services: ScriptHostServices;
   private commandResult = { success: true, output: "" };
   private readonly rng: Rng = createSeededRng(1);
@@ -460,6 +473,7 @@ export class ScriptHost {
         );
       },
       onDestroyed: (self) => {
+        this.clearFlowState(self);
         this.dispatchEvent(loaded, "onDestroyed", self, 0, 0);
       },
     };
@@ -637,6 +651,35 @@ export class ScriptHost {
     this.pending.get(self)?.delete(key);
   }
 
+  clearFlowState(self: BObject | null | undefined): void {
+    if (self) this.flowStates.delete(self);
+  }
+
+  private flowStateFor(
+    self: BObject | null,
+    nodeId: string,
+  ): Record<string, unknown> {
+    if (!self) {
+      let row = this.orphanFlowStates.get(nodeId);
+      if (!row) {
+        row = {};
+        this.orphanFlowStates.set(nodeId, row);
+      }
+      return row;
+    }
+    let byNode = this.flowStates.get(self);
+    if (!byNode) {
+      byNode = new Map();
+      this.flowStates.set(self, byNode);
+    }
+    let row = byNode.get(nodeId);
+    if (!row) {
+      row = {};
+      byNode.set(nodeId, row);
+    }
+    return row;
+  }
+
   createContext(
     self: BObject | null,
     deltaSeconds: number,
@@ -654,6 +697,7 @@ export class ScriptHost {
       commandArgs,
       args: commandArgs,
       animFacts: extras?.animFacts,
+      flowState: (nodeId: string) => this.flowStateFor(self, String(nodeId)),
       reportCommand: (success, output) => {
         this.commandResult = { success: Boolean(success), output: String(output) };
         services.reportCommand?.(Boolean(success), String(output));

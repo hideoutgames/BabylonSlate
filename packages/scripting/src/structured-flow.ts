@@ -4,9 +4,9 @@
  * flow nodes. Branch / Sequence / Enum Switch keep their existing emission
  * paths for source stability.
  *
- * Concurrent loop / stateful kinds (forLoop, Do Once, Gate, …) land with the
- * structured-flow slice; this module already owns Switch on Int / String so
- * those discriminators merge cleanly when that slice arrives.
+ * Owns Switch on Int / String and loop / stateful kinds (forLoop, Do Once,
+ * Gate, …). Compiler emits loops and stateful flow from these discriminators
+ * while preserving Branch / Sequence / Enum Switch source behavior.
  */
 
 export type StructuredFlowKind =
@@ -121,6 +121,19 @@ export function isBreakableLoopKind(
   );
 }
 
+export type LoopStructuredFlowMeta = Extract<
+  StructuredFlowMeta,
+  {
+    kind:
+      | "forLoop"
+      | "forLoopWithBreak"
+      | "forEach"
+      | "forEachWithBreak"
+      | "forEachMap"
+      | "forEachMapWithBreak";
+  }
+>;
+
 export function isLoopKind(kind: StructuredFlowKind | undefined): boolean {
   return (
     kind === "forLoop" ||
@@ -130,4 +143,10 @@ export function isLoopKind(kind: StructuredFlowKind | undefined): boolean {
     kind === "forEachMap" ||
     kind === "forEachMapWithBreak"
   );
+}
+
+export function isLoopMeta(
+  meta: StructuredFlowMeta,
+): meta is LoopStructuredFlowMeta {
+  return isLoopKind(meta.kind);
 }
