@@ -25,7 +25,7 @@ export interface SearchDropdownProps {
   placeholder?: string;
   emptyLabel?: string;
   children: ReactElement;
-  /** When true, outside clicks are captured so chrome behind the menu is not hit. Default true. */
+  /** When true, outside clicks are captured so chrome behind the menu is not hit. Default false so canvas pickers do not paint an iPad WKWebView black overlay. */
   modal?: boolean;
   /** Max height class for the scrollable list. Default max-h-80. */
   contentClassName?: string;
@@ -43,7 +43,7 @@ export function SearchDropdown({
   placeholder = "Search",
   emptyLabel = "No matches",
   children,
-  modal = true,
+  modal = false,
   contentClassName,
   "data-testid": testId,
 }: SearchDropdownProps) {
