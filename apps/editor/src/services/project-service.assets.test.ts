@@ -304,51 +304,6 @@ describe("project documents as .babasset", () => {
     );
   });
 
-  it("keeps EditorUtilityInterface type and dockKind on the header after a ui save", async () => {
-    const { storage, service } = await scaffolded();
-    const path = "assets/SceneTools.eui.babasset";
-    await storage.writeBinary(
-      path,
-      await encodeAssetDocument(
-        {
-          type: "EditorUtilityInterface",
-          name: "SceneTools",
-          guid: "eui-guid",
-          version: 1,
-          payload: { name: "SceneTools", dockKind: "scene", widgets: {} },
-        },
-        { headerMeta: { dockKind: "scene" } },
-      ),
-    );
-    await service.remountRegistry();
-    expect(
-      service.registry?.list().find((asset) => asset.path === path)?.header.payload
-        .dockKind,
-    ).toBe("scene");
-    const loaded = (await service.loadDocument("ui", path)) as Record<
-      string,
-      unknown
-    >;
-    await service.saveDocument("ui", path, {
-      ...loaded,
-      dockKind: "class",
-      name: "ClassTools",
-    });
-    const header = readAssetDocumentHeader(await storage.readBinary(path));
-    expect(header.type).toBe("EditorUtilityInterface");
-    expect(header.payload.dockKind).toBe("class");
-    const reloaded = (await service.loadDocument("ui", path)) as Record<
-      string,
-      unknown
-    >;
-    expect(reloaded.dockKind).toBe("class");
-    expect(reloaded.name).toBe("ClassTools");
-    expect(
-      service.registry?.list().find((asset) => asset.path === path)?.header.payload
-        .dockKind,
-    ).toBe("class");
-  });
-
   it("indexes FunctionLibrary function members on the Class header", async () => {
     const { storage, service } = await scaffolded();
     const path = "assets/MathLib.class.babasset";

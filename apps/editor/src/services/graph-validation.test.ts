@@ -486,16 +486,12 @@ describe("createDefaultLogicGraphSerialized", () => {
     ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
   });
 
-  it("seeds Event Editor On Begin Play for EditorUtilityInterface logic", () => {
+  it("does not seed leftover EditorUtilityInterface as a logic host", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BObject",
       assetType: "EditorUtilityInterface",
     });
-    expect(
-      graph.nodes
-        .filter((node) => node.type.startsWith("flow.event.") && node.type !== "flow.event.callParent")
-        .map((node) => node.type),
-    ).toEqual(["flow.event.editorBeginPlay"]);
+    expect(graph.nodes).toEqual([]);
   });
 });
 
@@ -643,7 +639,7 @@ describe("scriptPaletteNodes", () => {
     }
   });
 
-  it("lists Set Input Mode on runtime graphs and hides it on EUO, EFL, and EUI", () => {
+  it("lists Set Input Mode on runtime graphs and hides it on EUO and EFL", () => {
     expect(
       scriptPaletteNodes(registry, { parentClass: "Actor" }).some(
         (node) => node.id === "input.setInputMode",
@@ -673,12 +669,6 @@ describe("scriptPaletteNodes", () => {
       scriptPaletteNodes(registry, { parentClass: "EditorFunctionLibrary" }).some(
         (node) => node.id === "input.setInputMode",
       ),
-    ).toBe(false);
-    expect(
-      scriptPaletteNodes(registry, {
-        assetType: "EditorUtilityInterface",
-        parentClass: "BObject",
-      }).some((node) => node.id === "input.setInputMode"),
     ).toBe(false);
     const actor = scriptPaletteNodes(registry, { parentClass: "Actor" }).find(
       (node) => node.id === "input.setInputMode",
@@ -923,27 +913,9 @@ describe("scriptPaletteNodes", () => {
     });
   });
 
-  it("shows Event Editor On Begin Play and hides Tick on an EditorUtilityInterface logic host", () => {
-    const nodes = scriptPaletteNodes(registry, {
-      assetType: "EditorUtilityInterface",
-      parentClass: "BObject",
-    });
-    expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
-      true,
-    );
-    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
-      false,
-    );
-    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
-    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
-  });
-
   it("stamps editorOnly on palette rows for editor-only catalog defs", () => {
     const nodes = scriptPaletteNodes(registry, {
-      assetType: "EditorUtilityInterface",
-      parentClass: "BObject",
+      parentClass: "EditorUtilityObject",
     });
     const editorBegin = nodes.find(
       (node) => node.id === "flow.event.editorBeginPlay",
@@ -1666,7 +1638,7 @@ describe("scriptPaletteNodes", () => {
     ).toBe(true);
   });
 
-  it("shows FunctionLibrary calls on EditorUtilityObject and EditorUtilityInterface hosts", () => {
+  it("shows FunctionLibrary calls on EditorUtilityObject hosts", () => {
     const libraries = [
       {
         classId: "MathLib",
@@ -1679,17 +1651,9 @@ describe("scriptPaletteNodes", () => {
       parentOf: libraryParentOf,
       functionLibraries: libraries,
     });
-    const eui = scriptPaletteNodes(registry, {
-      assetType: "EditorUtilityInterface",
-      parentOf: libraryParentOf,
-      functionLibraries: libraries,
-    });
     expect(
       utility.some((node) => node.id === "functions.call:MathLib:Add"),
     ).toBe(true);
-    expect(eui.some((node) => node.id === "functions.call:MathLib:Add")).toBe(
-      true,
-    );
   });
 
   it("hides EditorFunctionLibrary calls on Actor and UserInterface hosts", () => {
@@ -1729,11 +1693,6 @@ describe("scriptPaletteNodes", () => {
     const hosts = [
       scriptPaletteNodes(registry, {
         parentClass: "EditorUtilityObject",
-        parentOf: libraryParentOf,
-        functionLibraries: libraries,
-      }),
-      scriptPaletteNodes(registry, {
-        assetType: "EditorUtilityInterface",
         parentOf: libraryParentOf,
         functionLibraries: libraries,
       }),

@@ -106,26 +106,19 @@ describe("collectOverridableEventRows", () => {
     );
   });
 
-  it("lists EditorUtilityInterface editor begin play and pointer events without Tick", () => {
+  it("does not list leftover EditorUtilityInterface editor events as overridable", () => {
     const rows = collectOverridableEventRows({
       assetType: "EditorUtilityInterface",
       parentClass: "BObject",
       graph: { nodes: [], edges: [] },
     });
-    expect(rows.map((row) => row.eventType)).toEqual(
-      expect.arrayContaining([
-        "flow.event.editorBeginPlay",
-        "flow.event.mouseEnter",
-        "flow.event.mouseExit",
-        "flow.event.mousePress",
-        "flow.event.mouseRelease",
-        "flow.event.widgetClick",
-      ]),
-    );
-    expect(rows.some((row) => row.eventType === "flow.event.tick")).toBe(false);
-    expect(rows.some((row) => row.eventType === "flow.event.beginPlay")).toBe(
+    expect(rows.some((row) => row.eventType === "flow.event.editorBeginPlay")).toBe(
       false,
     );
+    expect(rows.some((row) => row.eventType === "flow.event.mouseEnter")).toBe(
+      false,
+    );
+    expect(rows.some((row) => row.eventType === "flow.event.tick")).toBe(false);
   });
 
   it("lists parent custom events as overridable inherited rows", () => {

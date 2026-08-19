@@ -10,4 +10,4 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. Details i
 
 Never use or enable GitHub Actions larger runners — standard hosted runners only. Details in [.cursor/rules/github-actions-standard-runners.mdc](.cursor/rules/github-actions-standard-runners.mdc).
 
-Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work, and for **UserInterface** / **EditorUtilityInterface** work (both are Babylon GUI). React editor chrome stays on the shadcn / editor-ui-components skills.
+Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work, and for **UserInterface** work (Babylon GUI). React editor chrome stays on the shadcn / editor-ui-components skills.

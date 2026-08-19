@@ -102,14 +102,6 @@ function headerMetaForSave(
     content as Record<string, unknown>,
   );
   if (materialMeta) return materialMeta;
-  if (type === "EditorUtilityInterface") {
-    return {
-      dockKind:
-        typeof (content as { dockKind?: unknown }).dockKind === "string"
-          ? (content as { dockKind: string }).dockKind
-          : "scene",
-    };
-  }
   if (type === "Class" || type === "Graph") {
     return classHeaderMeta(
       content as {

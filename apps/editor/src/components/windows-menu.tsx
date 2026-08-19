@@ -7,12 +7,6 @@ import {
   useDockWindowTick,
 } from "../context/document-context";
 import {
-  editorUtilityAssetsFromIndexed,
-  editorUtilityEmptyLabel,
-  editorUtilityGuidFromWindowId,
-  listEditorUtilityMenuWindows,
-} from "../shell/editor-utility-windows";
-import {
   isDockviewDocumentKind,
   listDockWindows,
 } from "../shell/window-catalog";
@@ -27,7 +21,6 @@ export function WindowsMenu() {
     openDocuments,
     activeDocumentId,
     toggleDockWindow,
-    openLiveEditorUtility,
     isDockWindowOpen,
     getOpenDockWindowCount,
     assetRegistry,
@@ -52,8 +45,6 @@ export function WindowsMenu() {
     classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
       assetType: indexed.header.type,
     });
-  const editorUtilityInterface =
-    indexed?.header.type === "EditorUtilityInterface";
   const openDockWindowCount = getOpenDockWindowCount();
 
   useEffect(() => {
@@ -66,84 +57,35 @@ export function WindowsMenu() {
     const windows = isDockviewDocumentKind(activeKind)
       ? listDockWindows(activeKind, {
           actorPrefab,
-          editorUtilityInterface,
           sourceControl: sourceControl.enabled,
           uiEditorMode: activeKind === "ui" ? uiEditorMode : undefined,
           animEditorMode:
             activeKind === "anim-graph" ? animEditorMode : undefined,
         })
       : [];
-    const utilityAssets = editorUtilityAssetsFromIndexed(
-      assetRegistry?.list() ?? [],
-      openDocuments,
-    );
-    const editorUtilities = listEditorUtilityMenuWindows({
-      kind: activeKind,
-      assets: utilityAssets,
-    });
-    const emptyLabel = editorUtilityEmptyLabel(activeKind, utilityAssets);
-    const openLiveHost = activeKind === "ui";
-    const checkbox = (
-      entry: { id: string; title: string },
-      options?: { liveHost?: boolean },
-    ): NestedMenuItem => {
+    return windows.map((entry) => {
       const open = isDockWindowOpen(entry.id);
-      const guid = editorUtilityGuidFromWindowId(entry.id);
       return {
         id: entry.id,
         type: "checkbox",
         label: entry.title,
         checked: open,
         closeOnClick: false,
-        disabled: !options?.liveHost && open && openDockWindowCount === 1,
+        disabled: open && openDockWindowCount === 1,
         testId: `windows-menu-${entry.id}`,
         onCheckedChange: () => {
-          if (options?.liveHost && guid) {
-            void openLiveEditorUtility(guid);
-            return;
-          }
           toggleDockWindow(entry.id);
         },
       };
-    };
-
-    return [
-      ...windows.map((entry) => checkbox(entry)),
-      { type: "separator", id: "utilities-sep" },
-      {
-        type: "submenu",
-        id: "editor-utilities",
-        label: "Editor Utilities",
-        testId: "windows-editor-utilities",
-        contentTestId: "windows-editor-utilities-menu",
-        items:
-          emptyLabel
-            ? [
-                {
-                  id: "empty",
-                  label: emptyLabel,
-                  disabled: true,
-                  testId: "windows-editor-utilities-empty",
-                  onSelect: () => {},
-                },
-              ]
-            : editorUtilities.map((entry) =>
-                checkbox(entry, { liveHost: openLiveHost }),
-              ),
-      },
-    ];
+    });
   }, [
     activeKind,
     actorPrefab,
-    editorUtilityInterface,
     uiEditorMode,
     animEditorMode,
-    assetRegistry,
-    openDocuments,
     sourceControl.enabled,
     isDockWindowOpen,
     openDockWindowCount,
-    openLiveEditorUtility,
     toggleDockWindow,
   ]);
 

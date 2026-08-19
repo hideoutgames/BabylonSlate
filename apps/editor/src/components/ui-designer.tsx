@@ -4,7 +4,6 @@ import {
   UiDesignPanel,
   UiDetailsPanel,
   UiHierarchyPanel,
-  UiSettingsPanel,
 } from "../panels/ui-editor-panels";
 
 const STUB_DOCK_PROPS = {
@@ -19,12 +18,10 @@ export function UiDesigner({
   path,
   payload,
   onChange,
-  editorUtilityInterface = false,
 }: {
   path: string;
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>, mergeKey?: string) => void;
-  editorUtilityInterface?: boolean;
 }) {
   return (
     <UiEditingProvider path={path} payload={payload} onChange={onChange}>
@@ -40,11 +37,6 @@ export function UiDesigner({
             <UiDetailsPanel {...STUB_DOCK_PROPS} />
           </div>
         </div>
-        {editorUtilityInterface ? (
-          <div className="h-40 shrink-0 border-t border-border">
-            <UiSettingsPanel {...STUB_DOCK_PROPS} />
-          </div>
-        ) : null}
       </div>
     </UiEditingProvider>
   );

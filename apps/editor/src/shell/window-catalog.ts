@@ -69,11 +69,9 @@ export const MATERIAL_SIDE_STACK_WIDTH = 360;
 export type DockWindowOptions = {
   /** Actor-lineage class documents get Prefab + Components. Default true. */
   actorPrefab?: boolean;
-  /** EditorUtilityInterface authoring adds a Settings dock for `dockKind`. */
-  editorUtilityInterface?: boolean;
   /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
   sourceControl?: boolean;
-  /** UserInterface / EditorUtilityInterface Designer vs Logic surface. */
+  /** UserInterface Designer vs Logic surface. */
   uiEditorMode?: UiEditorMode;
   /** Animation Graph State Machine vs Animation Object surface. */
   animEditorMode?: AnimEditorMode;
@@ -749,17 +747,6 @@ const BEHAVIOUR_TREE_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const UI_SETTINGS_WINDOW: DockWindowDefinition = {
-  id: "ui-settings",
-  component: "ui-settings",
-  title: "Settings",
-  defaultPosition: {
-    referencePanelId: "ui-details",
-    direction: "below",
-    initialHeight: 160,
-  },
-};
-
 export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
@@ -802,10 +789,7 @@ export function listDockWindows(
     if (options?.uiEditorMode === "logic") {
       return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
     }
-    const windows = options?.editorUtilityInterface
-      ? [...UI_DESIGNER_WINDOWS, UI_SETTINGS_WINDOW]
-      : UI_DESIGNER_WINDOWS;
-    return withOptionalLocks(kind, windows, options);
+    return withOptionalLocks(kind, UI_DESIGNER_WINDOWS, options);
   }
   if (kind === "plugin-settings") {
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);

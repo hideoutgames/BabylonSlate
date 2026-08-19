@@ -82,7 +82,7 @@ Per engineplan §11.1: input is tested through **synthetic event streams** repla
 | `OnAction` | exec on pressed / released |
 | `OnGamepadConnected` / `OnGamepadDisconnected` | exec on pad transitions |
 | `SetGamepadRumble` | `ctx.setGamepadRumble(...)` |
-| `Set Input Mode` | `ctx.setInputMode(mode)` — engine enum `engine:InputMode` (All / Interface / Game). Hidden on EUO / EFL / EUI. Allowed on Actor / GameInstance / BObject / UserInterface Logic. |
+| `Set Input Mode` | `ctx.setInputMode(mode)` — engine enum `engine:InputMode` (All / Interface / Game). Hidden on EUO / EFL. Allowed on Actor / GameInstance / BObject / UserInterface Logic. |
 
 See [bridge.md](bridge.md) for the raw input ring buffer wire format and the `setInputMode` command.
 

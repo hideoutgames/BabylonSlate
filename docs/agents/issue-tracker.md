@@ -143,10 +143,9 @@ Agents must never create visual or spatial media with AI (images, video, icons, 
 
 ## BabylonJS skill
 
-Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** or **EditorUtilityInterface** work. Both asset types are Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
+Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** work. UserInterface is Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
 
 - **UserInterface** — game HUD, viewport-layer apply, designer canvas ([ui-runtime.md](../architecture/ui-runtime.md)).
-- **EditorUtilityInterface** — widgets opened from **Windows → Editor Utilities** (P12).
 - React editor chrome (Dockview, shadcn, editor-kit) still uses the editor-ui-components and shadcn skills.
 - Rule: [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (BabylonJS).
 
@@ -395,7 +394,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 | G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19**, not this wave |
 
-Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / EditorUtilityInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
+Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
 ### P9 follow-ups / open deferrals
 
@@ -409,7 +408,7 @@ Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer Cu
 | World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
-| UserInterface + EditorUtilityInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details (EUI Settings); Logic Class docks on `payload.logic`. Live EditorUtilityInterface **tabs** stay P12 Dockview + `createUiSurface` from Windows → Editor Utilities | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
+| UserInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details; Logic Class docks on `payload.logic` | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
 | Animation Graph Object + transition-rule graphs | Chrome **State Machine \| Animation Object**; typed variables; compiled `AnimGraph:` / `AnimRule:` scripts; per-slot `animState` layers; Unreal state nodes + nested Enter/Exit rule graphs | Done (`cursor/complete-animation-graph-9a46`) |
 
 ## P10 tilemaps
@@ -512,15 +511,15 @@ Out of scope: scripted custom composite VMs; RotateToFace / PlayAnimation hosts 
 
 ## P12 editor extensions
 
-Spec: [engineplan.md](../engineplan.md) §7 (Windows → Editor Utilities; live vs author), §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) is Done. Design notes: [editor-extensions.md](../architecture/editor-extensions.md).
+Spec: [engineplan.md](../engineplan.md) §7, §18 P12, Appendix A `p12-editor-extensions` then `p12-ui-editors`. Lighting/cameras (`p-lighting-camera`) is Done. Design notes: [editor-extensions.md](../architecture/editor-extensions.md).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| EditorUtilityObject + live Interface tabs | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, `render` (Dockview Babylon GUI host via `createUiSurface`), export strip | P11 done |
-| UserInterface + EditorUtilityInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
+| EditorUtilityObject | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, export strip | P11 done |
+| UserInterface **authoring** editors | Done (`p12-ui-editors`) | `apps/editor` (designer Dockview host), `render` (`presentAdtToCanvas` / `createUiSurface`) | `p12-editor-extensions` |
 | Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
-**Live vs author:** Windows → Editor Utilities opens a **live** Dockview tab that presents Babylon GUI (ADT copy, never `registerView`) — that is `p12-editor-extensions`. Content Browser opens **authoring**. UserInterface and EditorUtilityInterface share one host (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a healthy Engine, EUI `dockKind` Settings. Do not rebuild `@babylonslate/ui-runtime`.
+UserInterface authoring (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a healthy Engine. Do not rebuild `@babylonslate/ui-runtime`.
 
 Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
 

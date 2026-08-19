@@ -1,7 +1,7 @@
 import type { UserInterfaceDocument } from "./types";
 import { nestedUiGuidsOf } from "./cycle-check";
 
-/** Texture asset guids referenced by Image widgets in UI / EUI documents. */
+/** Texture asset guids referenced by Image widgets in UserInterface documents. */
 export function collectImageGuidsFromUiDocuments(
   documents: Iterable<UserInterfaceDocument>,
   resolveNested?: (guid: string) => UserInterfaceDocument | null,

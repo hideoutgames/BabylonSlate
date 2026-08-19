@@ -66,7 +66,6 @@ function RegisteredDockviewShell({
   documentKind,
   initialLayout,
   actorPrefab,
-  editorUtilityInterface,
   uiEditorMode,
   animEditorMode,
   surface,
@@ -75,7 +74,6 @@ function RegisteredDockviewShell({
   documentKind: DockviewDocumentKind;
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
-  editorUtilityInterface?: boolean;
   uiEditorMode?: import("../shell/ui-document-layout").UiEditorMode;
   animEditorMode?: import("../shell/anim-document-layout").AnimEditorMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
@@ -93,7 +91,6 @@ function RegisteredDockviewShell({
       documentKind={documentKind}
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
-      editorUtilityInterface={editorUtilityInterface}
       sourceControl={sourceControl.enabled}
       uiEditorMode={uiEditorMode}
       animEditorMode={animEditorMode}
@@ -128,11 +125,9 @@ function DocumentShell({
 function UiDocumentDocks({
   id,
   layout,
-  editorUtilityInterface,
 }: {
   id: string;
   layout: Record<string, unknown> | null;
-  editorUtilityInterface: boolean;
 }) {
   const { uiEditorMode, setUiEditorMode, activeDocumentId } = useDocuments();
   const parsed = parseUiDocumentLayout(layout);
@@ -159,7 +154,6 @@ function UiDocumentDocks({
             id={id}
             documentKind="ui"
             initialLayout={parsed.designer}
-            editorUtilityInterface={editorUtilityInterface}
             uiEditorMode="designer"
             surface="designer"
           />
@@ -347,9 +341,6 @@ export function DocumentWorkspace() {
 
         if (doc.ref.kind === "ui") {
           if (!shouldMount) return null;
-          const indexed = assetRegistry
-            ?.list()
-            .find((asset) => asset.path === doc.ref.path);
           return (
             <WorkspaceErrorBoundary key={id}>
               <DocumentWorkspaceProvider documentId={id}>
@@ -361,13 +352,7 @@ export function DocumentWorkspace() {
                     testId="document-workspace-ui"
                     active={active}
                   >
-                    <UiDocumentDocks
-                      id={id}
-                      layout={doc.layout}
-                      editorUtilityInterface={
-                        indexed?.header.type === "EditorUtilityInterface"
-                      }
-                    />
+                    <UiDocumentDocks id={id} layout={doc.layout} />
                   </DocumentShell>
                 </UiEditingProvider>
                 </GraphEditingProvider>
