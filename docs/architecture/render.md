@@ -68,7 +68,7 @@ LRU with byte ceiling (~512 MB accounted) plus refcounts. Stable blob URL per as
 
 **One `ResourceCache` per Engine lifetime** (`p20-shared-resource-cache`). Today every `createEngine` allocates `new ResourceCache()` even when `sharedEngine` is set, which can defeat InternalTexture dedupe. Play, Prefab (after `p18-shared-prefab-engine`), Material Preview, and UI surfaces must reuse the viewport cache. Eviction stays unreferenced-LRU only.
 
-Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`, `isCube`. `getTexture(..., { isCube: true })` returns a `CubeTexture` (IBL, single DDS/ENV URL). `getCubeTextureFromImages(guid, scene, files)` builds a six-face skybox cube (`files` in `px, py, pz, nx, ny, nz` order) **on the Engine** (`new CubeTexture(files, engine)`), not the Scene, so Play `scene.dispose()` cannot drop a cache-owned cube. Constructing `Texture` outside the cache is lint-banned. Skybox empty faces use engine default PNG buffers (`packages/render/src/default-skybox/`); override Texture guids are collected into Play `textureBytes` (`skyboxFaceGuidsFromScene`). The skybox never sets `scene.environmentTexture`.
+Cache key includes `url`, `noMipmap`, `samplingMode`, `invertY`, `useSRGBBuffer`, `isCube`. `getTexture(..., { isCube: true })` returns a `CubeTexture` (IBL, single DDS/ENV URL). `getCubeTextureFromImages(guid, scene, files)` builds a six-face skybox cube (`files` in `px, py, pz, nx, ny, nz` order) **on the Engine** (`new CubeTexture(files, engine)`), not the Scene, so Play `scene.dispose()` cannot drop a cache-owned cube. Constructing `Texture` outside the cache is lint-banned. Skybox empty faces load `engine-content/skybox/{px,py,pz,nx,ny,nz}.png` (Vite-copied to editor/player public; URL helper in `packages/render/src/default-skybox/`); override Texture guids are collected into Play `textureBytes` (`skyboxFaceGuidsFromScene`). The skybox never sets `scene.environmentTexture`.
 
 Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Context-loss restore drops one quality tier and flushes the LRU.
 
@@ -81,7 +81,7 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 - `MeshBuilder.CreateBox` at component `size` (default **1000**)
 - Unlit `PBRMaterial`: `backFaceCulling = false`, `disableLighting = true`, `twoSidedLighting = true`; `reflectionTexture` in `Texture.SKYBOX_MODE`
 - Mesh flags: `infiniteDistance`, `ignoreCameraMaxZ`, `applyFog = false` (Babylon 9 fog flag is on the mesh), `receiveShadows = false`, **always** `isPickable = false`
-- Missing authored faces fall back to the matching engine default cubemap face
+- Missing authored faces fall back to the matching engine default cubemap face (`engine-content/skybox/{face}.png`)
 - Shadows, nav bake, and `frameActor` skip skyboxes (`infiniteDistance` tracks the camera, so framing the mesh origin is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
 - Six-face cubes are Engine-owned so Play overlay `scene.dispose()` does not race pending face loads
