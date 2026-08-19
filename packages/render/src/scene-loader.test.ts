@@ -227,6 +227,39 @@ describe("scene-loader", () => {
     ).toBe("particle");
   });
 
+  it("represents a RigidBodyComponent actor with a rigidbody billboard, not a white cube", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("body", "Body", {
+          components: [
+            {
+              id: "rb",
+              classId: "RigidBodyComponent",
+              properties: { motionType: "dynamic" },
+            },
+          ],
+        }),
+      ]),
+    );
+    const origin = scene.getMeshByName(editorMeshName("body"));
+    const icon = scene.getMeshByName(editorComponentMeshName("body", "rb"));
+    expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    expect(origin!.visibility).toBe(0);
+    expect(
+      (origin!.metadata as { editorPickProxy?: boolean }).editorPickProxy,
+    ).toBe(true);
+    expect(icon).not.toBeNull();
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("rigidbody");
+    expect(icon!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(
+      0.1,
+    );
+  });
+
   it("parents camera, light, and audio billboards under a non-billboard origin", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
