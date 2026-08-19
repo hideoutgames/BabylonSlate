@@ -1,6 +1,7 @@
 node_modules
 dist
 apps/editor/public/engine-plugins
+apps/editor/public/engine-content
 apps/player/public
 .DS_Store
 *.local

@@ -176,6 +176,8 @@ export function ContentBrowserWorkspace({
     refreshAssetRegistry,
     repathDocument,
     openDocument,
+    closeDocumentsForPaths,
+    repairAfterAssetDelete,
     openDocuments,
     setActiveDocument,
     tabOrder,
@@ -883,8 +885,24 @@ export function ContentBrowserWorkspace({
     const oursToRelease = oursLockPaths([...paths], (path) =>
       sourceControl.lockStateForPath(path),
     );
+    const deletedGuids = contentBrowserDeletingGuids({
+      extraGuids: deleteTarget.guids,
+      folderPaths: folders,
+      assets: allAssets,
+    });
+    const deletedClassNames = new Set<string>();
+    for (const guid of deletedGuids) {
+      const asset = assetRegistry.getByGuid(guid);
+      if (
+        asset &&
+        (asset.header.type === "Class" || asset.header.type === "Graph")
+      ) {
+        deletedClassNames.add(asset.header.name);
+      }
+    }
     setBusy(true);
     try {
+      closeDocumentsForPaths(paths);
       for (const path of folders) {
         const from = contentBrowserFolderOps(path, browserRoots);
         if (from.readOnly) continue;
@@ -908,7 +926,7 @@ export function ContentBrowserWorkspace({
       for (const path of oursToRelease) {
         await sourceControl.releasePath(path);
       }
-      await refreshAssetRegistry();
+      await repairAfterAssetDelete(deletedGuids, deletedClassNames);
     } finally {
       setBusy(false);
     }
@@ -916,8 +934,9 @@ export function ContentBrowserWorkspace({
     allAssets,
     assetRegistry,
     browserRoots,
+    closeDocumentsForPaths,
     deleteTarget,
-    refreshAssetRegistry,
+    repairAfterAssetDelete,
     refuseTheirsAssetPaths,
     sourceControl,
   ]);
@@ -1852,7 +1871,7 @@ export function ContentBrowserWorkspace({
             ))}
             {deleteInboundRefs.length > 0 ? (
               <>
-                <p>Inbound references from other assets:</p>
+                <p>These references will be set to None:</p>
                 <ul className="list-disc pl-5">
                   {deleteInboundRefs.map((ref) => (
                     <li key={ref.guid}>

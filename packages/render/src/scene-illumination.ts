@@ -3,6 +3,7 @@ import {
   Color3,
   Color4,
   DirectionalLight,
+  LinesMesh,
   Matrix,
   PointLight,
   Quaternion,
@@ -11,6 +12,7 @@ import {
   SpotLight,
   UniversalCamera,
   Vector3,
+  type AbstractMesh,
   type Light,
 } from "@babylonjs/core";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
@@ -33,6 +35,16 @@ const EXTRA_CASTER_DIAGNOSTIC =
   "Only the first castShadows light owns a shadow map; extra casters are ignored.";
 const SHADOW_2048_WARN =
   "shadowquality 2048 is expensive on the baseline device";
+
+const SHADOW_BIAS = 0.001;
+const SHADOW_NORMAL_BIAS = 0.01;
+const SHADOW_FRUSTUM_EDGE_FALLOFF = 1;
+const SHADOW_SKIP_NAME_PREFIXES = [
+  "debugLight:",
+  "debugCamera",
+  "navmeshDebug",
+  "playConsoleViz:",
+] as const;
 
 export type ShadowQualityLevel = "off" | "512" | "1024" | "2048";
 
@@ -340,10 +352,44 @@ export function updateAuthoredCameraTransform(
   gameCamera.rotation.set(0, 0, 0);
 }
 
+function shadowSkipMetadata(mesh: AbstractMesh): boolean {
+  const meta = mesh.metadata as {
+    editorActorOrigin?: boolean;
+    editorPickProxy?: boolean;
+    editorBillboard?: string;
+    playHelperVisual?: boolean;
+    playActorOrigin?: boolean;
+    playDebugOverlay?: boolean;
+  } | null;
+  if (!meta) return false;
+  return Boolean(
+    meta.editorActorOrigin ||
+      meta.editorPickProxy ||
+      meta.editorBillboard ||
+      meta.playHelperVisual ||
+      meta.playActorOrigin ||
+      meta.playDebugOverlay,
+  );
+}
+
+function participatesInShadows(mesh: AbstractMesh): boolean {
+  if (mesh.name.startsWith("__")) return false;
+  if (isSkyboxMesh(mesh)) return false;
+  if (mesh instanceof LinesMesh) return false;
+  if (SHADOW_SKIP_NAME_PREFIXES.some((prefix) => mesh.name.startsWith(prefix))) {
+    return false;
+  }
+  return !shadowSkipMetadata(mesh);
+}
+
 function refreshShadowCasters(scene: Scene, generator: ShadowGenerator): void {
+  const list = generator.getShadowMap()?.renderList;
+  if (list) list.length = 0;
   for (const mesh of scene.meshes) {
-    if (mesh.name.startsWith("__")) continue;
-    if (isSkyboxMesh(mesh)) continue;
+    if (!participatesInShadows(mesh)) {
+      mesh.receiveShadows = false;
+      continue;
+    }
     generator.addShadowCaster(mesh, false);
     mesh.receiveShadows = true;
   }
@@ -367,6 +413,14 @@ export function attachSingleShadowGenerator(
     return null;
   }
   const generator = new ShadowGenerator(mapSize, light);
+  generator.usePercentageCloserFiltering = true;
+  generator.filteringQuality = ShadowGenerator.QUALITY_LOW;
+  generator.bias = SHADOW_BIAS;
+  generator.normalBias = SHADOW_NORMAL_BIAS;
+  generator.frustumEdgeFalloff = SHADOW_FRUSTUM_EDGE_FALLOFF;
+  if (light instanceof DirectionalLight) {
+    light.autoCalcShadowZBounds = true;
+  }
   refreshShadowCasters(scene, generator);
   return generator;
 }

@@ -1,5 +1,18 @@
 import { expect, type Page } from "@playwright/test";
 
+/** Click the Homepage TestProject row (name with or without `.babproject`). */
+export async function clickListedTestProject(page: Page): Promise<void> {
+  const listed = page.getByTestId("open-listed-project-TestProject");
+  const listedLegacy = page.getByTestId(
+    "open-listed-project-TestProject.babproject",
+  );
+  if ((await listed.count()) > 0) {
+    await listed.click();
+    return;
+  }
+  await listedLegacy.click();
+}
+
 /** Homepage → Create Project dialog (test-mode name TestProject) → editor chrome.
  *  If TestProject is already listed (shared OPFS), open it instead of Create.
  */
@@ -36,6 +49,12 @@ export async function openTestProject(
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 
+/** Click the homepage TestProject row after Close / reload, then wait for chrome. */
+export async function openListedTestProject(page: Page): Promise<void> {
+  await clickListedTestProject(page);
+  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */
 export async function submitCreateOrOpenListed(
   page: Page,
@@ -54,20 +73,6 @@ export async function submitCreateOrOpenListed(
     return;
   }
   await page.getByTestId(`open-listed-project-${listedName}.babproject`).click();
-}
-
-/** Click the homepage TestProject row after Close / reload. */
-export async function openListedTestProject(page: Page): Promise<void> {
-  const listed = page.getByTestId("open-listed-project-TestProject");
-  const listedLegacy = page.getByTestId(
-    "open-listed-project-TestProject.babproject",
-  );
-  if ((await listed.count()) > 0) {
-    await listed.click();
-  } else {
-    await listedLegacy.click();
-  }
-  await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
 }
 
 export async function openContentBrowser(page: Page): Promise<void> {
