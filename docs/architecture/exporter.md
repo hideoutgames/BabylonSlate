@@ -63,7 +63,7 @@ File-count report: warn 800 / fail 1000 (preset-overridable). Export smoke asser
 
 | Action | Output |
 | --- | --- |
-| **Export Game** (Project Settings) | Itch zip of the packaged player |
+| **Export Game** (Project Settings) | Itch zip of the packaged player. Failures surface as **Could not build the zip. Try again.** when the cause is a zip/DOS-date error; other messages stay readable. |
 | **Export Project** | `.zip` backup of the project directory tree |
 
 Preview packs are in-memory only. Capacitor and Electron host the **editor**, not shipped games.
