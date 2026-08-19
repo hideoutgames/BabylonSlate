@@ -3,11 +3,12 @@ import type { SerializedGraph } from "@babylonslate/core";
 import { ensureEventNodeOnGraph, nativeEventStubs } from "./class-members";
 
 describe("nativeEventStubs", () => {
-  it("always lists Begin Play and Tick", () => {
+  it("lists Begin Play, Tick, and On Actor Destroyed", () => {
     const stubs = nativeEventStubs({ parentClass: "Actor" });
     expect(stubs.map((stub) => stub.eventType)).toEqual([
       "flow.event.beginPlay",
       "flow.event.tick",
+      "flow.event.destroyed",
     ]);
   });
 
@@ -15,6 +16,7 @@ describe("nativeEventStubs", () => {
     expect(nativeEventStubs().map((stub) => stub.eventType)).toEqual([
       "flow.event.beginPlay",
       "flow.event.tick",
+      "flow.event.destroyed",
     ]);
   });
 
@@ -24,13 +26,17 @@ describe("nativeEventStubs", () => {
     expect(nativeEventStubs({ parentClass: "ActorComponent" })).toEqual([]);
   });
 
-  it("lists Begin Play and Tick on UserInterface logic even when parentClass is BObject", () => {
+  it("lists Begin Play, Tick, and On Actor Destroyed on UserInterface logic even when parentClass is BObject", () => {
     expect(
       nativeEventStubs({
         assetType: "UserInterface",
         parentClass: "BObject",
       }).map((stub) => stub.eventType),
-    ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
+    ).toEqual([
+      "flow.event.beginPlay",
+      "flow.event.tick",
+      "flow.event.destroyed",
+    ]);
   });
 
   it("does not treat leftover EditorUtilityInterface as a logic host", () => {

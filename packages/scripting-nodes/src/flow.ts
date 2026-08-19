@@ -21,6 +21,7 @@ import {
 const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
+  "flow.event.destroyed": "onDestroyed",
   "flow.event.commandRun": "onCommandRun",
   "flow.event.editorBeginPlay": "onEditorBeginPlay",
   "flow.event.mouseEnter": "onMouseEnter",
@@ -85,6 +86,16 @@ export const flowNodes: NodeDefinition[] = [
       pin("deltaSeconds", "deltaSeconds", "out", FLOAT),
     ],
     codegen: () => ({ deltaSeconds: "ctx.deltaSeconds" }),
+  },
+  {
+    id: "flow.event.destroyed",
+    title: "Event On Actor Destroyed",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
   },
   {
     id: "flow.event.commandRun",

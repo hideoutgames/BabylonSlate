@@ -841,6 +841,8 @@ class InProcessRuntime implements RuntimeDriver {
         onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
         onTick: (self, ctx) =>
           this.guardScript(() => hooks.onTick?.(self, ctx)),
+        onDestroyed: (self) =>
+          this.guardScript(() => hooks.onDestroyed?.(self)),
       },
     });
     this.scriptHost.bindInterfaceHandlers(actor);
@@ -868,6 +870,8 @@ class InProcessRuntime implements RuntimeDriver {
               onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
               onTick: (self, ctx) =>
                 this.guardScript(() => hooks.onTick?.(self, ctx)),
+              onDestroyed: (self) =>
+                this.guardScript(() => hooks.onDestroyed?.(self)),
             };
           },
         );
