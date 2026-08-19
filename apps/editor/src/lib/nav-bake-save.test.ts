@@ -37,9 +37,8 @@ describe("nav bake save flush", () => {
   });
 
   it("invokes registered startBake flushes sequentially and skips when none are registered", async () => {
-    const startBake = vi.fn(
-      async (_properties: Record<string, unknown>) => {},
-    );
+    const startBake = vi.fn<(properties: Record<string, unknown>) => Promise<void>>();
+    startBake.mockResolvedValue(undefined);
     await flushNavBakeForSave();
     expect(startBake).not.toHaveBeenCalled();
     const unregister = registerNavBakeSaveFlush(async () => {
