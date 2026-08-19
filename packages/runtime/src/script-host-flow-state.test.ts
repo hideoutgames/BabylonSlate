@@ -28,6 +28,32 @@ describe("ScriptHost flowState", () => {
     expect(ctxA.flowState("doOnce1").done).toBe(true);
   });
 
+  it("keeps identical node ids isolated between compiled scripts", () => {
+    const host = new ScriptHost(stubServices());
+    const actor = new Actor({ classId: "Hero", guid: "hero" });
+    const first = host.createContext(
+      actor,
+      0,
+      0,
+      {},
+      undefined,
+      undefined,
+      "script-a",
+    );
+    const second = host.createContext(
+      actor,
+      0,
+      0,
+      {},
+      undefined,
+      undefined,
+      "script-b",
+    );
+
+    first.flowState("gate").open = true;
+    expect(second.flowState("gate").open).toBeUndefined();
+  });
+
   it("clears flow state when the actor is destroyed via host hooks", async () => {
     const host = new ScriptHost(stubServices());
     await host.load({
@@ -48,8 +74,32 @@ describe("ScriptHost flowState", () => {
     const actor = new Actor({ classId: "Hero", guid: "hero" });
     const hooks = host.hooksFor("Hero")!;
     hooks.onCreation?.(actor);
-    expect(host.createContext(actor, 0, 0).flowState("gate1").open).toBe(true);
+    expect(
+      host
+        .createContext(
+          actor,
+          0,
+          0,
+          {},
+          undefined,
+          undefined,
+          "hero-logic",
+        )
+        .flowState("gate1").open,
+    ).toBe(true);
     hooks.onDestroyed?.(actor);
-    expect(host.createContext(actor, 0, 0).flowState("gate1").open).toBeUndefined();
+    expect(
+      host
+        .createContext(
+          actor,
+          0,
+          0,
+          {},
+          undefined,
+          undefined,
+          "hero-logic",
+        )
+        .flowState("gate1").open,
+    ).toBeUndefined();
   });
 });

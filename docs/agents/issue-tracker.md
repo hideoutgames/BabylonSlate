@@ -298,7 +298,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (exec highway / independent chain roots); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
-**Closed (node-graph completeness pass):** dynamic Format String and Enum Select; Bool-indexed typed Selects; safe immutable Array/Map catalogs including Break Map; Switch on Int/String; deterministic string/math/vector/transform/Actor utilities; complete same-tick trace/overlap/sphere-sweep outputs with live Actor resolution; dynamic-pin Inspector/hydration/persistence; catalog codegen contracts and Preview acceptance.
+**Closed (node-graph completeness pass):** dynamic Format String and Enum Select; Bool-indexed typed Selects; safe immutable Array/Map catalogs including Break Map; Switch on Int/String; For Loop / For Each / For Each Map with Break variants; per-object Do Once / Do N / Flip Flop / Gate state; deterministic string/math/vector/transform/Actor utilities; complete same-tick trace/overlap/sphere-sweep outputs with live Actor resolution; dynamic-pin Inspector/hydration/persistence; catalog codegen contracts and Preview acceptance.
 
 **Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
 

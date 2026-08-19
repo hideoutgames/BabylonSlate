@@ -541,7 +541,15 @@ export class ScriptHost {
     if (!loaded || loaded.length === 0) return undefined;
     const evaluate = loaded[0]?.exports.evaluate;
     if (typeof evaluate !== "function") return undefined;
-    const ctx = this.createContext(self, 0, 0, {}, undefined, extras);
+    const ctx = this.createContext(
+      self,
+      0,
+      0,
+      {},
+      undefined,
+      extras,
+      loaded[0]!.script.assetGuid,
+    );
     try {
       const result = (evaluate as (context: ScriptContext) => unknown)(ctx);
       if (!result || typeof result !== "object") return undefined;
@@ -572,7 +580,15 @@ export class ScriptHost {
           object.interfaceHandlers.set(key, (args) => {
             const fn = entry.exports[exportName];
             if (typeof fn !== "function") return {};
-            const ctx = this.createContext(object, 0, 0, args);
+            const ctx = this.createContext(
+              object,
+              0,
+              0,
+              args,
+              undefined,
+              undefined,
+              entry.script.assetGuid,
+            );
             try {
               const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
               if (result instanceof Promise) {
@@ -618,6 +634,7 @@ export class ScriptHost {
           commandArgs,
           tick,
           extras,
+          entry.script.assetGuid,
         );
         try {
           const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
@@ -658,12 +675,14 @@ export class ScriptHost {
   private flowStateFor(
     self: BObject | null,
     nodeId: string,
+    namespace = "",
   ): Record<string, unknown> {
+    const key = namespace ? `${namespace}\0${nodeId}` : nodeId;
     if (!self) {
-      let row = this.orphanFlowStates.get(nodeId);
+      let row = this.orphanFlowStates.get(key);
       if (!row) {
         row = {};
-        this.orphanFlowStates.set(nodeId, row);
+        this.orphanFlowStates.set(key, row);
       }
       return row;
     }
@@ -672,10 +691,10 @@ export class ScriptHost {
       byNode = new Map();
       this.flowStates.set(self, byNode);
     }
-    let row = byNode.get(nodeId);
+    let row = byNode.get(key);
     if (!row) {
       row = {};
-      byNode.set(nodeId, row);
+      byNode.set(key, row);
     }
     return row;
   }
@@ -687,6 +706,7 @@ export class ScriptHost {
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
     extras?: ScriptExtras,
+    flowNamespace = "",
   ): ScriptContext {
     const services = this.services;
     const store = extras?.variableStore ?? self;
@@ -697,7 +717,8 @@ export class ScriptHost {
       commandArgs,
       args: commandArgs,
       animFacts: extras?.animFacts,
-      flowState: (nodeId: string) => this.flowStateFor(self, String(nodeId)),
+      flowState: (nodeId: string) =>
+        this.flowStateFor(self, String(nodeId), flowNamespace),
       reportCommand: (success, output) => {
         this.commandResult = { success: Boolean(success), output: String(output) };
         services.reportCommand?.(Boolean(success), String(output));
@@ -924,6 +945,7 @@ export class ScriptHost {
             fnArgs ?? {},
             tick,
             extras,
+            entry.script.assetGuid,
           );
           try {
             const value = (fn as (ctx: ScriptContext) => unknown)(nested);
