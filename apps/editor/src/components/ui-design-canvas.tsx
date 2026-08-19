@@ -221,6 +221,14 @@ export function UiDesignCanvas({
     });
   }
   const session = layoutSessionProp ?? localSessionRef.current!;
+  useEffect(() => {
+    if (!documentActive && session.locked) session.commit();
+  }, [documentActive, session]);
+  useEffect(() => {
+    return () => {
+      if (session.locked) session.commit();
+    };
+  }, [session]);
   const resolveImageUrlRef = useRef(resolveImageUrl);
   resolveImageUrlRef.current = resolveImageUrl;
   const boundResolveImageUrl = useCallback(

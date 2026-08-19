@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetUiHostStats } from "@babylonslate/render";
-import { pinLayout, stretchLayout } from "@babylonslate/ui-runtime";
+import { pinLayout } from "@babylonslate/ui-runtime";
 import { createUiDesignerSession } from "./ui-designer-session";
 
 function createHarness() {
@@ -72,12 +72,16 @@ describe("createUiDesignerSession", () => {
     expect(host.setGestureLocked).toHaveBeenLastCalledWith(false);
   });
 
-  it("cancel drops the stroke without a document commit", () => {
-    const { commitLayout, host, session } = createHarness();
-    session.preview("btn", stretchLayout({ left: 8, right: 8, top: 4, bottom: 4 }));
+  it("cancel restores the layout from the first preview of the stroke", () => {
+    const { host, commitLayout, onOverlay, session } = createHarness();
+    const original = pinLayout("left", "top", 160, 36, 12, 8);
+    const moved = pinLayout("left", "top", 160, 36, 40, 8);
+    session.preview("btn", original);
+    session.preview("btn", moved);
     session.cancel();
     expect(commitLayout).not.toHaveBeenCalled();
-    expect(host.setGestureLocked).toHaveBeenLastCalledWith(false);
+    expect(host.patchLiveLayout).toHaveBeenLastCalledWith("btn", original);
+    expect(onOverlay).toHaveBeenLastCalledWith("btn", original);
     expect(session.locked).toBe(false);
   });
 
