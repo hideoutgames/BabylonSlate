@@ -52,7 +52,7 @@ import {
   spawnPlacedActor,
   type PlaceActorItem,
 } from "../lib/place-actors";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { prefabComponentsFromGraph } from "../lib/prefab-preview";
 import {
   actorRowId,
@@ -240,7 +240,7 @@ export function flattenOutliner(
 export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument } =
+  const { openDocuments, applySceneChange, assetRegistry, loadGraphDocument, openDocument } =
     useDocuments();
   const { selectedActorIds, selectActor, setSelectedActorIds, frameActor, viewportDropApi } =
     useSceneEditing();
@@ -565,31 +565,55 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
 
   const actorMenuItems = useCallback(
-    (actorId: string): NestedMenuItem[] => [
-      {
-        id: "duplicate-actor",
-        label: "Duplicate",
-        testId: `outliner-duplicate-${actorId}`,
-        onSelect: () => {
-          if (!scene) return;
-          const source = scene.actors.find((actor) => actor.id === actorId);
-          if (!source) return;
-          const copy = duplicateSceneActor(scene, source);
-          mutate({
-            ...scene,
-            actors: [...scene.actors, copy],
-          });
-          selectActor(copy.id);
+    (actorId: string): NestedMenuItem[] => {
+      const actor = scene?.actors.find((entry) => entry.id === actorId);
+      const classAsset = (assetRegistry?.list() ?? []).find(
+        (item) =>
+          item.header.type === "Class" &&
+          classIdFromClassAsset(item) === actor?.classId,
+      );
+      const items: NestedMenuItem[] = [];
+      if (classAsset) {
+        items.push({
+          id: "open-actor",
+          label: "Open Actor",
+          testId: `outliner-open-actor-${actorId}`,
+          onSelect: () => {
+            void openDocument({
+              kind: "graph",
+              path: classAsset.path,
+              label: classAsset.header.name,
+            });
+          },
+        });
+      }
+      items.push(
+        {
+          id: "duplicate-actor",
+          label: "Duplicate",
+          testId: `outliner-duplicate-${actorId}`,
+          onSelect: () => {
+            if (!scene) return;
+            const source = scene.actors.find((entry) => entry.id === actorId);
+            if (!source) return;
+            const copy = duplicateSceneActor(scene, source);
+            mutate({
+              ...scene,
+              actors: [...scene.actors, copy],
+            });
+            selectActor(copy.id);
+          },
         },
-      },
-      {
-        id: "delete-actor",
-        label: "Delete",
-        testId: `outliner-delete-${actorId}`,
-        onSelect: () => removeActor(actorId),
-      },
-    ],
-    [mutate, removeActor, scene, selectActor],
+        {
+          id: "delete-actor",
+          label: "Delete",
+          testId: `outliner-delete-${actorId}`,
+          onSelect: () => removeActor(actorId),
+        },
+      );
+      return items;
+    },
+    [assetRegistry, mutate, openDocument, removeActor, scene, selectActor],
   );
 
   const folderMenuItems = useCallback(

@@ -824,6 +824,31 @@ describe("EditorSceneSync", () => {
     });
   });
 
+  it("resolves whenEditorModelsReady immediately when the scene has no models", async () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
+      ]),
+    );
+    await expect(sync.whenEditorModelsReady()).resolves.toBeUndefined();
+  });
+
+  it("whenEditorModelsReady waits until pending GLB instantiations finish", async () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    const root = sync.meshForActor("a");
+    await sync.whenEditorModelsReady();
+    expect(visualMeshes(root!).length).toBeGreaterThan(0);
+  });
+
   it("loads a Model guid once for two actors on the same scene", async () => {
     const { scene } = createHandle();
     const bytes = encodeTriangleGlb();
@@ -1271,7 +1296,7 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("draws the grid as a background underlay below world meshes", () => {
+  it("draws the grid in the world group so meshes can occlude it", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "3d" });
     const sync = new EditorSceneSync(scene);
@@ -1282,11 +1307,11 @@ describe("editor grid", () => {
     );
     const mesh = sync.meshForActor("a");
     expect(grid.mesh.name).toBe(GRID_MESH_NAME);
-    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.background);
+    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
     expect(mesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
+    expect(grid.mesh.material?.disableDepthWrite).toBe(true);
     const worldClear = scene.getAutoClearDepthStencilSetup(RENDERING_GROUP.world);
-    expect(worldClear.autoClear).toBe(true);
-    expect(worldClear.depth).toBe(true);
+    expect(worldClear.autoClear).toBe(false);
     grid.dispose();
   });
 });

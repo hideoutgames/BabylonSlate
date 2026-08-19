@@ -79,6 +79,26 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  it("draws capsule collider primitives", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    overlay.sync([
+      {
+        id: "capsule",
+        shape: "capsule",
+        position: { x: 0, y: 1.5, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        radius: 0.5,
+        halfHeight: 1,
+      },
+    ]);
+    expect(scene.getMeshByName("playConsoleViz:capsule")).not.toBeNull();
+    overlay.sync([]);
+    expect(scene.getMeshByName("playConsoleViz:capsule")).toBeNull();
+    overlay.dispose();
+    engine.dispose();
+  });
+
   it("reuses collision overlay meshes when pose changes", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayCollisionOverlay(scene);

@@ -45,6 +45,7 @@ export const DEBUG_COMMAND_NAMES = [
   "stat threads",
   "showcollision",
   "showbounds",
+  "actorboundingbox",
   "wireframe",
   "pause",
   "resume",
@@ -215,11 +216,14 @@ export function builtinCommands(): RegisteredCommand[] {
       host.setShowCollision?.(enabled),
     ),
     flagCommand("showbounds", (host, enabled) => host.setShowBounds?.(enabled)),
+    flagCommand("actorboundingbox", (host, enabled) =>
+      host.setShowBounds?.(enabled),
+    ),
     flagCommand("wireframe", (host, enabled) => host.setWireframe?.(enabled)),
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),
-      "Detached fly camera; pointer/WASD stolen, gamepad still forwards; simulation keeps running",
+      "Detached fly camera; pointer/WASD stolen, gamepad still forwards; overlay Play shows a fly stick; simulation keeps running",
     ),
     flagCommand("shownav", (host, enabled) => host.setShowNav?.(enabled)),
     flagCommand("showaudiodebug", (host, enabled) =>

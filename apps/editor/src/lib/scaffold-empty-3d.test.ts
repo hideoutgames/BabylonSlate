@@ -63,10 +63,10 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
     );
     expect(actorBody?.properties.motionType).toBe("kinematic");
     expect(actorCollider?.properties.shape).toEqual(
-      expect.objectContaining({ kind: "capsule" }),
+      expect.objectContaining({ kind: "capsule", radius: 0.5, halfHeight: 1 }),
     );
     const actorY = actorCollider?.transform.position[1];
-    expect(actorY).toBeGreaterThan(0);
+    expect(actorY).toBe(1.5);
 
     const classCall = createAsset.mock.calls.find(([, path]) =>
       String(path).includes("Mannequin.class"),

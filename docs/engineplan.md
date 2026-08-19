@@ -797,7 +797,7 @@ A `packages/debugger` holds the runtime side (command registry, parser, stat col
 
 Every registered command carries a tier, and the non-debug build tree-shakes the debug tier out entirely.
 - **Core commands ship in every build**: `changescene`, `renderquality`, `shadowquality`, `resolutionscale`, `framecap`, `volume`, `quit`, `help`, and every user-authored command. These mutate real engine settings, so they have to exist in a release build.
-- **Debugger commands ship only when the debugger is bundled**: `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start` and `snapshot stop`.
+- **Debugger commands ship only when the debugger is bundled**: `showfps`, `stat unit`, `stat memory`, `stat draws`, `stat threads`, `showcollision`, `showbounds`, `actorboundingbox`, `wireframe`, `pause`, `resume` (alias `unpause`), `step`, `slomo`, `freecam`, `shownav`, `showaudiodebug`, `dumpactors`, `inspect`, `dumplog`, `snapshot start` and `snapshot stop`.
 
 `pause` is idempotent; `resume` / `unpause` unpause. `freecam` detaches a fly/pan camera **without pausing** simulation. Engine names are reserved so a user `BDebugCommand` cannot silently overwrite them. Catalog and apply audit: [architecture/console-commands.md](architecture/console-commands.md).
 
@@ -1414,7 +1414,7 @@ P8 follow-up (do not rebuild P8). Spec: [architecture/console-commands.md](archi
 - [x] **p8-console-apply** — Core setters actually apply: `volume` → `setGlobalVolume`, `framecap` → Play scheduler, `renderquality` / `resolutionscale` → Play hardware scaling; omitted args print the current value
 - [x] **p8-console-slomo** — `slomo` scales runtime tick `dt` (script, physics, nav, BT); `slomo 1` is identity
 - [x] **p8-console-freecam** — `freecam` debug fly/pan camera that does **not** pause; restores possessed camera on off / `changescene`; canvas look-move stolen, gamepad can still feed the worker
-- [x] **p8-console-viz** — `wireframe` / `showbounds` / `showcollision` / `shownav` draw on the Play scene; `showfps` / `stat *` open the Stats HUD; `dumpactors` / `inspect` print world state
+- [x] **p8-console-viz** — `wireframe` / `showbounds` / `actorboundingbox` / `showcollision` / `shownav` draw on the Play scene; `showfps` / `stat *` open the Stats HUD; `dumpactors` / `inspect` print world state
 
 ### P9
 

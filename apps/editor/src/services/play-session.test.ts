@@ -329,6 +329,24 @@ describe("applyPlayHudConsoleCommand", () => {
     expect(onShowFps).toHaveBeenCalledWith(true);
     expect(onStat).toHaveBeenCalledWith("unit", true);
   });
+
+  it("reports free cam so Preview can show a fly stick", () => {
+    const onFreeCam = vi.fn();
+    expect(
+      applyPlayHudConsoleCommand(
+        { type: "setFreeCam", enabled: true },
+        { onFreeCam },
+      ),
+    ).toBe(true);
+    expect(onFreeCam).toHaveBeenCalledWith(true);
+    expect(
+      applyPlayHudConsoleCommand(
+        { type: "setFreeCam", enabled: false },
+        { onFreeCam },
+      ),
+    ).toBe(true);
+    expect(onFreeCam).toHaveBeenCalledWith(false);
+  });
 });
 
 describe("shouldForwardPlayEngineCommand", () => {

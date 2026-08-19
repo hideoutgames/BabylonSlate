@@ -224,7 +224,7 @@ export function createEditorGrid(
   mesh.doNotSyncBoundingInfo = true;
   mesh.alwaysSelectAsActiveMesh = true;
   mesh.isVisible = visible;
-  mesh.renderingGroupId = RENDERING_GROUP.background;
+  mesh.renderingGroupId = RENDERING_GROUP.world;
   configureEditorRenderingGroups(scene);
 
   const material = new ShaderMaterial(

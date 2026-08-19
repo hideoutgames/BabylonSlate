@@ -197,6 +197,42 @@ describe("attachPlayFreeCamInput", () => {
     engine.dispose();
   });
 
+  it("looks right on pointer drag right and up on pointer drag up", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const binding = createSnapshotSceneBinding();
+    const freeCam = createPlayFreeCamController(scene, { binding, mode: "3d" });
+    const canvas = new FakeCanvas();
+    freeCam.setEnabled(true);
+    const input = attachPlayFreeCamInput(
+      canvas as unknown as HTMLCanvasElement,
+      freeCam,
+      { mode: "3d", orbitScale: 0.01 },
+    );
+    const camera = scene.activeCamera as UniversalCamera;
+    camera.computeWorldMatrix();
+    const right = camera.getDirection(Vector3.Right()).clone();
+    const up = camera.getDirection(Vector3.Up()).clone();
+    const forwardBefore = camera.getDirection(Vector3.Forward()).clone();
+
+    canvas.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+    canvas.emit("pointermove", { pointerId: 1, clientX: 180, clientY: 100 });
+    camera.computeWorldMatrix();
+    const afterYaw = camera.getDirection(Vector3.Forward());
+    expect(
+      Vector3.Dot(afterYaw.subtract(forwardBefore), right),
+    ).toBeGreaterThan(0);
+
+    canvas.emit("pointermove", { pointerId: 1, clientX: 180, clientY: 40 });
+    camera.computeWorldMatrix();
+    const afterPitch = camera.getDirection(Vector3.Forward());
+    expect(Vector3.Dot(afterPitch.subtract(afterYaw), up)).toBeGreaterThan(0);
+
+    input.dispose();
+    freeCam.dispose();
+    engine.dispose();
+  });
+
   it("pans XY from pointer drag in 2D", () => {
     const { engine, scene } = createTestEngine();
     setupDefaultViewport(scene);

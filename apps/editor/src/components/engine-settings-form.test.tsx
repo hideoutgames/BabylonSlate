@@ -59,6 +59,8 @@ describe("EngineSettingsForm viewport", () => {
     );
     fireEvent.click(toggle);
     expect(onChange).toHaveBeenCalledWith({ postProcessingEnabled: false });
+    expect(toggle.className).not.toMatch(/min-h-\[var\(--touch-target/);
+    expect(toggle.closest("[data-slot='field']")?.querySelector("[data-slot='field-content']")).not.toBeNull();
   });
 });
 

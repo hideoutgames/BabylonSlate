@@ -90,14 +90,14 @@ Project Settings → **Physics** stores `settings.physics.collisionLayers` (`Nam
 
 ### Editor / Play visuals
 
-RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes. Play/export draws them only when `renderInGame` is true (`meshKind` `collider:{json}`). Console `showcollision` stays a **global** Play overlay (`listDebugColliders()`, including Blocking Volume static boxes); it does not replace the per-collider property. See [render.md](render.md) and [scene-editing.md](scene-editing.md).
+RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes. Play/export draws them only when `renderInGame` is true (`meshKind` `collider:{json}`). Console `showcollision` stays a **global** Play overlay (`listDebugColliders()`, including capsules and Blocking Volume static boxes); it does not replace the per-collider property. See [render.md](render.md) and [scene-editing.md](scene-editing.md).
 
 ### Shapes
 
 - **3D:** box, sphere, capsule, convex hull, triangle mesh
 - **2D:** box, circle, capsule, polygon, chain (tilemap chunks emit merged chains via `tilemapChunkChains`)
 
-Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; Mesh / Sprite / Tilemap stay the pick target when present. Physics-only actors pick via the origin proxy / default billboard. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent` (or a Tilemap, or a Blocking Volume). Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule sized to the character (Y offset so it sits on the ground). Users add colliders on any other mesh the same way.
+Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; Mesh / Sprite / Tilemap stay the pick target when present. Physics-only actors pick via the origin proxy / default billboard. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent` (or a Tilemap, or a Blocking Volume). Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule (`radius` 0.5, `halfHeight` 1, Y offset `radius + halfHeight` so it sits on the feet origin). New Empty 3D projects only — existing scenes are not migrated. Users add colliders on any other mesh the same way.
 
 ## Scripting
 
