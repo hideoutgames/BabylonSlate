@@ -625,7 +625,10 @@ describe("scene-loader", () => {
     expect(volume!.parent).toBe(origin);
     expect(icon!.parent).toBe(origin);
     expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
-    expect(icon!.ignoreParentScaling).toBe(true);
+    icon!.computeWorldMatrix(true);
+    expect(icon!.absoluteScaling.x).toBeCloseTo(1);
+    expect(icon!.absoluteScaling.y).toBeCloseTo(1);
+    expect(icon!.absoluteScaling.z).toBeCloseTo(1);
     expect(
       (icon!.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("default");

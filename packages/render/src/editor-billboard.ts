@@ -5,6 +5,7 @@ import {
   Scene,
   StandardMaterial,
   Texture,
+  TransformNode,
   type AbstractEngine,
 } from "@babylonjs/core";
 import type { SerializedActor } from "@babylonslate/core";
@@ -77,6 +78,32 @@ export function lightBillboardIcon(
   return "point_light";
 }
 
+export function isEditorBillboardMesh(mesh: Mesh): boolean {
+  return typeof (mesh.metadata as { editorBillboard?: unknown } | null)
+    ?.editorBillboard === "string";
+}
+
+/**
+ * Invert the origin's local scale so a PNG child stays square. Babylon 9 has
+ * no `ignoreParentScaling`; volume / actor scale still hits the sibling mesh.
+ */
+export function syncEditorBillboardParentScale(mesh: Mesh): void {
+  const parent = mesh.parent;
+  if (!(parent instanceof TransformNode)) {
+    if (mesh.scaling.x !== 1 || mesh.scaling.y !== 1 || mesh.scaling.z !== 1) {
+      mesh.scaling.set(1, 1, 1);
+    }
+    return;
+  }
+  const sx = parent.scaling.x === 0 ? 1 : 1 / parent.scaling.x;
+  const sy = parent.scaling.y === 0 ? 1 : 1 / parent.scaling.y;
+  const sz = parent.scaling.z === 0 ? 1 : 1 / parent.scaling.z;
+  if (mesh.scaling.x === sx && mesh.scaling.y === sy && mesh.scaling.z === sz) {
+    return;
+  }
+  mesh.scaling.set(sx, sy, sz);
+}
+
 /** Camera-facing unlit icon quad for location-only editor helpers. */
 export function createEditorBillboard(
   scene: Scene,
@@ -90,9 +117,11 @@ export function createEditorBillboard(
     scene,
   );
   mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
-  mesh.ignoreParentScaling = true;
   mesh.isPickable = true;
   mesh.metadata = { ...(mesh.metadata ?? {}), editorBillboard: resolved };
+  mesh.onBeforeRenderObservable.add(() => {
+    syncEditorBillboardParentScale(mesh);
+  });
 
   const material = new StandardMaterial(`${name}-billboard`, scene);
   material.disableLighting = true;

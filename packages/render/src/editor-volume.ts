@@ -4,6 +4,7 @@ import {
   MeshBuilder,
   Scene,
   StandardMaterial,
+  type AbstractMesh,
 } from "@babylonjs/core";
 import {
   COLLIDER_COLOR,
@@ -21,7 +22,7 @@ export type EditorVolumeKind = "box" | "cylinder";
 
 const volumeMaterials = new WeakMap<Scene, StandardMaterial>();
 
-export function isEditorVolumeMesh(mesh: Mesh): boolean {
+export function isEditorVolumeMesh(mesh: AbstractMesh): boolean {
   return Boolean(
     (mesh.metadata as { editorVolume?: boolean } | null)?.editorVolume,
   );

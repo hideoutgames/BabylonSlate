@@ -20,8 +20,10 @@ import {
   applyEditorBillboardFromActor,
   createEditorBillboard,
   editorBillboardKind,
+  isEditorBillboardMesh,
   lightBillboardIcon,
   parseEditorBillboardIcon,
+  syncEditorBillboardParentScale,
   type EditorBillboardIcon,
 } from "./editor-billboard";
 import { createSpriteQuad } from "./sprite-quad";
@@ -594,6 +596,7 @@ function createActorOriginHierarchy(
     billboard.isVisible = actor.visible;
     billboard.isPickable = visualIsPickable(billboard, actor.locked);
     billboard.parent = root;
+    syncEditorBillboardParentScale(billboard);
   }
   return root;
 }
@@ -707,6 +710,9 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   mesh.isPickable = visualIsPickable(mesh, actor.locked);
   if (!origin) return;
   for (const child of childMeshesOf(mesh)) {
+    if (isEditorBillboardMesh(child)) {
+      syncEditorBillboardParentScale(child);
+    }
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) continue;
     const afterPipe = child.name.slice(
       child.name.indexOf(EDITOR_COMPONENT_MESH_SEP) + 1,

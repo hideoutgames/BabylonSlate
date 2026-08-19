@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial, Texture } from "@babylonjs/core";
+import { Mesh, StandardMaterial, Texture, TransformNode } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createActor } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
@@ -8,6 +8,7 @@ import {
   lightBillboardIcon,
   parseEditorBillboardIcon,
   resolveEditorBillboardIcon,
+  syncEditorBillboardParentScale,
 } from "./editor-billboard";
 import { engineBillboardUrl } from "./default-billboard/urls";
 
@@ -66,7 +67,6 @@ describe("editor billboard", () => {
     expect(mesh.name).toBe("editorActor:lamp");
     expect(mesh.isPickable).toBe(true);
     expect(mesh.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
-    expect(mesh.ignoreParentScaling).toBe(true);
     expect(
       (mesh.metadata as { editorBillboard?: string }).editorBillboard,
     ).toBe("point_light");
@@ -96,5 +96,18 @@ describe("editor billboard", () => {
     expect(material.emissiveColor.r).toBeCloseTo(0.2);
     expect(material.emissiveColor.g).toBeCloseTo(0.5);
     expect(material.emissiveColor.b).toBeCloseTo(1);
+  });
+
+  it("stays square when parented under non-uniform actor scale", () => {
+    const { scene } = createHandle();
+    const parent = new TransformNode("origin", scene);
+    parent.scaling.set(3, 2, 4);
+    const mesh = createEditorBillboard(scene, "editorActor:empty", "default");
+    mesh.parent = parent;
+    syncEditorBillboardParentScale(mesh);
+    mesh.computeWorldMatrix(true);
+    expect(mesh.absoluteScaling.x).toBeCloseTo(1);
+    expect(mesh.absoluteScaling.y).toBeCloseTo(1);
+    expect(mesh.absoluteScaling.z).toBeCloseTo(1);
   });
 });
