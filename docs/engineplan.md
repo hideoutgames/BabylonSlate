@@ -660,7 +660,7 @@ Mistakes in visual scripting should be caught **before Preview**, not discovered
 
 **Rules, grouped by when they can run:**
 
-- **Structural** (no full compile needed): disconnected exec entry, unreachable node, exec cycle, pure-data cycle, latent node inside a synchronous-only context.
+- **Structural** (no full compile needed): disconnected exec entry, exec cycle, pure-data cycle, latent node inside a synchronous-only context. Leftover nodes whose exec never roots at a trigger (and pures no compiled node reads) are omitted rather than warned as `exec.unreachable`.
 - **Pin typing** (no full compile needed): type mismatch, missing required input, extra data wire on a single-input pin (`pin.duplicate_connection`; exec pins may fan in), incompatible wildcard resolution group, delegate signature mismatch.
 - **References** (needs registry index): broken asset, enum, struct or interface guid; class reference outside inheritance chain; interface function not implemented (`interface.unimplemented`).
 - **Signatures** (needs class graph): override pin list does not match parent (`member.override_signature`); ScriptInterface implementation arity or types differ (`interface.signature_mismatch`). Interface implementation Output pins without a wire or default are errors.
