@@ -49,13 +49,13 @@ function typedSelect(
     category: "select",
     pure: true,
     pins: () => [
-      pin("index", "Index", "in", INT),
-      pin("a", "A", "in", type),
-      pin("b", "B", "in", type),
+      pin("index", "Index", "in", BOOL),
+      pin("false", "False", "in", type),
+      pin("true", "True", "in", type),
       pin("out", "Out", "out", type),
     ],
     codegen: (ctx) => ({
-      out: `((${ctx.input("index")}) === 0 ? (${ctx.input("a")}) : (${ctx.input("b")}))`,
+      out: `((${ctx.input("index")}) ? (${ctx.input("true")}) : (${ctx.input("false")}))`,
     }),
   };
 }

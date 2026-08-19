@@ -88,7 +88,7 @@ describe("select nodes", () => {
     expect(pins.find((pin) => pin.id === "out")?.type).toEqual(BOOL);
   });
 
-  it("builds fixed typed Selects with Index plus A/B of that type", () => {
+  it("builds fixed typed Selects with a Bool Index and False/True values", () => {
     const expected: Array<{ id: string; type: PinType; title: string }> = [
       { id: "select.int", type: INT, title: "Select Int" },
       { id: "select.float", type: FLOAT, title: "Select Float" },
@@ -104,9 +104,15 @@ describe("select nodes", () => {
       const def = selectNodes.find((entry) => entry.id === row.id)!;
       expect(def.title).toBe(row.title);
       const pins = def.pins({});
-      expect(pins.map((pin) => pin.id)).toEqual(["index", "a", "b", "out"]);
-      expect(pins.find((pin) => pin.id === "index")?.type).toEqual(INT);
-      expect(pins.find((pin) => pin.id === "a")?.type).toEqual(row.type);
+      expect(pins.map((pin) => pin.id)).toEqual([
+        "index",
+        "false",
+        "true",
+        "out",
+      ]);
+      expect(pins.find((pin) => pin.id === "index")?.type).toEqual(BOOL);
+      expect(pins.find((pin) => pin.id === "false")?.type).toEqual(row.type);
+      expect(pins.find((pin) => pin.id === "true")?.type).toEqual(row.type);
       expect(pins.find((pin) => pin.id === "out")?.type).toEqual(row.type);
     }
   });
