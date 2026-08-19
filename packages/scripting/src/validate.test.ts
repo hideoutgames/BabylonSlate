@@ -1512,4 +1512,197 @@ describe("validateGraphs", () => {
     ).toBe(false);
     expect(diags.some((d) => d.nodeId === "trace")).toBe(false);
   });
+
+  it("still reports a direction error when a leftover node wires into a compiled pin", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        flowEntry(),
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
+        },
+        {
+          id: "print",
+          typeId: "debug.print",
+          position: { x: 0, y: 80 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("value", "value", "in", STRING),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        execThen("entry", "log"),
+        {
+          id: "backwards",
+          sourceNodeId: "print",
+          sourcePinId: "value",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const dir = validateGraphs([graph], { assetGuid: "a" }).find(
+      (d) => d.code === "pin.direction",
+    );
+    expect(dir).toBeDefined();
+    expect(dir?.relatedNodeId).toBe("log");
+  });
+
+  it("does not report a pure cycle that never intersects the compiled set", () => {
+    const addPins = (id: string, x: number): GraphNode => ({
+      id,
+      typeId: "math.add",
+      position: { x, y: 80 },
+      pins: [
+        pin("a", "a", "in", INT),
+        pin("out", "out", "out", INT),
+      ],
+      properties: {},
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
+        },
+        {
+          id: "trace",
+          typeId: "trace.line",
+          position: { x: 0, y: 80 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("hit", "hit", "out", STRING),
+            pin("target", "target", "in", INT),
+          ],
+          properties: {},
+        },
+        addPins("addA", 200),
+        addPins("addB", 400),
+      ],
+      edges: [
+        execThen("begin", "log"),
+        {
+          id: "data",
+          sourceNodeId: "trace",
+          sourcePinId: "hit",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+        {
+          id: "intoTrace",
+          sourceNodeId: "addA",
+          sourcePinId: "out",
+          targetNodeId: "trace",
+          targetPinId: "target",
+        },
+        {
+          id: "ab",
+          sourceNodeId: "addA",
+          sourcePinId: "out",
+          targetNodeId: "addB",
+          targetPinId: "a",
+        },
+        {
+          id: "ba",
+          sourceNodeId: "addB",
+          sourcePinId: "out",
+          targetNodeId: "addA",
+          targetPinId: "a",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" });
+    expect(diags.some((d) => d.code === "pure.cycle")).toBe(false);
+  });
+
+  it("still reports a pure cycle among pures a compiled node reads", () => {
+    const addPins = (id: string, x: number): GraphNode => ({
+      id,
+      typeId: "math.add",
+      position: { x, y: 80 },
+      pins: [
+        pin("a", "a", "in", INT),
+        pin("out", "out", "out", INT),
+      ],
+      properties: {},
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        flowEntry(),
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
+        },
+        addPins("addA", 0),
+        addPins("addB", 80),
+      ],
+      edges: [
+        execThen("entry", "log"),
+        {
+          id: "toLog",
+          sourceNodeId: "addA",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+        {
+          id: "ab",
+          sourceNodeId: "addA",
+          sourcePinId: "out",
+          targetNodeId: "addB",
+          targetPinId: "a",
+        },
+        {
+          id: "ba",
+          sourceNodeId: "addB",
+          sourcePinId: "out",
+          targetNodeId: "addA",
+          targetPinId: "a",
+        },
+      ],
+    };
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }).some(
+        (d) => d.code === "pure.cycle",
+      ),
+    ).toBe(true);
+  });
 });
