@@ -600,7 +600,7 @@ describe("UiDesignCanvas preview fallback", () => {
         onLayoutChange={props.onLayoutChange}
       />,
     );
-    await flushUiFrame();
+    await flushPaint();
     expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
     expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
   });
@@ -640,7 +640,7 @@ describe("UiDesignCanvas preview fallback", () => {
         onLayoutChange={() => {}}
       />,
     );
-    await flushUiFrame();
+    await flushPaint();
     const afterPaint = surface.resizeDesign.mock.calls.length;
     expect(afterPaint).toBeGreaterThan(0);
     const hit = screen.getByTestId("ui-widget-btn");
