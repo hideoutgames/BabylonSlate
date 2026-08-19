@@ -45,14 +45,21 @@ describe("Verify GitHub Actions workflow", () => {
 
   it("fails hung jobs and Playwright installs instead of sitting for six hours", () => {
     const yaml = verifyWorkflow();
-    for (const job of ["unit", "e2e"] as const) {
-      expect(jobBlock(yaml, job)).toMatch(/timeout-minutes:\s*45/);
-    }
+    expect(jobBlock(yaml, "unit")).toMatch(/timeout-minutes:\s*45/);
     const e2e = jobBlock(yaml, "e2e");
+    expect(e2e).toMatch(/timeout-minutes:\s*25/);
     expect(e2e).toMatch(/timeout-minutes:\s*5/);
     expect(e2e).toContain("playwright install chromium");
     expect(e2e).toContain("playwright install-deps chromium");
     expect(e2e).not.toContain("playwright install chromium --with-deps");
+  });
+
+  it("shards Playwright e2e four ways on standard runners", () => {
+    const e2e = jobBlock(verifyWorkflow(), "e2e");
+    expect(e2e).toMatch(/fail-fast:\s*false/);
+    expect(e2e).toMatch(/shard:\s*\[1,\s*2,\s*3,\s*4\]/);
+    expect(e2e).toContain("playwright test --shard=${{ matrix.shard }}/4");
+    expect(e2e).not.toContain("pnpm test:e2e");
   });
 
   it("caches Playwright browsers on standard ubuntu-latest runners", () => {
