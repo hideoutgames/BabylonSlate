@@ -1514,6 +1514,15 @@ function GraphEditorCanvas({
   const viewportX = useStore((state) => state.transform[0]);
   const viewportY = useStore((state) => state.transform[1]);
   const viewportZoom = useStore((state) => state.transform[2]);
+  const keepIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (focusedNodeId) ids.add(focusedNodeId);
+    if (selectedNodeId) ids.add(selectedNodeId);
+    for (const node of nodes) {
+      if (node.selected) ids.add(node.id);
+    }
+    return [...ids];
+  }, [focusedNodeId, nodes, selectedNodeId]);
   const visibleGraph = useMemo(
     () =>
       selectVisibleGraphElements(
@@ -1527,10 +1536,10 @@ function GraphEditorCanvas({
           height: hostSize.height,
         },
         GRAPH_VIRTUALIZE_OVERSCAN_PX,
-        focusedNodeId ? [focusedNodeId] : [],
+        keepIds,
       ),
     [
-      focusedNodeId,
+      keepIds,
       nodes,
       styledEdges,
       viewportX,
@@ -1716,7 +1725,7 @@ function GraphEditorCanvas({
           nodesConnectable={!readOnly}
           elementsSelectable
           edgesReconnectable={false}
-          onlyRenderVisibleElements={virtualize}
+          onlyRenderVisibleElements={false}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}

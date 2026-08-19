@@ -12,7 +12,9 @@ import {
   createNavigationBackend,
   generateNavMesh,
   initNavigation,
+  mergeNavBakeMeshes,
   recastWalkableQuadFromXy,
+  solidBlockerMesh,
 } from "@babylonslate/navigation";
 import { createInProcessRuntime } from "./driver";
 
@@ -28,6 +30,41 @@ function groundPrism(): { positions: number[]; indices: number[] } {
     indices: [0, 3, 2, 0, 2, 1],
   };
 }
+
+function corridorMesh(): { positions: number[]; indices: number[] } {
+  const half = 12;
+  return mergeNavBakeMeshes([
+    {
+      positions: [
+        -half, 0, -half,
+        half, 0, -half,
+        half, 0, half,
+        -half, 0, half,
+      ],
+      indices: [0, 3, 2, 0, 2, 1],
+    },
+    solidBlockerMesh({
+      kind: "box",
+      pose: { x: 0, y: 1, z: -6 },
+      size: { x: 2, y: 2, z: 8 },
+    }),
+    solidBlockerMesh({
+      kind: "box",
+      pose: { x: 0, y: 1, z: 6 },
+      size: { x: 2, y: 2, z: 8 },
+    }),
+  ]);
+}
+
+const recastFine = {
+  cellSize: 0.25,
+  cellHeight: 0.25,
+  maxEdgeLen: 2,
+  maxSimplificationError: 0.3,
+  minRegionArea: 2,
+  mergeRegionArea: 4,
+  walkableRadius: 0.3,
+};
 
 function patrolScene(): SerializedScene {
   return {
@@ -278,6 +315,52 @@ describe("runtime navmesh import and crowd", () => {
     expect(
       path.some((point) => Math.abs(point.x) < 1 && Math.abs(point.y) < 1),
     ).toBe(false);
+    runtime.stop();
+  });
+
+  it("stamps cost volumes so findNavPath detours the corridor", async () => {
+    const bytes = await generateNavMesh({
+      ...corridorMesh(),
+      settings: recastFine,
+    });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      playScene: {
+        name: "NavCost",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("mud", "Mud", {
+            transform: {
+              position: [0, 1, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [4, 2, 3],
+            },
+            components: [
+              {
+                id: "block",
+                classId: "NavMeshBlockerComponent",
+                properties: {
+                  dynamic: false,
+                  kind: "box",
+                  area: "cost",
+                  cost: 10,
+                },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+    await runtime.loadNavMesh(bytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    const path = runtime.findNavPath({ x: -8, y: 0, z: 0 }, { x: 8, y: 0, z: 0 });
+    expect(path.length).toBeGreaterThan(1);
+    expect(path.some((point) => Math.abs(point.z) > 6)).toBe(true);
     runtime.stop();
   });
 });

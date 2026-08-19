@@ -66,6 +66,34 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("forwards animClipCatalog onto the runtime", () => {
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        animClipCatalog: [
+          {
+            guid: "walk-1",
+            type: "Animation",
+            name: "Walk",
+            clipName: "Walk",
+            durationMs: 200,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      animClipCatalog: [
+        {
+          guid: "walk-1",
+          type: "Animation",
+          name: "Walk",
+          clipName: "Walk",
+          durationMs: 200,
+        },
+      ],
+    });
+  });
+
   it("forwards gameInstanceClass and a scene library for changescene", () => {
     const scene = { name: "Level2", actors: [] };
     expect(

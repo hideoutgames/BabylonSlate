@@ -10,7 +10,7 @@ User-facing names are **Title Case** (each word capitalized, spaces kept). That 
 
 ## Events
 
-- Node titles: `Event Begin Play`, `Event Tick`, `Event On Hit`.
+- Node titles: `Event Begin Play`, `Event Tick`, `Event On Actor Destroyed`, `Event On Hit`.
 - Class member names store the body only: `Begin Play`, `On Hit`.
 - Format typed or generated names with `formatEventMemberName` / `formatEventTitle` from `@babylonslate/editor-kit`.
 - Catalog ids stay dotted camelCase (`flow.event.beginPlay`); codegen names stay camelCase (`onBeginPlay`).

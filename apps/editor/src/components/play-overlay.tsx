@@ -13,6 +13,7 @@ import {
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
+import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import type { TracePayload } from "@babylonslate/debugger";
 import { applyInspectSelectionToConsoleLine } from "@babylonslate/runtime";
 import type { Engine } from "@babylonjs/core";
@@ -114,6 +115,7 @@ export interface PlayOverlayProps {
   retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: PlayAudioLibrary;
+  animClipCatalog?: readonly AnimClipCatalogEntry[];
   particleLibrary?: PlayParticleLibrary;
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   materialFunctions?: ReadonlyMap<string, MaterialFunctionDocument>;
@@ -179,6 +181,7 @@ export function PlayOverlay({
   retargetAnimationLoads,
   audioBytes,
   audioLibrary,
+  animClipCatalog,
   particleLibrary,
   materialDocuments,
   materialFunctions,
@@ -278,6 +281,8 @@ export function PlayOverlay({
   audioBytesRef.current = audioBytes;
   const audioLibraryRef = useRef(audioLibrary);
   audioLibraryRef.current = audioLibrary;
+  const animClipCatalogRef = useRef(animClipCatalog);
+  animClipCatalogRef.current = animClipCatalog;
   const particleLibraryRef = useRef(particleLibrary);
   particleLibraryRef.current = particleLibrary;
   const materialDocumentsRef = useRef(materialDocuments);
@@ -395,6 +400,7 @@ export function PlayOverlay({
       retargetAnimationLoads: retargetAnimationLoadsRef.current,
       audioBytes: audioBytesRef.current,
       audioLibrary: audioLibraryRef.current,
+      animClipCatalog: animClipCatalogRef.current,
       particleLibrary: particleLibraryRef.current,
       materialDocuments: materialDocumentsRef.current,
       materialFunctions: materialFunctionsRef.current,

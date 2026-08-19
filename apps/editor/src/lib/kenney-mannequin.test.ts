@@ -20,5 +20,6 @@ describe("Kenney Mannequin GLB", () => {
     expect(images[0]?.bufferView).toEqual(expect.any(Number));
     const browse = parseGlbForBrowse(bytes);
     expect(browse?.images[0]?.bytes.byteLength).toBeGreaterThan(100);
+    expect(browse?.materials[0]?.unlit).toBe(true);
   });
 });

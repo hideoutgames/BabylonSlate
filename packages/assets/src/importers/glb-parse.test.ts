@@ -20,6 +20,7 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.materials).toHaveLength(1);
     expect(browse!.materials[0]!.name).toBe("HeroMat");
     expect(browse!.materials[0]!.albedoImageIndex).toBe(0);
+    expect(browse!.materials[0]!.unlit).toBe(false);
     expect(browse!.images).toHaveLength(1);
     expect(browse!.images[0]!.bytes.byteLength).toBeGreaterThan(0);
     expect(browse!.animations[0]!.name).toBe("Walk");
@@ -47,6 +48,26 @@ describe("parseGlbForBrowse", () => {
     expect(browse).not.toBeNull();
     expect(browse!.images[0]!.bytes.byteLength).toBeGreaterThan(0);
     expect(browse!.materials[0]!.albedoImageIndex).toBe(0);
+    expect(browse!.materials[0]!.unlit).toBe(false);
+  });
+
+  it("marks KHR_materials_unlit as unlit", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        materials: [
+          {
+            name: "Toon",
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+            extensions: { KHR_materials_unlit: {} },
+          },
+        ],
+        textures: [{ source: 0 }],
+        images: [],
+      }),
+    );
+    expect(browse).not.toBeNull();
+    expect(browse!.materials[0]!.unlit).toBe(true);
   });
 
   it("rejects non-GLB bytes", () => {
@@ -105,7 +126,63 @@ describe("parseGlbForBrowse", () => {
     );
     expect(browse!.rigKind).toBe("hierarchy");
     expect(browse!.boneNames).toEqual(["character", "root", "torso", "head"]);
+    expect(browse!.boneNames).not.toContain("__root__");
     expect(browse!.animations[0]).toEqual({ name: "idle", durationMs: 500 });
+  });
+
+  it("does not invent a hierarchy skeleton for two independent animated meshes", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "crate", mesh: 0 },
+          { name: "door", mesh: 1 },
+        ],
+        meshes: [{ primitives: [] }, { primitives: [] }],
+        animations: [
+          {
+            name: "props",
+            channels: [
+              { target: { node: 0, path: "rotation" }, sampler: 0 },
+              { target: { node: 1, path: "rotation" }, sampler: 0 },
+            ],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+        accessors: [{ componentType: 5126, type: "SCALAR", count: 2, max: [1] }],
+      }),
+    );
+    expect(browse!.rigKind).toBe("none");
+    expect(browse!.boneNames).toEqual([]);
+  });
+
+  it("limits hierarchy boneNames to the animated parented-mesh tree", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "character", children: [1] },
+          { name: "root", children: [2, 3] },
+          { name: "torso", mesh: 0 },
+          { name: "head", mesh: 1 },
+          { name: "crate", mesh: 2 },
+        ],
+        meshes: [{ primitives: [] }, { primitives: [] }, { primitives: [] }],
+        animations: [
+          {
+            name: "idle",
+            channels: [
+              { target: { node: 2, path: "rotation" }, sampler: 0 },
+              { target: { node: 3, path: "rotation" }, sampler: 0 },
+            ],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+        accessors: [{ componentType: 5126, type: "SCALAR", count: 2, max: [0.5] }],
+      }),
+    );
+    expect(browse!.rigKind).toBe("hierarchy");
+    expect(browse!.boneNames).toEqual(["character", "root", "torso", "head"]);
   });
 
   it("does not invent a skeleton for a one-node object clip", () => {
@@ -123,6 +200,56 @@ describe("parseGlbForBrowse", () => {
         ],
       }),
     );
+    expect(browse!.rigKind).toBe("none");
+    expect(browse!.boneNames).toEqual([]);
+  });
+
+  it("omits a glTF node named __root__ from catalog boneNames", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "__root__", children: [1, 2] },
+          { name: "torso", mesh: 0 },
+          { name: "head", mesh: 1 },
+        ],
+        meshes: [{ primitives: [] }, { primitives: [] }],
+        animations: [
+          {
+            name: "idle",
+            channels: [
+              { target: { node: 1, path: "rotation" }, sampler: 0 },
+              { target: { node: 2, path: "rotation" }, sampler: 0 },
+            ],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+      }),
+    );
+    expect(browse!.rigKind).toBe("hierarchy");
+    expect(browse!.boneNames).toEqual(["torso", "head"]);
+  });
+
+  it("does not invent a hierarchy skeleton from one targeted ancestor and a single mesh descendant", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "character", children: [1] },
+          { name: "empty", children: [2] },
+          { name: "torso", mesh: 0 },
+        ],
+        meshes: [{ primitives: [] }],
+        animations: [
+          {
+            name: "idle",
+            channels: [{ target: { node: 0, path: "rotation" }, sampler: 0 }],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+      }),
+    );
+    // #361: hierarchy needs two or more parented Mesh parts that share an ancestor.
     expect(browse!.rigKind).toBe("none");
     expect(browse!.boneNames).toEqual([]);
   });

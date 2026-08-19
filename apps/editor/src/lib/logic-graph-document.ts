@@ -4,6 +4,7 @@ import {
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
+import { pruneEventMembersToNodes } from "./class-members";
 import {
   animGraphMembersFromVariables,
   parseAnimGraphDocument,
@@ -460,6 +461,7 @@ export function commitLogicGraph(
   content: unknown,
   next: SerializedGraph,
 ): LogicGraphCommit {
+  next = pruneEventMembersToNodes(next);
   if (kind === "ui") {
     const payload = replaceSerializedGraphInDocument("ui", content, next);
     if (isRecord(payload)) {

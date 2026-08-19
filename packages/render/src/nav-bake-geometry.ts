@@ -14,6 +14,10 @@ import type { EditorSceneSync } from "./editor-scene-sync";
 
 export type NavBakeCollectExtras = {
   tilemapChains?: readonly XyChain[];
+  bakeBounds?: {
+    min: { x: number; y: number; z: number };
+    max: { x: number; y: number; z: number };
+  };
 };
 
 /**
@@ -29,13 +33,17 @@ export function collectNavBakeGeometry(
   const parts: NavBakeMeshPart[] = [];
   const scratch = new Vector3();
   const mode = sceneData.viewportMode === "2d" ? "2d" : "3d";
+  const bounds = extras?.bakeBounds;
   if (mode === "2d") {
-    parts.push(recastWalkableQuadFromXy(xyBoundsFromActors(sceneData.actors)));
+    const xy = xyBoundsFromActors(sceneData.actors);
+    const clipped = bounds ? intersectXyBounds(xy, bounds) : xy;
+    if (clipped) parts.push(recastWalkableQuadFromXy(clipped));
     for (const actor of sceneData.actors) {
       const position = {
         x: actor.transform.position[0],
         y: actor.transform.position[1],
       };
+      if (bounds && !pointInXyBounds(position, bounds)) continue;
       for (const component of actor.components) {
         if (component.classId !== "ColliderComponent") continue;
         const shape =
@@ -58,12 +66,55 @@ export function collectNavBakeGeometry(
       }
       const mesh = sync.meshForActor(actor.id);
       if (!mesh) continue;
+      if (bounds && !meshAabbIntersects(mesh, bounds)) continue;
       const part = meshPart(mesh, scratch);
       if (part) parts.push(part);
     }
   }
   parts.push(...staticBlockerBakeParts(sceneData.actors, mode));
   return mergeNavBakeMeshes(parts);
+}
+
+function pointInXyBounds(
+  point: { x: number; y: number },
+  bounds: NonNullable<NavBakeCollectExtras["bakeBounds"]>,
+): boolean {
+  const minX = Math.min(bounds.min.x, bounds.max.x);
+  const maxX = Math.max(bounds.min.x, bounds.max.x);
+  const minY = Math.min(bounds.min.y, bounds.max.y);
+  const maxY = Math.max(bounds.min.y, bounds.max.y);
+  return point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
+}
+
+function intersectXyBounds(
+  xy: { minX: number; minY: number; maxX: number; maxY: number },
+  bounds: NonNullable<NavBakeCollectExtras["bakeBounds"]>,
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  const minX = Math.max(xy.minX, Math.min(bounds.min.x, bounds.max.x));
+  const minY = Math.max(xy.minY, Math.min(bounds.min.y, bounds.max.y));
+  const maxX = Math.min(xy.maxX, Math.max(bounds.min.x, bounds.max.x));
+  const maxY = Math.min(xy.maxY, Math.max(bounds.min.y, bounds.max.y));
+  if (minX > maxX || minY > maxY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function meshAabbIntersects(
+  mesh: Mesh,
+  bounds: NonNullable<NavBakeCollectExtras["bakeBounds"]>,
+): boolean {
+  mesh.computeWorldMatrix(true);
+  mesh.refreshBoundingInfo();
+  const box = mesh.getBoundingInfo().boundingBox;
+  const min = box.minimumWorld;
+  const max = box.maximumWorld;
+  return (
+    min.x <= Math.max(bounds.min.x, bounds.max.x) &&
+    max.x >= Math.min(bounds.min.x, bounds.max.x) &&
+    min.y <= Math.max(bounds.min.y, bounds.max.y) &&
+    max.y >= Math.min(bounds.min.y, bounds.max.y) &&
+    min.z <= Math.max(bounds.min.z, bounds.max.z) &&
+    max.z >= Math.min(bounds.min.z, bounds.max.z)
+  );
 }
 
 function meshPart(
@@ -87,11 +138,21 @@ function meshPart(
   const world = mesh.getWorldMatrix();
   return {
     positions,
-    indices,
+    indices: reversedTriangles(indices),
     transform: (x, y, z) => {
       scratch.set(x, y, z);
       Vector3.TransformCoordinatesToRef(scratch, world, scratch);
       return { x: scratch.x, y: scratch.y, z: scratch.z };
     },
   };
+}
+
+/** Babylon is left-handed; Recast wants CCW triangles with +Y normals. */
+function reversedTriangles(indices: ArrayLike<number>): number[] {
+  const out: number[] = [];
+  const count = Math.floor(indices.length / 3) * 3;
+  for (let i = 0; i < count; i += 3) {
+    out.push(Number(indices[i]), Number(indices[i + 2]), Number(indices[i + 1]));
+  }
+  return out;
 }

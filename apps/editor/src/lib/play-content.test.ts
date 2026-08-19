@@ -7,6 +7,7 @@ import {
   WIDGET_KINDS,
 } from "@babylonslate/ui-runtime";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
+import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
 import {
   createActor,
   createDefaultScene,
@@ -49,6 +50,7 @@ import {
   playLoadSpritesControl,
   playUiLibraryFromAssets,
   spriteAnimationGuidsFromAnimGraphs,
+  spriteAnimationGuidsFromBehaviourTrees,
   removePlayHudInstance,
   resolvePlayHudDocuments,
   spriteAssetGuidsFromScene,
@@ -671,6 +673,20 @@ describe("scene-referenced Play content", () => {
     expect(
       spriteAnimationGuidsFromAnimGraphs([{ guid: "loco", document: graph }]),
     ).toEqual(["walk-anim"]);
+  });
+
+  it("collects Sprite Animation guids from BT Play Animation tasks", () => {
+    const tree = createDefaultBehaviourTree("Guard");
+    const task = tree.nodes.find((node) => node.kind === "task");
+    expect(task).toBeTruthy();
+    task!.classId = "bt.task.playAnimation";
+    task!.properties = {
+      clipKind: "sprite",
+      clipAssetGuid: "idle-1",
+    };
+    expect(
+      spriteAnimationGuidsFromBehaviourTrees([{ guid: "tree-1", document: tree }]),
+    ).toEqual(["idle-1"]);
   });
 
   it("maps Sprite Animation guids to payloads and ignores Sprite atlas documents", () => {

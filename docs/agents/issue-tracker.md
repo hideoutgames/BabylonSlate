@@ -19,6 +19,20 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-19 | cursor/audit-mannequin-preview-4245 | Mannequin preview / #367 | Spec | `aimPreviewCameraAtMesh` included the hidden placeholder cube in hierarchy bounds | Resolved |
+| 2026-08-19 | cursor/audit-mannequin-preview-4245 | Mannequin preview / #367 | Spec | Missing Kenney browse `unlit`, compiled `TextureBlock` invertY, and editor/Prefab Kenney adopt tests | Resolved |
+| 2026-08-19 | cursor/audit-mannequin-preview-4245 | Mannequin preview / p9 Prefab materials | Spec | Prefab viewport remade mesh-asset loads whenever `openDocuments` identity changed, cancelling material binds | Resolved |
+| 2026-08-19 | cursor/audit-mannequin-preview-4245 | Models / materials / anim | Spec | Adopt, slots, UVs, and paused clip seek must hold for any glTF, not a Kenney-only path. Slot index is glTF `/materials/N`, then name — not mesh visit order | Resolved |
+| 2026-08-19 | cursor/dual-skeleton-preview-root-e48e | dual glTF skeleton kinds | Spec | Hierarchy preview used the material-preview placeholder as the rig root (extra bone); catalog `boneNames` kept a JSON `__root__` node | Resolved |
+| 2026-08-19 | cursor/dual-skeleton-preview-root-e48e | dual glTF skeleton kinds | Standards | Content Browser constructed a Babylon `Scene` for Retarget probes | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | Verify e2e / #361 | Spec | Eight shards ran `playwright install-deps`, which apt-gets ~21MB of CJK fonts even though `ubuntu-latest` already has Chromium libs. Shards 5 and 8 hit the 5-minute apt timeout. CI now installs Chromium only | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | p18-graph-virtualize / #328 / #358 | Spec | Off-screen XYFlow selection (`node.selected` / `selectedNodeId`) was omitted from `keepIds`, so Copy / Delete / `SelectedNodeSync` followed a cleared selection while Inspector still showed a node. `keepIds` now mounts focused + selected ids | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | p18-graph-virtualize / #358 | Spec | Custom spatial filter and xyflow `onlyRenderVisibleElements={virtualize}` both ran, so keep-mounted nodes could skip paint. Spatial filter is the source of truth; `onlyRenderVisibleElements` stays false | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | p18-graph-virtualize / #358 | Standards | Duplicate ResizeObserver test hosts in `graph-editor.test.tsx`; extracted `installImmediateGraphHostSize` | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | dual glTF skeleton / #344 | Spec | `classifyGltfRig` treated any 2+ animation targets as hierarchy and listed every mesh/parent as `boneNames`. Hierarchy requires parented Mesh parts that share an ancestor; `boneNames` is that tree | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | dual glTF skeleton / #344 | Standards | `glb-parse.ts` header still said full runtime mesh/skin fidelity stays deferred after dual-skeleton Play/preview | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | Create Project / #355 / #349 | Spec | #349 replaced the iPad one-line Black Bars helper with two sentences. Restored `On locks WxH with bars. Off fills without stretching.` | Resolved |
+| 2026-08-19 | cursor/last-prs-review-2bd5 | 2D Z-Order / #331 | Spec | Label “Z-Order” can sound like sprite draw order; Details writes `transform.position.z` and scene-editing.md distinguishes sorting-layer `alphaIndex`. No rename | Accepted |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | `selectVisibleGraphElements` dropped off-screen `focusedNodeId`, so search / compiler / Play navigate `fitView` no-oped. `keepIds` now mounts the focused node and its incident edges | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | Hidden warm graphs (`display: none` → 0×0) turned virtualisation off and remounted every node. `GraphEditor` now freezes the last positive host size | Resolved |
 | 2026-08-19 | cursor/p18-post-merge-review-256c | p18-content-browser-virtualize | Standards | `asset-registry.md` still described CSS Grid overflow; the grid is windowed absolute tiles plus a spacer | Resolved |
@@ -406,7 +420,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
 | F — Anim Graph Parameters / States / Details host | Done (`cursor/anim-graph-authoring-6e70`); dual-mode State Machine \| Animation Object + compiled rules on `cursor/complete-animation-graph-9a46` |
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
-| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19**, not this wave |
+| G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19** (Done), not this wave |
 
 Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
 
@@ -485,7 +499,7 @@ Foundation-hardening is on `main`. Chrome polish (pin flash) is not P11 work. Mu
 | Blockers + 2D + nodes | `p11-nav-blockers-2d` | `navigation`, `scripting-nodes`, `apps/editor`, `runtime` (landed) | Nav editor host |
 | §18 acceptance | `p11-acceptance` | `runtime` harness + `e2e/p11-ai.spec.ts` (landed) | Blockers + editor host |
 
-`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default (Details hides the unwired toggle until **P19**). Dynamic cost volumes do not yet affect path cost (**P19**). RotateToFace / PlayAnimation succeed without a host until **P19**. PlaySound waits on **P16 Audio**. **P11 is Done** (packages + §18). Do not uncheck P11; P19 is additive.
+`BehaviourTreeComponent` and `NavAgentComponent` are addable. `NavMeshComponent` and `NavMeshBlockerComponent` are Place Actors only. Auto-bake-on-save stays off by default (**P19** wired the Details toggle and Save flush). Cost volumes detour via poly-area filter costs (**P19**). RotateToFace / PlayAnimation are hosted (**P19**). PlaySound is P16. **P11 is Done** (packages + §18). Do not uncheck P11; P19 is additive and **Done**.
 
 ## Behaviour tree editor authoring (`p-bt-editor-authoring`)
 
@@ -497,7 +511,7 @@ Authoring-surface residual, same class as the Anim Graph host pass. Do **not** u
 | Tree ops + canvas diagnostics | same | `apps/editor`, `graph-ui`, `behaviour-tree` (validate) | Details |
 | Loop/Cooldown/TimeLimit + Play stack overlay | same | `behaviour-tree` (eval), `bridge`/`runtime` `btState.stack`, `e2e/p11-ai.spec.ts` | Tree ops |
 
-Out of scope: RotateToFace / PlayAnimation hosts (**P19**); PlaySound (**P16 Audio**); nav cost-carve / auto-bake (**P19**); Dockview for asset tabs; large-graph virtualisation (**P18**); P12; lighting.
+Out of scope: RotateToFace / PlayAnimation hosts (**P19**, now Done); PlaySound (**P16 Audio**); nav cost-carve / auto-bake (**P19**, now Done); Dockview for asset tabs; large-graph virtualisation (**P18**); P12; lighting.
 
 ## Behaviour tree editor UX (`p-bt-editor-ux`)
 
@@ -599,7 +613,7 @@ Spec: [engineplan.md](../engineplan.md) §2.7 / §18 / Appendix A `p17-particle-
 
 ## P18 iPad editor optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **P18 is Done.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake collect stays **P19**. Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`. **P18 is Done.** P17 is Done. No `p1-device-spikes` gate. Pin flash stays parked chrome polish. Nav bake leftovers are **P19** (Done). Editor/runtime follow-on stays **P20** (do not add those as extra P18 slices). Collapse-inactive-subtree / cap-auto-layout stay parked.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -610,24 +624,26 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`.
 | Prefab Preview on the app-lifetime Engine | Done (`p18-shared-prefab-engine`) | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
 | Architecture docs + Playwright + verify | Done | unit + `e2e/p18-editor-opt.spec.ts` | all P18 slices |
 
-Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers; **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
+Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers (Done); **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
 
 **P18 is Done.** Idle-unmount, GraphEditor virtualisation, windowed Add Node, windowed Content Browser grid, and Prefab on the app-lifetime Engine all landed. Playwright: `e2e/p18-editor-opt.spec.ts`.
 
 ## P19 Behaviour tree hosts and navigation leftovers
 
-Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. **P18** is Done. **P20** may run in parallel (editor/runtime perf, not a P19 reopen).
+Spec: [engineplan.md](../engineplan.md) §14, Appendix A `p19-*`. Additive on Done P11. Do **not** uncheck `p11-*`. **P18** is Done. **P20** is the next engine slice (editor/runtime perf, not a P19 reopen).
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| RotateToFace + PlayAnimation runtime hosts | `p19-bt-task-hosts` | `behaviour-tree`, `runtime`, `apps/editor` | P11 hosts; P18 Done |
-| Auto-bake-on-save, bake bounds, cost volumes | `p19-nav-leftovers` | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P18 Done |
+| RotateToFace + PlayAnimation runtime hosts | Done (`p19-bt-task-hosts`) | `behaviour-tree`, `runtime`, `apps/editor` | P11 hosts; P18 Done |
+| Auto-bake-on-save, bake bounds, cost volumes | Done (`p19-nav-leftovers`) | `navigation`, `apps/editor`, `runtime` | `p11-nav-blockers-2d`; P18 Done |
+
+**P19 is Done.** Play from a tree faces a target and seeks catalogued Animation / Sprite Animation clips through `animState`. PlaySound stays AudioService. Auto-bake on Save opens the existing modal when the scene workspace is mounted. Bake bounds filter collect. Cost volumes detour; unwalkable carve is unchanged.
 
 Out of scope: rebuilding BT **PlaySound** (P16); scripted custom composite VM; reopening P11 evaluator/abort matrix; `p1-device-spikes`; P20 editor/runtime follow-on. Crowd MoveTo is already live.
 
 ## P20 Editor/runtime follow-on optimisation
 
-Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. **P18** is Done. May parallel P19 (different packages). No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
+Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A `p20-*`. After P18. **P18** and **P19** are Done. No `p1-device-spikes` gate. Do not dirty-skip a visible editor viewport.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |

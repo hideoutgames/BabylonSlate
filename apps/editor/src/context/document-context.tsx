@@ -110,6 +110,10 @@ import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
+  flushNavBakeForSave,
+  lastNavBakeSaveResult,
+} from "../lib/nav-bake-save";
+import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
   knownClassIdSet,
@@ -195,6 +199,7 @@ import {
   playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
   spriteAnimationGuidsFromAnimGraphs,
+  spriteAnimationGuidsFromBehaviourTrees,
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
   playUiLibraryFromAssets,
@@ -430,9 +435,10 @@ interface DocumentContextValue {
     scene?: SerializedScene | null,
     graphs?: readonly PlayAnimGraphEntry[],
   ) => Promise<Map<string, SpritePayload>>;
-  /** Sprite Animation clips referenced by loaded Animation Graphs. */
+  /** Sprite Animation clips referenced by loaded Animation Graphs and behaviour trees. */
   collectPlaySpriteAnimationPayloads: (
     graphs: readonly PlayAnimGraphEntry[],
+    trees?: readonly PlayBehaviourTreeEntry[],
   ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
@@ -1251,6 +1257,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     try {
       await flushAudioReverbForSave();
+      await flushNavBakeForSave();
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments();
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
@@ -2436,6 +2443,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlaySpriteAnimationPayloads = useCallback(
     async (
       graphs: readonly PlayAnimGraphEntry[],
+      trees: readonly PlayBehaviourTreeEntry[] = [],
     ): Promise<Map<string, SpriteAnimationPayload>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
@@ -2444,7 +2452,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           .map((asset) => [asset.header.guid, asset]),
       );
       const loaded = new Map<string, unknown>();
-      for (const guid of spriteAnimationGuidsFromAnimGraphs(graphs)) {
+      const needed = new Set([
+        ...spriteAnimationGuidsFromAnimGraphs(graphs),
+        ...spriteAnimationGuidsFromBehaviourTrees(trees),
+      ]);
+      for (const guid of needed) {
         const asset = byGuid.get(guid);
         if (!asset) continue;
         const content = await loadPlayAssetContent(
@@ -2838,6 +2850,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
         advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
+        readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+        lastNavBake: () => {
+          ok: boolean;
+          path: string | null;
+          byteLength: number;
+          error: string | null;
+        } | null;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
         enginePluginLoad: () => {
@@ -3070,6 +3089,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         advanceTestIdleClock(ms);
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      readAssetChunk: (path: string, chunkId: string) =>
+        projectService.readAssetChunk(path, chunkId),
+      lastNavBake: () => lastNavBakeSaveResult(),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()

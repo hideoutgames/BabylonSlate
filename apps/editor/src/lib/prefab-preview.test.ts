@@ -11,6 +11,7 @@ import {
   instantiatePrefabComponents,
   mergePrefabComponents,
   prefabComponentsFromGraph,
+  prefabPreviewLoadKey,
   prefabSelectedActorIds,
   prefabSelectedIdFromPick,
   previewSceneFor,
@@ -330,5 +331,36 @@ describe("applyPrefabPivotDelta", () => {
         scale: [1, 1, 1],
       }),
     ).toEqual([mesh]);
+  });
+});
+
+describe("prefabPreviewLoadKey", () => {
+  it("stays stable when the component list is cloned with the same payload", () => {
+    const mesh = createMeshComponent("prefab-material", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const clone = {
+      ...mesh,
+      properties: { ...mesh.properties },
+      transform: mesh.transform
+        ? {
+            position: [...mesh.transform.position] as [number, number, number],
+            rotation: [...mesh.transform.rotation] as [
+              number,
+              number,
+              number,
+              number,
+            ],
+            scale: [...mesh.transform.scale] as [number, number, number],
+          }
+        : undefined,
+    };
+    expect(prefabPreviewLoadKey([clone])).toBe(prefabPreviewLoadKey([mesh]));
+  });
+
+  it("changes when a MeshComponent materialGuid changes", () => {
+    const mesh = createMeshComponent("prefab-material", "box");
+    const before = prefabPreviewLoadKey([mesh]);
+    mesh.properties.materialGuid = "mat-rock";
+    expect(prefabPreviewLoadKey([mesh])).not.toBe(before);
   });
 });

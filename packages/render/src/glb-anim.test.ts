@@ -74,7 +74,7 @@ describe("animationRetargetHasMatches", () => {
     handles.push(handle);
     const bytes = encodeParentedAnimatedTriangleGlb("Idle");
     expect(
-      await animationRetargetHasMatches(handle.scene, bytes, bytes, "Idle"),
+      await animationRetargetHasMatches(handle.engine, bytes, bytes, "Idle"),
     ).toBe(true);
   });
 
@@ -83,7 +83,7 @@ describe("animationRetargetHasMatches", () => {
     handles.push(handle);
     const bytes = encodeParentedAnimatedTriangleGlb("Idle");
     expect(
-      await animationRetargetHasMatches(handle.scene, bytes, bytes, "Walk"),
+      await animationRetargetHasMatches(handle.engine, bytes, bytes, "Walk"),
     ).toBe(false);
   });
 
@@ -92,7 +92,7 @@ describe("animationRetargetHasMatches", () => {
     handles.push(handle);
     expect(
       await animationRetargetHasMatches(
-        handle.scene,
+        handle.engine,
         encodeParentedAnimatedTriangleGlb("Idle"),
         encodeTriangleGlb(),
         "Idle",

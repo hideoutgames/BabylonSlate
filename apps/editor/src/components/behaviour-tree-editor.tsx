@@ -142,13 +142,20 @@ function useBehaviourTreeDocument() {
     () => hydrateBehaviourTreeForEditor(behaviourTreeToSerialized(doc, overlay)),
     [doc, overlay],
   );
-  const assets = (assetRegistry?.list() ?? []).map((asset) => ({
-    guid: asset.header.guid,
-    name: asset.header.name,
-    type: asset.header.type,
-    path: asset.path,
-    parentClass: asset.header.parentClass,
-  }));
+  const assets = (assetRegistry?.list() ?? []).map((asset) => {
+    const payload =
+      asset.header.payload && typeof asset.header.payload === "object"
+        ? (asset.header.payload as Record<string, unknown>)
+        : {};
+    return {
+      guid: asset.header.guid,
+      name: asset.header.name,
+      type: asset.header.type,
+      path: asset.path,
+      parentClass: asset.header.parentClass,
+      clipName: typeof payload.clipName === "string" ? payload.clipName : "",
+    };
+  });
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const customEntries = (
     kind: "BTTask" | "BTDecorator" | "BTService" | "BTComposite",
@@ -755,6 +762,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             value: String(raw ?? ""),
             options: field.options ?? keyOptions,
             onChange: (value: string) => {
+              if (field.key === "clipKind") {
+                write({ clipKind: value, clipAssetGuid: "", clipName: "" });
+                return;
+              }
               if (field.kind === "blackboardKey" && typedValue) {
                 const type = blackboardKeyEntries.find(
                   (entry) => entry.name === value,
@@ -785,9 +796,28 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
               setAssetPick({
                 key: field.key,
                 assetType: field.assetType ?? "Audio",
-                write: (value) => write({ [field.key]: value ?? "" }),
+                write: (value) => {
+                  if (field.key === "clipAssetGuid") {
+                    const picked = assets.find((asset) => asset.guid === value);
+                    write({
+                      clipAssetGuid: value ?? "",
+                      clipName:
+                        field.assetType === "Animation"
+                          ? (picked?.clipName ?? "")
+                          : "",
+                    });
+                    return;
+                  }
+                  write({ [field.key]: value ?? "" });
+                },
               }),
-            onChange: (value: string | null) => write({ [field.key]: value ?? "" }),
+            onChange: (value: string | null) => {
+              if (field.key === "clipAssetGuid") {
+                write({ clipAssetGuid: value ?? "", clipName: "" });
+                return;
+              }
+              write({ [field.key]: value ?? "" });
+            },
             ...assetRowIdentity(
               picked ? { name: picked.name, type: picked.type } : undefined,
             ),
@@ -829,7 +859,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         ),
     });
     rows.push(
-      ...toRows(propertyFieldsForClassId(selected.classId), selected.properties, (updates) =>
+      ...toRows(
+        propertyFieldsForClassId(selected.classId, selected.properties),
+        selected.properties,
+        (updates) =>
         commit(
           patchNode(doc, selected.id, {
             properties: { ...selected.properties, ...updates },
@@ -889,7 +922,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         ),
     });
     rows.push(
-      ...toRows(propertyFieldsForClassId(attachment.classId), attachment.properties, (updates) =>
+      ...toRows(propertyFieldsForClassId(attachment.classId, attachment.properties), attachment.properties, (updates) =>
         commit(
           patchNode(doc, selected.id, {
             decorators: selected.decorators.map((row) =>
@@ -963,7 +996,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
       });
     }
     rows.push(
-      ...toRows(propertyFieldsForClassId(attachment.classId), attachment.properties, (updates) =>
+      ...toRows(propertyFieldsForClassId(attachment.classId, attachment.properties), attachment.properties, (updates) =>
         commit(
           patchNode(doc, selected.id, {
             services: selected.services.map((row) =>
@@ -1072,7 +1105,11 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
         }}
         assets={assets}
         allowedTypes={assetPick ? [assetPick.assetType] : ["Audio"]}
-        title={assetPick ? `Pick ${assetPick.assetType}` : "Pick Asset"}
+        title={
+          assetPick
+            ? `Pick ${humanizePropertyLabel(assetPick.assetType)}`
+            : "Pick Asset"
+        }
         allowNone
         onPick={(guid) => {
           assetPick?.write(guid);

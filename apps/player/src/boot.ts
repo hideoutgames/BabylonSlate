@@ -233,6 +233,7 @@ export function startPlayer(options: {
     scenes,
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
+    animClipCatalog: content.animClipCatalog,
   };
 
   const spawn = playerSpawnListForScripts(game.scripts);

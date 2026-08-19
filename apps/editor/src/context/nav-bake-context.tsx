@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -25,6 +26,11 @@ import {
 } from "@babylonslate/navigation";
 import type { NavBakeCollectExtras } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
+import {
+  navMeshAutoBakeProperties,
+  recordNavBakeSaveResult,
+  registerNavBakeSaveFlush,
+} from "../lib/nav-bake-save";
 
 export type NavBakeCollector = (
   extras?: NavBakeCollectExtras,
@@ -64,7 +70,14 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
     async (properties: Record<string, unknown>) => {
       const doc = openDocuments.find((entry) => entry.id === documentId);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) {
-        throw new Error("Open a scene before baking a navmesh.");
+        const message = "Open a scene before baking a navmesh.";
+        recordNavBakeSaveResult({
+          ok: false,
+          path: doc?.ref.path ?? null,
+          byteLength: 0,
+          error: message,
+        });
+        throw new Error(message);
       }
       const parsed = parseNavMeshActorSettings(properties);
       const settings: NavMeshGenerateSettings = {
@@ -82,16 +95,20 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
           waitPaintedFrame,
           collect: async () => {
             const scene = doc.content as SerializedScene;
-            let extras: NavBakeCollectExtras | undefined;
+            const extras: NavBakeCollectExtras = {};
             if (scene.viewportMode === "2d") {
               const { tilemaps, tilesets } =
                 await collectPlayTilemapContent(scene);
-              extras = {
-                tilemapChains: navBakeTilemapChains(
-                  tilemaps,
-                  tilesets,
-                  projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
-                ),
+              extras.tilemapChains = navBakeTilemapChains(
+                tilemaps,
+                tilesets,
+                projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+              );
+            }
+            if (parsed.bakeBoundsEnabled) {
+              extras.bakeBounds = {
+                min: parsed.bakeBoundsMin,
+                max: parsed.bakeBoundsMax,
               };
             }
             return (
@@ -115,11 +132,24 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
           signal: controller.signal,
         });
         setLastBytes(bytes);
+        recordNavBakeSaveResult({
+          ok: true,
+          path: doc.ref.path,
+          byteLength: bytes.byteLength,
+          error: null,
+        });
       } catch (caught) {
         const message =
           caught instanceof Error ? caught.message : String(caught);
+        recordNavBakeSaveResult({
+          ok: false,
+          path: doc.ref.path,
+          byteLength: 0,
+          error: message,
+        });
         if (!controller.signal.aborted && !/abort/i.test(message)) {
           setError(message);
+          console.error("[nav-bake]", message);
         }
       } finally {
         worker.terminate();
@@ -130,6 +160,17 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
     },
     [collectPlayTilemapContent, documentId, openDocuments, projectDocument, writeSceneNavmeshChunk],
   );
+
+  useEffect(() => {
+    return registerNavBakeSaveFlush(async () => {
+      const doc = openDocuments.find((entry) => entry.id === documentId);
+      if (!doc || doc.ref.kind !== "scene" || !doc.content) return;
+      const scene = doc.content as SerializedScene;
+      for (const properties of navMeshAutoBakeProperties(scene)) {
+        await startBake(properties);
+      }
+    });
+  }, [documentId, openDocuments, startBake]);
 
   const value = useMemo(
     () => ({

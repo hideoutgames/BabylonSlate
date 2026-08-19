@@ -270,7 +270,16 @@ describe("componentPropertyRows", () => {
     ).toMatchObject({ kind: "boolean", value: false });
     expect(
       navMesh.rows.find((row) => row.id.endsWith("-autoBakeOnSave")),
-    ).toBeUndefined();
+    ).toMatchObject({ kind: "boolean", label: "Auto Bake On Save", value: false });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsEnabled")),
+    ).toMatchObject({ kind: "boolean", label: "Bake Bounds", value: false });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsMin")),
+    ).toMatchObject({ kind: "vector3" });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsMax")),
+    ).toMatchObject({ kind: "vector3" });
     expect(
       navMesh.rows.find((row) => row.id.endsWith("-debugOverlay")),
     ).toMatchObject({ kind: "boolean", value: true });
@@ -302,6 +311,21 @@ describe("componentPropertyRows", () => {
       kind: "enum",
       value: "cost",
     });
+    const costRow = blocker.rows.find((row) => row.id.endsWith("-cost"));
+    expect(costRow).toMatchObject({
+      kind: "number",
+      label: "Cost",
+      value: 10,
+    });
+    if (costRow?.kind === "number") {
+      expect(costRow.min).toBeGreaterThan(1);
+    }
+    const unwalkable = rowsFor({
+      id: "block-uw",
+      classId: "NavMeshBlockerComponent",
+      properties: { dynamic: false, kind: "box", area: "unwalkable" },
+    });
+    expect(unwalkable.rows.find((row) => row.id.endsWith("-cost"))).toBeUndefined();
     if (boardRow?.kind === "asset") boardRow.onPick();
     expect(tree.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["Blackboard"] }),

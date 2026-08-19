@@ -140,6 +140,15 @@ export function playLoadControl(options: {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   audioAssetGuids?: string[];
+  animClipCatalog?: Array<{
+    guid: string;
+    type: string;
+    name: string;
+    clipName?: string;
+    durationMs?: number;
+    skeletonGuid?: string | null;
+    modelGuid?: string;
+  }>;
 }): Extract<ControlMessage, { type: "load" }> {
   const physics = playPhysicsFromSceneSettings({
     physicsWorld: options.physicsWorld,
@@ -158,6 +167,7 @@ export function playLoadControl(options: {
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     audioAssetGuids: options.audioAssetGuids,
+    animClipCatalog: options.animClipCatalog,
   };
 }
 

@@ -23,6 +23,7 @@ import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_COMPONENT_CLASS_IDS,
 } from "@babylonslate/object-model";
+import { parseNavMeshActorSettings } from "@babylonslate/navigation";
 import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
@@ -575,13 +576,7 @@ export function componentPropertyRows(
         ),
       ];
     case "NavMeshComponent": {
-      const settings = {
-        tiled: component.properties.tiled === true,
-        supportDynamicObstacles:
-          component.properties.supportDynamicObstacles === true,
-        autoBakeOnSave: component.properties.autoBakeOnSave === true,
-        debugOverlay: component.properties.debugOverlay === true,
-      };
+      const settings = parseNavMeshActorSettings(component.properties);
       return [
         {
           kind: "number",
@@ -708,6 +703,44 @@ export function componentPropertyRows(
         },
         {
           kind: "boolean",
+          id: rowId(actorId, component.id, "autoBakeOnSave"),
+          label: "Auto Bake On Save",
+          value: settings.autoBakeOnSave,
+          onChange: (next) => update("autoBakeOnSave", next),
+        },
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "bakeBoundsEnabled"),
+          label: "Bake Bounds",
+          value: settings.bakeBoundsEnabled,
+          onChange: (next) => update("bakeBoundsEnabled", next),
+        },
+        {
+          kind: "vector3",
+          id: rowId(actorId, component.id, "bakeBoundsMin"),
+          label: "Bake Bounds Min",
+          value: [
+            settings.bakeBoundsMin.x,
+            settings.bakeBoundsMin.y,
+            settings.bakeBoundsMin.z,
+          ],
+          onChange: (value) =>
+            update("bakeBoundsMin", { x: value[0], y: value[1], z: value[2] }),
+        },
+        {
+          kind: "vector3",
+          id: rowId(actorId, component.id, "bakeBoundsMax"),
+          label: "Bake Bounds Max",
+          value: [
+            settings.bakeBoundsMax.x,
+            settings.bakeBoundsMax.y,
+            settings.bakeBoundsMax.z,
+          ],
+          onChange: (value) =>
+            update("bakeBoundsMax", { x: value[0], y: value[1], z: value[2] }),
+        },
+        {
+          kind: "boolean",
           id: rowId(actorId, component.id, "debugOverlay"),
           label: "Debug Overlay",
           value: settings.debugOverlay,
@@ -782,6 +815,18 @@ export function componentPropertyRows(
           ],
           onChange: (next) => update("area", next),
         },
+        ...(component.properties.area === "cost"
+          ? [
+              {
+                kind: "number" as const,
+                id: rowId(actorId, component.id, "cost"),
+                label: "Cost",
+                value: asNumber(component.properties.cost, 10),
+                min: 1.01,
+                onChange: (next: number) => update("cost", next),
+              },
+            ]
+          : []),
       ];
     case "RigidBodyComponent":
       return [

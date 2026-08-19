@@ -119,4 +119,10 @@ describe("recast generate / import round-trip", () => {
       /Failed|generateNavMesh/,
     );
   });
+
+  it("includes the Recast generator error when solo generate fails", async () => {
+    await expect(generateNavMesh({ positions: [], indices: [] })).rejects.toThrow(
+      /generateNavMesh failed:/,
+    );
+  });
 });

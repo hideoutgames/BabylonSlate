@@ -2,7 +2,7 @@
 
 Shared surface for the tree IR, Blackboard, and deterministic evaluator (engineplan §14.1, checklist `p11-behaviour-tree`). Implementation: `@babylonslate/behaviour-tree`. No React, no Babylon — the evaluator runs in the game worker.
 
-Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. The **authoring-surface** pass (`p-bt-editor-authoring`) fills typed Details, catalogs, tree operations, canvas diagnostics, honest Loop/Cooldown/TimeLimit, and the Play running-branch overlay. The **UX** pass (`p-bt-editor-ux`) adds optional persisted `editorPositions`, free X/Y placement, Auto Arrange that never rewrites `children[]`, drag-off-handle Add Node, TreeNode chrome, and DockView Blackboard + Compiler Results. User subclasses now get ancestry-specific class events and runtime hosts (`p-bt-class-events`): `BTTask` On Activate / On Tick / On Abort, `BTDecorator` On Evaluate, `BTService` On Tick; `BTComposite` stays data (selector / sequence / parallel from ancestry, not a scripted VM). `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; the package evaluator still succeeds immediately when no task host is provided. **P11 is Done.** Do not uncheck `p11-bt-editor` or `p11-bt-authoring`. §18: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
+Authoring (`p11-bt-authoring`) and the React Flow host (`p11-bt-editor`) are in. The **authoring-surface** pass (`p-bt-editor-authoring`) fills typed Details, catalogs, tree operations, canvas diagnostics, honest Loop/Cooldown/TimeLimit, and the Play running-branch overlay. The **UX** pass (`p-bt-editor-ux`) adds optional persisted `editorPositions`, free X/Y placement, Auto Arrange that never rewrites `children[]`, drag-off-handle Add Node, TreeNode chrome, and DockView Blackboard + Compiler Results. User subclasses now get ancestry-specific class events and runtime hosts (`p-bt-class-events`): `BTTask` On Activate / On Tick / On Abort, `BTDecorator` On Evaluate, `BTService` On Tick; `BTComposite` stays data (selector / sequence / parallel from ancestry, not a scripted VM). `BehaviourTreeComponent` and `NavAgentComponent` are addable. Runtime `BTTask_MoveTo` drives the crowd when a navmesh and `NavAgentComponent` are present; **P19** hosts RotateToFace and Play Animation. The package evaluator still succeeds immediately when no task host is provided. **P11 is Done.** Do not uncheck `p11-bt-editor` or `p11-bt-authoring`. §18: `packages/runtime/src/p11-acceptance.test.ts` plus `e2e/p11-ai.spec.ts`.
 
 ## Package
 
@@ -48,15 +48,7 @@ Pure: `(tree, previous, dtSeconds, options?) → BtEvalState`.
 - **Parallel** ticks every child each step, including nested composites: a running descendant yields back to the parallel so later siblings still run. Nodes with `lastResults === "running"` stay active for TimeLimit, services, self-abort, and `BtTaskHost.abort` even when they are not on the explicit stack.
 - Attached **services** tick while their owner is active (on the stack or `lastResults === "running"`). Interval + `randomDeviationMs` use `options.seed` (default `0`) so the same seed yields the same schedule. Built-in `bt.service.setBlackboard`; other class ids go through `BtServiceHost.tick`.
 
-Abort observers run **before** continuing the stack (Unreal-style):
-
-| Mode | When | Effect |
-| --- | --- | --- |
-| `self` | Decorator condition becomes false while the decorated node is on the stack | Pop through that node; node fails |
-| `lowerPriority` | Condition becomes true | Abort running descendants of **rightward** siblings under the nearest `selector` ancestor |
-| `both` | Either | Both |
-
-Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts`.
+`HOST_TASKS` (`moveTo`, `rotateToFace`, `playAnimation`, `playSound`) call `host.tick` when a host is attached; without a host they stub-`success` so package tests stay Babylon-free.
 
 ## Validation
 
@@ -66,12 +58,20 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 ## Authoring (`p11-bt-authoring`)
 
-- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue. RotateToFace and PlayAnimation are catalogued and **succeed** without a host until **P19**. PlaySound stays a catalog stub until **P16 Audio**.
+- Engine bases: `BTTask`, `BTDecorator`, `BTService`, `BTComposite`. Built-ins: Wait, MoveTo (crowd when the runtime host is attached), RotateToFace, Play Animation, PlaySound, SetBlackboardValue, Loop / Cooldown / TimeLimit, BlackboardIsSet, CompareBlackboardValue.
 - `BehaviourTreeComponent` has `treeGuid` + `blackboardGuid`. Search / Add Component list it. Play loads trees like AnimationGraphs (`loadBehaviourTrees`) and `tickBehaviourTrees()` emits `btState`.
 - Missing `treeGuid` / unloaded tree emits `bt.missing_tree`.
 - Custom `classId` values run compiled graphs: tasks `On Activate` / `On Tick` / `On Abort` (`bt.event.*`) and finish via `bt.finish`; decorators `On Evaluate` plus `bt.returnCondition` (`ctx.btEvaluate`); services `On Tick`. Get/Set Blackboard (`bt.blackboard.get` / `bt.blackboard.set`) compile to `ctx.getBlackboard` / `ctx.setBlackboard`. Abort mode on a decorator stays a tree attachment property, not a class event.
 - Runtime `BTTask_MoveTo` abort calls `stopNavAgent` and clears `__moveRequested` so the crowd does not keep walking the aborted path.
 - Custom `BTComposite` subclasses are **data** composites: `kind` walks ancestry (`BTComposite_Selector` → selector, `_Sequence` → sequence, `_Parallel` → parallel, bare `BTComposite` → sequence). There is no scripted composite VM.
+
+### Hosted task properties (P19)
+
+| Task | Details | Runtime |
+| --- | --- | --- |
+| Rotate To Face | `target` vector3 (default `{ x: 0, y: 0, z: 1 }`) | Yaw only (3D Y euler, 2D Z). Missing/non-finite target → `failure`. Instant `success`. Crowd agents also write `navYawByActor` so `tickCrowd` does not restore the old yaw. |
+| Play Animation | `clipKind` Animation / Sprite; `clipAssetGuid` picker (`Animation` or `Sprite Animation`). No `durationMs` field — duration comes from the clip catalog. Animation `clipName` fills from the asset payload (hidden like Anim Graph). | Resolves `{ clipName, durationMs, clipKind }` from the Play clip catalog. Emits `animState` (`stateId: "bt.playAnimation"`, one layer, `normalisedTime = min(1, elapsed/durationMs)`). `running` until finished, then `success`. Missing/unknown guid → `failure`. Skips `tickAnimGraphs` emit for that slot while owned. Sprite calls `setActorSpriteClip`. Abort clears ownership (pose stays on last seek). One play-through; looping Animation assets are not a BT loop. Play collect walks trees for Sprite Animation guids and a worker clip catalog (same path as graphs). |
+| Play Sound | `audioAssetGuid` (`Audio`) + `volume` `0..1`. No Loop pin — Audio asset `loop` applies. | Same `playSound` command as graphs (`emitterActorGuid`, **omit `loop`**). Stable `voiceId` `bt:${actor.guid}:${node.id}` so retrigger stops the previous voice. Succeeds when playback is accepted (one emit per activate). Abort emits `stopSound` for that id. |
 
 ## Editor (`p11-bt-editor` + `p-bt-editor-authoring` + `p-bt-editor-ux`)
 
@@ -80,7 +80,7 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 - `GraphEditor` takes `nodeTypes` / `nodesDraggable` / `nodeDragHandle=".bt-node-drag-handle"` (stamped as XYFlow `node.dragHandle`) / `commitPositionsOnDragEnd` / `connectEndMode="add-node"` / `replaceIncomingOnConnect` / `canConnect` / `toolbarExtra` / `hiddenToolbarActions` (Copy, Paste, Break Links, Format). Composites and tasks are React Flow `bt.node` (`TreeNode`) with Title Case titles, visible exec diamonds, numeric priority badges, and reserved last-result rows. The `__protected` root omits the parent pin (`pinsForBtKind(..., { isRoot })` plus TreeNode skipping `[data-handleid="parent"]`); Wrap In Sequence moves `__protected` to the new wrapper so the old Selector gets a parent pin. Decorators/services are attached selectable rows (catalog titles, not raw `classId`).
 - **Positions.** Optional document field `editorPositions`. Runtime ignores it. Missing field → in-memory `d3-hierarchy` layout, asset stays clean until the first authoring change. A completed move writes coordinates and stably re-sorts siblings by X (`applyNodePositions` on Graph `onChange` with `meta.kind === "position"`). `commitPositionsOnDragEnd` already emits once per drag, so the host does **not** pass a shared `mergeKey` — consecutive finished moves stay separate undo steps. Canvas round-trip (`serializedToBehaviourTree`) uses the same X sort with a previous-`children[]` tie-break. **Auto Arrange** writes computed positions and never changes `children[]`.
 - Add Node palette: built-in composites/tasks plus project Class assets whose parent is `BTTask` / `BTComposite`. Custom composites take `kind` from ancestry (`kindForCatalogClassId`, bare `BTComposite` → sequence), not from the class name. Releasing a drag off a children handle (including a short drag) opens the filtered catalog and auto-connects; script/material/Animation Object graphs keep the 96px cancel + wire-break; Animation Graph State Machine uses `zone-add-node` (far empty-canvas Add State; near a compatible pin snap-connects; near-source cancel, no wire-break). In add-node mode a **second pointer** during the drag cancels the rubber-band without opening Add Node, and a pending pin plus empty-pane tap cancels tap-to-connect (double-tap with no pending pin still opens Add Node). The live-wire badge is **Tap to Cancel**. Add Decorator / Add Service opens a `CatalogDialog` (built-ins plus `BTDecorator` / `BTService` classes). Attachments can be removed or moved up/down.
-- Details: `PropertyGrid` schemas per `classId` (Wait duration, SetBlackboard key+value, MoveTo destination + accept radius, CompareBlackboard key/op/value, Loop count, Cooldown / TimeLimit ms, service interval / deviation, decorator abort + observed keys). Blackboard **key** fields pick from the linked Blackboard; the **asset** picker lives on the Blackboard dock. Set / Compare Blackboard **value** rows follow the selected key’s `PinType` (bool checkbox, int/float number, string text, vec2/vec3 vector; other kinds fall back to text). Value stays hidden until a key is chosen; changing the key writes that type’s default.
+- Details: `PropertyGrid` schemas per `classId` (Wait duration, SetBlackboard key+value, MoveTo destination + accept radius, Rotate To Face target, Play Animation clip kind + asset, Play Sound audio + volume, CompareBlackboard key/op/value, Loop count, Cooldown / TimeLimit ms, service interval / deviation, decorator abort + observed keys). Blackboard **key** fields pick from the linked Blackboard; the **asset** picker lives on the Blackboard dock. Set / Compare Blackboard **value** rows follow the selected key’s `PinType` (bool checkbox, int/float number, string text, vec2/vec3 vector; other kinds fall back to text). Value stays hidden until a key is chosen; changing the key writes that type’s default.
 - Blackboard dock: `AssetPicker` for `blackboardGuid`, a read-only key + type list (`TypeColorMark` + `pinPickerLabel`), and the Play blackboard watch. Add / rename / type / default / delete stay on the Blackboard document editor.
 - Compiler Results: `validateBehaviourTree` rows with Title Case severity badges; tapping a row focuses that node. The same diagnostics still badge the canvas.
 - Long-press `ContextMenuOverlay` on the node, attachment row, and empty pane (selected node): Add Decorator, Wrap In Sequence, Duplicate, Delete. Double-tap a node or attachment whose `classId` matches a Class asset opens that class document.
@@ -89,8 +89,9 @@ Table-driven coverage lives in `packages/behaviour-tree/src/abort-matrix.test.ts
 
 ## Honest residuals
 
-- RotateToFace / PlayAnimation succeed without a host until **P19** (`p19-bt-task-hosts`).
-- **PlaySound** is hosted: success when the Audio guid is in the Play library, failure when missing (same `playSound` command as graphs). Mixer/channel setup is optional.
+- Without a `BtTaskHost`, hosted tasks still stub-succeed (package-only tests).
+- **PlaySound** stays on AudioService (`voiceId` on retrigger and abort). Mixer/channel setup is optional.
+- Viewport glTF listen/watch is not a Playwright gate; P11 §18 and P19 hosts are headless.
 - §18 patrol, live obstacle close, abort, compiled throw, and `.babtrace` BT replay are the headless harness. Compiled custom decorator On Evaluate (false gates Wait), On Abort, and service Set Blackboard live in `p11-acceptance.test.ts`. Editor e2e covers New Asset, add Wait + duration + keyed decorator + remove attachment, New Class parent `BTDecorator` (Events show On Evaluate, Add Decorator catalogs the class), bake, session-report `btNodeId` (Playwright Preview throw is test-mode `previewThrow` when a tree is attached), and `e2e/bt-editor.spec.ts` (free move, sibling X order, Auto Arrange, save/reopen, drag-off-handle add, Windows Blackboard + Compiler Results).
 - Undo is already via `applyAssetDocumentChange`.
 - Large-graph off-screen virtualisation (`p18-graph-virtualize`) applies to every `GraphEditor` host, not a BT-only slice. Collapse-inactive-subtree / cap-auto-layout stay parked.

@@ -1,4 +1,4 @@
-import { parseAnimGraphDocument } from "@babylonslate/anim-graph";
+import { parseAnimGraphDocument, type AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
@@ -499,6 +499,8 @@ export function startPlaySession(options: {
   retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   audioLibrary?: AudioLibrary;
+  /** Animation / Sprite Animation clip metadata for BT Play Animation. */
+  animClipCatalog?: readonly AnimClipCatalogEntry[];
   particleLibrary?: ParticleLibrary;
   /** Baked Scene `audioReverb` bytes; Play imports and never generates. */
   audioReverbBytes?: Uint8Array | null;
@@ -736,6 +738,7 @@ export function startPlaySession(options: {
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],
+    animClipCatalog: options.animClipCatalog ? [...options.animClipCatalog] : undefined,
   });
 
   try {

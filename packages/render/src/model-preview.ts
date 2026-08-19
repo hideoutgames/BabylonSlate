@@ -1,5 +1,5 @@
 import "./gltf-loader";
-import type { AbstractMesh, AnimationGroup, Material } from "@babylonjs/core";
+import type { AbstractMesh, AnimationGroup, Material, TransformNode } from "@babylonjs/core";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { ModelMaterialSlot } from "@babylonslate/assets";
@@ -9,56 +9,68 @@ import {
   type MaterialPreviewScene,
 } from "./material-preview";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
 
-const CONSTRUCTION_KEY = "babylonslateModelConstructionMaterial";
+export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
 
-type ConstructionMeta = {
-  [CONSTRUCTION_KEY]?: Material | null;
+const GLTF_MATERIAL_POINTER = /^\/materials\/(\d+)$/;
+
+type GltfPointerHost = {
+  _internalMetadata?: { gltf?: { pointers?: unknown } };
+  metadata?: { gltf?: { pointers?: unknown } } | null;
 };
 
-function asMeta(mesh: AbstractMesh): ConstructionMeta {
-  const current =
-    mesh.metadata && typeof mesh.metadata === "object"
-      ? (mesh.metadata as ConstructionMeta)
-      : {};
-  mesh.metadata = current;
-  return current;
+function gltfPointers(material: Material): string[] {
+  const host = material as Material & GltfPointerHost;
+  const raw =
+    host._internalMetadata?.gltf?.pointers ?? host.metadata?.gltf?.pointers;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((pointer): pointer is string => typeof pointer === "string");
 }
 
-function visualMeshes(root: AbstractMesh): AbstractMesh[] {
-  const children = root.getChildMeshes();
-  // After LoadAssetContainerAsync adopt, the first-primitive stub is hidden.
-  // Counting it as slot 0 would offset every glTF material by one.
-  if (root.visibility === 0 && children.length > 0) {
-    return children;
+/** glTF `materials` array index from the loader’s `/materials/N` pointer. */
+function gltfMaterialIndex(material: Material): number | undefined {
+  for (const pointer of gltfPointers(material)) {
+    const match = GLTF_MATERIAL_POINTER.exec(pointer);
+    if (match) return Number(match[1]);
   }
-  return [root, ...children];
+  return undefined;
 }
 
-/**
- * Map first-seen construction materials to Model `materialSlots` indices.
- * Empty guid restores the glTF construction material; a filled guid assigns
- * `resolveMaterial` when it returns a material.
- */
 export function applyModelMaterialSlots(
   root: AbstractMesh,
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string) => Material | null,
 ): void {
   const meshes = visualMeshes(root);
-  const constructionOrder: Array<Material | null> = [];
   const constructionToSlot = new Map<Material, number>();
+  const usedIndices = new Set<number>();
+  const slotIndices = new Set(slots.map((slot) => slot.index));
+  const slotByName = new Map<string, number>();
+  for (const slot of slots) {
+    if (slot.name.length > 0 && !slotByName.has(slot.name)) {
+      slotByName.set(slot.name, slot.index);
+    }
+  }
+
+  const unusedIndex = (): number => {
+    const unused = slots.find((slot) => !usedIndices.has(slot.index));
+    return unused?.index ?? usedIndices.size;
+  };
 
   for (const mesh of meshes) {
-    const meta = asMeta(mesh);
-    if (!Object.prototype.hasOwnProperty.call(meta, CONSTRUCTION_KEY)) {
-      meta[CONSTRUCTION_KEY] = mesh.material ?? null;
-    }
-    const construction = meta[CONSTRUCTION_KEY] ?? null;
-    if (construction && !constructionToSlot.has(construction)) {
-      constructionToSlot.set(construction, constructionOrder.length);
-      constructionOrder.push(construction);
-    }
+    const construction = constructionMaterialOf(mesh);
+    if (!construction || constructionToSlot.has(construction)) continue;
+    const fromGltf = gltfMaterialIndex(construction);
+    const namedIndex = slotByName.get(construction.name);
+    const index =
+      fromGltf !== undefined && slotIndices.has(fromGltf)
+        ? fromGltf
+        : namedIndex !== undefined
+          ? namedIndex
+          : unusedIndex();
+    constructionToSlot.set(construction, index);
+    usedIndices.add(index);
   }
 
   const byIndex = new Map<number, string | null>();
@@ -67,7 +79,7 @@ export function applyModelMaterialSlots(
   }
 
   for (const mesh of meshes) {
-    const construction = asMeta(mesh)[CONSTRUCTION_KEY] ?? null;
+    const construction = constructionMaterialOf(mesh);
     if (!construction) continue;
     const slotIndex = constructionToSlot.get(construction);
     if (slotIndex === undefined) continue;
@@ -96,6 +108,14 @@ export function createModelPreviewScene(
   return host;
 }
 
+/** glTF container root under the hidden preview placeholder (not the placeholder mesh). */
+export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
+  const child = host.mesh.getChildTransformNodes(true).find(
+    (node) => !node.name.endsWith("_overlay"),
+  );
+  return child ?? host.mesh;
+}
+
 export async function loadModelPreviewSource(
   host: MaterialPreviewScene,
   bytes: Uint8Array,
@@ -120,7 +140,7 @@ export async function loadModelPreviewSource(
   host.mesh.visibility = 0;
   host.mesh.computeWorldMatrix(true);
   aimPreviewCameraAtMesh(host.camera, host.mesh);
-  const extent = host.mesh.getHierarchyBoundingVectors(true);
+  const extent = visualHierarchyBoundingVectors(host.mesh);
   const size = extent.max.subtract(extent.min).length();
   if (Number.isFinite(size) && size > 0) {
     const lower = host.camera.lowerRadiusLimit ?? 0.5;

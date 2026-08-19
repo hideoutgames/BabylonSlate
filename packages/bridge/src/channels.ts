@@ -121,6 +121,16 @@ export type ControlMessage =
       loopCount?: number;
       /** Audio asset guids in the Play library (BT PlaySound fail-on-missing). */
       audioAssetGuids?: string[];
+      /** Animation / Sprite Animation clip metadata for BT Play Animation. */
+      animClipCatalog?: Array<{
+        guid: string;
+        type: string;
+        name: string;
+        clipName?: string;
+        durationMs?: number;
+        skeletonGuid?: string | null;
+        modelGuid?: string;
+      }>;
     }
   | {
       type: "loadScripts";

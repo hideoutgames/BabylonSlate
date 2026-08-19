@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   Effect,
   Mesh,
   ShaderMaterial,
   StandardMaterial,
   Vector3,
+  VertexBuffer,
 } from "@babylonjs/core";
+import { embedGlbExternalImages } from "@babylonslate/assets";
 import {
   createActor,
   createDefaultScene,
@@ -20,7 +25,8 @@ import {
   TWO_D_BETA,
 } from "./editor-camera";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { encodeTriangleGlb } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
+import { visualMeshes } from "./visual-meshes";
 import {
   createEditorGrid,
   gridCoverageWorld,
@@ -44,6 +50,21 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+
+function kenneyMannequinGlb(): Uint8Array {
+  const dir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../engine-content/kenney-assets/Mannequin",
+  );
+  return embedGlbExternalImages(
+    new Uint8Array(readFileSync(join(dir, "mannequin.glb"))),
+    {
+      "Textures/texture-d.png": new Uint8Array(
+        readFileSync(join(dir, "mannequin.png")),
+      ),
+    },
+  );
+}
 
 const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
   [];
@@ -901,6 +922,119 @@ describe("EditorSceneSync", () => {
     expect(sync.meshForActor("a")?.material).toBe(meshMat);
     for (const child of sync.meshForActor("a")!.getChildMeshes()) {
       expect(child.material).toBe(meshMat);
+    }
+  });
+
+  it("adopts every UV'd glTF part and applies slot 0 to all of them", async () => {
+    const { scene } = createHandle();
+    const override = new StandardMaterial("slot-0", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "hero-model";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-1" ? override : null),
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([["hero-model", encodeUvHierarchyGlb()]]),
+      modelPayloads: new Map([
+        [
+          "hero-model",
+          {
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
+          },
+        ],
+      ]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    await vi.waitFor(() => {
+      const root = sync.meshForActor("a");
+      expect(root).toBeDefined();
+      expect(visualMeshes(root!).length).toBe(2);
+    });
+    const visuals = visualMeshes(sync.meshForActor("a")!);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+      expect(part.material).toBe(override);
+    }
+  });
+
+  it("maps separate glTF materials to independent editor slots", async () => {
+    const { scene } = createHandle();
+    const slot0 = new StandardMaterial("slot-0", scene);
+    const slot1 = new StandardMaterial("slot-1", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "hero-model";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) =>
+        guid === "mat-a" ? slot0 : guid === "mat-b" ? slot1 : null,
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([
+        ["hero-model", encodeUvHierarchyGlb({ separateMaterials: true })],
+      ]),
+      modelPayloads: new Map([
+        [
+          "hero-model",
+          {
+            clipNames: [],
+            skeletonGuid: null,
+            materialSlots: [
+              { index: 0, name: "MatA", materialGuid: "mat-a" },
+              { index: 1, name: "MatB", materialGuid: "mat-b" },
+            ],
+          },
+        ],
+      ]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    await vi.waitFor(() => {
+      const root = sync.meshForActor("a");
+      expect(root).toBeDefined();
+      expect(visualMeshes(root!).length).toBe(2);
+    });
+    const visuals = visualMeshes(sync.meshForActor("a")!);
+    expect(visuals.find((part) => part.name === "part-a")?.material).toBe(slot0);
+    expect(visuals.find((part) => part.name === "part-b")?.material).toBe(slot1);
+  });
+
+  it("adopts a pack GLB with UVs on every visual mesh and slot 0 on all parts", async () => {
+    const { scene } = createHandle();
+    const override = new StandardMaterial("slot-0", scene);
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "mannequin";
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-1" ? override : null),
+    });
+    sync.setMeshAssets({
+      modelBytes: new Map([["mannequin", kenneyMannequinGlb()]]),
+      modelPayloads: new Map([
+        [
+          "mannequin",
+          {
+            clipNames: ["idle"],
+            skeletonGuid: null,
+            materialSlots: [
+              { index: 0, name: "texture-d", materialGuid: "mat-1" },
+            ],
+          },
+        ],
+      ]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    await vi.waitFor(() => {
+      const root = sync.meshForActor("a");
+      expect(root).toBeDefined();
+      expect(visualMeshes(root!).length).toBeGreaterThan(1);
+    });
+    const visuals = visualMeshes(sync.meshForActor("a")!);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+      expect(part.material).toBe(override);
     }
   });
 });

@@ -28,6 +28,7 @@ export * from "./viewport-fly-keys";
 export * from "./two-d";
 export * from "./sorting";
 export * from "./pixel-perfect";
+export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./ui-apply";
 export * from "./babylon-ui-host";

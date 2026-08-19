@@ -60,6 +60,60 @@ const debugLogPins = [
   },
 ];
 
+function installImmediateGraphHostSize(
+  width = 500,
+  height = 400,
+): () => void {
+  const previous = globalThis.ResizeObserver;
+  class ImmediateResizeObserver {
+    callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe(target: Element) {
+      const isEditor = target.getAttribute("data-testid") === "graph-editor";
+      if (isEditor) {
+        Object.defineProperty(target, "clientWidth", {
+          configurable: true,
+          value: width,
+        });
+        Object.defineProperty(target, "clientHeight", {
+          configurable: true,
+          value: height,
+        });
+      }
+      const measuredWidth = isEditor ? width : 0;
+      const measuredHeight = isEditor ? height : 0;
+      this.callback(
+        [
+          {
+            target,
+            contentRect: {
+              width: measuredWidth,
+              height: measuredHeight,
+              top: 0,
+              left: 0,
+              right: measuredWidth,
+              bottom: measuredHeight,
+              x: 0,
+              y: 0,
+              toJSON: () => ({}),
+            },
+          } as ResizeObserverEntry,
+        ],
+        this as unknown as ResizeObserver,
+      );
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  globalThis.ResizeObserver =
+    ImmediateResizeObserver as unknown as typeof ResizeObserver;
+  return () => {
+    globalThis.ResizeObserver = previous;
+  };
+}
+
 function graphWithPins(): GraphDocument {
   return {
     nodes: [
@@ -385,51 +439,7 @@ describe("GraphEditor", () => {
   });
 
   it("mounts only viewport-near nodes when the host has a measured size", () => {
-    const previous = globalThis.ResizeObserver;
-    class ImmediateResizeObserver {
-      callback: ResizeObserverCallback;
-      constructor(callback: ResizeObserverCallback) {
-        this.callback = callback;
-      }
-      observe(target: Element) {
-        const isEditor = target.getAttribute("data-testid") === "graph-editor";
-        if (isEditor) {
-          Object.defineProperty(target, "clientWidth", {
-            configurable: true,
-            value: 500,
-          });
-          Object.defineProperty(target, "clientHeight", {
-            configurable: true,
-            value: 400,
-          });
-        }
-        const width = isEditor ? 500 : 0;
-        const height = isEditor ? 400 : 0;
-        this.callback(
-          [
-            {
-              target,
-              contentRect: {
-                width,
-                height,
-                top: 0,
-                left: 0,
-                right: width,
-                bottom: height,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-              },
-            } as ResizeObserverEntry,
-          ],
-          this as unknown as ResizeObserver,
-        );
-      }
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    globalThis.ResizeObserver =
-      ImmediateResizeObserver as unknown as typeof ResizeObserver;
+    const restore = installImmediateGraphHostSize();
     const nodes = Array.from({ length: 200 }, (_, index) => ({
       id: `n${index}`,
       type: "debug.log",
@@ -452,56 +462,12 @@ describe("GraphEditor", () => {
       expect(container.querySelector('[data-id="n0"]')).not.toBeNull();
       expect(container.querySelector('[data-id="n199"]')).not.toBeNull();
     } finally {
-      globalThis.ResizeObserver = previous;
+      restore();
     }
   });
 
   it("keeps a focused off-screen node mounted when virtualizing", () => {
-    const previous = globalThis.ResizeObserver;
-    class ImmediateResizeObserver {
-      callback: ResizeObserverCallback;
-      constructor(callback: ResizeObserverCallback) {
-        this.callback = callback;
-      }
-      observe(target: Element) {
-        const isEditor = target.getAttribute("data-testid") === "graph-editor";
-        if (isEditor) {
-          Object.defineProperty(target, "clientWidth", {
-            configurable: true,
-            value: 500,
-          });
-          Object.defineProperty(target, "clientHeight", {
-            configurable: true,
-            value: 400,
-          });
-        }
-        const width = isEditor ? 500 : 0;
-        const height = isEditor ? 400 : 0;
-        this.callback(
-          [
-            {
-              target,
-              contentRect: {
-                width,
-                height,
-                top: 0,
-                left: 0,
-                right: width,
-                bottom: height,
-                x: 0,
-                y: 0,
-                toJSON: () => ({}),
-              },
-            } as ResizeObserverEntry,
-          ],
-          this as unknown as ResizeObserver,
-        );
-      }
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    globalThis.ResizeObserver =
-      ImmediateResizeObserver as unknown as typeof ResizeObserver;
+    const restore = installImmediateGraphHostSize();
     const nodes = Array.from({ length: 200 }, (_, index) => ({
       id: `n${index}`,
       type: "debug.log",
@@ -523,7 +489,35 @@ describe("GraphEditor", () => {
       expect(mounted).toBeLessThan(80);
       expect(container.querySelector('[data-id="n199"]')).not.toBeNull();
     } finally {
-      globalThis.ResizeObserver = previous;
+      restore();
+    }
+  });
+
+  it("keeps a selected off-screen node mounted so Copy stays available", () => {
+    const restore = installImmediateGraphHostSize();
+    const nodes = Array.from({ length: 200 }, (_, index) => ({
+      id: `n${index}`,
+      type: "debug.log",
+      position: { x: (index % 20) * 400, y: Math.floor(index / 20) * 400 },
+      data: { message: String(index), __pins: debugLogPins },
+    }));
+    try {
+      const { container, getByTestId } = render(
+        <GraphEditor
+          initialGraph={{ nodes, edges: [] }}
+          selectedNodeId="n199"
+        />,
+      );
+      expect(getByTestId("graph-editor").getAttribute("data-virtualize")).toBe(
+        "true",
+      );
+      const mounted = container.querySelectorAll(".react-flow__node").length;
+      expect(mounted).toBeGreaterThan(0);
+      expect(mounted).toBeLessThan(80);
+      expect(container.querySelector('[data-id="n199"]')).not.toBeNull();
+      expect(getByTestId("graph-copy")).toHaveProperty("disabled", false);
+    } finally {
+      restore();
     }
   });
 

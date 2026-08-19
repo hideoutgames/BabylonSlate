@@ -3,6 +3,7 @@ import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
 import {
   parseBehaviourTreeDocument,
   parseBlackboardDocument,
+  builtinClassId,
 } from "@babylonslate/behaviour-tree";
 import {
   modelMaterialGuids,
@@ -578,6 +579,30 @@ export function spriteAnimationGuidsFromAnimGraphs(
       }
       seen.add(clip.assetGuid);
       guids.push(clip.assetGuid);
+    }
+  }
+  return guids;
+}
+
+/** Sprite Animation asset guids referenced by BT Play Animation tasks. */
+export function spriteAnimationGuidsFromBehaviourTrees(
+  trees: readonly PlayBehaviourTreeEntry[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of trees) {
+    const document = parseBehaviourTreeDocument(entry.document);
+    if (!document) continue;
+    for (const node of document.nodes) {
+      if (builtinClassId(node.classId) !== "bt.task.playAnimation") continue;
+      if (node.properties.clipKind !== "sprite") continue;
+      const guid =
+        typeof node.properties.clipAssetGuid === "string"
+          ? node.properties.clipAssetGuid.trim()
+          : "";
+      if (!guid || seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
     }
   }
   return guids;

@@ -254,6 +254,74 @@ describe("packedContentFromGame", () => {
     );
   });
 
+  it("includes BT Play Animation clips in the packed worker clip catalog", async () => {
+    const tree = createDefaultBehaviourTree("Guard");
+    const task = tree.nodes.find((node) => node.kind === "task");
+    expect(task).toBeTruthy();
+    task!.classId = "bt.task.playAnimation";
+    task!.properties = {
+      clipKind: "sprite",
+      clipAssetGuid: "idle-1",
+    };
+    const animation = createDefaultSpriteAnimationPayload();
+    animation.frames[0]!.durationMs = 200;
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(
+            JSON.stringify({
+              ...createDefaultScene(),
+              actors: [
+                createActor("guard", "Guard", {
+                  components: [
+                    {
+                      id: "bt-1",
+                      classId: "BehaviourTreeComponent",
+                      properties: { treeGuid: "tree-1" },
+                    },
+                  ],
+                }),
+              ],
+            }),
+          ),
+        },
+        {
+          guid: "tree-1",
+          type: "BehaviourTree",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(tree)),
+        },
+        {
+          guid: "idle-1",
+          type: "SpriteAnimation",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(animation)),
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const content = packedContentFromGame(await loadGameFromFiles(packed.value.files));
+    expect(content.spriteAnimationPayloads.has("idle-1")).toBe(true);
+    expect(content.animClipCatalog).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          guid: "idle-1",
+          type: "SpriteAnimation",
+          durationMs: expect.any(Number),
+        }),
+      ]),
+    );
+    expect(content.animClipCatalog.find((entry) => entry.guid === "idle-1")?.durationMs).toBeGreaterThan(0);
+  });
+
   it("hydrates Material and Material Function documents from the packed game", async () => {
     const surface = createDefaultMaterialDocument("Rock");
     const postProcess = createDefaultMaterialDocument("Bloom", "postProcess");

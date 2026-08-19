@@ -19,6 +19,7 @@ import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import {
   previewSceneFor,
   PREFAB_ROOT_ID,
+  prefabPreviewLoadKey,
   prefabSelectedActorIds,
   prefabSelectedIdFromPick,
 } from "../lib/prefab-preview";
@@ -154,10 +155,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     }
   }, [playing]);
 
+  const previewLoadKey = prefabPreviewLoadKey(components);
+
   useEffect(() => {
     const handle = engineRef.current;
     if (!handle) return;
-    const scene = previewSceneFor(components);
+    const scene = previewSceneFor(componentsRef.current);
     handle.loadScene(scene);
     let cancelled = false;
     void (async () => {
@@ -198,8 +201,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     return () => {
       cancelled = true;
     };
+    // Key on authored payload + Engine identity, not `components` array
+    // identity. PrefabEditing rebuilds that list whenever `openDocuments`
+    // bumps (compiler, Save All), which cancelled in-flight material binds.
   }, [
-    components,
+    previewLoadKey,
+    sharedEngine,
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,

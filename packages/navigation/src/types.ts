@@ -2,6 +2,14 @@ export type NavPoint = { x: number; y: number; z: number };
 
 export type NavObstacleKind = "box" | "cylinder";
 
+export type NavCostVolume = {
+  id?: string;
+  kind: NavObstacleKind;
+  pose: NavPoint;
+  size: NavPoint;
+  cost: number;
+};
+
 export type NavAgentParams = {
   radius?: number;
   height?: number;
@@ -16,6 +24,7 @@ export type NavigationBackend = {
   randomPointInRadius(center: NavPoint, radius: number): NavPoint | null;
   addObstacle(kind: NavObstacleKind, pose: NavPoint, size: NavPoint): string;
   removeObstacle(id: string): void;
+  applyCostVolume(volume: NavCostVolume): void;
   addAgent(position: NavPoint, params?: NavAgentParams): string;
   /** Clears the crowd agent's current move target. */
   stopAgent(id: string): void;

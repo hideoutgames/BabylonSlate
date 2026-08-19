@@ -5,6 +5,7 @@ import {
   encodeAnimatedTriangleGlb,
   encodeTranslatedTetrahedronGlb,
   encodeTriangleGlb,
+  encodeUvHierarchyGlb,
   encodeYRotatedTriangleGlb,
   glbClipNames,
 } from "./model-mesh";
@@ -13,6 +14,18 @@ describe("glbClipNames", () => {
   it("uses animation{index} when a clip has no name", () => {
     const bytes = encodeAnimatedTriangleGlb("");
     expect(glbClipNames(bytes)).toEqual(["animation0"]);
+  });
+
+  it("lists a named clip from a multi-mesh hierarchy GLB", () => {
+    expect(glbClipNames(encodeUvHierarchyGlb({ clipName: "Walk" }))).toEqual([
+      "Walk",
+    ]);
+    expect(
+      glbClipNames(
+        encodeUvHierarchyGlb({ clipName: "Run", laterMaterialFirst: true }),
+      ),
+    ).toEqual(["Run"]);
+    expect(glbClipNames(encodeUvHierarchyGlb())).toEqual([]);
   });
 
   it("returns an empty list for truncated or non-GLB bytes", () => {

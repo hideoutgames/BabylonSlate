@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Texture, type Engine } from "@babylonjs/core";
+import { type Engine } from "@babylonjs/core";
 import {
   modelMaterialGuids,
   normalizeModelPayload,
@@ -11,6 +11,7 @@ import {
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createModelPreviewScene,
+  getMaterialTexture,
   loadModelPreviewSource,
   materialUnavailable,
   type MaterialPreviewPresenter,
@@ -136,8 +137,7 @@ export function ModelPreviewCanvas({
         resolveTexture: (guid) => {
           const data = textureBytes.get(guid);
           if (!data) return null;
-          const texture = cache.getTexture(guid, engine, data);
-          return texture instanceof Texture ? texture : null;
+          return getMaterialTexture(cache, guid, engine, data);
         },
       });
       for (const [guid, document] of materials.documents) {

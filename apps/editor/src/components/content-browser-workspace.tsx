@@ -24,7 +24,6 @@ import {
   resolvePluginEnabled,
 } from "@babylonslate/assets";
 import { convertObjImportBatch, animationRetargetHasMatches } from "@babylonslate/render";
-import { Scene } from "@babylonjs/core/scene";
 import {
   ContextMenuOverlay,
   SearchInput,
@@ -400,7 +399,6 @@ export function ContentBrowserWorkspace({
         setRetargetErrors(["Shared editor Engine is not available."]);
         return;
       }
-      const scene = new Scene(engine);
       setBusy(true);
       try {
         const result = await writeRetargetedAnimations({
@@ -417,7 +415,7 @@ export function ContentBrowserWorkspace({
             return readAssetChunk(model.path, "source");
           },
           probeMatches: (sourceBytes, targetBytes, clipName) =>
-            animationRetargetHasMatches(scene, sourceBytes, targetBytes, clipName),
+            animationRetargetHasMatches(engine, sourceBytes, targetBytes, clipName),
           createAsset: (rootId, relativePath, importResult) =>
             assetRegistry.createAsset(rootId, relativePath, importResult),
         });
@@ -434,7 +432,6 @@ export function ContentBrowserWorkspace({
           error instanceof Error ? error.message : String(error),
         ]);
       } finally {
-        scene.dispose();
         setBusy(false);
       }
     },
