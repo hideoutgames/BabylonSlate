@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { NavBakeDialog } from "./nav-bake-dialog";
 
@@ -27,5 +27,22 @@ describe("NavBakeDialog", () => {
     );
     expect(getByTestId("nav-bake-phase").textContent).toMatch(/generating/i);
     expect(getByTestId("nav-bake-cancel")).toBeTruthy();
+  });
+
+  it("shows a bake error and a close control", () => {
+    const onDismiss = vi.fn();
+    const { getByTestId } = render(
+      <NavBakeDialog
+        open
+        phase="generating"
+        error="generateNavMesh failed"
+        onDismiss={onDismiss}
+      />,
+    );
+    expect(getByTestId("nav-bake-phase").textContent).toMatch(
+      /generateNavMesh failed/,
+    );
+    getByTestId("nav-bake-dismiss").click();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 });
