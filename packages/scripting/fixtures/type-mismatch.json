@@ -49,6 +49,13 @@
   ],
   "edges": [
     {
+      "id": "exec",
+      "sourceNodeId": "a",
+      "sourcePinId": "execOut",
+      "targetNodeId": "b",
+      "targetPinId": "execIn"
+    },
+    {
       "id": "e1",
       "sourceNodeId": "a",
       "sourcePinId": "out",
