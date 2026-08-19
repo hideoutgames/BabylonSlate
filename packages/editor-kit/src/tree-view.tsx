@@ -17,6 +17,20 @@ import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
 export const TREE_ROW_HEIGHT = 28;
 /** Horizontal swipe distance that adds a row to the selection (touch target). */
 export const TREE_SWIPE_ADD_PX = 44;
+/** Top/bottom band that inserts as a sibling instead of nesting into the row. */
+export const TREE_DROP_EDGE_PX = 8;
+
+export type TreeDropPlacement = "before" | "into" | "after";
+
+export function treeDropPlacement(
+  offsetY: number,
+  rowHeight: number = TREE_ROW_HEIGHT,
+  edgePx: number = TREE_DROP_EDGE_PX,
+): TreeDropPlacement {
+  if (offsetY < edgePx) return "before";
+  if (offsetY >= rowHeight - edgePx) return "after";
+  return "into";
+}
 
 export type TreeSelectOptions = {
   additive?: boolean;
@@ -62,8 +76,15 @@ export interface TreeViewProps {
   selectedIds?: readonly string[];
   onSelect?: (id: string, options?: TreeSelectOptions) => void;
   onToggleExpanded?: (id: string) => void;
-  /** Drop `dragId` onto `targetId`; null means the scene root. */
-  onReparent?: (dragId: string, targetId: string | null) => void;
+  /**
+   * Drop `dragId` relative to `targetId`. `into` (default) nests under the row;
+   * `before` / `after` insert as a sibling. Null `targetId` means the scene root.
+   */
+  onReparent?: (
+    dragId: string,
+    targetId: string | null,
+    placement?: TreeDropPlacement,
+  ) => void;
   /** Drop a row onto a client point outside the tree (graph canvas spawn). */
   onExternalDrop?: (id: string, clientX: number, clientY: number) => void;
   /** Fired while an external drag is armed (for graph drop hints). */
@@ -104,6 +125,11 @@ interface ExtraPointer {
   moved: boolean;
 }
 
+interface DropHint {
+  id: string | null;
+  placement: TreeDropPlacement;
+}
+
 /**
  * Virtualized touch tree. Rows are fixed height so the visible window is
  * arithmetic rather than measurement, which keeps scrolling allocation-free.
@@ -130,9 +156,7 @@ export function TreeView({
   const extraPointerRef = useRef<ExtraPointer | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
-  const [dropTargetId, setDropTargetId] = useState<string | null | undefined>(
-    undefined,
-  );
+  const [dropHint, setDropHint] = useState<DropHint | undefined>(undefined);
   const selectedSet = new Set(
     selectedIds ?? (selectedId !== null && selectedId !== undefined ? [selectedId] : []),
   );
@@ -155,15 +179,21 @@ export function TreeView({
     }
   }, []);
 
-  const nodeIdAtClientY = useCallback(
-    (clientY: number): string | null => {
+  const dropAtClientY = useCallback(
+    (clientY: number): DropHint => {
       const container = containerRef.current;
-      if (!container) return null;
+      if (!container) return { id: null, placement: "into" };
       const rect = container.getBoundingClientRect();
-      const index = Math.floor(
-        (clientY - rect.top + container.scrollTop) / rowHeight,
-      );
-      return nodes[index]?.id ?? null;
+      const y = clientY - rect.top + container.scrollTop;
+      if (y < 0 || y >= nodes.length * rowHeight) {
+        return { id: null, placement: "into" };
+      }
+      const index = Math.floor(y / rowHeight);
+      const offsetY = y - index * rowHeight;
+      return {
+        id: nodes[index]?.id ?? null,
+        placement: treeDropPlacement(offsetY, rowHeight),
+      };
     },
     [nodes, rowHeight],
   );
@@ -201,7 +231,7 @@ export function TreeView({
     const wasArmed = Boolean(drag?.armed);
     dragRef.current = null;
     extraPointerRef.current = null;
-    setDropTargetId(undefined);
+    setDropHint(undefined);
     if (wasArmed) onExternalDragEnd?.();
   }, [onExternalDragEnd]);
 
@@ -306,7 +336,7 @@ export function TreeView({
         drag.longPressTimer = null;
         if (drag.dragArmTimer) clearTimeout(drag.dragArmTimer);
         drag.dragArmTimer = null;
-        setDropTargetId(undefined);
+        setDropHint(undefined);
         return;
       }
       if (extraPointerRef.current) {
@@ -329,19 +359,19 @@ export function TreeView({
         drag.longPressTimer = null;
       }
       if (!inside && onExternalDrop) {
-        setDropTargetId(undefined);
+        setDropHint(undefined);
         onExternalDragMove?.(drag.nodeId, event.clientX, event.clientY);
         return;
       }
       if (onReparent) {
-        const target = nodeIdAtClientY(event.clientY);
-        setDropTargetId(target === drag.nodeId ? undefined : target);
+        const target = dropAtClientY(event.clientY);
+        setDropHint(target.id === drag.nodeId ? undefined : target);
         return;
       }
       onExternalDragMove?.(drag.nodeId, event.clientX, event.clientY);
     },
     [
-      nodeIdAtClientY,
+      dropAtClientY,
       onExternalDragMove,
       onExternalDrop,
       onReparent,
@@ -379,9 +409,9 @@ export function TreeView({
         if (!inside && onExternalDrop) {
           onExternalDrop(drag.nodeId, event.clientX, event.clientY);
         } else if (onReparent) {
-          const target = nodeIdAtClientY(event.clientY);
-          if (target !== drag.nodeId) {
-            onReparent(drag.nodeId, target);
+          const target = dropAtClientY(event.clientY);
+          if (target.id !== drag.nodeId) {
+            onReparent(drag.nodeId, target.id, target.placement);
           }
         }
       } else if (!drag.armed && !drag.moved) {
@@ -404,7 +434,7 @@ export function TreeView({
     },
     [
       clearDrag,
-      nodeIdAtClientY,
+      dropAtClientY,
       onActivate,
       onExternalDrop,
       onReparent,
@@ -430,6 +460,12 @@ export function TreeView({
           {visible.map((node, index) => {
             const top = (firstIndex + index) * rowHeight;
             const selected = selectedSet.has(node.id);
+            const placement =
+              dropHint?.id === node.id ? dropHint.placement : undefined;
+            const dropInto = placement === "into";
+            const dropBefore = placement === "before";
+            const dropAfter = placement === "after";
+            const insertLeft = node.depth * 16 + 8;
             return (
               <div
                 key={node.id}
@@ -438,18 +474,20 @@ export function TreeView({
                 aria-expanded={node.hasChildren ? node.expanded : undefined}
                 data-testid={`tree-row-${node.id}`}
                 data-depth={node.depth}
-                data-drop-target={dropTargetId === node.id ? "true" : undefined}
+                data-drop-target={dropInto ? "true" : undefined}
+                data-drop-before={dropBefore ? "true" : undefined}
+                data-drop-after={dropAfter ? "true" : undefined}
                 className={cn(
                   "absolute right-0 left-0 flex items-center gap-1 border-l-2 px-1 text-sm",
                   selected
                     ? "border-l-primary bg-primary/20 font-medium"
                     : "border-l-transparent hover:bg-accent/50",
-                  dropTargetId === node.id ? "outline outline-1 outline-ring" : "",
+                  dropInto ? "outline outline-1 outline-ring" : "",
                 )}
                 style={{
                   top,
                   height: rowHeight,
-                  paddingLeft: `${node.depth * 16 + 8}px`,
+                  paddingLeft: `${insertLeft}px`,
                 }}
                 onPointerDown={(event) => onPointerDown(event, node.id)}
                 onContextMenu={(event) => {
@@ -458,6 +496,22 @@ export function TreeView({
                   onContextMenu(node.id, event.clientX, event.clientY);
                 }}
               >
+                {dropBefore ? (
+                  <span
+                    aria-hidden
+                    data-testid={`tree-drop-before-${node.id}`}
+                    className="pointer-events-none absolute top-0 right-0 h-px bg-ring"
+                    style={{ left: insertLeft }}
+                  />
+                ) : null}
+                {dropAfter ? (
+                  <span
+                    aria-hidden
+                    data-testid={`tree-drop-after-${node.id}`}
+                    className="pointer-events-none absolute right-0 bottom-0 h-px bg-ring"
+                    style={{ left: insertLeft }}
+                  />
+                ) : null}
                 {node.hasChildren ? (
                   <button
                     type="button"

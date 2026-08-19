@@ -25,6 +25,7 @@ import {
   resolveTypeVisual,
   useContextMenu,
   type TypeVisual,
+  type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
@@ -1346,7 +1347,11 @@ export function ContentBrowserWorkspace({
   );
 
   const handleTreeReparent = useCallback(
-    (dragId: string, targetId: string | null) => {
+    (
+      dragId: string,
+      targetId: string | null,
+      placement?: TreeDropPlacement,
+    ) => {
       if (!assetRegistry) return;
       const moves = contentBrowserTreeDropMoves({
         dragId,
@@ -1356,6 +1361,7 @@ export function ContentBrowserWorkspace({
         selectedFolderPaths,
         rootPaths: rootPrefixes,
         resolvePath: (guid) => assetRegistry.getByGuid(guid)?.path,
+        placement,
       });
       if (moves.length === 0) return;
       void (async () => {

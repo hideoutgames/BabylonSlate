@@ -740,17 +740,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const recordRecent = useCallback(
-    async (handle: ProjectFolderHandle | null) => {
+    async (handle: ProjectFolderHandle | null, createdAt?: string) => {
       if (!handle) return;
       const settings = await settingsStore.load();
       const next = defaultEngineSettings();
       Object.assign(next, settings);
+      const previous = settings.recents.find((recent) => recent.id === handle.id);
       next.recents = [
         {
           id: handle.id,
           name: handle.name,
           tier: handle.tier,
           lastOpenedAt: new Date().toISOString(),
+          createdAt: createdAt ?? previous?.createdAt,
           bookmark: handle.tier === "external" ? handle.id : null,
         },
         ...settings.recents.filter((r) => r.id !== handle.id),
@@ -1127,7 +1129,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (guid) {
         setRecoveryAvailable(await hasJournal(derived, guid));
       }
-      await recordRecent(projectService.storagePort.getCurrentFolder());
+      await recordRecent(
+        projectService.storagePort.getCurrentFolder(),
+        document.metadata.createdAt,
+      );
       await refreshProjectList();
       await captureMtimeSnapshot();
       bump();
@@ -2210,6 +2215,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "sound-attenuation"
         | "particle-emitter"
         | "particle-system"
+        | "audio"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
@@ -2504,7 +2510,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             ? "audio-channel"
             : asset.header.type === "SoundAttenuation"
               ? "sound-attenuation"
-              : "asset-settings";
+              : "audio";
       const content =
         (await loadPlayAssetContent(kind, asset.path)) ?? asset.header.payload;
       payloads.push({

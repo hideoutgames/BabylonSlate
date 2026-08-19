@@ -29,7 +29,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useOptionalPlay } from "../context/play-context";
-import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument } from "../lib/play-content";
+import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument, resolveNestedUiDocument } from "../lib/play-content";
 import {
   freezeLiveUiSurface,
   presentLiveUiIfVisible,
@@ -137,6 +137,16 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     [payload],
   );
   const uiReady = Boolean(ui);
+  const resolveNested = useCallback(
+    (nestedGuid: string) =>
+      resolveNestedUiDocument(nestedGuid, {
+        openDocuments,
+        getAsset: (id) =>
+          (assetRegistry?.list() ?? []).find((entry) => entry.header.guid === id) ??
+          null,
+      }),
+    [assetRegistry, openDocuments],
+  );
 
   useEffect(() => {
     if (!ui) {
@@ -155,14 +165,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       chunks: asset.header.chunks,
     }));
     void resolveUiImages(
-      collectImageGuidsFromUiDocuments([ui], (nestedGuid) => {
-        const asset = listed.find((entry) => entry.header.guid === nestedGuid);
-        if (!asset) return null;
-        const openDoc = openDocuments.find((doc) => doc.ref.path === asset.path);
-        if (openDoc?.content) return asUiDocument(openDoc.content);
-        if (asset.header.payload) return asUiDocument(asset.header.payload);
-        return null;
-      }),
+      collectImageGuidsFromUiDocuments([ui], resolveNested),
       assets,
       readAssetChunk ?? (async () => null),
       imageUrlsRef.current,
@@ -180,7 +183,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, openDocuments, readAssetChunk, ui]);
+  }, [assetRegistry, openDocuments, readAssetChunk, resolveNested, ui]);
 
   useEffect(() => {
     if (!ui) {
@@ -192,15 +195,6 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       return;
     }
     let cancelled = false;
-    const listed = assetRegistry?.list() ?? [];
-    const resolveNested = (nestedGuid: string) => {
-      const nestedAsset = listed.find((entry) => entry.header.guid === nestedGuid);
-      if (!nestedAsset) return null;
-      const openDoc = openDocuments.find((doc) => doc.ref.path === nestedAsset.path);
-      if (openDoc?.content) return asUiDocument(openDoc.content);
-      if (nestedAsset.header.payload) return asUiDocument(nestedAsset.header.payload);
-      return null;
-    };
     const guids = interfaceMaterialGuidsFromUiDocuments([ui], resolveNested);
     if (guids.length === 0) {
       setInterfaceMaterials((prev) =>
@@ -230,7 +224,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, collectPlayMaterialLibrary, openDocuments, ui]);
+  }, [collectPlayMaterialLibrary, resolveNested, ui]);
 
   useEffect(
     () => () => {
@@ -305,7 +299,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
         1,
         canvas.clientHeight || ui.designResolution.height,
       );
-      const layout = layoutUserInterface(ui, { width, height });
+      const layout = layoutUserInterface(ui, { width, height }, { resolveNested });
       applyUiControlsIfUnfrozen(frozen, surface.host, describeUiControls(ui, layout));
       surface.resizeDesign(width, height, ui.scaleRule, ui.designResolution);
       presentLiveUiIfVisible({
@@ -338,7 +332,7 @@ export function EditorUtilityPanel(props: IDockviewPanelProps) {
       paintScheduler.cancel();
       observer.disconnect();
     };
-  }, [documentActive, imageUrls, interfaceMaterials, panelVisible, ui]);
+  }, [documentActive, imageUrls, interfaceMaterials, panelVisible, resolveNested, ui]);
 
   useEffect(() => {
     if (!asset?.path || !payload) return;

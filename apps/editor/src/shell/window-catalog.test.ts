@@ -152,6 +152,33 @@ describe("listDockWindows", () => {
       "sprite-preview",
       "sprite-details",
     ]);
+    expect(listDockWindows("audio").map((entry) => entry.id)).toEqual([
+      "audio-preview",
+      "audio-details",
+      "audio-clips",
+    ]);
+    expect(listDockWindows("audio").map((entry) => entry.title)).toEqual([
+      "Preview",
+      "Details",
+      "Clips",
+    ]);
+    expect(
+      listDockWindows("audio").find((entry) => entry.id === "audio-details")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "audio-preview",
+      direction: "right",
+      initialWidth: 280,
+    });
+    expect(
+      listDockWindows("audio").find((entry) => entry.id === "audio-clips")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "audio-preview",
+      direction: "below",
+      initialHeight: 220,
+    });
+    expect(primaryDockPanel("audio")).toBe("audio-preview");
     expect(listDockWindows("sprite-animation").map((entry) => entry.id)).toEqual([
       "sprite-animation-preview",
       "sprite-animation-details",
@@ -326,6 +353,7 @@ describe("listDockWindows", () => {
       "sound-attenuation",
       "particle-emitter",
       "particle-system",
+      "audio",
       "skybox-creator",
     ] as const) {
       expect(listDockWindows(kind).some((entry) => entry.id === "locks")).toBe(

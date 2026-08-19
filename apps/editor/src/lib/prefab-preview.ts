@@ -8,6 +8,7 @@ import {
   type SerializedScene,
   type SerializedTransform,
 } from "@babylonslate/core";
+import type { TreeDropPlacement } from "@babylonslate/editor-kit";
 
 export const PREFAB_ROOT_ID = "prefab-root";
 
@@ -197,15 +198,32 @@ export function componentSubtreeIds(
   return ids;
 }
 
+function moveIdsRelativeTo<T extends { id: string }>(
+  items: readonly T[],
+  ids: readonly string[],
+  anchorId: string,
+  placement: "before" | "after",
+): T[] {
+  const movingSet = new Set(ids);
+  const moving = items.filter((item) => movingSet.has(item.id));
+  const rest = items.filter((item) => !movingSet.has(item.id));
+  const index = rest.findIndex((item) => item.id === anchorId);
+  if (index < 0) return [...rest, ...moving];
+  const insertAt = placement === "before" ? index : index + 1;
+  return [...rest.slice(0, insertAt), ...moving, ...rest.slice(insertAt)];
+}
+
 /** Drop on Prefab Root / null unparents; drop on a row makes that row the parent. */
 export function reparentPrefabComponents(
   components: SerializedComponent[],
   dragId: string,
   targetId: string | null,
   selectedIds: readonly string[] = [],
+  placement: TreeDropPlacement = "into",
 ): SerializedComponent[] {
   if (dragId === PREFAB_ROOT_ID) return components;
-  const parentId = !targetId || targetId === PREFAB_ROOT_ID ? null : targetId;
+  const around = placement === "before" || placement === "after";
+  const targetIsRoot = !targetId || targetId === PREFAB_ROOT_ID;
   const inSelection = selectedIds.includes(dragId);
   const selected = inSelection
     ? selectedIds.filter((id) => id !== PREFAB_ROOT_ID)
@@ -220,15 +238,20 @@ export function reparentPrefabComponents(
     }
     return true;
   });
+  const parentId = !around || targetIsRoot
+    ? (targetIsRoot ? null : targetId)
+    : (byId.get(targetId!)?.parentId ?? null);
   if (parentId && roots.includes(parentId)) return components;
   for (const id of roots) {
     if (parentId === id) return components;
     if (wouldCreateComponentCycle(components, id, parentId)) return components;
   }
   const rootSet = new Set(roots);
-  return components.map((component) =>
+  const reparented = components.map((component) =>
     rootSet.has(component.id) ? { ...component, parentId } : component,
   );
+  if (!around || targetIsRoot || !targetId) return reparented;
+  return moveIdsRelativeTo(reparented, roots, targetId, placement);
 }
 
 /** Viewport tap: Prefab Root, a component actor, or nothing on empty space. */

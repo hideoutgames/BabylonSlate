@@ -1078,7 +1078,10 @@ export function createEngine(
         scheduler.invalidate("snapshot");
       }
     },
-    setPaused: (paused: boolean) => scheduler.setPaused(paused),
+    setPaused: (paused: boolean) => {
+      scheduler.setPaused(paused);
+      audioService?.setPaused(paused);
+    },
     liveObjectCounts: () => ({
       meshes: scene.meshes.length,
       textures: engine.getLoadedTexturesCache().length,

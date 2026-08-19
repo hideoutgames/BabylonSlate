@@ -40,7 +40,7 @@ import {
 } from "./document-workspace-context";
 import { useOptionalPlay } from "./play-context";
 import { familyFromAssetPayload } from "../lib/font-preview";
-import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument, type PlayUiLibrary } from "../lib/play-content";
+import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument, resolveNestedUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { collectFontAssetEntries } from "../lib/play-fonts";
 import {
   resolveUiImages,
@@ -93,6 +93,7 @@ export interface UiEditingContextValue {
   fontEntries: FontAssetEntry[];
   resolveImageUrl: (guid: string) => string | null;
   resolveInterfaceMaterial: (guid: string) => MaterialDocument | null;
+  resolveNested: (guid: string) => UserInterfaceDocument | null;
   materialFunctions: () => Record<string, MaterialFunctionDocument>;
   imageIssues: readonly UiImageIssue[];
   catalogOpen: boolean;
@@ -220,6 +221,18 @@ export function UiEditingProvider({
     };
   }, [assetRegistry, collectPlayUiLibrary, projectName, readAssetChunk]);
 
+  const resolveNested = useCallback(
+    (guid: string) =>
+      resolveNestedUiDocument(guid, {
+        selfGuid,
+        selfDocument: ui,
+        openDocuments,
+        getAsset: (id) => assetRegistry?.getByGuid(id) ?? null,
+        uiLibrary,
+      }),
+    [assetRegistry, openDocuments, selfGuid, ui, uiLibrary],
+  );
+
   useEffect(() => {
     let cancelled = false;
     const assets = (assetRegistry?.list() ?? []).map((asset) => ({
@@ -230,12 +243,7 @@ export function UiEditingProvider({
     }));
     const guids = collectImageGuidsFromUiDocuments(
       [ui, ...Object.values(uiLibrary)],
-      (guid) => {
-        if (guid === selfGuid) return ui;
-        const asset = assetRegistry?.getByGuid(guid);
-        if (asset?.header.payload) return asUiDocument(asset.header.payload);
-        return uiLibrary[guid] ?? null;
-      },
+      resolveNested,
     );
     void resolveUiImages(
       guids,
@@ -256,7 +264,7 @@ export function UiEditingProvider({
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, readAssetChunk, selfGuid, ui, uiLibrary]);
+  }, [assetRegistry, readAssetChunk, resolveNested, ui, uiLibrary]);
 
   useEffect(
     () => () => {
@@ -268,19 +276,6 @@ export function UiEditingProvider({
   const resolveImageUrl = useCallback(
     (guid: string) => imageUrls.get(guid) ?? null,
     [imageUrls],
-  );
-
-  const resolveNested = useCallback(
-    (guid: string) => {
-      if (guid === selfGuid) return ui;
-      const asset = assetRegistry?.getByGuid(guid);
-      if (asset) {
-        const open = openDocuments.find((entry) => entry.ref.path === asset.path);
-        if (open?.content) return asUiDocument(open.content);
-      }
-      return uiLibrary[guid] ?? null;
-    },
-    [assetRegistry, openDocuments, selfGuid, ui, uiLibrary],
   );
 
   useEffect(() => {
@@ -512,6 +507,7 @@ export function UiEditingProvider({
       fontEntries,
       resolveImageUrl,
       resolveInterfaceMaterial,
+      resolveNested,
       materialFunctions,
       imageIssues,
       catalogOpen,
@@ -539,6 +535,7 @@ export function UiEditingProvider({
       fontEntries,
       resolveImageUrl,
       resolveInterfaceMaterial,
+      resolveNested,
       materialFunctions,
       imageIssues,
       isEditorUtilityInterface,

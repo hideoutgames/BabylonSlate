@@ -21,6 +21,7 @@ import {
   type SoundAttenuationPayload,
 } from "@babylonslate/assets";
 import type { CommandMessage } from "@babylonslate/bridge";
+import type { AudioDebugVoiceSnapshot } from "./audio-debug";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import type {
   AudioPlaybackBackend,
@@ -51,6 +52,7 @@ export type AudioStats = {
   lastDistance: number | null;
   wet: number;
   accountedBytes: number;
+  debugVoices?: AudioDebugVoiceSnapshot[];
 };
 
 export const audioStats: AudioStats = {
@@ -82,8 +84,9 @@ type LiveVoice = {
   pitch: number;
   reverbSend: boolean;
   muffleThroughWalls: boolean;
-  loop: boolean;
   previousPose: AudioPose | null;
+  clipName: string | null;
+  loop: boolean;
 };
 
 function emptyLibrary(): AudioLibrary {
@@ -149,6 +152,7 @@ export class AudioService {
   private readonly now: () => number;
   private lastSnapshotAt: number | null = null;
   private readonly random: () => number;
+  private showAudioDebug = false;
   private projectAudio = {
     occlusionEnabled: true,
     reverbWetScale: 1,
@@ -175,6 +179,7 @@ export class AudioService {
       this.stopVoice(voiceId);
     };
     this.publishStats();
+    void this.backend.warmAsync().catch(() => undefined);
   }
 
   setLibrary(library: AudioLibrary): void {
@@ -240,6 +245,10 @@ export class AudioService {
   }
 
   handleCommand(command: CommandMessage): void {
+    if (command.type === "setShowAudioDebug") {
+      this.setShowAudioDebug(command.enabled);
+      return;
+    }
     if (!isAudioCommand(command)) return;
     if (!this.unlocked) {
       if (this.queue.length >= AUDIO_PRE_UNLOCK_QUEUE_CAP) this.queue.shift();
@@ -248,6 +257,15 @@ export class AudioService {
       return;
     }
     this.work = this.work.catch(() => undefined).then(() => this.dispatch(command));
+  }
+
+  setShowAudioDebug(enabled: boolean): void {
+    this.showAudioDebug = enabled === true;
+    this.publishStats();
+  }
+
+  setPaused(paused: boolean): void {
+    this.backend.setPaused(paused);
   }
 
   /** Wait until in-flight play/stop work has settled (tests). */
@@ -335,6 +353,7 @@ export class AudioService {
     this.wet = 0;
     this.reverbField = null;
     this.lastSnapshotAt = null;
+    this.showAudioDebug = false;
     this.publishStats();
   }
 
@@ -486,8 +505,9 @@ export class AudioService {
       pitch,
       reverbSend: resolved.environmentReverb,
       muffleThroughWalls: resolved.muffleThroughWalls,
-      loop: request.loop,
       previousPose: null,
+      clipName: clip.name.trim() === "" ? null : clip.name,
+      loop: request.loop,
     });
     this.lastGain = resolved.gain;
     try {
@@ -637,6 +657,50 @@ export class AudioService {
     this.publishStats();
   }
 
+  private voiceEmitterPose(voice: LiveVoice): AudioPose | undefined {
+    if (voice.emitterActorGuid === null) return undefined;
+    const slotId = this.actorSlots.get(voice.emitterActorGuid);
+    if (slotId === undefined) return undefined;
+    return this.slotPoses.get(slotId);
+  }
+
+  private collectDebugVoices(): AudioDebugVoiceSnapshot[] {
+    const snapshots: AudioDebugVoiceSnapshot[] = [];
+    for (const voice of this.voices.values()) {
+      const spatial = voice.spatial !== null;
+      const pose = spatial ? this.voiceEmitterPose(voice) : undefined;
+      let distance: number | null = null;
+      let innerRadius: number | null = null;
+      let maxRadius: number | null = null;
+      let insideRadius: boolean | null = null;
+      if (voice.spatial) {
+        innerRadius = voice.spatial.innerRadius;
+        maxRadius = voice.spatial.maxRadius;
+        if (pose) {
+          distance = Math.hypot(
+            pose.x - this.listener.x,
+            pose.y - this.listener.y,
+            pose.z - this.listener.z,
+          );
+          insideRadius = distance <= maxRadius;
+        }
+      }
+      snapshots.push({
+        assetGuid: voice.assetGuid,
+        clipName: voice.clipName,
+        gain: voice.gain,
+        pitch: voice.pitch,
+        loop: voice.loop,
+        spatial,
+        distance,
+        innerRadius,
+        maxRadius,
+        insideRadius,
+      });
+    }
+    return snapshots;
+  }
+
   private publishStats(): void {
     audioStats.unlocked = this.unlocked;
     audioStats.queued = this.queue.length;
@@ -645,5 +709,8 @@ export class AudioService {
     audioStats.lastDistance = this.lastDistance;
     audioStats.wet = this.wet;
     audioStats.accountedBytes = this.cache.accountedBytes();
+    audioStats.debugVoices = this.showAudioDebug
+      ? this.collectDebugVoices()
+      : undefined;
   }
 }
