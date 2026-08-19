@@ -53,6 +53,7 @@ import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
+import { fontAssetHasFacetype } from "../lib/play-fonts";
 import {
   componentPropertyRows,
   subclassClassEntries,
@@ -522,6 +523,7 @@ function PrefabComponentDetails({
   pickerAssets,
   assetLabel,
   assetType,
+  fontHasFacetype,
   onUpdate,
   onUpdateTransform,
 }: {
@@ -537,6 +539,7 @@ function PrefabComponentDetails({
   }>;
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType: (guid: string | null | undefined) => string | undefined;
+  fontHasFacetype?: (guid: string | null | undefined) => boolean;
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
@@ -571,6 +574,7 @@ function PrefabComponentDetails({
             sortingLayers,
             assetLabel,
             assetType,
+            fontHasFacetype,
             physicsWorld,
             onPickAsset: setAssetPick,
           })}
@@ -720,6 +724,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
   };
+  const fontHasFacetype = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
+  };
 
   const selectedPrefabComponentIds = prefabSelectedIds.filter(
     (id) => id !== PREFAB_ROOT_ID,
@@ -754,6 +762,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           pickerAssets={pickerAssets}
           assetLabel={assetLabel}
           assetType={assetType}
+          fontHasFacetype={fontHasFacetype}
           onUpdate={(property, value) =>
             updateComponent(selectedPrefabComponent.id, property, value)
           }

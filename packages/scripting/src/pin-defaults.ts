@@ -110,7 +110,12 @@ export function listUnconnectedLiteralPinDefaults(
       pinId: pin.id,
       name: pin.name,
       type: pin.type,
-      value: stored !== undefined ? stored : defaultJsValue(pin.type),
+      value:
+        stored !== undefined
+          ? stored
+          : pin.defaultValue !== undefined
+            ? pin.defaultValue
+            : defaultJsValue(pin.type),
     });
   }
   return listed;

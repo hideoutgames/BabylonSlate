@@ -196,4 +196,26 @@ describe("createActorsFromSerializedScene", () => {
     });
     expect(actors[0]!.components[0]!.assetGuid).toBe("fire");
   });
+
+  it("copies fontAssetGuid onto Text3DComponent assetGuid", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Text",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [
+        createActor("label", "3D Text", {
+          components: [
+            {
+              id: "text-1",
+              classId: "Text3DComponent",
+              properties: { fontAssetGuid: "font-display" },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.assetGuid).toBe("font-display");
+  });
 });

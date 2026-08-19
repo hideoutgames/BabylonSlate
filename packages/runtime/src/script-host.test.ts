@@ -243,6 +243,42 @@ describe("script host runs compiled graphs", () => {
     expect(diagnostic?.graphId).toBe("event-graph");
   });
 
+  it("emits Draw Debug Line as a debugDraw command", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "draw", "debug.drawLine"),
+      ],
+      edges: [edge("e1", "begin", "execOut", "draw", "execIn")],
+    };
+
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Painter", "painter-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Painter" });
+    runtime.start();
+    runtime.tick();
+
+    const draws = commands.filter((command) => command.type === "debugDraw");
+    expect(draws).toHaveLength(1);
+    expect(draws[0]).toMatchObject({
+      type: "debugDraw",
+      kind: "line",
+      duration: 0,
+      thickness: 1,
+    });
+    runtime.stop();
+  });
+
   it("Call Parent Event invokes the parent class Begin Play handler", async () => {
     const registry = createDefaultNodeRegistry();
     const parentGraph: LogicGraph = {

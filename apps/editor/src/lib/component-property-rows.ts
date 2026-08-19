@@ -10,6 +10,7 @@ import {
   isEditorGraphClass,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText3DProperties,
   SKYBOX_FACE_KEYS,
   userInterfaceClassId,
   type SerializedComponent,
@@ -47,6 +48,7 @@ export type ComponentPropertyContext = {
   sortingLayers: readonly string[];
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType?: (guid: string | null | undefined) => string | undefined;
+  fontHasFacetype?: (guid: string | null | undefined) => boolean;
   physicsWorld: "3d" | "2d";
   onPickAsset: (request: AssetPickRequest) => void;
 };
@@ -968,6 +970,83 @@ export function componentPropertyRows(
           new Set(["size", "faces"]),
         ),
       ];
+    }
+    case "Text3DComponent": {
+      const parsed = parseText3DProperties(component.properties);
+      const hasFacetype = Boolean(
+        parsed.fontAssetGuid && context.fontHasFacetype?.(parsed.fontAssetGuid),
+      );
+      const rows: PropertyRow[] = [
+        {
+          kind: "text",
+          id: rowId(actorId, component.id, "text"),
+          label: "Text",
+          value: parsed.text,
+          defaultValue: "Text",
+          onChange: (next) => update("text", next),
+        },
+        sliderRow(
+          actorId,
+          component.id,
+          "size",
+          "Size",
+          parsed.size,
+          0.01,
+          100,
+          update,
+          0.01,
+          1,
+        ),
+        sliderRow(
+          actorId,
+          component.id,
+          "depth",
+          "Depth",
+          parsed.depth,
+          0.01,
+          10,
+          update,
+          0.01,
+          0.1,
+        ),
+        {
+          kind: "color",
+          id: rowId(actorId, component.id, "color"),
+          label: "Color",
+          value: parsed.color,
+          defaultValue: [1, 1, 1],
+          onChange: (next) => update("color", next),
+        },
+        assetRow(
+          actorId,
+          component,
+          "fontAssetGuid",
+          "Font",
+          ["Font"],
+          update,
+          context,
+          "Pick Font",
+        ),
+      ];
+      if (!hasFacetype) {
+        rows.push({
+          kind: "text",
+          id: rowId(actorId, component.id, "typeface-note"),
+          label: "Typeface",
+          value: "Bundled ASCII (no Font facetype chunk)",
+          disabled: true,
+          onChange: () => {},
+        });
+      }
+      rows.push(
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["text", "size", "depth", "color", "fontAssetGuid"]),
+        ),
+      );
+      return rows;
     }
     case "LightComponent": {
       const color = asRgb(component.properties.color) ?? [1, 1, 1];

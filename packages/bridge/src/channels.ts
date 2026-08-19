@@ -190,6 +190,53 @@ export type DebugColliderPrimitive = {
   points?: Array<{ x: number; y: number; z: number }>;
 };
 
+export type DebugDrawVec3 = { x: number; y: number; z: number };
+export type DebugDrawColor = { x: number; y: number; z: number; w: number };
+export type DebugDrawRotator = { pitch: number; yaw: number; roll: number };
+
+export type DebugDrawKind =
+  | "line"
+  | "point"
+  | "box"
+  | "sphere"
+  | "circle"
+  | "rectangle"
+  | "square"
+  | "cone"
+  | "cylinder"
+  | "arrow"
+  | "frustum"
+  | "coordinateSystem";
+
+export type DebugDrawCommand = {
+  type: "debugDraw";
+  kind: DebugDrawKind;
+  duration: number;
+  color: DebugDrawColor;
+  frameId: number;
+  start?: DebugDrawVec3;
+  end?: DebugDrawVec3;
+  thickness?: number;
+  position?: DebugDrawVec3;
+  size?: number;
+  center?: DebugDrawVec3;
+  extent?: DebugDrawVec3;
+  rotation?: DebugDrawRotator;
+  radius?: number;
+  segments?: number;
+  width?: number;
+  height?: number;
+  origin?: DebugDrawVec3;
+  direction?: DebugDrawVec3;
+  length?: number;
+  angle?: number;
+  fov?: number;
+  aspect?: number;
+  near?: number;
+  far?: number;
+  scale?: number;
+};
+
 export type CommandMessage =
   | {
       type: "spawn";
@@ -230,6 +277,13 @@ export type CommandMessage =
         position: [number, number, number];
         rotation: [number, number, number, number];
         scale: [number, number, number];
+        text3d?: {
+          text: string;
+          size: number;
+          depth: number;
+          color: [number, number, number];
+          fontAssetGuid: string | null;
+        };
       }>;
       skybox?: {
         size: number;
@@ -241,6 +295,13 @@ export type CommandMessage =
           ny: string | null;
           nz: string | null;
         };
+      };
+      text3d?: {
+        text: string;
+        size: number;
+        depth: number;
+        color: [number, number, number];
+        fontAssetGuid: string | null;
       };
     }
   | { type: "possessCamera"; slotId: number }
@@ -296,6 +357,7 @@ export type CommandMessage =
       color: { x: number; y: number; z: number; w: number };
       frameId: number;
     }
+  | DebugDrawCommand
   | {
       type: "consoleResult";
       success: boolean;

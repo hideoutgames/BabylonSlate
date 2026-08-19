@@ -179,6 +179,36 @@ function pinForCodegen(
   );
 }
 
+function catalogPinDefault(
+  node: GraphNode,
+  dataPin: GraphPin,
+  registry: NodeRegistry,
+): unknown {
+  if (dataPin.defaultValue !== undefined) return dataPin.defaultValue;
+  const def = registry.get(node.typeId);
+  if (!def) return undefined;
+  const catalogPins = def.pins(node.properties);
+  const catalogPin =
+    catalogPins.find((pin) => pin.id === dataPin.id) ??
+    catalogPins.find((pin) => pin.name === dataPin.name);
+  return catalogPin?.defaultValue;
+}
+
+function disconnectedPinLiteral(
+  node: GraphNode,
+  dataPin: GraphPin,
+  registry: NodeRegistry,
+  fallbackLiteral?: string,
+): string {
+  const prop = readPinDefaultForPin(node.properties, dataPin);
+  if (prop !== undefined && !pinRejectsStoredDefault(dataPin.type)) {
+    return JSON.stringify(prop);
+  }
+  const catalog = catalogPinDefault(node, dataPin, registry);
+  if (catalog !== undefined) return JSON.stringify(catalog);
+  return fallbackLiteral ?? defaultValueLiteral(dataPin.type);
+}
+
 function entryNodes(graph: LogicGraph): GraphNode[] {
   const hasIncoming = new Set(
     graph.edges
@@ -269,11 +299,7 @@ export function compileGraph(
         return varName;
       }
     }
-    const prop = readPinDefaultForPin(node.properties, dataPin);
-    const lit =
-      prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
-        ? JSON.stringify(prop)
-        : defaultValueLiteral(dataPin.type);
+    const lit = disconnectedPinLiteral(node, dataPin, options.registry);
     exprCache.set(key, lit);
     return lit;
   }
@@ -680,11 +706,12 @@ export function compileTransitionRuleGraph(
         return varName;
       }
     }
-    const prop = readPinDefaultForPin(node.properties, dataPin);
-    const lit =
-      prop !== undefined && !pinRejectsStoredDefault(dataPin.type)
-        ? JSON.stringify(prop)
-        : (disconnectedLiteral ?? defaultValueLiteral(dataPin.type));
+    const lit = disconnectedPinLiteral(
+      node,
+      dataPin,
+      options.registry,
+      disconnectedLiteral,
+    );
     exprCache.set(key, lit);
     return lit;
   }

@@ -155,6 +155,17 @@ describe("listUnconnectedLiteralPinDefaults", () => {
       },
     ]);
   });
+
+  it("uses catalog pin defaultValue before the type-table default", () => {
+    const listed = listUnconnectedLiteralPinDefaults(
+      [pin("duration", "Duration", "in", FLOAT, "data", true, 2)],
+      {},
+      new Set(),
+    );
+    expect(listed).toEqual([
+      { pinId: "duration", name: "Duration", type: FLOAT, value: 2 },
+    ]);
+  });
 });
 
 describe("pin default editor conversions", () => {

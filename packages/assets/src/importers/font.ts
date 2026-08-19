@@ -16,6 +16,9 @@ function isMsdfFile(fileName: string): boolean {
   return /msdf/i.test(fileName);
 }
 
+/** Glyph JSON chunk attached to a Font for extruded 3D Text (`CreateText`). */
+export const FONT_FACETYPE_CHUNK_ID = "facetype-glyphs";
+
 /**
  * facetype.js and msdf atlas JSON describe glyph representations for a font
  * that should already exist rather than a new asset; matched by filename
@@ -51,7 +54,9 @@ export async function importFont(
   if (isFontRepresentationFile(options.fileName, bytes)) {
     const family = fontFamilyFromRepresentationFileName(options.fileName);
     const existingGuid = options.fontGuidsByName?.get(family);
-    const chunkId = isMsdfFile(options.fileName) ? "msdf-atlas" : "facetype-glyphs";
+    const chunkId = isMsdfFile(options.fileName)
+      ? "msdf-atlas"
+      : FONT_FACETYPE_CHUNK_ID;
     const chunkKind = isMsdfFile(options.fileName) ? "font-msdf" : "font-facetype";
 
     const result: ImportResult = {

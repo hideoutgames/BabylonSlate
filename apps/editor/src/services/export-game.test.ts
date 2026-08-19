@@ -3,6 +3,7 @@ import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
   createActor,
   createDefaultScene,
+  createText3DComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
   isErr,
@@ -574,6 +575,62 @@ describe("collectAndExportGame", () => {
       result.value.manifest.assets.some(
         (entry) =>
           entry.type === "AudioReverb" && entry.guid === "audioReverb:scene-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("packs Font facetype JSON as a FontFacetype sidecar alongside Font source bytes", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("label", "3D Text", {
+          components: [
+            {
+              ...createText3DComponent("text-1"),
+              properties: {
+                ...createText3DComponent("text-1").properties,
+                fontAssetGuid: "font-1",
+              },
+            },
+          ],
+        }),
+      ],
+    };
+    const source = new Uint8Array([1, 2, 3]);
+    const facetype = new Uint8Array([9, 8, 7]);
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "font-1", type: "Font", name: "Display" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      bytesByGuid: (guid) => {
+        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "font-1") return source;
+        return null;
+      },
+      fontFacetypeBytesByGuid: (guid) => (guid === "font-1" ? facetype : null),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(
+      result.value.manifest.assets.some(
+        (entry) => entry.type === "Font" && entry.guid === "font-1",
+      ),
+    ).toBe(true);
+    expect(
+      result.value.manifest.assets.some(
+        (entry) =>
+          entry.type === "FontFacetype" && entry.guid === "font-facetype:font-1",
       ),
     ).toBe(true);
   });
