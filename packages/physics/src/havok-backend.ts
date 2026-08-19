@@ -34,9 +34,11 @@ import type {
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsTransform,
+  Quat,
   RigidBodyDesc,
   Vec3,
 } from "./types";
+import { identityQuat } from "./collider-bake";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { loadHavokModule } from "./havok-loader";
 
@@ -477,7 +479,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     desc: ColliderDesc,
     record: BodyRecord,
   ): PhysicsShape | null {
-    const shape = this.createQueryShape(desc.shape, record, desc.translation);
+    const shape = this.createQueryShape(
+      desc.shape,
+      record,
+      desc.translation,
+      desc.rotation,
+    );
     if (!shape) return null;
     shape.material = {
       friction: desc.friction,
@@ -493,15 +500,17 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     shape: ColliderShape,
     record?: BodyRecord,
     translation?: { x: number; y: number; z: number },
+    rotation?: Quat,
   ): PhysicsShape | null {
     const origin = translation
       ? new Vector3(translation.x, translation.y, translation.z)
       : Vector3.Zero();
+    const localRotation = toQuaternion(rotation ?? identityQuat());
     switch (shape.kind) {
       case "box":
         return new PhysicsShapeBox(
           origin,
-          Quaternion.Identity(),
+          localRotation,
           new Vector3(
             shape.halfExtents.x * 2,
             shape.halfExtents.y * 2,
@@ -511,13 +520,20 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         );
       case "sphere":
         return new PhysicsShapeSphere(origin, shape.radius, this.scene);
-      case "capsule":
+      case "capsule": {
+        const start = new Vector3(0, -shape.halfHeight, 0).applyRotationQuaternion(
+          localRotation,
+        );
+        const end = new Vector3(0, shape.halfHeight, 0).applyRotationQuaternion(
+          localRotation,
+        );
         return new PhysicsShapeCapsule(
-          new Vector3(origin.x, origin.y - shape.halfHeight, origin.z),
-          new Vector3(origin.x, origin.y + shape.halfHeight, origin.z),
+          origin.add(start),
+          origin.add(end),
           shape.radius,
           this.scene,
         );
+      }
       case "convex": {
         const mesh = this.meshFromPoints(
           "convex",

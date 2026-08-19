@@ -2,6 +2,7 @@ import type { PhysicsBackend, PhysicsTransform, Vec3 } from "@babylonslate/physi
 import {
   parseColliderProperties,
   parseRigidBodyProperties,
+  bakeColliderLocal,
 } from "@babylonslate/physics";
 import type { Actor, World } from "@babylonslate/object-model";
 import {
@@ -265,20 +266,26 @@ export class PhysicsWorldSync {
         mapToRecord(component.variables),
         this.backend.kind,
       );
+      const baked = bakeColliderLocal(
+        collider.shape,
+        {
+          position: component.transform.position,
+          rotation: component.transform.rotation,
+          scale: component.transform.scale,
+        },
+        worldScale(actor, this.worldTransforms),
+      );
       this.backend.createCollider({
         id: `collider:${component.guid}`,
         bodyId,
-        shape: collider.shape,
+        shape: baked.shape,
         friction: collider.friction,
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
         layer: collider.layer,
         mask: collider.mask,
-        translation: {
-          x: component.transform.position.x,
-          y: component.transform.position.y,
-          z: component.transform.position.z,
-        },
+        translation: baked.translation,
+        rotation: baked.rotation,
       });
     }
 
@@ -329,30 +336,43 @@ export class PhysicsWorldSync {
       );
       if (collider.shape.kind !== "box2d") continue;
       const colliderId = `collider:${component.guid}`;
-      const translation = {
-        x: component.transform.position.x + mapped.translation.x,
-        y: component.transform.position.y + mapped.translation.y,
-        z: component.transform.position.z,
-      };
+      const baked = bakeColliderLocal(
+        { kind: "box2d", halfExtents: mapped.halfExtents },
+        {
+          position: {
+            x: component.transform.position.x + mapped.translation.x,
+            y: component.transform.position.y + mapped.translation.y,
+            z: component.transform.position.z,
+          },
+          rotation: component.transform.rotation,
+          scale: component.transform.scale,
+        },
+        worldScale(actor, this.worldTransforms),
+      );
       const fingerprint = [
-        mapped.halfExtents.x,
-        mapped.halfExtents.y,
-        translation.x,
-        translation.y,
-        translation.z,
+        baked.shape.kind === "box2d" ? baked.shape.halfExtents.x : 0,
+        baked.shape.kind === "box2d" ? baked.shape.halfExtents.y : 0,
+        baked.translation.x,
+        baked.translation.y,
+        baked.translation.z,
+        baked.rotation.x,
+        baked.rotation.y,
+        baked.rotation.z,
+        baked.rotation.w,
       ].join(",");
       if (keys.get(colliderId) === fingerprint) continue;
       this.backend.destroyCollider(colliderId);
       this.backend.createCollider({
         id: colliderId,
         bodyId,
-        shape: { kind: "box2d", halfExtents: mapped.halfExtents },
+        shape: baked.shape,
         friction: collider.friction,
         restitution: collider.restitution,
         isTrigger: collider.isTrigger,
         layer: collider.layer,
         mask: collider.mask,
-        translation,
+        translation: baked.translation,
+        rotation: baked.rotation,
       });
       keys.set(colliderId, fingerprint);
     }
@@ -428,6 +448,14 @@ function actorWorldPhysicsTransform(
     position: { ...world.position },
     rotation: { ...world.rotation },
   };
+}
+
+function worldScale(
+  actor: Actor,
+  transforms: ActorTransformMap,
+): { x: number; y: number; z: number } {
+  const world = transforms.get(actor.guid) ?? actor.transform;
+  return { ...world.scale };
 }
 
 function actorLocalPhysicsTransform(

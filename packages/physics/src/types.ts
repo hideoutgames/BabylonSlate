@@ -51,6 +51,8 @@ export type ColliderDesc = {
   mask: number;
   /** Local offset from the rigid body origin (component transform position). */
   translation?: Vec3;
+  /** Local rotation relative to the rigid body (component transform rotation). */
+  rotation?: Quat;
 };
 
 export type HitResult = {

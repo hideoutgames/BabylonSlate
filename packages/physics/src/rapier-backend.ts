@@ -10,6 +10,7 @@ import type {
   Vec3,
 } from "./types";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
+import { quatToPlanarAngle } from "./collider-bake";
 
 type RapierApi = {
   init(): Promise<void>;
@@ -77,6 +78,7 @@ type RapierColliderDesc = {
   setRestitution(v: number): RapierColliderDesc;
   setSensor(v: boolean): RapierColliderDesc;
   setTranslation(x: number, y: number): RapierColliderDesc;
+  setRotation(angle: number): RapierColliderDesc;
 };
 
 type RapierRigidBody = {
@@ -273,6 +275,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
       .setSensor(desc.isTrigger);
     if (desc.translation) {
       colliderDesc.setTranslation(desc.translation.x, desc.translation.y);
+    }
+    if (desc.rotation) {
+      colliderDesc.setRotation(quatToPlanarAngle(desc.rotation));
     }
     const collider = this.world.createCollider(colliderDesc, body.body);
     const extra = this.createLoopCloseSegment(desc, body.body);

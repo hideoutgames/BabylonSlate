@@ -112,6 +112,100 @@ describe("PhysicsWorldSync collider translation", () => {
     expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
     sync.dispose();
   });
+
+  it("bakes actor and component scale into collider half-extents", () => {
+    const world = createWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      transform: {
+        ...identityTransform(),
+        scale: { x: 2, y: 2, z: 2 },
+      },
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        guid: "rb",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        guid: "col",
+        variables: {
+          shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+        },
+        transform: {
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 2, z: 1 },
+        },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+
+    expect(backend.sphereOverlap({ x: 0.9, y: 0, z: 0 }, 0.05).actorIds).toContain(
+      "hero",
+    );
+    expect(backend.sphereOverlap({ x: 0, y: 1.9, z: 0 }, 0.05).actorIds).toContain(
+      "hero",
+    );
+    expect(backend.sphereOverlap({ x: 1.2, y: 0, z: 0 }, 0.05).actorIds).toEqual([]);
+    sync.dispose();
+  });
+
+  it("passes collider component rotation and scaled local translation", () => {
+    const yaw90 = Math.SQRT1_2;
+    const world = createWorld();
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: "hero",
+      transform: {
+        ...identityTransform(),
+        scale: { x: 2, y: 1, z: 1 },
+      },
+    });
+    actor.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        guid: "rb",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    actor.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        guid: "col",
+        variables: {
+          shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+        },
+        transform: {
+          position: { x: 1, y: 0, z: 0 },
+          rotation: { x: 0, y: yaw90, z: 0, w: yaw90 },
+          scale: { x: 1, y: 1, z: 1 },
+        },
+      }),
+    );
+    world.spawnActorNow(actor);
+
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+
+    expect(backend.sphereOverlap({ x: 2.3, y: 0, z: 0 }, 0.05).actorIds).toContain(
+      "hero",
+    );
+    expect(backend.sphereOverlap({ x: 0.7, y: 0, z: 0 }, 0.05).actorIds).toEqual(
+      [],
+    );
+    sync.dispose();
+  });
 });
 
 describe("PhysicsWorldSync destroy and transform ownership", () => {

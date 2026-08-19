@@ -28,6 +28,15 @@ function rotateOffset(rotation: Quat, offset: Vec3): Vec3 {
   };
 }
 
+function multiplyQuat(a: Quat, b: Quat): Quat {
+  return {
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  };
+}
+
 export function colliderWorldPosition(
   desc: ColliderDesc,
   bodyTransform: Pick<PhysicsTransform, "position" | "rotation">,
@@ -67,7 +76,10 @@ export function debugColliderFromDesc(
   bodyTransform: PhysicsTransform,
 ): DebugColliderPrimitive | null {
   const position = colliderWorldPosition(desc, bodyTransform);
-  const rotation = bodyTransform.rotation ?? identityQuat();
+  const rotation = multiplyQuat(
+    bodyTransform.rotation ?? identityQuat(),
+    desc.rotation ?? identityQuat(),
+  );
   const shape = desc.shape;
   switch (shape.kind) {
     case "box":
