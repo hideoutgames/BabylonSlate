@@ -2,6 +2,11 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Coverage instrumentation of the jsdom editor suite otherwise accumulates
+    // in a single fork until Node hits the default ~4GB heap (OOM on GitHub
+    // Free standard runners). Two forks split that map.
+    pool: "forks",
+    maxWorkers: 2,
     projects: [
       {
         extends: "./vitest.projects.node.ts",
