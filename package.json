@@ -10,7 +10,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "vitest run --config vitest.workspace.ts",
-    "test:editor-unit": "vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=1/4 && vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=2/4 && vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=3/4 && vitest run --config vitest.workspace.ts --project jsdom apps/editor --shard=4/4",
+    "test:editor-unit": "NODE_OPTIONS='--max-old-space-size=8192' vitest run --config vitest.workspace.ts --project jsdom --maxWorkers=1 apps/editor --shard=1/4 && NODE_OPTIONS='--max-old-space-size=8192' vitest run --config vitest.workspace.ts --project jsdom --maxWorkers=1 apps/editor --shard=2/4 && NODE_OPTIONS='--max-old-space-size=8192' vitest run --config vitest.workspace.ts --project jsdom --maxWorkers=1 apps/editor --shard=3/4 && NODE_OPTIONS='--max-old-space-size=8192' vitest run --config vitest.workspace.ts --project jsdom --maxWorkers=1 apps/editor --shard=4/4",
     "test:coverage": "VITEST_COVERAGE=1 VITEST_MAX_WORKERS=4 vitest run --config vitest.workspace.ts --coverage && pnpm test:editor-unit",
     "test:watch": "vitest --config vitest.workspace.ts",
     "test:e2e": "playwright test",
