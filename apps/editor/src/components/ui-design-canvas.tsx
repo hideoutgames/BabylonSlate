@@ -64,14 +64,15 @@ import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/s
 
 const defaultResolveImageUrl = (): string | null => null;
 const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
+const DEFAULT_ADT_IDEAL = {
+  designResolution: { width: 1920, height: 1080 },
+  scaleRule: "shortestSide" as const,
+};
 
 export function UiDesignCanvas({
   ui,
   viewport,
-  adtIdeal = {
-    designResolution: { width: 1920, height: 1080 },
-    scaleRule: "shortestSide",
-  },
+  adtIdeal = DEFAULT_ADT_IDEAL,
   controls,
   selectedId,
   view,
