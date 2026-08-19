@@ -32,6 +32,22 @@ async function pickAsset(
   await expect(page.getByTestId(pickerTestId)).toHaveCount(0);
 }
 
+/** Beep.wav is ~0ms; one-shot voices drop after onEnded. Loop so Play stats stay non-zero. */
+async function enableImportedAudioLoop(
+  page: Page,
+  assetPath = "assets/beep.babasset",
+): Promise<void> {
+  await openAssetFromBrowser(page, assetPath);
+  await expect(page.getByTestId("document-workspace-audio")).toBeVisible();
+  const loop = page.getByTestId("audio-preview-loop");
+  await expect(loop).toBeVisible();
+  if ((await loop.getAttribute("aria-pressed")) !== "true") {
+    await loop.click();
+  }
+  await expect(loop).toHaveAttribute("aria-pressed", "true");
+  await saveAllIfEnabled(page);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("P16 audio", () => {
@@ -48,6 +64,7 @@ test.describe("P16 audio", () => {
     ).toBeVisible({ timeout: 30_000 });
     const beepGuid = await guidForPath(page, "assets/beep.babasset");
     expect(beepGuid.length).toBeGreaterThan(0);
+    await enableImportedAudioLoop(page);
 
     await openMainScene(page);
     await page.getByTestId("outliner-add-actor").click();
@@ -135,10 +152,11 @@ test.describe("P16 audio", () => {
     await pickAsset(page, "audio-mixer-channel-picker", channelGuid);
 
     await openAssetFromBrowser(page, "assets/beep.babasset");
-    await expect(page.getByTestId("document-workspace-asset-settings")).toBeVisible();
+    await expect(page.getByTestId("document-workspace-audio")).toBeVisible();
     await expect(page.getByTestId("audio-preview")).toBeVisible();
     await expect(page.getByTestId("audio-preview-play")).toBeVisible();
     await page.getByTestId("audio-preview-play").click();
+    await expect(page.getByTestId("audio-clip-0-name")).toHaveText(/beep/i);
 
     await page.getByTestId("property-audioChannelGuid").click();
     await pickAsset(page, "audio-channel-picker", channelGuid);
@@ -343,5 +361,78 @@ test.describe("P16 audio", () => {
         });
       }, { timeout: 10_000 })
       .toBe(0);
+  });
+
+  test("Preview Build hears Place Audio after a canvas click", async ({
+    page,
+  }) => {
+    test.setTimeout(240_000);
+    await openTestProject(page);
+    await openContentBrowser(page);
+
+    await page.getByTestId("content-browser-import-input").setInputFiles([BEEP_WAV]);
+    await expect(
+      page.locator('[data-asset-path="assets/beep.babasset"]'),
+    ).toBeVisible({ timeout: 30_000 });
+    const beepGuid = await guidForPath(page, "assets/beep.babasset");
+    expect(beepGuid.length).toBeGreaterThan(0);
+    await enableImportedAudioLoop(page);
+
+    await openMainScene(page);
+    await page.getByTestId("outliner-add-actor").click();
+    await expect(page.getByTestId("place-actors-catalog")).toBeVisible();
+    await page.getByTestId("place-actors-catalog-search").fill("beep");
+    await page.getByTestId(`place-actors-item-asset-${beepGuid}`).click();
+    await expect(page.getByTestId("place-actors-catalog")).toHaveCount(0);
+
+    await saveAllIfEnabled(page);
+
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await expect(page.getByTestId("play-preview")).toHaveText("Preview");
+    await page.getByTestId("play-preview").click();
+    await expect(page.getByTestId("preview-build-overlay")).toBeVisible({
+      timeout: 60_000,
+    });
+
+    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
+    const root = frame.getByTestId("player-root");
+    await expect(root).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("preview-build-error")).toHaveCount(0);
+    await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
+
+    await frame.getByTestId("player-canvas").click({
+      position: { x: 200, y: 200 },
+      force: true,
+    });
+
+    const iframe = page.getByTestId("preview-build-iframe");
+    await expect
+      .poll(
+        async () =>
+          iframe.evaluate((el) => {
+            const win = (el as HTMLIFrameElement).contentWindow as {
+              __babylonslateAudioStats?: { unlocked: boolean; voices: number };
+            } | null;
+            return win?.__babylonslateAudioStats ?? null;
+          }),
+        { timeout: 15_000 },
+      )
+      .toEqual(expect.objectContaining({ unlocked: true, voices: expect.any(Number) }));
+    await expect
+      .poll(
+        async () =>
+          iframe.evaluate((el) => {
+            const win = (el as HTMLIFrameElement).contentWindow as {
+              __babylonslateAudioStats?: { voices: number };
+            } | null;
+            return win?.__babylonslateAudioStats?.voices ?? 0;
+          }),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(0);
+
+    await page.getByTestId("preview-build-close").click();
+    await expect(page.getByTestId("preview-build-overlay")).toHaveCount(0);
   });
 });

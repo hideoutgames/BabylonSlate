@@ -20,6 +20,7 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setShowBounds",
   "setShowCollision",
   "setShowNav",
+  "setShowAudioDebug",
   "debugColliders",
   "assignParticle",
   "setParticlePlaying",

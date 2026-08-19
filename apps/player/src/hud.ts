@@ -1,5 +1,11 @@
 import { snapshotTickIndex } from "@babylonslate/bridge";
-import { drawCallCeilingWarning } from "@babylonslate/render";
+import {
+  audioDebugOverlayText,
+  audioStats,
+  drawCallCeilingWarning,
+  PLAY_AUDIO_UNLOCK_HINT,
+  shouldShowPlayAudioUnlockHint,
+} from "@babylonslate/render";
 
 export type PlayerHudStats = {
   ticks: number;
@@ -71,9 +77,46 @@ export function mountPlayerHud(
   return { setStats };
 }
 
+export function mountPlayerDebuggerOverlays(
+  parent: HTMLElement,
+  options: { bundleDebugger: boolean },
+): () => void {
+  if (!options.bundleDebugger) return () => {};
+  const debugEl = document.createElement("pre");
+  debugEl.dataset.testid = "audio-debug-overlay";
+  debugEl.style.cssText =
+    "position:fixed;bottom:8px;right:8px;margin:0;max-width:28rem;max-height:12rem;overflow:hidden;color:#fff;font:12px/1.4 ui-monospace,monospace;pointer-events:none;white-space:pre;background:rgba(0,0,0,0.55);padding:8px;border-radius:6px;";
+  const hint = document.createElement("p");
+  hint.dataset.testid = "play-audio-unlock-hint";
+  hint.style.cssText =
+    "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);margin:0;color:#fff;font:12px/1.4 ui-sans-serif,system-ui,sans-serif;pointer-events:none;display:none;";
+  parent.appendChild(hint);
+  let raf = 0;
+  const tick = () => {
+    const debugText = audioDebugOverlayText(audioStats);
+    if (debugText === null) {
+      debugEl.remove();
+      debugEl.textContent = "";
+    } else {
+      debugEl.textContent = debugText;
+      if (!debugEl.parentNode) parent.appendChild(debugEl);
+    }
+    const showHint = shouldShowPlayAudioUnlockHint(audioStats);
+    hint.style.display = showHint ? "block" : "none";
+    hint.textContent = showHint ? PLAY_AUDIO_UNLOCK_HINT : "";
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  return () => {
+    cancelAnimationFrame(raf);
+    debugEl.remove();
+    hint.remove();
+  };
+}
+
 export function unlockAudioOnFirstGesture(
   unlock: () => void,
-  target: Pick<EventTarget, "addEventListener" | "removeEventListener"> = globalThis as EventTarget,
+  target: Pick<EventTarget, "addEventListener" | "removeEventListener">,
 ): () => void {
   const handler = () => {
     unlock();

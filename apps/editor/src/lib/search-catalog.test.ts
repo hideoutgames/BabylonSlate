@@ -12,9 +12,10 @@ describe("search catalog class ids", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("WidgetComponent");
   });
 
-  it("advertises AudioComponent once it is addable", () => {
+  it("advertises Audio, Skybox, and Particle once they are addable", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("AudioComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("SkyboxComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("ParticleComponent");
   });
 
   it("still indexes shipped engine classes", () => {

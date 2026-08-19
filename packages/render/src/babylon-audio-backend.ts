@@ -52,6 +52,7 @@ function engineAudioContext(engine: AudioEngineV2): AudioContext | null {
  */
 export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private engine: AudioEngineV2 | null = null;
+  private creating: Promise<AudioEngineV2> | null = null;
   private reverbBus: AudioBus | null = null;
   private reverbGraph: ParametricReverbGraph | null = null;
   private audioContext: AudioContext | null = null;
@@ -60,14 +61,21 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private readonly muffleSends = new Map<string, GainNode>();
   private muffleFilter: BiquadFilterNode | null = null;
   private unlocked = false;
+  private paused = false;
   onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   isUnlocked(): boolean {
     return this.unlocked;
   }
 
+  async warmAsync(): Promise<void> {
+    await this.ensureEngine();
+  }
+
   async unlockAsync(): Promise<void> {
-    const engine = await this.ensureEngine();
+    this.resumeAudioContext();
+    const engine = this.engine ?? (await this.ensureEngine());
+    this.resumeAudioContext();
     await engine.unlockAsync();
     this.unlocked = true;
   }
@@ -134,6 +142,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       this.onVoiceEnded?.(request.voiceId);
     });
     sound.play();
+    if (this.paused) this.pauseSound(sound);
   }
 
   stop(voiceId: string): void {
@@ -217,6 +226,21 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     send.gain.value = amount;
   }
 
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    let usedSoundPause = false;
+    for (const sound of this.voices.values()) {
+      if (paused) usedSoundPause = this.pauseSound(sound) || usedSoundPause;
+      else usedSoundPause = this.resumeSound(sound) || usedSoundPause;
+    }
+    if (usedSoundPause) return;
+    const ctx = this.audioContext;
+    if (!ctx) return;
+    if (paused) void ctx.suspend();
+    else this.resumeAudioContext();
+  }
+
   dispose(): void {
     for (const voiceId of [...this.voices.keys()]) {
       try {
@@ -253,12 +277,53 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       /* keep tearing down */
     }
     this.engine = null;
+    this.creating = null;
     this.audioContext = null;
     this.unlocked = false;
+    this.paused = false;
+  }
+
+  private resumeAudioContext(): void {
+    const ctx = this.audioContext;
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      void ctx.resume();
+    }
+  }
+
+  private pauseSound(sound: StaticSound): boolean {
+    if (typeof sound.pause !== "function") return false;
+    try {
+      sound.pause();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private resumeSound(sound: StaticSound): boolean {
+    if (typeof sound.resume !== "function") return false;
+    try {
+      sound.resume();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async ensureEngine(): Promise<AudioEngineV2> {
     if (this.engine) return this.engine;
+    if (this.creating) return this.creating;
+    this.creating = this.createEngine();
+    try {
+      this.engine = await this.creating;
+      return this.engine;
+    } finally {
+      this.creating = null;
+    }
+  }
+
+  private async createEngine(): Promise<AudioEngineV2> {
     const engine = await CreateAudioEngineAsync({
       disableDefaultUI: true,
       resumeOnInteraction: false,
@@ -276,7 +341,6 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       );
     }
     this.attachParametricReverb(engine);
-    this.engine = engine;
     return engine;
   }
 

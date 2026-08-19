@@ -46,6 +46,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings, not OS threads. |
 | `showcollision` / `showbounds` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/polylines). Skip helper/debug meshes. |
 | `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene with the session navmesh bytes. |
+| `showaudiodebug` | yes | **yes** | DOM voice overlay from `AudioService` `debugVoices` (`setShowAudioDebug`). Flag default is **on**. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
 | `inspect` | yes | **yes** | Prints inspect-snapshot variables. No arg uses overlay Inspector selection when known, else usage. |
 | `dumplog` | yes | **yes** | Returns the log-ring messages. |
@@ -143,11 +144,12 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
 | `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/polylines from `listDebugColliders()`; not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. |
 | `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene when a nav chunk is loaded. |
+| `showaudiodebug [on\|off]` | DOM overlay of playing voices (guid, clip, gain, pitch, loop, spatial, distance, radii, inside radius). Empty list: `No playing voices`. Off unmounts the overlay. Polls with `requestAnimationFrame` so it still draws while sim is paused. |
 | `dumpactors` | One line per actor: name, class, guid, world position. |
 | `inspect [name\|guid]` | Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |
 | `dumplog` / `snapshot start` / `snapshot stop` | Unchanged. |
 
-`showcollision` / `showbounds` / `wireframe` / `shownav` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
+`showcollision` / `showbounds` / `wireframe` / `shownav` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
 
 ### Intentionally not engine commands
 
@@ -169,7 +171,7 @@ Worker→main commands:
 | `setRenderQuality` / `setResolutionScale` / `setFrameCap` | worker → main | Play view hardware scaling + scheduler cap |
 | `setGlobalVolume` | already existed | `volume` console command reuses it |
 | `setFreeCam` | worker → main | Attach/detach debug camera, input steal |
-| `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` | worker → main | Play-scene overlays |
+| `setWireframe` / `setShowBounds` / `setShowCollision` / `setShowNav` / `setShowAudioDebug` | worker → main | Play-scene overlays; audio debug is a DOM overlay, not Babylon GUI |
 | `debugColliders` | worker → main | Collision primitives while `showcollision` is on |
 | `setShowFps` / `setStat` | worker → main | Stats HUD open + row |
 
