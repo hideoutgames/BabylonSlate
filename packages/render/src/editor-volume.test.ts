@@ -1,4 +1,4 @@
-import { Mesh, StandardMaterial } from "@babylonjs/core";
+import { StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
