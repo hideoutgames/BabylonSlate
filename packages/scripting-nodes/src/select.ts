@@ -118,6 +118,8 @@ export const selectNodes: NodeDefinition[] = [
             titleCaseSelectMember(member.name),
             "in",
             RESOLVING_WILDCARD,
+            "data",
+            true,
           ),
         ),
         pin("out", "Out", "out", RESOLVING_WILDCARD),

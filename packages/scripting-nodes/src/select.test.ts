@@ -15,6 +15,7 @@ import {
   enumRef,
   pinTypeKey,
   resolveWildcardPinTypes,
+  validateGraphs,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -139,6 +140,48 @@ describe("select nodes", () => {
     expect(option.type).toEqual(RESOLVING_WILDCARD);
     expect(out.type).toEqual(RESOLVING_WILDCARD);
     expect(option.type).toEqual(out.type);
+    expect(option.optional).toBe(true);
+    expect(pins.find((pin) => pin.id === selectOptionPinId("Red"))?.optional).toBe(
+      true,
+    );
+    expect(pins.find((pin) => pin.id === "index")?.optional).toBeFalsy();
+  });
+
+  it("does not warn pin.missing_input for unconnected enum Select options", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: registry.get("flow.event.beginPlay")!.pins({}),
+          properties: {},
+        },
+        node(registry, "sel", "enum.select", team),
+        node(registry, "print", "debug.print", {}),
+      ],
+      edges: [
+        {
+          id: "e0",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "print",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e1",
+          sourceNodeId: "sel",
+          sourcePinId: "out",
+          targetNodeId: "print",
+          targetPinId: "value",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], { assetGuid: "a" }, { registry });
+    expect(diags.filter((d) => d.code === "pin.missing_input")).toEqual([]);
   });
 
   it("binds enum Select default index to the first member", () => {
