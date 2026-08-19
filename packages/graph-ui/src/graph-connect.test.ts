@@ -246,6 +246,55 @@ describe("filterPaletteForPin", () => {
       "variables.set:Hero:Team",
     ]);
   });
+
+  it("prefers Make String and Make Int for matching literal pins", () => {
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const makeString: PaletteNode = {
+      id: "literal.makeString",
+      title: "Make String",
+      category: "literal",
+      pins: [stringIn, stringOut],
+    };
+    const makeInt: PaletteNode = {
+      id: "literal.makeInt",
+      title: "Make Int",
+      category: "literal",
+      pins: [
+        {
+          id: "in",
+          name: "In",
+          kind: "data",
+          direction: "in",
+          type: { kind: "int" },
+        },
+        {
+          id: "out",
+          name: "Out",
+          kind: "data",
+          direction: "out",
+          type: { kind: "int" },
+        },
+      ],
+    };
+    const intOut: SerializedPin = {
+      id: "value",
+      name: "Value",
+      kind: "data",
+      direction: "out",
+      type: { kind: "int" },
+    };
+    expect(
+      filterPaletteForPin([log, makeString], stringOut, assignable).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["literal.makeString", "debug.log"]);
+    expect(
+      filterPaletteForPin([log, makeInt], intOut, assignable).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["literal.makeInt"]);
+  });
 });
 
 describe("oppositeSideHandleId", () => {
