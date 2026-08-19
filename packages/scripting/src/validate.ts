@@ -52,29 +52,29 @@ function buildAdjacency(graph: LogicGraph): {
   return { execOut, dataDeps };
 }
 
-function hasCycle(adj: Map<string, string[]>): string | null {
+function hasCycle(
+  adj: Map<string, string[]>,
+  roots: ReadonlySet<string>,
+): string | null {
   const visiting = new Set<string>();
   const visited = new Set<string>();
-  const stack: string[] = [];
 
   function dfs(id: string): string | null {
     if (visiting.has(id)) return id;
     if (visited.has(id)) return null;
     visiting.add(id);
-    stack.push(id);
     for (const next of adj.get(id) ?? []) {
       const hit = dfs(next);
       if (hit) return hit;
     }
-    stack.pop();
     visiting.delete(id);
     visited.add(id);
     return null;
   }
 
-  for (const id of adj.keys()) {
+  for (const id of roots) {
     const hit = dfs(id);
-    if (hit) return hit;
+    if (hit) return roots.has(hit) ? hit : id;
   }
   return null;
 }
@@ -82,11 +82,12 @@ function hasCycle(adj: Map<string, string[]>): string | null {
 function validateStructural(
   graph: LogicGraph,
   ctx: TypeContext,
+  compiled: ReadonlySet<string>,
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
   const { execOut, dataDeps } = buildAdjacency(graph);
 
-  const execCycle = hasCycle(execOut);
+  const execCycle = hasCycle(execOut, compiled);
   if (execCycle) {
     out.push(
       diagnostic({
@@ -99,7 +100,7 @@ function validateStructural(
     );
   }
 
-  const dataCycle = hasCycle(dataDeps);
+  const dataCycle = hasCycle(dataDeps, compiled);
   if (dataCycle) {
     out.push(
       diagnostic({
@@ -776,7 +777,7 @@ export function validateGraphs(
     const compiled = compiledNodeIds(graph);
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
-    diagnostics.push(...keep(validateStructural(graph, ctx)));
+    diagnostics.push(...keep(validateStructural(graph, ctx, compiled)));
     diagnostics.push(...keep(validatePinTyping(graph, ctx)));
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));

@@ -1203,6 +1203,25 @@ describe("validateGraphs", () => {
     const diags = validateGraphs([graph], { assetGuid: "a" });
     expect(diags.some((d) => d.code === "pin.missing_input")).toBe(false);
     expect(diags.some((d) => d.code === "exec.unreachable")).toBe(false);
+
+    graph.nodes.unshift({
+      id: "begin",
+      typeId: "flow.event.beginPlay",
+      position: { x: -200, y: 0 },
+      pins: [pin("execOut", "then", "out", EXEC)],
+      properties: {},
+    });
+    graph.edges.push({
+      id: "e0",
+      sourceNodeId: "begin",
+      sourcePinId: "execOut",
+      targetNodeId: "print",
+      targetPinId: "execIn",
+    });
+    const live = validateGraphs([graph], { assetGuid: "a" });
+    expect(
+      live.some((d) => d.code === "pin.missing_input" && d.nodeId === "print"),
+    ).toBe(true);
   });
 
   it("does not diagnose an exec cycle that is not compiled", () => {
@@ -1314,6 +1333,78 @@ describe("validateGraphs", () => {
         (d) => d.code === "exec.cycle",
       ),
     ).toBe(true);
+  });
+
+  it("still diagnoses a compiled exec cycle when a leftover island also cycles", () => {
+    const execLog = (id: string, x: number, y: number): GraphNode => ({
+      id,
+      typeId: "debug.log",
+      position: { x, y },
+      pins: [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+      ],
+      properties: {},
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        execLog("deadA", 0, 80),
+        execLog("deadB", 200, 80),
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        execLog("liveA", 200, 0),
+        execLog("liveB", 400, 0),
+      ],
+      edges: [
+        {
+          id: "dead1",
+          sourceNodeId: "deadA",
+          sourcePinId: "execOut",
+          targetNodeId: "deadB",
+          targetPinId: "execIn",
+        },
+        {
+          id: "dead2",
+          sourceNodeId: "deadB",
+          sourcePinId: "execOut",
+          targetNodeId: "deadA",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e0",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "liveA",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e1",
+          sourceNodeId: "liveA",
+          sourcePinId: "execOut",
+          targetNodeId: "liveB",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "liveB",
+          sourcePinId: "execOut",
+          targetNodeId: "liveA",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const cycle = validateGraphs([graph], { assetGuid: "a" }).find(
+      (d) => d.code === "exec.cycle",
+    );
+    expect(cycle).toBeDefined();
+    expect(["liveA", "liveB", "begin"]).toContain(cycle?.nodeId);
   });
 
   it("still diagnoses a Branch false arm reachable from Begin Play", () => {
