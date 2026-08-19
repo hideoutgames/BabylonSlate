@@ -9,6 +9,7 @@ import { actorNodes } from "./actor";
 import { componentNodes } from "./component";
 import { transformNodes } from "./transform";
 import { physicsNodes } from "./physics";
+import { registerPhysicsValidationRules } from "./physics";
 import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
@@ -143,6 +144,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
 }
 
 export function createDefaultNodeRegistry(): NodeRegistry {
+  registerPhysicsValidationRules();
   const registry = new NodeRegistry();
   registry.registerAll(allNodeDefinitions());
   return registry;

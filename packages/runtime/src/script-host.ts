@@ -88,6 +88,11 @@ export interface ScriptHostServices {
   reportCommand?(success: boolean, output: string): void;
   /** Debugger loop guard; omitted in release players. */
   checkInfiniteLoop?(): void;
+  /**
+   * Resolve a backend physics actor id to a live Actor. Missing / destroyed
+   * actors must return undefined so query nodes never surface string ids.
+   */
+  findActor?(actorId: string): Actor | undefined;
   lineTrace?(start: Vec3, end: Vec3): HitResult;
   sphereOverlap?(center: Vec3, radius: number): OverlapResult;
   shapeSweep?(
@@ -301,9 +306,13 @@ export interface ScriptContext {
     location: Vec3 | null;
     normal: Vec3 | null;
     distance: number;
-    actor: string | null;
+    actor: Actor | null;
   };
-  sphereOverlap(center: Vec3, radius: number, channel?: string): OverlapResult;
+  sphereOverlap(
+    center: Vec3,
+    radius: number,
+    channel?: string,
+  ): OverlapResult & { actors: Actor[] };
   shapeSweep(
     shape: ColliderShape,
     start: PhysicsTransform,
@@ -314,7 +323,7 @@ export interface ScriptContext {
     location: Vec3 | null;
     normal: Vec3 | null;
     distance: number;
-    actor: string | null;
+    actor: Actor | null;
   };
   addImpulse(
     actor: BObject | null | undefined,
@@ -854,18 +863,24 @@ export class ScriptHost {
           bodyId: null,
         };
         return {
-          hit: hit.hit,
-          location: hit.location,
-          normal: hit.normal,
-          distance: hit.distance,
-          actor: hit.actorId,
+          hit: hit.hit === true,
+          location: hit.location ?? null,
+          normal: hit.normal ?? null,
+          distance: hit.distance ?? 0,
+          actor: resolveLiveActor(services, hit.actorId),
         };
       },
-      sphereOverlap: (center, radius) =>
-        services.sphereOverlap?.(center, radius) ?? {
+      sphereOverlap: (center, radius) => {
+        const overlap = services.sphereOverlap?.(center, radius) ?? {
           actorIds: [],
           bodyIds: [],
-        },
+        };
+        return {
+          actorIds: overlap.actorIds,
+          bodyIds: overlap.bodyIds,
+          actors: resolveLiveActors(services, overlap.actorIds),
+        };
+      },
       shapeSweep: (shape, start, end) => {
         const hit = services.shapeSweep?.(shape, start, end) ?? {
           hit: false,
@@ -876,11 +891,11 @@ export class ScriptHost {
           bodyId: null,
         };
         return {
-          hit: hit.hit,
-          location: hit.location,
-          normal: hit.normal,
-          distance: hit.distance,
-          actor: hit.actorId,
+          hit: hit.hit === true,
+          location: hit.location ?? null,
+          normal: hit.normal ?? null,
+          distance: hit.distance ?? 0,
+          actor: resolveLiveActor(services, hit.actorId),
         };
       },
       addImpulse: (actor, impulse, strength) => {
@@ -1008,6 +1023,31 @@ export class ScriptHost {
 
 function asActor(target: unknown): Actor | null {
   return target instanceof Actor ? target : null;
+}
+
+function resolveLiveActor(
+  services: ScriptHostServices,
+  actorId: string | null | undefined,
+): Actor | null {
+  if (!actorId) return null;
+  const actor = services.findActor?.(actorId);
+  if (!actor || actor.destroyed) return null;
+  return actor;
+}
+
+function resolveLiveActors(
+  services: ScriptHostServices,
+  actorIds: readonly string[],
+): Actor[] {
+  const seen = new Set<string>();
+  const actors: Actor[] = [];
+  for (const id of actorIds) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const actor = resolveLiveActor(services, id);
+    if (actor) actors.push(actor);
+  }
+  return actors;
 }
 
 function actorOf(target: unknown): Actor | null {

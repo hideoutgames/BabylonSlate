@@ -662,6 +662,11 @@ class InProcessRuntime implements RuntimeDriver {
       reportError: (error) => {
         this.reportError(error);
       },
+      findActor: (actorId) => {
+        const actor = this.world.findActor(actorId);
+        if (!actor || actor.destroyed) return undefined;
+        return actor;
+      },
       lineTrace: (start, end) => this.physicsSync.lineTrace(start, end),
       sphereOverlap: (center, radius) =>
         this.physicsSync.sphereOverlap(center, radius),
