@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
-import { openTestProject } from "./open-test-project";
+import { openTestProject, waitForSceneViewportReady } from "./open-test-project";
 
 async function openClassAndOverflowClosableTabs(page: Page) {
   await page
@@ -39,6 +39,7 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     await expect(page.getByTestId("viewport-panel")).toBeVisible({
       timeout: 15_000,
     });
+    await waitForSceneViewportReady(page);
   });
 
   test("defaults to user-select none on the shell", async ({ page }) => {

@@ -117,6 +117,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     progress: number;
     phase: SceneViewportLoadPhase;
   }>({ open: false, progress: 0, phase: "Collecting Assets" });
+  const [sceneReady, setSceneReady] = useState(false);
 
   const { menu, closeMenu, bind } = useContextMenu({
     items: [
@@ -223,6 +224,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     engineGenerationRef.current += 1;
+    setSceneReady(false);
 
     const handle = createEngine(canvas, {
       editor: true,
@@ -423,6 +425,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
             progress: 100,
             phase: "Loading Models",
           });
+          setSceneReady(true);
         }
       }
     })();
@@ -611,6 +614,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       ref={panelRef}
       className="relative flex h-full w-full flex-col bg-background"
       data-testid="viewport-panel"
+      data-scene-ready={sceneReady ? "true" : "false"}
       {...bind}
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">

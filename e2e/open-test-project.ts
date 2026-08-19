@@ -149,6 +149,17 @@ export async function openAssetFromBrowser(
   await tile.dblclick();
 }
 
+export async function waitForSceneViewportReady(page: Page): Promise<void> {
+  await expect(page.getByTestId("viewport-canvas")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("viewport-panel")).toHaveAttribute(
+    "data-scene-ready",
+    "true",
+    { timeout: 30_000 },
+  );
+}
+
 export async function openMainScene(page: Page): Promise<void> {
   const sceneTab = page.locator(
     '[data-testid="document-tab"][data-document-kind="scene"]',
@@ -162,7 +173,5 @@ export async function openMainScene(page: Page): Promise<void> {
     await openAssetFromBrowser(page, "assets/main.scene.babasset");
   }
   await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
-  await expect(page.getByTestId("viewport-canvas")).toBeVisible({
-    timeout: 15_000,
-  });
+  await waitForSceneViewportReady(page);
 }
