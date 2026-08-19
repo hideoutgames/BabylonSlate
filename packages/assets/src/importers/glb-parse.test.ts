@@ -20,6 +20,7 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.materials).toHaveLength(1);
     expect(browse!.materials[0]!.name).toBe("HeroMat");
     expect(browse!.materials[0]!.albedoImageIndex).toBe(0);
+    expect(browse!.materials[0]!.unlit).toBe(false);
     expect(browse!.images).toHaveLength(1);
     expect(browse!.images[0]!.bytes.byteLength).toBeGreaterThan(0);
     expect(browse!.animations[0]!.name).toBe("Walk");
@@ -47,6 +48,26 @@ describe("parseGlbForBrowse", () => {
     expect(browse).not.toBeNull();
     expect(browse!.images[0]!.bytes.byteLength).toBeGreaterThan(0);
     expect(browse!.materials[0]!.albedoImageIndex).toBe(0);
+    expect(browse!.materials[0]!.unlit).toBe(false);
+  });
+
+  it("marks KHR_materials_unlit as unlit", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        materials: [
+          {
+            name: "Toon",
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+            extensions: { KHR_materials_unlit: {} },
+          },
+        ],
+        textures: [{ source: 0 }],
+        images: [],
+      }),
+    );
+    expect(browse).not.toBeNull();
+    expect(browse!.materials[0]!.unlit).toBe(true);
   });
 
   it("rejects non-GLB bytes", () => {

@@ -5,9 +5,15 @@ import {
   NullEngine,
   RenderTargetTexture,
   Scene,
+  StandardMaterial,
   Vector3,
+  VertexBuffer,
 } from "@babylonjs/core";
 import { MATERIAL_PREVIEW_MESHES } from "@babylonslate/shader-graph";
+import { embedGlbExternalImages } from "@babylonslate/assets";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
   aimPreviewCameraAtMesh,
@@ -16,6 +22,7 @@ import {
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
 } from "./material-preview";
+import { visualMeshes } from "./visual-meshes";
 
 type Listener = (event: Event) => void;
 
@@ -67,14 +74,18 @@ class FakeCanvas {
     return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight };
   }
 
+  capturedImages: Array<{ data: Uint8ClampedArray }> = [];
+
   getContext(): {
     clearRect: () => void;
-    putImageData: () => void;
+    putImageData: (image: { data: Uint8ClampedArray }) => void;
     createImageData: (width: number, height: number) => ImageData;
   } {
     return {
       clearRect: () => {},
-      putImageData: () => {},
+      putImageData: (image) => {
+        this.capturedImages.push(image);
+      },
       createImageData: (width, height) =>
         ({ data: new Uint8ClampedArray(width * height * 4), width, height }) as ImageData,
     };
@@ -144,9 +155,39 @@ describe("material preview scene", () => {
   it("falls back to a cube when a custom mesh has no bytes", () => {
     const scene = new Scene(engine());
     disposers.push(() => scene.dispose());
-    const mesh = createMaterialPreviewMesh(scene, "custom", null);
+    const mesh = createMaterialPreviewMesh(scene, "custom");
     expect(mesh.getTotalVertices()).toBe(24);
     expect(mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
+  });
+
+  it("loads the full custom Model hierarchy with UVs and paints every part", async () => {
+    const dir = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../engine-content/kenney-assets/Mannequin",
+    );
+    const bytes = embedGlbExternalImages(
+      new Uint8Array(readFileSync(join(dir, "mannequin.glb"))),
+      {
+        "Textures/texture-d.png": new Uint8Array(
+          readFileSync(join(dir, "mannequin.png")),
+        ),
+      },
+    );
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    await host.setMesh("custom", bytes);
+    const visuals = visualMeshes(host.mesh);
+    expect(visuals.length).toBeGreaterThan(1);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+    }
+    const preview = new StandardMaterial("preview", host.scene);
+    host.applyMaterial(preview);
+    for (const part of visuals) {
+      expect(part.material).toBe(preview);
+    }
   });
 
   it("creates a scene with a camera, lights and a mesh", () => {
@@ -158,20 +199,20 @@ describe("material preview scene", () => {
     expect(host.mesh.getTotalVertices()).toBe(24);
   });
 
-  it("swaps the primitive while keeping the applied material", () => {
+  it("swaps the primitive while keeping the applied material", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     const before = host.mesh.getTotalVertices();
-    const next = host.setMesh("sphere");
+    const next = await host.setMesh("sphere");
     expect(next.getTotalVertices()).not.toBe(before);
     expect(host.scene.meshes.length).toBe(1);
   });
 
-  it("disposes the old mesh when the primitive changes", () => {
+  it("disposes the old mesh when the primitive changes", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     const original = host.mesh;
-    host.setMesh("plane");
+    await host.setMesh("plane");
     expect(original.isDisposed()).toBe(true);
   });
 
@@ -209,12 +250,12 @@ describe("material preview scene", () => {
     expect(camera.target.z).toBeCloseTo(4);
   });
 
-  it("reframes the camera when the preview primitive changes", () => {
+  it("reframes the camera when the preview primitive changes", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     host.mesh.position.set(1.5, 0, 0);
     host.mesh.computeWorldMatrix(true);
-    const next = host.setMesh("cube");
+    const next = await host.setMesh("cube");
     next.computeWorldMatrix(true);
     const center = next.getBoundingInfo().boundingBox.centerWorld;
     expect(host.camera.target.x).toBeCloseTo(center.x);
@@ -474,6 +515,60 @@ describe("material preview presenter", () => {
     canvas.clientHeight = 0;
     presenter.present();
     expect(render).not.toHaveBeenCalled();
+  });
+
+  it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
+    const width = 320;
+    const height = 180;
+    const row = width * 4;
+    const gpu = new Uint8Array(width * height * 4);
+    for (let x = 0; x < width; x++) {
+      const bottom = x * 4;
+      gpu[bottom] = 255;
+      gpu[bottom + 3] = 255;
+      const top = (height - 1) * row + x * 4;
+      gpu[top + 2] = 255;
+      gpu[top + 3] = 255;
+    }
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(gpu);
+    disposers.push(() => readPixels.mockRestore());
+    const ImageDataStub = class {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(data: Uint8ClampedArray, width: number, height: number) {
+        this.data = data;
+        this.width = width;
+        this.height = height;
+      }
+    };
+    const previousImageData = (globalThis as { ImageData?: unknown }).ImageData;
+    (globalThis as { ImageData: unknown }).ImageData = ImageDataStub;
+    disposers.push(() => {
+      if (previousImageData) {
+        (globalThis as { ImageData: unknown }).ImageData = previousImageData;
+      } else {
+        delete (globalThis as { ImageData?: unknown }).ImageData;
+      }
+    });
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000 },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present({ force: true });
+    await vi.waitFor(() => expect(canvas.capturedImages.length).toBeGreaterThan(0));
+    const image = canvas.capturedImages[0]!;
+    expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+    expect([
+      ...image.data.subarray((height - 1) * row, (height - 1) * row + 4),
+    ]).toEqual([255, 0, 0, 255]);
   });
 
   it("clears the camera output target on dispose", () => {

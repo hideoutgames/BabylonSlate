@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { Texture } from "@babylonjs/core";
 import {
   modelMaterialGuids,
   normalizeModelPayload,
@@ -8,6 +7,7 @@ import {
   MaterialLibrary,
   ResourceCache,
   captureModelThumbnailPng,
+  getMaterialTexture,
   materialUnavailable,
 } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
@@ -63,8 +63,7 @@ export function ModelThumbnailCaptureHost() {
           resolveTexture: (guid) => {
             const data = textureBytes.get(guid);
             if (!data) return null;
-            const texture = cache.getTexture(guid, engine, data);
-            return texture instanceof Texture ? texture : null;
+            return getMaterialTexture(cache, guid, engine, data);
           },
         });
         try {

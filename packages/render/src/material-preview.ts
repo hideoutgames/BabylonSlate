@@ -1,3 +1,4 @@
+import "./gltf-loader";
 import {
   ArcRotateCamera,
   Color4,
@@ -6,13 +7,19 @@ import {
   RenderTargetTexture,
   Scene,
   Vector3,
+  type AssetContainer,
   type Engine,
+  type Material,
   type Mesh,
   type NodeMaterial,
   type PostProcess,
 } from "@babylonjs/core";
+import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
-import { createMeshFromModelBytes } from "./model-mesh";
+import { flipReadPixelsRgba } from "./flip-read-pixels";
+import { adoptLoadedHierarchy } from "./glb-anim";
+import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { applyMaterialToVisualMeshes } from "./visual-meshes";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -22,8 +29,15 @@ export function aimPreviewCameraAtMesh(
   mesh: Mesh,
 ): void {
   mesh.computeWorldMatrix(true);
-  const bounds = mesh.getBoundingInfo();
-  camera.setTarget(bounds.boundingBox.centerWorld.clone());
+  const extent = mesh.getHierarchyBoundingVectors(true);
+  const center = extent.min.add(extent.max).scale(0.5);
+  if (
+    Number.isFinite(center.x) &&
+    Number.isFinite(center.y) &&
+    Number.isFinite(center.z)
+  ) {
+    camera.setTarget(center);
+  }
 }
 
 /**
@@ -35,7 +49,6 @@ export function aimPreviewCameraAtMesh(
 export function createMaterialPreviewMesh(
   scene: Scene,
   kind: MaterialPreviewMesh,
-  customMeshBytes?: Uint8Array | null,
 ): Mesh {
   const name = MATERIAL_PREVIEW_MESH_NAME;
   switch (kind) {
@@ -55,14 +68,9 @@ export function createMaterialPreviewMesh(
       );
     case "plane":
       return MeshBuilder.CreatePlane(name, { size: 1.8 }, scene);
-    case "custom": {
-      if (customMeshBytes && customMeshBytes.byteLength > 0) {
-        const loaded = createMeshFromModelBytes(scene, name, customMeshBytes);
-        if (loaded) return loaded;
-      }
-      // Missing or invalid custom bytes return to the canonical preview shape.
+    case "custom":
+      // Hierarchy loads asynchronously in `setMesh`. Missing bytes stay a cube.
       return MeshBuilder.CreateBox(name, { size: 1.4 }, scene);
-    }
     case "sphere":
     default:
       return MeshBuilder.CreateSphere(
@@ -81,8 +89,8 @@ export interface MaterialPreviewScene {
   setMesh: (
     kind: MaterialPreviewMesh,
     customMeshBytes?: Uint8Array | null,
-  ) => Mesh;
-  applyMaterial: (material: NodeMaterial | null) => void;
+  ) => Promise<Mesh>;
+  applyMaterial: (material: Material | null) => void;
   applyPostProcess: (material: NodeMaterial | null) => void;
   dispose: () => void;
 }
@@ -136,18 +144,22 @@ export function createMaterialPreviewScene(
   );
   fill.intensity = 0.35;
 
-  let mesh = createMaterialPreviewMesh(
-    scene,
-    options.mesh ?? "cube",
-    options.customMeshBytes,
-  );
+  let mesh = createMaterialPreviewMesh(scene, options.mesh ?? "cube");
   aimPreviewCameraAtMesh(camera, mesh);
   let postProcess: PostProcess | null = null;
+  let currentMaterial: Material | null = mesh.material;
+  let customContainer: AssetContainer | null = null;
+  let meshGeneration = 0;
 
   const disposePostProcess = () => {
     if (!postProcess) return;
     postProcess.dispose(camera);
     postProcess = null;
+  };
+
+  const disposeCustomContainer = () => {
+    customContainer?.dispose();
+    customContainer = null;
   };
 
   const host: MaterialPreviewScene = {
@@ -156,16 +168,47 @@ export function createMaterialPreviewScene(
     get mesh() {
       return mesh;
     },
-    setMesh: (kind, customMeshBytes) => {
-      const material = mesh.material;
+    setMesh: async (kind, customMeshBytes) => {
+      const generation = ++meshGeneration;
+      disposeCustomContainer();
       mesh.dispose();
-      mesh = createMaterialPreviewMesh(scene, kind, customMeshBytes);
-      mesh.material = material;
+      mesh = createMaterialPreviewMesh(scene, kind);
+      if (
+        kind === "custom" &&
+        customMeshBytes &&
+        isGltfModelBytes(customMeshBytes)
+      ) {
+        mesh.visibility = 0;
+        try {
+          const container = await LoadAssetContainerAsync(
+            customMeshBytes,
+            scene,
+            {
+              pluginExtension: gltfLoaderExtension(customMeshBytes),
+              name: "material-preview-custom.glb",
+            },
+          );
+          if (generation !== meshGeneration) {
+            container.dispose();
+            return mesh;
+          }
+          container.addAllToScene();
+          adoptLoadedHierarchy(mesh, container);
+          customContainer = container;
+        } catch {
+          if (generation === meshGeneration) {
+            mesh.visibility = 1;
+          }
+        }
+      }
+      if (generation !== meshGeneration) return mesh;
+      applyMaterialToVisualMeshes(mesh, currentMaterial);
       aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
     applyMaterial: (material) => {
-      mesh.material = material;
+      currentMaterial = material;
+      applyMaterialToVisualMeshes(mesh, material);
     },
     applyPostProcess: (material) => {
       disposePostProcess();
@@ -173,10 +216,19 @@ export function createMaterialPreviewScene(
       postProcess = material.createPostProcess(camera) ?? null;
     },
     dispose: () => {
+      meshGeneration += 1;
       disposePostProcess();
+      disposeCustomContainer();
       scene.dispose();
     },
   };
+  if (
+    (options.mesh ?? "cube") === "custom" &&
+    options.customMeshBytes &&
+    isGltfModelBytes(options.customMeshBytes)
+  ) {
+    void host.setMesh("custom", options.customMeshBytes);
+  }
   return host;
 }
 
@@ -398,7 +450,7 @@ export function createMaterialPreviewPresenter(
         const bytes =
           buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
         ctx.putImageData(
-          new ImageData(new Uint8ClampedArray(bytes), width, height),
+          new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
           0,
           0,
         );
