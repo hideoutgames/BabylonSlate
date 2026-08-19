@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetUiHostStats } from "@babylonslate/render";
-import { pinLayout, stretchLayout } from "@babylonslate/ui-runtime";
+import { pinLayout } from "@babylonslate/ui-runtime";
 import { createUiDesignerSession } from "./ui-designer-session";
 
 function createHarness() {
