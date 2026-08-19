@@ -1468,7 +1468,7 @@ test.describe("P9 content systems", () => {
     await page.getByTestId("ui-widget-catalog-search").fill("Panel");
     await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
     await expect(
-      hudWorkspace.locator('[data-testid*="/button-"]'),
+      hudWorkspace.locator('[data-testid^="ui-widget-"][data-testid*="/button-"]'),
     ).toBeVisible();
     await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });
