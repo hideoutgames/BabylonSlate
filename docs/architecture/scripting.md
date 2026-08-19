@@ -320,7 +320,7 @@ The `ctx` handed to compiled code copies the world's `TickContext`: `self`, `del
 
 ### Codegen invariants
 
-- Impure node output slots are declared once at the top of each entry point, never inside a branch body — a node reachable from two `Sequence` outputs or both `Branch` arms must not redeclare them, and downstream reads must stay in scope.
+- Impure node output slots are declared once at the top of each entry point, never inside a branch body — a node reachable from two `Sequence` outputs or both `Branch` arms must not redeclare them, and downstream reads must stay in scope. Slot temps are named from the pin **id** (`_n_<node>_<id>`), not the Title Case display name, so writers (`ctx.output`) and pure readers stay on the same variable.
 - Editor / debugger compiles (`compileGraphDocuments`, `instrumentInfiniteLoops: true`) prepend `ctx.checkInfiniteLoop();` to each impure exec emit and to generated `for` / `while` bodies (for example the gamepad connect loop). Release `compileGraphDocumentsForExport` leaves the flag off — no checks in shipped JS. Call Function recursion shares the same per-tick budget.
 - `ctx.checkInfiniteLoop` is always a function on `ScriptContext` (no-op when the debugger guard is missing or disabled) so mixed or stale instrumented scripts cannot throw `is not a function`.
 - A node that emits `await` must call `ctx.requestAsync()` (or declare `latent: true`) so the entry point is emitted `async`.

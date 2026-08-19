@@ -293,7 +293,8 @@ export function compileGraph(
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
-        const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
+        const slotKey = p?.id ?? pinName;
+        const name = `_n_${jsIdent(node.id)}_${jsIdent(slotKey)}`;
         if (p) exprCache.set(`${node.id}:${p.id}`, name);
         return name;
       },
@@ -705,7 +706,8 @@ export function compileTransitionRuleGraph(
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
-        const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
+        const slotKey = p?.id ?? pinName;
+        const name = `_n_${jsIdent(node.id)}_${jsIdent(slotKey)}`;
         if (p) exprCache.set(`${node.id}:${p.id}`, name);
         return name;
       },
