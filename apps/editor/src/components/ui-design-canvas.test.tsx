@@ -530,8 +530,21 @@ describe("UiDesignCanvas preview fallback", () => {
     const surface = mockSurface();
     createUiSurfaceMock.mockReturnValue(surface);
     const props = hudCanvasProps();
-    const { adtIdeal: _ignored, ...rest } = props;
-    render(<UiDesignCanvas {...rest} />);
+    render(
+      <UiDesignCanvas
+        ui={props.ui}
+        viewport={props.viewport}
+        controls={props.controls}
+        selectedId={props.selectedId}
+        view={props.view}
+        previewScale={props.previewScale}
+        bitmapScale={props.bitmapScale}
+        sharedEngine={props.sharedEngine}
+        onSelect={props.onSelect}
+        onViewChange={props.onViewChange}
+        onLayoutChange={props.onLayoutChange}
+      />,
+    );
     expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
     expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
   });
