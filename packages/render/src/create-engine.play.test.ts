@@ -952,6 +952,8 @@ describe("Play createEngine view", () => {
     resize.mockClear();
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
+    expect(canvas.width).toBe(256);
+    expect(canvas.height).toBe(256);
   });
 
   it("forwards Prefab RTT canvas pointers into the scene for gizmo drags", () => {

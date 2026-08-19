@@ -73,6 +73,17 @@ describe("createRttCanvasPresent", () => {
     present.dispose();
   });
 
+  it("clears the 2D canvas bitmap on resize without throwing", () => {
+    const { scene, canvas, fake } = host();
+    fake.width = 32;
+    fake.height = 16;
+    const present = createRttCanvasPresent(scene, canvas);
+    present.clear();
+    expect(fake.width).toBe(128);
+    expect(fake.height).toBe(64);
+    present.dispose();
+  });
+
   it("blits readPixels into the 2D canvas", async () => {
     const { scene, camera, canvas, fake } = host();
     const ImageDataStub = class {

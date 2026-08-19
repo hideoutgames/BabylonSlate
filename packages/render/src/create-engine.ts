@@ -898,6 +898,8 @@ export function createEngine(
   const resize = () => {
     if (!presentRtt) {
       engine.resize();
+    } else {
+      rttPresent?.clear();
     }
     const size = presentRtt
       ? rttPresent?.canvasSize() ?? { width: 1, height: 1 }

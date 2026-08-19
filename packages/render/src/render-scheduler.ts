@@ -14,7 +14,7 @@ function nowMs(): number {
 /**
  * Dirty-driven render scheduler with refcounted continuous-render leases.
  * Visible editor viewports always render continuously plus a frame cap; freeze
- * when paused, not visible, or obstructed.
+ * when paused, not visible, obstructed, or resizing.
  */
 export class RenderScheduler {
   private dirty = false;
@@ -23,6 +23,7 @@ export class RenderScheduler {
   private paused = false;
   private visible = true;
   private obstructed = false;
+  private resizing = false;
   private frameCap = Number.POSITIVE_INFINITY;
   private lastRenderAt: number | null = null;
   private renderedFrames = 0;
@@ -68,13 +69,17 @@ export class RenderScheduler {
     this.obstructed = value;
   }
 
+  setResizing(value: boolean): void {
+    this.resizing = value;
+  }
+
   setFrameCap(fps: number): void {
     this.frameCap = fps > 0 ? fps : 60;
   }
 
   shouldRender(now: number = nowMs()): boolean {
     if (this.paused) return false;
-    if (!this.visible || this.obstructed) return false;
+    if (!this.visible || this.obstructed || this.resizing) return false;
     const wants =
       this.alwaysRender || this.continuous > 0 || this.dirty;
     if (!wants) return false;

@@ -130,11 +130,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       setPostProcessingEnabled: (enabled) =>
         handle.setPostProcessingEnabled(enabled),
     });
-    const resizeIfSized = createCanvasResizeGuard(() => handle.resize());
+    const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
+      onHoldChange: (holding) => handle.scheduler.setResizing(holding),
+    });
     resizeIfSized(canvas);
     const resizeObserver = new ResizeObserver(() => resizeIfSized(canvas));
     resizeObserver.observe(canvas);
     return () => {
+      resizeIfSized.dispose();
       resizeObserver.disconnect();
       detachRenderGate();
       unregisterScheduler();

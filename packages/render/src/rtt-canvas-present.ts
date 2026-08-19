@@ -6,6 +6,8 @@ export type RttCanvasPresent = {
   bind: () => void;
   /** Best-effort 2D blit of the last RTT. NullEngine readback is a no-op. */
   blit: () => void;
+  /** Assign bitmap size from CSS so a skipped blit stays blank, not stretched. */
+  clear: () => void;
   dispose: () => void;
   canvasSize: () => { width: number; height: number };
 };
@@ -64,6 +66,12 @@ export function createRttCanvasPresent(
     camera.outputRenderTarget = rtt;
   };
 
+  const clear = () => {
+    const { width, height } = canvasSize();
+    canvas.width = width;
+    canvas.height = height;
+  };
+
   const blit = () => {
     if (!rtt || blitInFlight || typeof canvas.getContext !== "function") return;
     blitInFlight = true;
@@ -92,5 +100,5 @@ export function createRttCanvasPresent(
     })();
   };
 
-  return { bind, blit, dispose: release, canvasSize };
+  return { bind, blit, clear, dispose: release, canvasSize };
 }

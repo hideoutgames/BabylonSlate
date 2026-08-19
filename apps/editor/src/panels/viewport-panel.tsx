@@ -254,7 +254,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         handle.setPostProcessingEnabled(enabled),
     });
 
-    const resizeIfSized = createCanvasResizeGuard(() => handle.resize());
+    const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
+      onHoldChange: (holding) => handle.scheduler.setResizing(holding),
+    });
     resizeIfSized(canvas);
 
     const unsubscribe = engineCommandBus.subscribe((command) => {
@@ -287,6 +289,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
     return () => {
       unsubscribe();
+      resizeIfSized.dispose();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       detachRenderGate();
