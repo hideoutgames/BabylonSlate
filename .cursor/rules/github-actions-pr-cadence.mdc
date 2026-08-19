@@ -1,5 +1,5 @@
 ---
-description: Keep PRs draft until local verify; mark ready once; cap non-draft PRs at 2 so sharded Verify stays under the GitHub Actions job cap
+description: Keep PRs draft until local verify; mark ready once; cap non-draft PRs at 3 so sharded Verify stays under the GitHub Actions job cap
 alwaysApply: true
 ---
 
@@ -14,19 +14,19 @@ GitHub Free public repos cap concurrent jobs at 20. Verify is `unit` plus **four
 
 ## Mark ready once — only if a slot is free
 
-- Mark ready only after local `pnpm verify` passes **and** fewer than **2** non-draft PRs already target `main`.
+- Mark ready only after local `pnpm verify` passes **and** fewer than **3** non-draft PRs already target `main`.
 - Count with `gh pr list --base main --state open` (ignore drafts). Do not count `main`'s own Verify.
 - Do not mark ready on the first push, then keep pushing. Each later synchronize cancels in-progress Verify and starts a new e2e.
 
 ```text
 # ❌ BAD — ready immediately, five more pushes, wait on Actions while still editing
-# ❌ BAD — mark ready when two non-draft PRs already target main
+# ❌ BAD — mark ready when three non-draft PRs already target main
 # ✅ GOOD — draft until pnpm verify is green, mark ready once if a slot is free
 ```
 
-## At most 2 non-draft PRs — no slot, stop
+## At most 3 non-draft PRs — no slot, stop
 
-Before marking ready, count open non-draft PRs targeting `main`. If that count is already **2**, **stop**:
+Before marking ready, count open non-draft PRs targeting `main`. If that count is already **3**, **stop**:
 
 - Leave this PR **draft**.
 - Do **not** mark ready, merge, poll, or wait for a slot.
