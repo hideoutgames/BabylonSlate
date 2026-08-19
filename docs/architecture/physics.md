@@ -89,7 +89,7 @@ Project Settings → **Physics** stores `settings.physics.collisionLayers` (`Nam
 
 ### Editor / Play visuals
 
-RigidBody-only actors use a camera-facing **billboard** (procedural cube glyph in `EDITOR_BILLBOARD_ICONS`, Play `playHelperVisual`) — never the empty-actor 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes. Play/export draws them only when `renderInGame` is true (`meshKind` `collider:{json}`). Console `showcollision` stays a **global** Play overlay (`listDebugColliders()`); it does not replace the per-collider property. See [render.md](render.md) and [scene-editing.md](scene-editing.md).
+RigidBody-only actors use a camera-facing **billboard** (procedural cube glyph in `EDITOR_BILLBOARD_ICONS`, Play `playHelperVisual`) — never the empty-actor 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes. Play/export draws them only when `renderInGame` is true (`meshKind` `collider:{json}`). Console `showcollision` stays a **global** Play overlay (`listDebugColliders()`, including capsules); it does not replace the per-collider property. See [render.md](render.md) and [scene-editing.md](scene-editing.md).
 
 ### Shapes
 

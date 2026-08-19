@@ -76,6 +76,46 @@ describe("debugColliderFromDesc", () => {
     expect(
       debugColliderFromDesc(
         {
+          id: "capsule",
+          bodyId: "body",
+          shape: { kind: "capsule", radius: 0.5, halfHeight: 1 },
+          friction: 0,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 1,
+        },
+        identity,
+      ),
+    ).toMatchObject({
+      id: "capsule",
+      shape: "capsule",
+      position: identity.position,
+      radius: 0.5,
+      halfHeight: 1,
+    });
+    expect(
+      debugColliderFromDesc(
+        {
+          id: "capsule2d",
+          bodyId: "body",
+          shape: { kind: "capsule2d", radius: 0.4, halfHeight: 0.8 },
+          friction: 0,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 1,
+        },
+        identity,
+      ),
+    ).toMatchObject({
+      shape: "capsule",
+      radius: 0.4,
+      halfHeight: 0.8,
+    });
+    expect(
+      debugColliderFromDesc(
+        {
           id: "mesh",
           bodyId: "body",
           shape: { kind: "mesh", vertices: [], indices: [] },

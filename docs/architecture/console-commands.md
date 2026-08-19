@@ -44,7 +44,7 @@ Parser: whitespace tokens, quoted strings, longest-name match (`stat unit`, `sna
 | `freecam` | yes | **yes** | `{ type: "setFreeCam" }`. Detached fly/pan camera; simulation keeps ticking. Pointer/WASD stolen; 2D pinch zooms ortho; gamepad still forwards (`help freecam` documents that split). Overlay Play shows a touch fly stick while on. Off / `changescene` / `possessCamera` restore. FPS look (drag right looks right). |
 | `showfps` | yes | **yes** | Opens/collapses Stats HUD (`setShowFps`). Flag default is **on**. |
 | `stat unit` / `memory` / `draws` / `threads` | yes | **yes** | Opens Stats HUD and highlights that row. `threads` is main vs worker timings (fps vs script/physics), not OS threads. |
-| `showcollision` / `showbounds` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/polylines, including body rotation of local offsets and polyline points). Overlay meshes reuse by id when pose changes. Skip helper/debug meshes. |
+| `showcollision` / `showbounds` / `actorboundingbox` / `wireframe` | yes | **yes** | Play-scene overlays. Collision uses `listDebugColliders()` (boxes/spheres/circles/capsules/polylines, including body rotation of local offsets and polyline points). Overlay meshes reuse by id when pose changes. Skip helper/debug meshes. `actorboundingbox` is an alias of `showbounds`. |
 | `shownav` | yes | **yes** | `NavMeshDebugOverlay` on the Play scene with the session navmesh bytes. |
 | `showaudiodebug` | yes | **yes** | DOM voice overlay from `AudioService` `debugVoices` (`setShowAudioDebug`). Flag default is **on**. |
 | `dumpactors` | yes | **yes** | One line per actor from `inspectWorld()` (name, class, guid, position). |
@@ -142,14 +142,15 @@ This is the missing “spectate without pausing” tool. It is not a Possess Cam
 | `stat unit` / `memory` / `draws` / `threads` | Ensure Stats HUD is open and highlight that row. `threads` means main vs worker timings (script/physics vs render), not OS threads. |
 | `wireframe [on\|off]` | Force wireframe on Play scene meshes (skip helper/debug lines). |
 | `showbounds [on\|off]` | AABB / selection-style bounds on spawned Play meshes. |
-| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/polylines from `listDebugColliders()`; local collider offsets and polyline points use body world rotation. Not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
+| `actorboundingbox [on\|off]` | Same host as `showbounds` (`setShowBounds`). Keep `showbounds` as the existing alias. |
+| `showcollision [on\|off]` | Physics collider debug draw for the active backend (Havok / Rapier / software AABB). Boxes/spheres/circles/capsules/polylines from `listDebugColliders()`; local collider offsets and polyline points use body world rotation. Capsule total height is `2 * halfHeight + 2 * radius`. Not full convex mesh authorship. Editor-grid 2D camera bounds are unrelated. Does **not** replace per-collider **Render In Game** (world dashes when that property is on). |
 | `shownav [on\|off]` | Reuse `NavMeshDebugOverlay` on the Play scene when a nav chunk is loaded. |
 | `showaudiodebug [on\|off]` | DOM overlay of playing voices (guid, clip, gain, pitch, loop, spatial, distance, radii, inside radius). Empty list: `No playing voices`. Off unmounts the overlay. Polls with `requestAnimationFrame` so it still draws while sim is paused. |
 | `dumpactors` | One line per actor: name, class, guid, world position. |
 | `inspect [name\|guid]` | Print the inspect-snapshot variables for that node (same data as the Inspector overlay). No arg → print the current inspector selection if any, else usage. |
 | `dumplog` / `snapshot start` / `snapshot stop` | Unchanged. |
 
-`showcollision` / `showbounds` / `wireframe` / `shownav` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
+`showcollision` / `showbounds` / `actorboundingbox` / `wireframe` / `shownav` / `showaudiodebug` stay debug-tier and stay off the Debug menu; the console is the default way to arm them.
 
 ### Intentionally not engine commands
 

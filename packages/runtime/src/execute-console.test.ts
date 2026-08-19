@@ -315,6 +315,10 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       success: true,
       output: "showbounds on",
     });
+    expect(runtime.executeConsoleCommand("actorboundingbox off")).toEqual({
+      success: true,
+      output: "actorboundingbox off",
+    });
     expect(runtime.executeConsoleCommand("shownav")).toEqual({
       success: true,
       output: "shownav on",

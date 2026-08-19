@@ -76,6 +76,13 @@ function colliderShapeKey(collider: DebugColliderPrimitive): string | null {
     if (!points || points.length <= 1) return null;
     return `line:${points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
   }
+  if (
+    collider.shape === "capsule" &&
+    collider.radius != null &&
+    collider.halfHeight != null
+  ) {
+    return `capsule:${collider.radius}:${collider.halfHeight}`;
+  }
   return null;
 }
 
@@ -171,6 +178,23 @@ export function createPlayCollisionOverlay(scene: Scene): {
       line.color = lineColor;
       markDebugOverlay(line);
       return line;
+    }
+    if (
+      collider.shape === "capsule" &&
+      collider.radius != null &&
+      collider.halfHeight != null
+    ) {
+      const mesh = MeshBuilder.CreateCapsule(
+        name,
+        {
+          radius: collider.radius,
+          height: 2 * collider.halfHeight + 2 * collider.radius,
+        },
+        scene,
+      );
+      mesh.material = material;
+      markDebugOverlay(mesh);
+      return mesh;
     }
     return null;
   };

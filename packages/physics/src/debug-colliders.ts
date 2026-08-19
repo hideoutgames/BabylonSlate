@@ -1,6 +1,6 @@
 import type { ColliderDesc, PhysicsTransform, Quat, Vec3 } from "./types";
 
-export type DebugColliderShape = "box" | "sphere" | "circle" | "polyline";
+export type DebugColliderShape = "box" | "sphere" | "circle" | "polyline" | "capsule";
 
 export type DebugColliderPrimitive = {
   id: string;
@@ -9,6 +9,7 @@ export type DebugColliderPrimitive = {
   rotation: Quat;
   halfExtents?: Vec3;
   radius?: number;
+  halfHeight?: number;
   points?: Vec3[];
 };
 
@@ -70,7 +71,7 @@ function polylinePoints(
   });
 }
 
-/** Boxes, spheres, circles, and polylines only — skip convex/mesh authorship. */
+/** Boxes, spheres, circles, capsules, and polylines only — skip convex/mesh authorship. */
 export function debugColliderFromDesc(
   desc: ColliderDesc,
   bodyTransform: PhysicsTransform,
@@ -117,6 +118,16 @@ export function debugColliderFromDesc(
         position,
         rotation,
         radius: shape.radius,
+      };
+    case "capsule":
+    case "capsule2d":
+      return {
+        id: desc.id,
+        shape: "capsule",
+        position,
+        rotation,
+        radius: shape.radius,
+        halfHeight: shape.halfHeight,
       };
     case "polygon":
     case "chain":

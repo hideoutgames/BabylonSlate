@@ -229,6 +229,20 @@ describe("createCommandRegistry", () => {
     ]);
   });
 
+  it("toggles actorboundingbox as an alias of showbounds", () => {
+    const host = recordingHost();
+    const registry = createCommandRegistry({ includeDebug: true });
+    expect(registry.execute("actorboundingbox", host)).toEqual({
+      success: true,
+      output: "actorboundingbox on",
+    });
+    expect(registry.execute("showbounds off", host)).toEqual({
+      success: true,
+      output: "showbounds off",
+    });
+    expect(host.calls).toEqual(["showbounds:true", "showbounds:false"]);
+  });
+
   it("coerces types and rejects bad enum values", () => {
     const registry = createCommandRegistry();
     expect(registry.execute("framecap nope", recordingHost())).toEqual({
