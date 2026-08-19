@@ -51,9 +51,9 @@ function nodeIntersectsWorld(
 
 /**
  * Mount nodes near the flow viewport (plus overscan) and edges that touch
- * them. `keepIds` (focus / search) stay mounted even when off-screen so
- * `fitView` can still resolve them. A 0×0 viewport (jsdom / first paint)
- * returns the full lists.
+ * them. `keepIds` (focus / search / selection) stay mounted even when
+ * off-screen so `fitView` and Copy / Delete still resolve them. A 0×0
+ * viewport (jsdom / first paint) returns the full lists.
  */
 export function selectVisibleGraphElements<
   N extends GraphVirtualizeNode,

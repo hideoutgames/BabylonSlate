@@ -50,7 +50,9 @@ describe("Verify GitHub Actions workflow", () => {
     expect(e2e).toMatch(/timeout-minutes:\s*25/);
     expect(e2e).toMatch(/timeout-minutes:\s*5/);
     expect(e2e).toContain("playwright install chromium");
-    expect(e2e).toContain("playwright install-deps chromium");
+    // ubuntu-latest already has Chromium shared libraries. install-deps still
+    // apt-gets CJK fonts and times out when eight shards hit the archive.
+    expect(e2e).not.toContain("playwright install-deps");
     expect(e2e).not.toContain("playwright install chromium --with-deps");
   });
 
