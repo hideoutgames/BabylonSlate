@@ -226,9 +226,8 @@ export function HomepageCreateDialog({
                     />
                   </div>
                   <FieldDescription>
-                    Play and packaged builds use this framebuffer (default{" "}
-                    {DEFAULT_RENDER_WIDTH}×{DEFAULT_RENDER_HEIGHT}). The host
-                    letterboxes it so the image is not stretched.
+                    Play and export resolution (default{" "}
+                    {DEFAULT_RENDER_WIDTH}×{DEFAULT_RENDER_HEIGHT}).
                   </FieldDescription>
                 </Field>
                 <Field orientation="horizontal">
@@ -245,9 +244,7 @@ export function HomepageCreateDialog({
                   </FieldLabel>
                 </Field>
                 <FieldDescription>
-                  A locked framebuffer always letterboxes. Unused overlay space is
-                  black. This flag is stored on the project and does not stretch
-                  to fill.
+                  Renders black bars to force desired resolution.
                 </FieldDescription>
               </FieldGroup>
             </div>

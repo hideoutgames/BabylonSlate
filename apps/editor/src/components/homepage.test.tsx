@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { TooltipProvider } from "@babylonslate/ui/components/tooltip";
+import { DEFAULT_RENDER_HEIGHT, DEFAULT_RENDER_WIDTH } from "@babylonslate/core";
 import type { ListedProject } from "../lib/listed-projects";
 import { Homepage } from "./homepage";
 
@@ -455,7 +456,13 @@ describe("Homepage Create Project dialog", () => {
     );
     expect(dialog.textContent).not.toMatch(/opfs/i);
     expect(screen.queryByTestId("create-project-choose-location")).toBeNull();
-    expect(dialog.textContent).toMatch(/letterboxes/i);
+    expect(dialog.textContent).toContain(
+      `Play and export resolution (default ${DEFAULT_RENDER_WIDTH}×${DEFAULT_RENDER_HEIGHT}).`,
+    );
+    expect(dialog.textContent).not.toMatch(/letterboxes/i);
+    expect(dialog.textContent).toContain(
+      "Renders black bars to force desired resolution.",
+    );
   });
 
   it("does not pass pickFolder when creating on web", async () => {
