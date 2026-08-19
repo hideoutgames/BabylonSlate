@@ -66,6 +66,10 @@ import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/s
 
 const defaultResolveImageUrl = (): string | null => null;
 const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
+const DEFAULT_ADT_IDEAL = {
+  designResolution: { width: 1920, height: 1080 },
+  scaleRule: "shortestSide" as const,
+};
 
 const DEFAULT_ADT_IDEAL = {
   designResolution: { width: 1920, height: 1080 },
