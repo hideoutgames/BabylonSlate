@@ -19,7 +19,7 @@ import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
-import { applyMaterialToVisualMeshes } from "./visual-meshes";
+import { applyMaterialToVisualMeshes, visualHierarchyBoundingVectors } from "./visual-meshes";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -29,7 +29,7 @@ export function aimPreviewCameraAtMesh(
   mesh: Mesh,
 ): void {
   mesh.computeWorldMatrix(true);
-  const extent = mesh.getHierarchyBoundingVectors(true);
+  const extent = visualHierarchyBoundingVectors(mesh);
   const center = extent.min.add(extent.max).scale(0.5);
   if (
     Number.isFinite(center.x) &&

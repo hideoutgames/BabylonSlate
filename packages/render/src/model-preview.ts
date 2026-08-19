@@ -9,7 +9,7 @@ import {
   type MaterialPreviewScene,
 } from "./material-preview";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
-import { constructionMaterialOf, visualMeshes } from "./visual-meshes";
+import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
 
 export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
 
@@ -95,7 +95,7 @@ export async function loadModelPreviewSource(
   host.mesh.visibility = 0;
   host.mesh.computeWorldMatrix(true);
   aimPreviewCameraAtMesh(host.camera, host.mesh);
-  const extent = host.mesh.getHierarchyBoundingVectors(true);
+  const extent = visualHierarchyBoundingVectors(host.mesh);
   const size = extent.max.subtract(extent.min).length();
   if (Number.isFinite(size) && size > 0) {
     const lower = host.camera.lowerRadiusLimit ?? 0.5;

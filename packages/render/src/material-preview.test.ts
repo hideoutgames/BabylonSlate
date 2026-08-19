@@ -250,6 +250,30 @@ describe("material preview scene", () => {
     expect(camera.target.z).toBeCloseTo(4);
   });
 
+  it("aims at visible glTF parts, not the hidden placeholder cube", () => {
+    const scene = new Scene(engine());
+    disposers.push(() => scene.dispose());
+    const camera = new ArcRotateCamera(
+      "aim",
+      0,
+      Math.PI / 2,
+      4,
+      Vector3.Zero(),
+      scene,
+    );
+    const placeholder = MeshBuilder.CreateBox("placeholder", { size: 10 }, scene);
+    placeholder.visibility = 0;
+    const part = MeshBuilder.CreateBox("part", { size: 1 }, scene);
+    part.position.set(0, 8, 0);
+    part.parent = placeholder;
+    placeholder.computeWorldMatrix(true);
+    part.computeWorldMatrix(true);
+    aimPreviewCameraAtMesh(camera, placeholder);
+    expect(camera.target.x).toBeCloseTo(0);
+    expect(camera.target.y).toBeCloseTo(8);
+    expect(camera.target.z).toBeCloseTo(0);
+  });
+
   it("reframes the camera when the preview primitive changes", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
