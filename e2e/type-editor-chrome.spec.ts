@@ -85,6 +85,11 @@ async function dragClassMemberOntoGraph(
   await page.mouse.up();
 }
 
+
+async function classGraphNodeCount(page: import("@playwright/test").Page) {
+  return page.getByTestId("graph-panel").locator(".react-flow__node").count();
+}
+
 test.describe("Type-asset editors and hierarchy chrome", () => {
   test("ScriptInterface Add Method shows a preview and enables Windows", async ({
     page,
