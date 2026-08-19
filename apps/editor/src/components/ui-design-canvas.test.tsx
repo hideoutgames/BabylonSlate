@@ -27,16 +27,25 @@ afterEach(() => {
   cleanup();
   createUiSurfaceMock.mockReset();
   resetUiHostStats();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    callback(0);
-    return 1;
+    return setTimeout(() => callback(0), 0) as unknown as number;
   });
-  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    clearTimeout(id);
+  });
 });
+
+function flushUiFrames() {
+  act(() => {
+    vi.runOnlyPendingTimers();
+  });
+}
 
 function hudCanvasProps() {
   const ui = createDefaultPlayHud("HUD");
@@ -128,6 +137,7 @@ describe("UiDesignCanvas preview fallback", () => {
         }
       />,
     );
+    flushUiFrames();
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
@@ -221,12 +231,14 @@ describe("UiDesignCanvas preview fallback", () => {
     const props = hudCanvasProps();
     const { rerender } = render(<UiDesignCanvas {...props} />);
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
+    flushUiFrames();
     rerender(
       <UiDesignCanvas
         {...props}
         viewport={{ ...props.viewport, width: 800, height: 600 }}
       />,
     );
+    flushUiFrames();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
@@ -257,8 +269,10 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(
       <UiDesignCanvas {...props} panelVisible documentActive={false} />,
     );
+    flushUiFrames();
     expect(addControl).not.toHaveBeenCalled();
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
+    flushUiFrames();
     expect(addControl).toHaveBeenCalled();
   });
 
