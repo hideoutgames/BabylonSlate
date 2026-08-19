@@ -33,8 +33,8 @@ export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
 
 /** Kenney Mannequin is about 1.6m tall; origin is at the feet. */
-export const MANNEQUIN_CAPSULE_RADIUS = 0.28;
-export const MANNEQUIN_CAPSULE_HALF_HEIGHT = 0.52;
+export const MANNEQUIN_CAPSULE_RADIUS = 0.5;
+export const MANNEQUIN_CAPSULE_HALF_HEIGHT = 1;
 
 function mannequinPhysicsComponents(idPrefix: string): SerializedComponent[] {
   const radius = MANNEQUIN_CAPSULE_RADIUS;

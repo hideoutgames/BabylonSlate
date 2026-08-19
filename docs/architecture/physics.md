@@ -96,7 +96,7 @@ RigidBody-only actors use a camera-facing **billboard** (procedural cube glyph i
 - **3D:** box, sphere, capsule, convex hull, triangle mesh
 - **2D:** box, circle, capsule, polygon, chain (tilemap chunks emit merged chains via `tilemapChunkChains`)
 
-Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; Mesh / Sprite / Tilemap stay the pick target when present. Physics-only actors pick via the RigidBody origin proxy. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent` (or a Tilemap). Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule sized to the character (Y offset so it sits on the ground). Users add colliders on any other mesh the same way.
+Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; Mesh / Sprite / Tilemap stay the pick target when present. Physics-only actors pick via the RigidBody origin proxy. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent` (or a Tilemap). Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule (`radius` 0.5, `halfHeight` 1, Y offset `radius + halfHeight` so it sits on the feet origin). New Empty 3D projects only — existing scenes are not migrated. Users add colliders on any other mesh the same way.
 
 ## Scripting
 
