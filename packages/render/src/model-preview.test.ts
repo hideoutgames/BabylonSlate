@@ -5,7 +5,7 @@ import { MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { embedGlbExternalImages } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
-import { encodeTriangleGlb, isGltfModelBytes } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb, isGltfModelBytes } from "./model-mesh";
 import { attachSkeletonPreview, createLinkedSkeletonFromNodeRig } from "./node-rig";
 import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
 import {
@@ -29,6 +29,13 @@ function kenneyMannequinGlb(): Uint8Array {
     readFileSync(join(KENNEY_MANNEQUIN_DIR, "mannequin.png")),
   );
   return embedGlbExternalImages(glb, { "Textures/texture-d.png": png });
+}
+
+function visualNamed(
+  root: Parameters<typeof visualMeshes>[0],
+  name: string,
+) {
+  return visualMeshes(root).find((part) => part.name === name);
 }
 
 describe("isGltfModelBytes", () => {
@@ -140,6 +147,64 @@ describe("applyModelMaterialSlots", () => {
     expect(root.material).toBe(stubMat);
     expect(child.material).toBe(override);
   });
+
+  it("maps construction materials to named slot indices, not child visit order", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const root = MeshBuilder.CreateBox("placeholder", { size: 1 }, scene);
+    root.visibility = 0;
+    const partB = MeshBuilder.CreateBox("part-b", { size: 1 }, scene);
+    const partA = MeshBuilder.CreateBox("part-a", { size: 1 }, scene);
+    partB.parent = root;
+    partA.parent = root;
+    const matB = new StandardMaterial("MatB", scene);
+    const matA = new StandardMaterial("MatA", scene);
+    const slot0 = new StandardMaterial("slot-0", scene);
+    const slot1 = new StandardMaterial("slot-1", scene);
+    partB.material = matB;
+    partA.material = matA;
+
+    applyModelMaterialSlots(
+      root,
+      [
+        { index: 0, name: "MatA", materialGuid: "mat-a" },
+        { index: 1, name: "MatB", materialGuid: "mat-b" },
+      ],
+      (guid) => (guid === "mat-a" ? slot0 : guid === "mat-b" ? slot1 : null),
+    );
+
+    expect(partA.material).toBe(slot0);
+    expect(partB.material).toBe(slot1);
+  });
+
+  it("maps same-named construction clones to one slot, not the next unused index", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const root = MeshBuilder.CreateBox("placeholder", { size: 1 }, scene);
+    root.visibility = 0;
+    const partB = MeshBuilder.CreateBox("part-b", { size: 1 }, scene);
+    const partA = MeshBuilder.CreateBox("part-a", { size: 1 }, scene);
+    partB.parent = root;
+    partA.parent = root;
+    partB.material = new StandardMaterial("Skin", scene);
+    partA.material = new StandardMaterial("Skin", scene);
+    const slot0 = new StandardMaterial("slot-0", scene);
+    const slot1 = new StandardMaterial("slot-1", scene);
+
+    applyModelMaterialSlots(
+      root,
+      [
+        { index: 0, name: "Skin", materialGuid: "mat-skin" },
+        { index: 1, name: "Trim", materialGuid: "mat-trim" },
+      ],
+      (guid) => (guid === "mat-skin" ? slot0 : guid === "mat-trim" ? slot1 : null),
+    );
+
+    expect(partA.material).toBe(slot0);
+    expect(partB.material).toBe(slot0);
+  });
 });
 
 describe("loadModelPreviewSource", () => {
@@ -165,7 +230,7 @@ describe("loadModelPreviewSource", () => {
     loaded?.dispose();
   });
 
-  it("loads Kenney Mannequin (KHR_materials_unlit) and attaches a hierarchy overlay", async () => {
+  it("loads a hierarchy-rig pack GLB (KHR_materials_unlit) and attaches an overlay", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const host = createModelPreviewScene(handle.engine);
@@ -194,7 +259,89 @@ describe("loadModelPreviewSource", () => {
     loaded?.dispose();
   });
 
-  it("keeps UVs on every Kenney part and applies slot 0 to the whole hierarchy", async () => {
+  it("adopts every UV'd part and applies a shared slot to the whole hierarchy", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(host, encodeUvHierarchyGlb());
+    expect(loaded).not.toBeNull();
+    const visuals = visualMeshes(host.mesh);
+    expect(visuals).toHaveLength(2);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+    }
+    const override = new StandardMaterial("slot-0", handle.scene);
+    applyModelMaterialSlots(
+      host.mesh,
+      [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
+      (guid) => (guid === "mat-1" ? override : null),
+    );
+    for (const part of visuals) {
+      expect(part.material).toBe(override);
+    }
+    loaded?.dispose();
+  });
+
+  it("maps separate glTF materials to independent slots after adopt", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(
+      host,
+      encodeUvHierarchyGlb({ separateMaterials: true }),
+    );
+    expect(loaded).not.toBeNull();
+    const visuals = visualMeshes(host.mesh);
+    expect(visuals).toHaveLength(2);
+    const slot0 = new StandardMaterial("slot-0", handle.scene);
+    const slot1 = new StandardMaterial("slot-1", handle.scene);
+    applyModelMaterialSlots(
+      host.mesh,
+      [
+        { index: 0, name: "MatA", materialGuid: "mat-a" },
+        { index: 1, name: "MatB", materialGuid: "mat-b" },
+      ],
+      (guid) => (guid === "mat-a" ? slot0 : guid === "mat-b" ? slot1 : null),
+    );
+    expect(visualNamed(host.mesh, "part-a")?.material).toBe(slot0);
+    expect(visualNamed(host.mesh, "part-b")?.material).toBe(slot1);
+    loaded?.dispose();
+  });
+
+  it("maps glTF material indices even when slot names and visit order disagree", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(
+      host,
+      encodeUvHierarchyGlb({
+        separateMaterials: true,
+        laterMaterialFirst: true,
+      }),
+    );
+    expect(loaded).not.toBeNull();
+    expect(visualMeshes(host.mesh).map((part) => part.name)).toEqual([
+      "part-b",
+      "part-a",
+    ]);
+    const slot0 = new StandardMaterial("slot-0", handle.scene);
+    const slot1 = new StandardMaterial("slot-1", handle.scene);
+    applyModelMaterialSlots(
+      host.mesh,
+      [
+        { index: 0, name: "Body", materialGuid: "mat-a" },
+        { index: 1, name: "Leaves", materialGuid: "mat-b" },
+      ],
+      (guid) => (guid === "mat-a" ? slot0 : guid === "mat-b" ? slot1 : null),
+    );
+    expect(visualNamed(host.mesh, "part-a")?.material).toBe(slot0);
+    expect(visualNamed(host.mesh, "part-b")?.material).toBe(slot1);
+    loaded?.dispose();
+  });
+
+  it("keeps UVs on every pack-GLB part and applies slot 0 to the whole hierarchy", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const host = createModelPreviewScene(handle.engine);

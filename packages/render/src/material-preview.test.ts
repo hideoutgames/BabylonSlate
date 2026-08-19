@@ -10,10 +10,6 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { MATERIAL_PREVIEW_MESHES } from "@babylonslate/shader-graph";
-import { embedGlbExternalImages } from "@babylonslate/assets";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
   aimPreviewCameraAtMesh,
@@ -22,6 +18,7 @@ import {
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
 } from "./material-preview";
+import { encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 
 type Listener = (event: Event) => void;
@@ -161,23 +158,11 @@ describe("material preview scene", () => {
   });
 
   it("loads the full custom Model hierarchy with UVs and paints every part", async () => {
-    const dir = join(
-      dirname(fileURLToPath(import.meta.url)),
-      "../../../engine-content/kenney-assets/Mannequin",
-    );
-    const bytes = embedGlbExternalImages(
-      new Uint8Array(readFileSync(join(dir, "mannequin.glb"))),
-      {
-        "Textures/texture-d.png": new Uint8Array(
-          readFileSync(join(dir, "mannequin.png")),
-        ),
-      },
-    );
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
-    await host.setMesh("custom", bytes);
+    await host.setMesh("custom", encodeUvHierarchyGlb());
     const visuals = visualMeshes(host.mesh);
-    expect(visuals.length).toBeGreaterThan(1);
+    expect(visuals).toHaveLength(2);
     for (const part of visuals) {
       expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
         0,
