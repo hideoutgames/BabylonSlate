@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import {
   PropertyGrid,
   assetRowIdentity,
@@ -7,8 +8,11 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   applyAnchorPreset,
+  applyAuthoringFields,
+  authoringFieldsFromLayout,
   authoringParentRect,
   clamp01,
+  convertLayoutSize,
   matchAnchorPreset,
   parentOwnsChildLayout,
   widgetParentId,
@@ -30,6 +34,8 @@ export function UiDesignDetails({
   assetLabels,
   onPatchWidget,
   onPatchLayout,
+  onPreviewLayout,
+  onCommitLayout,
   onPickAsset,
   resolveNested,
 }: {
@@ -51,9 +57,12 @@ export function UiDesignDetails({
   };
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void;
   onPatchLayout: (id: string, next: WidgetLayout) => void;
+  onPreviewLayout?: (id: string, next: WidgetLayout) => void;
+  onCommitLayout?: (id: string, next: WidgetLayout) => void;
   onPickAsset: (kind: UiAssetPickKind) => void;
   resolveNested?: (guid: string) => UserInterfaceDocument | null;
 }) {
+  const previewedLayoutRef = useRef<WidgetLayout | null>(null);
   const parentId = widgetParentId(ui, selected.id);
   const parent = parentId ? ui.widgets[parentId] : null;
   const slotOwned = parent ? parentOwnsChildLayout(parent.kind) : false;
@@ -139,44 +148,137 @@ export function UiDesignDetails({
         ]),
   ];
 
-  const sizeRows: PropertyRow[] = [
-        numberRow("width", "Width", selected.layout.width, (width) =>
-          onPatchLayout(selected.id, { ...selected.layout, width }),
-        ),
-        {
-          id: "width-unit",
-          kind: "enum",
-          label: "Width Unit",
-          value: selected.layout.widthUnit,
-          options: [
-            { value: "px", label: "px" },
-            { value: "percent", label: "%" },
-          ],
-          onChange: (widthUnit) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              widthUnit: widthUnit as WidgetLayout["widthUnit"],
-            }),
-        },
-        numberRow("height", "Height", selected.layout.height, (height) =>
-          onPatchLayout(selected.id, { ...selected.layout, height }),
-        ),
-        {
-          id: "height-unit",
-          kind: "enum",
-          label: "Height Unit",
-          value: selected.layout.heightUnit,
-          options: [
-            { value: "px", label: "px" },
-            { value: "percent", label: "%" },
-          ],
-          onChange: (heightUnit) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              heightUnit: heightUnit as WidgetLayout["heightUnit"],
-            }),
-        },
-      ];
+  const fields = authoringFieldsFromLayout(parentRect, selected.layout);
+  const writeLayout = (next: WidgetLayout) => onPatchLayout(selected.id, next);
+  const previewLayout = (next: WidgetLayout) => {
+    previewedLayoutRef.current = next;
+    if (onPreviewLayout) onPreviewLayout(selected.id, next);
+    else writeLayout(next);
+  };
+  const commitLayout = (next: WidgetLayout) => {
+    const committed = previewedLayoutRef.current ?? next;
+    previewedLayoutRef.current = null;
+    if (onCommitLayout) onCommitLayout(selected.id, committed);
+    else writeLayout(committed);
+  };
+  const sizeNumber = (
+    id: string,
+    label: string,
+    value: number,
+    apply: (value: number) => WidgetLayout,
+  ): PropertyRow =>
+    numberRow(
+      id,
+      label,
+      value,
+      (next) => previewLayout(apply(next)),
+      (next) => commitLayout(apply(next)),
+    );
+
+  const sizeRows: PropertyRow[] = [];
+  if (fields.pinX) {
+    sizeRows.push(
+      sizeNumber("width", "Width", selected.layout.width, (width) => ({
+        ...selected.layout,
+        width,
+      })),
+      {
+        id: "width-unit",
+        kind: "enum",
+        label: "Width Unit",
+        value: selected.layout.widthUnit,
+        options: [
+          { value: "px", label: "px" },
+          { value: "percent", label: "%" },
+        ],
+        onChange: (widthUnit) =>
+          writeLayout(
+            convertLayoutSize(
+              selected.layout,
+              "width",
+              widthUnit as WidgetLayout["widthUnit"],
+              parentRect,
+            ),
+          ),
+      },
+    );
+  } else {
+    sizeRows.push(
+      sizeNumber("inset-left", "Left", fields.left, (left) =>
+        applyAuthoringFields(selected.layout, parentRect, { left }),
+      ),
+      sizeNumber("inset-right", "Right", fields.right, (right) =>
+        applyAuthoringFields(selected.layout, parentRect, { right }),
+      ),
+    );
+  }
+  if (fields.pinY) {
+    sizeRows.push(
+      sizeNumber("height", "Height", selected.layout.height, (height) => ({
+        ...selected.layout,
+        height,
+      })),
+      {
+        id: "height-unit",
+        kind: "enum",
+        label: "Height Unit",
+        value: selected.layout.heightUnit,
+        options: [
+          { value: "px", label: "px" },
+          { value: "percent", label: "%" },
+        ],
+        onChange: (heightUnit) =>
+          writeLayout(
+            convertLayoutSize(
+              selected.layout,
+              "height",
+              heightUnit as WidgetLayout["heightUnit"],
+              parentRect,
+            ),
+          ),
+      },
+    );
+  } else {
+    sizeRows.push(
+      sizeNumber("inset-top", "Top", fields.top, (top) =>
+        applyAuthoringFields(selected.layout, parentRect, { top }),
+      ),
+      sizeNumber("inset-bottom", "Bottom", fields.bottom, (bottom) =>
+        applyAuthoringFields(selected.layout, parentRect, { bottom }),
+      ),
+    );
+  }
+
+  const paddingRows: PropertyRow[] = [];
+  if (fields.pinX) {
+    paddingRows.push(
+      sizeNumber("layout-padding-left", "Padding Left", selected.layout.padding.left, (left) => ({
+        ...selected.layout,
+        padding: { ...selected.layout.padding, left },
+      })),
+      sizeNumber("layout-padding-right", "Padding Right", selected.layout.padding.right, (right) => ({
+        ...selected.layout,
+        padding: { ...selected.layout.padding, right },
+      })),
+    );
+  }
+  if (fields.pinY) {
+    paddingRows.push(
+      sizeNumber("layout-padding-top", "Padding Top", selected.layout.padding.top, (top) => ({
+        ...selected.layout,
+        padding: { ...selected.layout.padding, top },
+      })),
+      sizeNumber(
+        "layout-padding-bottom",
+        "Padding Bottom",
+        selected.layout.padding.bottom,
+        (bottom) => ({
+          ...selected.layout,
+          padding: { ...selected.layout.padding, bottom },
+        }),
+      ),
+    );
+  }
 
   const layoutRows: PropertyRow[] = slotOwned
     ? sizeRows
@@ -192,7 +294,7 @@ export function UiDesignDetails({
             { value: "right", label: "Right" },
           ],
           onChange: (horizontalAlignment) =>
-            onPatchLayout(selected.id, {
+            writeLayout({
               ...selected.layout,
               horizontalAlignment: horizontalAlignment as WidgetLayout["horizontalAlignment"],
             }),
@@ -208,14 +310,15 @@ export function UiDesignDetails({
             { value: "bottom", label: "Bottom" },
           ],
           onChange: (verticalAlignment) =>
-            onPatchLayout(selected.id, {
+            writeLayout({
               ...selected.layout,
               verticalAlignment: verticalAlignment as WidgetLayout["verticalAlignment"],
             }),
         },
-        numberRow("left", "Left", selected.layout.left, (left) =>
-          onPatchLayout(selected.id, { ...selected.layout, left }),
-        ),
+        sizeNumber("left", "Left", selected.layout.left, (left) => ({
+          ...selected.layout,
+          left,
+        })),
         {
           id: "left-unit",
           kind: "enum",
@@ -226,14 +329,19 @@ export function UiDesignDetails({
             { value: "percent", label: "%" },
           ],
           onChange: (leftUnit) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              leftUnit: leftUnit as WidgetLayout["leftUnit"],
-            }),
+            writeLayout(
+              convertLayoutSize(
+                selected.layout,
+                "left",
+                leftUnit as WidgetLayout["leftUnit"],
+                parentRect,
+              ),
+            ),
         },
-        numberRow("top", "Top", selected.layout.top, (top) =>
-          onPatchLayout(selected.id, { ...selected.layout, top }),
-        ),
+        sizeNumber("top", "Top", selected.layout.top, (top) => ({
+          ...selected.layout,
+          top,
+        })),
         {
           id: "top-unit",
           kind: "enum",
@@ -244,40 +352,16 @@ export function UiDesignDetails({
             { value: "percent", label: "%" },
           ],
           onChange: (topUnit) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              topUnit: topUnit as WidgetLayout["topUnit"],
-            }),
+            writeLayout(
+              convertLayoutSize(
+                selected.layout,
+                "top",
+                topUnit as WidgetLayout["topUnit"],
+                parentRect,
+              ),
+            ),
         },
-        ...sizeRows,
-        numberRow("layout-padding-left", "Padding Left", selected.layout.padding.left, (left) =>
-          onPatchLayout(selected.id, {
-            ...selected.layout,
-            padding: { ...selected.layout.padding, left },
-          }),
-        ),
-        numberRow("layout-padding-right", "Padding Right", selected.layout.padding.right, (right) =>
-          onPatchLayout(selected.id, {
-            ...selected.layout,
-            padding: { ...selected.layout.padding, right },
-          }),
-        ),
-        numberRow("layout-padding-top", "Padding Top", selected.layout.padding.top, (top) =>
-          onPatchLayout(selected.id, {
-            ...selected.layout,
-            padding: { ...selected.layout.padding, top },
-          }),
-        ),
-        numberRow(
-          "layout-padding-bottom",
-          "Padding Bottom",
-          selected.layout.padding.bottom,
-          (bottom) =>
-            onPatchLayout(selected.id, {
-              ...selected.layout,
-              padding: { ...selected.layout.padding, bottom },
-            }),
-        ),
+        ...paddingRows,
         ...(parent?.kind === "Canvas"
           ? [
               {
@@ -357,15 +441,12 @@ export function UiDesignDetails({
         }
       />
       {slotOwned ? (
-        <>
-          <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="ui-slot-layout-note">
-            Parent slot owns position. Stack-axis size stays authored in pixels.
-          </p>
-          <PropertyGrid title="Layout" rows={layoutRows} />
-        </>
-      ) : (
-        <PropertyGrid title="Layout" rows={layoutRows} />
-      )}
+        <p className="px-2 py-1 text-xs text-muted-foreground" data-testid="ui-slot-layout-note">
+          Parent slot owns position. Stack-axis size stays authored in pixels.
+        </p>
+      ) : null}
+      <PropertyGrid title="Size" rows={sizeRows} />
+      {slotOwned ? null : <PropertyGrid title="Layout" rows={layoutRows} />}
       <PropertyGrid title="Style" rows={styleRows} />
       <PropertyGrid title="Advanced" rows={advanced} />
     </div>
@@ -377,8 +458,9 @@ function numberRow(
   label: string,
   value: number,
   onChange: (value: number) => void,
+  onCommit?: (value: number) => void,
 ): PropertyRow {
-  return { id, kind: "number", label, value, onChange };
+  return { id, kind: "number", label, value, onChange, onCommit };
 }
 
 function colorRow(
@@ -713,16 +795,6 @@ function containerPropRows(
       ),
       numberRow("gap", "Spacing", Number(selected.props.gap ?? 8), (gap) =>
         onPatchWidget(selected.id, { props: { ...selected.props, gap } }),
-      ),
-    ];
-  }
-  if (selected.kind === "Rectangle") {
-    return [
-      numberRow("box-width", "Box Width", Number(selected.props.width ?? 100), (width) =>
-        onPatchWidget(selected.id, { props: { ...selected.props, width } }),
-      ),
-      numberRow("box-height", "Box Height", Number(selected.props.height ?? 100), (height) =>
-        onPatchWidget(selected.id, { props: { ...selected.props, height } }),
       ),
     ];
   }

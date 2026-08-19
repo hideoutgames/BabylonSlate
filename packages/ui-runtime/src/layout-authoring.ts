@@ -4,6 +4,7 @@ import type {
   HorizontalAlignment,
   LayoutResult,
   Rect,
+  SizeUnit,
   UserInterfaceDocument,
   VerticalAlignment,
   WidgetKind,
@@ -226,8 +227,8 @@ export function authoringFieldsFromLayout(
 ): AuthoringFields {
   void parent;
   const slot = normalizeLayout(layout);
-  const pinX = slot.widthUnit === "px";
-  const pinY = slot.heightUnit === "px";
+  const pinX = !(slot.widthUnit === "percent" && nearlyEqual(slot.width, 100));
+  const pinY = !(slot.heightUnit === "percent" && nearlyEqual(slot.height, 100));
   return {
     pinX,
     pinY,
@@ -244,6 +245,46 @@ export function authoringFieldsFromLayout(
     horizontalAlignment: slot.horizontalAlignment,
     verticalAlignment: slot.verticalAlignment,
   };
+}
+
+export function convertSizeValue(
+  value: number,
+  from: SizeUnit,
+  to: SizeUnit,
+  parentSize: number,
+): number {
+  if (from === to) return value;
+  const px = from === "percent" ? (value / 100) * parentSize : value;
+  if (to !== "percent") return px;
+  if (!(parentSize > 0)) return value;
+  return (px / parentSize) * 100;
+}
+
+export function convertLayoutSize(
+  layout: WidgetLayout,
+  axis: "width" | "height" | "left" | "top",
+  unit: SizeUnit,
+  parent: Rect,
+): WidgetLayout {
+  const next = normalizeLayout(layout);
+  if (axis === "width") {
+    next.width = convertSizeValue(next.width, next.widthUnit, unit, parent.width);
+    next.widthUnit = unit;
+    return next;
+  }
+  if (axis === "height") {
+    next.height = convertSizeValue(next.height, next.heightUnit, unit, parent.height);
+    next.heightUnit = unit;
+    return next;
+  }
+  if (axis === "left") {
+    next.left = convertSizeValue(next.left, next.leftUnit, unit, parent.width);
+    next.leftUnit = unit;
+    return next;
+  }
+  next.top = convertSizeValue(next.top, next.topUnit, unit, parent.height);
+  next.topUnit = unit;
+  return next;
 }
 
 export type AuthoringFieldPatch = Partial<

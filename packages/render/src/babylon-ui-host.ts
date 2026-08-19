@@ -203,10 +203,19 @@ export class BabylonUiApplyHost implements UiApplyHost {
     const handle = this.handles.find((row) => row.id === id);
     const control = handle?.control;
     if (!control) return;
+    control.horizontalAlignment = horizontalAlignmentValue(layout.horizontalAlignment);
+    control.verticalAlignment = verticalAlignmentValue(layout.verticalAlignment);
     control.left = sizeValue(layout.left, layout.leftUnit ?? "px");
     control.top = sizeValue(layout.top, layout.topUnit ?? "px");
     control.width = sizeValue(layout.width, layout.widthUnit);
     control.height = sizeValue(layout.height, layout.heightUnit);
+    const padding = layout.padding;
+    if (padding) {
+      control.paddingLeft = `${padding.left}px`;
+      control.paddingRight = `${padding.right}px`;
+      control.paddingTop = `${padding.top}px`;
+      control.paddingBottom = `${padding.bottom}px`;
+    }
   }
 
   markAsDirty(): void {

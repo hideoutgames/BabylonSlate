@@ -402,6 +402,45 @@ describe("BabylonUiApplyHost", () => {
     expect(factory.created).toHaveLength(1);
   });
 
+  it("patches live padding and alignment during a stretch resize", () => {
+    const factory = new RecordingFactory();
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const control = {
+      left: "0px",
+      top: "0px",
+      width: "100%",
+      height: "100%",
+      paddingLeft: "0px",
+      paddingRight: "0px",
+      paddingTop: "0px",
+      paddingBottom: "0px",
+      horizontalAlignment: 0,
+      verticalAlignment: 0,
+    };
+    factory.create = (spec) => {
+      const handle = {
+        id: spec.id,
+        type: spec.type,
+        spec,
+        control: control as never,
+        dispose() {},
+      };
+      factory.created.push(handle);
+      return handle;
+    };
+    host.addControl(descriptor({ id: "btn", kind: "Button" }));
+    host.patchLiveLayout(
+      "btn",
+      stretchLayout({ left: 16, right: 24, top: 8, bottom: 12 }),
+    );
+    expect(control.width).toBe("100%");
+    expect(control.paddingLeft).toBe("16px");
+    expect(control.paddingRight).toBe("24px");
+    expect(control.paddingTop).toBe("8px");
+    expect(control.paddingBottom).toBe("12px");
+    expect(control.horizontalAlignment).toBe(GuiControl.HORIZONTAL_ALIGNMENT_LEFT);
+  });
+
   it("maps scale rules onto ADT ideal width/height", () => {
     const adt = { idealWidth: 0, idealHeight: 0, useSmallestIdeal: false };
     applyAdtIdeal(adt, { width: 1920, height: 1080 }, "shortestSide");

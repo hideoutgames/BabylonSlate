@@ -1,5 +1,9 @@
 import { NullEngine, Scene, Vector3 } from "@babylonjs/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { embedGlbExternalImages } from "@babylonslate/assets";
 import {
   createActor,
   createDefaultScene,
@@ -13,9 +17,25 @@ import { encodeTranslatedTetrahedronGlb } from "./model-mesh";
 import { pickAtCanvas } from "./picking";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { meshNamesInCanvasRect, projectToCanvas } from "./two-d";
+import { visualMeshes } from "./visual-meshes";
 
 const WIDTH = 800;
 const HEIGHT = 600;
+
+function kenneyMannequinGlb(): Uint8Array {
+  const dir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../engine-content/kenney-assets/Mannequin",
+  );
+  return embedGlbExternalImages(
+    new Uint8Array(readFileSync(join(dir, "mannequin.glb"))),
+    {
+      "Textures/texture-d.png": new Uint8Array(
+        readFileSync(join(dir, "mannequin.png")),
+      ),
+    },
+  );
+}
 
 function sceneWith(actors: SerializedScene["actors"]): SerializedScene {
   return { ...createDefaultScene(), actors };
@@ -171,7 +191,7 @@ describe("editor tap picking", () => {
     ).toEqual(["spk"]);
   });
 
-  it("picks a model at the visual center when the glTF node is translated", () => {
+  it("picks a model at the visual center when the glTF node is translated", async () => {
     const translation: [number, number, number] = [4, 0, 0];
     const visual = new Vector3(4.25, 0.25, 0.25);
     prepareView(visual);
@@ -188,7 +208,71 @@ describe("editor tap picking", () => {
         }),
       ]),
     );
-    expect(sync.meshForActor("hero")?.getTotalVertices()).toBe(4);
-    expect(pickWorld(sync, visual)).toBe("hero");
+    const root = sync.meshForActor("hero");
+    expect(root?.getTotalVertices()).toBe(0);
+    await vi.waitFor(() => {
+      expect(visualMeshes(root!).length).toBeGreaterThan(0);
+    });
+    const part = visualMeshes(root!)[0]!;
+    part.computeWorldMatrix(true);
+    vi.spyOn(scene, "pick").mockReturnValue({
+      hit: true,
+      pickedMesh: part,
+    } as never);
+    const hit = pickAtCanvas(scene, 1, 1);
+    expect(hit?.meshName).toBe(editorMeshName("hero"));
+    expect(sync.actorForMesh(hit!.meshName)).toBe("hero");
+  });
+
+  it("picks a Kenney Mannequin body part back to the actor", async () => {
+    prepareView(new Vector3(0, 0.8, 0));
+    const sync = new EditorSceneSync(scene);
+    const component = createMeshComponent("mesh", "box");
+    component.properties.assetGuid = "mannequin";
+    sync.setMeshAssets({
+      modelBytes: new Map([["mannequin", kenneyMannequinGlb()]]),
+    });
+    sync.apply(
+      sceneWith([
+        createActor("hero", "Mannequin", {
+          components: [component],
+        }),
+      ]),
+    );
+    const root = sync.meshForActor("hero");
+    await vi.waitFor(() => {
+      expect(visualMeshes(root!).some((part) => part.name === "torso")).toBe(
+        true,
+      );
+    });
+    const torso = visualMeshes(root!).find((part) => part.name === "torso");
+    expect(torso).toBeDefined();
+    torso!.computeWorldMatrix(true);
+    expect(pickWorld(sync, torso!.getAbsolutePosition())).toBe("hero");
+  });
+
+  it("does not pick a locked Mannequin after instantiate", async () => {
+    prepareView(new Vector3(0, 0.8, 0));
+    const sync = new EditorSceneSync(scene);
+    const component = createMeshComponent("mesh", "box");
+    component.properties.assetGuid = "mannequin";
+    sync.setMeshAssets({
+      modelBytes: new Map([["mannequin", kenneyMannequinGlb()]]),
+    });
+    sync.apply(
+      sceneWith([
+        createActor("hero", "Mannequin", {
+          locked: true,
+          components: [component],
+        }),
+      ]),
+    );
+    const root = sync.meshForActor("hero");
+    await vi.waitFor(() => {
+      expect(visualMeshes(root!).length).toBeGreaterThan(1);
+    });
+    const torso = visualMeshes(root!).find((part) => part.name === "torso");
+    expect(torso?.isPickable).toBe(false);
+    expect(pickWorld(sync, torso!.getAbsolutePosition())).toBeNull();
   });
 });
