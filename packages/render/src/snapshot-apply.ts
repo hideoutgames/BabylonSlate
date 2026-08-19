@@ -15,11 +15,13 @@ import {
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import { emptySkyboxFaces, type SkyboxFaces } from "@babylonslate/core";
+import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
+import { createColliderVisualMesh } from "./collider-visual";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
@@ -416,6 +418,18 @@ export function isPlayHelperMeshKind(
   );
 }
 
+function parsePlayColliderShape(encoded: string): ColliderShape {
+  try {
+    const parsed = JSON.parse(encoded) as unknown;
+    if (parsed && typeof parsed === "object" && "kind" in parsed) {
+      return parsed as ColliderShape;
+    }
+  } catch {
+    // Fall through to a unit box so Play still has a visible collider.
+  }
+  return { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } };
+}
+
 function markPlayHelperVisual(mesh: Mesh): void {
   mesh.isVisible = false;
   mesh.isPickable = false;
@@ -590,6 +604,13 @@ export function createPlayMesh(
       binding,
     );
     return createSkyboxMesh(scene, name, texture, props?.size ?? 1000);
+  }
+  if (meshKind?.startsWith("collider:")) {
+    return createColliderVisualMesh(
+      scene,
+      name,
+      parsePlayColliderShape(meshKind.slice("collider:".length)),
+    );
   }
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);

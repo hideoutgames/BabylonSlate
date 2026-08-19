@@ -15,6 +15,8 @@ export type ColliderProperties = {
   isTrigger: boolean;
   layer: number;
   mask: number;
+  /** Play/export world dashes; editor always draws them. Default false. */
+  renderInGame: boolean;
 };
 
 export function parseRigidBodyProperties(
@@ -48,6 +50,7 @@ export function parseColliderProperties(
     isTrigger: source.isTrigger === true,
     layer: numberOr(source.layer, 1),
     mask: numberOr(source.mask, 0xffffffff),
+    renderInGame: source.renderInGame === true,
   };
 }
 

@@ -87,6 +87,10 @@ describe("@babylonslate/physics", () => {
     });
     expect(parseColliderProperties({}, "3d").shape.kind).toBe("box");
     expect(parseColliderProperties({}, "2d").shape.kind).toBe("box2d");
+    expect(parseColliderProperties({}, "3d").renderInGame).toBe(false);
+    expect(parseColliderProperties({ renderInGame: true }, "3d").renderInGame).toBe(
+      true,
+    );
   });
 
   it("software 3d: dynamic body falls and lineTrace hits ground", async () => {
