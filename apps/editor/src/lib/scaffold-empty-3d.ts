@@ -13,9 +13,14 @@ import {
 import {
   createMeshComponent,
   identitySerializedTransform,
+  type SerializedComponent,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
+import {
+  parseColliderProperties,
+  parseRigidBodyProperties,
+} from "@babylonslate/physics";
 import {
   buildNewAssetResult,
   newAssetFileName,
@@ -26,6 +31,45 @@ export const MANNEQUIN_ANIM_GRAPH_FILE = "Mannequin/Mannequin.anim.babasset";
 export const MANNEQUIN_ASSET_FOLDER = "Mannequin";
 export const MANNEQUIN_CLASS_ID = "Mannequin";
 export const MANNEQUIN_ACTOR_ID = "actor-1";
+
+/** Kenney Mannequin is about 1.6m tall; origin is at the feet. */
+export const MANNEQUIN_CAPSULE_RADIUS = 0.28;
+export const MANNEQUIN_CAPSULE_HALF_HEIGHT = 0.52;
+
+function mannequinPhysicsComponents(idPrefix: string): SerializedComponent[] {
+  const radius = MANNEQUIN_CAPSULE_RADIUS;
+  const halfHeight = MANNEQUIN_CAPSULE_HALF_HEIGHT;
+  return [
+    {
+      id: `${idPrefix}rigid-body`,
+      classId: "RigidBodyComponent",
+      properties: {
+        ...parseRigidBodyProperties({}),
+        motionType: "kinematic",
+        gravityScale: 0,
+      },
+      parentId: null,
+      transform: identitySerializedTransform(),
+    },
+    {
+      id: `${idPrefix}collider`,
+      classId: "ColliderComponent",
+      properties: {
+        ...parseColliderProperties(
+          {
+            shape: { kind: "capsule", radius, halfHeight },
+          },
+          "3d",
+        ),
+      },
+      parentId: null,
+      transform: {
+        ...identitySerializedTransform(),
+        position: [0, radius + halfHeight, 0],
+      },
+    },
+  ];
+}
 
 function withDocumentPayload(
   result: ImportResult,
@@ -88,6 +132,7 @@ function replaceDefaultCubeActor(
             parentId: null,
             transform: identitySerializedTransform(),
           },
+          ...mannequinPhysicsComponents("component-"),
         ],
       };
     }),
@@ -169,6 +214,7 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
       parentId: null,
       transform: identitySerializedTransform(),
     },
+    ...mannequinPhysicsComponents("prefab-"),
   ];
   const classResult = withDocumentPayload(
     {

@@ -26,7 +26,9 @@ function hasGeometry(mesh: AbstractMesh): boolean {
  */
 export function visualMeshes(root: AbstractMesh): AbstractMesh[] {
   const children = root.getChildMeshes().filter(hasGeometry);
-  if (root.visibility === 0 && children.length > 0) {
+  const placeholder =
+    (root.visibility === 0 || root.isVisible === false) && children.length > 0;
+  if (placeholder) {
     return children;
   }
   if (hasGeometry(root)) {

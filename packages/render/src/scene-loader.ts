@@ -7,7 +7,13 @@ import {
   SKYBOX_FACE_KEYS,
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
-import { createMeshFromModelBytes } from "./model-mesh";
+import {
+  beginSlotModelAnimLoad,
+  createModelActorRoot,
+  hideModelPlaceholder,
+  isEditorModelPlaceholder,
+} from "./glb-anim";
+import { isGltfModelBytes } from "./model-mesh";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import {
   applyEditorBillboardFromActor,
@@ -19,6 +25,10 @@ import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
+import {
+  applyWorldVisualGroup,
+  RENDERING_GROUP,
+} from "./sorting";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -347,13 +357,8 @@ export function createMeshForComponent(
     return createEditorBillboard(scene, name, "particle");
   }
   const assetGuid = stringProp(component.properties.assetGuid);
-  if (assetGuid && assets?.modelBytes?.has(assetGuid)) {
-    const loaded = createMeshFromModelBytes(
-      scene,
-      name,
-      assets.modelBytes.get(assetGuid)!,
-    );
-    if (loaded) return loaded;
+  if (assetGuid) {
+    return createModelActorRoot(scene, name);
   }
   const meshKind =
     typeof component.properties.meshKind === "string"
@@ -460,13 +465,8 @@ export function createActorMesh(
     return createMeshForComponent(scene, name, actor, skyboxComponent, assets);
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
-  if (assetGuid && assets?.modelBytes?.has(assetGuid)) {
-    const loaded = createMeshFromModelBytes(
-      scene,
-      name,
-      assets.modelBytes.get(assetGuid)!,
-    );
-    if (loaded) return loaded;
+  if (assetGuid) {
+    return createModelActorRoot(scene, name);
   }
   const icon = parseEditorBillboardIcon(editorMeshKindOf(actor));
   if (icon) {
@@ -512,6 +512,20 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   const origin = isEditorActorOrigin(mesh);
   if (origin) {
     mesh.visibility = 0;
+  }
+  applyWorldVisualGroup(mesh, actor);
+  if (isSkyboxMesh(mesh)) {
+    mesh.renderingGroupId = RENDERING_GROUP.background;
+  }
+  if (isEditorModelPlaceholder(mesh)) {
+    hideModelPlaceholder(mesh);
+    const pickable = !actor.locked;
+    for (const child of mesh.getChildMeshes()) {
+      if (!(child instanceof Mesh)) continue;
+      child.isVisible = actor.visible;
+      child.isPickable = isSkyboxMesh(child) ? false : pickable;
+    }
+    return;
   }
   mesh.isVisible = actor.visible;
   mesh.isPickable = isSkyboxMesh(mesh) ? false : !actor.locked;
@@ -571,10 +585,36 @@ export function applySceneToBabylonScene(
   clearSceneMeshes(scene);
 
   const meshes = new Map<string, Mesh>();
+  const loadBinding = {
+    slotAnimEpoch: new Map<number, number>(),
+    slotAnimationGroups: new Map(),
+    slotAnimLoads: new Map<number, Promise<void>>(),
+    modelBytes: assets?.modelBytes,
+    modelPayloads: assets?.modelPayloads,
+    modelClipAnimationGuids: assets?.modelClipAnimationGuids,
+    retargetAnimationLoads: assets?.retargetAnimationLoads,
+  };
+  let loadSlot = 0;
   for (const actor of sceneData.actors) {
     const mesh = createActorMesh(scene, actor, assets);
     applyActorTransform(mesh, actor);
     meshes.set(actor.id, mesh);
+    const guid = actor.components.find(
+      (component) => component.classId === "MeshComponent",
+    )?.properties.assetGuid;
+    const bytes =
+      typeof guid === "string" ? assets?.modelBytes?.get(guid) : undefined;
+    if (typeof guid === "string" && bytes && isGltfModelBytes(bytes)) {
+      void beginSlotModelAnimLoad(
+        scene,
+        loadBinding,
+        ++loadSlot,
+        guid,
+        bytes,
+        mesh,
+        () => applyActorTransform(mesh, actor),
+      );
+    }
   }
 
   for (const actor of sceneData.actors) {

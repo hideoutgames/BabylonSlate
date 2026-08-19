@@ -79,6 +79,56 @@ export function applySortingToMesh(
   mesh.renderingGroupId = resolution.renderingGroupId;
 }
 
+export function usesSpriteOrTilemapSorting(actor: {
+  components: ReadonlyArray<{ classId: string }>;
+}): boolean {
+  return actor.components.some(
+    (component) =>
+      component.classId === "SpriteComponent" ||
+      component.classId === "TilemapComponent",
+  );
+}
+
+/** 3D MeshComponent visuals sit above the editor grid underlay. */
+export function applyWorldVisualGroup(
+  mesh: {
+    renderingGroupId: number;
+    getChildMeshes: () => Array<{ renderingGroupId: number }>;
+  },
+  actor: { components: ReadonlyArray<{ classId: string }> },
+): void {
+  if (usesSpriteOrTilemapSorting(actor)) return;
+  mesh.renderingGroupId = RENDERING_GROUP.world;
+  for (const child of mesh.getChildMeshes()) {
+    child.renderingGroupId = RENDERING_GROUP.world;
+  }
+}
+
+/**
+ * Clear depth (not color) when drawing world/foreground/ui so the grid in
+ * group 0 is an underlay rather than a transparent peer.
+ */
+export function configureEditorRenderingGroups(scene: {
+  setRenderingAutoClearDepthStencil: (
+    renderingGroupId: number,
+    autoClear: boolean,
+    depth?: boolean,
+    stencil?: boolean,
+  ) => void;
+}): void {
+  scene.setRenderingAutoClearDepthStencil(
+    RENDERING_GROUP.background,
+    false,
+  );
+  for (const group of [
+    RENDERING_GROUP.world,
+    RENDERING_GROUP.foreground,
+    RENDERING_GROUP.ui,
+  ] as const) {
+    scene.setRenderingAutoClearDepthStencil(group, true, true, true);
+  }
+}
+
 /** Babylon particle systems expose `renderingGroupId`, not mesh `alphaIndex`. */
 export function applySortingToParticleSystem(
   system: { renderingGroupId: number },

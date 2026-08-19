@@ -1,5 +1,6 @@
 import type { Scene } from "@babylonjs/core";
 import { PickingInfo, Vector3 } from "@babylonjs/core";
+import { EDITOR_ACTOR_MESH_PREFIX } from "./scene-loader";
 
 const scratchOrigin = new Vector3();
 const scratchDir = new Vector3();
@@ -33,6 +34,13 @@ export function pickAtCanvas(
       return {
         meshName: mesh.name,
         slotId: Number(match[1]),
+        hit: pick,
+      };
+    }
+    if (mesh.name.startsWith(EDITOR_ACTOR_MESH_PREFIX)) {
+      return {
+        meshName: mesh.name,
+        slotId: null,
         hit: pick,
       };
     }

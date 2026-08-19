@@ -5,6 +5,7 @@ import {
   applyWidgetResize,
   authoringFieldsFromLayout,
   authoringParentRect,
+  convertLayoutSize,
   defaultAddLayout,
   laidOutParentRect,
   layoutFromRect,
@@ -98,6 +99,30 @@ describe("authoring fields", () => {
     expect(fields.right).toBe(24);
     expect(fields.top).toBe(8);
     expect(fields.bottom).toBe(12);
+  });
+
+  it("treats a non-100 percent size as pinned size, not stretch insets", () => {
+    const layout = pinLayout("left", "top", 160, 40);
+    layout.widthUnit = "percent";
+    layout.width = 50;
+    const fields = authoringFieldsFromLayout(parent, layout);
+    expect(fields.pinX).toBe(true);
+    expect(fields.width).toBe(50);
+  });
+
+  it("converts px size to percent using the parent extent", () => {
+    const layout = pinLayout("left", "top", 160, 40);
+    const next = convertLayoutSize(layout, "width", "percent", parent);
+    expect(next.widthUnit).toBe("percent");
+    expect(next.width).toBe(20);
+  });
+
+  it("converts percent size to px using the parent extent", () => {
+    const layout = pinLayout("left", "top", 50, 40);
+    layout.widthUnit = "percent";
+    const next = convertLayoutSize(layout, "width", "px", parent);
+    expect(next.widthUnit).toBe("px");
+    expect(next.width).toBe(400);
   });
 
   it("writes width when pinned", () => {

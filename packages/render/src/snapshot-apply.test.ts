@@ -7,6 +7,7 @@ import { createDefaultSpritePayload, embedGlbExternalImages } from "@babylonslat
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
+import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
@@ -72,9 +73,25 @@ describe("createPlayMesh", () => {
     expect(material.alphaCutOff).toBeCloseTo(0.4);
 
     const model = createPlayMesh(scene, 2, "box", "model-1", binding);
-    const positions = model.getVerticesData(VertexBuffer.PositionKind);
-    expect(positions).not.toBeNull();
-    expect(positions!.length).toBe(9);
+    expect(model.getTotalVertices()).toBe(0);
+    expect(model.isPickable).toBe(false);
+    expect(model.isVisible).toBe(false);
+  });
+
+  it("loads a Model guid once for two Play slots", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const bytes = encodeTriangleGlb();
+    binding.modelBytes = new Map([["model-1", bytes]]);
+    const first = createPlayMesh(scene, 2, "box", "model-1", binding);
+    const second = createPlayMesh(scene, 3, "box", "model-1", binding);
+    await binding.slotAnimLoads?.get(2);
+    await binding.slotAnimLoads?.get(3);
+    expect(visualMeshes(first).length).toBeGreaterThan(0);
+    expect(visualMeshes(second).length).toBeGreaterThan(0);
+    expect(glbContainerLoadCount(scene)).toBe(1);
   });
 
   it("adopts the full GLB container when the file has no clips", async () => {
