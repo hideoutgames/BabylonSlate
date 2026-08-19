@@ -815,6 +815,18 @@ export function componentPropertyRows(
           ],
           onChange: (next) => update("area", next),
         },
+        ...(component.properties.area === "cost"
+          ? [
+              {
+                kind: "number" as const,
+                id: rowId(actorId, component.id, "cost"),
+                label: "Cost",
+                value: asNumber(component.properties.cost, 10),
+                min: 1.01,
+                onChange: (next: number) => update("cost", next),
+              },
+            ]
+          : []),
       ];
     case "RigidBodyComponent":
       return [

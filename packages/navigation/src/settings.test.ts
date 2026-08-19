@@ -62,13 +62,17 @@ describe("nav mesh settings", () => {
       dynamic: false,
       kind: "box",
       area: "unwalkable",
+      cost: 10,
     });
     expect(
       parseNavMeshBlockerProperties({
         dynamic: true,
         kind: "cylinder",
         area: "cost",
+        cost: 25,
       }),
-    ).toEqual({ dynamic: true, kind: "cylinder", area: "cost" });
+    ).toEqual({ dynamic: true, kind: "cylinder", area: "cost", cost: 25 });
+    expect(parseNavMeshBlockerProperties({ cost: 1 }).cost).toBe(10);
+    expect(parseNavMeshBlockerProperties({ cost: 0.5 }).cost).toBe(10);
   });
 });

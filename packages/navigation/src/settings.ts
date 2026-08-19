@@ -139,10 +139,16 @@ export type NavMeshBlockerProperties = {
   dynamic: boolean;
   kind: "box" | "cylinder";
   area: "unwalkable" | "cost";
+  cost: number;
 };
 
 export function defaultNavMeshBlockerComponentProperties(): NavMeshBlockerProperties {
-  return { dynamic: false, kind: "box", area: "unwalkable" };
+  return { dynamic: false, kind: "box", area: "unwalkable", cost: 10 };
+}
+
+function asCost(value: unknown): number {
+  const n = asNumber(value, 10);
+  return n > 1 ? n : 10;
 }
 
 export function parseNavMeshBlockerProperties(
@@ -153,6 +159,7 @@ export function parseNavMeshBlockerProperties(
     dynamic: asBoolean(properties.dynamic, defaults.dynamic),
     kind: properties.kind === "cylinder" ? "cylinder" : "box",
     area: properties.area === "cost" ? "cost" : "unwalkable",
+    cost: asCost(properties.cost),
   };
 }
 

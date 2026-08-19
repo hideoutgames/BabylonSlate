@@ -311,6 +311,21 @@ describe("componentPropertyRows", () => {
       kind: "enum",
       value: "cost",
     });
+    const costRow = blocker.rows.find((row) => row.id.endsWith("-cost"));
+    expect(costRow).toMatchObject({
+      kind: "number",
+      label: "Cost",
+      value: 10,
+    });
+    if (costRow?.kind === "number") {
+      expect(costRow.min).toBeGreaterThan(1);
+    }
+    const unwalkable = rowsFor({
+      id: "block-uw",
+      classId: "NavMeshBlockerComponent",
+      properties: { dynamic: false, kind: "box", area: "unwalkable" },
+    });
+    expect(unwalkable.rows.find((row) => row.id.endsWith("-cost"))).toBeUndefined();
     if (boardRow?.kind === "asset") boardRow.onPick();
     expect(tree.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["Blackboard"] }),

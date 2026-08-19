@@ -19,6 +19,7 @@ import {
 import {
   DEFAULT_NAV_MESH_SETTINGS,
   type NavAgentParams,
+  type NavCostVolume,
   type NavMeshGenerateInput,
   type NavMeshSettings,
   type NavObstacleKind,
@@ -29,7 +30,9 @@ import {
 const QUERY_EXTENTS = { x: 4, y: 4, z: 4 };
 const TILE_CACHE_MAGIC = new Uint8Array([0x42, 0x53, 0x4e, 0x54]); // BSNT
 const WALKABLE_AREA = 63;
+const COST_AREA = 1;
 const WALKABLE_FLAGS = 1;
+const DEFAULT_COST_AREA_COST = 10;
 
 let recastReady: Promise<void> | null = null;
 
@@ -137,6 +140,12 @@ class RecastNavigationBackend implements NavigationBackend {
   private nextObstacle = 1;
   private agents = new Map<string, CrowdAgent>();
   private nextAgent = 1;
+  private costVolumes = new Map<
+    string,
+    { volume: NavCostVolume; polyRefs: number[] }
+  >();
+  private nextCost = 1;
+  private costAreaCost = DEFAULT_COST_AREA_COST;
 
   importNavMesh(bytes: Uint8Array): void {
     this.dispose();
@@ -153,6 +162,7 @@ class RecastNavigationBackend implements NavigationBackend {
     }
     this.query = new NavMeshQuery(this.navMesh);
     this.crowd = new Crowd(this.navMesh, { maxAgents: 32, maxAgentRadius: 0.6 });
+    this.applyAreaCosts(this.costAreaCost);
   }
 
   findPath(from: NavPoint, to: NavPoint): NavPoint[] {
@@ -217,6 +227,26 @@ class RecastNavigationBackend implements NavigationBackend {
     }
   }
 
+  applyCostVolume(volume: NavCostVolume): void {
+    const cost =
+      Number.isFinite(volume.cost) && volume.cost > 1
+        ? volume.cost
+        : DEFAULT_COST_AREA_COST;
+    const id = volume.id?.trim() ? volume.id : `cost-${this.nextCost++}`;
+    const record: NavCostVolume = {
+      id,
+      kind: volume.kind === "cylinder" ? "cylinder" : "box",
+      pose: { ...volume.pose },
+      size: { ...volume.size },
+      cost,
+    };
+    this.costAreaCost = cost;
+    this.restoreCostVolumePolys();
+    this.costVolumes.set(id, { volume: record, polyRefs: [] });
+    this.applyAreaCosts(cost);
+    this.stampCostVolumes();
+  }
+
   addAgent(position: NavPoint, params?: NavAgentParams): string {
     if (!this.crowd) return "";
     const agent = this.crowd.addAgent(position, {
@@ -278,6 +308,54 @@ class RecastNavigationBackend implements NavigationBackend {
     }
     this.query?.destroy();
     this.query = new NavMeshQuery(this.navMesh);
+    this.applyAreaCosts(this.costAreaCost);
+    for (const record of this.costVolumes.values()) record.polyRefs = [];
+    this.stampCostVolumes();
+  }
+
+  private walkablePolyArea(): number {
+    return this.tileCache ? WALKABLE_AREA : 0;
+  }
+
+  private restoreCostVolumePolys(): void {
+    if (!this.navMesh) return;
+    const walkable = this.walkablePolyArea();
+    for (const record of this.costVolumes.values()) {
+      for (const ref of record.polyRefs) {
+        if (!ref) continue;
+        this.navMesh.setPolyArea(ref, walkable);
+      }
+      record.polyRefs = [];
+    }
+  }
+
+  private applyAreaCosts(cost: number): void {
+    const walkable = 1;
+    this.query?.defaultFilter.setAreaCost(0, walkable);
+    this.query?.defaultFilter.setAreaCost(WALKABLE_AREA, walkable);
+    this.query?.defaultFilter.setAreaCost(COST_AREA, cost);
+    const crowdFilter = this.crowd?.getFilter(0);
+    crowdFilter?.setAreaCost(0, walkable);
+    crowdFilter?.setAreaCost(WALKABLE_AREA, walkable);
+    crowdFilter?.setAreaCost(COST_AREA, cost);
+  }
+
+  private stampCostVolumes(): void {
+    if (!this.query || !this.navMesh) return;
+    for (const record of this.costVolumes.values()) {
+      const halfExtents = costVolumeHalfExtents(record.volume);
+      const result = this.query.queryPolygons(record.volume.pose, halfExtents, {
+        maxPolys: 512,
+      });
+      if (!result.success) continue;
+      const refs: number[] = [];
+      for (const ref of result.polyRefs) {
+        if (!ref) continue;
+        this.navMesh.setPolyArea(ref, COST_AREA);
+        refs.push(ref);
+      }
+      record.polyRefs = refs;
+    }
   }
 
   private dispose(): void {
@@ -292,7 +370,25 @@ class RecastNavigationBackend implements NavigationBackend {
     this.tileCacheKeepAlive.length = 0;
     this.obstacles.clear();
     this.agents.clear();
+    this.costVolumes.clear();
+    this.costAreaCost = DEFAULT_COST_AREA_COST;
   }
+}
+
+function costVolumeHalfExtents(volume: NavCostVolume): NavPoint {
+  if (volume.kind === "cylinder") {
+    const radius = Math.max(Math.abs(volume.size.x), 0.05);
+    return {
+      x: radius,
+      y: Math.max(Math.abs(volume.size.y) / 2, 4),
+      z: radius,
+    };
+  }
+  return {
+    x: Math.max(Math.abs(volume.size.x) / 2, 0.05),
+    y: Math.max(Math.abs(volume.size.y) / 2, 4),
+    z: Math.max(Math.abs(volume.size.z) / 2, 0.05),
+  };
 }
 
 export function createNavigationBackend(): NavigationBackend {

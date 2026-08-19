@@ -1250,26 +1250,67 @@ class InProcessRuntime implements RuntimeDriver {
       const props = parseNavMeshBlockerProperties(
         Object.fromEntries(component.variables),
       );
-      if (!props.dynamic || props.area === "cost") continue;
       const size = {
         x: Math.abs(actor.transform.scale.x) || 1,
         y: Math.abs(actor.transform.scale.y) || 1,
         z: Math.abs(actor.transform.scale.z) || 1,
       };
-      this.nav.addObstacle(
-        props.kind,
-        this.toNavObstaclePose({
+      const pose = this.toNavObstaclePose({
+        x: actor.transform.position.x,
+        y: actor.transform.position.y,
+        z: actor.transform.position.z,
+      });
+      const navSize = this.toNavObstacleSize(size);
+      if (props.area === "cost") {
+        this.nav.applyCostVolume({
+          id: actor.guid,
+          kind: props.kind,
+          pose,
+          size: navSize,
+          cost: props.cost,
+        });
+        continue;
+      }
+      if (!props.dynamic) continue;
+      this.nav.addObstacle(props.kind, pose, navSize);
+    }
+  }
+
+  private syncNavCostVolumes(): void {
+    if (!this.nav) return;
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const component = actor.components.find(
+        (entry) =>
+          entry.classId === "NavMeshBlockerComponent" && !entry.destroyed,
+      );
+      if (!component) continue;
+      const props = parseNavMeshBlockerProperties(
+        Object.fromEntries(component.variables),
+      );
+      if (props.area !== "cost" || !props.dynamic) continue;
+      const size = {
+        x: Math.abs(actor.transform.scale.x) || 1,
+        y: Math.abs(actor.transform.scale.y) || 1,
+        z: Math.abs(actor.transform.scale.z) || 1,
+      };
+      this.nav.applyCostVolume({
+        id: actor.guid,
+        kind: props.kind,
+        pose: this.toNavObstaclePose({
           x: actor.transform.position.x,
           y: actor.transform.position.y,
           z: actor.transform.position.z,
         }),
-        this.toNavObstacleSize(size),
-      );
+        size: this.toNavObstacleSize(size),
+        cost: props.cost,
+      });
     }
   }
 
   private tickCrowd(): void {
     if (!this.nav) return;
+    this.syncNavCostVolumes();
     this.nav.stepCrowd(this.simulationDt());
     for (const [actorGuid, agentId] of this.navAgentByActor) {
       const actor = this.world.findActor(actorGuid);

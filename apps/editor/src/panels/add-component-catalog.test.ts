@@ -94,6 +94,7 @@ describe("Add Component catalog", () => {
       dynamic: false,
       kind: "box",
       area: "unwalkable",
+      cost: 10,
     });
     expect(defaultPropertiesFor("AudioComponent")).toEqual({
       audioAssetGuid: null,
