@@ -5,6 +5,7 @@ import {
   openTestProject,
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
+import { saveAllIfEnabled } from "./save-all";
 
 async function injectGamepad(
   page: { evaluate: (fn: (next: unknown) => void, arg: unknown) => Promise<unknown> },
@@ -269,6 +270,20 @@ test.describe("P5 visual scripting acceptance", () => {
       }) ?? false;
     });
     expect(installed).toBe(true);
+
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    const formattedArg = page.locator(
+      '[data-id="format"] [data-handleid="arg:input%20pin"]',
+    );
+    await expect(formattedArg).toBeVisible();
+    await saveAllIfEnabled(page);
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="graph"]')
+      .getByTestId("document-tab-close")
+      .click();
+    await expect(page.getByTestId("graph-panel")).toHaveCount(0);
+    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await expect(formattedArg).toBeVisible();
 
     await openMainScene(page);
     await clickPlayAndWaitForOverlay(page);
