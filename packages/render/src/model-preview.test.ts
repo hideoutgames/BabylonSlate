@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MeshBuilder, StandardMaterial } from "@babylonjs/core";
+import { MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { embedGlbExternalImages } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
@@ -13,6 +13,7 @@ import {
   createModelPreviewScene,
   loadModelPreviewSource,
   previewRigRoot,
+  visualMeshes,
 } from "./model-preview";
 
 const KENNEY_MANNEQUIN_DIR = join(
@@ -190,6 +191,30 @@ describe("loadModelPreviewSource", () => {
         host.mesh.name === MATERIAL_PREVIEW_MESH_NAME,
     ).toBe(true);
     preview.dispose();
+    loaded?.dispose();
+  });
+
+  it("keeps UVs on every Kenney part and applies slot 0 to the whole hierarchy", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(host, kenneyMannequinGlb());
+    expect(loaded).not.toBeNull();
+    const visuals = visualMeshes(host.mesh);
+    expect(visuals.length).toBeGreaterThan(1);
+    for (const part of visuals) {
+      const uvs = part.getVerticesData(VertexBuffer.UVKind);
+      expect(uvs?.length ?? 0).toBeGreaterThan(0);
+    }
+    const override = new StandardMaterial("slot-0", handle.scene);
+    applyModelMaterialSlots(
+      host.mesh,
+      [{ index: 0, name: "texture-d", materialGuid: "mat-1" }],
+      (guid) => (guid === "mat-1" ? override : null),
+    );
+    for (const part of visuals) {
+      expect(part.material).toBe(override);
+    }
     loaded?.dispose();
   });
 
