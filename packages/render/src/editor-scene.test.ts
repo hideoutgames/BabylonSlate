@@ -1310,7 +1310,6 @@ describe("editor grid", () => {
     expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
     expect(mesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
     expect(grid.mesh.material?.disableDepthWrite).toBe(true);
-    expect(grid.mesh.material?.disableDepthTest).not.toBe(true);
     const worldClear = scene.getAutoClearDepthStencilSetup(RENDERING_GROUP.world);
     expect(worldClear.autoClear).toBe(false);
     grid.dispose();

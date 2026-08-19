@@ -234,7 +234,7 @@ export class EditorSceneSync {
   }
 
   whenEditorModelsReady(): Promise<void> {
-    const loads = [...this.modelLoadBinding.slotAnimLoads.values()];
+    const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? [])];
     if (loads.length === 0) return Promise.resolve();
     return Promise.all(loads).then(() => undefined);
   }
