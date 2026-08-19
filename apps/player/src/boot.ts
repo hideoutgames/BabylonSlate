@@ -267,7 +267,12 @@ export function startPlayer(options: {
     applyPlayerActiveScene(handle, game.scenes, command);
     applyPlayerUiCommand(uiHost, command);
     if (command.type === "print") {
-      printHud.applyPrint(command);
+      printHud.applyPrint({
+        message: command.message,
+        key: command.key,
+        duration: command.duration,
+        color: command.color,
+      });
     }
     if (command.type === "setInputMode") {
       input?.setInputMode(String(command.mode ?? "All"));
