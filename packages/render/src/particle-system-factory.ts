@@ -227,11 +227,7 @@ function bindParticleTextureBlocks(
   material: NodeMaterial,
   texture: Texture,
 ): void {
-  const blocks =
-    typeof material.getAttachedBlocks === "function"
-      ? material.getAttachedBlocks()
-      : material.attachedBlocks;
-  for (const block of blocks ?? []) {
+  for (const block of material.attachedBlocks ?? []) {
     if (block instanceof ParticleTextureBlock) {
       block.texture = texture;
     }

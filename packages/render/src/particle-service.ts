@@ -1,11 +1,11 @@
 import {
   MeshBuilder,
+  Texture,
   type AbstractMesh,
   type IParticleSystem,
   type Mesh,
   type NodeMaterial,
   type Scene,
-  type Texture,
 } from "@babylonjs/core";
 import type {
   ParticleEmitterPayload,
@@ -72,10 +72,6 @@ function isParticleCommand(
 
 function liveKey(actorGuid: string, componentId: string): string {
   return `${actorGuid}:${componentId}`;
-}
-
-function particleTextureUrl(texture: { url?: unknown }): string {
-  return typeof texture.url === "string" ? texture.url : "";
 }
 
 /**
@@ -300,7 +296,11 @@ export class ParticleService {
       system.start();
     };
     const texture = system.particleTexture;
-    if (!texture || texture.isReady() || !particleTextureUrl(texture)) {
+    if (
+      !(texture instanceof Texture) ||
+      texture.isReady() ||
+      !texture.url
+    ) {
       begin();
       return;
     }
