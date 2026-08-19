@@ -777,13 +777,6 @@ export function componentPropertyRows(
           onChange: (value) =>
             update("bakeBoundsMax", { x: value[0], y: value[1], z: value[2] }),
         },
-        {
-          kind: "boolean",
-          id: rowId(actorId, component.id, "debugOverlay"),
-          label: "Debug Overlay",
-          value: settings.debugOverlay,
-          onChange: (next) => update("debugOverlay", next),
-        },
       ];
     }
     case "NavAgentComponent":

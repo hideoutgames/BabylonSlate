@@ -14,7 +14,7 @@ Tile-cache obstacles, 2D bake input, scripting nodes, and crowd `MoveTo` are in 
 | `runtime` | Import scene `navmesh` chunk; `NavAgentComponent` → `addAgent`; dynamic unwalkable `NavMeshBlockerComponent` → `addObstacle`; cost blockers → `applyCostVolume`; `stepCrowd` into the snapshot; BT `MoveTo` | Babylon, DOM |
 | `scripting-nodes` | FindPathTo / MoveTo / StopMovement / IsPathValid / GetClosestNavigablePoint / GetRandomPointInRadius / obstacle add/remove (`ctx.*`, no Recast import) | React, Babylon, Capacitor, `@babylonslate/navigation` |
 
-Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators` own the byte format. `@recast-navigation/babylon` is not a published npm package; editor debug draw uses Recast `DebugDrawerUtils` in `navigation` plus a Babylon wireframe mesh in `render`.
+Do **not** use Babylon `RecastJSPlugin`. `@recast-navigation/core` + `generators` own the byte format. `@recast-navigation/babylon` is not a published npm package; editor debug draw uses Recast `DebugDrawerUtils` in `navigation` plus a Babylon filled mesh with edge outlines in `render`.
 
 ## Package API (`p11-navigation` + `p11-nav-blockers-2d`)
 
@@ -30,13 +30,13 @@ Recast settings (`NavMeshSettings`) are data: cell size/height, walkable slope/h
 
 ## Editor host
 
-- Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, **Auto Bake On Save** default off, **Bake Bounds** plus min/max, debug overlay). Not an Add Component row.
-- Place Actors **NavMesh Blocker** spawns an Actor with `NavMeshBlockerComponent` (`dynamic` default false, `kind` box/cylinder, `area` unwalkable/cost, **Cost** number when Area is Cost, default 10, min > 1). Scale is the blocker size. Not Add Component / Search.
+- Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, **Auto Bake On Save** default off, **Bake Bounds** plus min/max). Not an Add Component row. Details no longer has a **Debug Overlay** checkbox — Viewport Settings **Show Navmesh** (`scene.settings.showNavmesh`, default off) owns the overlay. A leftover `debugOverlay === true` on old documents still turns the overlay on until the scene is saved with an explicit `showNavmesh` key.
+- Place Actors **NavMesh Blocker** spawns an Actor with `NavMeshBlockerComponent` (`dynamic` default false, `kind` box/cylinder, `area` unwalkable/cost, **Cost** number when Area is Cost, default 10, min > 1). Scale is the blocker size. Editor draws an amber dotted volume plus `default.png` at the center. Not Add Component / Search.
 - Details **Bake NavMesh** opens a non-dismissable modal on a painted frame, collects geometry, runs `generateNavMesh` in a dedicated bake worker (tile cache when Support Dynamic Obstacles is on), writes the Scene `navmesh` chunk. A failed bake keeps the modal open with the Recast error and a Close control (Save still continues).
 - Save with Auto Bake On Save awaits `flushNavBakeForSave()` (same `startBake` / `NavBakeDialog` as Bake). Export does **not** auto-bake. Only **mounted** scene workspaces register a collector — an idle-unmounted P18 scene tab will not bake on Save until it remounts.
-- 3D collect: `MeshComponent` world meshes — origin-root / glTF **visual children**, triangle winding reversed for Recast +Y; skip editor pick proxies — plus static unwalkable blockers. Dynamic / cost blockers are skipped at bake. When Bake Bounds is on, meshes, tilemap chains, and static blockers whose AABB misses the box are dropped.
+- 3D collect: `MeshComponent` world meshes — origin-root / glTF **visual children**, triangle winding reversed for Recast +Y; skip editor pick proxies — plus static unwalkable blockers (**rotated by the actor quaternion**; dynamic Recast `addObstacle` still uses the world AABB of the rotated box). Dynamic / cost blockers are skipped at bake. When Bake Bounds is on, meshes, tilemap chains, and static blockers whose AABB misses the box are dropped.
 - 2D collect: Recast XZ walkable quad from actor XY bounds (or the bounds box XY when enabled), `ColliderComponent` 2D shapes whose actor XY is inside the box, tilemap collision chains (`tilemapCollisionChains` / `navBakeTilemapChains`) that intersect the box XY, remapped static blockers in-box. MeshComponent XY verts are not fed to Recast.
-- Debug overlay: Recast primitives → Babylon wireframe when `debugOverlay` is on.
+- Debug overlay: Recast tris lifted ~0.04 on +Y, translucent green fill, darker green edge outlines, unpickable. Viewport **Show Navmesh** (and leftover `debugOverlay`) drive the editor overlay; when on, NavMesh Blocker volumes also draw. Play console `shownav` reuses the same overlay (blockers included; Blocking Volumes are not nav input and stay off this overlay).
 - Play reads the Scene chunk (`readPlayNavmeshBytes`) and posts `loadNavMesh` **before** `realizePlayWorld`. `NavAgentComponent` registers `addAgent`; dynamic **unwalkable** blockers register `addObstacle`; **cost** blockers (static and dynamic) call `applyCostVolume`; `tickCrowd` copies pose + `facingYawFromVelocity` into the snapshot and re-stamps moving dynamic cost volumes.
 
 Bake modal phases:

@@ -48,6 +48,24 @@ describe("physicsActorDiagnostics", () => {
     ).toEqual([]);
   });
 
+  it("does not warn for a blocking volume with or without an extra collider", () => {
+    expect(
+      physicsActorDiagnostics({
+        id: "wall",
+        components: [{ id: "vol", classId: "BlockingVolumeComponent" }],
+      }),
+    ).toEqual([]);
+    expect(
+      physicsActorDiagnostics({
+        id: "wall-col",
+        components: [
+          { id: "vol", classId: "BlockingVolumeComponent" },
+          { id: "col", classId: "ColliderComponent" },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
   it("does not warn for a tilemap with or without a rigid body", () => {
     expect(
       physicsActorDiagnostics({

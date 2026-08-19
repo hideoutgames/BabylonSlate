@@ -591,6 +591,7 @@ export function DocumentWorkspace() {
                   sceneContent?.settings?.editorJoystickEnabled
                 }
                 documentGridVisible={sceneContent?.settings?.grid?.showGrid}
+                documentNavmeshVisible={sceneContent?.settings?.showNavmesh}
               >
               <NavBakeProvider>
               <PrefabEditingProvider>

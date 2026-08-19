@@ -14,8 +14,8 @@ import { RENDERING_GROUP } from "./sorting";
 export const COLLIDER_DASH_SIZE = 0.12;
 export const COLLIDER_GAP_SIZE = 0.08;
 export const COLLIDER_DASH_THICKNESS = 0.018;
-const COLLIDER_COLOR = new Color3(0.85, 0.9, 0.4);
-const materialsByScene = new WeakMap<Scene, StandardMaterial>();
+export const COLLIDER_COLOR = new Color3(0.85, 0.9, 0.4);
+const materialsByScene = new WeakMap<Scene, Map<string, StandardMaterial>>();
 
 export function isColliderVisualMesh(mesh: Mesh): boolean {
   return Boolean(
@@ -24,34 +24,62 @@ export function isColliderVisualMesh(mesh: Mesh): boolean {
   );
 }
 
-export function createColliderVisualMesh(
+export function createDashedEdgesMesh(
   scene: Scene,
   name: string,
-  shape: ColliderShape,
+  edges: Array<[Vector3, Vector3]>,
+  color: Color3 = COLLIDER_COLOR,
 ): Mesh {
   const root = new Mesh(name, scene);
   root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
   root.isPickable = false;
   root.renderingGroupId = RENDERING_GROUP.world;
-  const material = colliderMaterial(scene);
+  const material = colliderMaterial(scene, color);
+  for (const [from, to] of edges) {
+    addDashedEdge(root, scene, material, from, to);
+  }
+  return root;
+}
+
+export function createColliderVisualMesh(
+  scene: Scene,
+  name: string,
+  shape: ColliderShape,
+  color: Color3 = COLLIDER_COLOR,
+): Mesh {
+  const root = new Mesh(name, scene);
+  root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
+  root.isPickable = false;
+  root.renderingGroupId = RENDERING_GROUP.world;
+  const material = colliderMaterial(scene, color);
   for (const [from, to] of shapeEdges(shape)) {
     addDashedEdge(root, scene, material, from, to);
   }
   return root;
 }
 
-function colliderMaterial(scene: Scene): StandardMaterial {
-  const existing = materialsByScene.get(scene);
+function colorKey(color: Color3): string {
+  return `${color.r.toFixed(3)},${color.g.toFixed(3)},${color.b.toFixed(3)}`;
+}
+
+function colliderMaterial(scene: Scene, color: Color3): StandardMaterial {
+  let byColor = materialsByScene.get(scene);
+  if (!byColor) {
+    byColor = new Map();
+    materialsByScene.set(scene, byColor);
+  }
+  const key = colorKey(color);
+  const existing = byColor.get(key);
   if (existing) return existing;
-  const material = new StandardMaterial("colliderDash", scene);
+  const material = new StandardMaterial(`colliderDash:${key}`, scene);
   material.disableLighting = true;
   material.disableDepthWrite = false;
   material.backFaceCulling = false;
-  material.emissiveColor = COLLIDER_COLOR.clone();
+  material.emissiveColor = color.clone();
   material.diffuseColor = Color3.Black();
   material.specularColor = Color3.Black();
   material.alpha = 1;
-  materialsByScene.set(scene, material);
+  byColor.set(key, material);
   return material;
 }
 
@@ -132,6 +160,33 @@ function shapeEdges(shape: ColliderShape): Array<[Vector3, Vector3]> {
     default:
       return boxEdges(0.5, 0.5, 0.5);
   }
+}
+
+export function cylinderEdges(
+  radius: number,
+  height: number,
+): Array<[Vector3, Vector3]> {
+  const hy = height / 2;
+  const top = ringEdges(radius, "y").map(
+    ([a, b]): [Vector3, Vector3] => [
+      a.add(new Vector3(0, hy, 0)),
+      b.add(new Vector3(0, hy, 0)),
+    ],
+  );
+  const bottom = ringEdges(radius, "y").map(
+    ([a, b]): [Vector3, Vector3] => [
+      a.add(new Vector3(0, -hy, 0)),
+      b.add(new Vector3(0, -hy, 0)),
+    ],
+  );
+  const edges: Array<[Vector3, Vector3]> = [...top, ...bottom];
+  for (let i = 0; i < 4; i++) {
+    const theta = (i / 4) * Math.PI * 2;
+    const x = Math.cos(theta) * radius;
+    const z = Math.sin(theta) * radius;
+    edges.push([new Vector3(x, -hy, z), new Vector3(x, hy, z)]);
+  }
+  return edges;
 }
 
 function boxEdges(hx: number, hy: number, hz: number): Array<[Vector3, Vector3]> {

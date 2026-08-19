@@ -20,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "vite-engine-plugins.ts", "vite-engine-skybox.ts", "vite-player-host.ts"]
+  "include": ["vite.config.ts", "vite-engine-plugins.ts", "vite-engine-skybox.ts", "vite-engine-billboards.ts", "vite-player-host.ts"]
 }

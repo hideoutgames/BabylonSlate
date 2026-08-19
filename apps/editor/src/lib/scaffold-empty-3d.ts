@@ -141,7 +141,8 @@ function replaceDefaultCubeActor(
 
 /**
  * Import Kenney Mannequin (hierarchy rig), write Class + idle Anim Graph, and
- * replace the default Cube actor. `createDefaultScene()` itself stays Cube.
+ * replace the default empty Actor. `createDefaultScene()` itself stays an
+ * empty Actor (editor `default.png` at the pivot).
  */
 export async function applyKenneyMannequinEmptyScaffold(options: {
   registry: AssetRegistry;

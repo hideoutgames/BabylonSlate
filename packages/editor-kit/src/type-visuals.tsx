@@ -27,6 +27,7 @@ import {
   PlugIcon,
   PuzzleIcon,
   SparklesIcon,
+  SquareDashedIcon,
   TypeIcon,
   Volume2Icon,
   WindIcon,
@@ -116,6 +117,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   NavAgentComponent: "ActorComponent",
   NavMeshComponent: "ActorComponent",
   NavMeshBlockerComponent: "ActorComponent",
+  BlockingVolumeComponent: "ActorComponent",
   UserInterface: "BObject",
   Widget: "BObject",
   CanvasWidget: "Widget",
@@ -168,6 +170,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   NavAgentComponent: NavigationIcon,
   NavMeshComponent: MapIcon,
   NavMeshBlockerComponent: BoxIcon,
+  BlockingVolumeComponent: SquareDashedIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -230,6 +233,7 @@ const COMPONENT_CLASS_IDS = new Set([
   "NavAgentComponent",
   "NavMeshComponent",
   "NavMeshBlockerComponent",
+  "BlockingVolumeComponent",
 ]);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {

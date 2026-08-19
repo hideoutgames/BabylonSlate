@@ -536,11 +536,11 @@ describe("EditorSceneSync", () => {
     expect(after!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
     const icon = after!
       .getChildMeshes()
-      .find((mesh) => (mesh.metadata as { editorBillboard?: string } | null)?.editorBillboard === "light");
+      .find((mesh) => (mesh.metadata as { editorBillboard?: string } | null)?.editorBillboard === "point_light");
     expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
       (icon!.metadata as { editorBillboard?: string }).editorBillboard,
-    ).toBe("light");
+    ).toBe("point_light");
   });
 
   it("tints an existing light billboard without rebuilding the mesh", () => {
@@ -562,7 +562,7 @@ describe("EditorSceneSync", () => {
     const mesh = sync.meshForActor("a");
     const icon = mesh!
       .getChildMeshes()
-      .find((entry) => (entry.metadata as { editorBillboard?: string } | null)?.editorBillboard === "light");
+      .find((entry) => (entry.metadata as { editorBillboard?: string } | null)?.editorBillboard === "point_light");
     sync.apply(
       sceneWith([
         createActor("a", "A", {

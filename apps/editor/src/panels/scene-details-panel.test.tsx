@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
-import { createActor, createDefaultScene, normalizeScene } from "@babylonslate/core";
+import { createActor, createDefaultScene, createMeshComponent, normalizeScene } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -121,8 +121,8 @@ function scene() {
 describe("SceneDetailsPanel authoring", () => {
   it("opens an AssetPicker for mesh assetGuid and shows the asset name", async () => {
     harness.selectedActorIds = ["actor-1"];
-    const mesh = scene().actors[0]?.components[0];
-    if (mesh) mesh.properties.assetGuid = "mesh-1";
+    scene().actors[0]!.components.push(createMeshComponent("component-1", "box"));
+    scene().actors[0]!.components[0]!.properties.assetGuid = "mesh-1";
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     const button = screen.getByTestId("property-actor-1-component-1-assetGuid");
     expect(button.textContent).toContain("Rock");

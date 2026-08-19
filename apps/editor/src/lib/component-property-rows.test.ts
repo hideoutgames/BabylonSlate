@@ -371,7 +371,7 @@ describe("componentPropertyRows", () => {
     ).toMatchObject({ kind: "vector3" });
     expect(
       navMesh.rows.find((row) => row.id.endsWith("-debugOverlay")),
-    ).toMatchObject({ kind: "boolean", value: true });
+    ).toBeUndefined();
 
     const agent = rowsFor({
       id: "agent",
