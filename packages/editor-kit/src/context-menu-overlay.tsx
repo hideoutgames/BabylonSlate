@@ -4,9 +4,14 @@ import type { ContextMenuState } from "./use-context-menu";
 export interface ContextMenuOverlayProps {
   menu: ContextMenuState | null;
   onClose: () => void;
+  contentTestId?: string;
 }
 
-export function ContextMenuOverlay({ menu, onClose }: ContextMenuOverlayProps) {
+export function ContextMenuOverlay({
+  menu,
+  onClose,
+  contentTestId = "context-menu-panel",
+}: ContextMenuOverlayProps) {
   if (!menu?.open) return null;
 
   return (
@@ -25,7 +30,7 @@ export function ContextMenuOverlay({ menu, onClose }: ContextMenuOverlayProps) {
         }}
         anchor={{ x: menu.x, y: menu.y }}
         size="touch"
-        contentTestId="context-menu-panel"
+        contentTestId={contentTestId}
       />
     </>
   );
