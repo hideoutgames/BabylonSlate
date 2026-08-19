@@ -89,7 +89,7 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 - No unresolved merge conflicts.
 - User has **not** explicitly asked to hold the PR open, keep it draft, or skip merge.
 - Session is not read-only (e.g. Plan mode).
-- A Verify **slot** is free (fewer than 2 non-draft PRs targeting `main`). If not, stay draft and stop — see [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
+- A Verify **slot** is free (fewer than 3 non-draft PRs targeting `main`). If not, stay draft and stop — see [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
 
 ### When merge is not reasonable (exceptions)
 
