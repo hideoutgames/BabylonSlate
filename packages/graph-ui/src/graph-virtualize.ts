@@ -51,7 +51,9 @@ function nodeIntersectsWorld(
 
 /**
  * Mount nodes near the flow viewport (plus overscan) and edges that touch
- * them. A 0×0 viewport (jsdom / first paint) returns the full lists.
+ * them. `keepIds` (focus / search) stay mounted even when off-screen so
+ * `fitView` can still resolve them. A 0×0 viewport (jsdom / first paint)
+ * returns the full lists.
  */
 export function selectVisibleGraphElements<
   N extends GraphVirtualizeNode,
@@ -61,6 +63,7 @@ export function selectVisibleGraphElements<
   edges: readonly E[],
   viewport: GraphVirtualizeViewport,
   overscan = GRAPH_VIRTUALIZE_OVERSCAN_PX,
+  keepIds: readonly string[] = [],
 ): { nodes: N[]; edges: E[] } {
   if (viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) {
     return { nodes: [...nodes], edges: [...edges] };
@@ -70,7 +73,7 @@ export function selectVisibleGraphElements<
   const minY = (-viewport.y - overscan) / zoom;
   const maxX = (-viewport.x + viewport.width + overscan) / zoom;
   const maxY = (-viewport.y + viewport.height + overscan) / zoom;
-  const nearIds = new Set<string>();
+  const nearIds = new Set<string>(keepIds);
   for (const node of nodes) {
     if (nodeIntersectsWorld(node, minX, minY, maxX, maxY)) {
       nearIds.add(node.id);

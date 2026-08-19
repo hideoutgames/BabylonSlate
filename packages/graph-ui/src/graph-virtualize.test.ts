@@ -60,6 +60,38 @@ describe("selectVisibleGraphElements", () => {
     expect(visible.edges).toEqual(edges);
   });
 
+  it("keeps an off-screen keepIds node and its incident edge mounted", () => {
+    const nodes = [
+      { id: "near", position: { x: 0, y: 0 } },
+      { id: "focus", position: { x: 8000, y: 8000 } },
+      { id: "peer", position: { x: 9000, y: 9000 } },
+      { id: "unrelated", position: { x: 12000, y: 12000 } },
+    ];
+    const edges = [
+      { id: "focus-link", source: "focus", target: "peer" },
+      { id: "other", source: "unrelated", target: "peer" },
+    ];
+    const visible = selectVisibleGraphElements(
+      nodes,
+      edges,
+      {
+        x: 0,
+        y: 0,
+        zoom: 1,
+        width: 400,
+        height: 300,
+      },
+      GRAPH_VIRTUALIZE_OVERSCAN_PX,
+      ["focus"],
+    );
+    expect(visible.nodes.map((node) => node.id).sort()).toEqual([
+      "focus",
+      "near",
+      "peer",
+    ]);
+    expect(visible.edges.map((edge) => edge.id)).toEqual(["focus-link"]);
+  });
+
   it("uses the named overscan and fallback node size", () => {
     expect(GRAPH_VIRTUALIZE_OVERSCAN_PX).toBeGreaterThan(0);
     expect(GRAPH_NODE_FALLBACK_WIDTH).toBeGreaterThan(0);

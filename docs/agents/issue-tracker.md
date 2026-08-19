@@ -19,6 +19,10 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | `selectVisibleGraphElements` dropped off-screen `focusedNodeId`, so search / compiler / Play navigate `fitView` no-oped. `keepIds` now mounts the focused node and its incident edges | Resolved |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Spec | Hidden warm graphs (`display: none` → 0×0) turned virtualisation off and remounted every node. `GraphEditor` now freezes the last positive host size | Resolved |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-content-browser-virtualize | Standards | `asset-registry.md` still described CSS Grid overflow; the grid is windowed absolute tiles plus a spacer | Resolved |
+| 2026-08-19 | cursor/p18-post-merge-review-256c | p18-graph-virtualize | Standards | GraphEditor catalog omitted `sessionViewport` remount restore and focus keep-mount | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-slomo | Spec | Trace frame `snapshotText` baked `world.clock.dt` (`dt * rate`) instead of recorded `dt` | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-viz | Standards | `showcollision` disposed and rebuilt overlay meshes every tick | Resolved |
 | 2026-08-18 | cursor/console-commands-review-be9a | p8-console-apply | Spec | `resolutionscale 8` printed and emitted 8 while Play clamped to 2 | Resolved |
