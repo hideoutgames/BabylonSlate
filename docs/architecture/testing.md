@@ -16,7 +16,7 @@ GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 9 Verify 
 
 ## Vitest projects
 
-Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace uses the `forks` pool with `maxWorkers: 2` so v8 coverage of the jsdom editor suite cannot accumulate in one Node heap past GitHub Free standard-runner limits.
+Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. Coverage runs (`pnpm test:coverage` / `pnpm verify`) use four `forks` workers so the jsdom editor suite cannot fill one Node heap past GitHub Free standard-runner limits.
 
 | Project | Environment | Covers |
 | --- | --- | --- |
