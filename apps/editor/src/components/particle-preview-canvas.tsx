@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Texture, type Engine } from "@babylonjs/core";
+import type { Engine } from "@babylonjs/core";
 import type {
   ParticleEmitterPayload,
   ParticleSystemPayload,
@@ -10,9 +10,17 @@ import {
   createMaterialPreviewPresenter,
   createParticleMaterialResolver,
   createParticlePreviewScene,
+  getMaterialTexture,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
+  type ParticleServiceDiagnostic,
 } from "@babylonslate/render";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import {
@@ -30,33 +38,72 @@ async function loadTextureBytes(
   return source && source.byteLength > 0 ? source : null;
 }
 
+function libraryLook(
+  library: PlayParticleLibrary,
+): "no-emitters" | "no-texture" | "ok" {
+  if (library.emitters.size === 0) return "no-emitters";
+  for (const emitter of library.emitters.values()) {
+    if (emitter.textureGuid) return "ok";
+  }
+  return "no-texture";
+}
+
+function PreviewStatusEmpty({
+  title,
+  description,
+  testId,
+}: {
+  title: string;
+  description: string;
+  testId: string;
+}) {
+  return (
+    <Empty data-testid={testId}>
+      <EmptyHeader>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
 export function ParticlePreviewCanvas({
   library,
   systemGuid,
   testId,
+  showSkybox = false,
 }: {
   library: PlayParticleLibrary;
   systemGuid: string;
   testId: string;
+  showSkybox?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
   const { assetRegistry, readAssetChunk, collectPlayMaterialLibrary } =
     useDocuments();
   const [engine, setEngine] = useState<Engine | null>(null);
+  const [booted, setBooted] = useState(false);
+  const [skipped, setSkipped] = useState<ParticleServiceDiagnostic | null>(
+    null,
+  );
 
   useEffect(() => {
     setEngine(play?.ensureSharedEngine() ?? null);
   }, [play]);
 
+  const look = libraryLook(library);
   const libraryKey = JSON.stringify({
     emitters: [...library.emitters.entries()],
     systems: [...library.systems.entries()],
   });
 
   useEffect(() => {
+    setBooted(false);
+    setSkipped(null);
     const canvas = canvasRef.current;
     if (!canvas || !engine || !readAssetChunk) return;
+    if (look !== "ok") return;
     const snapshot = JSON.parse(libraryKey) as {
       emitters: Array<[string, ParticleEmitterPayload]>;
       systems: Array<[string, ParticleSystemPayload]>;
@@ -85,15 +132,15 @@ export function ParticlePreviewCanvas({
         if (loaded) bytes.set(guid, loaded);
       }
       if (cancelled) return;
+      const diagnostics: ParticleServiceDiagnostic[] = [];
       try {
-        host = createParticlePreviewScene(engine);
+        host = createParticlePreviewScene(engine, { skybox: showSkybox });
         presenter = createMaterialPreviewPresenter(host, canvas);
         cache = new ResourceCache();
         const resolveTexture = (guid: string) => {
           const data = bytes.get(guid);
           if (!data || !cache) return null;
-          const texture = cache.getTexture(guid, engine, data);
-          return texture instanceof Texture ? texture : null;
+          return getMaterialTexture(cache, guid, engine, data);
         };
         const extraGuids = particleMaterialGuidsFromLibrary(nextLibrary);
         const libraryDocs = collectPlayMaterialLibrary
@@ -113,6 +160,7 @@ export function ParticlePreviewCanvas({
           scene: host.scene,
           resolveTexture,
           resolveMaterial: materials.resolve,
+          onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
         });
         service.setLibrary(nextLibrary);
         service.handleCommand({
@@ -129,6 +177,13 @@ export function ParticlePreviewCanvas({
         service?.dispose();
         materials?.dispose();
         cache?.dispose();
+        if (!cancelled) {
+          setSkipped({
+            code: "particle.apply_failed",
+            message: "Particle Emitter failed to apply; slot skipped.",
+          });
+          setBooted(true);
+        }
         return;
       }
       if (cancelled) {
@@ -139,6 +194,23 @@ export function ParticlePreviewCanvas({
         cache?.dispose();
         return;
       }
+      if ((service?.stats().systems ?? 0) === 0) {
+        presenter.dispose();
+        host.dispose();
+        service.dispose();
+        materials.dispose();
+        cache.dispose();
+        setSkipped(
+          diagnostics[0] ?? {
+            code: "particle.missing_texture",
+            message: "Particle Emitter has no Texture; slot skipped.",
+          },
+        );
+        setBooted(true);
+        return;
+      }
+      presenter.present();
+      setBooted(true);
       const tick = () => {
         presenter?.present();
         frame = window.requestAnimationFrame(tick);
@@ -159,15 +231,47 @@ export function ParticlePreviewCanvas({
     collectPlayMaterialLibrary,
     engine,
     libraryKey,
+    look,
     readAssetChunk,
+    showSkybox,
     systemGuid,
   ]);
 
+  if (look === "no-emitters" || skipped?.code === "particle.unknown_emitter") {
+    return (
+      <PreviewStatusEmpty
+        testId="particle-preview-empty"
+        title="Missing Emitter"
+        description="Particle System references a Particle Emitter that could not be loaded."
+      />
+    );
+  }
+  if (look === "no-texture" || skipped?.code === "particle.missing_texture") {
+    return (
+      <PreviewStatusEmpty
+        testId="particle-preview-empty"
+        title="No Texture"
+        description="Pick a Texture on the Particle Emitter. Billboard quads sample that Texture."
+      />
+    );
+  }
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="h-full w-full"
-      data-testid={testId}
-    />
+    <div className="relative h-full w-full">
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full"
+        data-testid={testId}
+      />
+      {!booted ? (
+        <div className="absolute inset-0">
+          <PreviewStatusEmpty
+            testId="particle-preview-loading"
+            title="Loading Preview"
+            description="Starting the particle Preview on the shared Engine."
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }

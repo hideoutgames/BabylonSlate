@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
@@ -10,7 +10,9 @@ import {
 } from "@babylonslate/editor-kit";
 import {
   decodeSourceToRgba,
+  defaultSkyboxCreatorSourcePlacement,
   fitSourceIntoSkyboxNet,
+  letterboxSize,
   newAssetGuid,
   normalizeSkyboxCreatorPayload,
   SKYBOX_CREATOR_COMPASS_FACES,
@@ -19,6 +21,7 @@ import {
   SKYBOX_CREATOR_NET_ROWS,
   type SkyboxCreatorCompassFace,
   type SkyboxCreatorPayload,
+  type SkyboxCreatorSourcePlacement,
 } from "@babylonslate/assets";
 import {
   SKYBOX_FACE_KEYS,
@@ -43,6 +46,7 @@ import {
   SkyboxCreatorPreviewCanvas,
   type SkyboxCreatorPreviewFacePngs,
 } from "./skybox-creator-preview-canvas";
+import { SkyboxCreatorSourceOverlay } from "./skybox-creator-source-overlay";
 
 const SOURCE_DECODE_MAX = 16384;
 
@@ -233,7 +237,23 @@ export function SkyboxCreatorPreviewPanel(_props: IDockviewPanelProps) {
         }}
         creating={busy}
         error={error}
+        onChange={(next) => {
+          void applyAssetDocumentChange(documentId, next);
+        }}
       />
+    </PanelFrame>
+  );
+}
+
+export function SkyboxCreatorCubemapPanel(_props: IDockviewPanelProps) {
+  void _props;
+  const { documentId } = useDocumentWorkspace();
+  const { openDocuments } = useDocuments();
+  const doc = openDocuments.find((entry) => entry.id === documentId);
+  const payload = asRecord(doc?.content);
+  return (
+    <PanelFrame data-testid="skybox-creator-cubemap-panel">
+      <SkyboxCreatorCubemap payload={payload} />
     </PanelFrame>
   );
 }
@@ -258,32 +278,65 @@ export function SkyboxCreatorDetailsPanel(_props: IDockviewPanelProps) {
   );
 }
 
+
+function hostSize(element: HTMLElement): { width: number; height: number } {
+  const rect = element.getBoundingClientRect();
+  return {
+    width: element.clientWidth || rect.width,
+    height: element.clientHeight || rect.height,
+  };
+}
+
 export function SkyboxCreatorPreview({
   payload,
   onCreate,
   creating,
   error,
+  onChange,
 }: {
   payload: Record<string, unknown>;
   onCreate: () => void;
   creating?: boolean;
   error?: string | null;
+  onChange?: (next: Record<string, unknown>) => void;
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
   const { assetRegistry, readAssetChunk } = useDocuments();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const netRef = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ width: 0, height: 0 });
   const [url, setUrl] = useState<string | null>(null);
-  const [facePngs, setFacePngs] = useState<SkyboxCreatorPreviewFacePngs | null>(
-    null,
-  );
+  const [sourceSize, setSourceSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const texture = ((assetRegistry?.list() ?? []) as IndexedAsset[]).find(
     (asset) => asset.header.guid === helper.sourceTextureGuid,
   );
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const measure = () => {
+      const size = hostSize(host);
+      const next = letterboxSize(size.width, size.height);
+      setBox((prev) =>
+        prev.width === next.width && prev.height === next.height
+          ? prev
+          : { width: next.width, height: next.height },
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(host);
+    return () => observer.disconnect();
+  });
 
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
     setUrl(null);
-    setFacePngs(null);
+    setSourceSize(null);
     if (!texture || !readAssetChunk) return;
     void (async () => {
       const bytes = await readTextureImageBytes(readAssetChunk, texture.path);
@@ -292,20 +345,11 @@ export function SkyboxCreatorPreview({
       if (!cancelled) setUrl(objectUrl);
       try {
         const decoded = await decodeSourceToRgba(bytes, SOURCE_DECODE_MAX);
-        if (cancelled) return;
-        const sliced = fitSourceIntoSkyboxNet(
-          decoded.rgba,
-          decoded.width,
-          decoded.height,
-        );
-        const pngs = {} as SkyboxCreatorPreviewFacePngs;
-        for (const key of SKYBOX_FACE_KEYS) {
-          const face = sliced.faces[key];
-          pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+        if (!cancelled) {
+          setSourceSize({ width: decoded.width, height: decoded.height });
         }
-        if (!cancelled) setFacePngs(pngs);
       } catch {
-        if (!cancelled) setFacePngs(null);
+        if (!cancelled) setSourceSize(null);
       }
     })();
     return () => {
@@ -328,6 +372,16 @@ export function SkyboxCreatorPreview({
     return rows;
   }, []);
 
+  const overlayPlacement: SkyboxCreatorSourcePlacement | null =
+    helper.sourcePlacement ??
+    (sourceSize
+      ? defaultSkyboxCreatorSourcePlacement(sourceSize.width, sourceSize.height)
+      : null);
+
+  const commitPlacement = (sourcePlacement: SkyboxCreatorSourcePlacement) => {
+    onChange?.({ ...helper, sourcePlacement });
+  };
+
   return (
     <div
       className="flex h-full min-h-0 flex-col"
@@ -336,63 +390,127 @@ export function SkyboxCreatorPreview({
       <ToolbarStrip>
         <CreateSkyboxButton disabled={creating} onClick={onCreate} />
       </ToolbarStrip>
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
+      <div className="flex min-h-0 flex-1 flex-col p-3">
         {error ? <SkyboxCreatorAlert message={error} /> : null}
         <div
-          className="relative w-full overflow-hidden rounded-md border border-border bg-muted/30"
-          style={{ aspectRatio: `${SKYBOX_CREATOR_NET_COLS} / ${SKYBOX_CREATOR_NET_ROWS}` }}
-          data-testid="skybox-creator-net"
+          ref={hostRef}
+          className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+          data-testid="skybox-creator-net-host"
         >
-          {url ? (
-            <img
-              src={url}
-              alt=""
-              className="absolute inset-0 h-full w-full object-contain"
-            />
-          ) : null}
           <div
-            className="absolute inset-0 grid"
-            style={{
-              gridTemplateColumns: `repeat(${SKYBOX_CREATOR_NET_COLS}, 1fr)`,
-              gridTemplateRows: `repeat(${SKYBOX_CREATOR_NET_ROWS}, 1fr)`,
-            }}
+            ref={netRef}
+            className="relative overflow-hidden rounded-md border border-border bg-muted/30"
+            style={{ width: box.width, height: box.height }}
+            data-testid="skybox-creator-net"
           >
-            {cells.map((cell) => (
-              <div
-                key={`${cell.col}-${cell.row}`}
-                className={
-                  cell.compass
-                    ? "relative flex items-start justify-center border border-border/80 bg-background/20 p-1"
-                    : "border border-dashed border-border/50 bg-muted/40"
-                }
+            {helper.sourceTextureGuid && overlayPlacement && onChange ? (
+              <SkyboxCreatorSourceOverlay
+                placement={overlayPlacement}
+                imageUrl={url}
+                onChange={commitPlacement}
+                getNetRect={() => netRef.current?.getBoundingClientRect()}
+              />
+            ) : null}
+            <div
+              className="pointer-events-none absolute inset-0 z-20 grid"
+              style={{
+                gridTemplateColumns: `repeat(${SKYBOX_CREATOR_NET_COLS}, 1fr)`,
+                gridTemplateRows: `repeat(${SKYBOX_CREATOR_NET_ROWS}, 1fr)`,
+              }}
+            >
+              {cells.map((cell) => (
+                <div
+                  key={`${cell.col}-${cell.row}`}
+                  style={{
+                    width: `${100 / SKYBOX_CREATOR_NET_COLS}%`,
+                    height: `${100 / SKYBOX_CREATOR_NET_ROWS}%`,
+                  }}
+                  className={
+                    cell.compass
+                      ? "relative flex items-start justify-center border border-border/80 bg-background/20 p-1"
+                      : "border border-dashed border-border/50 bg-muted/40"
+                  }
+                >
+                  {cell.compass ? (
+                    <span className="rounded bg-background/80 px-1 text-[10px] font-medium tracking-wide text-foreground">
+                      {COMPASS_LABEL[cell.compass]}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+            {helper.sourceTextureGuid ? null : (
+              <Empty
+                className="pointer-events-none absolute inset-0 z-30 justify-center"
+                data-testid="skybox-creator-empty"
               >
-                {cell.compass ? (
-                  <span className="rounded bg-background/80 px-1 text-[10px] font-medium tracking-wide text-foreground">
-                    {COMPASS_LABEL[cell.compass]}
-                  </span>
-                ) : null}
-              </div>
-            ))}
+                <EmptyHeader>
+                  <EmptyTitle>No Texture</EmptyTitle>
+                  <EmptyDescription>
+                    Pick a Texture in Details. Place it on this 4×3 net of
+                    square cells, then Create writes six skybox faces.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
           </div>
         </div>
-        {helper.sourceTextureGuid ? (
-          facePngs ? (
-            <SkyboxCreatorPreviewCanvas facePngs={facePngs} />
-          ) : (
-            <p className="text-sm text-muted-foreground">Slicing preview…</p>
-          )
-        ) : (
-          <Empty data-testid="skybox-creator-empty">
-            <EmptyHeader>
-              <EmptyTitle>No Texture</EmptyTitle>
-              <EmptyDescription>
-                Pick a Texture in Details. The whole image fits into this 4×3
-                net, then Create writes six skybox faces.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
       </div>
+    </div>
+  );
+}
+
+export function SkyboxCreatorCubemap({
+  payload,
+}: {
+  payload: Record<string, unknown>;
+}) {
+  const helper = normalizeSkyboxCreatorPayload(payload);
+  const { assetRegistry, readAssetChunk } = useDocuments();
+  const [facePngs, setFacePngs] = useState<SkyboxCreatorPreviewFacePngs | null>(
+    null,
+  );
+  const texture = ((assetRegistry?.list() ?? []) as IndexedAsset[]).find(
+    (asset) => asset.header.guid === helper.sourceTextureGuid,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    setFacePngs(null);
+    if (!texture || !readAssetChunk) return;
+    void (async () => {
+      const bytes = await readTextureImageBytes(readAssetChunk, texture.path);
+      if (!bytes || cancelled) return;
+      try {
+        const decoded = await decodeSourceToRgba(bytes, SOURCE_DECODE_MAX);
+        if (cancelled) return;
+        const sliced = fitSourceIntoSkyboxNet(
+          decoded.rgba,
+          decoded.width,
+          decoded.height,
+          helper.sourcePlacement,
+        );
+        const pngs = {} as SkyboxCreatorPreviewFacePngs;
+        for (const key of SKYBOX_FACE_KEYS) {
+          const face = sliced.faces[key];
+          pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+        }
+        if (!cancelled) setFacePngs(pngs);
+      } catch {
+        if (!cancelled) setFacePngs(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [helper.sourcePlacement, readAssetChunk, texture]);
+
+  return (
+    <div
+      className="h-full min-h-0 overflow-hidden"
+      data-testid="skybox-creator-cubemap"
+    >
+      {facePngs ? <SkyboxCreatorPreviewCanvas facePngs={facePngs} /> : null}
     </div>
   );
 }
@@ -427,7 +545,8 @@ export function SkyboxCreatorEditor({
       value: helper.sourceTextureGuid,
       placeholder: "None",
       onPick: () => setPickerOpen(true),
-      onChange: (sourceTextureGuid) => commit({ ...helper, sourceTextureGuid }),
+      onChange: (sourceTextureGuid) =>
+        commit({ ...helper, sourceTextureGuid, sourcePlacement: null }),
       ...identityFor(assets, helper.sourceTextureGuid),
     },
     ...SKYBOX_FACE_KEYS.map((key) => ({
@@ -456,7 +575,7 @@ export function SkyboxCreatorEditor({
         title="Pick Texture"
         allowNone
         onPick={(sourceTextureGuid) => {
-          commit({ ...helper, sourceTextureGuid });
+          commit({ ...helper, sourceTextureGuid, sourcePlacement: null });
           setPickerOpen(false);
         }}
         data-testid="skybox-creator-texture-picker"

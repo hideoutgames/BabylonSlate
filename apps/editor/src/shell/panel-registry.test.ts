@@ -52,8 +52,9 @@ describe("panelComponents", () => {
     expect(panelComponents["animation-details"]).toBeTypeOf("function");
   });
 
-  it("registers Skybox Creator Preview and Details docks", () => {
+  it("registers Skybox Creator Preview, Cubemap, and Details docks", () => {
     expect(panelComponents["skybox-creator-preview"]).toBeTypeOf("function");
+    expect(panelComponents["skybox-creator-cubemap"]).toBeTypeOf("function");
     expect(panelComponents["skybox-creator-details"]).toBeTypeOf("function");
   });
 });

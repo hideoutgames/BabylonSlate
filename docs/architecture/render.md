@@ -85,7 +85,7 @@ Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().le
 - Shadows, nav bake, and `frameActor` skip skyboxes (`infiniteDistance` tracks the camera, so framing the mesh origin is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
 - Six-face cubes are Engine-owned so Play overlay `scene.dispose()` does not race pending face loads
-- Authors produce custom faces with Content Browser **Skybox Creator** (editor-only helper, not a Skybox document). Preview slices in memory; **Create Skybox Textures** writes six uncompressed `usage: "skybox"` Textures. Assign those guids on `SkyboxComponent`. Equirect-to-cubemap projection is out of scope.
+- Authors produce custom faces with Content Browser **Skybox Creator** (editor-only helper, not a Skybox document). Preview is a letterboxed 4×3 net of **square** cells (same aspect as engine cube faces). The Texture overlay on that net is what Create crops; **Create Skybox Textures** writes six uncompressed `usage: "skybox"` Textures. **Cubemap** is a contained 3D dock tab. Assign those guids on `SkyboxComponent`. Equirect-to-cubemap projection is out of scope.
 
 ## 3D Text mesh
 
@@ -147,8 +147,8 @@ See [audio.md](audio.md).
 
 Main-thread owner shared by overlay Play, asset Preview, and `apps/player`. Wraps Babylon `GPUParticleSystem` (default when `IsSupported`) with CPU `ParticleSystem` fallback. Billboard quads only (`isBillboardBased`, `BILLBOARDMODE_ALL`). No second renderer.
 
-- Play library of Particle Emitter / Particle System payloads loads beside `textureBytes`. Optional particle-domain Material uses `createEffectForParticles`.
-- Worker emits `assignParticle` / `setParticlePlaying` only. Actor origin is an invisible emitter mesh parented under the Play helper.
+- Play library of Particle Emitter / Particle System payloads loads beside `textureBytes`. Particle textures go through `getMaterialTexture`. Optional particle-domain Material uses `createEffectForParticles` after binding `system.particleTexture` onto `ParticleTextureBlock`.
+- Worker emits `assignParticle` / `setParticlePlaying` only. Actor origin is an enabled zero-visibility emitter mesh (`alwaysSelectAsActiveMesh`) parented under the Play helper.
 - GPU `stop()` still draws leftovers; `resetParticleSession` / `dispose()` on Play close, `changescene`, and despawn.
 - Test-mode `window.__babylonslateParticleStats` (`particleStats`) exposes `systems`, `playing`, `gpu`. Play open/close must return systems to 0.
 

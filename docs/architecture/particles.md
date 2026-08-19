@@ -22,15 +22,17 @@ Do **not** write a custom thin-instance simulator, Solid Particle System, points
 ## Authoring
 
 - **New Asset → Rendering**: Particle Emitter (`.emitter.babasset`) and Particle System (`.particles.babasset`).
-- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. Preview with no Texture shows **No Texture**. With a Texture guid, Preview runs `GPUParticleSystem` (CPU fallback) on the Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Preview compiles an optional particle-domain Material and calls `createEffectForParticles`.
+- DockView **Preview** + **Details** (Sprite-style). Windows toggles those tabs. **Loading Preview** overlays the canvas until the first `present()`. After boot, skipped emitters show **No Texture** or **Missing Emitter** (catalog Empty) instead of a black canvas. Emitter Preview with no Texture guid shows **No Texture**. With a Texture guid, Preview runs `GPUParticleSystem` (CPU fallback) on the Material-Preview-style disposable Scene (app-lifetime Engine, RTT + 2D blit, never a second Engine). Preview compiles an optional particle-domain Material and calls `createEffectForParticles`.
+- **System Preview** loads each slot's Particle Emitter **document** payload (open tab first, else `loadAssetDocument`). Registry `header.payload` is empty for Emitters (`headerMetaForSave` has no Particle case) — do not treat `{}` as authored look.
+- System Preview defaults to the engine cubemap (`createSkyboxMesh` + `createEngineDefaultCubeTexture`, not `scene.createDefaultSkybox`). Details boolean **Preview Skybox** (`previewSkybox`, schema v1, missing → true) is editor-only and ignored at runtime. Emitter Preview stays the near-black studio.
 - Lucide `Sparkles` (Particle System / ParticleComponent) and `Wind` (Particle Emitter); family color matches Material.
 - **Place Actors → Particles** and **Place Actors → Project** Particle System spawn `ParticleComponent`. Engine Particle stays empty until a System is picked.
 - Add Component / Search: `ParticleComponent` (`particleSystemGuid`, play-on-start, sorting layer/order).
 - Editor viewport uses a camera-facing billboard helper (`billboard:particle`), same as audio/light/camera. Play hides that helper (`meshKind: "particle"`).
 
-Emitter Details: Texture, optional particle-domain Material (AssetPicker filters `domain === "particle"`), capacity 16–4096, emit rate, blend Standard/Additive, shape point/box/sphere/cone, lifetime/speed/size min/max, gravity, color start/end (RGB + alpha), angular speed, pre-warm cycles.
+Emitter Details: Texture, optional particle-domain Material (AssetPicker filters `domain === "particle"`), capacity 16–4096, emit rate, blend Standard/Additive, shape point/box/sphere/cone, lifetime/speed/size min/max, gravity, color start/end (RGB + alpha), angular speed, pre-warm cycles. Look lives here — do not duplicate Emitter fields onto System slots.
 
-System Details: space world/local, looping, duration, up to 8 Emitter slots (duplicates allowed).
+System Details: space world/local, looping, duration, up to 8 Emitter slots (duplicates allowed), **Preview Skybox**.
 
 ## GPU-safe authored surface
 
@@ -40,7 +42,7 @@ Author only the shared CPU/GPU surface: `emitRate`; `createPointEmitter` / `crea
 
 GPU `stop()` still draws leftover particles; teardown must `dispose()`. Do not author sub-emitters, bursts (`manualEmitCount`), `disposeOnStop`, dual min/max gradient values, emit-rate / start-size gradients, `textureMask`, or mesh emitters.
 
-Always set `system.particleTexture` from the Emitter Texture guid (ResourceCache). An NME Particle Texture preview is ignored at runtime.
+Always set `system.particleTexture` from the Emitter Texture guid (`getMaterialTexture`: `invertY: false`, then `hasAlpha = true`). Before `createEffectForParticles`, copy that texture onto every `ParticleTextureBlock` on the particle-domain NodeMaterial so the effect does not sample Babylon's empty/error checker. An NME Particle Texture preview node is not a second source of truth — live sampling is `system.particleTexture`.
 
 ## Particle-domain materials
 
@@ -55,7 +57,7 @@ Shared math / Mix / Combine stay legal. Hide world attributes, WPO, PBR metallic
 
 ## Runtime
 
-`ParticleService` in `@babylonslate/render` is Audio-shaped: main thread, worker never imports Babylon. Commands: `assignParticle` / `setParticlePlaying`. Each Particle System slot becomes one Babylon `GPUParticleSystem` (or CPU `ParticleSystem`). The Babylon `emitter` is an invisible mesh parented to the actor origin. `start()` / `stop()` / `reset()`; GPU `stop()` still draws leftovers, so teardown must `dispose()` (Play close, `changescene`, despawn, `assignParticle` with a null guid). CPU fallback capacity is `min(capacity, 512)`.
+`ParticleService` in `@babylonslate/render` is Audio-shaped: main thread, worker never imports Babylon. Commands: `assignParticle` / `setParticlePlaying`. Each Particle System slot becomes one Babylon `GPUParticleSystem` (or CPU `ParticleSystem`). The Babylon `emitter` is an **enabled** mesh parented to the actor origin (`isVisible = true`, `visibility = 0`, `alwaysSelectAsActiveMesh`, not pickable). Do not `setEnabled(false)` or `isVisible = false` — Play uses `performancePriority = Intermediate`, and hidden emitters drop out of the active mesh list so GPU particles never draw. `start()` / `stop()` / `reset()`; blob-URL textures start after `isReady()` / `onLoadObservable` (do not skip a Texture that exists but is still decoding). GPU `stop()` still draws leftovers, so teardown must `dispose()` (Play close, `changescene`, despawn, `assignParticle` with a null guid). CPU fallback capacity is `min(capacity, 512)`.
 
 Overlay Play and `apps/player` pass a particle library (Emitter + System payloads) into `createEngine`, same pattern as `audioLibrary` / `textureBytes`. Packed player hydrates `ParticleEmitter` / `ParticleSystem` JSON from the pack. Test-mode `window.__babylonslateParticleStats` (`particleStats`) exposes `systems`, `playing`, `gpu`. Play open/close must return `systems` to 0.
 

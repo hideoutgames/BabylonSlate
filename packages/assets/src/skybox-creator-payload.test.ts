@@ -1,14 +1,21 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SKYBOX_FACE_KEYS } from "@babylonslate/core";
 import {
   SKYBOX_CREATOR_COMPASS_TO_BABYLON,
+  SKYBOX_CREATOR_NET_ASPECT,
   SKYBOX_CREATOR_NET_CELLS,
   SKYBOX_CREATOR_NET_COLS,
   SKYBOX_CREATOR_NET_ROWS,
   createDefaultSkyboxCreatorPayload,
   createSkyboxFaceTextureResult,
+  defaultSkyboxCreatorSourcePlacement,
   fitSourceIntoSkyboxNet,
+  letterboxSize,
   normalizeSkyboxCreatorPayload,
+  resizeSkyboxCreatorSourcePlacement,
   skyboxCreatorAssetDependencies,
   skyboxCreatorFaceRelativePath,
   planSkyboxCreatorFaceWrites,
@@ -39,6 +46,7 @@ describe("SkyboxCreator payload", () => {
   it("seeds an empty source and empty generated faces", () => {
     expect(createDefaultSkyboxCreatorPayload()).toEqual({
       sourceTextureGuid: null,
+      sourcePlacement: null,
       generatedFaces: {
         px: null,
         py: null,
@@ -61,6 +69,7 @@ describe("SkyboxCreator payload", () => {
       }),
     ).toEqual({
       sourceTextureGuid: "tex-1",
+      sourcePlacement: null,
       generatedFaces: {
         px: null,
         py: null,
@@ -70,6 +79,16 @@ describe("SkyboxCreator payload", () => {
         nz: null,
       },
     });
+    expect(
+      normalizeSkyboxCreatorPayload({
+        sourcePlacement: { x: -0.25, y: 0.1, width: 1.5, height: 0.8 },
+      }).sourcePlacement,
+    ).toEqual({ x: -0.25, y: 0.1, width: 1.5, height: 0.8 });
+    expect(
+      normalizeSkyboxCreatorPayload({
+        sourcePlacement: { x: "nope", y: 0, width: 1, height: 1 },
+      }).sourcePlacement,
+    ).toBeNull();
   });
 
   it("collects source and generated face guids as header dependencies", () => {
@@ -244,5 +263,125 @@ describe("SkyboxCreator cubemap net", () => {
     expect(sliced.faceSize).toBe(2);
     expect(sliced.faces.py.size).toBe(2);
     expect(sliced.faces.py.rgba.byteLength).toBe(2 * 2 * 4);
+  });
+
+  it("keeps a 4 by 3 net of square faces, matching engine default 512 cube faces", () => {
+    expect(SKYBOX_CREATOR_NET_ASPECT).toBe(4 / 3);
+    expect(SKYBOX_CREATOR_NET_COLS / SKYBOX_CREATOR_NET_ROWS).toBe(
+      SKYBOX_CREATOR_NET_ASPECT,
+    );
+    const sliced = fitSourceIntoSkyboxNet(new Uint8Array(8 * 6 * 4), 8, 6);
+    expect(sliced.netWidth / sliced.netHeight).toBe(4 / 3);
+    for (const key of SKYBOX_FACE_KEYS) {
+      expect(sliced.faces[key].size).toBe(sliced.faceSize);
+      expect(sliced.faces[key].rgba.byteLength).toBe(
+        sliced.faceSize * sliced.faceSize * 4,
+      );
+    }
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
+    const png = new Uint8Array(
+      readFileSync(join(repoRoot, "engine-content/skybox/px.png")),
+    );
+    const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+    expect(view.getUint32(16)).toBe(512);
+    expect(view.getUint32(20)).toBe(512);
+  });
+
+  it("letterboxes a 4 by 3 net into wide and tall hosts so cells stay square", () => {
+    expect(letterboxSize(800, 300)).toEqual({
+      width: 400,
+      height: 300,
+      x: 200,
+      y: 0,
+    });
+    expect(letterboxSize(400, 600)).toEqual({
+      width: 400,
+      height: 300,
+      x: 0,
+      y: 150,
+    });
+    expect(letterboxSize(400, 300)).toEqual({
+      width: 400,
+      height: 300,
+      x: 0,
+      y: 0,
+    });
+  });
+
+  it("contain-fits source placement onto the net by default", () => {
+    const wide = defaultSkyboxCreatorSourcePlacement(8, 2);
+    expect(wide.x).toBe(0);
+    expect(wide.width).toBe(1);
+    expect(wide.height).toBeCloseTo(1 / 3);
+    expect(wide.y).toBeCloseTo(1 / 3);
+    expect(defaultSkyboxCreatorSourcePlacement(4, 3)).toEqual({
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it("samples an authored placement so a pixel can land in a different compass face", () => {
+    const width = 8;
+    const height = 2;
+    const rgba = new Uint8Array(width * height * 4);
+    for (let i = 0; i < rgba.length; i += 4) {
+      rgba.set([200, 10, 10, 255], i);
+    }
+    const contain = fitSourceIntoSkyboxNet(rgba, width, height);
+    expect(pixel(contain.faces.py.rgba, contain.faceSize, 0, 0)).toEqual([
+      0, 0, 0, 255,
+    ]);
+    expect(pixel(contain.faces.pz.rgba, contain.faceSize, 0, 0)).toEqual([
+      200, 10, 10, 255,
+    ]);
+    const upOnly = {
+      x: 1 / 4,
+      y: 0,
+      width: 1 / 4,
+      height: 1 / 3,
+    };
+    const sliced = fitSourceIntoSkyboxNet(rgba, width, height, upOnly);
+    expect(pixel(sliced.faces.py.rgba, sliced.faceSize, 0, 0)).toEqual([
+      200, 10, 10, 255,
+    ]);
+    expect(pixel(sliced.faces.pz.rgba, sliced.faceSize, 0, 0)).toEqual([
+      0, 0, 0, 255,
+    ]);
+  });
+
+  it("omitted placement matches contain-fit", () => {
+    const rgba = new Uint8Array(8 * 2 * 4);
+    rgba.fill(180);
+    const auto = fitSourceIntoSkyboxNet(rgba, 8, 2);
+    const explicit = fitSourceIntoSkyboxNet(
+      rgba,
+      8,
+      2,
+      defaultSkyboxCreatorSourcePlacement(8, 2),
+    );
+    expect(explicit.dest).toEqual(auto.dest);
+    expect([...explicit.faces.pz.rgba]).toEqual([...auto.faces.pz.rgba]);
+  });
+
+  it("moves and resizes source placement without clamping onto the net", () => {
+    const start = { x: 0, y: 0, width: 0.5, height: 0.5 };
+    expect(
+      resizeSkyboxCreatorSourcePlacement(
+        start,
+        "move",
+        { x: -0.2, y: 0.1 },
+        { x: 0, y: 0 },
+      ),
+    ).toEqual({ x: -0.2, y: 0.1, width: 0.5, height: 0.5 });
+    expect(
+      resizeSkyboxCreatorSourcePlacement(
+        start,
+        "se",
+        { x: 0.8, y: 0.9 },
+        { x: 0.5, y: 0.5 },
+      ),
+    ).toEqual({ x: 0, y: 0, width: 0.8, height: 0.9 });
   });
 });

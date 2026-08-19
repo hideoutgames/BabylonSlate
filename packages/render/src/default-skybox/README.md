@@ -8,5 +8,6 @@ and player `public/engine-content/skybox/`. They are not Content Browser
 Textures and not IBL.
 
 `cubemap_layout.png` in that folder is the 4×3 mapping diagram only — it is not
-a cube face. Authors assign Texture assets on the component (or Skybox Creator
-output) when they want a custom sky.
+a cube face. Skybox Creator Preview letterboxes that same 4×3 of **square**
+cells so Create crops 1:1 faces. Authors assign Texture assets on the component
+(or Skybox Creator output) when they want a custom sky.
