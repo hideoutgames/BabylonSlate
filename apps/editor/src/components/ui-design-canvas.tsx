@@ -377,14 +377,14 @@ export function UiDesignCanvas({
         setGuiLive(false);
       }
     });
-    // Primitives keep Fit/paint stable; `session.locked` is read when the
-    // scheduled callback runs so a stroke can skip resizeDesign.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+    // Mid-stroke still skips resizeDesign in the callback. `session.locked` in
+    // deps reschedules apply + present after commit/cancel unlocks.
   }, [
     displayControls,
     documentActive,
     guiLive,
     panelVisible,
+    session.locked,
     viewport.height,
     viewport.width,
     adtIdeal.designResolution.height,

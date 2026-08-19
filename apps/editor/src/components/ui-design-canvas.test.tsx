@@ -318,6 +318,83 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(addControl).toHaveBeenCalled();
   });
 
+  it("re-applies when a locked session unlocks after a skipped controls paint", async () => {
+    const reconcile = vi.fn();
+    const present = vi.fn();
+    createUiSurfaceMock.mockReturnValue({
+      present,
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        reconcile,
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout: vi.fn(),
+    });
+    const props = hudCanvasProps();
+    const { rerender } = render(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(reconcile).toHaveBeenCalled();
+    expect(present).toHaveBeenCalled();
+    const afterFirstPaint = {
+      reconcile: reconcile.mock.calls.length,
+      present: present.mock.calls.length,
+    };
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    expect(session.locked).toBe(true);
+    const nextControls = [...props.controls];
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        controls={nextControls}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(reconcile.mock.calls.length).toBe(afterFirstPaint.reconcile);
+    expect(present.mock.calls.length).toBe(afterFirstPaint.present);
+    session.cancel();
+    expect(session.locked).toBe(false);
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        controls={nextControls}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(reconcile.mock.calls.length).toBeGreaterThan(afterFirstPaint.reconcile);
+    expect(present.mock.calls.length).toBeGreaterThan(afterFirstPaint.present);
+  });
+
   it("commits a locked session when Designer becomes inactive", async () => {
     const commitLayout = vi.fn();
     const session = createUiDesignerSession({
