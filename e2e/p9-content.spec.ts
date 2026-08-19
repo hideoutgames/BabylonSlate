@@ -1443,14 +1443,15 @@ test.describe("P9 content systems", () => {
       '[data-testid="document-workspace-ui"]:visible',
     );
     await expect(workspace).toBeVisible();
-    await addNestedUserInterface(page, workspace, "Panel");
-    await page.getByTestId("property-nestedUi").click();
-    await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
+    await workspace.getByTestId("ui-add-widget").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
     await expect(
-      page.getByTestId("ui-nested-picker").getByText("Panel", { exact: true }),
+      page.locator('[data-testid^="ui-add-widget-UserInterface-"]'),
     ).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("HUD");
     await expect(
-      page.getByTestId("ui-nested-picker").getByText("HUD", { exact: true }),
+      page.locator('[data-testid^="ui-add-widget-UserInterface-"]'),
     ).toHaveCount(0);
   });
 
@@ -1479,7 +1480,7 @@ test.describe("P9 content systems", () => {
     await addNestedUserInterface(page, hudWorkspace, "Panel");
     await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     await expect(
-      hudWorkspace.locator('[data-testid^="ui-widget-"][data-testid*="button-"]'),
+      hudWorkspace.locator('[data-testid^="ui-widget-"][data-testid*="/button-"]'),
     ).toBeVisible();
     await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });

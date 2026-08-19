@@ -3,6 +3,7 @@ export * from "./ir";
 export * from "./diagnostics";
 export * from "./type-context";
 export * from "./validate";
+export * from "./compiled-nodes";
 export * from "./node-registry";
 export * from "./compile";
 export * from "./development-only";

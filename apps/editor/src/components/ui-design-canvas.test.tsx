@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
-import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
   createDefaultPlayHud,
   createDefaultUserInterface,
@@ -11,17 +10,50 @@ import {
 } from "@babylonslate/ui-runtime";
 import { UiDesignCanvas } from "./ui-design-canvas";
 
-const { createUiSurfaceMock } = vi.hoisted(() => ({
-  createUiSurfaceMock: vi.fn(),
-}));
-
-vi.mock("@babylonslate/render", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+const { createUiSurfaceMock, uiHostStats, resetUiHostStats } = vi.hoisted(() => {
+  const uiHostStats = { apply: 0, create: 0, present: 0, commit: 0 };
   return {
-    ...actual,
-    createUiSurface: (...args: unknown[]) => createUiSurfaceMock(...args),
+    createUiSurfaceMock: vi.fn(),
+    uiHostStats,
+    resetUiHostStats: () => {
+      uiHostStats.apply = 0;
+      uiHostStats.create = 0;
+      uiHostStats.present = 0;
+      uiHostStats.commit = 0;
+    },
   };
 });
+
+vi.mock("@babylonslate/render", () => ({
+  createUiSurface: (...args: unknown[]) => createUiSurfaceMock(...args),
+  uiHostStats,
+  resetUiHostStats,
+  FontRegistry: class FontRegistry {},
+  applyFontRegistryToHost: vi.fn(async () => undefined),
+  applyUiControlsIfUnfrozen: (
+    frozen: boolean,
+    host: {
+      clear: () => void;
+      addControl: (control: unknown) => void;
+      markAsDirty: () => void;
+      reconcile?: (controls: unknown[]) => void;
+    },
+    controls: unknown[],
+  ) => {
+    if (frozen) return;
+    uiHostStats.apply += 1;
+    if (host.reconcile) {
+      host.reconcile(controls);
+    } else {
+      host.clear();
+      for (const control of controls) {
+        host.addControl(control);
+      }
+    }
+    host.markAsDirty();
+  },
+  isHardUiPresentFailure: () => false,
+}));
 
 afterEach(() => {
   cleanup();
