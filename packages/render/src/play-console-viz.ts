@@ -9,7 +9,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { CommandMessage, DebugColliderPrimitive } from "@babylonslate/bridge";
-import { NavMeshDebugOverlay } from "./nav-debug-overlay";
+import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 
 const DEBUG_OVERLAY_PREFIX = "playConsoleViz:";
@@ -215,7 +215,10 @@ export type PlayConsoleVizController = {
 
 export function createPlayConsoleViz(
   scene: Scene,
-  options: { navmeshBytes?: Uint8Array | null } = {},
+  options: {
+    navmeshBytes?: Uint8Array | null;
+    navBlockers?: readonly NavDebugBlockerPose[] | null;
+  } = {},
 ): PlayConsoleVizController {
   let wireframe = false;
   let bounds = false;
@@ -248,8 +251,8 @@ export function createPlayConsoleViz(
         return true;
       }
       if (command.type === "setShowNav") {
-        if (command.enabled && options.navmeshBytes) {
-          void nav.sync(options.navmeshBytes);
+        if (command.enabled) {
+          void nav.sync(options.navmeshBytes ?? null, options.navBlockers ?? []);
         } else {
           nav.clear();
         }

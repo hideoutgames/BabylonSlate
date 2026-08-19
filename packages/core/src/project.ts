@@ -2,7 +2,6 @@ import { lookAtRotation } from "./euler";
 import {
   createActor,
   createDefaultSceneSettings,
-  createMeshComponent,
   identitySerializedTransform,
   normalizeTransform,
   type SerializedActor,
@@ -901,9 +900,7 @@ export function createDefaultScene(
     viewportMode === "2d"
       ? [camera]
       : [
-          createActor("actor-1", "Cube", {
-            components: [createMeshComponent("component-1", "box")],
-          }),
+          createActor("actor-1", "Actor"),
           createDefaultSkyboxActor(),
           createDefaultSunActor(
             lookAtRotation(DEFAULT_SCENE_SUN_POSITION, [0, 0, 0]),

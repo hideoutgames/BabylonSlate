@@ -91,13 +91,14 @@ describe("project schema", () => {
     expect(createDefaultGraph().nodes.length).toBeGreaterThan(0);
   });
 
-  it("seeds a 3D default scene with a cube and a possessing Default Camera", () => {
+  it("seeds a 3D default scene with an empty Actor and a possessing Default Camera", () => {
     const scene = createDefaultScene();
-    const cube = scene.actors.find((actor) => actor.id === "actor-1");
-    const camera = scene.actors.find((actor) =>
-      actor.components.some((component) => component.classId === "CameraComponent"),
+    const actor = scene.actors.find((entry) => entry.id === "actor-1");
+    const camera = scene.actors.find((entry) =>
+      entry.components.some((component) => component.classId === "CameraComponent"),
     );
-    expect(cube?.name).toBe("Cube");
+    expect(actor?.name).toBe("Actor");
+    expect(actor?.components).toEqual([]);
     expect(
       scene.actors.some((actor) => actor.id === "actor-skybox" && actor.locked),
     ).toBe(true);

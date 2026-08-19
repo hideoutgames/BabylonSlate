@@ -103,6 +103,38 @@ describe("staticBlockerBakeParts", () => {
     expect(parts).toHaveLength(1);
     expect(parts[0]!.positions.length).toBeGreaterThanOrEqual(8 * 3);
   });
+
+  it("rotates 3D bake verts by the actor quaternion", () => {
+    const identity = staticBlockerBakeParts(
+      [blocker({ kind: "box" }, [0, 0, 0], [4, 2, 2])],
+      "3d",
+    );
+    const rotated = staticBlockerBakeParts(
+      [
+        {
+          transform: {
+            position: [0, 0, 0],
+            rotation: [0, Math.SQRT1_2, 0, Math.SQRT1_2],
+            scale: [4, 2, 2],
+          },
+          components: [{ classId: "NavMeshBlockerComponent", properties: { kind: "box" } }],
+        },
+      ],
+      "3d",
+    );
+    expect(rotated).toHaveLength(1);
+    const maxAbs = (positions: number[], axis: 0 | 1 | 2) => {
+      let max = 0;
+      for (let i = axis; i < positions.length; i += 3) {
+        max = Math.max(max, Math.abs(positions[i]!));
+      }
+      return max;
+    };
+    expect(maxAbs(identity[0]!.positions, 0)).toBeCloseTo(2, 5);
+    expect(maxAbs(identity[0]!.positions, 2)).toBeCloseTo(1, 5);
+    expect(maxAbs(rotated[0]!.positions, 0)).toBeCloseTo(1, 5);
+    expect(maxAbs(rotated[0]!.positions, 2)).toBeCloseTo(2, 5);
+  });
 });
 
 describe("xyBoundsFromActors", () => {

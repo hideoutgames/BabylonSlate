@@ -9,6 +9,7 @@ describe("search catalog class ids", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("NavAgentComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("NavMeshComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("NavMeshBlockerComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("BlockingVolumeComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).not.toContain("WidgetComponent");
   });
 

@@ -28,7 +28,7 @@ import {
 
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
- * RigidBodyComponent / ColliderComponent.
+ * RigidBodyComponent / ColliderComponent, tilemap collision, or a Blocking Volume.
  */
 export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
@@ -119,16 +119,24 @@ export class PhysicsWorldSync {
       const tilemap = actor.components.find(
         (c) => c.classId === "TilemapComponent" && !c.destroyed,
       );
-      if (!rigid && !tilemap) continue;
+      const blocking = actor.components.find(
+        (c) => c.classId === "BlockingVolumeComponent" && !c.destroyed,
+      );
+      if (!rigid && !tilemap && !blocking) continue;
       live.add(actor.guid);
       if (!this.bodyByActor.has(actor.guid)) {
         this.createForActor(actor);
       } else {
         const bodyId = this.bodyByActor.get(actor.guid)!;
-        const props = parseRigidBodyProperties(
-          rigid ? mapToRecord(rigid.variables) : { motionType: "static" },
-        );
-        if (props.motionType !== "dynamic") {
+        if (rigid) {
+          const props = parseRigidBodyProperties(mapToRecord(rigid.variables));
+          if (props.motionType !== "dynamic") {
+            this.backend.setBodyTransform(
+              bodyId,
+              actorWorldPhysicsTransform(actor, this.worldTransforms),
+            );
+          }
+        } else {
           this.backend.setBodyTransform(
             bodyId,
             actorWorldPhysicsTransform(actor, this.worldTransforms),
@@ -241,10 +249,15 @@ export class PhysicsWorldSync {
     const tilemap = actor.components.find(
       (c) => c.classId === "TilemapComponent" && !c.destroyed,
     );
-    if (!rigid && !tilemap) return;
+    const blocking = actor.components.find(
+      (c) => c.classId === "BlockingVolumeComponent" && !c.destroyed,
+    );
+    if (!rigid && !tilemap && !blocking) return;
     const bodyId = `body:${actor.guid}`;
     const props = parseRigidBodyProperties(
-      rigid ? mapToRecord(rigid.variables) : { motionType: "static", mass: 0, gravityScale: 0 },
+      rigid
+        ? mapToRecord(rigid.variables)
+        : { motionType: "static", mass: 0, gravityScale: 0 },
     );
     this.backend.createBody({
       id: bodyId,
@@ -289,8 +302,33 @@ export class PhysicsWorldSync {
       });
     }
 
+    if (blocking) this.createBlockingVolumeCollider(actor, bodyId, blocking);
     if (tilemap) this.createTilemapColliders(actor, bodyId, tilemap);
     this.applySpriteColliders(actor, bodyId);
+  }
+
+  private createBlockingVolumeCollider(
+    actor: Actor,
+    bodyId: string,
+    component: Actor["components"][number],
+  ): void {
+    const scale = worldScale(actor, this.worldTransforms);
+    const hx = Math.max(Math.abs(scale.x) / 2, 0.05);
+    const hy = Math.max(Math.abs(scale.y) / 2, 0.05);
+    const hz = Math.max(Math.abs(scale.z) / 2, 0.05);
+    this.backend.createCollider({
+      id: `collider:${component.guid}`,
+      bodyId,
+      shape:
+        this.backend.kind === "2d"
+          ? { kind: "box2d", halfExtents: { x: hx, y: hy } }
+          : { kind: "box", halfExtents: { x: hx, y: hy, z: hz } },
+      friction: 0.5,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
   }
 
   private applySpriteColliders(actor: Actor, bodyId: string): void {

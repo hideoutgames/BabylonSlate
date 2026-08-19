@@ -356,8 +356,9 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
   const meta = mesh.metadata as {
     editorActorOrigin?: boolean;
     editorPickProxy?: boolean;
-    editorBillboard?: string;
-    playHelperVisual?: boolean;
+      editorBillboard?: string;
+      editorVolume?: boolean;
+      playHelperVisual?: boolean;
     playActorOrigin?: boolean;
     playDebugOverlay?: boolean;
   } | null;
@@ -366,6 +367,7 @@ function shadowSkipMetadata(mesh: AbstractMesh): boolean {
     meta.editorActorOrigin ||
       meta.editorPickProxy ||
       meta.editorBillboard ||
+      meta.editorVolume ||
       meta.playHelperVisual ||
       meta.playActorOrigin ||
       meta.playDebugOverlay,

@@ -66,6 +66,7 @@ import {
   createPlayConsoleViz,
   type PlayConsoleVizController,
 } from "./play-console-viz";
+import type { NavDebugBlockerPose } from "./nav-debug-overlay";
 import {
   createPlayDebugDraw,
   type PlayDebugDrawController,
@@ -292,6 +293,8 @@ export interface CreateEngineOptions {
   }) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
+  /** NavMesh Blocker volumes drawn with Play `shownav`. */
+  navBlockers?: readonly NavDebugBlockerPose[] | null;
 }
 
 export interface EditorTools {
@@ -548,7 +551,10 @@ export function createEngine(
       })
     : null;
   const playViz: PlayConsoleVizController | null = options.playMode
-    ? createPlayConsoleViz(scene, { navmeshBytes: options.navmeshBytes })
+    ? createPlayConsoleViz(scene, {
+        navmeshBytes: options.navmeshBytes,
+        navBlockers: options.navBlockers,
+      })
     : null;
   const playDebugDraw: PlayDebugDrawController | null = options.playMode
     ? createPlayDebugDraw(scene)
@@ -885,8 +891,8 @@ export function createEngine(
     };
   }
 
-  // Play renders snapshot proxy meshes only. Seeding the default Cube here
-  // stacks it under those proxies at the origin (z-fighting / additive look).
+  // Play renders snapshot proxy meshes only. Seeding the default scene here
+  // stacks editor helpers under those proxies at the origin (z-fighting / additive look).
   if (!options.playMode) {
     loadScene(createDefaultScene());
   }

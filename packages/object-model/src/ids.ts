@@ -45,6 +45,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "NavAgentComponent",
   "NavMeshComponent",
   "NavMeshBlockerComponent",
+  "BlockingVolumeComponent",
 ] as const;
 
 export type EngineComponentClassId =

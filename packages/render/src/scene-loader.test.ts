@@ -15,8 +15,11 @@ import {
   countSceneMeshes,
   createPrimitiveMesh,
   editorComponentMeshName,
+  editorMeshKindOf,
   editorMeshName,
+  helperBillboardIconOf,
 } from "./scene-loader";
+import { isEditorVolumeMesh } from "./editor-volume";
 
 function lightComponent(
   color: [number, number, number] = [1, 1, 1],
@@ -52,7 +55,7 @@ describe("scene-loader", () => {
     return handle;
   }
 
-  it("creates editor meshes for the default cube and camera", () => {
+  it("creates editor meshes for the default actor and camera", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(scene, createDefaultScene());
     expect(scene.getMeshByName(editorMeshName("actor-1"))).not.toBeNull();
@@ -133,18 +136,24 @@ describe("scene-loader", () => {
     expect(child?.parent?.name).toBe(editorMeshName("parent"));
   });
 
-  it("creates a pickable cube proxy for actors without a mesh component", () => {
+  it("represents actors without a mesh as a default billboard at the origin", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
       scene,
       sceneWithActors([createActor("empty", "Empty")]),
     );
-    const mesh = scene.getMeshByName(editorMeshName("empty"));
-    expect(mesh).not.toBeNull();
-    expect(mesh!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    const origin = scene.getMeshByName(editorMeshName("empty"));
+    const icon = scene.getMeshByName(editorComponentMeshName("empty", "billboard"));
+    expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
+    expect(origin!.visibility).toBe(0);
     expect(
-      (mesh!.metadata as { editorBillboard?: string } | null)?.editorBillboard,
-    ).toBeUndefined();
+      (origin!.metadata as { editorPickProxy?: boolean }).editorPickProxy,
+    ).toBe(true);
+    expect(icon).not.toBeNull();
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("default");
   });
 
   it("represents a LightComponent actor with a lightbulb billboard", () => {
@@ -168,7 +177,63 @@ describe("scene-loader", () => {
     expect(mesh!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
       (mesh!.metadata as { editorBillboard?: string }).editorBillboard,
-    ).toBe("light");
+    ).toBe("point_light");
+  });
+
+  it("uses a distinct billboard PNG per light kind", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("spot", "Spot", {
+          components: [
+            {
+              id: "light",
+              classId: "LightComponent",
+              properties: { lightKind: "spot", color: [1, 1, 1] },
+            },
+          ],
+        }),
+        createActor("dir", "Sun", {
+          components: [
+            {
+              id: "light",
+              classId: "LightComponent",
+              properties: { lightKind: "directional", color: [1, 1, 1] },
+            },
+          ],
+        }),
+      ]),
+    );
+    expect(
+      (
+        scene.getMeshByName(editorComponentMeshName("spot", "light"))!
+          .metadata as { editorBillboard?: string }
+      ).editorBillboard,
+    ).toBe("spot_light");
+    expect(
+      (
+        scene.getMeshByName(editorComponentMeshName("dir", "light"))!
+          .metadata as { editorBillboard?: string }
+      ).editorBillboard,
+    ).toBe("directional_light");
+  });
+
+  it("represents a NavMesh actor with the navmesh billboard", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("nav", "NavMesh", {
+          components: [{ id: "nav", classId: "NavMeshComponent", properties: {} }],
+        }),
+      ]),
+    );
+    const icon = scene.getMeshByName(editorComponentMeshName("nav", "nav"));
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("navmesh");
   });
 
   it("represents CameraComponent, AudioComponent, and ParticleComponent actors with billboards", () => {
@@ -227,7 +292,7 @@ describe("scene-loader", () => {
     ).toBe("particle");
   });
 
-  it("represents a RigidBodyComponent actor with a rigidbody billboard, not a white cube", () => {
+  it("represents a RigidBodyComponent actor with the default billboard, not a white cube", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(
       scene,
@@ -244,7 +309,7 @@ describe("scene-loader", () => {
       ]),
     );
     const origin = scene.getMeshByName(editorMeshName("body"));
-    const icon = scene.getMeshByName(editorComponentMeshName("body", "rb"));
+    const icon = scene.getMeshByName(editorComponentMeshName("body", "billboard"));
     expect(origin!.billboardMode).toBe(Mesh.BILLBOARDMODE_NONE);
     expect(origin!.visibility).toBe(0);
     expect(
@@ -254,7 +319,7 @@ describe("scene-loader", () => {
     expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
     expect(
       (icon!.metadata as { editorBillboard?: string }).editorBillboard,
-    ).toBe("rigidbody");
+    ).toBe("default");
     expect(icon!.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(
       0.1,
     );
@@ -473,6 +538,123 @@ describe("scene-loader", () => {
     expect(childRoot?.position.x).toBe(4);
     expect(childSphere?.parent).toBe(childRoot);
     expect(childSphere?.position.x).toBe(2);
+  });
+
+  it("draws an empty actor as the default billboard at the pivot, not a cube", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([createActor("empty", "Empty")]),
+    );
+    const origin = scene.getMeshByName(editorMeshName("empty"));
+    const icon = scene.getMeshByName(
+      editorComponentMeshName("empty", "billboard"),
+    );
+    expect(origin!.visibility).toBe(0);
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("default");
+  });
+
+  it("maps empty and helper actors to dedicated billboard kinds, not a box", () => {
+    expect(editorMeshKindOf(createActor("empty", "Empty"))).toBe("billboard:default");
+    expect(helperBillboardIconOf(createActor("empty", "Empty"))).toBe("default");
+    expect(
+      helperBillboardIconOf(
+        createActor("lamp", "Lamp", { components: [lightComponent()] }),
+      ),
+    ).toBe("point_light");
+    expect(
+      helperBillboardIconOf(
+        createActor("mesh", "Mesh", {
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not spawn a 0.25 cube for an unknown MeshComponent kind", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("odd", "Odd", {
+          components: [createMeshComponent("c1", "mystery")],
+        }),
+      ]),
+    );
+    const mesh = scene.getMeshByName(editorMeshName("odd"))!;
+    expect(
+      (mesh.metadata as { editorBillboard?: string } | null)?.editorBillboard,
+    ).toBeUndefined();
+    expect(mesh.getBoundingInfo().boundingBox.extendSize.x).toBeGreaterThan(0.2);
+  });
+
+  it("draws a NavMesh Blocker as a dotted volume plus a default billboard at the center", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("block", "NavMesh Blocker", {
+          transform: {
+            position: [2, 1, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [3, 2, 4],
+          },
+          components: [
+            {
+              id: "vol",
+              classId: "NavMeshBlockerComponent",
+              properties: { kind: "box", dynamic: false },
+            },
+          ],
+        }),
+      ]),
+    );
+    const origin = scene.getMeshByName(editorMeshName("block"));
+    const volume = scene.getMeshByName(editorComponentMeshName("block", "vol"));
+    const icon = scene.getMeshByName(
+      editorComponentMeshName("block", "billboard"),
+    );
+    expect(origin!.visibility).toBe(0);
+    expect(isEditorVolumeMesh(volume!)).toBe(true);
+    expect(volume!.isPickable).toBe(true);
+    expect(volume!.visibility).toBe(1);
+    expect((volume!.material as StandardMaterial).alpha).toBe(0);
+    expect(volume!.parent).toBe(origin);
+    expect(icon!.parent).toBe(origin);
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(icon!.ignoreParentScaling).toBe(true);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("default");
+  });
+
+  it("draws a Blocking Volume as a blue dotted box plus a default billboard", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("wall", "Blocking Volume", {
+          components: [
+            {
+              id: "vol",
+              classId: "BlockingVolumeComponent",
+              properties: {},
+            },
+          ],
+        }),
+      ]),
+    );
+    const volume = scene.getMeshByName(editorComponentMeshName("wall", "vol"));
+    const icon = scene.getMeshByName(
+      editorComponentMeshName("wall", "billboard"),
+    );
+    expect(isEditorVolumeMesh(volume!)).toBe(true);
+    expect(
+      (icon!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("default");
   });
 
   it("builds a pickable origin marker for meshKind pivot", () => {

@@ -8,7 +8,10 @@
  * v3 adds `settings.physicsWorld` (`"3d"` | `"2d"`). Older documents default
  * from `viewportMode` on normalize. `editorJoystickEnabled` is additive on v3
  * (missing keys normalize to true). `grid.showGrid` is additive (missing keys
- * normalize to true so older scenes keep the editor grid). Fog color/start/end,
+ * normalize to true so older scenes keep the editor grid). `showNavmesh` is
+ * additive (missing keys normalize to false, except a leftover
+ * `NavMeshComponent.debugOverlay === true` migrates the overlay on). Fog
+ * color/start/end,
  * `environmentTextureGuid`, and Default Camera ids are additive on v3 (missing
  * keys normalize to defaults; a Default Camera pick requires both actor and
  * component ids).
@@ -109,6 +112,11 @@ export interface SceneSettings {
   /** Editor viewport on-screen stick for flying/panning the camera. */
   editorJoystickEnabled: boolean;
   /**
+   * Editor viewport navmesh debug overlay. Missing keys normalize to false
+   * unless a leftover NavMesh `debugOverlay` flag is true.
+   */
+  showNavmesh: boolean;
+  /**
    * Ordered post-process Material passes for the active camera. Empty by
    * default: a full-screen pass is the classic mobile fill-rate cost.
    */
@@ -168,6 +176,7 @@ export function createDefaultSceneSettings(
     },
     cameraBounds2D: { width: 16, height: 9 },
     editorJoystickEnabled: true,
+    showNavmesh: false,
     postProcessStack: [],
   };
 }
@@ -442,6 +451,7 @@ export function normalizeSceneSettings(
           : defaults.cameraBounds2D.height,
     },
     editorJoystickEnabled: source.editorJoystickEnabled !== false,
+    showNavmesh: source.showNavmesh === true,
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
   };
 }
@@ -469,10 +479,24 @@ export function normalizeScene(value: unknown): SerializedScene {
   const actors = Array.isArray(source.actors)
     ? withUniqueActorIds(source.actors.map(normalizeActor))
     : [];
+  const settings = normalizeSceneSettings(source.settings, viewportMode);
+  const rawSettings =
+    source.settings && typeof source.settings === "object"
+      ? (source.settings as Record<string, unknown>)
+      : {};
+  const leftoverNavDebug =
+    !("showNavmesh" in rawSettings) &&
+    actors.some((actor) =>
+      actor.components.some(
+        (component) =>
+          component.classId === "NavMeshComponent" &&
+          component.properties.debugOverlay === true,
+      ),
+    );
   return {
     name: typeof source.name === "string" ? source.name : "Untitled",
     viewportMode,
-    settings: normalizeSceneSettings(source.settings, viewportMode),
+    settings: leftoverNavDebug ? { ...settings, showNavmesh: true } : settings,
     actors: withResolvedFolderIds(actors, folders),
     folders,
   };

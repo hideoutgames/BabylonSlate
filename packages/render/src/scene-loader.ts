@@ -20,13 +20,22 @@ import {
   applyEditorBillboardFromActor,
   createEditorBillboard,
   editorBillboardKind,
+  lightBillboardIcon,
   parseEditorBillboardIcon,
+  type EditorBillboardIcon,
 } from "./editor-billboard";
 import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
 import { createColliderVisualMesh, isColliderVisualMesh } from "./collider-visual";
+import {
+  BLOCKING_VOLUME_COLOR,
+  createEditorVolumeMesh,
+  isEditorVolumeMesh,
+  NAV_BLOCKER_VOLUME_COLOR,
+  type EditorVolumeKind,
+} from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
 import {
@@ -109,9 +118,7 @@ export function createPrimitiveMesh(
     case "pivot":
       return createPivotMarkerMesh(scene, name);
     default:
-      // Actors without a renderable component still need a pickable proxy so
-      // they can be selected and transformed in the viewport.
-      return MeshBuilder.CreateBox(name, { size: 0.25 }, scene);
+      return MeshBuilder.CreateBox(name, { size: 1.5 }, scene);
   }
 }
 
@@ -184,9 +191,21 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "SkyboxComponent",
   "Text3DComponent",
   "ParticleComponent",
-  "RigidBodyComponent",
   "ColliderComponent",
+  "NavMeshComponent",
+  "NavMeshBlockerComponent",
+  "BlockingVolumeComponent",
 ]);
+
+const SURFACE_COMPONENT_CLASS_IDS = new Set([
+  "MeshComponent",
+  "SpriteComponent",
+  "TilemapComponent",
+  "SkyboxComponent",
+  "Text3DComponent",
+]);
+
+export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
 
 function visualComponentsOf(actor: SerializedActor): SerializedComponent[] {
   return actor.components.filter((component) =>
@@ -218,17 +237,54 @@ function isBillboardComponent(component: SerializedComponent): boolean {
     component.classId === "CameraComponent" ||
     component.classId === "AudioComponent" ||
     component.classId === "ParticleComponent" ||
-    component.classId === "RigidBodyComponent"
+    component.classId === "NavMeshComponent"
   );
+}
+
+function hasSurfaceVisual(actor: SerializedActor): boolean {
+  return actor.components.some((component) =>
+    SURFACE_COMPONENT_CLASS_IDS.has(component.classId),
+  );
+}
+
+export function helperBillboardIconOf(
+  actor: SerializedActor,
+): EditorBillboardIcon | null {
+  if (hasSurfaceVisual(actor)) return null;
+  const light = actor.components.find(
+    (component) => component.classId === "LightComponent",
+  );
+  if (light) return lightBillboardIcon(light.properties.lightKind);
+  if (actor.components.some((component) => component.classId === "CameraComponent")) {
+    return "camera";
+  }
+  if (actor.components.some((component) => component.classId === "AudioComponent")) {
+    return "audio";
+  }
+  if (
+    actor.components.some((component) => component.classId === "ParticleComponent")
+  ) {
+    return "particle";
+  }
+  if (actor.components.some((component) => component.classId === "NavMeshComponent")) {
+    return "navmesh";
+  }
+  return "default";
 }
 
 export function needsOriginRoot(actor: SerializedActor): boolean {
   const visuals = visualComponentsOf(actor);
   return (
+    helperBillboardIconOf(actor) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
-    visuals.some((component) => component.classId === "ColliderComponent")
+    visuals.some((component) => component.classId === "ColliderComponent") ||
+    visuals.some(
+      (component) =>
+        component.classId === "NavMeshBlockerComponent" ||
+        component.classId === "BlockingVolumeComponent",
+    )
   );
 }
 
@@ -243,7 +299,9 @@ function componentVisualKind(component: SerializedComponent): string {
   }
   if (component.classId === "SpriteComponent") return `sprite:${asset}`;
   if (component.classId === "TilemapComponent") return `tilemap:${asset}`;
-  if (component.classId === "LightComponent") return editorBillboardKind("light");
+  if (component.classId === "LightComponent") {
+    return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
+  }
   if (component.classId === "CameraComponent") return editorBillboardKind("camera");
   if (component.classId === "AudioComponent") return editorBillboardKind("audio");
   if (component.classId === "SkyboxComponent") {
@@ -258,8 +316,16 @@ function componentVisualKind(component: SerializedComponent): string {
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
   }
-  if (component.classId === "RigidBodyComponent") {
-    return editorBillboardKind("rigidbody");
+  if (component.classId === "NavMeshComponent") {
+    return editorBillboardKind("navmesh");
+  }
+  if (component.classId === "NavMeshBlockerComponent") {
+    const kind =
+      component.properties.kind === "cylinder" ? "cylinder" : "box";
+    return `volume:navblocker:${kind}`;
+  }
+  if (component.classId === "BlockingVolumeComponent") {
+    return "volume:blocking";
   }
   if (component.classId === "ColliderComponent") {
     return `collider:${JSON.stringify(component.properties.shape ?? {})}`;
@@ -271,7 +337,8 @@ function componentVisualKind(component: SerializedComponent): string {
 export function actorVisualFingerprint(actor: SerializedActor): string {
   const visuals = visualComponentsOf(actor);
   if (visuals.length === 0) {
-    return `single:${editorMeshKindOf(actor) ?? ""}`;
+    const mode = needsOriginRoot(actor) ? "origin" : "single";
+    return `${mode}:${editorMeshKindOf(actor) ?? ""}`;
   }
   const mode = needsOriginRoot(actor) ? "origin" : "single";
   return `${mode}:${visuals
@@ -342,7 +409,10 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   if (spriteComponent) return `sprite:${asset}`;
   if (tilemapComponent) return `tilemap:${asset}`;
   if (actor.components.some((component) => component.classId === "LightComponent")) {
-    return editorBillboardKind("light");
+    const light = actor.components.find(
+      (component) => component.classId === "LightComponent",
+    );
+    return editorBillboardKind(lightBillboardIcon(light?.properties.lightKind));
   }
   if (actor.components.some((component) => component.classId === "CameraComponent")) {
     return editorBillboardKind("camera");
@@ -363,12 +433,10 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   ) {
     return editorBillboardKind("particle");
   }
-  if (
-    actor.components.some((component) => component.classId === "RigidBodyComponent")
-  ) {
-    return editorBillboardKind("rigidbody");
+  if (actor.components.some((component) => component.classId === "NavMeshComponent")) {
+    return editorBillboardKind("navmesh");
   }
-  return null;
+  return editorBillboardKind(helperBillboardIconOf(actor) ?? "default");
 }
 
 /** Build a Babylon mesh for one visual component. */
@@ -386,7 +454,11 @@ export function createMeshForComponent(
     return createTilemapComponentMesh(scene, name, component, assets);
   }
   if (component.classId === "LightComponent") {
-    const mesh = createEditorBillboard(scene, name, "light");
+    const mesh = createEditorBillboard(
+      scene,
+      name,
+      lightBillboardIcon(component.properties.lightKind),
+    );
     applyEditorBillboardFromActor(mesh, actor);
     return mesh;
   }
@@ -411,8 +483,16 @@ export function createMeshForComponent(
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
   }
-  if (component.classId === "RigidBodyComponent") {
-    return createEditorBillboard(scene, name, "rigidbody");
+  if (component.classId === "NavMeshComponent") {
+    return createEditorBillboard(scene, name, "navmesh");
+  }
+  if (component.classId === "NavMeshBlockerComponent") {
+    const kind: EditorVolumeKind =
+      component.properties.kind === "cylinder" ? "cylinder" : "box";
+    return createEditorVolumeMesh(scene, name, kind, NAV_BLOCKER_VOLUME_COLOR);
+  }
+  if (component.classId === "BlockingVolumeComponent") {
+    return createEditorVolumeMesh(scene, name, "box", BLOCKING_VOLUME_COLOR);
   }
   if (component.classId === "ColliderComponent") {
     const world =
@@ -453,6 +533,7 @@ function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
 
 function visualIsPickable(mesh: Mesh, locked: boolean): boolean {
   if (isSkyboxMesh(mesh) || isColliderVisualMesh(mesh)) return false;
+  if (isEditorVolumeMesh(mesh)) return !locked;
   return !locked;
 }
 
@@ -501,6 +582,18 @@ function createActorOriginHierarchy(
     if (!mesh) continue;
     const parentId = parentVisualMeshId(component, meshes, componentsById);
     mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
+  }
+  const helperIcon = helperBillboardIconOf(actor);
+  if (helperIcon && !visuals.some(isBillboardComponent)) {
+    const billboard = createEditorBillboard(
+      scene,
+      editorComponentMeshName(actor.id, EDITOR_HELPER_BILLBOARD_ID),
+      helperIcon,
+    );
+    applyEditorBillboardFromActor(billboard, actor);
+    billboard.isVisible = actor.visible;
+    billboard.isPickable = visualIsPickable(billboard, actor.locked);
+    billboard.parent = root;
   }
   return root;
 }

@@ -1,6 +1,7 @@
 import {
   DirectionalLight,
   Mesh,
+  MeshBuilder,
   PointLight,
   Quaternion,
   Scene,
@@ -521,7 +522,7 @@ function createPlayVisual(
   if (!partsNeedOrigin(parts)) {
     return createPlayMesh(scene, slotId, meshKind, assetGuid, binding);
   }
-  const root = createPrimitiveMesh(scene, `actor-${slotId}`, null);
+  const root = MeshBuilder.CreateSphere(`actor-${slotId}`, { diameter: 0.75 }, scene);
   root.isVisible = false;
   root.metadata = { ...(root.metadata ?? {}), playActorOrigin: true };
   const meshes = new Map<string, Mesh>();

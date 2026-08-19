@@ -42,6 +42,20 @@ export function createEngineCubeTextureFromImages(
   return new CubeTexture(files.join(""), engine, { files, noMipmap });
 }
 
+/** Engine-static PNG (editor billboards). Not a project asset guid. */
+export function createEngineTextureFromUrl(
+  engine: AbstractEngine,
+  url: string,
+): Texture {
+  const texture = new Texture(url, engine, {
+    noMipmap: false,
+    invertY: true,
+    samplingMode: Texture.BILINEAR_SAMPLINGMODE,
+  });
+  texture.hasAlpha = true;
+  return texture;
+}
+
 function samplingKey(options: TextureSamplingOptions = {}): string {
   return [
     options.noMipmap ? "1" : "0",
