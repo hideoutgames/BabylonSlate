@@ -21,6 +21,7 @@ import {
   uiDesignStrokeMergeKey,
   uiDesignerCanvasFitKey,
   zoomAtPoint,
+  pinchView,
 } from "./ui-design-gestures";
 
 describe("ui-design-gestures", () => {
@@ -94,6 +95,32 @@ describe("ui-design-gestures", () => {
     expect(next.zoom).toBe(2);
     expect(next.panX).toBe(-100);
     expect(next.panY).toBe(-40);
+  });
+
+  it("keeps the pinch centroid over the same canvas point when span grows", () => {
+    const start = {
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      span: 100,
+      centroid: { x: 100, y: 40 },
+    };
+    const next = pinchView(start, { span: 200, centroid: { x: 100, y: 40 } });
+    expect(next).toEqual(zoomAtPoint(start, 2, start.centroid));
+  });
+
+  it("pans one-to-one when pinch span is unchanged", () => {
+    const start = {
+      zoom: 1,
+      panX: 5,
+      panY: 7,
+      span: 100,
+      centroid: { x: 50, y: 50 },
+    };
+    const next = pinchView(start, { span: 100, centroid: { x: 80, y: 60 } });
+    expect(next.zoom).toBe(1);
+    expect(next.panX).toBe(35);
+    expect(next.panY).toBe(17);
   });
 
   it("uses one undo merge key per drag stroke", () => {

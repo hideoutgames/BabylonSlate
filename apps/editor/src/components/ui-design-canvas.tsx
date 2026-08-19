@@ -39,7 +39,6 @@ import {
   designerGestureAt,
   designerLayoutViewScale,
   canvasDeltaToLayoutDelta,
-  clampDesignZoom,
   designRectToScreen,
   handleEdges,
   passedDragThreshold,
@@ -49,6 +48,7 @@ import {
   resizeHandleHitRects,
   resizeHandleRects,
   zoomAtPoint,
+  pinchView,
   type DesignView,
   type HandleEdge,
   type PointerPoint,
@@ -469,13 +469,15 @@ export function UiDesignCanvas({
 
   const beginTwoFinger = () => {
     dragRef.current = null;
+    const bounds = viewportRef.current?.getBoundingClientRect();
+    const origin = { x: bounds?.left ?? 0, y: bounds?.top ?? 0 };
     const centroid = pointerCentroid(pointersRef.current);
     panStartRef.current = {
       panX: viewRef.current.panX,
       panY: viewRef.current.panY,
       zoom: viewRef.current.zoom,
-      cx: centroid.x,
-      cy: centroid.y,
+      cx: centroid.x - origin.x,
+      cy: centroid.y - origin.y,
       span: pointerSpan(pointersRef.current),
     };
   };
@@ -592,16 +594,25 @@ export function UiDesignCanvas({
     if (!tracked) return;
     pointersRef.current.set(pointerId, { x: event.clientX, y: event.clientY });
     if (pointersRef.current.size >= 2) {
+      const bounds = viewportRef.current?.getBoundingClientRect();
+      const origin = { x: bounds?.left ?? 0, y: bounds?.top ?? 0 };
       const centroid = pointerCentroid(pointersRef.current);
-      const span = pointerSpan(pointersRef.current);
       const start = panStartRef.current;
-      onViewChange({
-        zoom: clampDesignZoom(
-          start.span > 0 ? start.zoom * (span / start.span) : start.zoom,
+      onViewChange(
+        pinchView(
+          {
+            zoom: start.zoom,
+            panX: start.panX,
+            panY: start.panY,
+            span: start.span,
+            centroid: { x: start.cx, y: start.cy },
+          },
+          {
+            span: pointerSpan(pointersRef.current),
+            centroid: { x: centroid.x - origin.x, y: centroid.y - origin.y },
+          },
         ),
-        panX: start.panX + (centroid.x - start.cx),
-        panY: start.panY + (centroid.y - start.cy),
-      });
+      );
       return;
     }
     const drag = dragRef.current;

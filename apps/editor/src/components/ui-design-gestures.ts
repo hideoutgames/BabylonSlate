@@ -93,6 +93,21 @@ export function zoomAtPoint(
   };
 }
 
+/** Two-finger pinch: zoom about the start centroid, then pan by centroid delta. */
+export function pinchView(
+  start: DesignView & { span: number; centroid: PointerPoint },
+  next: { span: number; centroid: PointerPoint },
+): DesignView {
+  const nextZoom =
+    start.span > 0 ? start.zoom * (next.span / start.span) : start.zoom;
+  const zoomed = zoomAtPoint(start, nextZoom, start.centroid);
+  return {
+    zoom: zoomed.zoom,
+    panX: zoomed.panX + (next.centroid.x - start.centroid.x),
+    panY: zoomed.panY + (next.centroid.y - start.centroid.y),
+  };
+}
+
 export function pointerCentroid(
   pointers: ReadonlyMap<number, PointerPoint>,
 ): PointerPoint {

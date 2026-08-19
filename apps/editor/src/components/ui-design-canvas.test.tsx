@@ -721,6 +721,58 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(surface.host.patchLiveLayout).toHaveBeenCalled();
   });
 
+  it("pinches zoom around the finger centroid", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const onViewChange = vi.fn();
+    render(
+      <UiDesignCanvas {...hudCanvasProps()} onViewChange={onViewChange} />,
+    );
+    const viewport = screen.getByTestId("ui-design-viewport");
+    viewport.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        bottom: 300,
+        right: 400,
+        width: 400,
+        height: 300,
+        toJSON() {
+          return {};
+        },
+      }) as DOMRect;
+    dispatchPointerEvent(viewport, "pointerdown", {
+      pointerId: 1,
+      clientX: 50,
+      clientY: 40,
+    });
+    dispatchPointerEvent(viewport, "pointerdown", {
+      pointerId: 2,
+      clientX: 150,
+      clientY: 40,
+    });
+    dispatchPointerEvent(viewport, "pointermove", {
+      pointerId: 1,
+      clientX: 0,
+      clientY: 40,
+    });
+    dispatchPointerEvent(viewport, "pointermove", {
+      pointerId: 2,
+      clientX: 200,
+      clientY: 40,
+    });
+    expect(onViewChange).toHaveBeenCalled();
+    const view = onViewChange.mock.calls.at(-1)![0] as {
+      zoom: number;
+      panX: number;
+      panY: number;
+    };
+    expect(view.zoom).toBe(2);
+    expect(view.panX).toBe(-100);
+    expect(view.panY).toBe(-40);
+  });
+
   it("surfaces missing texture chunk feedback instead of a silent blank Image", () => {
     createUiSurfaceMock.mockReturnValue(mockSurface());
     render(
