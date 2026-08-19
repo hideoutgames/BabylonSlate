@@ -110,6 +110,7 @@ describe("journal", () => {
 
   it("round-trips every scene command type through the journal", () => {
     const scene = createDefaultScene();
+    scene.actors[0]!.components.push(createMeshComponent("c1", "box"));
     const actorId = scene.actors[0]!.id;
     const componentId = scene.actors[0]!.components[0]!.id;
     const commands = [
@@ -132,7 +133,7 @@ describe("journal", () => {
           to: { position: [4, 5, 6], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
         },
       ]),
-      new RenameActorCommand(actorId, "Cube", "Renamed"),
+      new RenameActorCommand(actorId, "Actor", "Renamed"),
       new ReparentActorCommand(actorId, null, null),
       new ReorderActorCommand(actorId, 0, 0),
       new SetActorFlagsCommand(
