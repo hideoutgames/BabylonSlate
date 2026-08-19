@@ -12,11 +12,14 @@ import {
   pivotToScreen,
   previewScaleToFit,
   resizeHandleRects,
+  resizeHandleHitRects,
   designerControlHitRect,
   designerGestureAt,
+  frameRectView,
   UI_DESIGN_HANDLE_HIT_SIZE_PX,
   UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
   uiDesignStrokeMergeKey,
+  uiDesignerCanvasFitKey,
   zoomAtPoint,
 } from "./ui-design-gestures";
 
@@ -29,6 +32,19 @@ describe("ui-design-gestures", () => {
     expect(next.width).toBe(160);
     expect(next.left).toBe(50);
     expect(next.top).toBe(20);
+  });
+
+  it("scales percent left/top drags by the parent size", () => {
+    const layout = pinLayout("left", "top", 80, 32, 10, 20);
+    layout.leftUnit = "percent";
+    layout.topUnit = "percent";
+    const next = applyWidgetDragOffset(
+      layout,
+      { x: 40, y: 30 },
+      { x: 0, y: 0, width: 200, height: 100 },
+    );
+    expect(next.left).toBe(30);
+    expect(next.top).toBe(50);
   });
 
   it("scales design-space rects onto the bitmap from the origin", () => {
@@ -119,14 +135,41 @@ describe("ui-design-gestures", () => {
     );
   });
 
-  it("places 44px resize handles around a screen rect", () => {
-    const handles = resizeHandleRects({ x: 100, y: 50, width: 200, height: 80 });
-    expect(handles.se.width).toBe(44);
-    expect(handles.se.height).toBe(44);
-    expect(handles.nw.x).toBe(100 - 22);
-    expect(handles.nw.y).toBe(50 - 22);
-    expect(handles.e.x).toBe(100 + 200 - 22);
-    expect(handles.e.y).toBe(50 + 40 - 22);
+  it("places 44px resize hits fully outside the widget", () => {
+    const screen = { x: 100, y: 50, width: 200, height: 80 };
+    const hits = resizeHandleHitRects(screen);
+    expect(hits.se).toEqual({ x: 300, y: 130, width: 44, height: 44 });
+    expect(hits.nw).toEqual({ x: 56, y: 6, width: 44, height: 44 });
+    expect(hits.n.y).toBe(6);
+    expect(hits.e.x).toBe(300);
+    expect(hits.w.x).toBe(56);
+    expect(hits.s.y).toBe(130);
+  });
+
+  it("places compact visual handles on the widget corners", () => {
+    const visual = resizeHandleRects(
+      { x: 100, y: 50, width: 200, height: 80 },
+      UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
+    );
+    expect(visual.se.width).toBe(UI_DESIGN_HANDLE_VISUAL_SIZE_PX);
+    expect(visual.nw.x).toBe(100 - UI_DESIGN_HANDLE_VISUAL_SIZE_PX / 2);
+  });
+
+  it("keys Fit to the device canvas, not the dock panel size", () => {
+    expect(
+      uiDesignerCanvasFitKey("desktop-16-9", { width: 1920, height: 1080 }),
+    ).toBe("desktop-16-9:1920x1080");
+  });
+
+  it("frames a selected widget into the viewport without using Fit zoom 1", () => {
+    const view = frameRectView(
+      { width: 400, height: 300 },
+      { x: 0, y: 0, width: 160, height: 36 },
+      1,
+    );
+    expect(view.zoom).toBeGreaterThan(1);
+    expect(view.panX + 80 * view.zoom).toBeCloseTo(200);
+    expect(view.panY + 18 * view.zoom).toBeCloseTo(150);
   });
 
   it("keeps compact visual handles separate from 44px touch hits", () => {
