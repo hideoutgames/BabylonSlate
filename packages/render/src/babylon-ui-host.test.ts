@@ -8,6 +8,7 @@ import {
   guiSpecFromDescriptor,
   layoutUserInterface,
   pinLayout,
+  scopeUiControlIds,
   stretchLayout,
   type UiControlDescriptor,
 } from "@babylonslate/ui-runtime";
@@ -292,6 +293,44 @@ describe("BabylonUiApplyHost", () => {
     expect(scroller?.getDescendants(false).some((row) => row.name === "inner")).toBe(true);
   });
 
+  it("applies Grid gap as column and row spacing", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.gap = 12;
+    doc.widgets.canvas!.children = ["grid"];
+    doc.widgets.grid = grid;
+    const { root } = applyDocument(doc);
+    const gridControl = named(root, "grid") as Grid;
+    expect(gridControl.columnSpacing).toBe(12);
+    expect(gridControl.rowSpacing).toBe(12);
+  });
+
+  it("rebuilds Grid track defs when column count grows", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    doc.widgets.canvas!.children = ["grid"];
+    doc.widgets.grid = grid;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    expect((named(root, "grid") as Grid).columnCount).toBe(2);
+    grid.props.columns = 3;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    expect((named(root, "grid") as Grid).columnCount).toBe(3);
+  });
+
   it("parents default Canvas children into a padded SafeArea container", () => {
     const doc = createDefaultUserInterface();
     const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));
@@ -316,6 +355,69 @@ describe("BabylonUiApplyHost", () => {
     expect(safe?.getDescendants(false).some((row) => row.name === "bleed")).toBe(false);
     const canvas = named(root, "canvas") as Container;
     expect(canvas.getDescendants(false).some((row) => row.name === "bleed")).toBe(true);
+  });
+
+  it("parents scoped HUD children into a per-instance SafeArea", () => {
+    const doc = createDefaultUserInterface();
+    const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));
+    doc.widgets.canvas!.children = ["pin"];
+    doc.widgets.pin = pin;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      safeArea: { left: 10, right: 0, top: 20, bottom: 0 },
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      scopeUiControlIds(
+        describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+        "ui-1",
+      ),
+    );
+    const safe = named(root, `ui-1:${SAFE_AREA_CONTROL_ID}`);
+    expect(safe).toBeInstanceOf(Container);
+    expect(safe?.paddingTop).toBe("20px");
+    expect(safe?.getDescendants(false).some((row) => row.name === "ui-1:pin")).toBe(
+      true,
+    );
+    expect(root.children.some((row) => row.name === "ui-1:pin")).toBe(false);
+  });
+
+  it("gives stacked HUDs separate SafeArea containers", () => {
+    const first = createDefaultUserInterface("A");
+    const second = createDefaultUserInterface("B");
+    const a = createWidget("a", "Button", "A", pinLayout("left", "top", 80, 32));
+    const b = createWidget("b", "Button", "B", pinLayout("left", "top", 80, 32));
+    first.widgets.canvas!.children = ["a"];
+    first.widgets.a = a;
+    second.widgets.canvas!.children = ["b"];
+    second.widgets.b = b;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root, {
+      safeArea: { left: 8, right: 8, top: 16, bottom: 16 },
+    });
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(host, [
+      ...scopeUiControlIds(
+        describeUiControls(first, { parentSize: { width: 800, height: 600 } }),
+        "ui-1",
+      ),
+      ...scopeUiControlIds(
+        describeUiControls(second, { parentSize: { width: 800, height: 600 } }),
+        "ui-2",
+      ),
+    ]);
+    const safe1 = named(root, `ui-1:${SAFE_AREA_CONTROL_ID}`);
+    const safe2 = named(root, `ui-2:${SAFE_AREA_CONTROL_ID}`);
+    expect(safe1).toBeInstanceOf(Container);
+    expect(safe2).toBeInstanceOf(Container);
+    expect(safe1).not.toBe(safe2);
+    expect(safe1?.getDescendants(false).some((row) => row.name === "ui-1:a")).toBe(
+      true,
+    );
+    expect(safe2?.getDescendants(false).some((row) => row.name === "ui-2:b")).toBe(
+      true,
+    );
   });
 
   it("parents a nested UserInterface label under the host slot, not the ADT root", () => {

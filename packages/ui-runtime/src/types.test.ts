@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeUserInterfaceDocument } from "./normalize-document";
-import { createWidget, defaultHitTestableFor, defaultWidgetStyle } from "./types";
+import { createWidget, defaultHitTestableFor, defaultWidgetStyle, resizeGridTracks, widgetRuntimeMeta } from "./types";
 
 describe("createWidget style defaults", () => {
   it("gives newly created Buttons an explicit visible background", () => {
@@ -37,6 +37,56 @@ describe("Hit Testable defaults", () => {
   it("stamps createWidget with the kind default", () => {
     expect(createWidget("btn", "Button").hitTestable).toBe(true);
     expect(createWidget("art", "Image").hitTestable).toBe(false);
+  });
+});
+
+describe("resizeGridTracks", () => {
+  it("grows star tracks and keeps existing defs when Columns change", () => {
+    const next = resizeGridTracks(
+      [
+        { value: 2, isPixel: false },
+        { value: 40, isPixel: true },
+      ],
+      3,
+    );
+    expect(next).toEqual([
+      { value: 2, isPixel: false },
+      { value: 40, isPixel: true },
+      { value: 1, isPixel: false },
+    ]);
+  });
+
+  it("truncates extra tracks when Columns shrink", () => {
+    expect(
+      resizeGridTracks(
+        [
+          { value: 1, isPixel: false },
+          { value: 1, isPixel: false },
+          { value: 1, isPixel: false },
+        ],
+        2,
+      ),
+    ).toEqual([
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ]);
+  });
+});
+
+describe("widgetRuntimeMeta", () => {
+  it("copies nestedUiGuid, exposed, and overrides onto slim rows", () => {
+    const chip = createWidget("chip", "UserInterface", "Chip");
+    chip.nestedUiGuid = "chip-1";
+    chip.exposed = { key: "hp", label: "HP" };
+    chip.overrides = { label: { text: "MP" } };
+    expect(widgetRuntimeMeta(chip)).toEqual({
+      id: "chip",
+      kind: "UserInterface",
+      name: "Chip",
+      nestedUiGuid: "chip-1",
+      exposed: { key: "hp", label: "HP" },
+      overrides: { label: { text: "MP" } },
+    });
   });
 });
 

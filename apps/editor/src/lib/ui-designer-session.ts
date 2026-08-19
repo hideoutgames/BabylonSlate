@@ -38,6 +38,7 @@ export function createUiDesignerSession(
 ): UiDesignerSession {
   let widgetId: string | null = null;
   let layout: WidgetLayout | null = null;
+  let origin: WidgetLayout | null = null;
   let strokeId: string | null = null;
   let scheduled = false;
 
@@ -61,6 +62,7 @@ export function createUiDesignerSession(
   const end = () => {
     widgetId = null;
     layout = null;
+    origin = null;
     strokeId = null;
     scheduled = false;
     lock(false);
@@ -80,7 +82,10 @@ export function createUiDesignerSession(
       if (widgetId && widgetId !== id) {
         session.commit();
       }
-      if (!widgetId) begin(id);
+      if (!widgetId) {
+        begin(id);
+        origin = next;
+      }
       layout = next;
       const live = host();
       live?.patchLiveLayout?.(id, next);
@@ -108,6 +113,20 @@ export function createUiDesignerSession(
       }
     },
     cancel() {
+      const id = widgetId;
+      const restored = origin;
+      if (id && restored) {
+        const live = host();
+        live?.patchLiveLayout?.(id, restored);
+        live?.markAsDirty?.();
+        options.onOverlay?.(id, restored);
+        try {
+          options.present();
+        } finally {
+          end();
+        }
+        return;
+      }
       end();
     },
   };

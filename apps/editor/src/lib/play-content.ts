@@ -41,7 +41,7 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { normalizeUserInterfaceDocument, type UserInterfaceDocument, collectMaterialGuidsFromUiDocuments } from "@babylonslate/ui-runtime";
+import { normalizeUserInterfaceDocument, widgetRuntimeMeta, type UserInterfaceDocument, collectMaterialGuidsFromUiDocuments } from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 export interface PlayContentDocument {
@@ -224,16 +224,7 @@ export function playUserInterfaceRuntimeDocuments(
 ): UserInterfaceRuntimeDocument[] {
   return Object.entries(library).map(([guid, document]) => ({
     guid,
-    widgets: Object.values(document.widgets).map((widget) => ({
-      id: widget.id,
-      kind: widget.kind,
-      ...(widget.name ? { name: widget.name } : {}),
-      ...(widget.nestedUiGuid ? { nestedUiGuid: widget.nestedUiGuid } : {}),
-      ...(widget.exposed ? { exposed: widget.exposed } : {}),
-      ...(widget.overrides && Object.keys(widget.overrides).length > 0
-        ? { overrides: widget.overrides }
-        : {}),
-    })),
+    widgets: Object.values(document.widgets).map(widgetRuntimeMeta),
   }));
 }
 

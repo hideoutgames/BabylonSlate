@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   PropertyGrid,
   assetRowIdentity,
@@ -15,7 +15,9 @@ import {
   convertLayoutSize,
   matchAnchorPreset,
   parentOwnsChildLayout,
+  resizeGridTracks,
   widgetParentId,
+  type GridTrackDef,
   type UiControlDescriptor,
   type UserInterfaceDocument,
   type WidgetLayout,
@@ -63,6 +65,17 @@ export function UiDesignDetails({
   resolveNested?: (guid: string) => UserInterfaceDocument | null;
 }) {
   const previewedLayoutRef = useRef<WidgetLayout | null>(null);
+  const commitLayoutRef = useRef(onCommitLayout);
+  commitLayoutRef.current = onCommitLayout;
+  useEffect(() => {
+    const id = selected.id;
+    return () => {
+      const pending = previewedLayoutRef.current;
+      if (!pending) return;
+      previewedLayoutRef.current = null;
+      commitLayoutRef.current?.(id, pending);
+    };
+  }, [selected.id]);
   const parentId = widgetParentId(ui, selected.id);
   const parent = parentId ? ui.widgets[parentId] : null;
   const slotOwned = parent ? parentOwnsChildLayout(parent.kind) : false;
@@ -786,12 +799,31 @@ function containerPropRows(
     ];
   }
   if (selected.kind === "Grid") {
+    const patchTracks = (
+      key: "columns" | "rows",
+      trackKey: "gridColumns" | "gridRows",
+      count: number,
+    ) => {
+      const n = Math.max(1, Math.floor(count) || 1);
+      onPatchWidget(selected.id, {
+        props: {
+          ...selected.props,
+          [key]: n,
+          [trackKey]: resizeGridTracks(
+            Array.isArray(selected.props[trackKey])
+              ? (selected.props[trackKey] as GridTrackDef[])
+              : undefined,
+            n,
+          ),
+        },
+      });
+    };
     return [
       numberRow("columns", "Columns", Number(selected.props.columns ?? 2), (columns) =>
-        onPatchWidget(selected.id, { props: { ...selected.props, columns } }),
+        patchTracks("columns", "gridColumns", columns),
       ),
       numberRow("rows", "Rows", Number(selected.props.rows ?? 2), (rows) =>
-        onPatchWidget(selected.id, { props: { ...selected.props, rows } }),
+        patchTracks("rows", "gridRows", rows),
       ),
       numberRow("gap", "Spacing", Number(selected.props.gap ?? 8), (gap) =>
         onPatchWidget(selected.id, { props: { ...selected.props, gap } }),
