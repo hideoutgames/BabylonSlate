@@ -142,7 +142,7 @@ describe("select nodes", () => {
       "Red",
       "Blue",
     ]);
-    const properties = { ...team };
+    const properties: Record<string, unknown> = { ...team };
     delete properties["default:index"];
     const pins = selectNodes.find((e) => e.id === "enum.select")!.pins(properties);
     expect(pins.some((pin) => pin.id === "index")).toBe(true);

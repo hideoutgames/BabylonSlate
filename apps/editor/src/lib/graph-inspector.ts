@@ -566,7 +566,6 @@ export function containerConstructorPropertyRows(
       defaultValue: 0,
       min: 0,
       max: 64,
-      step: 1,
       onChange: (value) =>
         onPatch({ count: Math.max(0, Math.min(64, Math.floor(value))) }),
     },

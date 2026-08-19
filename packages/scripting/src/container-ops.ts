@@ -112,7 +112,9 @@ export function arrayRemoveItem<T>(
   return { array: next, success: true };
 }
 
-export function arrayClear(): [] {
+export function arrayClear<T>(
+  _array?: readonly T[] | null | undefined,
+): T[] {
   return [];
 }
 
@@ -192,8 +194,10 @@ export function mapIsEmpty(map: Map<unknown, unknown> | null | undefined): boole
   return mapSize(map) === 0;
 }
 
-export function mapClear(): Map<never, never> {
-  return new Map();
+export function mapClear<K, V>(
+  _map?: Map<K, V> | null | undefined,
+): Map<K, V> {
+  return new Map<K, V>();
 }
 
 export function mapKeys<K>(map: Map<K, unknown> | null | undefined): K[] {
