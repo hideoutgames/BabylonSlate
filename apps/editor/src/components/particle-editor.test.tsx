@@ -13,6 +13,19 @@ import {
 import { ParticlePreviewCanvas } from "./particle-preview-canvas";
 import { systemPreviewLibrary } from "../lib/play-particles";
 
+if (typeof window !== "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    writable: true,
+    value: PointerEventPolyfill,
+  });
+}
+
 const loadAssetDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("../context/document-context", () => ({
@@ -154,6 +167,22 @@ describe("ParticleSystemEditor", () => {
     fireEvent.click(screen.getByTestId("search-item-em-1"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ emitterGuids: ["em-1"] }),
+    );
+  });
+
+  it("toggles Preview Skybox on the System payload", () => {
+    const payload = createDefaultParticleSystemPayload();
+    const onChange = vi.fn();
+    render(
+      <ParticleSystemEditor
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText("Preview Skybox")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-previewSkybox"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ previewSkybox: false }),
     );
   });
 });

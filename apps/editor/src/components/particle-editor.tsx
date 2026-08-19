@@ -396,6 +396,7 @@ export function ParticleSystemPreview({
           library={systemPreviewLibrary(system, emitters)}
           systemGuid="preview-sys"
           testId="particle-system-preview-canvas"
+          showSkybox={system.previewSkybox}
         />
       )}
     </div>
@@ -719,6 +720,13 @@ export function ParticleSystemEditor({
       value: system.duration,
       min: 0,
       onChange: (duration) => commit({ ...system, duration }),
+    },
+    {
+      id: "previewSkybox",
+      kind: "boolean",
+      label: "Preview Skybox",
+      value: system.previewSkybox,
+      onChange: (previewSkybox) => commit({ ...system, previewSkybox }),
     },
   ];
 

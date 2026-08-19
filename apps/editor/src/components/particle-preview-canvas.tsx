@@ -70,10 +70,12 @@ export function ParticlePreviewCanvas({
   library,
   systemGuid,
   testId,
+  showSkybox = false,
 }: {
   library: PlayParticleLibrary;
   systemGuid: string;
   testId: string;
+  showSkybox?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
@@ -131,7 +133,7 @@ export function ParticlePreviewCanvas({
       if (cancelled) return;
       const diagnostics: ParticleServiceDiagnostic[] = [];
       try {
-        host = createParticlePreviewScene(engine);
+        host = createParticlePreviewScene(engine, { skybox: showSkybox });
         presenter = createMaterialPreviewPresenter(host, canvas);
         cache = new ResourceCache();
         const resolveTexture = (guid: string) => {
@@ -231,6 +233,7 @@ export function ParticlePreviewCanvas({
     libraryKey,
     look,
     readAssetChunk,
+    showSkybox,
     systemGuid,
   ]);
 
