@@ -76,6 +76,87 @@ async function classGraphNodeCount(page: import("@playwright/test").Page) {
   return page.getByTestId("graph-panel").locator(".react-flow__node").count();
 }
 
+async function setMainGraphContent(
+  page: import("@playwright/test").Page,
+  graph: unknown,
+): Promise<void> {
+  const installed = await page.evaluate(async (next) => {
+    const host = globalThis as unknown as {
+      __babylonslateTest?: {
+        setMainGraphContent: (g: unknown) => Promise<boolean>;
+      };
+    };
+    return host.__babylonslateTest?.setMainGraphContent(next) ?? false;
+  }, graph);
+  expect(installed).toBe(true);
+}
+
+async function openMannequinClass(page: import("@playwright/test").Page): Promise<void> {
+  await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+  await expect(page.getByTestId("graph-panel")).toBeVisible();
+}
+
+async function closeGraphTab(page: import("@playwright/test").Page): Promise<void> {
+  await page
+    .locator('[data-testid="document-tab"][data-document-kind="graph"]')
+    .getByTestId("document-tab-close")
+    .click();
+  await expect(page.getByTestId("graph-panel")).toHaveCount(0);
+}
+
+const INPUT_MODE_SELECT_DATA = {
+  enumGuid: "engine:InputMode",
+  members: [
+    { name: "All", value: 0 },
+    { name: "Interface", value: 1 },
+    { name: "Game", value: 2 },
+  ],
+  "default:index": "Interface",
+};
+
+function enumSelectGraph(wiredInt: boolean) {
+  return {
+    nodes: [
+      ...(wiredInt
+        ? [
+            {
+              id: "value",
+              type: "literal.makeInt",
+              position: { x: 40, y: 80 },
+              data: { "default:in": 7 },
+            },
+          ]
+        : []),
+      {
+        id: "select",
+        type: "enum.select",
+        position: { x: 280, y: 80 },
+        data: INPUT_MODE_SELECT_DATA,
+      },
+    ],
+    edges: wiredInt
+      ? [
+          {
+            id: "option",
+            source: "value",
+            target: "select",
+            sourceHandle: "out",
+            targetHandle: "option:Interface",
+          },
+        ]
+      : [],
+  };
+}
+
+function selectPinVisual(
+  page: import("@playwright/test").Page,
+  handleId: string,
+) {
+  return page.locator(
+    `[data-id="select"] [data-handleid="${handleId}"] .graph-pin-visual`,
+  );
+}
+
 test.describe("P5 visual scripting acceptance", () => {
   test("a scripted actor compiles and runs in Preview", async ({ page }) => {
     await openTestProject(page);
@@ -364,6 +445,342 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("print-overlay")).toContainText("2", {
       timeout: 15_000,
     });
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("dynamic Enum Select specialises wildcards from a wired option and resets when disconnected", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await setMainGraphContent(page, enumSelectGraph(false));
+    await openMannequinClass(page);
+    await expect(selectPinVisual(page, "option:All")).toHaveAttribute(
+      "style",
+      /--pin-wildcard/,
+    );
+    await expect(selectPinVisual(page, "option:Game")).toHaveAttribute(
+      "style",
+      /--pin-wildcard/,
+    );
+    await expect(selectPinVisual(page, "out")).toHaveAttribute(
+      "style",
+      /--pin-wildcard/,
+    );
+
+    await setMainGraphContent(page, enumSelectGraph(true));
+    await saveAllIfEnabled(page);
+    await closeGraphTab(page);
+    await openMannequinClass(page);
+    await expect(selectPinVisual(page, "option:Interface")).toHaveAttribute(
+      "style",
+      /--pin-int/,
+    );
+    await expect(selectPinVisual(page, "option:All")).toHaveAttribute(
+      "style",
+      /--pin-int/,
+    );
+    await expect(selectPinVisual(page, "out")).toHaveAttribute(
+      "style",
+      /--pin-int/,
+    );
+
+    await setMainGraphContent(page, enumSelectGraph(false));
+    await saveAllIfEnabled(page);
+    await closeGraphTab(page);
+    await openMannequinClass(page);
+    await expect(selectPinVisual(page, "option:All")).toHaveAttribute(
+      "style",
+      /--pin-wildcard/,
+    );
+    await expect(selectPinVisual(page, "out")).toHaveAttribute(
+      "style",
+      /--pin-wildcard/,
+    );
+  });
+
+  test("For Each and For Each Map iterate containers in Preview", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await openTestProject(page);
+    await setMainGraphContent(page, {
+      nodes: [
+        {
+          id: "tick",
+          type: "flow.event.tick",
+          position: { x: 40, y: 80 },
+          data: {},
+        },
+        {
+          id: "item0",
+          type: "literal.makeInt",
+          position: { x: 40, y: 220 },
+          data: { "default:in": 3 },
+        },
+        {
+          id: "item1",
+          type: "literal.makeInt",
+          position: { x: 40, y: 300 },
+          data: { "default:in": 8 },
+        },
+        {
+          id: "item2",
+          type: "literal.makeInt",
+          position: { x: 40, y: 380 },
+          data: { "default:in": 11 },
+        },
+        {
+          id: "make",
+          type: "array.make",
+          position: { x: 240, y: 260 },
+          data: { count: 3 },
+        },
+        {
+          id: "loop",
+          type: "flow.forEach",
+          position: { x: 480, y: 80 },
+          data: {},
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 760, y: 80 },
+          data: {
+            key: "for-each",
+            duration: 30,
+            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "start",
+          source: "tick",
+          target: "loop",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "i0",
+          source: "item0",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: "item0",
+        },
+        {
+          id: "i1",
+          source: "item1",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: "item1",
+        },
+        {
+          id: "i2",
+          source: "item2",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: "item2",
+        },
+        {
+          id: "array",
+          source: "make",
+          target: "loop",
+          sourceHandle: "out",
+          targetHandle: "array",
+        },
+        {
+          id: "body",
+          source: "loop",
+          target: "print",
+          sourceHandle: "loopBody",
+          targetHandle: "execIn",
+        },
+        {
+          id: "element",
+          source: "loop",
+          target: "print",
+          sourceHandle: "element",
+          targetHandle: "value",
+        },
+      ],
+    });
+    await openMainScene(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("print-overlay")).toContainText("11", {
+      timeout: 15_000,
+    });
+    await page.getByTestId("play-overlay-close").click();
+
+    await setMainGraphContent(page, {
+      nodes: [
+        {
+          id: "tick",
+          type: "flow.event.tick",
+          position: { x: 40, y: 80 },
+          data: {},
+        },
+        {
+          id: "key0",
+          type: "literal.makeString",
+          position: { x: 40, y: 220 },
+          data: { "default:in": "hp" },
+        },
+        {
+          id: "value0",
+          type: "literal.makeInt",
+          position: { x: 40, y: 300 },
+          data: { "default:in": 9 },
+        },
+        {
+          id: "make",
+          type: "map.make",
+          position: { x: 240, y: 240 },
+          data: { count: 1 },
+        },
+        {
+          id: "loop",
+          type: "flow.forEachMap",
+          position: { x: 480, y: 80 },
+          data: {},
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 760, y: 80 },
+          data: {
+            key: "for-each-map",
+            duration: 30,
+            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "start",
+          source: "tick",
+          target: "loop",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "k0",
+          source: "key0",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: "key0",
+        },
+        {
+          id: "v0",
+          source: "value0",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: "value0",
+        },
+        {
+          id: "map",
+          source: "make",
+          target: "loop",
+          sourceHandle: "out",
+          targetHandle: "map",
+        },
+        {
+          id: "body",
+          source: "loop",
+          target: "print",
+          sourceHandle: "loopBody",
+          targetHandle: "execIn",
+        },
+        {
+          id: "value",
+          source: "loop",
+          target: "print",
+          sourceHandle: "value",
+          targetHandle: "value",
+        },
+      ],
+    });
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("print-overlay")).toContainText("9", {
+      timeout: 15_000,
+    });
+    await page.getByTestId("play-overlay-close").click();
+  });
+
+  test("Sphere Overlap Actors returns a live Count in Preview", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await setMainGraphContent(page, {
+      nodes: [
+        {
+          id: "tick",
+          type: "flow.event.tick",
+          position: { x: 40, y: 80 },
+          data: {},
+        },
+        {
+          id: "overlap",
+          type: "physics.sphereOverlap",
+          position: { x: 280, y: 80 },
+          data: {
+            "default:center": { x: 0, y: 0, z: 0 },
+            "default:radius": 10_000,
+          },
+        },
+        {
+          id: "format",
+          type: "string.format",
+          position: { x: 540, y: 180 },
+          data: { "default:format": "overlap {n}" },
+        },
+        {
+          id: "print",
+          type: "debug.print",
+          position: { x: 780, y: 80 },
+          data: {
+            key: "overlap",
+            duration: 30,
+            color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "start",
+          source: "tick",
+          target: "overlap",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "then",
+          source: "overlap",
+          target: "print",
+          sourceHandle: "execOut",
+          targetHandle: "execIn",
+        },
+        {
+          id: "count",
+          source: "overlap",
+          target: "format",
+          sourceHandle: "count",
+          targetHandle: `arg:${encodeURIComponent("n")}`,
+        },
+        {
+          id: "formatted",
+          source: "format",
+          target: "print",
+          sourceHandle: "out",
+          targetHandle: "value",
+        },
+      ],
+    });
+    await openMainScene(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("print-overlay")).toContainText(
+      /overlap [1-9]/,
+      { timeout: 15_000 },
+    );
     await page.getByTestId("play-overlay-close").click();
   });
 
