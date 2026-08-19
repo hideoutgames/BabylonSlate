@@ -271,8 +271,11 @@ function ensurePointerEvent(): void {
       this.pointerType = String(init.pointerType ?? "mouse");
     }
   }
-  (globalThis as { PointerEvent: typeof PointerEvent }).PointerEvent =
-    PointerEventShim as typeof PointerEvent;
+  Object.defineProperty(globalThis, "PointerEvent", {
+    configurable: true,
+    writable: true,
+    value: PointerEventShim,
+  });
 }
 
 /**

@@ -404,6 +404,13 @@ export function compileMaterialPlan(
   };
 }
 
+/** NodeMaterial has no typed `alphaCutOff`; StandardMaterial / PBR do. */
+type MaterialAlphaCutOff = { alphaCutOff: number };
+
+function applyAlphaCutOff(material: Material, cutoff: number): void {
+  (material as Material & MaterialAlphaCutOff).alphaCutOff = cutoff;
+}
+
 /** Map authored blend / two-sided onto Babylon after `material.build()`. */
 function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
@@ -421,7 +428,7 @@ function applyAuthoredSurfaceBlend(
   switch (plan.blendMode) {
     case "masked":
       material.transparencyMode = Material.MATERIAL_ALPHATEST;
-      material.alphaCutOff = plan.alphaCutoff;
+      applyAlphaCutOff(material, plan.alphaCutoff);
       return;
     case "translucent":
     case "additive":

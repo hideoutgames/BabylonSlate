@@ -12,7 +12,7 @@ import {
   type MeshAssetContext,
 } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
-import { beginSlotModelAnimLoad } from "./glb-anim";
+import { beginSlotModelAnimLoad, type ModelAnimLoadBinding } from "./glb-anim";
 import { isGltfModelBytes } from "./model-mesh";
 import {
   actorIdFromMeshName,
@@ -74,11 +74,11 @@ export class EditorSceneSync {
   private restoreCamera: Camera | null = null;
   private shadowQuality = "1024";
   private modelLoadSlot = 0;
-  private readonly modelLoadBinding = {
+  private readonly modelLoadBinding: ModelAnimLoadBinding = {
     slotAnimEpoch: new Map<number, number>(),
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
-  } as import("./snapshot-apply").SnapshotSceneBinding;
+  };
 
   constructor(
     scene: Scene,

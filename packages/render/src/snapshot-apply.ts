@@ -568,10 +568,10 @@ export function createPlayMesh(
   if (assetGuid) {
     const root = createModelActorRoot(scene, name);
     const bytes = binding?.modelBytes?.get(assetGuid);
-    if (bytes) {
+    if (bytes && binding) {
       void beginSlotModelAnimLoad(
         scene,
-        binding!,
+        binding,
         slotId,
         assetGuid,
         bytes,

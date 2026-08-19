@@ -122,7 +122,9 @@ describe("material compiler", () => {
     if (!masked.ok) return;
     disposers.push(() => masked.material.dispose());
     expect(masked.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
-    expect(masked.material.alphaCutOff).toBeCloseTo(0.4);
+    expect(
+      (masked.material as unknown as { alphaCutOff: number }).alphaCutOff,
+    ).toBeCloseTo(0.4);
 
     const glassDoc = createDefaultMaterialDocument();
     glassDoc.blendMode = "translucent";

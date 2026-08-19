@@ -19,6 +19,24 @@ import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 
+/**
+ * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
+ * binding; the editor scene-loader can pass a stub without lights/cameras.
+ */
+export type ModelAnimLoadBinding = Pick<
+  SnapshotSceneBinding,
+  | "slotAnimEpoch"
+  | "slotAnimationGroups"
+  | "slotAnimLoads"
+  | "pendingAnimState"
+  | "slotAnimReady"
+  | "modelBytes"
+  | "modelPayloads"
+  | "modelClipAnimationGuids"
+  | "retargetAnimationLoads"
+  | "spritePayloads"
+>;
+
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
 const MODEL_INSTANCE_KEY = "babylonslateModelInstance";
 const MODEL_LOAD_KEY = "babylonslateModelLoadKey";
@@ -96,7 +114,7 @@ export function createModelActorRoot(scene: Scene, name: string): Mesh {
 }
 
 function bumpSlotAnimEpoch(
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): number {
   if (!binding.slotAnimEpoch) binding.slotAnimEpoch = new Map();
@@ -106,7 +124,7 @@ function bumpSlotAnimEpoch(
 }
 
 export function disposeSlotAnimationGroups(
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   for (const group of binding.slotAnimationGroups?.get(slotId) ?? []) {
@@ -117,7 +135,7 @@ export function disposeSlotAnimationGroups(
 
 /** Cancel in-flight GLB animation loads and dispose registered groups. */
 export function invalidateSlotAnimLoad(
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   bumpSlotAnimEpoch(binding, slotId);
@@ -126,13 +144,13 @@ export function invalidateSlotAnimLoad(
 
 function replayPendingAnimState(
   scene: Scene,
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
 ): void {
   const pending = binding.pendingAnimState?.get(slotId);
   if (!pending) return;
   applyAnimStateToScene(
-    sceneAnimHostFromBinding(binding, {
+    sceneAnimHostFromBinding(binding as SnapshotSceneBinding, {
       animationGroups: scene.animationGroups,
       spritePayloads: binding.spritePayloads,
     }),
@@ -262,7 +280,7 @@ function instantiateUnderPlaceholder(
  */
 export function beginSlotModelAnimLoad(
   scene: Scene,
-  binding: SnapshotSceneBinding,
+  binding: ModelAnimLoadBinding,
   slotId: number,
   clipAssetGuid: string,
   bytes: Uint8Array,
