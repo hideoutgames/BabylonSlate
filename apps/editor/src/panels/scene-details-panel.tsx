@@ -16,10 +16,8 @@ import {
 import {
   DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
-  eulerDegreesToQuaternion,
   findActor,
   patchComponentProperties,
-  quaternionToEulerDegrees,
   type SerializedActor,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -50,6 +48,7 @@ import {
   sceneComponentEntries,
 } from "../lib/scene-component-entries";
 import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
+import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -577,61 +576,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       value: actor.name,
       onChange: (name) => updateActor((entry) => ({ ...entry, name })),
     },
-    {
-      kind: "vector3",
-      id: "actor-position",
-      label: "Position",
-      value: actor.transform.position,
-      defaultValue: [0, 0, 0],
-      axes: scene.viewportMode === "2d" ? ["X", "Y"] : ["X", "Y", "Z"],
-      onChange: (position) =>
-        updateActor((entry) => ({
-          ...entry,
-          transform: {
-            ...entry.transform,
-            position: [position[0], position[1], position[2]],
-          },
-        })),
-    },
-    {
-      kind: "vector3",
-      id: "actor-rotation",
-      label: "Rotation",
-      value:
-        scene.viewportMode === "2d"
-          ? [quaternionToEulerDegrees(actor.transform.rotation)[2], 0, 0]
-          : quaternionToEulerDegrees(actor.transform.rotation),
-      defaultValue: [0, 0, 0],
-      axes: scene.viewportMode === "2d" ? ["Z"] : ["X", "Y", "Z"],
-      onChange: (next) =>
-        updateActor((entry) => ({
-          ...entry,
-          transform: {
-            ...entry.transform,
-            rotation: eulerDegreesToQuaternion(
-              scene.viewportMode === "2d"
-                ? [0, 0, next[0]]
-                : [next[0], next[1], next[2]],
-            ),
-          },
-        })),
-    },
-    {
-      kind: "vector3",
-      id: "actor-scale",
-      label: "Scale",
-      value: actor.transform.scale,
-      defaultValue: [1, 1, 1],
-      axes: scene.viewportMode === "2d" ? ["X", "Y"] : ["X", "Y", "Z"],
-      onChange: (scale) =>
-        updateActor((entry) => ({
-          ...entry,
-          transform: {
-            ...entry.transform,
-            scale: [scale[0], scale[1], scale[2]],
-          },
-        })),
-    },
+    ...spatialTransformPropertyRows(
+      "actor",
+      scene.viewportMode,
+      actor.transform,
+      (transform) => updateActor((entry) => ({ ...entry, transform })),
+    ),
     {
       kind: "boolean",
       id: "actor-visible",
