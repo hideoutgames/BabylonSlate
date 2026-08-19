@@ -1083,8 +1083,9 @@ export class AssetRegistry {
       set?.delete(asset.header.guid);
       if (set && set.size === 0) this.inbound.delete(dep);
     }
-    // Drop the reverse-index bucket for this guid; remaining referrers still
-    // list it in their own outbound `dependencies[]` until they are edited.
+    // Remaining referrers are rewritten to None by Content Browser delete
+    // (`ProjectService.clearDeletedAssetReferences`), not here — Skybox
+    // Creator replace deletes then recreates the same guid.
     this.inbound.delete(asset.header.guid);
   }
 }
