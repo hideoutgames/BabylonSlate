@@ -10,6 +10,8 @@ import {
   ParticleSystemEditor,
   ParticleSystemPreview,
 } from "./particle-editor";
+import { ParticlePreviewCanvas } from "./particle-preview-canvas";
+import { systemPreviewLibrary } from "../lib/play-particles";
 
 const loadAssetDocument = vi.hoisted(() => vi.fn());
 
@@ -117,6 +119,21 @@ describe("ParticleEmitterEditor", () => {
     );
     expect(screen.getByTestId("particle-emitter-preview-canvas")).toBeTruthy();
   });
+
+  it("signals Loading Preview while the particle canvas has no Engine", () => {
+    render(
+      <ParticleEmitterPreview
+        payload={
+          {
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    expect(screen.getByTestId("particle-preview-loading")).toBeTruthy();
+    expect(screen.getByText("Loading Preview")).toBeTruthy();
+  });
 });
 
 describe("ParticleSystemEditor", () => {
@@ -168,5 +185,28 @@ describe("ParticleSystemPreview", () => {
     await waitFor(() => {
       expect(screen.getByTestId("particle-system-preview-canvas")).toBeTruthy();
     });
+  });
+});
+
+describe("ParticlePreviewCanvas", () => {
+  it("shows No Texture instead of a black canvas when every Emitter skipped a Texture", () => {
+    const library = systemPreviewLibrary(
+      {
+        ...createDefaultParticleSystemPayload(),
+        emitterGuids: ["em-1"],
+      },
+      new Map([
+        ["em-1", createDefaultParticleEmitterPayload()],
+      ]),
+    );
+    render(
+      <ParticlePreviewCanvas
+        library={library}
+        systemGuid="preview-sys"
+        testId="particle-system-preview-canvas"
+      />,
+    );
+    expect(screen.getByText("No Texture")).toBeTruthy();
+    expect(screen.queryByTestId("particle-system-preview-canvas")).toBeNull();
   });
 });
