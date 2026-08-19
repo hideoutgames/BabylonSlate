@@ -30,6 +30,7 @@ import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import {
   createEditorGrid,
+  GRID_MESH_NAME,
   gridCoverageWorld,
   gridEdgeFadeAlpha,
   gridEdgeFadeRange,
@@ -51,6 +52,7 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { RENDERING_GROUP } from "./sorting";
 
 function kenneyMannequinGlb(): Uint8Array {
   const dir = join(
@@ -1266,6 +1268,25 @@ describe("editor grid", () => {
 
     grid.setMode("2d");
     expect(grid.boundsMesh).not.toBeNull();
+    grid.dispose();
+  });
+
+  it("draws the grid as a background underlay below world meshes", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "3d" });
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
+      ]),
+    );
+    const mesh = sync.meshForActor("a");
+    expect(grid.mesh.name).toBe(GRID_MESH_NAME);
+    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.background);
+    expect(mesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
+    const worldClear = scene.getAutoClearDepthStencilSetup(RENDERING_GROUP.world);
+    expect(worldClear.autoClear).toBe(true);
+    expect(worldClear.depth).toBe(true);
     grid.dispose();
   });
 });

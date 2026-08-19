@@ -25,6 +25,10 @@ import { createSpriteQuad } from "./sprite-quad";
 import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
+import {
+  applyWorldVisualGroup,
+  RENDERING_GROUP,
+} from "./sorting";
 
 /** Editor meshes are named so picking can map a hit back to an actor id. */
 export const EDITOR_ACTOR_MESH_PREFIX = "editorActor:";
@@ -508,6 +512,10 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   const origin = isEditorActorOrigin(mesh);
   if (origin) {
     mesh.visibility = 0;
+  }
+  applyWorldVisualGroup(mesh, actor);
+  if (isSkyboxMesh(mesh)) {
+    mesh.renderingGroupId = RENDERING_GROUP.background;
   }
   if (isEditorModelPlaceholder(mesh)) {
     hideModelPlaceholder(mesh);

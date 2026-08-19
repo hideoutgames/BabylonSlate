@@ -17,6 +17,7 @@ import { applyAnimStateToScene,
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
+import { RENDERING_GROUP } from "./sorting";
 
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
 const MODEL_INSTANCE_KEY = "babylonslateModelInstance";
@@ -90,6 +91,7 @@ export function createModelActorRoot(scene: Scene, name: string): Mesh {
   const mesh = new Mesh(name, scene);
   asPlaceholderMeta(mesh)[MODEL_PLACEHOLDER_KEY] = true;
   hideModelPlaceholder(mesh);
+  mesh.renderingGroupId = RENDERING_GROUP.world;
   return mesh;
 }
 
@@ -244,6 +246,10 @@ function instantiateUnderPlaceholder(
   });
   for (const node of instance.rootNodes) {
     node.parent = placeholder;
+  }
+  const group = placeholder.renderingGroupId;
+  for (const child of placeholder.getChildMeshes()) {
+    child.renderingGroupId = group;
   }
   asPlaceholderMeta(placeholder)[MODEL_INSTANCE_KEY] = instance;
   hideModelPlaceholder(placeholder);

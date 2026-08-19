@@ -2,6 +2,7 @@ import {
   AddBlock,
   FragmentOutputBlock,
   InputBlock,
+  Material,
   MultiplyBlock,
   NodeMaterial,
   NodeMaterialBlockConnectionPointTypes,
@@ -389,6 +390,8 @@ export function compileMaterialPlan(
     return fail();
   }
 
+  applyAuthoredSurfaceBlend(material, plan);
+
   let disposed = false;
   return {
     ok: true,
@@ -399,6 +402,35 @@ export function compileMaterialPlan(
       material.dispose();
     },
   };
+}
+
+/** Map authored blend / two-sided onto Babylon after `material.build()`. */
+function applyAuthoredSurfaceBlend(
+  material: NodeMaterial,
+  plan: MaterialBuildPlan,
+): void {
+  if (
+    plan.domain === "postProcess" ||
+    plan.domain === "interface" ||
+    plan.domain === "particle"
+  ) {
+    return;
+  }
+  material.backFaceCulling = plan.twoSided !== true;
+  material.needDepthPrePass = false;
+  switch (plan.blendMode) {
+    case "masked":
+      material.transparencyMode = Material.MATERIAL_ALPHATEST;
+      material.alphaCutOff = plan.alphaCutoff;
+      return;
+    case "translucent":
+    case "additive":
+      material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+      material.needDepthPrePass = true;
+      return;
+    default:
+      material.transparencyMode = Material.MATERIAL_OPAQUE;
+  }
 }
 
 /** Prefer a wired `param.texture`; otherwise use the sample's inline asset. */
