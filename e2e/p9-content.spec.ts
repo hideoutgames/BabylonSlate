@@ -1479,7 +1479,7 @@ test.describe("P9 content systems", () => {
     await addNestedUserInterface(page, hudWorkspace, "Panel");
     await expect(page.getByTestId("ui-widget-catalog")).toHaveCount(0);
     await expect(
-      hudWorkspace.locator('[data-testid*="/button-"]'),
+      hudWorkspace.locator('[data-testid^="ui-widget-"][data-testid*="button-"]'),
     ).toBeVisible();
     await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });
