@@ -112,7 +112,7 @@ async function switchToAsset(
   tabLabel: string,
 ): Promise<void> {
   const tab = page.locator("[data-testid='document-tab']").filter({
-    hasText: tabLabel === "HUD" ? /^HUD( \*)?$/ : tabLabel,
+    hasText: new RegExp(`^${tabLabel} UI( \\*)?$`),
   });
   if ((await tab.count()) === 1) {
     const select = tab.getByTestId("document-tab-select");
@@ -372,7 +372,7 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await expectDesignerReady(page);
     await saveAllIfEnabled(page);
     const hudTab = page.locator("[data-testid='document-tab']").filter({
-      has: page.locator("span", { hasText: /^HUD( \*)?$/ }),
+      hasText: /^HUD UI( \*)?$/,
     });
     await expect(hudTab).toBeVisible();
     await expect(hudTab).not.toContainText("*");

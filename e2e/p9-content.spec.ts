@@ -1528,7 +1528,7 @@ test.describe("P9 content systems", () => {
       .click();
     await expect(page.getByTestId("ui-nested-picker")).toHaveCount(0);
     await expect(
-      hudWorkspace.locator('[data-testid*="/button-"]'),
+      hudWorkspace.locator('[data-testid^="ui-widget-"][data-testid*="/button-"]'),
     ).toBeVisible();
     await expect(hudWorkspace.getByTestId("ui-gui-preview-error")).toHaveCount(0);
   });
