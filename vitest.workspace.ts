@@ -1,13 +1,14 @@
 import { defineConfig } from "vitest/config";
 
-const coverage = process.argv.includes("--coverage");
-
 export default defineConfig({
   test: {
-    // v8 coverage of the jsdom editor suite can fill a single fork past Node's
-    // default ~4GB heap. Four forks keep each worker on standard runners.
+    // This VM reports 2 logical CPUs (`availableParallelism`), so Vitest's
+    // default `cpus - 1` is a single worker. Coverage of the jsdom editor
+    // suite then fills that fork past Node's ~4GB heap. Four forks stay on
+    // standard GitHub-hosted runners.
     pool: "forks",
-    ...(coverage ? { maxWorkers: 4 } : {}),
+    fileParallelism: true,
+    maxWorkers: 4,
     projects: [
       {
         extends: "./vitest.projects.node.ts",
