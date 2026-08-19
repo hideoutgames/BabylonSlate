@@ -1,5 +1,5 @@
-import { StandardMaterial, VertexBuffer } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { StandardMaterial } from "@babylonjs/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
@@ -17,6 +17,7 @@ import { ResourceCache } from "./resource-cache";
 import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";
 import type { MeshAssetContext } from "./mesh-assets";
 import { encodeTriangleGlb } from "./model-mesh";
+import { visualMeshes } from "./visual-meshes";
 import { setupDefaultViewport } from "./viewport";
 
 function sceneWith(
@@ -118,7 +119,7 @@ describe("authored mesh content", () => {
     expect(child.material!.emissiveTexture).toBeTruthy();
   });
 
-  it("loads a GLB assetGuid as the authored mesh instead of a box", () => {
+  it("loads a GLB assetGuid as the authored mesh instead of a box", async () => {
     const { scene } = createHandle();
     const glb = encodeTriangleGlb();
     applySceneToBabylonScene(
@@ -137,9 +138,10 @@ describe("authored mesh content", () => {
     );
     const mesh = scene.getMeshByName(editorMeshName("tree"));
     expect(mesh).not.toBeNull();
-    const positions = mesh!.getVerticesData(VertexBuffer.PositionKind);
-    expect(positions).not.toBeNull();
-    expect(positions!.length).toBe(9);
+    expect(mesh!.getTotalVertices()).toBe(0);
+    await vi.waitFor(() => {
+      expect(visualMeshes(mesh!).length).toBeGreaterThan(0);
+    });
   });
 
   it("creates a PointLight from LightComponent instead of only the default hemi", () => {

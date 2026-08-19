@@ -7,6 +7,7 @@ import type {
 import type { RenderScheduler } from "./render-scheduler";
 import {
   meshAssetFingerprint,
+  meshAssetFingerprintWithoutModels,
   modelSlotFingerprint,
   type MeshAssetContext,
 } from "./mesh-assets";
@@ -72,6 +73,12 @@ export class EditorSceneSync {
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
   private shadowQuality = "1024";
+  private modelLoadSlot = 0;
+  private readonly modelLoadBinding = {
+    slotAnimEpoch: new Map<number, number>(),
+    slotAnimationGroups: new Map(),
+    slotAnimLoads: new Map<number, Promise<void>>(),
+  } as import("./snapshot-apply").SnapshotSceneBinding;
 
   constructor(
     scene: Scene,
@@ -97,6 +104,11 @@ export class EditorSceneSync {
   setMeshAssets(assets: MeshAssetContext | undefined): boolean {
     const fingerprint = meshAssetFingerprint(assets);
     const slotKey = modelSlotFingerprint(assets?.modelPayloads);
+    const previous = this.assets;
+    const onlyModelsChanged =
+      meshAssetFingerprintWithoutModels(previous) ===
+        meshAssetFingerprintWithoutModels(assets) &&
+      fingerprint !== this.lastAssetFingerprint;
     this.assets = assets;
     if (fingerprint === this.lastAssetFingerprint) {
       if (slotKey !== this.lastModelSlotKey) {
@@ -107,6 +119,10 @@ export class EditorSceneSync {
     }
     this.lastAssetFingerprint = fingerprint;
     this.lastModelSlotKey = slotKey;
+    if (onlyModelsChanged && this.lastScene && this.meshes.size > 0) {
+      this.apply(this.lastScene);
+      return false;
+    }
     for (const mesh of this.meshes.values()) mesh.dispose();
     this.meshes.clear();
     this.meshKinds.clear();
@@ -140,8 +156,8 @@ export class EditorSceneSync {
         mesh = createActorMesh(this.scene, actor, this.assets);
         this.meshes.set(actor.id, mesh);
         this.meshKinds.set(actor.id, kind);
-        this.beginEditorModelLoad(actor, mesh);
       }
+      this.beginEditorModelLoad(actor, mesh);
       applyActorTransform(mesh, actor);
       applyComponentChildTransforms(mesh, actor);
       applyEditorBillboardFromActor(mesh, actor);
@@ -243,18 +259,17 @@ export class EditorSceneSync {
     const guid = this.meshComponentAssetGuid(actor);
     const bytes = guid ? this.assets?.modelBytes?.get(guid) : undefined;
     if (!guid || !bytes || !isGltfModelBytes(bytes)) return;
-    const meta = (root.metadata ?? {}) as { babylonslateModelLoad?: boolean };
-    if (meta.babylonslateModelLoad) return;
-    root.metadata = { ...meta, babylonslateModelLoad: true };
-    const dummy = {
-      slotAnimEpoch: new Map<number, number>(),
-      slotAnimationGroups: new Map(),
-      slotAnimLoads: new Map<number, Promise<void>>(),
-    } as import("./snapshot-apply").SnapshotSceneBinding;
+    const slotId = ++this.modelLoadSlot;
+    this.modelLoadBinding.modelBytes = this.assets?.modelBytes;
+    this.modelLoadBinding.modelPayloads = this.assets?.modelPayloads;
+    this.modelLoadBinding.modelClipAnimationGuids =
+      this.assets?.modelClipAnimationGuids;
+    this.modelLoadBinding.retargetAnimationLoads =
+      this.assets?.retargetAnimationLoads;
     void beginSlotModelAnimLoad(
       this.scene,
-      dummy,
-      0,
+      this.modelLoadBinding,
+      slotId,
       guid,
       bytes,
       root,
@@ -262,6 +277,7 @@ export class EditorSceneSync {
         if (root.isDisposed()) return;
         const current =
           this.lastScene?.actors.find((entry) => entry.id === actor.id) ?? actor;
+        applyActorTransform(root, current);
         this.restoreMeshComponentConstruction(current, root);
         this.applyModelSlots(current, root);
         this.bindActorMeshMaterials(current, root);
