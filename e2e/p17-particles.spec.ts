@@ -138,10 +138,9 @@ test.describe("P17 particles", () => {
       .getByTestId("document-tab-close")
       .click();
     await expect(page.getByTestId("dirty-close-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("particle-preview-empty")).toHaveCount(0);
     await expect(
-      page
-        .getByTestId("particle-system-preview-canvas")
-        .or(page.getByTestId("particle-preview-loading")),
+      page.getByTestId("particle-system-preview-canvas"),
     ).toBeVisible();
 
     await openMainScene(page);
