@@ -249,7 +249,7 @@ export function MaterialEditingProvider({
         }
       }
       if (cancelled) return;
-      host.setMesh(mesh, bytes);
+      await host.setMesh(mesh, bytes);
     })();
     return () => {
       cancelled = true;

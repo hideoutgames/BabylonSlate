@@ -5,9 +5,15 @@ import {
   NullEngine,
   RenderTargetTexture,
   Scene,
+  StandardMaterial,
   Vector3,
+  VertexBuffer,
 } from "@babylonjs/core";
 import { MATERIAL_PREVIEW_MESHES } from "@babylonslate/shader-graph";
+import { embedGlbExternalImages } from "@babylonslate/assets";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
   aimPreviewCameraAtMesh,
@@ -16,6 +22,7 @@ import {
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
 } from "./material-preview";
+import { visualMeshes } from "./visual-meshes";
 
 type Listener = (event: Event) => void;
 
@@ -153,6 +160,36 @@ describe("material preview scene", () => {
     expect(mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
   });
 
+  it("loads the full custom Model hierarchy with UVs and paints every part", async () => {
+    const dir = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../engine-content/kenney-assets/Mannequin",
+    );
+    const bytes = embedGlbExternalImages(
+      new Uint8Array(readFileSync(join(dir, "mannequin.glb"))),
+      {
+        "Textures/texture-d.png": new Uint8Array(
+          readFileSync(join(dir, "mannequin.png")),
+        ),
+      },
+    );
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    await host.setMesh("custom", bytes);
+    const visuals = visualMeshes(host.mesh);
+    expect(visuals.length).toBeGreaterThan(1);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+    }
+    const preview = new StandardMaterial("preview", host.scene);
+    host.applyMaterial(preview);
+    for (const part of visuals) {
+      expect(part.material).toBe(preview);
+    }
+  });
+
   it("creates a scene with a camera, lights and a mesh", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
@@ -162,20 +199,20 @@ describe("material preview scene", () => {
     expect(host.mesh.getTotalVertices()).toBe(24);
   });
 
-  it("swaps the primitive while keeping the applied material", () => {
+  it("swaps the primitive while keeping the applied material", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     const before = host.mesh.getTotalVertices();
-    const next = host.setMesh("sphere");
+    const next = await host.setMesh("sphere");
     expect(next.getTotalVertices()).not.toBe(before);
     expect(host.scene.meshes.length).toBe(1);
   });
 
-  it("disposes the old mesh when the primitive changes", () => {
+  it("disposes the old mesh when the primitive changes", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     const original = host.mesh;
-    host.setMesh("plane");
+    await host.setMesh("plane");
     expect(original.isDisposed()).toBe(true);
   });
 
@@ -213,12 +250,12 @@ describe("material preview scene", () => {
     expect(camera.target.z).toBeCloseTo(4);
   });
 
-  it("reframes the camera when the preview primitive changes", () => {
+  it("reframes the camera when the preview primitive changes", async () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
     host.mesh.position.set(1.5, 0, 0);
     host.mesh.computeWorldMatrix(true);
-    const next = host.setMesh("cube");
+    const next = await host.setMesh("cube");
     next.computeWorldMatrix(true);
     const center = next.getBoundingInfo().boundingBox.centerWorld;
     expect(host.camera.target.x).toBeCloseTo(center.x);
