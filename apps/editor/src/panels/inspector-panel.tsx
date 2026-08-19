@@ -31,6 +31,7 @@ import { Input } from "@babylonslate/ui/components/input";
 import { Button } from "@babylonslate/ui/components/button";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   identitySerializedTransform,
   isEditorGraphHost,
@@ -517,6 +518,7 @@ function ClassMemberDetails({
 function PrefabComponentDetails({
   component,
   sortingLayers,
+  collisionLayers,
   physicsWorld,
   viewportMode,
   pickerAssets,
@@ -527,6 +529,7 @@ function PrefabComponentDetails({
 }: {
   component: SerializedComponent;
   sortingLayers: readonly string[];
+  collisionLayers: readonly string[];
   physicsWorld: "3d" | "2d";
   viewportMode: ViewportMode;
   pickerAssets: Array<{
@@ -569,6 +572,7 @@ function PrefabComponentDetails({
         <PropertyGrid
           rows={componentPropertyRows(PREFAB_ROOT_ID, component, onUpdate, {
             sortingLayers,
+            collisionLayers,
             assetLabel,
             assetType,
             physicsWorld,
@@ -705,6 +709,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const typeAssets = typeAssetPickerEntries(typeCatalog);
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const collisionLayers =
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const physicsWorld = physicsWorldFromOpenDocuments(openDocuments);
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
@@ -749,6 +755,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         <PrefabComponentDetails
           component={selectedPrefabComponent}
           sortingLayers={sortingLayers}
+          collisionLayers={collisionLayers}
           physicsWorld={physicsWorld}
           viewportMode={viewportMode}
           pickerAssets={pickerAssets}

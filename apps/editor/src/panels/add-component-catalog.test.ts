@@ -158,6 +158,7 @@ describe("Add Component catalog", () => {
       isTrigger: false,
       layer: 1,
       mask: 4294967295,
+      renderInGame: false,
     });
     expect(defaultPropertiesFor("ColliderComponent", "2d").shape).toEqual({
       kind: "box2d",
