@@ -293,16 +293,30 @@ describe("BabylonUiApplyHost", () => {
     expect(scroller?.getDescendants(false).some((row) => row.name === "inner")).toBe(true);
   });
 
-  it("applies Grid gap as column and row spacing", () => {
+  it("applies Grid gap as padding between Grid cells", () => {
     const doc = createDefaultUserInterface();
     const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
     grid.props.gap = 12;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const cellC = createWidget("cellC", "Button", "C");
     doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB", "cellC"];
     doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.cellC = cellC;
     const { root } = applyDocument(doc);
     const gridControl = named(root, "grid") as Grid;
-    expect(gridControl.columnSpacing).toBe(12);
-    expect(gridControl.rowSpacing).toBe(12);
+    const first = gridControl.cells["0:0"];
+    const nextCol = gridControl.cells["0:1"];
+    const nextRow = gridControl.cells["1:0"];
+    expect(first?.paddingLeft).toBe("0px");
+    expect(first?.paddingTop).toBe("0px");
+    expect(nextCol?.paddingLeft).toBe("12px");
+    expect(nextCol?.paddingTop).toBe("0px");
+    expect(nextRow?.paddingLeft).toBe("0px");
+    expect(nextRow?.paddingTop).toBe("12px");
   });
 
   it("rebuilds Grid track defs when column count grows", () => {

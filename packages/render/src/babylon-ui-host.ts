@@ -317,10 +317,24 @@ function canUpdateInPlace(previous: GuiControlSpec, next: GuiControlSpec): boole
   );
 }
 
+const gridGapByControl = new WeakMap<Grid, number>();
+
+function applyGridCellPadding(grid: Grid, spacing: number): void {
+  for (const [key, cell] of Object.entries(grid.cells)) {
+    const [rowRaw, columnRaw] = key.split(":");
+    const row = Number(rowRaw);
+    const column = Number(columnRaw);
+    cell.paddingLeft = column > 0 ? `${spacing}px` : "0px";
+    cell.paddingTop = row > 0 ? `${spacing}px` : "0px";
+    cell.paddingRight = "0px";
+    cell.paddingBottom = "0px";
+  }
+}
+
 function applyGridSpacing(grid: Grid, spec: GuiControlSpec): void {
   const spacing = spec.spacing ?? 0;
-  grid.columnSpacing = spacing;
-  grid.rowSpacing = spacing;
+  gridGapByControl.set(grid, spacing);
+  applyGridCellPadding(grid, spacing);
 }
 
 function applyTypeSpecific(
@@ -823,6 +837,7 @@ export function createAdtControlFactory(
         const parent = byId.get(spec.parentId);
         if (parent instanceof Grid && spec.layoutMode === "grid") {
           parent.addControl(control, spec.gridRow ?? 0, spec.gridColumn ?? 0);
+          applyGridCellPadding(parent, gridGapByControl.get(parent) ?? 0);
         } else if (parent instanceof Container) {
           parent.addControl(control);
         } else {
