@@ -138,6 +138,25 @@ vi.mock("../context/document-context", async () => {
             },
             path: "assets/jump.babasset",
           },
+          {
+            header: {
+              guid: "anim-walk",
+              name: "Walk",
+              type: "Animation",
+              parentClass: null,
+              payload: { clipName: "Walk", durationMs: 200 },
+            },
+            path: "assets/walk.anim.babasset",
+          },
+          {
+            header: {
+              guid: "sprite-run",
+              name: "Run",
+              type: "SpriteAnimation",
+              parentClass: null,
+            },
+            path: "assets/run.spriteanim.babasset",
+          },
         ],
         getByGuid: (guid: string) =>
           guid === "bb-1"
@@ -150,6 +169,25 @@ vi.mock("../context/document-context", async () => {
                   header: { guid: "audio-1", name: "Jump", type: "Audio" },
                   path: "assets/jump.babasset",
                 }
+              : guid === "anim-walk"
+                ? {
+                    header: {
+                      guid: "anim-walk",
+                      name: "Walk",
+                      type: "Animation",
+                      payload: { clipName: "Walk", durationMs: 200 },
+                    },
+                    path: "assets/walk.anim.babasset",
+                  }
+                : guid === "sprite-run"
+                  ? {
+                      header: {
+                        guid: "sprite-run",
+                        name: "Run",
+                        type: "SpriteAnimation",
+                      },
+                      path: "assets/run.spriteanim.babasset",
+                    }
               : guid === "class-1"
               ? {
                   header: {
@@ -369,6 +407,36 @@ describe("BehaviourTreeEditor", () => {
     fireEvent.click(await screen.findByTestId("search-item-audio-1"));
     const next = lastCommit().nodes.find((node) => node.id === "task");
     expect(next?.properties.audioAssetGuid).toBe("audio-1");
+  });
+
+  it("picks an Animation asset on Play Animation in Details", async () => {
+    const doc = createDefaultBehaviourTree();
+    const task = doc.nodes.find((node) => node.id === "task")!;
+    task.classId = "bt.task.playAnimation";
+    task.properties = { clipKind: "animation", clipAssetGuid: "" };
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    expect(screen.getByTestId("property-clipKind")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-clipAssetGuid"));
+    fireEvent.click(await screen.findByTestId("search-item-anim-walk"));
+    const next = lastCommit().nodes.find((node) => node.id === "task");
+    expect(next?.properties).toMatchObject({
+      clipAssetGuid: "anim-walk",
+      clipName: "Walk",
+    });
+  });
+
+  it("picks a Sprite Animation asset when Play Animation clip kind is sprite", async () => {
+    const doc = createDefaultBehaviourTree();
+    const task = doc.nodes.find((node) => node.id === "task")!;
+    task.classId = "bt.task.playAnimation";
+    task.properties = { clipKind: "sprite", clipAssetGuid: "" };
+    renderTree(doc);
+    fireEvent.click(screen.getByTestId("bt-node-task"));
+    fireEvent.click(screen.getByTestId("property-clipAssetGuid"));
+    fireEvent.click(await screen.findByTestId("search-item-sprite-run"));
+    const next = lastCommit().nodes.find((node) => node.id === "task");
+    expect(next?.properties.clipAssetGuid).toBe("sprite-run");
   });
 
   it("selects a Wait node added from the palette so Details show duration", async () => {

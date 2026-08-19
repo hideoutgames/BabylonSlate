@@ -28,6 +28,14 @@ export const BUILTIN_TASKS = new Set([
   "bt.task.playSound",
 ]);
 
+/** Built-ins that need a runtime host when one is attached (else package stubs succeed). */
+export const HOST_TASKS = new Set([
+  "bt.task.moveTo",
+  "bt.task.rotateToFace",
+  "bt.task.playAnimation",
+  "bt.task.playSound",
+]);
+
 export function builtinClassId(classId: string): string {
   return BT_CLASS_ALIASES[classId] ?? classId;
 }
