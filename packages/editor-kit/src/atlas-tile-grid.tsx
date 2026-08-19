@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   applyPointerPan,
   ensureTilesetTiles,
@@ -28,9 +28,37 @@ export interface AtlasTileGridProps {
   "data-testid"?: string;
 }
 
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
 const TAP_SELECT_PX = 8;
+
+function fitAtlasView(
+  surfaceWidth: number,
+  surfaceHeight: number,
+  atlasWidth: number,
+  atlasHeight: number,
+): { zoom: number; panX: number; panY: number } {
+  if (
+    surfaceWidth <= 0 ||
+    surfaceHeight <= 0 ||
+    atlasWidth <= 0 ||
+    atlasHeight <= 0
+  ) {
+    return { zoom: 1, panX: 0, panY: 0 };
+  }
+  const zoom = Math.min(
+    MAX_ZOOM,
+    Math.max(
+      MIN_ZOOM,
+      Math.min(surfaceWidth / atlasWidth, surfaceHeight / atlasHeight) * 0.92,
+    ),
+  );
+  return {
+    zoom,
+    panX: (surfaceWidth - atlasWidth * zoom) / 2,
+    panY: (surfaceHeight - atlasHeight * zoom) / 2,
+  };
+}
 
 /** Clickable atlas with a pixel-aligned grid, collision overlay, and optional pinch zoom. */
 export function AtlasTileGrid({
@@ -47,6 +75,7 @@ export function AtlasTileGrid({
   const filled = ensureTilesetTiles(tileset);
   const tool = toolProp ?? (panZoom ? "move" : "select");
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const fittedKeyRef = useRef<string | null>(null);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef({
     panX: 0,
@@ -67,6 +96,25 @@ export function AtlasTileGrid({
   const didPanRef = useRef(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+
+  useLayoutEffect(() => {
+    if (!panZoom) return;
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const key = `${filled.atlasWidth}x${filled.atlasHeight}:${imageUrl ?? ""}`;
+    if (fittedKeyRef.current === key) return;
+    const rect = surface.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    fittedKeyRef.current = key;
+    const next = fitAtlasView(
+      rect.width,
+      rect.height,
+      filled.atlasWidth,
+      filled.atlasHeight,
+    );
+    setZoom(next.zoom);
+    setPan({ x: next.panX, y: next.panY });
+  }, [filled.atlasHeight, filled.atlasWidth, imageUrl, panZoom]);
 
   const pointerIdOf = (event: ReactPointerEvent<HTMLDivElement>) => {
     const native = event.nativeEvent as { pointerId?: number };
@@ -246,10 +294,10 @@ export function AtlasTileGrid({
           </Empty>
         ) : null}
         <div
-          className="relative max-h-full max-w-full"
+          className="relative shrink-0"
           style={{
-            aspectRatio: `${Math.max(1, filled.atlasWidth)} / ${Math.max(1, filled.atlasHeight)}`,
-            width: "100%",
+            width: Math.max(1, filled.atlasWidth),
+            height: Math.max(1, filled.atlasHeight),
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: "0 0",
           }}
@@ -303,11 +351,11 @@ export function AtlasTileGrid({
                   onSelect(tile.id);
                 }}
               >
-                {selected &&
-                tile.collision &&
-                typeof tile.collision === "object" ? (
+                {tile.collision &&
+                typeof tile.collision === "object" &&
+                tile.collision.points.length > 1 ? (
                   <svg
-                    className="absolute inset-0 size-full"
+                    className="pointer-events-none absolute inset-0 size-full text-primary"
                     viewBox="0 0 1 1"
                     preserveAspectRatio="none"
                     aria-hidden="true"
@@ -315,7 +363,7 @@ export function AtlasTileGrid({
                     <polyline
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="0.04"
+                      strokeWidth="0.06"
                       points={tile.collision.points
                         .map((point) => `${point.x},${1 - point.y}`)
                         .join(" ")}

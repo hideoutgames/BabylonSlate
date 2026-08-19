@@ -39,6 +39,39 @@ describe("material library", () => {
     expect(result.material.getClassName()).toBe("NodeMaterial");
   });
 
+  it("recompiles when the cached material was disposed without release", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "mat-1", tinted(1));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    first.material.dispose();
+    expect(library.isCompiled(scene, "mat-1", tinted(1))).toBe(false);
+    const second = library.acquire(scene, "mat-1", tinted(1));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.material).not.toBe(first.material);
+    expect(scene.materials).toContain(second.material);
+    expect(scene.materials).not.toContain(first.material);
+  });
+
+  it("invalidates cached materials so the next acquire rebuilds them", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const first = library.acquire(scene, "mat-1", tinted(1));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    library.invalidate();
+    expect(scene.materials).not.toContain(first.material);
+    const second = library.acquire(scene, "mat-1", tinted(1));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.material).not.toBe(first.material);
+    expect(scene.materials).toContain(second.material);
+  });
+
   it("reuses one compiled material for the same graph in the same scene", () => {
     const scene = host();
     const library = new MaterialLibrary();

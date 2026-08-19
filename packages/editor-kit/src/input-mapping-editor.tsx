@@ -237,22 +237,30 @@ function ModifierToggles({
   onChange: (next?: BindingModifiers) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1" role="group" aria-label="Modifiers">
-      {MODIFIER_TOGGLES.map((entry) => (
-        <Toggle
-          key={entry.key}
-          variant="outline"
-          size="touch"
-          pressed={modifiers?.[entry.key] === true}
-          aria-label={entry.label}
-          data-testid={`${id}-mod-${entry.key}`}
-          onPressedChange={(pressed) =>
-            onChange(patchModifiers(modifiers, entry.key, pressed))
-          }
-        >
-          {entry.label}
-        </Toggle>
-      ))}
+    <div
+      className="flex flex-col gap-1 rounded-md border border-border/60 bg-muted/30 p-2"
+      data-testid={`${id}-modifiers`}
+    >
+      <p className="px-0.5 text-[10px] font-medium text-muted-foreground">
+        Modifiers
+      </p>
+      <div className="flex flex-wrap gap-1" role="group" aria-label="Modifiers">
+        {MODIFIER_TOGGLES.map((entry) => (
+          <Toggle
+            key={entry.key}
+            variant="outline"
+            size="touch"
+            pressed={modifiers?.[entry.key] === true}
+            aria-label={entry.label}
+            data-testid={`${id}-mod-${entry.key}`}
+            onPressedChange={(pressed) =>
+              onChange(patchModifiers(modifiers, entry.key, pressed))
+            }
+          >
+            {entry.label}
+          </Toggle>
+        ))}
+      </div>
     </div>
   );
 }
@@ -374,14 +382,14 @@ function AxisBindingRow({
           name={`binding ${index + 1}`}
         />
       </div>
+      {showsModifiers(binding.device) ? (
+        <ModifierToggles
+          id={id}
+          modifiers={binding.modifiers}
+          onChange={(modifiers) => onChange({ ...binding, modifiers })}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        {showsModifiers(binding.device) ? (
-          <ModifierToggles
-            id={id}
-            modifiers={binding.modifiers}
-            onChange={(modifiers) => onChange({ ...binding, modifiers })}
-          />
-        ) : null}
         {kind === "2d" ? (
           <ToggleGroup
             variant="outline"

@@ -2,7 +2,6 @@ import { lookAtRotation } from "./euler";
 import {
   createActor,
   createDefaultSceneSettings,
-  createMeshComponent,
   identitySerializedTransform,
   normalizeTransform,
   type SerializedActor,
@@ -842,7 +841,7 @@ export function createEmptyProject(
 const DEFAULT_SCENE_CAMERA_ACTOR_ID = "actor-camera";
 const DEFAULT_SCENE_CAMERA_COMPONENT_ID = "component-camera";
 /** Matches the editor ArcRotate radius in `@babylonslate/render` (no render import). */
-const DEFAULT_SCENE_CAMERA_RADIUS = 8;
+const DEFAULT_SCENE_CAMERA_RADIUS = 12;
 
 export const DEFAULT_CAMERA_FIELD_OF_VIEW = 60;
 export const DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE = 5;
@@ -901,9 +900,7 @@ export function createDefaultScene(
     viewportMode === "2d"
       ? [camera]
       : [
-          createActor("actor-1", "Cube", {
-            components: [createMeshComponent("component-1", "box")],
-          }),
+          createActor("actor-1", "Actor"),
           createDefaultSkyboxActor(),
           createDefaultSunActor(
             lookAtRotation(DEFAULT_SCENE_SUN_POSITION, [0, 0, 0]),

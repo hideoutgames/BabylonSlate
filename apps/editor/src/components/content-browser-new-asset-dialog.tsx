@@ -105,6 +105,13 @@ export function ContentBrowserNewAssetDialog({
     });
   }, [search]);
 
+  useEffect(() => {
+    const visible = visibleGroups.flatMap((group) => group.types);
+    if (visible.length === 0) return;
+    if (visible.includes(type)) return;
+    onTypeChange(visible[0]!);
+  }, [onTypeChange, type, visibleGroups]);
+
   const parentOf = useMemo(
     () => classParentLookup(classAssets),
     [classAssets],

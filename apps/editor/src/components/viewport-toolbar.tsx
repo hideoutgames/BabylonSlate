@@ -51,6 +51,8 @@ export function ViewportToolbar({
     setJoystickEnabled,
     gridVisible,
     setGridVisible,
+    navmeshVisible,
+    setNavmeshVisible,
     dragSelectActive,
     setDragSelectActive,
     viewportMode,
@@ -108,6 +110,16 @@ export function ViewportToolbar({
     }
   };
 
+  const toggleNavmesh = (enabled: boolean) => {
+    setNavmeshVisible(enabled);
+    if (scene && scene.settings.showNavmesh !== enabled) {
+      void applySceneChange(documentId, {
+        ...scene,
+        settings: { ...scene.settings, showNavmesh: enabled },
+      });
+    }
+  };
+
   const settingsItems: NestedMenuItem[] = [
     {
       type: "checkbox",
@@ -126,6 +138,15 @@ export function ViewportToolbar({
       closeOnClick: false,
       testId: `${testIdPrefix}viewport-show-grid-toggle`,
       onCheckedChange: toggleGrid,
+    },
+    {
+      type: "checkbox",
+      id: "show-navmesh",
+      label: "Show Navmesh",
+      checked: navmeshVisible,
+      closeOnClick: false,
+      testId: `${testIdPrefix}viewport-show-navmesh-toggle`,
+      onCheckedChange: toggleNavmesh,
     },
     {
       type: "checkbox",

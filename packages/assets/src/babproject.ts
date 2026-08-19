@@ -76,6 +76,12 @@ export async function readProjectTree(
 }
 
 /**
+ * fflate DOS dates use local getters; UTC midnight 1980 fails west of UTC.
+ * Local noon stays in 1980–2099 and keeps encoded bytes golden-stable.
+ */
+export const SAFE_ZIP_MTIME = new Date(1980, 0, 1, 12, 0, 0);
+
+/**
  * Zip backend: encode a project tree to a zip (Export Project download).
  * Uses a fixed mtime so encoded bytes are golden-stable.
  */
@@ -84,7 +90,7 @@ export function encodeProjectZip(files: ProjectTreeFile[]): Uint8Array {
   for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
     record[file.path] = file.data;
   }
-  return zipSync(record, { level: 6, mtime: new Date(Date.UTC(1980, 0, 1)) });
+  return zipSync(record, { level: 6, mtime: SAFE_ZIP_MTIME });
 }
 
 export function decodeProjectZip(bytes: Uint8Array): ProjectTreeFile[] {

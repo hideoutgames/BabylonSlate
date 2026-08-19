@@ -6,9 +6,9 @@ import {
 } from "./create-project";
 
 describe("defaultCreateProjectDisplayName", () => {
-  it("uses TestProject in test mode and MyGame otherwise", () => {
+  it("uses TestProject in test mode and leaves Name empty otherwise", () => {
     expect(defaultCreateProjectDisplayName(true)).toBe("TestProject");
-    expect(defaultCreateProjectDisplayName(false)).toBe("MyGame");
+    expect(defaultCreateProjectDisplayName(false)).toBe("");
   });
 });
 

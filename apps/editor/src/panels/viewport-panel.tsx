@@ -12,6 +12,8 @@ import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
   NavMeshDebugOverlay,
+  navDebugBlockersFromActors,
+  navmeshOverlayEnabled,
   selectionGizmoRoots,
   syncEditorPlayState,
   type EngineHandle,
@@ -73,6 +75,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     viewportMode,
     joystickEnabled,
     gridVisible,
+    navmeshVisible,
     dragSelectActive,
     setDragSelectActive,
     setFrameActorHandler,
@@ -156,30 +159,33 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     const overlay = navDebugRef.current;
     const path = doc?.ref.kind === "scene" ? doc.ref.path : null;
     const enabled = Boolean(
-      scene?.actors.some((actor) =>
-        actor.components.some(
-          (component) =>
-            component.classId === "NavMeshComponent" &&
-            component.properties.debugOverlay === true,
-        ),
-      ),
+      scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
     );
-    if (!overlay || !enabled) {
+    if (!overlay || !enabled || !scene) {
       overlay?.clear();
       return;
     }
+    const blockers = navDebugBlockersFromActors(scene.actors);
     let cancelled = false;
     void (async () => {
       const bytes =
         navBake?.lastBytes ??
         (path ? await readAssetChunk(path, NAVMESH_CHUNK_ID) : null);
-      if (cancelled || !bytes) return;
-      await overlay.sync(bytes);
+      if (cancelled) return;
+      await overlay.sync(bytes ?? null, blockers);
     })();
     return () => {
       cancelled = true;
     };
-  }, [doc?.ref.kind, doc?.ref.path, navBake?.lastBytes, navOverlayGeneration, readAssetChunk, scene]);
+  }, [
+    doc?.ref.kind,
+    doc?.ref.path,
+    navBake?.lastBytes,
+    navOverlayGeneration,
+    navmeshVisible,
+    readAssetChunk,
+    scene,
+  ]);
 
   /** Turn the mesh state a gizmo drag left behind into one scene command. */
   const commitGizmoTransform = useCallback(() => {

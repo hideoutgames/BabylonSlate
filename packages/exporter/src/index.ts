@@ -57,6 +57,7 @@ export {
   unzipExport,
   parseGameManifest,
   defaultPlayerIndexHtml,
+  SAFE_ZIP_MTIME,
 } from "./export-game";
 export type {
   ExportMode,

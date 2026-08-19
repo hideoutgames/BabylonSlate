@@ -16,15 +16,17 @@ const COLLIDER_WITHOUT_BODY =
 const BODY_WITHOUT_COLLIDER =
   "RigidBodyComponent needs a ColliderComponent on the same actor.";
 
-/** Pairing warnings for RigidBody / Collider. Tilemaps are exempt. */
+/** Pairing warnings for RigidBody / Collider. Tilemaps and blocking volumes are exempt. */
 export function physicsActorDiagnostics(
   actor: PhysicsActorLike,
 ): PhysicsPairingWarning[] {
   const live = actor.components.filter((component) => component.classId);
-  const hasTilemap = live.some(
-    (component) => component.classId === "TilemapComponent",
+  const hasImplicitBody = live.some(
+    (component) =>
+      component.classId === "TilemapComponent" ||
+      component.classId === "BlockingVolumeComponent",
   );
-  if (hasTilemap) return [];
+  if (hasImplicitBody) return [];
   const hasBody = live.some(
     (component) => component.classId === "RigidBodyComponent",
   );

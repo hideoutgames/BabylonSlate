@@ -144,6 +144,8 @@ export function defaultPropertiesFor(
       return { ...defaultNavMeshComponentProperties() };
     case "NavMeshBlockerComponent":
       return { ...defaultNavMeshBlockerComponentProperties() };
+    case "BlockingVolumeComponent":
+      return {};
     case "CameraComponent":
       return {
         fieldOfView: DEFAULT_CAMERA_FIELD_OF_VIEW,
@@ -209,6 +211,7 @@ const HIDDEN_COMPONENT_ANCESTORS = new Set([
   "WidgetComponent",
   "NavMeshComponent",
   "NavMeshBlockerComponent",
+  "BlockingVolumeComponent",
 ]);
 
 const COMPONENT_GUID_PROPERTIES = [

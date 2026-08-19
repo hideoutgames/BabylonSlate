@@ -47,7 +47,15 @@ const harness = vi.hoisted(() => ({
     stopRenderLoop: vi.fn(),
     resize: vi.fn(),
     views: [] as unknown[],
+    onContextRestoredObservable: {
+      add: (cb: () => void) => {
+        harness.contextRestored = cb;
+        return { cb };
+      },
+      remove: vi.fn(),
+    },
   },
+  contextRestored: null as (() => void) | null,
   createScene: vi.fn(),
   createPresenter: vi.fn(),
   attachGestures: vi.fn(),
@@ -81,6 +89,9 @@ const harness = vi.hoisted(() => ({
     resolveTexture?: (guid: string) => unknown;
     functions?: () => unknown;
   } | null,
+  acquireCalls: 0,
+  invalidateCalls: 0,
+  releaseGpuCalls: 0,
   content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
   readAssetChunk: vi.fn(
     async (_path: string, chunkId: string) =>
@@ -133,7 +144,13 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
     ResourceCache: class {
       getTexture(guid: string, _engine: unknown, bytes: Uint8Array) {
         harness.cachedTextures.push({ guid, bytes });
-        return { name: guid };
+        return {
+          name: guid,
+          isDisposed: () => false,
+        };
+      }
+      releaseGpuTextures() {
+        harness.releaseGpuCalls += 1;
       }
       dispose() {}
     },
@@ -145,9 +162,14 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
         harness.libraryOptions = options;
       }
       acquire() {
+        harness.acquireCalls += 1;
         return harness.acquireResult;
       }
       dispose() {}
+      releaseScene() {}
+      invalidate() {
+        harness.invalidateCalls += 1;
+      }
     },
     createMaterialPreviewScene: (...args: unknown[]) =>
       harness.createScene(...args),
@@ -217,6 +239,10 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.presenter.dispose.mockReset();
     harness.gestures.dispose.mockReset();
     harness.libraryOptions = null;
+    harness.acquireCalls = 0;
+    harness.invalidateCalls = 0;
+    harness.releaseGpuCalls = 0;
+    harness.contextRestored = null;
     harness.cachedTextures = [];
     harness.content = createDefaultMaterialDocument("Rock");
     harness.readAssetChunk.mockClear();
@@ -345,12 +371,115 @@ describe("MaterialEditingProvider preview isolation", () => {
       );
     });
     await waitFor(() => {
-      expect(harness.libraryOptions?.resolveTexture?.("tex-1")).toEqual({
-        name: "tex-1",
-      });
+      expect(harness.libraryOptions?.resolveTexture?.("tex-1")).toEqual(
+        expect.objectContaining({ name: "tex-1" }),
+      );
     });
     expect(harness.cachedTextures).toEqual([
       { guid: "tex-1", bytes: new Uint8Array([9, 9, 9]) },
     ]);
+  });
+
+  it("recompiles onto a new preview Scene after the canvas remounts", async () => {
+    vi.useFakeTimers();
+    const remount = {
+      attach: null as ((canvas: HTMLCanvasElement | null) => void) | null,
+      canvas: null as HTMLCanvasElement | null,
+    };
+    try {
+      function RemountProbe() {
+        const editing = useMaterialEditing();
+        const ref = useRef<HTMLCanvasElement>(null);
+        useEffect(() => {
+          const canvas = ref.current;
+          if (canvas) {
+            Object.defineProperty(canvas, "clientWidth", {
+              value: 320,
+              configurable: true,
+            });
+            Object.defineProperty(canvas, "clientHeight", {
+              value: 180,
+              configurable: true,
+            });
+          }
+          remount.attach = editing.attachPreviewCanvas;
+          remount.canvas = canvas;
+          editing.attachPreviewCanvas(canvas);
+          // Attach once; the test remounts through `remount.attach`.
+        }, [editing.attachPreviewCanvas]);
+        return <canvas data-testid="material-preview-canvas" ref={ref} />;
+      }
+
+      mount(true, <RemountProbe />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(harness.createScene).toHaveBeenCalledTimes(1);
+      expect(harness.acquireCalls).toBeGreaterThan(0);
+      const acquiresBefore = harness.acquireCalls;
+
+      await act(async () => {
+        remount.attach?.(null);
+      });
+      await act(async () => {
+        remount.attach?.(remount.canvas);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(harness.createScene.mock.calls.length).toBeGreaterThan(1);
+      expect(harness.acquireCalls).toBeGreaterThan(acquiresBefore);
+      expect(harness.host.applyMaterial).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("invalidates compiled materials and GPU textures after WebGL restore", async () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(harness.contextRestored).toEqual(expect.any(Function));
+      const acquiresBefore = harness.acquireCalls;
+      await act(async () => {
+        harness.contextRestored?.();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(harness.invalidateCalls).toBeGreaterThan(0);
+      expect(harness.releaseGpuCalls).toBeGreaterThan(0);
+      expect(harness.acquireCalls).toBeGreaterThan(acquiresBefore);
+      expect(harness.presenter.present).toHaveBeenCalledWith({ force: true });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

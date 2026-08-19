@@ -46,4 +46,24 @@ describe("sceneComponentEntries", () => {
     );
     expect(sceneComponentDisplayLabel(scene, "missing", "hero-cam")).toBeUndefined();
   });
+
+  it("does not double the Default Camera name when the actor is Camera", () => {
+    const withDefault = {
+      ...scene,
+      actors: [
+        createActor("cam", "Camera", {
+          components: [
+            {
+              id: "cam-comp",
+              classId: "CameraComponent",
+              properties: {},
+            },
+          ],
+        }),
+      ],
+    };
+    expect(sceneComponentDisplayLabel(withDefault, "cam", "cam-comp")).toBe(
+      "Camera",
+    );
+  });
 });
