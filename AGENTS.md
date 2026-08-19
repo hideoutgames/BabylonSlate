@@ -10,4 +10,6 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. Details i
 
 Never use or enable GitHub Actions larger runners — standard hosted runners only. Details in [.cursor/rules/github-actions-standard-runners.mdc](.cursor/rules/github-actions-standard-runners.mdc).
 
+PRs stay draft until local `pnpm verify` passes; mark ready once; at most ~8 non-draft PRs at a time. Details in [.cursor/rules/github-actions-pr-cadence.mdc](.cursor/rules/github-actions-pr-cadence.mdc).
+
 Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work, and for **UserInterface** work (Babylon GUI). React editor chrome stays on the shadcn / editor-ui-components skills.
