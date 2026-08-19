@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { compiledNodeIds } from "./compiled-nodes";
 import type { GraphEdge, GraphNode, LogicGraph } from "./ir";
 import { pin } from "./node-registry";
-import { BOOL, EXEC, FLOAT, INT, STRING } from "./types";
+import { BOOL, EXEC, FLOAT, INT, STRING, classRef, objectRef } from "./types";
 
 function node(
   id: string,
@@ -119,6 +119,75 @@ describe("compiledNodeIds", () => {
     expect(ids.has("branch")).toBe(true);
     expect(ids.has("thenLog")).toBe(true);
     expect(ids.has("elseLog")).toBe(true);
+  });
+
+  it("includes both Sequence then_* successors wired from Begin Play", () => {
+    const ids = compiledNodeIds(
+      graph(
+        [
+          node("begin", "flow.event.beginPlay", [
+            pin("execOut", "then", "out", EXEC),
+          ]),
+          node("seq", "flow.sequence", [
+            pin("execIn", "exec", "in", EXEC),
+            pin("then0", "then_0", "out", EXEC),
+            pin("then1", "then_1", "out", EXEC),
+          ]),
+          node("then0Log", "debug.log", execInOut),
+          node("then1Log", "debug.log", execInOut),
+        ],
+        [
+          execEdge("e1", "begin", "seq"),
+          execEdge("e2", "seq", "then0Log", "then0", "execIn"),
+          execEdge("e3", "seq", "then1Log", "then1", "execIn"),
+        ],
+      ),
+    );
+    expect(ids.has("seq")).toBe(true);
+    expect(ids.has("then0Log")).toBe(true);
+    expect(ids.has("then1Log")).toBe(true);
+  });
+
+  it("includes both Cast success and result consumers and skips a leftover Cast", () => {
+    const castPins = [
+      pin("object", "object", "in", objectRef("BObject")),
+      pin("class", "class", "in", classRef("BObject")),
+      pin("success", "success", "out", BOOL),
+      pin("result", "result", "out", objectRef("BObject")),
+    ];
+    const ids = compiledNodeIds(
+      graph(
+        [
+          node("begin", "flow.event.beginPlay", [
+            pin("execOut", "then", "out", EXEC),
+          ]),
+          node("branch", "flow.branch", [
+            pin("execIn", "exec", "in", EXEC),
+            pin("true", "true", "out", EXEC),
+            pin("false", "false", "out", EXEC),
+            pin("condition", "condition", "in", BOOL),
+          ]),
+          node("thenLog", "debug.log", [
+            ...execInOut,
+            pin("message", "message", "in", STRING),
+          ]),
+          node("elseLog", "debug.log", execInOut),
+          node("cast", "casting.cast", castPins),
+          node("leftoverCast", "casting.cast", castPins),
+        ],
+        [
+          execEdge("e1", "begin", "branch"),
+          execEdge("e2", "branch", "thenLog", "true", "execIn"),
+          execEdge("e3", "branch", "elseLog", "false", "execIn"),
+          dataEdge("d1", "cast", "branch", "success", "condition"),
+          dataEdge("d2", "cast", "thenLog", "result", "message"),
+        ],
+      ),
+    );
+    expect(ids.has("cast")).toBe(true);
+    expect(ids.has("thenLog")).toBe(true);
+    expect(ids.has("elseLog")).toBe(true);
+    expect(ids.has("leftoverCast")).toBe(false);
   });
 
   it("includes a pure Add that a compiled Log reads and skips an unused Add", () => {
