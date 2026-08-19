@@ -271,7 +271,7 @@ test.describe("P5 visual scripting acceptance", () => {
     });
     expect(installed).toBe(true);
 
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     const formattedArg = page.locator(
       '[data-id="format"] [data-handleid="arg:input%20pin"]',
     );
@@ -282,7 +282,7 @@ test.describe("P5 visual scripting acceptance", () => {
       .getByTestId("document-tab-close")
       .click();
     await expect(page.getByTestId("graph-panel")).toHaveCount(0);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(formattedArg).toBeVisible();
 
     await openMainScene(page);
