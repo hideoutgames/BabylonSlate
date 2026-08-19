@@ -534,6 +534,44 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it("rotates software collider AABBs by ColliderDesc rotation", () => {
+    const yaw90 = Math.SQRT1_2;
+    const backend = createSoftwarePhysicsBackend("3d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    backend.createBody({
+      id: "body",
+      actorId: "actor",
+      motionType: "static",
+      mass: 0,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCollider({
+      id: "col",
+      bodyId: "body",
+      shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 2 } },
+      friction: 0.5,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+      rotation: { x: 0, y: yaw90, z: 0, w: yaw90 },
+    });
+    expect(backend.sphereOverlap({ x: 1.5, y: 0, z: 0 }, 0.2).bodyIds).toContain(
+      "body",
+    );
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 1.5 }, 0.2).bodyIds).toEqual([]);
+    backend.dispose();
+  });
+
   it("preferSoftware never loads wasm backends", async () => {
     resetLoadedBackendModules();
     const backend = await createPhysicsBackend({
