@@ -101,9 +101,17 @@ Editor clicks are **mesh picks**, not physics. Collider dashes are unpickable; M
 
 ## Scripting
 
-Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. Line Trace / Shape Sweep / Sphere Overlap output engine Structure **Hit Result** (`Hit`, `Location`, `Normal`, `Actor`, `Distance`) plus exploded alias pins on Line Trace / Shape Sweep, and an optional **Collision Channel** pin (default All). `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
+Sync nodes (exec pin continues in the same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`.
 
-`ScriptHost` binds `ctx.lineTrace` / overlap / sweep / impulse to the active backend.
+- **Line Trace** returns Hit Result plus exploded Hit, Location, Normal, Distance, and a live Actor reference.
+- **Sphere Overlap Actors** keeps the `physics.sphereOverlap` id for existing graphs and returns a deterministic, de-duplicated live Actor array plus Int Count. Missing or destroyed actor ids are filtered.
+- **Sphere Shape Sweep** exposes Radius and returns the same Hit Result / exploded query fields as Line Trace.
+- Query misses return false, null vectors/Actor, and zero Distance rather than leaking backend ids or typed `undefined`. Radius defaults at or below zero emit `physics.radius`.
+- Every query has an optional **Collision Channel** (default All). In 2D, authored `vec3` points use XY.
+
+`moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.
+
+`ScriptHost` binds trace / overlap / sweep / impulse to the active backend and resolves returned actor ids through the live World before compiled graph code receives them.
 
 ## Determinism
 

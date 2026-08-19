@@ -245,6 +245,24 @@ describe("filterPaletteForPin", () => {
       "enum.equals:enum-team",
       "variables.set:Hero:Team",
     ]);
+    const selectTeam: PaletteNode = {
+      id: "enum.select:enum-team",
+      title: "Select Team",
+      category: "enum",
+      pins: [enumIn],
+      defaultData: { enumGuid: "enum-team" },
+    };
+    expect(
+      filterPaletteForPin(
+        [setTeam, selectTeam, equalTeam],
+        teamOut,
+        assignable,
+      ).map((node) => node.id),
+    ).toEqual([
+      "enum.select:enum-team",
+      "enum.equals:enum-team",
+      "variables.set:Hero:Team",
+    ]);
   });
 
   it("prefers Make String and Make Int for matching literal pins", () => {
@@ -294,6 +312,86 @@ describe("filterPaletteForPin", () => {
         (entry) => entry.id,
       ),
     ).toEqual(["literal.makeInt"]);
+  });
+
+  it("prefers Switch on Int and Switch on String for matching selector pins", () => {
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const switchInt: PaletteNode = {
+      id: "flow.switchInt",
+      title: "Switch on Int",
+      category: "flow",
+      pins: [
+        {
+          id: "execIn",
+          name: "exec",
+          kind: "exec",
+          direction: "in",
+          type: { kind: "exec" },
+        },
+        {
+          id: "value",
+          name: "value",
+          kind: "data",
+          direction: "in",
+          type: { kind: "int" },
+        },
+        {
+          id: "default",
+          name: "Default",
+          kind: "exec",
+          direction: "out",
+          type: { kind: "exec" },
+        },
+      ],
+    };
+    const switchString: PaletteNode = {
+      id: "flow.switchString",
+      title: "Switch on String",
+      category: "flow",
+      pins: [
+        {
+          id: "execIn",
+          name: "exec",
+          kind: "exec",
+          direction: "in",
+          type: { kind: "exec" },
+        },
+        {
+          id: "value",
+          name: "value",
+          kind: "data",
+          direction: "in",
+          type: { kind: "string" },
+        },
+        {
+          id: "default",
+          name: "Default",
+          kind: "exec",
+          direction: "out",
+          type: { kind: "exec" },
+        },
+      ],
+    };
+    const intOut: SerializedPin = {
+      id: "out",
+      name: "Out",
+      kind: "data",
+      direction: "out",
+      type: { kind: "int" },
+    };
+    expect(
+      filterPaletteForPin([log, switchInt, switchString], intOut, assignable).map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["flow.switchInt"]);
+    expect(
+      filterPaletteForPin(
+        [log, switchInt, switchString],
+        stringOut,
+        assignable,
+      ).map((entry) => entry.id),
+    ).toEqual(["flow.switchString", "debug.log"]);
   });
 
   it("prefers Make Asset, Make Quaternion, and Make/Break Quaternion", () => {

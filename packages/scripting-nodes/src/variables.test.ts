@@ -318,7 +318,7 @@ describe("variables.get / variables.set", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
-    expect(compiled.source).toContain("_n_set_Health = 8");
+    expect(compiled.source).toContain("_n_set_out = 8");
     expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
   });
 });

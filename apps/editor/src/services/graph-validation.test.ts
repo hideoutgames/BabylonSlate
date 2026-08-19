@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
-import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
+import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
 import {
   classHierarchyFromParentOf,
   createDefaultLogicGraphSerialized,
@@ -2001,6 +2001,30 @@ describe("scriptPaletteNodes", () => {
     });
     expect(nodes.some((node) => node.id === "enum.switch:enum-team")).toBe(true);
     expect(nodes.some((node) => node.id === "enum.equals:enum-team")).toBe(true);
+    expect(nodes.some((node) => node.id === "enum.select")).toBe(true);
+    const select = nodes.find((node) => node.id === "enum.select:enum-team");
+    expect(select?.title).toBe("Select Team");
+    expect(select?.nodeType).toBe("enum.select");
+    expect(select?.defaultData).toMatchObject({
+      enumGuid: "enum-team",
+      "default:index": "Red",
+    });
+  });
+
+  it("seeds Format String palette with default {input}", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    const format = nodes.find((node) => node.id === "string.format");
+    expect(format?.title).toBe("Format String");
+    expect(format?.defaultData).toMatchObject({
+      "default:format": "{input}",
+    });
+    expect(
+      format?.pins?.some(
+        (pin) => pin.id === "arg:input" || pin.name === "input",
+      ),
+    ).toBe(true);
+    expect(nodes.some((node) => node.id === "select.bool")).toBe(true);
+    expect(nodes.some((node) => node.id === "select.float")).toBe(true);
   });
 
   it("passes typeClassId onto Get/Set palette rows", () => {
@@ -2064,5 +2088,398 @@ describe("scriptPaletteNodes", () => {
           pin.id === "value" && (pin.type as { kind?: string }).kind === "array",
       ),
     ).toBe(true);
+  });
+});
+
+describe("Format String and Select hydration", () => {
+  it("regenerates Format String argument pins and prunes them when Format is wired", () => {
+    const inputPin = formatArgPinId("input");
+    const countPin = formatArgPinId("count");
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "lit",
+          type: "literal.makeString",
+          position: { x: 0, y: 0 },
+          data: { "default:in": "wired" },
+        },
+        {
+          id: "fmt",
+          type: "string.format",
+          position: { x: 80, y: 0 },
+          data: {
+            "default:format": "{input} {count}",
+            __pins: [
+              {
+                id: "format",
+                name: "Format",
+                kind: "data",
+                direction: "in",
+                type: { kind: "string" },
+              },
+              {
+                id: inputPin,
+                name: "input",
+                kind: "data",
+                direction: "in",
+                type: { kind: "boxedWildcard" },
+              },
+              {
+                id: countPin,
+                name: "count",
+                kind: "data",
+                direction: "in",
+                type: { kind: "boxedWildcard" },
+              },
+              {
+                id: "out",
+                name: "Out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "string" },
+              },
+            ],
+          },
+        },
+        {
+          id: "src",
+          type: "literal.makeInt",
+          position: { x: 0, y: 40 },
+          data: { "default:in": 3 },
+        },
+      ],
+      edges: [
+        {
+          id: "arg-edge",
+          source: "src",
+          target: "fmt",
+          sourceHandle: "out",
+          targetHandle: countPin,
+        },
+        {
+          id: "format-edge",
+          source: "lit",
+          target: "fmt",
+          sourceHandle: "out",
+          targetHandle: "format",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes.find((node) => node.id === "fmt")?.data
+      .__pins as Array<{ id: string }>;
+    expect(pins?.map((pin) => pin.id)).toEqual(["format", "out"]);
+    expect(hydrated.nodes.find((node) => node.id === "fmt")?.data.formatWired).toBe(
+      true,
+    );
+    expect(hydrated.nodes.find((node) => node.id === "fmt")?.data["default:format"]).toBe(
+      "{input} {count}",
+    );
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["format-edge"]);
+  });
+
+  it("restores Format String argument pins from the retained default after disconnect", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "fmt",
+          type: "string.format",
+          position: { x: 0, y: 0 },
+          data: {
+            "default:format": "{player}",
+            formatWired: true,
+            __pins: [
+              {
+                id: "format",
+                name: "Format",
+                kind: "data",
+                direction: "in",
+                type: { kind: "string" },
+              },
+              {
+                id: "out",
+                name: "Out",
+                kind: "data",
+                direction: "out",
+                type: { kind: "string" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string; name: string }>;
+    expect(hydrated.nodes[0]?.data.formatWired).toBe(false);
+    expect(pins?.map((pin) => pin.id)).toEqual([
+      "format",
+      formatArgPinId("player"),
+      "out",
+    ]);
+  });
+
+  it("hydrates enum Select members, binds index default, and drops stale option wires", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sel",
+          type: "enum.select",
+          position: { x: 0, y: 0 },
+          data: {
+            enumGuid: "enum-team",
+            members: [
+              { name: "Red", value: 1 },
+              { name: "Green", value: 2 },
+            ],
+            "default:index": "Green",
+          },
+        },
+        {
+          id: "lit",
+          type: "literal.makeFloat",
+          position: { x: 0, y: 40 },
+          data: { "default:in": 1 },
+        },
+        {
+          id: "sink",
+          type: "literal.makeFloat",
+          position: { x: 80, y: 40 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "keep",
+          source: "lit",
+          target: "sel",
+          sourceHandle: "out",
+          targetHandle: selectOptionPinId("Red"),
+        },
+        {
+          id: "drop",
+          source: "lit",
+          target: "sel",
+          sourceHandle: "out",
+          targetHandle: selectOptionPinId("Green"),
+        },
+        {
+          id: "out-edge",
+          source: "sel",
+          target: "sink",
+          sourceHandle: "out",
+          targetHandle: "in",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      enums: {
+        "enum-team": {
+          name: "Team",
+          members: [
+            { name: "Red", value: 1 },
+            { name: "Blue", value: 2 },
+          ],
+        },
+      },
+    });
+    const data = hydrated.nodes.find((node) => node.id === "sel")?.data;
+    expect(data?.title).toBe("Select Team");
+    expect(data?.["default:index"]).toBe("Red");
+    const pins = data?.__pins as Array<{ id: string }>;
+    expect(pins?.map((pin) => pin.id)).toEqual([
+      "index",
+      selectOptionPinId("Red"),
+      selectOptionPinId("Blue"),
+      "out",
+    ]);
+    expect(hydrated.edges.map((edge) => edge.id).sort()).toEqual([
+      "keep",
+      "out-edge",
+    ]);
+  });
+});
+
+describe("container constructor hydration", () => {
+  it.each([
+    {
+      type: "array.make",
+      count: 2,
+      stalePin: "item2",
+      expectedPins: ["item0", "item1", "out"],
+    },
+    {
+      type: "map.make",
+      count: 2,
+      stalePin: "key2",
+      expectedPins: ["key0", "value0", "key1", "value1", "out"],
+    },
+  ])("regenerates $type pins and prunes removed pair edges", ({
+    type,
+    count,
+    stalePin,
+    expectedPins,
+  }) => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "make",
+          type,
+          position: { x: 0, y: 0 },
+          data: {
+            count,
+            __pins: [
+              { id: "item0", name: "Item 0", direction: "in", kind: "data", type: { kind: "float" } },
+              { id: stalePin, name: stalePin, direction: "in", kind: "data", type: { kind: "float" } },
+              { id: "out", name: "Out", direction: "out", kind: "data", type: { kind: "array", element: { kind: "float" } } },
+            ],
+          },
+        },
+        {
+          id: "literal",
+          type: "literal.makeFloat",
+          position: { x: 0, y: 40 },
+          data: { "default:in": 1 },
+        },
+      ],
+      edges: [
+        {
+          id: "keep",
+          source: "literal",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: type === "map.make" ? "key0" : "item0",
+        },
+        {
+          id: "drop",
+          source: "literal",
+          target: "make",
+          sourceHandle: "out",
+          targetHandle: stalePin,
+        },
+      ],
+    };
+
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual(expectedPins);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep"]);
+  });
+});
+
+describe("flow switch hydrate", () => {
+  it("regenerates Switch on Int case pins, keeps matching wires, and prunes removed ones", () => {
+    const keepPin = "case:1";
+    const dropPin = "case:9";
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sw",
+          type: "flow.switchInt",
+          position: { x: 0, y: 0 },
+          data: {
+            cases: [1, "", 1, 2],
+            __pins: [
+              {
+                id: "execIn",
+                name: "exec",
+                kind: "exec",
+                direction: "in",
+                type: { kind: "exec" },
+              },
+              {
+                id: keepPin,
+                name: "1",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+              {
+                id: dropPin,
+                name: "9",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+            ],
+          },
+        },
+        {
+          id: "one",
+          type: "debug.log",
+          position: { x: 80, y: 0 },
+          data: {},
+        },
+        {
+          id: "nine",
+          type: "debug.log",
+          position: { x: 80, y: 40 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "keep",
+          source: "sw",
+          target: "one",
+          sourceHandle: keepPin,
+          targetHandle: "execIn",
+        },
+        {
+          id: "drop",
+          source: "sw",
+          target: "nine",
+          sourceHandle: dropPin,
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.cases).toEqual([1, 2]);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:1",
+      "case:2",
+      "default",
+    ]);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep"]);
+  });
+
+  it("regenerates Switch on String encoded case pins and materializes the same shape", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sw",
+          type: "flow.switchString",
+          position: { x: 0, y: 0 },
+          data: {
+            cases: ["idle", "", "a/b", "idle"],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.cases).toEqual(["idle", "a/b"]);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:idle",
+      "case:a%2Fb",
+      "default",
+    ]);
+
+    const logic = materializeLogicGraph(hydrated, "g");
+    expect(logic.nodes[0]?.properties.cases).toEqual(["idle", "a/b"]);
+    expect(logic.nodes[0]?.pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:idle",
+      "case:a%2Fb",
+      "default",
+    ]);
   });
 });

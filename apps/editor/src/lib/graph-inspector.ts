@@ -21,6 +21,8 @@ import {
   isDevelopmentOnlyNode,
   isDevelopmentOnlyByDefaultTypeId,
   listUnconnectedLiteralPinDefaults,
+  normalizeIntSwitchCases,
+  normalizeStringSwitchCases,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
   pinDefaultAsString,
@@ -505,6 +507,8 @@ export function enumNodePropertyRows(
             ? `Make ${next.name}`
             : typeId === "enum.switch"
               ? `Switch on ${next.name}`
+              : typeId === "enum.select"
+                ? `Select ${next.name}`
               : typeId === "enum.equals"
                 ? `Equal ${next.name}`
                 : typeId === "enum.notEquals"
@@ -518,6 +522,9 @@ export function enumNodePropertyRows(
           members: next?.members ?? [],
           ...(typeId === "enum.make"
             ? { value: next?.members[0]?.name ?? "" }
+            : {}),
+          ...(typeId === "enum.select"
+            ? { "default:index": next?.members[0]?.name ?? "" }
             : {}),
           ...(title ? { title } : {}),
         });
@@ -541,6 +548,61 @@ export function enumNodePropertyRows(
     });
   }
   return rows;
+}
+
+export function containerConstructorPropertyRows(
+  typeId: string,
+  data: Record<string, unknown>,
+  onPatch: (patch: Record<string, unknown>) => void,
+): PropertyRow[] {
+  if (typeId !== "array.make" && typeId !== "map.make") return [];
+  const raw = typeof data.count === "number" && Number.isFinite(data.count)
+    ? data.count
+    : 0;
+  return [
+    {
+      kind: "number",
+      id: "count",
+      label: typeId === "array.make" ? "Items" : "Pairs",
+      value: Math.max(0, Math.min(64, Math.floor(raw))),
+      defaultValue: 0,
+      min: 0,
+      max: 64,
+      onChange: (value) =>
+        onPatch({ count: Math.max(0, Math.min(64, Math.floor(value))) }),
+    },
+  ];
+}
+
+export function isFlowSwitchTypeId(typeId: string): boolean {
+  return typeId === "flow.switchInt" || typeId === "flow.switchString";
+}
+
+/** NamedListEditor display values for Switch on Int / String cases. */
+export function flowSwitchCaseListValues(
+  typeId: string,
+  data: Record<string, unknown>,
+): string[] {
+  if (typeId === "flow.switchInt") {
+    return normalizeIntSwitchCases(data.cases).cases.map(String);
+  }
+  if (typeId === "flow.switchString") {
+    return normalizeStringSwitchCases(data.cases).cases;
+  }
+  return [];
+}
+
+export function patchFlowSwitchCases(
+  typeId: string,
+  values: readonly string[],
+): Record<string, unknown> {
+  if (typeId === "flow.switchInt") {
+    return { cases: normalizeIntSwitchCases(values).cases };
+  }
+  if (typeId === "flow.switchString") {
+    return { cases: normalizeStringSwitchCases(values).cases };
+  }
+  return {};
 }
 
 export function connectedEnumGuidFromSerialized(

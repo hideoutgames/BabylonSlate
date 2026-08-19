@@ -651,6 +651,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!id) return null;
         return this.spawnScriptedActor({ classId: id });
       },
+      getActors: () => this.world.getActors(),
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {
@@ -661,6 +662,11 @@ class InProcessRuntime implements RuntimeDriver {
         }),
       reportError: (error) => {
         this.reportError(error);
+      },
+      findActor: (actorId) => {
+        const actor = this.world.findActor(actorId);
+        if (!actor || actor.destroyed) return undefined;
+        return actor;
       },
       lineTrace: (start, end) => this.physicsSync.lineTrace(start, end),
       sphereOverlap: (center, radius) =>

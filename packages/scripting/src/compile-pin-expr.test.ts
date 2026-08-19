@@ -349,4 +349,105 @@ describe("compile pinExpr defaults", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry: nodes });
     expect(compiled.source).toContain("ctx.wait(5)");
   });
+
+  it("keys impure output temps by pin id when the display name is Title Case", () => {
+    const nodes = new NodeRegistry();
+    nodes.register({
+      id: "flow.event.beginPlay",
+      title: "Event Begin Play",
+      category: "flow",
+      pins: () => [pin("execOut", "then", "out", EXEC)],
+      codegen: () => {},
+    });
+    nodes.register({
+      id: "container.append",
+      title: "Append",
+      category: "array",
+      pins: () => [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("out", "Out", "out", BOXED_WILDCARD),
+      ],
+      codegen: (ctx) => {
+        const out = ctx.output("out");
+        ctx.emit(`${out} = ["ok"];`);
+      },
+    });
+    nodes.register({
+      id: "debug.print",
+      title: "Print",
+      category: "debug",
+      pins: () => [
+        pin("execIn", "exec", "in", EXEC),
+        pin("execOut", "then", "out", EXEC),
+        pin("value", "Value", "in", BOXED_WILDCARD),
+      ],
+      codegen: (ctx) => {
+        ctx.emit(`ctx.print(${ctx.input("value")});`);
+      },
+    });
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "append",
+          typeId: "container.append",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("out", "Out", "out", BOXED_WILDCARD),
+          ],
+          properties: {},
+        },
+        {
+          id: "print",
+          typeId: "debug.print",
+          position: { x: 0, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("value", "Value", "in", BOXED_WILDCARD),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "append",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "append",
+          sourcePinId: "execOut",
+          targetNodeId: "print",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "append",
+          sourcePinId: "out",
+          targetNodeId: "print",
+          targetPinId: "value",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry: nodes });
+    expect(compiled.source).toContain("let _n_append_out");
+    expect(compiled.source).toContain("_n_append_out = [\"ok\"];");
+    expect(compiled.source).toContain("ctx.print(_n_append_out)");
+    expect(compiled.source).not.toContain("_n_append_Out");
+  });
 });

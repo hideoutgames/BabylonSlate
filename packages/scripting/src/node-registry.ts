@@ -1,6 +1,7 @@
 import type { PinType } from "./types";
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
 import { registerDevelopmentOnlyByDefaultTypeId } from "./development-only";
+import type { StructuredFlowMeta } from "./structured-flow";
 
 /** 1-based line in a hoist chunk mapped to an ExecuteJavaScript body line. */
 export type HoistBodyAnchor = {
@@ -50,6 +51,11 @@ export type NodeDefinition = {
    * unless the author unchecks Development Only.
    */
   developmentOnlyByDefault?: boolean;
+  /**
+   * Structured control-flow discriminator. Preferred over scattered typeId
+   * checks for Switch on Int / String, loops / Break, and stateful flow.
+   */
+  structuredFlow?: StructuredFlowMeta;
 };
 
 export class NodeRegistry {

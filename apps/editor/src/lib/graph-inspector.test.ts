@@ -4,18 +4,80 @@ import {
   collectEnumMemberNames,
   connectedEnumGuidFromSerialized,
   connectedInputPinIds,
+  containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   enumNodePropertyRows,
+  flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
+  isFlowSwitchTypeId,
   logNodePropertyRows,
   parameterRowsFromPinList,
   parameterTypeFromPin,
+  patchFlowSwitchCases,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
   pinTypeFromParameterType,
   pinsFromNodeData,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
+
+describe("containerConstructorPropertyRows", () => {
+  it.each(["array.make", "map.make"])("edits the dynamic pin count for %s", (typeId) => {
+    const onPatch = vi.fn();
+    const rows = containerConstructorPropertyRows(typeId, { count: 3 }, onPatch);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: "count",
+      kind: "number",
+      label: typeId === "array.make" ? "Items" : "Pairs",
+      value: 3,
+      defaultValue: 0,
+      min: 0,
+      max: 64,
+    });
+
+    const row = rows[0]!;
+    if (row.kind !== "number") throw new Error("expected number row");
+    row.onChange(5);
+    expect(onPatch).toHaveBeenCalledWith({ count: 5 });
+  });
+
+  it("returns no rows for static node types", () => {
+    expect(containerConstructorPropertyRows("array.length", {}, vi.fn())).toEqual([]);
+  });
+});
+
+describe("flowSwitchCaseListValues", () => {
+  it("normalizes Switch on Int case rows for NamedListEditor", () => {
+    expect(
+      flowSwitchCaseListValues("flow.switchInt", { cases: [1, "", 1, "2"] }),
+    ).toEqual(["1", "2"]);
+    expect(
+      patchFlowSwitchCases("flow.switchInt", ["3", "", "3", "x", "4"]),
+    ).toEqual({ cases: [3, 4] });
+  });
+
+  it("normalizes Switch on String case rows for NamedListEditor", () => {
+    expect(
+      flowSwitchCaseListValues("flow.switchString", {
+        cases: ["idle", "", "a/b", "idle"],
+      }),
+    ).toEqual(["idle", "a/b"]);
+    expect(
+      patchFlowSwitchCases("flow.switchString", ["run", "", "run", "jump"]),
+    ).toEqual({ cases: ["run", "jump"] });
+  });
+
+  it("ignores unrelated node types", () => {
+    expect(isFlowSwitchTypeId("flow.branch")).toBe(false);
+    expect(isFlowSwitchTypeId("flow.switchInt")).toBe(true);
+    expect(flowSwitchCaseListValues("flow.branch", { cases: ["1"] })).toEqual(
+      [],
+    );
+    expect(patchFlowSwitchCases("flow.branch", ["1"])).toEqual({});
+  });
+});
 
 describe("connectedInputPinIds", () => {
   it("collects target handles on the inspected node", () => {
@@ -526,6 +588,40 @@ describe("enumNodePropertyRows", () => {
         { value: "onHit", label: "On Hit" },
       ]);
     }
+  });
+
+  it("retitles Select and binds Index default when Enum Type changes", () => {
+    const onPatch = vi.fn();
+    const rows = enumNodePropertyRows(
+      "enum.select",
+      { enumGuid: "enum-team" },
+      onPatch,
+      {
+        enums: [
+          {
+            guid: "enum-team",
+            name: "Team",
+            members: [{ name: "Red" }],
+          },
+          {
+            guid: "enum-mode",
+            name: "Mode",
+            members: [{ name: "Idle" }, { name: "Run" }],
+          },
+        ],
+      },
+    );
+    const typeRow = rows[0];
+    expect(typeRow?.kind).toBe("enum");
+    if (typeRow?.kind === "enum") {
+      typeRow.onChange("enum-mode");
+    }
+    expect(onPatch).toHaveBeenCalledWith({
+      enumGuid: "enum-mode",
+      members: [{ name: "Idle" }, { name: "Run" }],
+      "default:index": "Idle",
+      title: "Select Mode",
+    });
   });
 });
 

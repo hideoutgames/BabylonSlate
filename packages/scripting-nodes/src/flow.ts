@@ -8,6 +8,12 @@ import {
   INT,
   STRING,
   objectRef,
+  flowSwitchCasePinId,
+  intSwitchCasesOf,
+  stringSwitchCasesOf,
+  arrayOf,
+  mapOf,
+  RESOLVING_WILDCARD,
 } from "@babylonslate/scripting";
 import {
   dataMemberPins,
@@ -17,6 +23,8 @@ import {
   pinTypeForMember,
 } from "./member-pins";
 
+const MAP_K: PinType = { kind: "resolvingWildcard", group: "K" };
+const MAP_V: PinType = { kind: "resolvingWildcard", group: "V" };
 /** Runtime export names for catalog event entry nodes. */
 const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.beginPlay": "onBeginPlay",
@@ -354,6 +362,48 @@ export const flowNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "flow.switchInt",
+    title: "Switch on Int",
+    category: "flow",
+    pins: (properties) => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("value", "value", "in", INT),
+      ...intSwitchCasesOf(properties).map((value) =>
+        pin(flowSwitchCasePinId(String(value)), String(value), "out", EXEC),
+      ),
+      pin("default", "Default", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "switchOnInt",
+      valuePin: "value",
+      defaultPin: "default",
+    },
+  },
+  {
+    id: "flow.switchString",
+    title: "Switch on String",
+    category: "flow",
+    pins: (properties) => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("value", "value", "in", STRING),
+      ...stringSwitchCasesOf(properties).map((value) =>
+        pin(flowSwitchCasePinId(value), value, "out", EXEC),
+      ),
+      pin("default", "Default", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "switchOnString",
+      valuePin: "value",
+      defaultPin: "default",
+    },
+  },
+  {
     id: "flow.function.input",
     title: "Input",
     category: "flow",
@@ -385,6 +435,251 @@ export const flowNodes: NodeDefinition[] = [
         );
       }
       ctx.emit(`return { ${fields.join(", ")} };`);
+    },
+  },
+  {
+    id: "flow.forLoop",
+    title: "For Loop",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("firstIndex", "firstIndex", "in", INT),
+      pin("lastIndex", "lastIndex", "in", INT),
+      pin("loopBody", "loopBody", "out", EXEC),
+      pin("index", "index", "out", INT),
+      pin("completed", "completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "forLoop",
+      firstIndexPin: "firstIndex",
+      lastIndexPin: "lastIndex",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+      indexPin: "index",
+    },
+  },
+  {
+    id: "flow.forLoopWithBreak",
+    title: "For Loop With Break",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("firstIndex", "firstIndex", "in", INT),
+      pin("lastIndex", "lastIndex", "in", INT),
+      pin("loopBody", "loopBody", "out", EXEC),
+      pin("index", "index", "out", INT),
+      pin("completed", "completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "forLoopWithBreak",
+      firstIndexPin: "firstIndex",
+      lastIndexPin: "lastIndex",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+      indexPin: "index",
+    },
+  },
+  {
+    id: "flow.forEach",
+    title: "For Each",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("array", "array", "in", arrayOf(RESOLVING_WILDCARD)),
+      pin("loopBody", "loopBody", "out", EXEC),
+      pin("element", "element", "out", RESOLVING_WILDCARD),
+      pin("index", "index", "out", INT),
+      pin("completed", "completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "forEach",
+      arrayPin: "array",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+      elementPin: "element",
+      indexPin: "index",
+    },
+  },
+  {
+    id: "flow.forEachWithBreak",
+    title: "For Each With Break",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("array", "array", "in", arrayOf(RESOLVING_WILDCARD)),
+      pin("loopBody", "loopBody", "out", EXEC),
+      pin("element", "element", "out", RESOLVING_WILDCARD),
+      pin("index", "index", "out", INT),
+      pin("completed", "completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "forEachWithBreak",
+      arrayPin: "array",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+      elementPin: "element",
+      indexPin: "index",
+    },
+  },
+  {
+    id: "flow.forEachMap",
+    title: "For Each Map",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("map", "map", "in", mapOf(MAP_K, MAP_V)),
+      pin("loopBody", "loopBody", "out", EXEC),
+      pin("key", "key", "out", MAP_K),
+      pin("value", "value", "out", MAP_V),
+      pin("index", "index", "out", INT),
+      pin("completed", "completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "forEachMap",
+      mapPin: "map",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+      keyPin: "key",
+      valuePin: "value",
+      indexPin: "index",
+    },
+  },
+  {
+    id: "flow.forEachMapWithBreak",
+    title: "For Each Map With Break",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("map", "map", "in", mapOf(MAP_K, MAP_V)),
+      pin("loopBody", "loopBody", "out", EXEC),
+      pin("key", "key", "out", MAP_K),
+      pin("value", "value", "out", MAP_V),
+      pin("index", "index", "out", INT),
+      pin("completed", "completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "forEachMapWithBreak",
+      mapPin: "map",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+      keyPin: "key",
+      valuePin: "value",
+      indexPin: "index",
+    },
+  },
+  {
+    id: "flow.break",
+    title: "Break",
+    category: "flow",
+    pins: () => [pin("execIn", "exec", "in", EXEC)],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: { kind: "break" },
+  },
+  {
+    id: "flow.doOnce",
+    title: "Do Once",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("reset", "reset", "in", EXEC),
+      pin("then", "then", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "doOnce",
+      execPin: "exec",
+      resetPin: "reset",
+      thenPin: "then",
+    },
+  },
+  {
+    id: "flow.doN",
+    title: "Do N",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("n", "n", "in", INT),
+      pin("reset", "reset", "in", EXEC),
+      pin("then", "then", "out", EXEC),
+      pin("counter", "counter", "out", INT),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "doN",
+      execPin: "exec",
+      nPin: "n",
+      resetPin: "reset",
+      thenPin: "then",
+      counterPin: "counter",
+    },
+  },
+  {
+    id: "flow.flipFlop",
+    title: "Flip Flop",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("a", "a", "out", EXEC),
+      pin("b", "b", "out", EXEC),
+      pin("isA", "isA", "out", BOOL),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "flipFlop",
+      execPin: "exec",
+      aPin: "a",
+      bPin: "b",
+      isAPin: "isA",
+    },
+  },
+  {
+    id: "flow.gate",
+    title: "Gate",
+    category: "flow",
+    pins: () => [
+      pin("enter", "enter", "in", EXEC),
+      pin("open", "open", "in", EXEC),
+      pin("close", "close", "in", EXEC),
+      pin("toggle", "toggle", "in", EXEC),
+      pin("exit", "exit", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "gate",
+      enterPin: "enter",
+      openPin: "open",
+      closePin: "close",
+      togglePin: "toggle",
+      exitPin: "exit",
+      startClosed: true,
     },
   },
 ];

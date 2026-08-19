@@ -7,6 +7,14 @@ import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
 import { entryNodes } from "./compiled-nodes";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
+import {
+  flowSwitchCaseValueFromPinId,
+} from "./flow-switch-pins";
+import {
+  isFlowSwitchMeta,
+  isLoopMeta,
+  type StructuredFlowMeta,
+} from "./structured-flow";
 
 export type CompileAnchor = {
   line: number;
@@ -150,6 +158,14 @@ function execSuccessors(
   nodeId: string,
   pinName?: string,
 ): string[] {
+  return execSuccessorEdges(graph, nodeId, pinName).map((e) => e.targetNodeId);
+}
+
+function execSuccessorEdges(
+  graph: LogicGraph,
+  nodeId: string,
+  pinName?: string,
+): Array<{ targetNodeId: string; targetPinId: string }> {
   const node = findNode(graph, nodeId);
   if (!node) return [];
   const outs = node.pins.filter(
@@ -158,15 +174,36 @@ function execSuccessors(
       p.direction === "out" &&
       (pinName === undefined || p.name === pinName),
   );
-  const result: string[] = [];
+  const result: Array<{ targetNodeId: string; targetPinId: string }> = [];
   for (const out of outs) {
     for (const e of graph.edges) {
       if (e.sourceNodeId === nodeId && e.sourcePinId === out.id) {
-        result.push(e.targetNodeId);
+        result.push({
+          targetNodeId: e.targetNodeId,
+          targetPinId: e.targetPinId,
+        });
       }
     }
   }
   return result;
+}
+
+function entryPinMatches(
+  node: GraphNode,
+  pinRef: string,
+  entryPinId: string | undefined,
+): boolean {
+  if (!entryPinId) {
+    const preferred = pinForCodegen(node, pinRef, "in");
+    if (!preferred) return false;
+    const execIns = node.pins.filter(
+      (p) => p.kind === "exec" && p.direction === "in",
+    );
+    if (execIns.length <= 1) return true;
+    return preferred.id === execIns[0]?.id;
+  }
+  const pin = findPin(node, entryPinId);
+  return !!pin && (pin.id === pinRef || pin.name === pinRef);
 }
 
 function pinForCodegen(
@@ -261,7 +298,7 @@ export function compileGraph(
       if (srcDef?.pure) {
         ensurePure(srcNode);
       } else {
-        const slot = `_n_${jsIdent(srcNode.id)}_${jsIdent(srcPin.name)}`;
+        const slot = `_n_${jsIdent(srcNode.id)}_${jsIdent(srcPin.id)}`;
         if (!exprCache.has(`${srcNode.id}:${srcPin.id}`)) {
           exprCache.set(`${srcNode.id}:${srcPin.id}`, slot);
           outputDecls.set(
@@ -293,7 +330,8 @@ export function compileGraph(
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
-        const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
+        const slotKey = p?.id ?? pinName;
+        const name = `_n_${jsIdent(node.id)}_${jsIdent(slotKey)}`;
         if (p) exprCache.set(`${node.id}:${p.id}`, name);
         return name;
       },
@@ -343,8 +381,290 @@ export function compileGraph(
     }
   }
 
-  function emitExecChain(startId: string, visited = new Set<string>()) {
+  function emitAlong(
+    edges: Array<{ targetNodeId: string; targetPinId: string }>,
+    visited: Set<string>,
+  ) {
+    for (const edge of edges) {
+      emitExecChain(edge.targetNodeId, new Set(visited), edge.targetPinId);
+    }
+  }
+
+  function declareDataOuts(node: GraphNode, ctx: CodegenContext) {
+    for (const p of node.pins) {
+      if (p.kind === "data" && p.direction === "out") {
+        const name = ctx.output(p.id);
+        outputDecls.set(
+          name,
+          `  let ${name} = ${defaultValueLiteral(p.type)};`,
+        );
+      }
+    }
+  }
+
+  function emitFlowSwitch(
+    node: GraphNode,
+    meta: StructuredFlowMeta,
+    visited: Set<string>,
+  ): boolean {
+    if (!isFlowSwitchMeta(meta)) return false;
+    const ctx = makeCtx(node);
+    const anchor = {
+      column: 1,
+      assetGuid: options.assetGuid,
+      graphId: graph.id,
+      nodeId: node.id,
+    };
+    const valueExpr = ctx.input(meta.valuePin);
+    const cases = node.pins.filter(
+      (pin) =>
+        pin.kind === "exec" &&
+        pin.direction === "out" &&
+        flowSwitchCaseValueFromPinId(pin.id) !== undefined,
+    );
+    const wiredCases = cases.filter(
+      (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
+    );
+    const defaultTargets = execSuccessors(graph, node.id, "Default");
+    if (wiredCases.length === 0 && defaultTargets.length === 0) {
+      emitBody(`  /* ${node.typeId} ${node.id}: no exec outs */`, anchor);
+      return true;
+    }
+    for (let i = 0; i < wiredCases.length; i++) {
+      const pin = wiredCases[i]!;
+      const raw = flowSwitchCaseValueFromPinId(pin.id) ?? pin.name;
+      const compare =
+        meta.kind === "switchOnInt"
+          ? String(Number(raw))
+          : JSON.stringify(raw);
+      const keyword = i === 0 ? "if" : "} else if";
+      emitBody(`  ${keyword} (${valueExpr} === ${compare}) {`, anchor);
+      for (const target of execSuccessors(graph, node.id, pin.name)) {
+        emitExecChain(target, new Set(visited));
+      }
+    }
+    if (defaultTargets.length > 0) {
+      if (wiredCases.length > 0) {
+        emitBody(`  } else {`, anchor);
+      }
+      for (const target of defaultTargets) {
+        emitExecChain(target, new Set(visited));
+      }
+      if (wiredCases.length > 0) {
+        emitBody(`  }`, anchor);
+      }
+    } else if (wiredCases.length > 0) {
+      emitBody(`  }`, anchor);
+    }
+    return true;
+  }
+
+  function emitStructuredFlow(
+    node: GraphNode,
+    meta: StructuredFlowMeta,
+    visited: Set<string>,
+    entryPinId: string | undefined,
+  ): boolean {
+    const ctx = makeCtx(node);
+    const anchor = {
+      column: 1,
+      assetGuid: options.assetGuid,
+      graphId: graph.id,
+      nodeId: node.id,
+    };
+
+    if (meta.kind === "break") {
+      emitBody(`  break;`, anchor);
+      return true;
+    }
+
+    if (isLoopMeta(meta)) {
+      declareDataOuts(node, ctx);
+      const indexSlot = ctx.output(meta.indexPin);
+      if (meta.kind === "forLoop" || meta.kind === "forLoopWithBreak") {
+        const firstExpr = ctx.input(meta.firstIndexPin);
+        const lastExpr = ctx.input(meta.lastIndexPin);
+        const iter = `__i_${jsIdent(node.id)}`;
+        emitBody(`  {`, anchor);
+        emitBody(
+          `    for (let ${iter} = (${firstExpr}) | 0; ${iter} <= ((${lastExpr}) | 0); ${iter}++) {`,
+          anchor,
+        );
+        if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
+        emitBody(`      ${indexSlot} = ${iter};`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+        emitBody(`    }`, anchor);
+        emitBody(`  }`, anchor);
+      } else if (meta.kind === "forEach" || meta.kind === "forEachWithBreak") {
+        const arrayExpr = ctx.input(meta.arrayPin);
+        const elementSlot = ctx.output(meta.elementPin);
+        const snap = `__snap_${jsIdent(node.id)}`;
+        const iter = `__i_${jsIdent(node.id)}`;
+        emitBody(`  {`, anchor);
+        emitBody(
+          `    const ${snap} = Array.isArray(${arrayExpr}) ? (${arrayExpr}).slice() : [];`,
+          anchor,
+        );
+        emitBody(
+          `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
+          anchor,
+        );
+        if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
+        emitBody(`      ${indexSlot} = ${iter};`, anchor);
+        emitBody(`      ${elementSlot} = ${snap}[${iter}];`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+        emitBody(`    }`, anchor);
+        emitBody(`  }`, anchor);
+      } else if (
+        meta.kind === "forEachMap" ||
+        meta.kind === "forEachMapWithBreak"
+      ) {
+        const mapExpr = ctx.input(meta.mapPin);
+        const keySlot = ctx.output(meta.keyPin);
+        const valueSlot = ctx.output(meta.valuePin);
+        const snap = `__snap_${jsIdent(node.id)}`;
+        const iter = `__i_${jsIdent(node.id)}`;
+        emitBody(`  {`, anchor);
+        emitBody(
+          `    const ${snap} = [...(new Map(${mapExpr} ?? [])).entries()];`,
+          anchor,
+        );
+        emitBody(
+          `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
+          anchor,
+        );
+        if (instrumentLoops) emitBody(`      ${loopCheck}`, anchor);
+        emitBody(`      ${indexSlot} = ${iter};`, anchor);
+        emitBody(`      ${keySlot} = ${snap}[${iter}][0];`, anchor);
+        emitBody(`      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+        emitBody(`    }`, anchor);
+        emitBody(`  }`, anchor);
+      }
+      emitAlong(execSuccessorEdges(graph, node.id, meta.completedPin), visited);
+      return true;
+    }
+
+    if (meta.kind === "doOnce") {
+      if (entryPinMatches(node, meta.resetPin, entryPinId)) {
+        emitBody(
+          `  ctx.flowState(${JSON.stringify(node.id)}).done = false;`,
+          anchor,
+        );
+        return true;
+      }
+      emitBody(`  {`, anchor);
+      emitBody(
+        `    const __st = ctx.flowState(${JSON.stringify(node.id)});`,
+        anchor,
+      );
+      emitBody(`    if (!__st.done) {`, anchor);
+      emitBody(`      __st.done = true;`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.thenPin), visited);
+      emitBody(`    }`, anchor);
+      emitBody(`  }`, anchor);
+      return true;
+    }
+
+    if (meta.kind === "doN") {
+      declareDataOuts(node, ctx);
+      const counterSlot = ctx.output(meta.counterPin);
+      if (entryPinMatches(node, meta.resetPin, entryPinId)) {
+        emitBody(
+          `  ctx.flowState(${JSON.stringify(node.id)}).count = 0;`,
+          anchor,
+        );
+        return true;
+      }
+      const nExpr = ctx.input(meta.nPin);
+      emitBody(`  {`, anchor);
+      emitBody(
+        `    const __st = ctx.flowState(${JSON.stringify(node.id)});`,
+        anchor,
+      );
+      emitBody(`    if (__st.count == null) __st.count = 0;`, anchor);
+      emitBody(`    if ((__st.count | 0) < ((${nExpr}) | 0)) {`, anchor);
+      emitBody(`      ${counterSlot} = __st.count | 0;`, anchor);
+      emitBody(`      __st.count = (__st.count | 0) + 1;`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.thenPin), visited);
+      emitBody(`    }`, anchor);
+      emitBody(`  }`, anchor);
+      return true;
+    }
+
+    if (meta.kind === "flipFlop") {
+      declareDataOuts(node, ctx);
+      const isASlot = ctx.output(meta.isAPin);
+      emitBody(`  {`, anchor);
+      emitBody(
+        `    const __st = ctx.flowState(${JSON.stringify(node.id)});`,
+        anchor,
+      );
+      emitBody(`    const __isA = __st.nextIsB !== true;`, anchor);
+      emitBody(`    __st.nextIsB = __isA;`, anchor);
+      emitBody(`    ${isASlot} = __isA;`, anchor);
+      emitBody(`    if (__isA) {`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.aPin), visited);
+      emitBody(`    } else {`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.bPin), visited);
+      emitBody(`    }`, anchor);
+      emitBody(`  }`, anchor);
+      return true;
+    }
+
+    if (meta.kind === "gate") {
+      if (entryPinMatches(node, meta.openPin, entryPinId)) {
+        emitBody(
+          `  ctx.flowState(${JSON.stringify(node.id)}).open = true;`,
+          anchor,
+        );
+        return true;
+      }
+      if (entryPinMatches(node, meta.closePin, entryPinId)) {
+        emitBody(
+          `  ctx.flowState(${JSON.stringify(node.id)}).open = false;`,
+          anchor,
+        );
+        return true;
+      }
+      if (entryPinMatches(node, meta.togglePin, entryPinId)) {
+        emitBody(`  {`, anchor);
+        emitBody(
+          `    const __st = ctx.flowState(${JSON.stringify(node.id)});`,
+          anchor,
+        );
+        emitBody(`    __st.open = !__st.open;`, anchor);
+        emitBody(`  }`, anchor);
+        return true;
+      }
+      // Enter (default)
+      const startOpen = meta.startClosed === true ? "false" : "true";
+      emitBody(`  {`, anchor);
+      emitBody(
+        `    const __st = ctx.flowState(${JSON.stringify(node.id)});`,
+        anchor,
+      );
+      emitBody(
+        `    if (__st.open == null) __st.open = ${startOpen};`,
+        anchor,
+      );
+      emitBody(`    if (__st.open) {`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.exitPin), visited);
+      emitBody(`    }`, anchor);
+      emitBody(`  }`, anchor);
+      return true;
+    }
+
+    return false;
+  }
+
+  function emitExecChain(
+    startId: string,
+    visited = new Set<string>(),
+    entryPinId?: string,
+  ) {
     let current: string | undefined = startId;
+    let currentEntryPin = entryPinId;
     while (current && !visited.has(current)) {
       visited.add(current);
       const node = findNode(graph, current);
@@ -354,6 +674,7 @@ export function compileGraph(
         if (targets.length === 0) break;
         if (targets.length === 1) {
           current = targets[0];
+          currentEntryPin = undefined;
           continue;
         }
         for (const t of targets) emitExecChain(t, new Set(visited));
@@ -379,13 +700,9 @@ export function compileGraph(
           nodeId: node.id,
         };
         emitBody(`  if (${ctx.input("condition")}) {`, anchor);
-        for (const t of execSuccessors(graph, node.id, "true")) {
-          emitExecChain(t, new Set(visited));
-        }
+        emitAlong(execSuccessorEdges(graph, node.id, "true"), visited);
         emitBody(`  } else {`, anchor);
-        for (const t of execSuccessors(graph, node.id, "false")) {
-          emitExecChain(t, new Set(visited));
-        }
+        emitAlong(execSuccessorEdges(graph, node.id, "false"), visited);
         emitBody(`  }`, anchor);
         break;
       }
@@ -408,7 +725,7 @@ export function compileGraph(
         const wiredCases = cases.filter(
           (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
         );
-        const defaultTargets = execSuccessors(graph, node.id, "Default");
+        const defaultTargets = execSuccessorEdges(graph, node.id, "Default");
         if (wiredCases.length === 0 && defaultTargets.length === 0) {
           emitBody(`  /* enum.switch ${node.id}: no exec outs */`, anchor);
           break;
@@ -421,23 +738,26 @@ export function compileGraph(
             `  ${keyword} (${valueExpr} === ${JSON.stringify(memberName)}) {`,
             anchor,
           );
-          for (const target of execSuccessors(graph, node.id, pin.name)) {
-            emitExecChain(target, new Set(visited));
-          }
+          emitAlong(execSuccessorEdges(graph, node.id, pin.name), visited);
         }
         if (defaultTargets.length > 0) {
           if (wiredCases.length > 0) {
             emitBody(`  } else {`, anchor);
           }
-          for (const target of defaultTargets) {
-            emitExecChain(target, new Set(visited));
-          }
+          emitAlong(defaultTargets, visited);
           if (wiredCases.length > 0) {
             emitBody(`  }`, anchor);
           }
         } else if (wiredCases.length > 0) {
           emitBody(`  }`, anchor);
         }
+        break;
+      }
+
+      if (
+        def.structuredFlow &&
+        emitFlowSwitch(node, def.structuredFlow, visited)
+      ) {
         break;
       }
 
@@ -456,7 +776,7 @@ export function compileGraph(
         };
         for (const p of node.pins) {
           if (p.kind === "data" && p.direction === "out") {
-            const name = ctx.output(p.name);
+            const name = ctx.output(p.id);
             emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, anchor);
           }
         }
@@ -467,9 +787,7 @@ export function compileGraph(
             `  if (((${phase} === "released" ? ctx.wasActionReleased?.(${action}) : ctx.wasActionPressed?.(${action})) ?? false)) {`,
             anchor,
           );
-          for (const t of execSuccessors(graph, node.id, "then")) {
-            emitExecChain(t, new Set(visited));
-          }
+          emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
           emitBody(`  }`, anchor);
         } else {
           const connected = node.typeId === "input.onGamepadConnected";
@@ -480,9 +798,7 @@ export function compileGraph(
           );
           if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
           emitBody(`    ${index} = __pad.gamepadIndex;`, anchor);
-          for (const t of execSuccessors(graph, node.id, "then")) {
-            emitExecChain(t, new Set(visited));
-          }
+          emitAlong(execSuccessorEdges(graph, node.id, "then"), visited);
           emitBody(`  }`, anchor);
         }
         break;
@@ -494,10 +810,21 @@ export function compileGraph(
         )) {
           for (const e of graph.edges) {
             if (e.sourceNodeId === node.id && e.sourcePinId === outPin.id) {
-              emitExecChain(e.targetNodeId, new Set(visited));
+              emitExecChain(
+                e.targetNodeId,
+                new Set(visited),
+                e.targetPinId,
+              );
             }
           }
         }
+        break;
+      }
+
+      if (
+        def.structuredFlow &&
+        emitStructuredFlow(node, def.structuredFlow, visited, currentEntryPin)
+      ) {
         break;
       }
 
@@ -506,27 +833,20 @@ export function compileGraph(
       } else {
         const ctx = makeCtx(node);
         if (def.latent) isAsync = true;
-        for (const p of node.pins) {
-          if (p.kind === "data" && p.direction === "out") {
-            const name = ctx.output(p.name);
-            outputDecls.set(
-              name,
-              `  let ${name} = ${defaultValueLiteral(p.type)};`,
-            );
-          }
-        }
+        declareDataOuts(node, ctx);
         def.codegen(ctx);
       }
 
-      const thenTargets = execSuccessors(graph, node.id, "then");
-      const targets =
-        thenTargets.length > 0 ? thenTargets : execSuccessors(graph, node.id);
-      if (targets.length === 0) break;
-      if (targets.length === 1) {
-        current = targets[0];
+      const thenEdges = execSuccessorEdges(graph, node.id, "then");
+      const edges =
+        thenEdges.length > 0 ? thenEdges : execSuccessorEdges(graph, node.id);
+      if (edges.length === 0) break;
+      if (edges.length === 1) {
+        current = edges[0]!.targetNodeId;
+        currentEntryPin = edges[0]!.targetPinId;
         continue;
       }
-      for (const t of targets) emitExecChain(t, new Set(visited));
+      emitAlong(edges, visited);
       break;
     }
   }
@@ -705,7 +1025,8 @@ export function compileTransitionRuleGraph(
       },
       output(pinName) {
         const p = pinForCodegen(node, pinName, "out");
-        const name = `_n_${jsIdent(node.id)}_${jsIdent(pinName)}`;
+        const slotKey = p?.id ?? pinName;
+        const name = `_n_${jsIdent(node.id)}_${jsIdent(slotKey)}`;
         if (p) exprCache.set(`${node.id}:${p.id}`, name);
         return name;
       },

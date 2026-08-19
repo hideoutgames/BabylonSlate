@@ -145,4 +145,6 @@ export type NodeTypeLookup = {
 export type ValidateOptions = {
   extraRules?: readonly ValidationRule[];
   nodeLookup?: NodeTypeLookup;
+  /** Optional registry so structured-flow rules can read node metadata. */
+  registry?: import("./node-registry").NodeRegistry;
 };

@@ -284,6 +284,9 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Project-wide pre-Preview validation sweep | later polish (`apps/editor`, `scripting`) | Play now validates the compiled project graph set (`collectPlayPreviewScripts`); startup-map / GameInstance / plugin EUO sweep still deferred |
 | Validator fixture per diagnostic code | later polish (`scripting`) | CI has `type.mismatch` and `js.parse` fixtures; other codes are unit-tested |
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
+| Timeline / delegate timer nodes | later design (`scripting`, runtime, editor) | Needs authored curves and delegate/event pins; not a fixed-pin catalog addition |
+| Advanced physics query shapes / filters | P7 polish (`physics`, runtime, scripting-nodes) | Box/capsule overlap, arbitrary shape descriptors, ignore-Actor lists, and backend parity need a query-filter contract |
+| Inline Array / Map pin defaults | later editor design | Dynamic Make Array / Make Map are the authoring path; generic pin-default fields intentionally remain scalar/struct/enum only |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
 | BDebugCommand + parameter list | P8 | Landed (`p8-bdebugcommand`) |
 | Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
@@ -294,6 +297,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Audio / UI node runtime helpers beyond stubs | P9 / P16 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; Play Sound / Set Channel Volume / Set Global Volume emit audio commands (P16 Done) |
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (exec highway / independent chain roots); **hold-to-marquee** (`attachGraphPaneMarquee`).
+
+**Closed (node-graph completeness pass):** dynamic Format String and Enum Select; Bool-indexed typed Selects; safe immutable Array/Map catalogs including Break Map; Switch on Int/String; For Loop / For Each / For Each Map with Break variants; per-object Do Once / Do N / Flip Flop / Gate state; deterministic string/math/vector/transform/Actor utilities; complete same-tick trace/overlap/sphere-sweep outputs with live Actor resolution; dynamic-pin Inspector/hydration/persistence; catalog codegen contracts and Preview acceptance.
 
 **Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
 

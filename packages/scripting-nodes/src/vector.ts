@@ -37,6 +37,10 @@ function lengthExpr(v: string, axes: readonly string[]): string {
   return `Math.hypot(${axes.map((axis) => `(${v}).${axis}`).join(", ")})`;
 }
 
+function lengthSquaredExpr(v: string, axes: readonly string[]): string {
+  return `(${axes.map((axis) => `(${v}).${axis} * (${v}).${axis}`).join(" + ")})`;
+}
+
 function binaryVec(
   id: string,
   title: string,
@@ -265,6 +269,17 @@ export const vectorNodes: NodeDefinition[] = [
     codegen: (ctx) => ({ out: lengthExpr(ctx.input("v"), AXES3) }),
   },
   {
+    id: "vector.lengthSquared3",
+    title: "Vector3 Length Squared",
+    category: "vector",
+    pure: true,
+    pins: () => [
+      pin("v", "V", "in", VEC3),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx.input("v"), AXES3) }),
+  },
+  {
     id: "vector.normalize3",
     title: "Normalize Vector3",
     category: "vector",
@@ -339,6 +354,17 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({ out: lengthExpr(ctx.input("v"), AXES2) }),
+  },
+  {
+    id: "vector.lengthSquared2",
+    title: "Vector2 Length Squared",
+    category: "vector",
+    pure: true,
+    pins: () => [
+      pin("v", "V", "in", VEC2),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx.input("v"), AXES2) }),
   },
   {
     id: "vector.normalize2",
@@ -416,6 +442,17 @@ export const vectorNodes: NodeDefinition[] = [
     codegen: (ctx) => ({ out: lengthExpr(ctx.input("v"), AXES4) }),
   },
   {
+    id: "vector.lengthSquared4",
+    title: "Vector4 Length Squared",
+    category: "vector",
+    pure: true,
+    pins: () => [
+      pin("v", "V", "in", VEC4),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx.input("v"), AXES4) }),
+  },
+  {
     id: "vector.normalize4",
     title: "Normalize Vector4",
     category: "vector",
@@ -431,6 +468,20 @@ export const vectorNodes: NodeDefinition[] = [
         out: `((${len} > 1e-8 ? { x: (${v}).x / ${len}, y: (${v}).y / ${len}, z: (${v}).z / ${len}, w: (${v}).w / ${len} } : { x: 0, y: 0, z: 0, w: 0 }))`,
       };
     },
+  },
+  {
+    id: "vector.distance4",
+    title: "Distance Vector4",
+    category: "vector",
+    pure: true,
+    pins: () => [
+      pin("a", "A", "in", VEC4),
+      pin("b", "B", "in", VEC4),
+      pin("out", "Out", "out", FLOAT),
+    ],
+    codegen: (ctx) => ({
+      out: `Math.hypot((${ctx.input("a")}).x - (${ctx.input("b")}).x, (${ctx.input("a")}).y - (${ctx.input("b")}).y, (${ctx.input("a")}).z - (${ctx.input("b")}).z, (${ctx.input("a")}).w - (${ctx.input("b")}).w)`,
+    }),
   },
   {
     id: "vector.lerp4",

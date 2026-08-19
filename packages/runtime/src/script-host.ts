@@ -67,6 +67,8 @@ export interface ScriptHostServices {
   interfaceRegistry?: InterfaceRegistry;
   /** Live-object `ctx.isA` uses ClassRegistry ancestry, not string equality. */
   classRegistry?: ClassRegistry;
+  /** World actors in deterministic spawn order for class queries. */
+  getActors?(): readonly Actor[];
   log(severity: LogSeverity, category: string, message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
@@ -88,6 +90,11 @@ export interface ScriptHostServices {
   reportCommand?(success: boolean, output: string): void;
   /** Debugger loop guard; omitted in release players. */
   checkInfiniteLoop?(): void;
+  /**
+   * Resolve a backend physics actor id to a live Actor. Missing / destroyed
+   * actors must return undefined so query nodes never surface string ids.
+   */
+  findActor?(actorId: string): Actor | undefined;
   lineTrace?(start: Vec3, end: Vec3): HitResult;
   sphereOverlap?(center: Vec3, radius: number): OverlapResult;
   shapeSweep?(
@@ -168,6 +175,10 @@ export interface ScriptContext {
     actor: BObject | null | undefined,
     location: { x: number; y: number; z: number },
   ): void;
+  addActorWorldOffset(
+    actor: BObject | null | undefined,
+    offset: { x: number; y: number; z: number },
+  ): void;
   setActorRotation(
     actor: BObject | null | undefined,
     rotation: { pitch: number; yaw: number; roll: number },
@@ -238,7 +249,16 @@ export interface ScriptContext {
   normalizeQuat(
     quat: { x?: number; y?: number; z?: number; w?: number } | null | undefined,
   ): { x: number; y: number; z: number; w: number };
+  /** Seeded PRNG surface — never Math.random. */
+  random: {
+    float(): number;
+    int(min: number, max: number): number;
+    bool(): boolean;
+  };
+  /** @deprecated Prefer `ctx.random.float()`. */
   randomFloat(): number;
+  getAllActorsOfClass(classId: string): Actor[];
+  getActorOfClass(classId: string): Actor | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
@@ -301,9 +321,13 @@ export interface ScriptContext {
     location: Vec3 | null;
     normal: Vec3 | null;
     distance: number;
-    actor: string | null;
+    actor: Actor | null;
   };
-  sphereOverlap(center: Vec3, radius: number, channel?: string): OverlapResult;
+  sphereOverlap(
+    center: Vec3,
+    radius: number,
+    channel?: string,
+  ): OverlapResult & { actors: Actor[] };
   shapeSweep(
     shape: ColliderShape,
     start: PhysicsTransform,
@@ -314,7 +338,7 @@ export interface ScriptContext {
     location: Vec3 | null;
     normal: Vec3 | null;
     distance: number;
-    actor: string | null;
+    actor: Actor | null;
   };
   addImpulse(
     actor: BObject | null | undefined,
@@ -362,6 +386,11 @@ export interface ScriptContext {
   addObstacle(kind: string, pose: Vec3, size: Vec3): string;
   removeObstacle(id: string): void;
   animFacts?: AnimStateFacts;
+  /**
+   * Per-script-instance / per-node mutable state for Do Once, Do N, Flip Flop,
+   * Gate. Never module-global — keyed by the receiving BObject.
+   */
+  flowState(nodeId: string): Record<string, unknown>;
 }
 
 export type VariableStore = {
@@ -393,6 +422,14 @@ type LoadedScript = {
 export class ScriptHost {
   private readonly byClassId = new Map<string, LoadedScript[]>();
   private readonly pending = new WeakMap<BObject, Set<string>>();
+  private readonly flowStates = new WeakMap<
+    BObject,
+    Map<string, Record<string, unknown>>
+  >();
+  private readonly orphanFlowStates = new Map<
+    string,
+    Record<string, unknown>
+  >();
   private readonly services: ScriptHostServices;
   private commandResult = { success: true, output: "" };
   private readonly rng: Rng = createSeededRng(1);
@@ -436,6 +473,7 @@ export class ScriptHost {
         );
       },
       onDestroyed: (self) => {
+        this.clearFlowState(self);
         this.dispatchEvent(loaded, "onDestroyed", self, 0, 0);
       },
     };
@@ -503,7 +541,15 @@ export class ScriptHost {
     if (!loaded || loaded.length === 0) return undefined;
     const evaluate = loaded[0]?.exports.evaluate;
     if (typeof evaluate !== "function") return undefined;
-    const ctx = this.createContext(self, 0, 0, {}, undefined, extras);
+    const ctx = this.createContext(
+      self,
+      0,
+      0,
+      {},
+      undefined,
+      extras,
+      loaded[0]!.script.assetGuid,
+    );
     try {
       const result = (evaluate as (context: ScriptContext) => unknown)(ctx);
       if (!result || typeof result !== "object") return undefined;
@@ -534,7 +580,15 @@ export class ScriptHost {
           object.interfaceHandlers.set(key, (args) => {
             const fn = entry.exports[exportName];
             if (typeof fn !== "function") return {};
-            const ctx = this.createContext(object, 0, 0, args);
+            const ctx = this.createContext(
+              object,
+              0,
+              0,
+              args,
+              undefined,
+              undefined,
+              entry.script.assetGuid,
+            );
             try {
               const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
               if (result instanceof Promise) {
@@ -580,6 +634,7 @@ export class ScriptHost {
           commandArgs,
           tick,
           extras,
+          entry.script.assetGuid,
         );
         try {
           const result = (fn as (ctx: ScriptContext) => unknown)(ctx);
@@ -613,6 +668,37 @@ export class ScriptHost {
     this.pending.get(self)?.delete(key);
   }
 
+  clearFlowState(self: BObject | null | undefined): void {
+    if (self) this.flowStates.delete(self);
+  }
+
+  private flowStateFor(
+    self: BObject | null,
+    nodeId: string,
+    namespace = "",
+  ): Record<string, unknown> {
+    const key = namespace ? `${namespace}\0${nodeId}` : nodeId;
+    if (!self) {
+      let row = this.orphanFlowStates.get(key);
+      if (!row) {
+        row = {};
+        this.orphanFlowStates.set(key, row);
+      }
+      return row;
+    }
+    let byNode = this.flowStates.get(self);
+    if (!byNode) {
+      byNode = new Map();
+      this.flowStates.set(self, byNode);
+    }
+    let row = byNode.get(key);
+    if (!row) {
+      row = {};
+      byNode.set(key, row);
+    }
+    return row;
+  }
+
   createContext(
     self: BObject | null,
     deltaSeconds: number,
@@ -620,6 +706,7 @@ export class ScriptHost {
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
     extras?: ScriptExtras,
+    flowNamespace = "",
   ): ScriptContext {
     const services = this.services;
     const store = extras?.variableStore ?? self;
@@ -630,6 +717,8 @@ export class ScriptHost {
       commandArgs,
       args: commandArgs,
       animFacts: extras?.animFacts,
+      flowState: (nodeId: string) =>
+        this.flowStateFor(self, String(nodeId), flowNamespace),
       reportCommand: (success, output) => {
         this.commandResult = { success: Boolean(success), output: String(output) };
         services.reportCommand?.(Boolean(success), String(output));
@@ -664,6 +753,13 @@ export class ScriptHost {
         target.transform.position.x = Number(location.x ?? 0);
         target.transform.position.y = Number(location.y ?? 0);
         target.transform.position.z = Number(location.z ?? 0);
+      },
+      addActorWorldOffset: (actor, offset) => {
+        const target = asActor(actor ?? self);
+        if (!target || !offset) return;
+        target.transform.position.x += Number(offset.x ?? 0);
+        target.transform.position.y += Number(offset.y ?? 0);
+        target.transform.position.z += Number(offset.z ?? 0);
       },
       setActorRotation: (actor, rotation) => {
         const target = asActor(actor ?? self);
@@ -716,7 +812,41 @@ export class ScriptHost {
       slerpQuats,
       quatRotateVector,
       normalizeQuat,
+      random: {
+        float: () => this.rng.nextFloat(),
+        int: (min, max) => {
+          const a = Number(min) | 0;
+          const b = Number(max) | 0;
+          const lo = Math.min(a, b);
+          const hi = Math.max(a, b);
+          if (hi === lo) return lo;
+          return lo + (this.rng.next() % (hi - lo + 1));
+        },
+        bool: () => this.rng.nextFloat() < 0.5,
+      },
       randomFloat: () => this.rng.nextFloat(),
+      getAllActorsOfClass: (classId) => {
+        const target = String(classId ?? "");
+        const actors = services.getActors?.() ?? [];
+        if (!target) return [];
+        return actors.filter((actor) => {
+          const id = actor.classId;
+          if (!id) return false;
+          return services.classRegistry?.isA(id, target) ?? id === target;
+        });
+      },
+      getActorOfClass: (classId) => {
+        const target = String(classId ?? "");
+        const actors = services.getActors?.() ?? [];
+        if (!target) return null;
+        return (
+          actors.find((actor) => {
+            const id = actor.classId;
+            if (!id) return false;
+            return services.classRegistry?.isA(id, target) ?? id === target;
+          }) ?? null
+        );
+      },
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
       delay: (seconds) => services.delay(seconds),
@@ -815,6 +945,7 @@ export class ScriptHost {
             fnArgs ?? {},
             tick,
             extras,
+            entry.script.assetGuid,
           );
           try {
             const value = (fn as (ctx: ScriptContext) => unknown)(nested);
@@ -854,18 +985,24 @@ export class ScriptHost {
           bodyId: null,
         };
         return {
-          hit: hit.hit,
-          location: hit.location,
-          normal: hit.normal,
-          distance: hit.distance,
-          actor: hit.actorId,
+          hit: hit.hit === true,
+          location: hit.location ?? null,
+          normal: hit.normal ?? null,
+          distance: hit.distance ?? 0,
+          actor: resolveLiveActor(services, hit.actorId),
         };
       },
-      sphereOverlap: (center, radius) =>
-        services.sphereOverlap?.(center, radius) ?? {
+      sphereOverlap: (center, radius) => {
+        const overlap = services.sphereOverlap?.(center, radius) ?? {
           actorIds: [],
           bodyIds: [],
-        },
+        };
+        return {
+          actorIds: overlap.actorIds,
+          bodyIds: overlap.bodyIds,
+          actors: resolveLiveActors(services, overlap.actorIds),
+        };
+      },
       shapeSweep: (shape, start, end) => {
         const hit = services.shapeSweep?.(shape, start, end) ?? {
           hit: false,
@@ -876,11 +1013,11 @@ export class ScriptHost {
           bodyId: null,
         };
         return {
-          hit: hit.hit,
-          location: hit.location,
-          normal: hit.normal,
-          distance: hit.distance,
-          actor: hit.actorId,
+          hit: hit.hit === true,
+          location: hit.location ?? null,
+          normal: hit.normal ?? null,
+          distance: hit.distance ?? 0,
+          actor: resolveLiveActor(services, hit.actorId),
         };
       },
       addImpulse: (actor, impulse, strength) => {
@@ -1008,6 +1145,31 @@ export class ScriptHost {
 
 function asActor(target: unknown): Actor | null {
   return target instanceof Actor ? target : null;
+}
+
+function resolveLiveActor(
+  services: ScriptHostServices,
+  actorId: string | null | undefined,
+): Actor | null {
+  if (!actorId) return null;
+  const actor = services.findActor?.(actorId);
+  if (!actor || actor.destroyed) return null;
+  return actor;
+}
+
+function resolveLiveActors(
+  services: ScriptHostServices,
+  actorIds: readonly string[],
+): Actor[] {
+  const seen = new Set<string>();
+  const actors: Actor[] = [];
+  for (const id of actorIds) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const actor = resolveLiveActor(services, id);
+    if (actor) actors.push(actor);
+  }
+  return actors;
 }
 
 function actorOf(target: unknown): Actor | null {
