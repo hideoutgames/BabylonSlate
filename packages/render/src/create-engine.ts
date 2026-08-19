@@ -23,6 +23,10 @@ import {
 } from "./editor-place";
 import { createEditorGrid, type EditorGrid } from "./editor-grid";
 import { EditorSceneSync } from "./editor-scene-sync";
+import {
+  ViewportShadingOverlay,
+  type ViewportShadingMode,
+} from "./viewport-shading-mode";
 import { createGizmoHost, type GizmoHost } from "./gizmo-host";
 import {
   applyGizmoMultiSelectDrag,
@@ -307,6 +311,8 @@ export interface EditorTools {
   selection: SelectionOutline;
   sync: EditorSceneSync;
   setViewportMode: (mode: ViewportMode) => void;
+  /** Session overlay: PBR / Unlit / Wireframe / Points Cloud. */
+  setViewportShadingMode: (mode: ViewportShadingMode) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
   setPixelPerfect: (
     settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
@@ -644,9 +650,13 @@ export function createEngine(
     rebuildPostProcessStack();
   };
 
+  const viewportShading = options.editor
+    ? new ViewportShadingOverlay(scene)
+    : null;
   const editorSync = options.editor
     ? new EditorSceneSync(scene, scheduler, {
         resolveMaterial: (guid) => binding.resolveMaterial?.(guid) ?? null,
+        onAfterApply: () => viewportShading?.apply(),
       })
     : null;
 
@@ -803,6 +813,10 @@ export function createEngine(
         gizmos.setMode(next);
         grid.setMode(next);
         scheduler.invalidate("camera");
+      },
+      setViewportShadingMode: (next: ViewportShadingMode) => {
+        viewportShading?.setMode(next);
+        scheduler.invalidate("asset");
       },
       setPixelPerfect: (settings) => {
         cameraController.setCanvasHeight(engine.getRenderHeight());

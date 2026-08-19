@@ -32,6 +32,8 @@ const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 export type EditorSceneSyncOptions = {
   resolveMaterial?: (guid: string) => Material | null;
+  /** Fired after meshes/materials are bound so overlays can re-apply. */
+  onAfterApply?: () => void;
 };
 
 function spriteSortingOf(
@@ -64,6 +66,7 @@ export class EditorSceneSync {
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
   private readonly resolveMaterial?: (guid: string) => Material | null;
+  private readonly onAfterApply?: () => void;
   private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
@@ -88,6 +91,7 @@ export class EditorSceneSync {
     this.scene = scene;
     this.scheduler = scheduler;
     this.resolveMaterial = options?.resolveMaterial;
+    this.onAfterApply = options?.onAfterApply;
   }
 
   /** Ordered sorting layers from project settings, back to front. */
@@ -209,6 +213,7 @@ export class EditorSceneSync {
       shadowQuality: this.shadowQuality,
       assets: this.assets,
     });
+    this.onAfterApply?.();
   }
 
   serializedScene(): SerializedScene | null {
@@ -288,6 +293,7 @@ export class EditorSceneSync {
         this.applyModelSlots(current, root);
         this.bindActorMeshMaterials(current, root);
         this.scheduler?.invalidate("asset");
+        this.onAfterApply?.();
       },
     );
   }
