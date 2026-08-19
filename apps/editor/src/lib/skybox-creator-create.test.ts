@@ -27,6 +27,7 @@ describe("writeSkyboxCreatorFaceAssets", () => {
       helperPath: "assets/skies/Day.skyboxcreator.babasset",
       payload: {
         sourceTextureGuid: "src-1",
+        sourcePlacement: null,
         generatedFaces: emptySkyboxFaces(),
       },
       rgba: atlasRgba(),
@@ -84,6 +85,7 @@ describe("writeSkyboxCreatorFaceAssets", () => {
       helperPath: "assets/Day.skyboxcreator.babasset",
       payload: {
         sourceTextureGuid: "src-1",
+        sourcePlacement: null,
         generatedFaces: {
           px: "old-px",
           py: "old-py",
@@ -132,6 +134,46 @@ describe("writeSkyboxCreatorFaceAssets", () => {
       "Day_ny.babasset",
       "Day_nz.babasset",
     ]);
+  });
+
+  it("writes square faces using sourcePlacement instead of contain-fit", async () => {
+    const width = 8;
+    const height = 2;
+    const rgba = new Uint8Array(width * height * 4);
+    for (let i = 0; i < rgba.length; i += 4) {
+      rgba.set([200, 10, 10, 255], i);
+    }
+    const encoded: Record<string, number[]> = {};
+    await writeSkyboxCreatorFaceAssets({
+      helperPath: "assets/Day.skyboxcreator.babasset",
+      payload: {
+        sourceTextureGuid: "src-1",
+        sourcePlacement: { x: 0.25, y: 0, width: 0.25, height: 1 / 3 },
+        generatedFaces: emptySkyboxFaces(),
+      },
+      rgba,
+      width,
+      height,
+      existingByGuid: new Map(),
+      occupiedPaths: new Set(),
+      rootId: "project",
+      pathPrefix: "assets",
+      encodePng: (faceWidth, faceHeight, faceRgba) => {
+        expect(faceWidth).toBe(faceHeight);
+        return faceRgba.slice();
+      },
+      newGuid: (() => {
+        let n = 0;
+        return () => `face-${SKYBOX_FACE_KEYS[n++]!}`;
+      })(),
+      createAsset: async (_rootId, relativePath, result) => {
+        const key = relativePath.replace("Day_", "").replace(".babasset", "");
+        encoded[key] = [...(result.chunks[0]!.data as Uint8Array).slice(0, 4)];
+      },
+      deleteAsset: async () => {},
+    });
+    expect(encoded.py).toEqual([200, 10, 10, 255]);
+    expect(encoded.pz).toEqual([0, 0, 0, 255]);
   });
 });
 
