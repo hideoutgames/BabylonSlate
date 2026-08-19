@@ -123,7 +123,7 @@ describe("staticBlockerBakeParts", () => {
       "3d",
     );
     expect(rotated).toHaveLength(1);
-    const maxAbs = (positions: number[], axis: 0 | 1 | 2) => {
+    const maxAbs = (positions: ArrayLike<number>, axis: 0 | 1 | 2) => {
       let max = 0;
       for (let i = axis; i < positions.length; i += 3) {
         max = Math.max(max, Math.abs(positions[i]!));
