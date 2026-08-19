@@ -13,7 +13,7 @@ No React, Babylon, or Capacitor. Callers compile graphs and load payloads; the p
 | `collectExportClosure` | BFS from `startupSceneGuid` plus GameInstance class; walks scene/graph JSON and Sprite/UI/Tilemap payloads; strips `isEditorOnlyAsset`; skips disabled plugin roots |
 | `exportGame` | Default `mode: "packed"`; writes `game.json`, `scripts.js`, packs, player files |
 | `selectPlayerRuntimeFiles` | Havok **or** Rapier wasm/JS matching `physicsWorld`; drops `README.md` / `.keep` |
-| `zipExport` | `fflate` zip with `index.html` at the root (itch) |
+| `zipExport` | `fflate` zip with `index.html` at the root (itch). Fixed **local noon 1980-01-01** `mtime` (DOS dates use local getters; UTC midnight fails west of UTC with `date not in range 1980-2099`) |
 | `encodeBabpack` / `decodeBabpack` / `decodeBabpackIndex` | Concatenated asset bytes + JSON index `{ guid, offset, length, hash }` (`BPK1`) |
 | `createHttpPackSource` / `createMemoryPackSource` | Range-first HTTP loader with whole-body fallback; in-memory Preview Build source |
 | `concatenateScripts` / `serializeScriptRegistry` | One `scripts.js` (unminified). Concatenation adds `//# sourceURL` prefixes; ScriptHost evals **per-class** `script.source`, so the registry keeps original `CompileAnchor.line`. |

@@ -156,14 +156,7 @@ export function HomepageCreateDialog({
                 </Field>
                 <Field>
                   <FieldLabel>Location</FieldLabel>
-                  {hostPlatform === "web" ? (
-                    <p
-                      className="text-sm text-muted-foreground"
-                      data-testid="create-project-location"
-                    >
-                      On this device.
-                    </p>
-                  ) : (
+                  {hostPlatform === "web" ? null : (
                     <div className="flex w-full min-w-0 flex-col gap-2">
                       <Button
                         type="button"
@@ -243,9 +236,6 @@ export function HomepageCreateDialog({
                     Black Bars
                   </FieldLabel>
                 </Field>
-                <FieldDescription>
-                  On locks WxH with bars. Off fills without stretching.
-                </FieldDescription>
               </FieldGroup>
             </div>
             <DialogFooter

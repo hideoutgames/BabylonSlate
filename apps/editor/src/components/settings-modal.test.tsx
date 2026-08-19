@@ -534,8 +534,23 @@ describe("SettingsModal project authoring", () => {
     fireEvent.click(screen.getByTestId("settings-modal-category-export"));
     fireEvent.click(screen.getByTestId("export-game"));
     expect(await screen.findByTestId("export-game-error")).toBeTruthy();
-    expect(screen.getByTestId("export-game-error").textContent).toMatch(
-      /zip failed/,
+    expect(screen.getByTestId("export-game-error").textContent).toBe(
+      "Could not build the zip. Try again.",
+    );
+  });
+
+  it("maps DOS date zip failures to human Export Game copy", async () => {
+    exportGameArtifact.mockRejectedValueOnce(
+      new Error("date not in range 1980-2099"),
+    );
+    render(
+      <SettingsModal open onOpenChange={() => {}} scope="project" />,
+    );
+    fireEvent.click(screen.getByTestId("settings-modal-category-export"));
+    fireEvent.click(screen.getByTestId("export-game"));
+    expect(await screen.findByTestId("export-game-error")).toBeTruthy();
+    expect(screen.getByTestId("export-game-error").textContent).toBe(
+      "Could not build the zip. Try again.",
     );
   });
 });
