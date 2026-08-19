@@ -31,11 +31,23 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  const pending: FrameRequestCallback[] = [];
+  let flushing = false;
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    callback(0);
-    return 1;
+    pending.push(callback);
+    if (!flushing) {
+      flushing = true;
+      queueMicrotask(() => {
+        flushing = false;
+        const batch = pending.splice(0);
+        for (const cb of batch) cb(0);
+      });
+    }
+    return pending.length;
   });
-  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal("cancelAnimationFrame", () => {
+    pending.length = 0;
+  });
 });
 
 function hudCanvasProps() {
@@ -90,6 +102,12 @@ function mockSurface() {
   };
 }
 
+async function flushPaint(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 describe("UiDesignCanvas preview fallback", () => {
   it("shows an error instead of a silent black canvas when the surface fails", () => {
     createUiSurfaceMock.mockImplementation(() => {
@@ -102,7 +120,7 @@ describe("UiDesignCanvas preview fallback", () => {
     );
   });
 
-  it("does not show Preview Unavailable when present skips a zero-size ADT", () => {
+  it("does not show Preview Unavailable when present skips a zero-size ADT", async () => {
     const present = vi.fn();
     createUiSurfaceMock.mockReturnValue({
       present,
@@ -128,6 +146,7 @@ describe("UiDesignCanvas preview fallback", () => {
         }
       />,
     );
+    await flushPaint();
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
@@ -199,7 +218,7 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(addControl).not.toHaveBeenCalled();
   });
 
-  it("resizes the existing surface when the device viewport changes", () => {
+  it("resizes the existing surface when the device viewport changes", async () => {
     const dispose = vi.fn();
     const resizeDesign = vi.fn();
     createUiSurfaceMock.mockReturnValue({
@@ -220,6 +239,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
     const props = hudCanvasProps();
     const { rerender } = render(<UiDesignCanvas {...props} />);
+    await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     rerender(
       <UiDesignCanvas
@@ -227,6 +247,7 @@ describe("UiDesignCanvas preview fallback", () => {
         viewport={{ ...props.viewport, width: 800, height: 600 }}
       />,
     );
+    await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
@@ -235,7 +256,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
   });
 
-  it("re-applies when returning from Logic to Designer", () => {
+  it("re-applies when returning from Logic to Designer", async () => {
     const addControl = vi.fn();
     createUiSurfaceMock.mockReturnValue({
       present: vi.fn(),
@@ -257,8 +278,10 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(
       <UiDesignCanvas {...props} panelVisible documentActive={false} />,
     );
+    await flushPaint();
     expect(addControl).not.toHaveBeenCalled();
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
+    await flushPaint();
     expect(addControl).toHaveBeenCalled();
   });
 
