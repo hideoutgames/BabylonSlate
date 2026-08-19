@@ -155,6 +155,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "AudioComponent",
   "SkyboxComponent",
   "ParticleComponent",
+  "RigidBodyComponent",
 ]);
 
 function visualComponentsOf(actor: SerializedActor): SerializedComponent[] {
@@ -186,7 +187,8 @@ function isBillboardComponent(component: SerializedComponent): boolean {
     component.classId === "LightComponent" ||
     component.classId === "CameraComponent" ||
     component.classId === "AudioComponent" ||
-    component.classId === "ParticleComponent"
+    component.classId === "ParticleComponent" ||
+    component.classId === "RigidBodyComponent"
   );
 }
 
@@ -220,6 +222,9 @@ function componentVisualKind(component: SerializedComponent): string {
   }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
+  }
+  if (component.classId === "RigidBodyComponent") {
+    return editorBillboardKind("rigidbody");
   }
   return component.classId;
 }
@@ -316,6 +321,11 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   ) {
     return editorBillboardKind("particle");
   }
+  if (
+    actor.components.some((component) => component.classId === "RigidBodyComponent")
+  ) {
+    return editorBillboardKind("rigidbody");
+  }
   return null;
 }
 
@@ -355,6 +365,9 @@ export function createMeshForComponent(
   }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
+  }
+  if (component.classId === "RigidBodyComponent") {
+    return createEditorBillboard(scene, name, "rigidbody");
   }
   const assetGuid = stringProp(component.properties.assetGuid);
   if (assetGuid) {

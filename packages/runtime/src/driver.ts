@@ -2189,6 +2189,20 @@ class InProcessRuntime implements RuntimeDriver {
         meshKind: "particle",
         parts: [playMeshPartOf(particle)],
       });
+      return;
+    }
+    const rigid = actor.components.find(
+      (component) =>
+        component.classId === "RigidBodyComponent" && !component.destroyed,
+    );
+    if (rigid) {
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "rigidbody",
+        parts: [playMeshPartOf(rigid)],
+      });
     }
   }
 
@@ -2916,6 +2930,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "CameraComponent") return "camera";
   if (component.classId === "AudioComponent") return "audio";
   if (component.classId === "ParticleComponent") return "particle";
+  if (component.classId === "RigidBodyComponent") return "rigidbody";
   const meshKind = component.getVariable("meshKind");
   return typeof meshKind === "string" ? meshKind : null;
 }
