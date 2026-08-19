@@ -22,9 +22,9 @@ GitHub Free public repos cap concurrent jobs at 20. Verify uses two jobs and e2e
 # ✅ GOOD — draft until pnpm verify is green, mark ready once, merge when CI is green
 ```
 
-## At most ~8 non-draft PRs
+## At most 3 non-draft PRs
 
-Before marking ready, count open non-draft PRs targeting `main`. If there are already about eight, **stay draft**. Do not mark ready to “get in the queue.”
+Before marking ready, count open non-draft PRs targeting `main`. If there are already three, **stay draft**. Do not mark ready to “get in the queue.”
 
 Many agents may code in parallel. Only a handful should be ready and waiting on Verify. Merge when green so slots free.
 
