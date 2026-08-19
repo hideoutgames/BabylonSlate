@@ -37,10 +37,16 @@ function filesOf(tests: ListedTest[]): string[] {
 }
 
 describe("Playwright iPad project filter", () => {
-  it("runs touch, layout, and orientation tests on iPad and keeps the rest on desktop", () => {
+  it("runs touch and landscape tests on iPad and keeps the rest on desktop", () => {
+    const listed = execFileSync(
+      "pnpm",
+      ["exec", "playwright", "test", "--list"],
+      { encoding: "utf8", cwd: repoRoot },
+    );
+    expect(listed).not.toMatch(/\[ipad-portrait\]/);
+
     const desktop = listProject("desktop-chrome");
     const landscape = listProject("ipad-landscape");
-    const portrait = listProject("ipad-portrait");
 
     expect(filesOf(desktop)).toEqual(
       expect.arrayContaining([
@@ -51,11 +57,6 @@ describe("Playwright iPad project filter", () => {
         "p9-content.spec.ts",
         "touch-shell.spec.ts",
       ]),
-    );
-
-    expect(filesOf(landscape)).toEqual(filesOf(portrait));
-    expect(landscape.map((test) => test.title).sort()).toEqual(
-      portrait.map((test) => test.title).sort(),
     );
 
     const ipadFiles = filesOf(landscape);
