@@ -72,11 +72,11 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       String(path).includes("Mannequin.class"),
     );
     expect(classCall).toBeDefined();
-    const graph = classCall![2]!.payload as SerializedGraph;
-    const classBody = graph.components.find(
+    const graph = classCall![2]!.payload as unknown as SerializedGraph;
+    const classBody = graph.components?.find(
       (component) => component.classId === "RigidBodyComponent",
     );
-    const classCollider = graph.components.find(
+    const classCollider = graph.components?.find(
       (component) => component.classId === "ColliderComponent",
     );
     expect(classBody?.properties.motionType).toBe("kinematic");
