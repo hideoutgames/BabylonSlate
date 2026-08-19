@@ -345,6 +345,128 @@ describe("BabylonUiApplyHost", () => {
     expect((named(root, "grid") as Grid).columnCount).toBe(3);
   });
 
+  it("keeps Grid cells when column count grows", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.columns = 2;
+    grid.props.rows = 2;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const cellC = createWidget("cellC", "Button", "C");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB", "cellC"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.cellC = cellC;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const first = named(root, "grid") as Grid;
+    expect(first.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(first.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+    expect(first.getChildrenAt(1, 0)?.some((row) => row.name === "cellC")).toBe(true);
+    grid.props.columns = 3;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const live = named(root, "grid") as Grid;
+    expect(live).toBe(first);
+    expect(live.columnCount).toBe(3);
+    expect(live.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(live.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+    expect(live.getChildrenAt(0, 2)?.some((row) => row.name === "cellC")).toBe(true);
+  });
+
+  it("keeps Grid cells when column count shrinks", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.columns = 3;
+    grid.props.rows = 2;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    const cellC = createWidget("cellC", "Button", "C");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB", "cellC"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    doc.widgets.cellC = cellC;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const first = named(root, "grid") as Grid;
+    expect(first.getChildrenAt(0, 2)?.some((row) => row.name === "cellC")).toBe(true);
+    grid.props.columns = 2;
+    grid.props.gridColumns = [
+      { value: 1, isPixel: false },
+      { value: 1, isPixel: false },
+    ];
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const live = named(root, "grid") as Grid;
+    expect(live).toBe(first);
+    expect(live.columnCount).toBe(2);
+    expect(live.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(live.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+    expect(live.getChildrenAt(1, 0)?.some((row) => row.name === "cellC")).toBe(true);
+  });
+
+  it("updates Grid gap padding without recreating the Grid", () => {
+    const doc = createDefaultUserInterface();
+    const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
+    grid.props.gap = 12;
+    const cellA = createWidget("cellA", "Button", "A");
+    const cellB = createWidget("cellB", "Button", "B");
+    doc.widgets.canvas!.children = ["grid"];
+    grid.children = ["cellA", "cellB"];
+    doc.widgets.grid = grid;
+    doc.widgets.cellA = cellA;
+    doc.widgets.cellB = cellB;
+    const root = new Container("adt-root");
+    const factory = createAdtControlFactory(root);
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const first = named(root, "grid") as Grid;
+    expect(first.cells["0:1"]?.paddingLeft).toBe("12px");
+    grid.props.gap = 24;
+    applyUiControls(
+      host,
+      describeUiControls(doc, { parentSize: { width: 800, height: 600 } }),
+    );
+    const live = named(root, "grid") as Grid;
+    expect(live).toBe(first);
+    expect(live.columnCount).toBe(2);
+    expect(live.cells["0:0"]?.paddingLeft).toBe("0px");
+    expect(live.cells["0:1"]?.paddingLeft).toBe("24px");
+    expect(live.getChildrenAt(0, 0)?.some((row) => row.name === "cellA")).toBe(true);
+    expect(live.getChildrenAt(0, 1)?.some((row) => row.name === "cellB")).toBe(true);
+  });
+
   it("parents default Canvas children into a padded SafeArea container", () => {
     const doc = createDefaultUserInterface();
     const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));

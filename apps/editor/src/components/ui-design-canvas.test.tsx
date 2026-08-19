@@ -8,6 +8,7 @@ import {
   describeUiControls,
   pinLayout,
 } from "@babylonslate/ui-runtime";
+import { createUiDesignerSession } from "../lib/ui-designer-session";
 import { UiDesignCanvas } from "./ui-design-canvas";
 
 const { createUiSurfaceMock, uiHostStats, resetUiHostStats } = vi.hoisted(() => {
@@ -315,6 +316,74 @@ describe("UiDesignCanvas preview fallback", () => {
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
     await flushPaint();
     expect(addControl).toHaveBeenCalled();
+  });
+
+  it("commits a locked session when Designer becomes inactive", async () => {
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    expect(session.locked).toBe(true);
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const props = hudCanvasProps();
+    const { rerender } = render(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(session.locked).toBe(true);
+    rerender(
+      <UiDesignCanvas
+        {...props}
+        layoutSession={session}
+        panelVisible
+        documentActive={false}
+      />,
+    );
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
+    expect(commitLayout.mock.calls[0]![0]).toBe("stick");
+  });
+
+  it("commits a locked session when the canvas unmounts", async () => {
+    const commitLayout = vi.fn();
+    const session = createUiDesignerSession({
+      getHost: () => ({
+        setGestureLocked: vi.fn(),
+        patchLiveLayout: vi.fn(),
+        markAsDirty: vi.fn(),
+      }),
+      present: () => {},
+      schedule: (work) => work(),
+      commitLayout,
+    });
+    session.preview("stick", pinLayout("left", "top", 160, 36));
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const { unmount } = render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        layoutSession={session}
+        panelVisible
+        documentActive
+      />,
+    );
+    await flushPaint();
+    expect(session.locked).toBe(true);
+    unmount();
+    expect(session.locked).toBe(false);
+    expect(commitLayout).toHaveBeenCalledTimes(1);
   });
 
   it("commits a widget drag once on pointer up", () => {

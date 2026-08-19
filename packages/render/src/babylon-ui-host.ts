@@ -15,6 +15,7 @@ import { Container } from "@babylonjs/gui/2D/controls/container";
 import type { AdvancedDynamicTexture } from "@babylonjs/gui/2D/advancedDynamicTexture";
 import type {
   EdgeInsets,
+  GridTrackDef,
   GuiControlSpec,
   HorizontalAlignment,
   ScaleRule,
@@ -289,32 +290,53 @@ function applyCommon(control: Control, spec: GuiControlSpec): void {
   if (typeof spec.scaleY === "number") control.scaleY = spec.scaleY;
 }
 
-function sameTrackDefs(
-  previous?: Array<{ value: number; isPixel: boolean }>,
-  next?: Array<{ value: number; isPixel: boolean }>,
-): boolean {
-  if (previous === next) return true;
-  if (!previous || !next) return (previous?.length ?? 0) === 0 && (next?.length ?? 0) === 0;
-  if (previous.length !== next.length) return false;
-  return previous.every(
-    (def, index) =>
-      def.value === next[index]?.value && def.isPixel === next[index]?.isPixel,
-  );
-}
-
 function canUpdateInPlace(previous: GuiControlSpec, next: GuiControlSpec): boolean {
   return (
     previous.type === next.type &&
     previous.parentId === next.parentId &&
     previous.kind === next.kind &&
     previous.layoutMode === next.layoutMode &&
-    previous.gridColumns === next.gridColumns &&
-    previous.gridRows === next.gridRows &&
     previous.gridColumn === next.gridColumn &&
-    previous.gridRow === next.gridRow &&
-    sameTrackDefs(previous.columnDefs, next.columnDefs) &&
-    sameTrackDefs(previous.rowDefs, next.rowDefs)
+    previous.gridRow === next.gridRow
   );
+}
+
+function syncGridTrackDefs(
+  grid: Grid,
+  defs: readonly GridTrackDef[],
+  kind: "column" | "row",
+): void {
+  const count = () => (kind === "column" ? grid.columnCount : grid.rowCount);
+  const add = (value: number, isPixel: boolean) =>
+    kind === "column"
+      ? grid.addColumnDefinition(value, isPixel)
+      : grid.addRowDefinition(value, isPixel);
+  const set = (index: number, value: number, isPixel: boolean) =>
+    kind === "column"
+      ? grid.setColumnDefinition(index, value, isPixel)
+      : grid.setRowDefinition(index, value, isPixel);
+  const remove = (index: number) =>
+    kind === "column"
+      ? grid.removeColumnDefinition(index)
+      : grid.removeRowDefinition(index);
+  while (count() < defs.length) {
+    const def = defs[count()]!;
+    add(def.value, def.isPixel);
+  }
+  for (let index = 0; index < defs.length; index++) {
+    const def = defs[index]!;
+    set(index, def.value, def.isPixel);
+  }
+  while (count() > defs.length) {
+    remove(count() - 1);
+  }
+}
+
+function applyGridTracks(grid: Grid, spec: GuiControlSpec): void {
+  const columns = Math.max(1, spec.gridColumns ?? 2);
+  const rows = Math.max(1, spec.gridRows ?? 2);
+  syncGridTrackDefs(grid, resizeGridTracks(spec.columnDefs, columns), "column");
+  syncGridTrackDefs(grid, resizeGridTracks(spec.rowDefs, rows), "row");
 }
 
 const gridGapByControl = new WeakMap<Grid, number>();
@@ -403,6 +425,7 @@ function applyTypeSpecific(
     }
     case "Grid": {
       if (control instanceof Grid) {
+        applyGridTracks(control, spec);
         applyGridSpacing(control, spec);
         if (spec.background) control.background = spec.background;
       }
@@ -607,16 +630,7 @@ export function createBabylonControl(
     case "Grid": {
       const grid = new Grid(spec.id);
       applyCommon(grid, spec);
-      const columns = Math.max(1, spec.gridColumns ?? 2);
-      const rows = Math.max(1, spec.gridRows ?? 2);
-      const columnDefs = resizeGridTracks(spec.columnDefs, columns);
-      const rowDefs = resizeGridTracks(spec.rowDefs, rows);
-      for (const def of columnDefs) {
-        grid.addColumnDefinition(def.value, def.isPixel);
-      }
-      for (const def of rowDefs) {
-        grid.addRowDefinition(def.value, def.isPixel);
-      }
+      applyGridTracks(grid, spec);
       applyGridSpacing(grid, spec);
       if (spec.background) grid.background = spec.background;
       return grid;

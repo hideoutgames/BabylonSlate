@@ -164,9 +164,15 @@ export function UiDesignDetails({
   const fields = authoringFieldsFromLayout(parentRect, selected.layout);
   const writeLayout = (next: WidgetLayout) => onPatchLayout(selected.id, next);
   const previewLayout = (next: WidgetLayout) => {
-    previewedLayoutRef.current = next;
-    if (onPreviewLayout) onPreviewLayout(selected.id, next);
-    else writeLayout(next);
+    if (onPreviewLayout) {
+      if (!previewedLayoutRef.current) {
+        onPreviewLayout(selected.id, selected.layout);
+      }
+      previewedLayoutRef.current = next;
+      onPreviewLayout(selected.id, next);
+    } else {
+      writeLayout(next);
+    }
   };
   const commitLayout = (next: WidgetLayout) => {
     const committed = previewedLayoutRef.current ?? next;
