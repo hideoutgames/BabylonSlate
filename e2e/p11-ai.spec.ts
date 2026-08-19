@@ -151,7 +151,9 @@ test.describe("P11 behaviour tree and navigation acceptance", () => {
     await placeActor(page, "shape-ground");
     await placeActor(page, "navmesh");
     await page.getByTestId("outliner-tree").getByText("NavMesh", { exact: true }).click();
-    const autoBake = page.locator('[data-testid$="-autoBakeOnSave"]');
+    const autoBake = page.locator(
+      '[data-testid^="property-actor-"][data-testid$="-autoBakeOnSave"]',
+    );
     await expect(autoBake).toBeVisible();
     await autoBake.click();
     const save = page.getByTestId("save-all-project");
