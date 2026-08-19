@@ -108,14 +108,19 @@ async function addWidget(page: Page, kind: AddableWidgetKind): Promise<void> {
   ).toBeVisible();
 }
 
+function uiDocumentTab(page: Page, assetName: string) {
+  // createDocumentRef labels UserInterface tabs `${name} UI` (core documentKindLabel).
+  return page.locator("[data-testid='document-tab']").filter({
+    hasText: new RegExp(`^${assetName} UI( \\*)?$`),
+  });
+}
+
 async function switchToAsset(
   page: Page,
   assetPath: string,
   tabLabel: string,
 ): Promise<void> {
-  const tab = page.locator("[data-testid='document-tab']").filter({
-    hasText: tabLabel === "HUD" ? /^HUD( \*)?$/ : tabLabel,
-  });
+  const tab = uiDocumentTab(page, tabLabel);
   if ((await tab.count()) === 1) {
     const select = tab.getByTestId("document-tab-select");
     if ((await select.count()) > 0 && (await select.isVisible())) {
@@ -373,9 +378,7 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
     await expectDesignerReady(page);
     await saveAllIfEnabled(page);
-    const hudTab = page.locator("[data-testid='document-tab']").filter({
-      hasText: /^HUD( \*)?$/,
-    });
+    const hudTab = uiDocumentTab(page, "HUD");
     await expect(hudTab).toBeVisible();
     await expect(hudTab).not.toContainText("*");
     await visibleUiWorkspace(page).getByTestId("ui-device-preset").click();
