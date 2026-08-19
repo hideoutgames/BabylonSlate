@@ -261,7 +261,7 @@ export function compileGraph(
       if (srcDef?.pure) {
         ensurePure(srcNode);
       } else {
-        const slot = `_n_${jsIdent(srcNode.id)}_${jsIdent(srcPin.name)}`;
+        const slot = `_n_${jsIdent(srcNode.id)}_${jsIdent(srcPin.id)}`;
         if (!exprCache.has(`${srcNode.id}:${srcPin.id}`)) {
           exprCache.set(`${srcNode.id}:${srcPin.id}`, slot);
           outputDecls.set(
@@ -456,7 +456,7 @@ export function compileGraph(
         };
         for (const p of node.pins) {
           if (p.kind === "data" && p.direction === "out") {
-            const name = ctx.output(p.name);
+            const name = ctx.output(p.id);
             emitBody(`  let ${name} = ${defaultValueLiteral(p.type)};`, anchor);
           }
         }
@@ -508,7 +508,7 @@ export function compileGraph(
         if (def.latent) isAsync = true;
         for (const p of node.pins) {
           if (p.kind === "data" && p.direction === "out") {
-            const name = ctx.output(p.name);
+            const name = ctx.output(p.id);
             outputDecls.set(
               name,
               `  let ${name} = ${defaultValueLiteral(p.type)};`,

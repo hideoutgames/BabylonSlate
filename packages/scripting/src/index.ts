@@ -17,3 +17,4 @@ export * from "./engine-types";
 export * from "./member-pin-type";
 export * from "./type-defaults";
 export * from "./enum-switch-pins";
+export * from "./container-ops";
