@@ -374,7 +374,7 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await expectDesignerReady(page);
     await saveAllIfEnabled(page);
     const hudTab = page.locator("[data-testid='document-tab']").filter({
-      hasText: /^HUD( \*)?$/,
+      hasText: /^HUD UI( \*)?$/,
     });
     await expect(hudTab).toBeVisible();
     await expect(hudTab).not.toContainText("*");

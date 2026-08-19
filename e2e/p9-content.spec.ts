@@ -1435,15 +1435,10 @@ test.describe("P9 content systems", () => {
     await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-ui")).toBeVisible();
     await page.getByTestId("ui-add-widget").click();
-    await page.getByTestId("ui-add-widget-UserInterface").click();
-    await page.getByTestId("property-nestedUi").click();
-    await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
-    await expect(
-      page.getByTestId("ui-nested-picker").getByText("Panel", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByTestId("ui-nested-picker").getByText("HUD", { exact: true }),
-    ).toHaveCount(0);
+    const catalog = page.getByTestId("ui-widget-catalog");
+    await expect(catalog).toBeVisible();
+    await expect(catalog.getByText("Panel", { exact: true })).toBeVisible();
+    await expect(catalog.getByText("HUD", { exact: true })).toHaveCount(0);
   });
 
   test("UserInterface designer paints a nested UserInterface subtree", async ({
@@ -1469,14 +1464,9 @@ test.describe("P9 content systems", () => {
     );
     await expect(hudWorkspace).toBeVisible();
     await hudWorkspace.getByTestId("ui-add-widget").click();
-    await page.getByTestId("ui-add-widget-UserInterface").click();
-    await page.getByTestId("property-nestedUi").click();
-    await expect(page.getByTestId("ui-nested-picker")).toBeVisible();
-    await page
-      .getByTestId("ui-nested-picker")
-      .getByText("Panel", { exact: true })
-      .click();
-    await expect(page.getByTestId("ui-nested-picker")).toHaveCount(0);
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Panel");
+    await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
     await expect(
       hudWorkspace.locator('[data-testid*="/button-"]'),
     ).toBeVisible();
