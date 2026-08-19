@@ -18,8 +18,7 @@ import { emptySkyboxFaces, parseText3DProperties, type SkyboxFaces, type Text3DP
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
-import { createMeshFromModelBytes } from "./model-mesh";
-import { beginSlotModelAnimLoad, invalidateSlotAnimLoad } from "./glb-anim";
+import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
 import {
   AUTHORED_CAMERA_PREFIX,
@@ -577,24 +576,21 @@ export function createPlayMesh(
     }
     return mesh;
   }
-  if (assetGuid && binding?.modelBytes?.has(assetGuid)) {
-    const loaded = createMeshFromModelBytes(
-      scene,
-      name,
-      binding.modelBytes.get(assetGuid)!,
-    );
-    if (loaded) {
+  if (assetGuid) {
+    const root = createModelActorRoot(scene, name);
+    const bytes = binding?.modelBytes?.get(assetGuid);
+    if (bytes && binding) {
       void beginSlotModelAnimLoad(
         scene,
         binding,
         slotId,
         assetGuid,
-        binding.modelBytes.get(assetGuid)!,
-        loaded,
-        () => applyLoadedModelMaterials(binding, slotId, assetGuid, loaded),
+        bytes,
+        root,
+        () => applyLoadedModelMaterials(binding, slotId, assetGuid, root),
       );
-      return loaded;
     }
+    return root;
   }
   if (meshKind === "skybox") {
     const props = binding?.skyboxProps.get(slotId);

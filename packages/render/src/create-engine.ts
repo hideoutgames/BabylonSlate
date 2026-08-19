@@ -85,6 +85,7 @@ import {
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
+import { mapCanvasPointer } from "./pick-coords";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
@@ -459,6 +460,22 @@ export function createEngine(
     ? createRttCanvasPresent(scene, canvas, { name: "prefabPreview" })
     : null;
 
+  const pointerCanvas = () => {
+    if (presentRtt) {
+      return (
+        rttPresent?.canvasSize() ?? {
+          width: Math.max(1, canvas.clientWidth || 1),
+          height: Math.max(1, canvas.clientHeight || 1),
+        }
+      );
+    }
+    const rect = canvas.getBoundingClientRect();
+    return {
+      width: Math.max(1, rect.width || canvas.clientWidth || 1),
+      height: Math.max(1, rect.height || canvas.clientHeight || 1),
+    };
+  };
+
   setupDefaultViewport(scene);
 
   const scheduler = new RenderScheduler();
@@ -720,10 +737,17 @@ export function createEngine(
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
-      blockLook: (x, y) => gizmos.isDragging() || gizmos.hitTest(x, y),
+      blockLook: (x, y) =>
+        gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
+      onPointer: presentRtt
+        ? (type, x, y, pointerId) => {
+            gizmos.forwardPointer(type, x, y, { ...pointerCanvas(), pointerId });
+          }
+        : undefined,
       onTap: (x, y, tap) => {
-        const hit = pickAtCanvas(scene, x, y);
+        const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
+        const hit = pickAtCanvas(scene, mapped.x, mapped.y);
         const actorId = hit ? editorSync.actorForMesh(hit.meshName) : null;
         options.onPickActor?.(actorId, { additive: tap?.additive === true });
       },
@@ -1113,7 +1137,8 @@ export function createEngine(
     }),
     drawCalls: () => lastDrawCalls,
     pickAt: (x, y) => {
-      const hit = pickAtCanvas(scene, x, y);
+      const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
+      const hit = pickAtCanvas(scene, mapped.x, mapped.y);
       return hit
         ? { meshName: hit.meshName, slotId: hit.slotId }
         : null;

@@ -68,6 +68,8 @@ Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops back
 - **3D:** box, sphere, capsule, convex hull, triangle mesh
 - **2D:** box, circle, capsule, polygon, chain (tilemap chunks emit merged chains via `tilemapChunkChains`)
 
+Editor clicks are **mesh picks**, not physics. Havok/Rapier colliders exist in Play only when the actor has authored `RigidBodyComponent` + `ColliderComponent`. Details / Prefab Add Component lists box, sphere, and capsule (2D: box2d, circle, capsule2d). There is **no** auto-trimesh baker from a GLB. 3D Empty scaffolds Kenney Mannequin Class and `actor-1` with a **kinematic** rigid body and a capsule sized to the character (Y offset so it sits on the ground). Users add colliders on any other mesh the same way.
+
 ## Scripting
 
 Sync nodes (exec pin continues same tick): `physics.lineTrace`, `physics.sphereOverlap`, `physics.shapeSweep`, `physics.addImpulse`, `physics.moveCharacter`. `moveCharacter` takes an Actor (defaults to `self`), lazily creates a character controller on that actor’s rigid body (`id` = actor guid, optional `offset` default 0.01), and applies the returned transform to the actor immediately so the next kinematic sync keeps it. Destroy follows the rigid body. No `CharacterControllerComponent` in this slice.

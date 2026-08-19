@@ -68,6 +68,20 @@ export function meshAssetFingerprint(
   ].join("|");
 }
 
+export function meshAssetFingerprintWithoutModels(
+  assets: MeshAssetContext | undefined,
+): string {
+  return meshAssetFingerprint({
+    pixelsPerUnit: assets?.pixelsPerUnit,
+    spritePayloads: assets?.spritePayloads,
+    spriteAnimations: assets?.spriteAnimations,
+    tilemaps: assets?.tilemaps,
+    tilesets: assets?.tilesets,
+    textureBytes: assets?.textureBytes,
+    modelBytes: undefined,
+  });
+}
+
 export function modelSlotFingerprint(
   payloads: ReadonlyMap<string, ModelPayload> | undefined,
 ): string {

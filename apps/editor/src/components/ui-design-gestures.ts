@@ -60,11 +60,20 @@ export function canvasDeltaToLayoutDelta(
 export function applyWidgetDragOffset(
   layout: WidgetLayout,
   delta: PointerPoint,
+  parent?: { width: number; height: number },
 ): WidgetLayout {
+  const leftDelta =
+    layout.leftUnit === "percent" && parent && parent.width > 0
+      ? (delta.x / parent.width) * 100
+      : delta.x;
+  const topDelta =
+    layout.topUnit === "percent" && parent && parent.height > 0
+      ? (delta.y / parent.height) * 100
+      : delta.y;
   return {
     ...layout,
-    left: layout.left + delta.x,
-    top: layout.top + delta.y,
+    left: layout.left + leftDelta,
+    top: layout.top + topDelta,
   };
 }
 
@@ -110,8 +119,16 @@ export function pointerSpan(
 export const UI_DESIGN_DRAG_THRESHOLD_PX = 4;
 export const UI_DESIGN_HANDLE_HIT_SIZE_PX = 44;
 export const UI_DESIGN_HANDLE_VISUAL_SIZE_PX = 14;
-export const UI_DESIGN_HANDLE_SIZE_PX = UI_DESIGN_HANDLE_HIT_SIZE_PX;
+export const UI_DESIGN_HANDLE_SIZE_PX = UI_DESIGN_HANDLE_VISUAL_SIZE_PX;
 export const UI_DESIGN_FIT_PADDING_PX = 24;
+
+/** Fit once per device canvas, not when the Design dock resizes. */
+export function uiDesignerCanvasFitKey(
+  presetId: string,
+  canvas: { width: number; height: number },
+): string {
+  return `${presetId}:${canvas.width}x${canvas.height}`;
+}
 
 export function previewScaleToFit(
   viewport: { width: number; height: number },
@@ -204,7 +221,7 @@ export function pivotToScreen(
 
 export function resizeHandleRects(
   screen: ScreenRect,
-  size = UI_DESIGN_HANDLE_SIZE_PX,
+  size = UI_DESIGN_HANDLE_VISUAL_SIZE_PX,
 ): Record<HandleEdge, ScreenRect> {
   const half = size / 2;
   const midX = screen.x + screen.width / 2 - half;
@@ -226,6 +243,63 @@ export function resizeHandleRects(
   };
 }
 
+/** 44px hits sit outside the box so a fitted 36px control still has a move interior. */
+export function resizeHandleHitRects(
+  screen: ScreenRect,
+  size = UI_DESIGN_HANDLE_HIT_SIZE_PX,
+): Record<HandleEdge, ScreenRect> {
+  const midX = screen.x + screen.width / 2 - size / 2;
+  const midY = screen.y + screen.height / 2 - size / 2;
+  return {
+    nw: { x: screen.x - size, y: screen.y - size, width: size, height: size },
+    n: { x: midX, y: screen.y - size, width: size, height: size },
+    ne: { x: screen.x + screen.width, y: screen.y - size, width: size, height: size },
+    e: { x: screen.x + screen.width, y: midY, width: size, height: size },
+    se: {
+      x: screen.x + screen.width,
+      y: screen.y + screen.height,
+      width: size,
+      height: size,
+    },
+    s: { x: midX, y: screen.y + screen.height, width: size, height: size },
+    sw: { x: screen.x - size, y: screen.y + screen.height, width: size, height: size },
+    w: { x: screen.x - size, y: midY, width: size, height: size },
+  };
+}
+
+export function applyScreenRect(el: HTMLElement | null, rect: ScreenRect): void {
+  if (!el) return;
+  el.style.left = `${rect.x}px`;
+  el.style.top = `${rect.y}px`;
+  el.style.width = `${rect.width}px`;
+  el.style.height = `${rect.height}px`;
+}
+
+/** Zoom and pan so `rect` (design pixels) is centered and readable. */
+export function frameRectView(
+  viewport: { width: number; height: number },
+  rect: { x: number; y: number; width: number; height: number },
+  previewScale: number,
+  padding = UI_DESIGN_FIT_PADDING_PX,
+): DesignView {
+  const width = Math.max(1, rect.width * previewScale);
+  const height = Math.max(1, rect.height * previewScale);
+  const availW = viewport.width - padding * 2;
+  const availH = viewport.height - padding * 2;
+  const zoom = clampDesignZoom(
+    Math.min(
+      availW > 0 ? availW / width : 1,
+      availH > 0 ? availH / height : 1,
+    ),
+  );
+  const scale = previewScale * zoom;
+  return {
+    zoom,
+    panX: viewport.width / 2 - (rect.x + rect.width / 2) * scale,
+    panY: viewport.height / 2 - (rect.y + rect.height / 2) * scale,
+  };
+}
+
 function rectContains(rect: ScreenRect, point: PointerPoint): boolean {
   return (
     point.x >= rect.x &&
@@ -236,10 +310,8 @@ function rectContains(rect: ScreenRect, point: PointerPoint): boolean {
 }
 
 /**
- * Prefer moving the widget interior so 44px handle hits do not cover a
- * small control's center. Visual handles stay compact (~14px).
+ * Unmeasured root/canvas must fill the device frame, especially Desired mode.
  */
-/** Unmeasured root/canvas must fill the device frame, especially Desired mode. */
 export function designerControlHitRect(
   control: { id: string; kind: string; guiRect: ScreenRect },
   live: ScreenRect | undefined,
@@ -254,6 +326,10 @@ export function designerControlHitRect(
   return designRectToBitmap(control.guiRect, bitmapScale);
 }
 
+/**
+ * Prefer moving the widget interior so 44px handle hits do not cover a
+ * small control's center. Visual handles stay compact (~14px).
+ */
 export function designerGestureAt(
   point: PointerPoint,
   screen: ScreenRect,
@@ -273,7 +349,7 @@ export function designerGestureAt(
   } else if (rectContains(inner, point)) {
     return "move";
   }
-  const handles = resizeHandleRects(screen, hit);
+  const handles = resizeHandleHitRects(screen, hit);
   const edges: HandleEdge[] = ["nw", "ne", "se", "sw", "n", "e", "s", "w"];
   for (const edge of edges) {
     if (rectContains(handles[edge], point)) return edge;

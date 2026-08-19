@@ -102,6 +102,8 @@ export {
   applyAuthoringFields,
   applyWidgetResize,
   authoringFieldsFromLayout,
+  convertLayoutSize,
+  convertSizeValue,
   defaultAddLayout,
   layoutFromRect,
   matchAnchorPreset,

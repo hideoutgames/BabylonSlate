@@ -571,6 +571,85 @@ describe("UiDesignCanvas preview fallback", () => {
     ];
     expect(next.width).toBeGreaterThan(160);
     expect(next.height).toBeGreaterThan(36);
+    expect(onLayoutChange.mock.calls[0]?.[2]).toMatch(/^ui-design-stroke:/);
+  });
+
+  it("keeps selection outline and resize handles visible when the GUI preview is live", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    render(<UiDesignCanvas {...hudCanvasProps()} selectedId="stick" />);
+    expect(screen.getByTestId("ui-selection-outline").className).toMatch(/border/);
+    expect(screen.getByTestId("ui-resize-se-visual").className).toMatch(/border/);
+  });
+
+  it("does not retrigger paint from a default adtIdeal object identity", async () => {
+    const surface = mockSurface();
+    createUiSurfaceMock.mockReturnValue(surface);
+    const props = hudCanvasProps();
+    render(
+      <UiDesignCanvas
+        ui={props.ui}
+        viewport={props.viewport}
+        controls={props.controls}
+        selectedId={props.selectedId}
+        view={props.view}
+        previewScale={props.previewScale}
+        bitmapScale={props.bitmapScale}
+        sharedEngine={props.sharedEngine}
+        onSelect={props.onSelect}
+        onViewChange={props.onViewChange}
+        onLayoutChange={props.onLayoutChange}
+      />,
+    );
+    await flushUiFrame();
+    expect(surface.resizeDesign.mock.calls.length).toBeGreaterThan(0);
+    expect(surface.resizeDesign.mock.calls.length).toBeLessThan(5);
+  });
+
+  it("does not resize the ADT while a layout stroke is in progress", async () => {
+    const surface = mockSurface();
+    createUiSurfaceMock.mockReturnValue(surface);
+    const ui = createDefaultUserInterface();
+    const button = createWidget(
+      "btn",
+      "Button",
+      "Play",
+      pinLayout("left", "top", 160, 36, 40, 40),
+    );
+    ui.widgets.canvas!.children = ["btn"];
+    ui.widgets.btn = button;
+    const viewport = {
+      id: "desktop-16-9",
+      width: 800,
+      height: 600,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    };
+    render(
+      <UiDesignCanvas
+        ui={ui}
+        viewport={viewport}
+        controls={describeUiControls(ui, {
+          parentSize: { width: viewport.width, height: viewport.height },
+        })}
+        selectedId="btn"
+        view={{ zoom: 1, panX: 0, panY: 0 }}
+        previewScale={1}
+        bitmapScale={1}
+        sharedEngine={{} as Engine}
+        onSelect={() => {}}
+        onViewChange={() => {}}
+        onLayoutChange={() => {}}
+      />,
+    );
+    await flushUiFrame();
+    const afterPaint = surface.resizeDesign.mock.calls.length;
+    expect(afterPaint).toBeGreaterThan(0);
+    const hit = screen.getByTestId("ui-widget-btn");
+    act(() => {
+      dispatchPointerEvent(hit, "pointerdown", { clientX: 120, clientY: 58 });
+      dispatchPointerEvent(hit, "pointermove", { clientX: 180, clientY: 58 });
+    });
+    expect(surface.resizeDesign.mock.calls.length).toBe(afterPaint);
+    expect(surface.host.patchLiveLayout).toHaveBeenCalled();
   });
 
   it("surfaces missing texture chunk feedback instead of a silent blank Image", () => {

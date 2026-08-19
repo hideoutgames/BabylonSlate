@@ -17,6 +17,7 @@ export * from "./play-free-cam";
 export * from "./play-console-viz";
 export * from "./play-debug-draw";
 export * from "./picking";
+export * from "./pick-coords";
 export * from "./editor-camera";
 export * from "./editor-place";
 export * from "./editor-grid";

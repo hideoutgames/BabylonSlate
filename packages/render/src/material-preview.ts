@@ -306,7 +306,7 @@ export function attachMaterialPreviewGestures(
         camera.alpha -= (point.x - lastPoint.x) * ORBIT_SCALE;
         camera.beta = Math.min(
           Math.PI - 0.01,
-          Math.max(0.01, camera.beta + (point.y - lastPoint.y) * ORBIT_SCALE),
+          Math.max(0.01, camera.beta - (point.y - lastPoint.y) * ORBIT_SCALE),
         );
         options?.onChange?.();
       }

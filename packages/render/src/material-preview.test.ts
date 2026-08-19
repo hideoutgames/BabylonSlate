@@ -310,6 +310,24 @@ describe("material preview orbit gestures", () => {
     );
   });
 
+  it("decreases beta when dragging down to match the Scene viewport", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(
+      canvas as unknown as HTMLCanvasElement,
+      host.camera,
+    );
+    disposers.push(() => handle.dispose());
+    const betaBefore = host.camera.beta;
+
+    canvas.emit("pointerdown", pointer(1, 160, 90));
+    canvas.emit("pointermove", pointer(1, 160, 140));
+    canvas.emit("pointerup", pointer(1, 160, 140));
+
+    expect(host.camera.beta).toBeLessThan(betaBefore);
+  });
+
   it("zooms radius on wheel and pinch without panning the target", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());
