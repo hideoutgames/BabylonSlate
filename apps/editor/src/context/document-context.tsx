@@ -115,10 +115,8 @@ import {
   capturePanelPlacement,
   isDockWindowOpen as isDockWindowOpenOnApi,
   listDockPanels,
-  openDockWindow,
   toggleDockWindow as toggleDockWindowOnApi,
   type DockWindowApi,
-  type PanelPlacement,
 } from "../shell/dock-window-ops";
 import {
   isDockviewDocumentKind,
