@@ -9,6 +9,7 @@ import {
   type StandardMaterial,
 } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
+import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
@@ -45,7 +46,21 @@ export interface GizmoHost {
   /** True while a gizmo handle drag is in progress. */
   isDragging: () => boolean;
   /** True when a gizmo handle sits under the canvas point. */
-  hitTest: (canvasX: number, canvasY: number) => boolean;
+  hitTest: (
+    canvasX: number,
+    canvasY: number,
+    canvas?: PointerCanvasSize,
+  ) => boolean;
+  /**
+   * Drive PointerDragBehavior from a canvas that is not the Engine input
+   * element (Prefab RTT blit).
+   */
+  forwardPointer: (
+    type: "down" | "move" | "up",
+    canvasX: number,
+    canvasY: number,
+    canvas?: PointerCanvasSize & { pointerId?: number },
+  ) => void;
   dispose: () => void;
 }
 
@@ -243,6 +258,23 @@ function enlargeGizmoTouchTargets(root: AbstractMesh): void {
   }
 }
 
+function ensurePointerEvent(): void {
+  if (typeof PointerEvent === "function") return;
+  class PointerEventShim extends Event {
+    pointerId: number;
+    button: number;
+    pointerType: string;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+      this.button = init.button ?? 0;
+      this.pointerType = String(init.pointerType ?? "mouse");
+    }
+  }
+  (globalThis as { PointerEvent: typeof PointerEvent }).PointerEvent =
+    PointerEventShim as typeof PointerEvent;
+}
+
 /**
  * Translate / rotate / scale gizmos on a utility layer, with the axis set
  * filtered by viewport mode: 2D exposes XY translate plus the XY plane, Z rotate
@@ -382,9 +414,32 @@ export function createGizmoHost(
     },
     attachedMesh: () => attached,
     isDragging: () => dragging,
-    hitTest: (canvasX: number, canvasY: number) => {
-      const pick = layer.utilityLayerScene.pick(canvasX, canvasY);
+    hitTest: (canvasX, canvasY, canvasSize) => {
+      const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
+      const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);
       return pick?.hit === true;
+    },
+    forwardPointer: (type, canvasX, canvasY, canvasSize) => {
+      ensurePointerEvent();
+      const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
+      scene.pointerX = mapped.x;
+      scene.pointerY = mapped.y;
+      const pick =
+        layer.utilityLayerScene.pick(mapped.x, mapped.y) ??
+        scene.pick(mapped.x, mapped.y);
+      const pointerEventInit = {
+        pointerId: canvasSize?.pointerId ?? 1,
+        button: 0,
+      };
+      if (type === "down") {
+        scene.simulatePointerDown(pick, pointerEventInit);
+        return;
+      }
+      if (type === "move") {
+        scene.simulatePointerMove(pick, pointerEventInit);
+        return;
+      }
+      scene.simulatePointerUp(pick, pointerEventInit);
     },
     dispose: () => {
       releaseLease?.();

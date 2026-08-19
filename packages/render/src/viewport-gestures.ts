@@ -33,6 +33,16 @@ export interface ViewportGestureOptions {
    * a one-finger drag does not look the camera.
    */
   blockLook?: (canvasX: number, canvasY: number) => boolean;
+  /**
+   * Prefab RTT blit canvas is not the Engine input element. Forward
+   * one-finger pointers so UtilityLayer gizmos can drag.
+   */
+  onPointer?: (
+    type: "down" | "move" | "up",
+    canvasX: number,
+    canvasY: number,
+    pointerId: number,
+  ) => void;
 }
 
 export interface ViewportGestureHandle {
@@ -159,6 +169,7 @@ export function attachViewportGestures(
         !dragSelectGesture && options.blockLook?.(point.x, point.y) === true;
       skipLook = dragSelectGesture || skipTap;
       marqueeArmed = dragSelectGesture;
+      options.onPointer?.("down", point.x, point.y, event.pointerId);
       clearMarqueeTimer();
       if (!dragSelectGesture && controller.mode === "2d" && !skipLook) {
         marqueeTimer = setTimeout(() => {
@@ -186,6 +197,7 @@ export function attachViewportGestures(
 
     if (samples.length === 1) {
       const point = samples[0]!;
+      options.onPointer?.("move", point.x, point.y, event.pointerId);
       if (
         downPoint &&
         Math.hypot(point.x - downPoint.x, point.y - downPoint.y) >
@@ -266,6 +278,9 @@ export function attachViewportGestures(
     }
     if (pointers.size > 0 || !point || !downPoint) {
       if (pointers.size === 0) {
+        if (point) {
+          options.onPointer?.("up", point.x, point.y, event.pointerId);
+        }
         downPoint = null;
         skipLook = false;
         skipTap = false;
@@ -278,6 +293,7 @@ export function attachViewportGestures(
       return;
     }
     clearMarqueeTimer();
+    options.onPointer?.("up", point.x, point.y, event.pointerId);
     const wasDragSelect = dragSelectGesture;
     if (!moved && !skipTap) {
       options.onTap?.(point.x, point.y, { additive: tapAdditive });
