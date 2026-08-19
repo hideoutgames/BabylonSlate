@@ -53,3 +53,9 @@ export {
   isIdentityQuat,
   type ColliderLocalTransform,
 } from "./collider-bake";
+export {
+  physicsActorDiagnostics,
+  physicsActorsDiagnostics,
+  type PhysicsActorLike,
+  type PhysicsPairingWarning,
+} from "./pairing";
