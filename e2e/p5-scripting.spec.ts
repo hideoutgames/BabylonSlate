@@ -180,6 +180,105 @@ test.describe("P5 visual scripting acceptance", () => {
     await injectGamepad(page, null);
   });
 
+  test("Format String and dynamic Enum Select compile and run in Preview", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+
+    const installed = await page.evaluate(async () => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          setMainGraphContent: (g: unknown) => Promise<boolean>;
+        };
+      };
+      return host.__babylonslateTest?.setMainGraphContent({
+        nodes: [
+          {
+            id: "tick",
+            type: "flow.event.tick",
+            position: { x: 40, y: 80 },
+            data: {},
+          },
+          {
+            id: "value",
+            type: "literal.makeInt",
+            position: { x: 40, y: 240 },
+            data: { "default:in": 42 },
+          },
+          {
+            id: "select",
+            type: "enum.select",
+            position: { x: 280, y: 220 },
+            data: {
+              enumGuid: "engine:InputMode",
+              members: [
+                { name: "All", value: 0 },
+                { name: "Interface", value: 1 },
+                { name: "Game", value: 2 },
+              ],
+              "default:index": "Interface",
+            },
+          },
+          {
+            id: "format",
+            type: "string.format",
+            position: { x: 520, y: 180 },
+            data: { "default:format": "Selected {input pin}" },
+          },
+          {
+            id: "print",
+            type: "debug.print",
+            position: { x: 780, y: 80 },
+            data: {
+              key: "format-select",
+              duration: 30,
+              color: { x: 0.4, y: 1, z: 0.6, w: 1 },
+            },
+          },
+        ],
+        edges: [
+          {
+            id: "exec",
+            source: "tick",
+            target: "print",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "option",
+            source: "value",
+            target: "select",
+            sourceHandle: "out",
+            targetHandle: "option:Interface",
+          },
+          {
+            id: "selected",
+            source: "select",
+            target: "format",
+            sourceHandle: "out",
+            targetHandle: `arg:${encodeURIComponent("input pin")}`,
+          },
+          {
+            id: "formatted",
+            source: "format",
+            target: "print",
+            sourceHandle: "out",
+            targetHandle: "value",
+          },
+        ],
+      }) ?? false;
+    });
+    expect(installed).toBe(true);
+
+    await openMainScene(page);
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("print-overlay")).toContainText(
+      "Selected 42",
+      { timeout: 15_000 },
+    );
+    await page.getByTestId("play-overlay-close").click();
+  });
+
   test("the node palette can add Get Axis 2D on the Class graph", async ({
     page,
   }) => {
