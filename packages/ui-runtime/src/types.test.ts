@@ -9,7 +9,7 @@ describe("createWidget style defaults", () => {
   });
 
   it("does not invent a background on non-Button widgets", () => {
-    expect(createWidget("label", "Text").style.background).toBeUndefined();
+    expect(createWidget("label", "TextBlock").style.background).toBeUndefined();
     expect(createWidget("art", "Image").style.background).toBeUndefined();
     expect(defaultWidgetStyle().background).toBeUndefined();
   });
@@ -23,14 +23,14 @@ describe("Hit Testable defaults", () => {
     expect(defaultHitTestableFor("TouchDPad")).toBe(true);
     expect(defaultHitTestableFor("Image")).toBe(false);
     expect(defaultHitTestableFor("Material")).toBe(false);
-    expect(defaultHitTestableFor("Text")).toBe(false);
+    expect(defaultHitTestableFor("TextBlock")).toBe(false);
     expect(defaultHitTestableFor("Slider")).toBe(false);
-    expect(defaultHitTestableFor("CheckBox")).toBe(false);
-    expect(defaultHitTestableFor("TextInput")).toBe(false);
+    expect(defaultHitTestableFor("Checkbox")).toBe(false);
+    expect(defaultHitTestableFor("InputText")).toBe(false);
     expect(defaultHitTestableFor("Canvas")).toBe(false);
     expect(defaultHitTestableFor("ProgressBar")).toBe(false);
-    expect(defaultHitTestableFor("Spacer")).toBe(false);
-    expect(defaultHitTestableFor("HorizontalBox")).toBe(false);
+    expect(defaultHitTestableFor("Container")).toBe(false);
+    expect(defaultHitTestableFor("StackPanel")).toBe(false);
     expect(defaultHitTestableFor("UserInterface")).toBe(false);
   });
 

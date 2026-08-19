@@ -27,8 +27,8 @@ describe("widget tree", () => {
 
   it("deletes a widget and its descendants", () => {
     const doc = createDefaultUserInterface();
-    const box = createWidget("box", "VerticalBox", "Col");
-    const child = createWidget("child", "Text", "Label");
+    const box = createWidget("box", "StackPanel", "Col");
+    const child = createWidget("child", "TextBlock", "Label");
     let next = insertWidget(doc, box, doc.rootId);
     next = insertWidget(next, child, "box");
     next = removeWidget(next, "box");
@@ -39,8 +39,8 @@ describe("widget tree", () => {
 
   it("reparents without creating a cycle", () => {
     const doc = createDefaultUserInterface();
-    const a = createWidget("a", "Border", "A");
-    const b = createWidget("b", "Text", "B");
+    const a = createWidget("a", "Rectangle", "A");
+    const b = createWidget("b", "TextBlock", "B");
     let next = insertWidget(doc, a, doc.rootId);
     next = insertWidget(next, b, "a");
     expect(reparentWidget(next, "a", "b")).toBe(next);
@@ -71,7 +71,7 @@ describe("widget tree", () => {
 
   it("nests into a target row and still rejects cycles", () => {
     const doc = createDefaultUserInterface();
-    const box = createWidget("box", "VerticalBox", "Col");
+    const box = createWidget("box", "StackPanel", "Col");
     const a = createWidget("a", "Button", "A");
     const b = createWidget("b", "Button", "B");
     let next = insertWidget(doc, box, doc.rootId);
@@ -96,15 +96,15 @@ describe("widget tree", () => {
 
   it("duplicates a container and its descendants", () => {
     const doc = createDefaultUserInterface();
-    const box = createWidget("box", "VerticalBox", "Col");
-    const child = createWidget("child", "Text", "Label");
+    const box = createWidget("box", "StackPanel", "Col");
+    const child = createWidget("child", "TextBlock", "Label");
     let next = insertWidget(doc, box, doc.rootId);
     next = insertWidget(next, child, "box");
     next = duplicateWidget(next, "box", "box-copy");
     expect(next.widgets["box-copy"]?.children.length).toBe(1);
     const copiedChildId = next.widgets["box-copy"]?.children[0];
     expect(copiedChildId).toBeTruthy();
-    expect(next.widgets[copiedChildId!]?.kind).toBe("Text");
+    expect(next.widgets[copiedChildId!]?.kind).toBe("TextBlock");
     expect(next.widgets.child).toBeDefined();
   });
 });

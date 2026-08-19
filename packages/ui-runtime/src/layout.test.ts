@@ -75,8 +75,9 @@ describe("Babylon-native layout", () => {
 describe("container layout", () => {
   it("lays HorizontalBox children left to right", () => {
     const doc = createDefaultUserInterface();
-    const box = createWidget("hbox", "HorizontalBox", "Row");
+    const box = createWidget("hbox", "StackPanel", "Row");
     box.props.gap = 10;
+    box.props.isVertical = false;
     const a = createWidget("a", "Button", "A", pinLayout("left", "top", 80, 32));
     a.props.text = "A";
     const b = createWidget("b", "Button", "B", pinLayout("left", "top", 80, 32));
@@ -97,11 +98,11 @@ describe("container layout", () => {
 
   it("lays VerticalBox children top to bottom in GUI space", () => {
     const doc = createDefaultUserInterface();
-    const box = createWidget("vbox", "VerticalBox", "Col");
+    const box = createWidget("vbox", "StackPanel", "Col");
     box.props.gap = 4;
-    const a = createWidget("a", "Text", "A");
+    const a = createWidget("a", "TextBlock", "A");
     a.props.text = "A";
-    const b = createWidget("b", "Text", "B");
+    const b = createWidget("b", "TextBlock", "B");
     b.props.text = "B";
     box.children = ["a", "b"];
     doc.widgets.canvas!.children = ["vbox"];
@@ -124,7 +125,7 @@ describe("container layout", () => {
     const a = createWidget("a", "Button", "A");
     const b = createWidget("b", "Button", "B");
     grid.children = ["a", "b"];
-    const box = createWidget("size", "SizeBox", "Box");
+    const box = createWidget("size", "Rectangle", "Box");
     box.props = { width: 40, height: 20 };
     doc.widgets.canvas!.children = ["grid", "size"];
     doc.widgets.grid = grid;
@@ -140,10 +141,9 @@ describe("container layout", () => {
 
   it("lays Overlay children with alignment inside the overlay", () => {
     const doc = createDefaultUserInterface();
-    const overlay = createWidget("over", "Overlay");
+    const overlay = createWidget("over", "Rectangle");
     const child = createWidget(
-      "c",
-      "Text",
+      "c", "TextBlock",
       "Hi",
       pinLayout("left", "top", 10, 10, 0, 0),
     );
@@ -191,8 +191,7 @@ describe("default play HUD", () => {
     const chip = createDefaultUserInterface("Chip");
     chip.desiredSize = { width: 1920, height: 1080 };
     const label = createWidget(
-      "label",
-      "Text",
+      "label", "TextBlock",
       "HP",
       pinLayout("left", "top", 80, 20, 8, 4),
     );
@@ -235,8 +234,7 @@ describe("nested UserInterface layout", () => {
     const chip = createDefaultUserInterface("Chip");
     chip.desiredSize = { width: 1920, height: 1080 };
     const label = createWidget(
-      "label",
-      "Text",
+      "label", "TextBlock",
       "HP",
       pinLayout("left", "top", 80, 20),
     );

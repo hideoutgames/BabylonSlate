@@ -9,18 +9,17 @@ import { SAFE_AREA_CONTROL_ID } from "./layout";
 describe("guiSpecFromDescriptor", () => {
   it("maps widget kinds onto Babylon GUI control types", () => {
     expect(guiControlType("Button")).toBe("Button");
-    expect(guiControlType("Text")).toBe("TextBlock");
-    expect(guiControlType("TextInput")).toBe("InputText");
+    expect(guiControlType("TextBlock")).toBe("TextBlock");
+    expect(guiControlType("InputText")).toBe("InputText");
     expect(guiControlType("Slider")).toBe("Slider");
-    expect(guiControlType("CheckBox")).toBe("Checkbox");
+    expect(guiControlType("Checkbox")).toBe("Checkbox");
     expect(guiControlType("Image")).toBe("Image");
     expect(guiControlType("Canvas")).toBe("Rectangle");
-    expect(guiControlType("HorizontalBox")).toBe("StackPanel");
-    expect(guiControlType("VerticalBox")).toBe("StackPanel");
+    expect(guiControlType("StackPanel")).toBe("StackPanel");
     expect(guiControlType("Grid")).toBe("Grid");
-    expect(guiControlType("ScrollBox")).toBe("ScrollViewer");
+    expect(guiControlType("ScrollViewer")).toBe("ScrollViewer");
     expect(guiControlType("ProgressBar")).toBe("ProgressBar");
-    expect(guiControlType("Spacer")).toBe("Container");
+    expect(guiControlType("Container")).toBe("Container");
     expect(guiControlType("TouchJoystick")).toBe("Ellipse");
     expect(guiControlType("TouchButton")).toBe("Rectangle");
     expect(guiControlType("TouchDPad")).toBe("Rectangle");
@@ -96,8 +95,7 @@ describe("guiSpecFromDescriptor", () => {
       pinLayout("left", "top", 64, 64),
     );
     const label = createWidget(
-      "label",
-      "Text",
+      "label", "TextBlock",
       "Score",
       pinLayout("left", "top", 80, 24, 80, 0),
     );

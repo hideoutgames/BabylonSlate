@@ -44,22 +44,30 @@ export class Widget extends BObject {
 }
 
 export class CanvasWidget extends Widget {}
-export class HorizontalBoxWidget extends Widget {}
-export class VerticalBoxWidget extends Widget {}
+export class RectangleWidget extends Widget {}
+export class StackPanelWidget extends Widget {}
+export class HorizontalBoxWidget extends StackPanelWidget {}
+export class VerticalBoxWidget extends StackPanelWidget {}
 export class GridWidget extends Widget {}
-export class ScrollBoxWidget extends Widget {}
-export class OverlayWidget extends Widget {}
-export class SizeBoxWidget extends Widget {}
-export class BorderWidget extends Widget {}
+export class ScrollViewerWidget extends Widget {}
+export class ScrollBoxWidget extends ScrollViewerWidget {}
+export class EllipseWidget extends Widget {}
+export class ContainerWidget extends Widget {}
+export class OverlayWidget extends RectangleWidget {}
+export class SizeBoxWidget extends RectangleWidget {}
+export class BorderWidget extends RectangleWidget {}
+export class SpacerWidget extends ContainerWidget {}
 export class ButtonWidget extends Widget {}
-export class TextWidget extends Widget {}
-export class TextInputWidget extends Widget {}
+export class TextBlockWidget extends Widget {}
+export class TextWidget extends TextBlockWidget {}
+export class InputTextWidget extends Widget {}
+export class TextInputWidget extends InputTextWidget {}
 export class SliderWidget extends Widget {}
-export class CheckBoxWidget extends Widget {}
+export class CheckboxWidget extends Widget {}
+export class CheckBoxWidget extends CheckboxWidget {}
 export class ImageWidget extends Widget {}
 export class MaterialWidget extends Widget {}
 export class ProgressBarWidget extends Widget {}
-export class SpacerWidget extends Widget {}
 export class TouchJoystickWidget extends Widget {}
 export class TouchButtonWidget extends Widget {}
 export class TouchDPadWidget extends Widget {}
@@ -69,22 +77,30 @@ type WidgetCtor = new (options: ConstructorParameters<typeof Widget>[0]) => Widg
 
 const WIDGET_CLASS_BY_KIND: Record<string, WidgetCtor> = {
   Canvas: CanvasWidget,
-  HorizontalBox: HorizontalBoxWidget,
-  VerticalBox: VerticalBoxWidget,
+  Rectangle: RectangleWidget,
+  StackPanel: StackPanelWidget,
+  HorizontalBox: StackPanelWidget,
+  VerticalBox: StackPanelWidget,
   Grid: GridWidget,
-  ScrollBox: ScrollBoxWidget,
-  Overlay: OverlayWidget,
-  SizeBox: SizeBoxWidget,
-  Border: BorderWidget,
+  ScrollViewer: ScrollViewerWidget,
+  ScrollBox: ScrollViewerWidget,
+  Ellipse: EllipseWidget,
+  Container: ContainerWidget,
+  Overlay: RectangleWidget,
+  SizeBox: RectangleWidget,
+  Border: RectangleWidget,
+  Spacer: ContainerWidget,
   Button: ButtonWidget,
-  Text: TextWidget,
-  TextInput: TextInputWidget,
+  TextBlock: TextBlockWidget,
+  Text: TextBlockWidget,
+  InputText: InputTextWidget,
+  TextInput: InputTextWidget,
   Slider: SliderWidget,
-  CheckBox: CheckBoxWidget,
+  Checkbox: CheckboxWidget,
+  CheckBox: CheckboxWidget,
   Image: ImageWidget,
   Material: MaterialWidget,
   ProgressBar: ProgressBarWidget,
-  Spacer: SpacerWidget,
   TouchJoystick: TouchJoystickWidget,
   TouchButton: TouchButtonWidget,
   TouchDPad: TouchDPadWidget,

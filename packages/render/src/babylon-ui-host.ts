@@ -21,6 +21,7 @@ import type {
   SizeUnit,
   UiControlDescriptor,
   VerticalAlignment,
+  WidgetLayout,
 } from "@babylonslate/ui-runtime";
 import {
   guiSpecFromDescriptor,
@@ -85,6 +86,8 @@ export class BabylonUiApplyHost implements UiApplyHost {
   private descriptors: UiControlDescriptor[] = [];
   private readonly factory: GuiControlFactory;
   private readonly options: BabylonUiHostOptions;
+  private gestureLocked = false;
+  private queued: UiControlDescriptor[] | null = null;
 
   constructor(factory: GuiControlFactory, options: BabylonUiHostOptions) {
     this.factory = factory;
@@ -112,6 +115,10 @@ export class BabylonUiApplyHost implements UiApplyHost {
   }
 
   reconcile(descriptors: readonly UiControlDescriptor[]): void {
+    if (this.gestureLocked) {
+      this.queued = [...descriptors];
+      return;
+    }
     this.descriptors = [...descriptors];
     const next = descriptors.map((descriptor) => ({
       descriptor,
@@ -179,6 +186,27 @@ export class BabylonUiApplyHost implements UiApplyHost {
 
   setVisible(widgetId: string, visible: boolean): void {
     this.visibility.set(widgetId, visible);
+    const handle = this.handles.find((row) => row.id === widgetId);
+    if (handle?.control) handle.control.isVisible = visible;
+  }
+
+  setGestureLocked(locked: boolean): void {
+    this.gestureLocked = locked;
+    if (!locked && this.queued) {
+      const next = this.queued;
+      this.queued = null;
+      this.reconcile(next);
+    }
+  }
+
+  patchLiveLayout(id: string, layout: WidgetLayout): void {
+    const handle = this.handles.find((row) => row.id === id);
+    const control = handle?.control;
+    if (!control) return;
+    control.left = sizeValue(layout.left, layout.leftUnit ?? "px");
+    control.top = sizeValue(layout.top, layout.topUnit ?? "px");
+    control.width = sizeValue(layout.width, layout.widthUnit);
+    control.height = sizeValue(layout.height, layout.heightUnit);
   }
 
   markAsDirty(): void {
@@ -225,8 +253,8 @@ function verticalAlignmentValue(value: VerticalAlignment): number {
 function applyCommon(control: Control, spec: GuiControlSpec): void {
   control.horizontalAlignment = horizontalAlignmentValue(spec.horizontalAlignment);
   control.verticalAlignment = verticalAlignmentValue(spec.verticalAlignment);
-  control.left = `${spec.left}px`;
-  control.top = `${spec.top}px`;
+  control.left = sizeValue(spec.left, spec.leftUnit ?? "px");
+  control.top = sizeValue(spec.top, spec.topUnit ?? "px");
   control.width = sizeValue(spec.width, spec.widthUnit);
   control.height = sizeValue(spec.height, spec.heightUnit);
   control.paddingLeft = `${spec.padding.left}px`;
@@ -235,13 +263,20 @@ function applyCommon(control: Control, spec: GuiControlSpec): void {
   control.paddingBottom = `${spec.padding.bottom}px`;
   control.transformCenterX = spec.transformCenter.x;
   control.transformCenterY = spec.transformCenter.y;
-  control.isVisible = spec.alpha !== 0;
+  control.isVisible = spec.visible !== false;
   if (typeof spec.alpha === "number") control.alpha = spec.alpha;
   control.isHitTestVisible = spec.hitTestVisible;
   control.isPointerBlocker = spec.isPointerBlocker;
   if (spec.fontFamily) control.fontFamily = spec.fontFamily;
   if (typeof spec.fontSize === "number") control.fontSize = spec.fontSize;
+  if (spec.fontWeight !== undefined) control.fontWeight = String(spec.fontWeight);
   if (spec.color) control.color = spec.color;
+  if (typeof spec.zIndex === "number") control.zIndex = spec.zIndex;
+  if (typeof spec.rotation === "number") {
+    control.rotation = (spec.rotation * Math.PI) / 180;
+  }
+  if (typeof spec.scaleX === "number") control.scaleX = spec.scaleX;
+  if (typeof spec.scaleY === "number") control.scaleY = spec.scaleY;
 }
 
 function canUpdateInPlace(previous: GuiControlSpec, next: GuiControlSpec): boolean {
@@ -309,6 +344,7 @@ function applyTypeSpecific(
           ? (resolveImageUrl?.(spec.imageGuid) ?? "")
           : "";
         if (control.source !== url) control.source = url;
+        if (typeof spec.imageStretch === "number") control.stretch = spec.imageStretch;
       }
       return;
     }
@@ -519,13 +555,27 @@ export function createBabylonControl(
     case "Grid": {
       const grid = new Grid(spec.id);
       applyCommon(grid, spec);
-      const columns = Math.max(1, spec.gridColumns ?? 2);
-      const rows = Math.max(1, spec.gridRows ?? 2);
-      for (let column = 0; column < columns; column++) {
-        grid.addColumnDefinition(1 / columns, false);
+      const columnDefs = spec.columnDefs;
+      const rowDefs = spec.rowDefs;
+      if (columnDefs && columnDefs.length > 0) {
+        for (const def of columnDefs) {
+          grid.addColumnDefinition(def.value, def.isPixel);
+        }
+      } else {
+        const columns = Math.max(1, spec.gridColumns ?? 2);
+        for (let column = 0; column < columns; column++) {
+          grid.addColumnDefinition(1, false);
+        }
       }
-      for (let row = 0; row < rows; row++) {
-        grid.addRowDefinition(1 / rows, false);
+      if (rowDefs && rowDefs.length > 0) {
+        for (const def of rowDefs) {
+          grid.addRowDefinition(def.value, def.isPixel);
+        }
+      } else {
+        const rows = Math.max(1, spec.gridRows ?? 2);
+        for (let row = 0; row < rows; row++) {
+          grid.addRowDefinition(1, false);
+        }
       }
       if (spec.background) grid.background = spec.background;
       return grid;

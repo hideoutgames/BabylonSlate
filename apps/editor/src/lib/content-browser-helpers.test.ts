@@ -42,6 +42,7 @@ import {
   listChildFolders,
   matchesAssetSearch,
   newAssetFileName,
+  siblingAssetRelativePath,
   remapPathAfterFolderMove,
   textureCompressionState,
   visualForIndexedAsset,
@@ -1136,6 +1137,12 @@ describe("content-browser-helpers", () => {
 
   it("seeds P9 document assets with typed suffixes", () => {
     expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
+    expect(siblingAssetRelativePath("assets/HUD.ui.babasset", "Chip.ui.babasset")).toBe(
+      "Chip.ui.babasset",
+    );
+    expect(
+      siblingAssetRelativePath("assets/ui/HUD.ui.babasset", "Chip.ui.babasset"),
+    ).toBe("ui/Chip.ui.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.babasset",
@@ -1203,7 +1210,7 @@ describe("content-browser-helpers", () => {
       parentClass: null,
     });
     expect(hud.type).toBe("UserInterface");
-    expect(hud.version).toBe(2);
+    expect(hud.version).toBe(3);
     expect(hud.payload.rootId).toBe("canvas");
     expect(hud.payload.viewportLayer).toBe(true);
     expect(

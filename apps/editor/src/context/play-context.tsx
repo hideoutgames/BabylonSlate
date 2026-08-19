@@ -1203,6 +1203,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             )}
             scenes={playSceneLibrary}
             uiLibrary={playUiLibrary}
+            uiSettings={projectDocument?.settings.ui}
             fontEntries={playFontEntries}
             resolveImageUrl={(guid) => playImageUrls.get(guid) ?? null}
             animGraphs={playAnimGraphs}

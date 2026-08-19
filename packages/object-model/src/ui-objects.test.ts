@@ -4,6 +4,8 @@ import {
   ButtonWidget,
   ImageWidget,
   MaterialWidget,
+  StackPanelWidget,
+  TextBlockWidget,
   UserInterface,
   Widget,
   createWidgetForKind,
@@ -47,6 +49,9 @@ describe("UserInterface and Widget objects", () => {
     expect(widgetClassForKind("Button")).toBe(ButtonWidget);
     expect(widgetClassForKind("Image")).toBe(ImageWidget);
     expect(widgetClassForKind("Material")).toBe(MaterialWidget);
+    expect(widgetClassForKind("StackPanel")).toBe(StackPanelWidget);
+    expect(widgetClassForKind("TextBlock")).toBe(TextBlockWidget);
+    expect(widgetClassForKind("HorizontalBox")).toBe(StackPanelWidget);
     const image = createWidgetForKind("Image", {
       classId: "ImageWidget",
       guid: "w-2",

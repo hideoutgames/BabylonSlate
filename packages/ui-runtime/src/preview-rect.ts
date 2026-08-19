@@ -51,8 +51,10 @@ export function previewRect(parent: Rect, layout: WidgetLayout): Rect {
     default:
       y = 0;
   }
-  const left = parent.x + padding.left + layout.left + x;
-  const top = parent.y + padding.top + layout.top + y;
+  const leftOffset = dimension(layout.left, layout.leftUnit ?? "px", parent.width);
+  const topOffset = dimension(layout.top, layout.topUnit ?? "px", parent.height);
+  const left = parent.x + padding.left + leftOffset + x;
+  const top = parent.y + padding.top + topOffset + y;
   return {
     x: left,
     y: top,

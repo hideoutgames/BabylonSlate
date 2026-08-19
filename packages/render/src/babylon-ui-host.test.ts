@@ -70,17 +70,21 @@ class RecordingFactory implements GuiControlFactory {
 
 function applyDocument(
   doc: ReturnType<typeof createDefaultUserInterface>,
-  options: { safeArea?: { left: number; right: number; top: number; bottom: number } } = {},
+  options: {
+    safeArea?: { left: number; right: number; top: number; bottom: number };
+    resolveNested?: (guid: string) => ReturnType<typeof createDefaultUserInterface> | null;
+  } = {},
 ) {
   const root = new Container("adt-root");
   const factory = createAdtControlFactory(root, { safeArea: options.safeArea });
   const host = new BabylonUiApplyHost(factory, { interactive: false });
-  const layout = layoutUserInterface(
-    doc,
-    { width: 800, height: 600 },
-    { safeArea: options.safeArea },
+  applyUiControls(
+    host,
+    describeUiControls(doc, {
+      parentSize: { width: 800, height: 600 },
+      resolveNested: options.resolveNested,
+    }),
   );
-  applyUiControls(host, describeUiControls(doc, layout));
   return { root, host };
 }
 
@@ -152,6 +156,23 @@ describe("BabylonUiApplyHost", () => {
     control.dispose();
   });
 
+  it("sets isVisible from the widget visible flag, not alpha", () => {
+    const hidden = createBabylonControl(
+      guiSpecFromDescriptor(
+        descriptor({
+          id: "btn",
+          kind: "Button",
+          visible: false,
+          style: { opacity: 1 },
+        }),
+        { interactive: false },
+      ),
+    );
+    expect(hidden.isVisible).toBe(false);
+    expect(hidden.alpha).toBe(1);
+    hidden.dispose();
+  });
+
   it("applies slider min and max from the spec", () => {
     const spec = guiSpecFromDescriptor(
       descriptor({
@@ -171,7 +192,7 @@ describe("BabylonUiApplyHost", () => {
   it("paints Text and Button with a light color when the document omits color", () => {
     const text = createBabylonControl(
       guiSpecFromDescriptor(
-        descriptor({ id: "label", kind: "Text", text: "Score" }),
+        descriptor({ id: "label", kind: "TextBlock", text: "Score" }),
         { interactive: false },
       ),
     );
@@ -222,17 +243,16 @@ describe("BabylonUiApplyHost", () => {
 
   it("parents StackPanel, Grid, and ScrollViewer children off the ADT root", () => {
     const doc = createDefaultUserInterface();
-    const column = createWidget("column", "VerticalBox", "Col", stretchLayout());
-    const label = createWidget("label", "Text", "Label");
+    const column = createWidget("column", "StackPanel", "Col", stretchLayout());
+    const label = createWidget("label", "TextBlock", "Label");
     const grid = createWidget("grid", "Grid", "Grid", stretchLayout());
     grid.props.columns = 2;
     grid.props.rows = 1;
     const cellA = createWidget("cellA", "Button", "A");
     const cellB = createWidget("cellB", "Button", "B");
-    const scroll = createWidget("scroll", "ScrollBox", "Scroll", stretchLayout());
+    const scroll = createWidget("scroll", "ScrollViewer", "Scroll", stretchLayout());
     const inner = createWidget(
-      "inner",
-      "Text",
+      "inner", "TextBlock",
       "Inner",
       pinLayout("left", "top", 200, 40),
     );
@@ -277,7 +297,7 @@ describe("BabylonUiApplyHost", () => {
     const pin = createWidget("pin", "Button", "Pin", pinLayout("left", "top", 80, 32));
     const bleed = createWidget(
       "bleed",
-      "Border",
+      "Rectangle",
       "Bleed",
       pinLayout("left", "top", 80, 32),
     );
@@ -303,8 +323,7 @@ describe("BabylonUiApplyHost", () => {
     const scene = new Scene(engine);
     const chip = createDefaultUserInterface("Chip");
     const label = createWidget(
-      "label",
-      "Text",
+      "label", "TextBlock",
       "HP",
       pinLayout("left", "top", 80, 20),
     );
@@ -326,17 +345,19 @@ describe("BabylonUiApplyHost", () => {
     const root = new Container("adt-root");
     const factory = createAdtControlFactory(root);
     const applyHost = new BabylonUiApplyHost(factory, { interactive: false });
-    const layout = layoutUserInterface(
-      hud,
-      { width: 800, height: 600 },
-      { resolveNested: (guid) => (guid === "chip-guid" ? chip : null) },
+    applyUiControls(
+      applyHost,
+      describeUiControls(hud, {
+        parentSize: { width: 800, height: 600 },
+        resolveNested: (guid) => (guid === "chip-guid" ? chip : null),
+      }),
     );
-    applyUiControls(applyHost, describeUiControls(hud, layout));
 
     const nestedLabel = named(root, "chip/label");
     expect(nestedLabel).toBeInstanceOf(TextBlock);
     expect((nestedLabel as TextBlock).text).toBe("HP");
-    expect(nestedLabel?.parent?.name).toBe("chip/canvas");
+    expect(nestedLabel?.parent?.name).toBe("chip");
+    expect(nestedLabel?.parent?.name).not.toBe("chip/canvas");
     expect(nestedLabel?.parent?.name).not.toBe("adt-root");
     expect(named(root, "chip")?.getDescendants(false).some((row) => row.name === "chip/label")).toBe(
       true,
@@ -344,6 +365,41 @@ describe("BabylonUiApplyHost", () => {
     applyHost.clear();
     scene.dispose();
     engine.dispose();
+  });
+
+  it("queues reconcile while a designer gesture is locked", () => {
+    const factory = new RecordingFactory();
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const first = descriptor({ id: "btn", kind: "Button" });
+    host.reconcile([first]);
+    expect(factory.created).toHaveLength(1);
+    host.setGestureLocked(true);
+    host.reconcile([first, descriptor({ id: "other", kind: "TextBlock" })]);
+    expect(factory.created).toHaveLength(1);
+    host.setGestureLocked(false);
+    expect(factory.created.some((row) => row.id === "other")).toBe(true);
+  });
+
+  it("patches live left/top during a gesture without recreating the control", () => {
+    const factory = new RecordingFactory();
+    const host = new BabylonUiApplyHost(factory, { interactive: false });
+    const control = { left: "0px", top: "0px", width: "80px", height: "32px" };
+    factory.create = (spec) => {
+      const handle = {
+        id: spec.id,
+        type: spec.type,
+        spec,
+        control: control as never,
+        dispose() {},
+      };
+      factory.created.push(handle);
+      return handle;
+    };
+    host.addControl(descriptor({ id: "btn", kind: "Button" }));
+    host.patchLiveLayout("btn", { ...pinLayout("left", "top", 80, 32), left: 12, top: 24 });
+    expect(control.left).toBe("12px");
+    expect(control.top).toBe("24px");
+    expect(factory.created).toHaveLength(1);
   });
 
   it("maps scale rules onto ADT ideal width/height", () => {
@@ -389,15 +445,15 @@ describe("BabylonUiApplyHost", () => {
 
   it("constructs remaining widget kinds without an ADT", () => {
     const kinds = [
-      "Text",
-      "TextInput",
+      "TextBlock",
+      "InputText",
       "Slider",
-      "CheckBox",
+      "Checkbox",
       "ProgressBar",
-      "HorizontalBox",
+      "StackPanel",
       "Grid",
-      "ScrollBox",
-      "Spacer",
+      "ScrollViewer",
+      "Container",
       "TouchDPad",
     ] as const;
     for (const kind of kinds) {
@@ -570,13 +626,13 @@ describe("BabylonUiApplyHost", () => {
     });
     const checkDesc = descriptor({
       id: "check",
-      kind: "CheckBox",
+      kind: "Checkbox",
       hitTestable: true,
       props: { checked: false },
     });
     const inputDesc = descriptor({
       id: "input",
-      kind: "TextInput",
+      kind: "InputText",
       hitTestable: true,
       props: { text: "" },
     });

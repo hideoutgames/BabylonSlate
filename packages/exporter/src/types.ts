@@ -85,6 +85,11 @@ export type GameManifest = {
   loopCount?: number;
   /** Engine Settings `uiDesignerPresets` packed for HUD Safe Area matching. */
   uiDesignerPresets?: PackedUiDesignerPreset[];
+  /** Project Settings User Interface design space (Play/player ADT ideal). */
+  ui?: {
+    designResolution: { width: number; height: number };
+    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
+  };
 };
 
 export type ExportGameOptions = {
@@ -111,6 +116,10 @@ export type ExportGameOptions = {
   fileCountWarn?: number;
   fileCountFail?: number;
   uiDesignerPresets?: readonly PackedUiDesignerPreset[];
+  ui?: {
+    designResolution: { width: number; height: number };
+    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
+  };
 };
 
 export type ExportArtifact = {

@@ -54,4 +54,26 @@ describe("collectNestedUiLogicSources", () => {
       { slotId: "chip", classId: userInterfaceClassId("chip-guid") },
     ]);
   });
+
+  it("does not mount worker logic for Touch skins", () => {
+    const nested = collectNestedUiLogicSources(
+      {
+        rootId: "canvas",
+        widgets: {
+          canvas: { id: "canvas", kind: "Canvas", children: ["stick"] },
+          stick: {
+            id: "stick",
+            kind: "TouchJoystick",
+            nestedUiGuid: "skin-guid",
+            children: [],
+          },
+        },
+      },
+      () => ({
+        path: "assets/Skin.ui.babasset",
+        payload: { rootId: "canvas", widgets: {} },
+      }),
+    );
+    expect(nested).toEqual([]);
+  });
 });

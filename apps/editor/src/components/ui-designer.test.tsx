@@ -163,7 +163,7 @@ function labeledChipDocument() {
   const chip = createDefaultUserInterface("Chip");
   const label = createWidget(
     "label",
-    "Text",
+    "TextBlock",
     "HP",
     pinLayout("left", "top", 80, 20),
   );
@@ -196,7 +196,7 @@ describe("UiDesigner", () => {
     expect(screen.getByTestId("property-width")).toBeTruthy();
     expect(screen.getByTestId("property-height")).toBeTruthy();
     expect(screen.getByTestId("property-row-transform-center")).toBeTruthy();
-    expect(screen.getByTestId("property-padding-left")).toBeTruthy();
+    expect(screen.getByTestId("property-layout-padding-left")).toBeTruthy();
     fireEvent.click(screen.getByTestId("ui-widget-header"));
     expect(screen.getByTestId("property-left")).toBeTruthy();
     expect(screen.getByTestId("property-top")).toBeTruthy();
@@ -205,7 +205,7 @@ describe("UiDesigner", () => {
     expect(screen.queryByTestId("property-offset-min-x")).toBeNull();
     fireEvent.click(screen.getByTestId("ui-widget-stick"));
     expect(screen.getByTestId("ui-resize-se")).toBeTruthy();
-    expect(screen.getByTestId("ui-gizmo-canvas")).toBeTruthy();
+    expect(screen.getByTestId("ui-adt-host")).toBeTruthy();
   });
 
   it("drags a widget to write left/top once on pointer up", () => {
@@ -424,7 +424,7 @@ describe("UiDesigner", () => {
 
     fireEvent.click(screen.getByTestId("ui-widget-jump"));
     expect(screen.getByTestId("property-action").tagName).not.toBe("INPUT");
-    expect(screen.getByTestId("property-visual-override")).toBeTruthy();
+    expect(screen.getByTestId("property-nested-skin")).toBeTruthy();
   });
 
   it("does not show Open Live on a UserInterface Design toolbar", () => {

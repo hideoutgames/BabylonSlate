@@ -1515,6 +1515,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
         uiDesignerPresets: asDevicePresets(engineSettings.uiDesignerPresets),
+        ui: projectDocument?.settings.ui,
       });
     },
     [projectDocument, projectService, settingsStore],
@@ -1772,6 +1773,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             fonts: {
               ...current.settings.fonts,
               ...settings.fonts,
+            },
+            ui: {
+              ...current.settings.ui,
+              ...settings.ui,
+              designResolution: {
+                ...current.settings.ui.designResolution,
+                ...settings.ui?.designResolution,
+              },
             },
             audio: {
               ...current.settings.audio,

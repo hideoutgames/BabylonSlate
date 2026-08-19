@@ -229,6 +229,10 @@ export function playUserInterfaceRuntimeDocuments(
       kind: widget.kind,
       ...(widget.name ? { name: widget.name } : {}),
       ...(widget.nestedUiGuid ? { nestedUiGuid: widget.nestedUiGuid } : {}),
+      ...(widget.exposed ? { exposed: widget.exposed } : {}),
+      ...(widget.overrides && Object.keys(widget.overrides).length > 0
+        ? { overrides: widget.overrides }
+        : {}),
     })),
   }));
 }

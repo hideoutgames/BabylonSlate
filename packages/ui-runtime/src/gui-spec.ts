@@ -29,6 +29,8 @@ export interface GuiControlSpec {
   gridRow?: number;
   left: number;
   top: number;
+  leftUnit: SizeUnit;
+  topUnit: SizeUnit;
   width: number;
   height: number;
   widthUnit: SizeUnit;
@@ -49,6 +51,14 @@ export interface GuiControlSpec {
     spacing?: number;
     gridColumns?: number;
     gridRows?: number;
+    columnDefs?: Array<{ value: number; isPixel: boolean }>;
+    rowDefs?: Array<{ value: number; isPixel: boolean }>;
+    zIndex?: number;
+    rotation?: number;
+    scaleX?: number;
+    scaleY?: number;
+    fontWeight?: number | string;
+    imageStretch?: number;
     hitTestVisible: boolean;
   isPointerBlocker: boolean;
   imageGuid?: string | null;
@@ -60,45 +70,43 @@ export interface GuiControlSpec {
   progress?: number;
   kind: WidgetKind;
   ignoreSafeArea?: boolean;
+  visible?: boolean;
 }
 
 export function guiControlType(kind: WidgetKind): GuiControlType {
   switch (kind) {
     case "Canvas":
-    case "Overlay":
-    case "Border":
-    case "SizeBox":
+    case "Rectangle":
     case "UserInterface":
     case "TouchButton":
+    case "TouchDPad":
       return "Rectangle";
-    case "HorizontalBox":
-    case "VerticalBox":
+    case "StackPanel":
       return "StackPanel";
     case "Grid":
       return "Grid";
-    case "ScrollBox":
+    case "ScrollViewer":
       return "ScrollViewer";
     case "Button":
       return "Button";
-    case "Text":
+    case "TextBlock":
       return "TextBlock";
-    case "TextInput":
+    case "InputText":
       return "InputText";
     case "Slider":
       return "Slider";
-    case "CheckBox":
+    case "Checkbox":
       return "Checkbox";
     case "Image":
     case "Material":
       return "Image";
     case "ProgressBar":
       return "ProgressBar";
-    case "Spacer":
+    case "Container":
       return "Container";
+    case "Ellipse":
     case "TouchJoystick":
       return "Ellipse";
-    case "TouchDPad":
-      return "Rectangle";
   }
 }
 
@@ -150,6 +158,8 @@ export function guiSpecFromDescriptor(
     gridRow: control.gridRow,
     left: slotOwned ? 0 : layout.left,
     top: slotOwned ? 0 : layout.top,
+    leftUnit: slotOwned ? "px" : (layout.leftUnit ?? "px"),
+    topUnit: slotOwned ? "px" : (layout.topUnit ?? "px"),
     width: layout.width,
     height: layout.height,
     widthUnit: layout.widthUnit,
@@ -163,16 +173,28 @@ export function guiSpecFromDescriptor(
     color: control.style.color,
     fontFamily: control.style.fontFamily,
     fontSize: control.style.fontSize,
+    fontWeight: control.style.fontWeight,
     alpha: control.style.opacity,
     cornerRadius:
       control.kind === "TouchJoystick"
         ? undefined
         : control.style.borderRadius,
-    thickness: control.kind === "Border" ? 1 : 0,
-    isVertical: control.kind === "VerticalBox",
+    thickness: numberProp(control.props, "thickness", 0),
+    isVertical: control.kind === "StackPanel" ? boolProp(control.props, "isVertical", true) : undefined,
     spacing: numberProp(control.props, "gap", 0),
     gridColumns: numberProp(control.props, "columns", 2),
     gridRows: numberProp(control.props, "rows", 2),
+    columnDefs: Array.isArray(control.props.gridColumns)
+      ? (control.props.gridColumns as Array<{ value: number; isPixel: boolean }>)
+      : undefined,
+    rowDefs: Array.isArray(control.props.gridRows)
+      ? (control.props.gridRows as Array<{ value: number; isPixel: boolean }>)
+      : undefined,
+    zIndex: control.zIndex,
+    rotation: layout.rotation,
+    scaleX: layout.scaleX,
+    scaleY: layout.scaleY,
+    imageStretch: numberProp(control.props, "stretch", 0),
     hitTestVisible: interactive && hitTestable && allowGuiHits,
     isPointerBlocker: interactive && hitTestable && allowGuiHits,
     imageGuid,
@@ -183,5 +205,6 @@ export function guiSpecFromDescriptor(
     checked: boolProp(control.props, "checked", false),
     progress: numberProp(control.props, "value", 0),
     ignoreSafeArea: control.ignoreSafeArea === true,
+    visible: control.visible,
   };
 }

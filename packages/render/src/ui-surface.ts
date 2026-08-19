@@ -21,8 +21,13 @@ export interface UiSurfaceOptions extends BabylonUiHostOptions {
   name: string;
   designResolution: { width: number; height: number };
   scaleRule: ScaleRule;
+  /** ADT backing-store size. Defaults to designResolution (prefab 1:1). */
+  bitmapWidth?: number;
+  bitmapHeight?: number;
   /** Screen-space overlay canvas (not CSS-transformed with the device frame). */
   gizmoCanvas?: HTMLCanvasElement;
+  /** Host the ADT backing canvas here (designer happy path; no blit). */
+  hostFrame?: HTMLElement;
   safeArea?: { left: number; right: number; top: number; bottom: number };
 }
 
@@ -31,6 +36,7 @@ export interface UiSurface {
   designAdt: AdvancedDynamicTexture;
   gizmoAdt: AdvancedDynamicTexture | null;
   host: BabylonUiApplyHost;
+  hosted: boolean;
   present: () => void;
   presentGizmos: (state: DesignerGizmoState) => void;
   resizeDesign: (
@@ -71,12 +77,18 @@ export function createUiSurface(
   scene.clearColor = new Color4(0, 0, 0, 0);
   new FreeCamera(`${options.name}:camera`, new Vector3(0, 0, -1), scene);
 
+  const bitmapWidth = Math.max(1, options.bitmapWidth ?? options.designResolution.width);
+  const bitmapHeight = Math.max(1, options.bitmapHeight ?? options.designResolution.height);
+  const hostFrame = options.hostFrame;
+  const hostedPath = !!hostFrame;
+
   const designAdt = createStandaloneAdt(
     `${options.name}:design`,
     scene,
-    options.designResolution.width,
-    options.designResolution.height,
+    bitmapWidth,
+    bitmapHeight,
     options.interactive,
+    { hosted: hostedPath },
   );
   applyAdtIdeal(designAdt, options.designResolution, options.scaleRule);
 
@@ -91,6 +103,7 @@ export function createUiSurface(
     : null;
 
   let frozen = false;
+  let hosted = false;
   let designResolution = options.designResolution;
   const blitDesign = () =>
     blitIfUnfrozen(frozen, () => presentAdtToCanvas(designAdt, canvas));
@@ -115,6 +128,16 @@ export function createUiSurface(
   });
   const presentDesign = () => {
     factory.presentMaterials?.();
+    if (frozen) return;
+    if (hostFrame) {
+      const backing = tryHostAdtBackingCanvas(designAdt, hostFrame);
+      if (backing) {
+        hosted = true;
+        presentHostedAdt(designAdt);
+        return;
+      }
+    }
+    hosted = false;
     blitDesign();
   };
   const host = new BabylonUiApplyHost(factory, {
@@ -128,8 +151,9 @@ export function createUiSurface(
     },
   });
   const detachPointers = options.interactive
-    ? attachAdtCanvasPointers(canvas, designAdt, blitDesign, {
+    ? attachAdtCanvasPointers(canvas, designAdt, presentDesign, {
         isFrozen: () => frozen,
+        hosted: () => hosted,
         onPickError: (error) => {
           console.error("ADT pick failed", error);
         },
@@ -141,6 +165,9 @@ export function createUiSurface(
     designAdt,
     gizmoAdt,
     host,
+    get hosted() {
+      return hosted;
+    },
     present: presentDesign,
     presentGizmos: (state) => {
       if (!gizmoAdt || !gizmoCanvas) return;
@@ -270,6 +297,7 @@ function createStandaloneAdt(
   width: number,
   height: number,
   interactive = false,
+  options?: { hosted?: boolean },
 ): AdvancedDynamicTexture {
   const adt = AdvancedDynamicTexture.CreateFullscreenUI(name, true, {
     scene,
@@ -278,8 +306,12 @@ function createStandaloneAdt(
     height: Math.max(1, height),
   });
   adt.disablePicking = !interactive;
-  prepareAdtForExternalPresent(adt);
-  adt._checkUpdate(null);
+  if (options?.hosted) {
+    adt._checkUpdate(null);
+  } else {
+    prepareAdtForExternalPresent(adt);
+    adt._checkUpdate(null);
+  }
   return adt;
 }
 
@@ -300,6 +332,7 @@ export function attachAdtCanvasPointers(
   options?: {
     onPickError?: (error: unknown) => void;
     isFrozen?: () => boolean;
+    hosted?: () => boolean;
   },
 ): () => void {
   canvas.tabIndex = canvas.tabIndex >= 0 ? canvas.tabIndex : 0;
@@ -326,10 +359,9 @@ export function attachAdtCanvasPointers(
         x,
         y,
       );
-      // Pick with invalidate-rect on leaves a clipped backing store that the
-      // next clearRect+drawImage copies as an empty frame. Disable that path
-      // and fully redraw after pick before the external blit.
-      prepareAdtForExternalPresent(adt);
+      // Hosted backing canvases keep Babylon's invalidate-rect path.
+      // Blit fallbacks must disable it so the copy is a full frame.
+      if (!options?.hosted?.()) prepareAdtForExternalPresent(adt);
       adt.pick(x, y, info);
       adt._checkUpdate(null);
       afterPick?.();
@@ -411,6 +443,34 @@ export function attachAdtCanvasPointers(
     canvas.removeEventListener("keydown", onKey);
     canvas.removeEventListener("keyup", onKey);
   };
+}
+
+/** Host the ADT Canvas2D bitmap in a designer frame (no blit). */
+export function tryHostAdtBackingCanvas(
+  adt: AdvancedDynamicTexture,
+  host: HTMLElement,
+): HTMLCanvasElement | null {
+  const source = (adt.getContext() as CanvasRenderingContext2D | null)?.canvas as
+    | HTMLCanvasElement
+    | undefined;
+  if (!source || typeof source.style !== "object" || typeof host.appendChild !== "function") {
+    return null;
+  }
+  source.style.width = "100%";
+  source.style.height = "100%";
+  source.style.display = "block";
+  source.style.pointerEvents = "none";
+  if (source.parentElement !== host) host.appendChild(source);
+  return source;
+}
+
+/** Paint a hosted ADT in place. Invalidate-rect stays on. */
+export function presentHostedAdt(adt: AdvancedDynamicTexture): void {
+  const size = adt.getSize();
+  if (!(size.width > 0) || !(size.height > 0)) return;
+  adt.markAsDirty();
+  adt._checkUpdate(null);
+  uiHostStats.present += 1;
 }
 
 /**

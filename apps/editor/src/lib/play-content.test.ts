@@ -221,6 +221,27 @@ describe("playUserInterfaceRuntimeDocuments", () => {
     });
   });
 
+  it("copies exposed properties and slot overrides onto runtime metadata", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const label = createWidget("label", "TextBlock", "HP");
+    label.exposed = { key: "hp", label: "HP Text" };
+    hud.widgets.canvas!.children = ["label"];
+    hud.widgets.label = label;
+    const chip = createWidget("chip", "UserInterface", "Chip");
+    chip.nestedUiGuid = "chip-guid";
+    chip.overrides = { label: { text: "MP" } };
+    hud.widgets.canvas!.children = ["label", "chip"];
+    hud.widgets.chip = chip;
+    const widgets = playUserInterfaceRuntimeDocuments({ "hud-guid": hud })[0]?.widgets;
+    expect(widgets?.find((row) => row.id === "label")?.exposed).toEqual({
+      key: "hp",
+      label: "HP Text",
+    });
+    expect(widgets?.find((row) => row.id === "chip")?.overrides).toEqual({
+      label: { text: "MP" },
+    });
+  });
+
   it("does not invent an apply command or mount instances", () => {
     const library = { "hud-guid": createDefaultUserInterface("HUD") };
     expect(playUserInterfaceRuntimeDocuments(library)[0]?.guid).toBe("hud-guid");
@@ -367,7 +388,7 @@ describe("resolveNestedUiDocument", () => {
     const chip = createDefaultUserInterface("Chip");
     const label = createWidget(
       "label",
-      "Text",
+      "TextBlock",
       text,
       pinLayout("left", "top", 80, 20),
     );

@@ -39,7 +39,7 @@ import {
   normalizeMaterialFunctionDocument,
   parseMaterialDomain,
 } from "@babylonslate/shader-graph";
-import { createDefaultUserInterface } from "@babylonslate/ui-runtime";
+import { createDefaultUserInterface, type UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import {
   isUserInterfaceClassId,
   USER_INTERFACE_ENGINE_CLASS_ID,
@@ -1591,6 +1591,29 @@ export function newAssetFileName(
   const safe = name.trim().replace(/[^a-zA-Z0-9_.-]+/g, "_");
   if (!safe) return "";
   return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
+}
+
+/** Relative path next to an existing asset (`assets/HUD.ui.babasset` → `Chip.ui.babasset`). */
+export function siblingAssetRelativePath(hostPath: string, fileName: string): string {
+  const slash = hostPath.lastIndexOf("/");
+  const dir = slash >= 0 ? hostPath.slice(0, slash) : "";
+  const relativeDir =
+    dir === "assets" || dir === "" ? "" : dir.replace(/^assets\//, "");
+  return relativeDir ? `${relativeDir}/${fileName}` : fileName;
+}
+
+/** New UserInterface asset whose document chunk is an extracted prefab. */
+export function buildUserInterfacePrefabResult(
+  prefab: UserInterfaceDocument,
+  guid: string,
+): ImportResult {
+  const payload = {
+    ...prefab,
+    logic: createDefaultLogicGraphSerialized(defaultNodeRegistry, {
+      parentClass: "BObject",
+    }),
+  } as unknown as Record<string, unknown>;
+  return documentAsset("UserInterface", prefab.name, guid, payload);
 }
 
 /**

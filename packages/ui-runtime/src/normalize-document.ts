@@ -1,5 +1,6 @@
 import {
   WIDGET_KINDS,
+  canonicalWidgetKind,
   defaultHitTestableFor,
   createWidget,
   defaultPropsFor,
@@ -16,6 +17,7 @@ import {
   migrateLegacyLayout,
   migrateUserInterfacePayload,
 } from "./migrate-layout";
+import { migrateUserInterfaceV3 } from "./migrate-v3";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -37,9 +39,14 @@ function isWidgetKind(value: unknown): value is WidgetKind {
   return typeof value === "string" && (WIDGET_KINDS as readonly string[]).includes(value);
 }
 
+function widgetKindFrom(value: unknown): WidgetKind {
+  if (isWidgetKind(value)) return value;
+  return canonicalWidgetKind(value);
+}
+
 function normalizeWidget(id: string, value: unknown): WidgetNode {
   const record = asRecord(value);
-  const kind = isWidgetKind(record.kind) ? record.kind : "Border";
+  const kind = widgetKindFrom(record.kind);
   const base = createWidget(id, kind, typeof record.name === "string" ? record.name : kind);
   const layout = isLegacyRectTransform(record.layout)
     ? migrateLegacyLayout(record.layout)
@@ -75,6 +82,17 @@ function normalizeWidget(id: string, value: unknown): WidgetNode {
       typeof record.hitTestable === "boolean"
         ? record.hitTestable
         : defaultHitTestableFor(kind),
+    gridColumn: typeof record.gridColumn === "number" ? record.gridColumn : undefined,
+    gridRow: typeof record.gridRow === "number" ? record.gridRow : undefined,
+    zIndex: typeof record.zIndex === "number" ? record.zIndex : undefined,
+    exposed:
+      record.exposed && typeof record.exposed === "object"
+        ? (record.exposed as WidgetNode["exposed"])
+        : null,
+    overrides:
+      record.overrides && typeof record.overrides === "object"
+        ? (record.overrides as WidgetNode["overrides"])
+        : undefined,
   };
 }
 
@@ -83,7 +101,7 @@ function normalizeWidget(id: string, value: unknown): WidgetNode {
  * that always has a root widget, layout, style, props, and children arrays.
  */
 export function normalizeUserInterfaceDocument(value: unknown): UserInterfaceDocument {
-  const record = migrateUserInterfacePayload(asRecord(value));
+  const record = migrateUserInterfaceV3(migrateUserInterfacePayload(asRecord(value)));
   const designResolution =
     sizeFrom(record.designResolution) ?? { width: 1920, height: 1080 };
   const rawWidgets = asRecord(record.widgets);

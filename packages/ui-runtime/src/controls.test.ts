@@ -6,9 +6,28 @@ import {
   describeUiControls,
   layoutUserInterface,
   pinLayout,
+  scopeUiControlIds,
 } from "./index";
 
 describe("describeUiControls", () => {
+  it("walks the widget tree without a layout solver", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget(
+      "play",
+      "Button",
+      "Play",
+      pinLayout("left", "bottom", 80, 32, 0, 0),
+    );
+    button.props.text = "Play";
+    doc.widgets.canvas!.children = ["play"];
+    doc.widgets.play = button;
+    const controls = describeUiControls(doc);
+    const play = controls.find((row) => row.id === "play");
+    expect(play?.text).toBe("Play");
+    expect(play?.parentId).toBe(SAFE_AREA_CONTROL_ID);
+    expect(play?.layout.verticalAlignment).toBe("bottom");
+  });
+
   it("keeps GUI top-left coordinates and parents children", () => {
     const doc = createDefaultUserInterface();
     const button = createWidget(
@@ -73,11 +92,10 @@ describe("describeUiControls", () => {
     expect(controls.find((row) => row.id === "c")?.gridRow).toBe(1);
   });
 
-  it("emits a prefixed nested UserInterface subtree with nested text and parent", () => {
+  it("parents nested instance children into the slot and skips the nested Canvas", () => {
     const chip = createDefaultUserInterface("Chip");
     const label = createWidget(
-      "label",
-      "Text",
+      "label", "TextBlock",
       "HP",
       pinLayout("left", "top", 80, 20),
     );
@@ -97,19 +115,98 @@ describe("describeUiControls", () => {
     hud.widgets.canvas!.children = ["chip"];
     hud.widgets.chip = host;
 
-    const layout = layoutUserInterface(
-      hud,
-      { width: 1920, height: 1080 },
-      { resolveNested: (guid) => (guid === "chip-guid" ? chip : null) },
-    );
-    const controls = describeUiControls(hud, layout);
+    const controls = describeUiControls(hud, {
+      resolveNested: (guid) => (guid === "chip-guid" ? chip : null),
+    });
     const ids = controls.map((row) => row.id);
-    expect(ids).toEqual(expect.arrayContaining(["chip", "chip/canvas", "chip/label"]));
+    expect(ids).toEqual(expect.arrayContaining(["chip", "chip/label"]));
+    expect(ids).not.toContain("chip/canvas");
     const nestedLabel = controls.find((row) => row.id === "chip/label");
     expect(nestedLabel?.text).toBe("HP");
     expect(nestedLabel?.style.color).toBe("#ff0000");
-    expect(nestedLabel?.parentId).toBe("chip/canvas");
+    expect(nestedLabel?.parentId).toBe("chip");
     expect(nestedLabel?.parentId).not.toBe(SAFE_AREA_CONTROL_ID);
     expect(nestedLabel?.parentId).not.toBe("canvas");
+    expect(ids).not.toContain("chip/__safeArea");
+  });
+
+  it("applies slot overrides and drops unknown nested ids", () => {
+    const chip = createDefaultUserInterface("Chip");
+    const label = createWidget("label", "TextBlock", "HP", pinLayout("left", "top", 80, 20));
+    label.props.text = "HP";
+    label.exposed = { key: "label", label: "Label" };
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+
+    const hud = createDefaultUserInterface("HUD");
+    const host = createWidget("chip", "UserInterface", "Chip", pinLayout("left", "top", 80, 20));
+    host.nestedUiGuid = "chip-guid";
+    host.overrides = {
+      label: { text: "MP", color: "#00ff00" },
+      gone: { text: "stale" },
+    };
+    hud.widgets.canvas!.children = ["chip"];
+    hud.widgets.chip = host;
+
+    const controls = describeUiControls(hud, {
+      resolveNested: (guid) => (guid === "chip-guid" ? chip : null),
+    });
+    expect(controls.find((row) => row.id === "chip/label")?.text).toBe("MP");
+    expect(controls.find((row) => row.id === "chip/label")?.style.color).toBe("#00ff00");
+    expect(controls.some((row) => row.id === "chip/gone")).toBe(false);
+  });
+
+  it("nests a Touch skin without mounting a nested Canvas", () => {
+    const skin = createDefaultUserInterface("Skin");
+    const art = createWidget("art", "Image", "Art", pinLayout("left", "top", 64, 64));
+    skin.widgets.canvas!.children = ["art"];
+    skin.widgets.art = art;
+    const hud = createDefaultUserInterface("HUD");
+    const stick = createWidget(
+      "stick",
+      "TouchJoystick",
+      "Move",
+      pinLayout("left", "bottom", 160, 160),
+    );
+    stick.nestedUiGuid = "skin-guid";
+    hud.widgets.canvas!.children = ["stick"];
+    hud.widgets.stick = stick;
+    const controls = describeUiControls(hud, {
+      resolveNested: (guid) => (guid === "skin-guid" ? skin : null),
+    });
+    expect(controls.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["stick", "stick/art"]),
+    );
+    expect(controls.map((row) => row.id)).not.toContain("stick/canvas");
+    expect(controls.find((row) => row.id === "stick/art")?.parentId).toBe("stick");
+  });
+
+  it("scopes instance ids and parent ids together", () => {
+    const doc = createDefaultUserInterface();
+    const button = createWidget("play", "Button", "Play");
+    doc.widgets.canvas!.children = ["play"];
+    doc.widgets.play = button;
+    const scoped = scopeUiControlIds(describeUiControls(doc), "ui-1");
+    expect(scoped.find((row) => row.id === "ui-1:play")?.parentId).toBe(
+      `ui-1:${SAFE_AREA_CONTROL_ID}`,
+    );
+    expect(scoped.find((row) => row.id === "ui-1:canvas")?.parentId).toBeNull();
+  });
+
+  it("does not invent StackPanel child geometry", () => {
+    const doc = createDefaultUserInterface();
+    const stack = createWidget("stack", "StackPanel", "Stack");
+    const a = createWidget("a", "Button", "A", pinLayout("left", "top", 80, 32));
+    const b = createWidget("b", "Button", "B", pinLayout("left", "top", 80, 32));
+    stack.children = ["a", "b"];
+    doc.widgets.canvas!.children = ["stack"];
+    doc.widgets.stack = stack;
+    doc.widgets.a = a;
+    doc.widgets.b = b;
+    const controls = describeUiControls(doc);
+    expect(controls.find((row) => row.id === "a")?.layoutMode).toBe("stack");
+    expect(controls.find((row) => row.id === "a")?.guiRect.y).toBe(
+      controls.find((row) => row.id === "b")?.guiRect.y,
+    );
   });
 });

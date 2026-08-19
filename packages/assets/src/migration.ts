@@ -7,7 +7,7 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { migrateUserInterfacePayload } from "@babylonslate/ui-runtime";
+import { migrateUserInterfacePayload, migrateUserInterfaceV3 } from "@babylonslate/ui-runtime";
 import {
   normalizeAudioChannelPayload,
   normalizeAudioMixerPayload,
@@ -167,6 +167,7 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
     migrations: [
       (payload) => ({ ...payload }),
       (payload) => migrateUserInterfacePayload(payload),
+      (payload) => migrateUserInterfaceV3(payload),
     ],
   });
   // v1 was the empty imported glTF stub; v2 is the authored Material graph.
@@ -248,5 +249,5 @@ export function migrateMaterialPayload(
   }) as unknown as Record<string, unknown>;
 }
 
-/** Current UserInterface payload version (Babylon alignment / size / padding). */
-export const USER_INTERFACE_SCHEMA_VERSION = 2;
+/** Current UserInterface payload version (Babylon kinds / units / Grid). */
+export const USER_INTERFACE_SCHEMA_VERSION = 3;

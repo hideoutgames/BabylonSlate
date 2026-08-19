@@ -1,4 +1,4 @@
-import { normalizeLayout } from "./layout";
+import { insetRect, normalizeLayout } from "./layout";
 import { previewRect } from "./preview-rect";
 import type {
   HorizontalAlignment,
@@ -63,10 +63,8 @@ export const ANCHOR_PRESETS: readonly AnchorPreset[] = [
 const PRESET_BY_ID = new Map(ANCHOR_PRESETS.map((row) => [row.id, row]));
 
 const SLOT_LAYOUT_PARENTS: ReadonlySet<WidgetKind> = new Set([
-  "HorizontalBox",
-  "VerticalBox",
+  "StackPanel",
   "Grid",
-  "SizeBox",
 ]);
 
 export function parentOwnsChildLayout(kind: WidgetKind): boolean {
@@ -87,24 +85,20 @@ export function widgetAllowsDesignerTransform(
 
 export function preferredWidgetSize(kind: WidgetKind): { width: number; height: number } {
   switch (kind) {
-    case "Text":
+    case "TextBlock":
     case "Button":
       return { width: 160, height: 36 };
-    case "TextInput":
+    case "InputText":
       return { width: 200, height: 36 };
     case "Slider":
       return { width: 200, height: 24 };
-    case "CheckBox":
+    case "Checkbox":
       return { width: 28, height: 28 };
     case "Image":
     case "Material":
       return { width: 128, height: 128 };
     case "ProgressBar":
       return { width: 200, height: 16 };
-    case "Spacer":
-      return { width: 24, height: 24 };
-    case "SizeBox":
-      return { width: 100, height: 100 };
     case "TouchJoystick":
     case "TouchDPad":
       return { width: 160, height: 160 };
@@ -120,11 +114,18 @@ export function preferredWidgetSize(kind: WidgetKind): { width: number; height: 
 export function defaultAddLayout(
   kind: WidgetKind,
   staggerIndex = 0,
+  parentKind?: WidgetKind,
+  parentVertical = true,
 ): WidgetLayout {
   const size = preferredWidgetSize(kind);
   const step = 48;
   const offset = Math.max(0, staggerIndex) * step;
-  return pinLayout("center", "center", size.width, size.height, offset, offset);
+  const layout = pinLayout("center", "center", size.width, size.height, offset, offset);
+  if (parentKind === "StackPanel") {
+    if (parentVertical) layout.heightUnit = "px";
+    else layout.widthUnit = "px";
+  }
+  return layout;
 }
 
 function nearlyEqual(a: number, b: number): boolean {
@@ -158,8 +159,13 @@ export function layoutFromRect(
     heightUnit: preset.stretchY ? "percent" : "px",
     left: 0,
     top: 0,
+    leftUnit: "px",
+    topUnit: "px",
     padding,
     transformCenter: { ...transformCenter },
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
   };
   if (!preset.stretchX || !preset.stretchY) {
     const preview = previewRect(parent, layout);
@@ -304,6 +310,39 @@ export function laidOutParentRect(
     for (const child of node.children) stack.push(child);
   }
   return result.canvas;
+}
+
+/** Parent space for 3×3 macros without calling `layoutUserInterface`. */
+export function authoringParentRect(
+  doc: UserInterfaceDocument,
+  widgetId: string,
+  options: {
+    viewport: { width: number; height: number };
+    safeArea?: { left: number; right: number; top: number; bottom: number };
+    controls?: readonly { id: string; guiRect: Rect }[];
+  },
+): Rect {
+  const canvas: Rect = {
+    x: 0,
+    y: 0,
+    width: options.viewport.width,
+    height: options.viewport.height,
+  };
+  const parentId = widgetParentId(doc, widgetId);
+  if (!parentId || parentId === doc.rootId) {
+    const widget = doc.widgets[widgetId];
+    if (
+      widget &&
+      widget.ignoreSafeArea !== true &&
+      options.safeArea &&
+      doc.viewportLayer !== false
+    ) {
+      return insetRect(canvas, options.safeArea);
+    }
+    return canvas;
+  }
+  const fromControls = options.controls?.find((row) => row.id === parentId);
+  return fromControls?.guiRect ?? canvas;
 }
 
 export function applyWidgetResize(

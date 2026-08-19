@@ -780,7 +780,7 @@ describe("collectExportClosure", () => {
           return {
             widgets: {
               canvas: { id: "canvas", kind: "Canvas", children: ["label"] },
-              label: { id: "label", kind: "Text", style: { fontFamily: "Display" } },
+              label: { id: "label", kind: "TextBlock", style: { fontFamily: "Display" } },
             },
           };
         }

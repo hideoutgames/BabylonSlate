@@ -49,10 +49,25 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
 export type EngineComponentClassId =
   (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
 
+/** v2 kind class ids kept so existing graphs still resolve. */
+export const LEGACY_ENGINE_WIDGET_CLASS_IDS = [
+  "HorizontalBoxWidget",
+  "VerticalBoxWidget",
+  "ScrollBoxWidget",
+  "OverlayWidget",
+  "SizeBoxWidget",
+  "BorderWidget",
+  "TextWidget",
+  "TextInputWidget",
+  "CheckBoxWidget",
+  "SpacerWidget",
+] as const;
+
 /** Concrete Widget subclasses, one per authored widget kind. */
-export const ENGINE_WIDGET_CLASS_IDS = ENGINE_WIDGET_KINDS.map((kind) =>
-  widgetClassIdForKind(kind),
-);
+export const ENGINE_WIDGET_CLASS_IDS = [
+  ...ENGINE_WIDGET_KINDS.map((kind) => widgetClassIdForKind(kind)),
+  ...LEGACY_ENGINE_WIDGET_CLASS_IDS,
+];
 
 /** Engine types that must not be reparented (bases, components, BT builtins). */
 export function isLockedEngineClassId(classId: string): boolean {
@@ -62,7 +77,7 @@ export function isLockedEngineClassId(classId: string): boolean {
   if ((ENGINE_COMPONENT_CLASS_IDS as readonly string[]).includes(classId)) {
     return true;
   }
-  if (ENGINE_WIDGET_CLASS_IDS.includes(classId)) {
+  if ((ENGINE_WIDGET_CLASS_IDS as readonly string[]).includes(classId)) {
     return true;
   }
   return ENGINE_BT_BUILTIN_CLASSES.some((entry) => entry.id === classId);

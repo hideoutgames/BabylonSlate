@@ -15,7 +15,8 @@ import {
 import {
   describeUiControls,
   devicePresetForViewport,
-  layoutUserInterface,
+  resolveUiAdtIdeal,
+  scopeUiControlIds,
   type DevicePreset,
   type UserInterfaceDocument,
 } from "@babylonslate/ui-runtime";
@@ -54,6 +55,10 @@ export type PlayerUiHostOptions = {
   attachGui?: typeof attachFullscreenGui;
   disposeAttached?: () => void;
   designerPresets?: readonly DevicePreset[];
+  uiSettings?: {
+    designResolution: { width: number; height: number };
+    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
+  };
   fontEntries?: readonly FontAssetEntry[];
   applyFonts?: typeof applyFontRegistryToHost;
   resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
@@ -101,6 +106,12 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
     });
   const applyFonts = options.applyFonts ?? applyFontRegistryToHost;
   const extras = options.designerPresets ?? [];
+  const playIdeal = () =>
+    resolveUiAdtIdeal({
+      viewportLayer: true,
+      project: options.uiSettings,
+      bitmap: viewport,
+    });
   let attached: ReturnType<typeof attachFullscreenGui> | null = null;
   let fallbackHost: UiApplyHost | null = options.host ?? null;
   let disposed = false;
@@ -147,9 +158,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
     if (fallbackHost) return fallbackHost;
     if (attached) return attached.host;
     if (options.scene) {
-      const first = rows
-        .map((row) => documentFromLibrary(options.library, row.assetGuid))
-        .find((doc) => doc);
+      const ideal = playIdeal();
       const attach = options.attachGui ?? attachFullscreenGui;
       attached = attach(options.scene, {
         name: "player-hud",
@@ -157,8 +166,8 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
         allowGuiHits,
         width: viewport.width,
         height: viewport.height,
-        designResolution: first?.designResolution ?? viewport,
-        scaleRule: first?.scaleRule ?? "shortestSide",
+        designResolution: ideal.designResolution,
+        scaleRule: ideal.scaleRule,
         safeArea: devicePresetForViewport(
           viewport.width,
           viewport.height,
@@ -185,35 +194,25 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
 
   const rebuild = (): void => {
     const host = applyHost();
-    const preset = devicePresetForViewport(
-      viewport.width,
-      viewport.height,
-      extras,
-    );
-    const first = rows
-      .map((row) => documentFromLibrary(options.library, row.assetGuid))
-      .find((doc) => doc);
+    const ideal = playIdeal();
     if (attached) {
       applyAdtIdeal(
         attached.adt,
-        first?.designResolution ?? viewport,
-        first?.scaleRule ?? "shortestSide",
+        ideal.designResolution,
+        ideal.scaleRule,
       );
     }
     const controls = rows.flatMap((row) => {
       const document = documentFromLibrary(options.library, row.assetGuid);
       if (!document) return [];
-      const layout = layoutUserInterface(document, viewport, {
-        safeArea: preset.safeArea,
-        resolveNested,
-      });
-      return describeUiControls(document, layout)
-        .map((control) => ({
-          ...control,
-          id: `${row.instanceId}:${control.id}`,
-          parentId: scopeControlId(row.instanceId, control.parentId),
-        }))
-        .filter((control) => control.visible && !hidden.has(control.id));
+      return scopeUiControlIds(
+        describeUiControls(document, {
+          parentSize: viewport,
+          resolveNested,
+          applySafeArea: document.viewportLayer !== false,
+        }),
+        row.instanceId,
+      ).filter((control) => control.visible && !hidden.has(control.id));
     });
     applyUiControls(host, controls);
   };

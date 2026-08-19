@@ -4,6 +4,7 @@ import {
   applyAuthoringFields,
   applyWidgetResize,
   authoringFieldsFromLayout,
+  authoringParentRect,
   defaultAddLayout,
   laidOutParentRect,
   layoutFromRect,
@@ -15,7 +16,9 @@ import {
 } from "./layout-authoring";
 import { layoutUserInterface, previewRect } from "./layout";
 import {
+  ZERO_INSETS,
   createDefaultPlayHud,
+  createDefaultUserInterface,
   createWidget,
   pinLayout,
   stretchLayout,
@@ -150,28 +153,34 @@ describe("default add layout", () => {
     expect(rect.x + rect.width / 2).toBe(400);
   });
 
+  it("authors StackPanel children with pixel size on the stack axis", () => {
+    const vertical = defaultAddLayout("Button", 0, "StackPanel", true);
+    expect(vertical.heightUnit).toBe("px");
+    const horizontal = defaultAddLayout("Button", 0, "StackPanel", false);
+    expect(horizontal.widthUnit).toBe("px");
+  });
+
   it("staggers later siblings away from the shared center", () => {
     const first = defaultAddLayout("Button", 0);
-    const second = defaultAddLayout("CheckBox", 1);
+    const second = defaultAddLayout("Checkbox", 1);
     expect(first.left).toBe(0);
     expect(second.left).toBe(48);
     expect(second.top).toBe(48);
   });
 
   it("marks box and grid parents as owning child layout", () => {
-    expect(parentOwnsChildLayout("HorizontalBox")).toBe(true);
-    expect(parentOwnsChildLayout("VerticalBox")).toBe(true);
+    expect(parentOwnsChildLayout("StackPanel")).toBe(true);
     expect(parentOwnsChildLayout("Grid")).toBe(true);
-    expect(parentOwnsChildLayout("SizeBox")).toBe(true);
+    expect(parentOwnsChildLayout("ScrollViewer")).toBe(false);
     expect(parentOwnsChildLayout("Canvas")).toBe(false);
-    expect(parentOwnsChildLayout("Overlay")).toBe(false);
+    expect(parentOwnsChildLayout("Rectangle")).toBe(false);
   });
 
   it("refuses designer move/resize on the canvas root and fill-slot children", () => {
     const hud = createDefaultPlayHud("HUD");
     expect(widgetAllowsDesignerTransform(hud, hud.rootId)).toBe(false);
     expect(widgetAllowsDesignerTransform(hud, "stick")).toBe(true);
-    const box = createWidget("box", "HorizontalBox", "Row");
+    const box = createWidget("box", "StackPanel", "Row");
     const child = createWidget("cell", "Button", "Cell");
     hud.widgets.canvas!.children = [...hud.widgets.canvas!.children, "box"];
     hud.widgets.box = box;
@@ -188,5 +197,37 @@ describe("laidOutParentRect", () => {
     expect(laidOutParentRect(result, hud.rootId)).toEqual(result.canvas);
     const stickParent = laidOutParentRect(result, "stick");
     expect(stickParent.width).toBe(result.tree?.rect.width);
+  });
+});
+
+describe("authoringParentRect", () => {
+  it("insets Canvas children by Safe Area without a layout solver", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const button = createWidget("play", "Button", "Play", pinLayout("left", "top", 80, 32));
+    hud.widgets.canvas!.children = ["play"];
+    hud.widgets.play = button;
+    const parent = authoringParentRect(hud, "play", {
+      viewport: { width: 800, height: 600 },
+      safeArea: { left: 10, right: 20, top: 30, bottom: 40 },
+    });
+    expect(parent).toEqual({ x: 10, y: 30, width: 770, height: 530 });
+  });
+
+  it("uses the parent control guiRect for nested absolute widgets", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const panel = createWidget("panel", "Rectangle", "Panel", pinLayout("left", "top", 200, 100));
+    const label = createWidget("label", "TextBlock", "HP", pinLayout("left", "top", 80, 20));
+    panel.children = ["label"];
+    hud.widgets.canvas!.children = ["panel"];
+    hud.widgets.panel = panel;
+    hud.widgets.label = label;
+    const parent = authoringParentRect(hud, "label", {
+      viewport: { width: 800, height: 600 },
+      safeArea: ZERO_INSETS,
+      controls: [
+        { id: "panel", guiRect: { x: 40, y: 50, width: 200, height: 100 } },
+      ],
+    });
+    expect(parent).toEqual({ x: 40, y: 50, width: 200, height: 100 });
   });
 });

@@ -202,7 +202,7 @@ describe("schema migration", () => {
     expect(result.payload).toEqual({ name: "Icon" });
   });
 
-  it("migrates UserInterface v1 RectTransform payloads to the Babylon layout", () => {
+  it("migrates UserInterface v1 RectTransform payloads through schema v3", () => {
     const registry = createDefaultMigrationRegistry();
     const result = registry.migrate("UserInterface", 1, {
       name: "HUD",
@@ -220,9 +220,13 @@ describe("schema migration", () => {
       },
     });
     expect(result.migrated).toBe(true);
-    expect(result.version).toBe(2);
-    const stick = (result.payload.widgets as Record<string, { layout: { horizontalAlignment: string } }>)
-      .stick;
+    expect(result.version).toBe(3);
+    const stick = (result.payload.widgets as Record<
+      string,
+      { layout: { horizontalAlignment: string; leftUnit: string; padding: { left: number } } }
+    >).stick;
     expect(stick.layout.horizontalAlignment).toBe("center");
+    expect(stick.layout.leftUnit).toBe("px");
+    expect(stick.layout.padding.left).toBe(0);
   });
 });

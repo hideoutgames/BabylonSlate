@@ -93,6 +93,61 @@ describe("exportGame", () => {
     expect(parsed.uiDesignerPresets).toEqual([phone]);
   });
 
+  it("writes Project Settings User Interface design space onto game.json", async () => {
+    const result = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+      ],
+      playerFiles: stubPlayer(),
+      ui: {
+        designResolution: { width: 1280, height: 720 },
+        scaleRule: "fitWidth",
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.manifest.ui).toEqual({
+      designResolution: { width: 1280, height: 720 },
+      scaleRule: "fitWidth",
+    });
+    const parsed = parseGameManifest(
+      new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)),
+    );
+    expect(parsed.ui).toEqual({
+      designResolution: { width: 1280, height: 720 },
+      scaleRule: "fitWidth",
+    });
+  });
+
+  it("defaults User Interface design space when game.json omits it", () => {
+    const manifest = parseGameManifest(
+      JSON.stringify({
+        startupSceneGuid: "scene-1",
+        bundleDebugger: false,
+        mode: "packed",
+        render: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        packs: [],
+        scriptsFile: "scripts.js",
+        physicsWorld: "3d",
+        assets: [],
+      }),
+    );
+    expect(manifest.ui).toEqual({
+      designResolution: { width: 1920, height: 1080 },
+      scaleRule: "shortestSide",
+    });
+  });
+
   it("defaults to packed mode with a boot pack", async () => {
     const result = await exportGame({
       bundleDebugger: true,

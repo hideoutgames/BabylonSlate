@@ -157,10 +157,7 @@ function cloneSubtree(
     name: rename ? `${source.name} Copy` : source.name,
     children: childIds,
     layout: cloneLayout(source.layout),
-    style: {
-      ...source.style,
-      padding: source.style.padding ? { ...source.style.padding } : undefined,
-    },
+    style: { ...source.style },
     props: { ...source.props },
   };
   return [copy, ...childCopies];

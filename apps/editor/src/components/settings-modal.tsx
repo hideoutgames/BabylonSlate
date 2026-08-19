@@ -99,6 +99,11 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
     keywords: "default font fallback family stack",
   },
   {
+    id: "ui",
+    label: "User Interface",
+    keywords: "hud design resolution scale rule shortest side fit width height adt ideal",
+  },
+  {
     id: "audio",
     label: "Audio",
     keywords: "mixer channel volume attenuation",
@@ -137,7 +142,7 @@ const PROJECT_CATEGORIES: Array<CatalogCategory & { keywords: string }> = [
 ];
 
 const PROJECT_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Project", ids: ["general", "input", "twoD", "fonts", "audio", "rendering", "textures", "plugins", "export", "sourceControl"] },
+  { label: "Project", ids: ["general", "input", "twoD", "fonts", "ui", "audio", "rendering", "textures", "plugins", "export", "sourceControl"] },
   { label: "Session", ids: ["project"] },
 ];
 
@@ -711,6 +716,114 @@ export function SettingsModal({
               <FieldDescription>
                 Generic CSS family appended to every compiled stack (never silent
                 Arial).
+              </FieldDescription>
+            </Field>
+          </FieldSet>
+        </FieldGroup>
+      ) : null}
+
+      {showProjectBody && projectDocument && activeCategoryId === "ui" ? (
+        <FieldGroup>
+          <FieldSet>
+            <FieldLegend>User Interface</FieldLegend>
+            <Field>
+              <FieldLabel htmlFor="settings-ui-design-width">
+                Design Resolution
+              </FieldLabel>
+              <div className="flex items-center gap-2">
+                <NumberField
+                  id="settings-ui-design-width"
+                  min={1}
+                  step={1}
+                  className="min-h-[var(--touch-target,44px)]"
+                  value={projectDocument.settings.ui.designResolution.width}
+                  onChange={(width) =>
+                    updateProjectSettings({
+                      ui: {
+                        ...projectDocument.settings.ui,
+                        designResolution: {
+                          ...projectDocument.settings.ui.designResolution,
+                          width,
+                        },
+                      },
+                    })
+                  }
+                  data-testid="settings-ui-design-width"
+                  aria-label="UI Design Width"
+                />
+                <span aria-hidden="true">×</span>
+                <NumberField
+                  id="settings-ui-design-height"
+                  min={1}
+                  step={1}
+                  className="min-h-[var(--touch-target,44px)]"
+                  value={projectDocument.settings.ui.designResolution.height}
+                  onChange={(height) =>
+                    updateProjectSettings({
+                      ui: {
+                        ...projectDocument.settings.ui,
+                        designResolution: {
+                          ...projectDocument.settings.ui.designResolution,
+                          height,
+                        },
+                      },
+                    })
+                  }
+                  data-testid="settings-ui-design-height"
+                  aria-label="UI Design Height"
+                />
+              </div>
+              <FieldDescription>
+                Play and the designer share this ADT ideal for viewport-layer
+                HUDs. Device presets change the bitmap and Safe Area only.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="settings-ui-scale-rule">
+                Scale Rule
+              </FieldLabel>
+              <Select
+                value={projectDocument.settings.ui.scaleRule}
+                onValueChange={(value) =>
+                  updateProjectSettings({
+                    ui: {
+                      ...projectDocument.settings.ui,
+                      scaleRule: value as typeof projectDocument.settings.ui.scaleRule,
+                    },
+                  })
+                }
+              >
+                <SelectTrigger
+                  id="settings-ui-scale-rule"
+                  className="min-h-[var(--touch-target,44px)] w-full"
+                  data-testid="settings-ui-scale-rule"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    value="shortestSide"
+                    data-testid="settings-ui-scale-rule-shortestSide"
+                  >
+                    Shortest Side
+                  </SelectItem>
+                  <SelectItem
+                    value="fitWidth"
+                    data-testid="settings-ui-scale-rule-fitWidth"
+                  >
+                    Fit Width
+                  </SelectItem>
+                  <SelectItem
+                    value="fitHeight"
+                    data-testid="settings-ui-scale-rule-fitHeight"
+                  >
+                    Fit Height
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                Maps to ADT idealWidth / idealHeight / useSmallestIdeal. Two
+                HUDs cannot each have their own ideal.
               </FieldDescription>
             </Field>
           </FieldSet>

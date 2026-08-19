@@ -7,16 +7,17 @@ import {
   attachPageFailureCollector,
   readUiHostStats,
 } from "./page-failures";
+import { saveAllIfEnabled } from "./save-all";
 
 const E2E_TIMEOUT_MS = 90_000;
 
 type UiAssetType = "UserInterface";
 type AddableWidgetKind =
   | "Button"
-  | "CheckBox"
+  | "Checkbox"
   | "Slider"
-  | "ScrollBox"
-  | "TextInput"
+  | "ScrollViewer"
+  | "InputText"
   | "Image";
 
 async function createAsset(
@@ -263,10 +264,10 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
 
     const kinds: AddableWidgetKind[] = [
       "Button",
-      "CheckBox",
+      "Checkbox",
       "Slider",
-      "ScrollBox",
-      "TextInput",
+      "ScrollViewer",
+      "InputText",
     ];
     for (const kind of kinds) {
       await selectCanvasRoot(page);
@@ -276,8 +277,8 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await expect(page.locator('[data-testid^="ui-widget-button-"]')).toBeVisible();
     await expect(page.locator('[data-testid^="ui-widget-checkbox-"]')).toBeVisible();
     await expect(page.locator('[data-testid^="ui-widget-slider-"]')).toBeVisible();
-    await expect(page.locator('[data-testid^="ui-widget-scrollbox-"]')).toBeVisible();
-    await expect(page.locator('[data-testid^="ui-widget-textinput-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="ui-widget-scrollviewer-"]')).toBeVisible();
+    await expect(page.locator('[data-testid^="ui-widget-inputtext-"]')).toBeVisible();
     await expectDesignerHostStats(page);
     await assertNoPageFailures(collector);
   });
@@ -306,7 +307,7 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await selectCanvasRoot(page);
     await addWidget(page, "Button");
     await selectCanvasRoot(page);
-    await addWidget(page, "CheckBox");
+    await addWidget(page, "Checkbox");
     const button = visibleUiWorkspace(page).locator(
       '[data-testid^="ui-widget-button-"]',
     );
@@ -363,5 +364,82 @@ test.describe("P12 UserInterface authoring editors", { tag: IPAD_TEST_TAG }, () 
     await expectDesignerReady(page);
     await expectDesignerHostStats(page);
     await assertNoPageFailures(collector);
+  });
+
+  test("device preset switch does not dirty the widget document", async ({ page }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+    await saveAllIfEnabled(page);
+    const hudTab = page.locator("[data-testid='document-tab']").filter({
+      hasText: /^HUD( \*)?$/,
+    });
+    await expect(hudTab).toBeVisible();
+    await expect(hudTab).not.toContainText("*");
+    await visibleUiWorkspace(page).getByTestId("ui-device-preset").click();
+    await page.getByTestId("ui-preset-desktop-4-3").click();
+    await expect(visibleUiWorkspace(page).getByTestId("ui-design-canvas")).toHaveAttribute(
+      "data-preset",
+      "desktop-4-3",
+    );
+    await expect(hudTab).not.toContainText("*");
+  });
+
+  test("adds a Vertical Stack and Button, and nested UserInterface from catalog", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    const collector = attachPageFailureCollector(page);
+    await openTestProject(page);
+    await collector.listenForUnhandledRejections();
+    await createAsset(page, "UserInterface", "Chip");
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+
+    const workspace = visibleUiWorkspace(page);
+    await workspace.getByTestId("ui-add-widget").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Vertical Stack");
+    await page.getByTestId("ui-add-widget-StackPanel-vertical").click();
+    await expect(workspace.locator('[data-testid^="ui-widget-stackpanel-"]')).toBeVisible();
+
+    await selectCanvasRoot(page);
+    await addWidget(page, "Button");
+
+    await selectCanvasRoot(page);
+    await workspace.getByTestId("ui-add-widget").click();
+    await expect(page.getByTestId("ui-widget-catalog")).toBeVisible();
+    await page.getByTestId("ui-widget-catalog-search").fill("Chip");
+    await page.locator('[data-testid^="ui-add-widget-UserInterface-"]').click();
+    await expect(workspace.locator('[data-testid^="ui-widget-ui-"]').or(
+      workspace.locator('[data-kind="UserInterface"]'),
+    ).first()).toBeVisible();
+    await expectDesignerHostStats(page);
+    await assertNoPageFailures(collector);
+  });
+
+  test("extracts a widget into a nested UserInterface prefab", async ({ page }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await createAsset(page, "UserInterface", "HUD");
+    await openAssetFromBrowser(page, "assets/HUD.ui.babasset");
+    await expectDesignerReady(page);
+    await addWidget(page, "Button");
+    const buttonRow = visibleUiWorkspace(page).locator(
+      '[data-testid^="ui-widget-menu-button-"]',
+    );
+    await expect(buttonRow).toBeVisible();
+    await buttonRow.click();
+    await page.getByTestId("ui-widget-extract").click();
+    await expect(page.getByTestId("ui-extract-widget")).toBeVisible();
+    await page.getByTestId("name-prompt-input").fill("Health Chip");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(page.getByTestId("ui-extract-widget")).toHaveCount(0);
+    await expect(
+      visibleUiWorkspace(page).locator('[data-kind="UserInterface"]'),
+    ).toBeVisible();
   });
 });

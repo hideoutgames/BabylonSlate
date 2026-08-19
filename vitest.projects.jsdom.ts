@@ -6,5 +6,7 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.jsdom.ts"],
     // Needed so `?raw` stylesheet imports resolve; Vitest stubs CSS by default.
     css: true,
+    fileParallelism: true,
+    maxWorkers: 4,
   },
 });

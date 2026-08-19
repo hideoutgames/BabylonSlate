@@ -1,4 +1,8 @@
-import type { WidgetLayout } from "@babylonslate/ui-runtime";
+import {
+  designScale,
+  type ScaleRule,
+  type WidgetLayout,
+} from "@babylonslate/ui-runtime";
 
 export const UI_DESIGN_ZOOM_MIN = 0.25;
 export const UI_DESIGN_ZOOM_MAX = 8;
@@ -19,6 +23,24 @@ export function uiDesignStrokeMergeKey(strokeId: string): string {
 export function clampDesignZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return 1;
   return Math.min(UI_DESIGN_ZOOM_MAX, Math.max(UI_DESIGN_ZOOM_MIN, zoom));
+}
+
+/** Screen → authored design pixels, including project ADT ideal scale. */
+export function designerLayoutViewScale(options: {
+  previewScale: number;
+  zoom: number;
+  bitmapScale?: number;
+  bitmap: { width: number; height: number };
+  designResolution: { width: number; height: number };
+  scaleRule: ScaleRule;
+}): number {
+  const adtScale = designScale(
+    options.bitmap,
+    options.designResolution,
+    options.scaleRule,
+  );
+  const bitmapScale = options.bitmapScale ?? 1;
+  return options.previewScale * options.zoom * bitmapScale * adtScale;
 }
 
 /** Screen Y-down to layout Y-down (Babylon GUI). */

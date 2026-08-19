@@ -7,7 +7,6 @@ import {
   createDefaultUserInterface,
   createWidget,
   describeUiControls,
-  layoutUserInterface,
   pinLayout,
 } from "@babylonslate/ui-runtime";
 import { UiDesignCanvas } from "./ui-design-canvas";
@@ -47,20 +46,22 @@ function hudCanvasProps() {
     height: 1080,
     safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
   };
-  const layout = layoutUserInterface(ui, viewport, {
-    designSpace: true,
-    safeArea: viewport.safeArea,
-  });
   return {
     ui,
     viewport,
-    layout,
-    controls: describeUiControls(ui, layout),
+    controls: describeUiControls(ui, {
+      parentSize: { width: viewport.width, height: viewport.height },
+      applySafeArea: ui.viewportLayer,
+    }),
     selectedId: ui.rootId,
     view: { zoom: 1, panX: 0, panY: 0 },
     previewScale: 1,
     bitmapScale: 1,
     sharedEngine: {} as Engine,
+    adtIdeal: {
+      designResolution: { width: 1920, height: 1080 },
+      scaleRule: "shortestSide" as const,
+    },
     onSelect: () => {},
     onViewChange: () => {},
     onLayoutChange: () => {},
@@ -72,11 +73,14 @@ function mockSurface() {
     present: vi.fn(),
     setFrozen: vi.fn(),
     dispose: vi.fn(),
+    hosted: false,
     host: {
       measureControls: () => ({}),
       clear: vi.fn(),
       addControl: vi.fn(),
       markAsDirty: vi.fn(),
+      setGestureLocked: vi.fn(),
+      patchLiveLayout: vi.fn(),
     },
     resizeDesign: vi.fn(),
     resizeGizmos: vi.fn(),
@@ -226,8 +230,8 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
-      width: 800,
-      height: 600,
+      width: 1920,
+      height: 1080,
     });
   });
 
@@ -304,8 +308,7 @@ describe("UiDesignCanvas preview fallback", () => {
     createUiSurfaceMock.mockReturnValue(mockSurface());
     const chip = createDefaultUserInterface("Chip");
     const label = createWidget(
-      "label",
-      "Text",
+      "label", "TextBlock",
       "HP",
       pinLayout("left", "top", 80, 20),
     );
@@ -331,17 +334,14 @@ describe("UiDesignCanvas preview fallback", () => {
       height: 1080,
       safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
     };
-    const layout = layoutUserInterface(ui, viewport, {
-      designSpace: true,
-      safeArea: viewport.safeArea,
-      resolveNested,
-    });
     render(
       <UiDesignCanvas
         ui={ui}
         viewport={viewport}
-        layout={layout}
-        controls={describeUiControls(ui, layout)}
+        controls={describeUiControls(ui, {
+          parentSize: { width: viewport.width, height: viewport.height },
+          resolveNested,
+        })}
         selectedId="chip"
         view={{ zoom: 1, panX: 0, panY: 0 }}
         previewScale={1}
@@ -353,12 +353,14 @@ describe("UiDesignCanvas preview fallback", () => {
         resolveNested={resolveNested}
       />,
     );
+    expect(screen.getByTestId("ui-widget-chip")).toBeTruthy();
     expect(screen.getByTestId("ui-widget-chip/label")).toBeTruthy();
     const chipHit = screen.getByTestId("ui-widget-chip");
     act(() => {
       dispatchPointerEvent(chipHit, "pointerdown", { clientX: 10, clientY: 10 });
       dispatchPointerEvent(chipHit, "pointermove", { clientX: 55, clientY: 10 });
     });
+    expect(screen.getByTestId("ui-widget-chip")).toBeTruthy();
     expect(screen.getByTestId("ui-widget-chip/label")).toBeTruthy();
   });
 
@@ -373,7 +375,7 @@ describe("UiDesignCanvas preview fallback", () => {
     );
     const checkbox = createWidget(
       "box",
-      "CheckBox",
+      "Checkbox",
       "On",
       pinLayout("left", "top", 28, 28, 400, 400),
     );
@@ -386,17 +388,14 @@ describe("UiDesignCanvas preview fallback", () => {
       height: 600,
       safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
     };
-    const layout = layoutUserInterface(ui, viewport, {
-      designSpace: true,
-      safeArea: viewport.safeArea,
-    });
     const onLayoutChange = vi.fn();
     render(
       <UiDesignCanvas
         ui={ui}
         viewport={viewport}
-        layout={layout}
-        controls={describeUiControls(ui, layout)}
+        controls={describeUiControls(ui, {
+          parentSize: { width: viewport.width, height: viewport.height },
+        })}
         selectedId="box"
         view={{ zoom: 1, panX: 0, panY: 0 }}
         previewScale={1}
@@ -439,17 +438,14 @@ describe("UiDesignCanvas preview fallback", () => {
       height: 600,
       safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
     };
-    const layout = layoutUserInterface(ui, viewport, {
-      designSpace: true,
-      safeArea: viewport.safeArea,
-    });
     const onLayoutChange = vi.fn();
     render(
       <UiDesignCanvas
         ui={ui}
         viewport={viewport}
-        layout={layout}
-        controls={describeUiControls(ui, layout)}
+        controls={describeUiControls(ui, {
+          parentSize: { width: viewport.width, height: viewport.height },
+        })}
         selectedId="btn"
         view={{ zoom: 1, panX: 0, panY: 0 }}
         previewScale={1}
@@ -491,17 +487,14 @@ describe("UiDesignCanvas preview fallback", () => {
       height: 600,
       safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
     };
-    const layout = layoutUserInterface(ui, viewport, {
-      designSpace: true,
-      safeArea: viewport.safeArea,
-    });
     const onLayoutChange = vi.fn();
     render(
       <UiDesignCanvas
         ui={ui}
         viewport={viewport}
-        layout={layout}
-        controls={describeUiControls(ui, layout)}
+        controls={describeUiControls(ui, {
+          parentSize: { width: viewport.width, height: viewport.height },
+        })}
         selectedId="btn"
         view={{ zoom: 1, panX: 0, panY: 0 }}
         previewScale={1}

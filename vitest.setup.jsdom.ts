@@ -29,3 +29,18 @@ if (typeof Element !== "undefined" && !Element.prototype.getAnimations) {
 if (typeof Document !== "undefined" && !Document.prototype.getAnimations) {
   Document.prototype.getAnimations = () => [];
 }
+
+/** jsdom has no Canvas2D; FontEditor and similar measure via getContext. */
+if (typeof HTMLCanvasElement !== "undefined") {
+  HTMLCanvasElement.prototype.getContext = function getContext() {
+    return {
+      font: "",
+      measureText: () => ({ width: 8 }),
+      fillRect() {},
+      clearRect() {},
+      drawImage() {},
+      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+      putImageData() {},
+    } as unknown as CanvasRenderingContext2D;
+  };
+}

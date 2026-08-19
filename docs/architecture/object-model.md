@@ -8,7 +8,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | --- | --- |
 | `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed` |
 | `UserInterface` | Viewport-layer HUD instance (`assetGuid`, `widgets[]`). Not an Actor. Class id `UserInterface:<assetGuid>`. |
-| `Widget` | Authored control scoped to an owning `UserInterface` (`widgetId`, `owner`). Concrete subclasses: `CanvasWidget`, `HorizontalBoxWidget`, `VerticalBoxWidget`, `GridWidget`, `ScrollBoxWidget`, `OverlayWidget`, `SizeBoxWidget`, `BorderWidget`, `ButtonWidget`, `TextWidget`, `TextInputWidget`, `SliderWidget`, `CheckBoxWidget`, `ImageWidget`, `MaterialWidget`, `ProgressBarWidget`, `SpacerWidget`, `TouchJoystickWidget`, `TouchButtonWidget`, `TouchDPadWidget`, `UserInterfaceWidget`. |
+| `Widget` | Authored control scoped to an owning `UserInterface` (`widgetId`, `owner`). Concrete subclasses match schema v3 kinds (`CanvasWidget`, `RectangleWidget`, `StackPanelWidget`, `GridWidget`, `ScrollViewerWidget`, `EllipseWidget`, `ContainerWidget`, `ButtonWidget`, `TextBlockWidget`, `InputTextWidget`, `SliderWidget`, `CheckboxWidget`, `ImageWidget`, `MaterialWidget`, `ProgressBarWidget`, `TouchJoystickWidget`, `TouchButtonWidget`, `TouchDPadWidget`, `UserInterfaceWidget`). v2 aliases (`HorizontalBoxWidget`, `TextWidget`, …) remain registered so old graphs resolve. |
 | `Actor` | World-placed object with transform and ordered component list |
 | `ActorComponent` | Attached to an Actor; own tick |
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
