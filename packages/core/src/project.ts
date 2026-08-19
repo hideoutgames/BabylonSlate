@@ -190,6 +190,7 @@ export interface ProjectSettings {
   gameInstanceClass: string | null;
   textures: TextureProjectSettings;
   twoD: TwoDProjectSettings;
+  physics: PhysicsProjectSettings;
   input: ProjectInputSettings;
   fonts: FontProjectSettings;
   /** Viewport-layer HUD design space shared by Play, the player, and the designer. */
@@ -373,6 +374,21 @@ export const DEFAULT_SORTING_LAYERS = [
   "UI",
 ] as const;
 
+export const DEFAULT_COLLISION_LAYERS = ["Default"] as const;
+export const MAX_COLLISION_LAYERS = 32;
+
+export interface PhysicsProjectSettings {
+  /**
+   * Named collision layers (bit 0 = first name). Storage stays 32-bit for
+   * Havok membership/collide masks. Cap 32.
+   */
+  collisionLayers: string[];
+}
+
+export const DEFAULT_PHYSICS_PROJECT_SETTINGS: PhysicsProjectSettings = {
+  collisionLayers: [...DEFAULT_COLLISION_LAYERS],
+};
+
 export const DEFAULT_TWO_D_PROJECT_SETTINGS: TwoDProjectSettings = {
   pixelsPerUnit: 100,
   pixelPerfect: false,
@@ -393,6 +409,21 @@ function normalizeSortingLayers(value: unknown): string[] {
     layers.push(name);
   }
   return layers.length > 0 ? layers : [...DEFAULT_SORTING_LAYERS];
+}
+
+function normalizeCollisionLayers(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_COLLISION_LAYERS];
+  const seen = new Set<string>();
+  const layers: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const name = entry.trim();
+    if (name === "" || seen.has(name)) continue;
+    seen.add(name);
+    layers.push(name);
+    if (layers.length >= MAX_COLLISION_LAYERS) break;
+  }
+  return layers.length > 0 ? layers : [...DEFAULT_COLLISION_LAYERS];
 }
 
 export const DEFAULT_PROJECT_INPUT_SETTINGS: ProjectInputSettings = {
@@ -664,6 +695,9 @@ export function normalizeProjectSettings(
       pixelPerfect: twoD?.pixelPerfect === true,
       integerZoomSteps: twoD?.integerZoomSteps === true,
       sortingLayers: normalizeSortingLayers(twoD?.sortingLayers),
+    },
+    physics: {
+      collisionLayers: normalizeCollisionLayers(settings?.physics?.collisionLayers),
     },
     textures: {
       maxTextureDimension:

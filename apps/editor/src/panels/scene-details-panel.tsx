@@ -14,6 +14,7 @@ import {
   type PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
+  DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
   findActor,
@@ -82,6 +83,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const classEntries = gameInstanceClassEntries(assetRegistry?.list() ?? []);
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
+  const collisionLayers =
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -697,6 +700,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   })),
                 {
                   sortingLayers,
+                  collisionLayers,
                   assetLabel,
                   assetType,
                   physicsWorld: scene.settings.physicsWorld,

@@ -57,6 +57,7 @@ function rowsFor(
                           ? "ParticleSystem"
                           : undefined,
       physicsWorld: "3d",
+      collisionLayers: ["Default"],
       onPickAsset,
       ...context,
     },
@@ -541,18 +542,21 @@ describe("componentPropertyRows", () => {
   });
 
   it("flattens collider shape kind and numeric extents instead of object text", () => {
-    const { rows, update } = rowsFor({
-      id: "col",
-      classId: "ColliderComponent",
-      properties: {
-        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.25, z: 0.5 } },
-        friction: 0.5,
-        restitution: 0,
-        isTrigger: false,
-        layer: 1,
-        mask: 1,
+    const { rows, update } = rowsFor(
+      {
+        id: "col",
+        classId: "ColliderComponent",
+        properties: {
+          shape: { kind: "box", halfExtents: { x: 0.5, y: 0.25, z: 0.5 } },
+          friction: 0.5,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 1,
+        },
       },
-    });
+      { collisionLayers: ["Default", "Enemy"] },
+    );
     expect(rows.some((row) => row.kind === "text" && row.label === "shape")).toBe(
       false,
     );
@@ -581,13 +585,35 @@ describe("componentPropertyRows", () => {
       max: 1,
     });
     expect(rows.find((row) => row.id.endsWith("-layer"))).toMatchObject({
-      kind: "flags",
-      value: 1,
-      bitCount: 32,
+      kind: "enum",
+      label: "Layer",
+      value: "Default",
     });
+    const layer = rows.find((row) => row.id.endsWith("-layer"));
+    if (layer?.kind === "enum") {
+      expect(layer.options.map((option) => option.value)).toEqual([
+        "Default",
+        "Enemy",
+      ]);
+      layer.onChange("Enemy");
+    }
+    expect(update).toHaveBeenCalledWith("layer", 2);
     expect(rows.find((row) => row.id.endsWith("-mask"))).toMatchObject({
       kind: "flags",
+      label: "Collides With",
       value: 1,
+      bitCount: 2,
+      labels: ["Default", "Enemy"],
+    });
+    expect(rows.find((row) => row.id.endsWith("-isTrigger"))).toMatchObject({
+      kind: "boolean",
+      label: "Is Trigger",
+      value: false,
+    });
+    expect(rows.find((row) => row.id.endsWith("-renderInGame"))).toMatchObject({
+      kind: "boolean",
+      label: "Render In Game",
+      value: false,
     });
   });
 

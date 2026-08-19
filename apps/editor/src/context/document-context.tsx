@@ -1762,6 +1762,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
               ...current.settings.twoD,
               ...settings.twoD,
             },
+            physics: {
+              ...current.settings.physics,
+              ...settings.physics,
+            },
             playPreview: {
               ...current.settings.playPreview,
               ...settings.playPreview,
