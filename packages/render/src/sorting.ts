@@ -89,7 +89,7 @@ export function usesSpriteOrTilemapSorting(actor: {
   );
 }
 
-/** 3D MeshComponent visuals sit above the editor grid underlay. */
+/** 3D MeshComponent visuals share `RENDERING_GROUP.world` with the editor grid. */
 export function applyWorldVisualGroup(
   mesh: {
     renderingGroupId: number;
@@ -105,8 +105,8 @@ export function applyWorldVisualGroup(
 }
 
 /**
- * Clear depth (not color) when drawing world/foreground/ui so the grid in
- * group 0 is an underlay rather than a transparent peer.
+ * Keep rendering groups on one depth buffer so the world-group grid is
+ * occluded by meshes instead of compositing as a cleared underlay.
  */
 export function configureEditorRenderingGroups(scene: {
   setRenderingAutoClearDepthStencil: (
@@ -116,16 +116,13 @@ export function configureEditorRenderingGroups(scene: {
     stencil?: boolean,
   ) => void;
 }): void {
-  scene.setRenderingAutoClearDepthStencil(
-    RENDERING_GROUP.background,
-    false,
-  );
   for (const group of [
+    RENDERING_GROUP.background,
     RENDERING_GROUP.world,
     RENDERING_GROUP.foreground,
     RENDERING_GROUP.ui,
   ] as const) {
-    scene.setRenderingAutoClearDepthStencil(group, true, true, true);
+    scene.setRenderingAutoClearDepthStencil(group, false);
   }
 }
 

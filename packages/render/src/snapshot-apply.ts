@@ -27,6 +27,7 @@ import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import { applySerializedTransform, createPrimitiveMesh } from "./scene-loader";
 import { createColliderVisualMesh } from "./collider-visual";
+import { applyWorldVisualGroup } from "./sorting";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
@@ -610,7 +611,7 @@ export function createPlayMesh(
         () => applyLoadedModelMaterials(binding, slotId, assetGuid, root),
       );
     }
-    return root;
+    return finishPlayWorldMesh(root);
   }
   if (meshKind === "skybox") {
     const props = binding?.skyboxProps.get(slotId);
@@ -622,10 +623,12 @@ export function createPlayMesh(
     return createSkyboxMesh(scene, name, texture, props?.size ?? 1000);
   }
   if (meshKind?.startsWith("collider:")) {
-    return createColliderVisualMesh(
-      scene,
-      name,
-      parsePlayColliderShape(meshKind.slice("collider:".length)),
+    return finishPlayWorldMesh(
+      createColliderVisualMesh(
+        scene,
+        name,
+        parsePlayColliderShape(meshKind.slice("collider:".length)),
+      ),
     );
   }
   if (meshKind === "text3d") {
@@ -636,7 +639,7 @@ export function createPlayMesh(
         ?.find((part) => playComponentMeshName(slotId, part.componentId) === name)
         ?.text3d;
     const props = fromPart ?? binding?.text3dProps.get(slotId);
-    return createText3DMesh(scene, name, props ?? {}, binding);
+    return finishPlayWorldMesh(createText3DMesh(scene, name, props ?? {}, binding));
   }
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
@@ -682,9 +685,14 @@ export function createPlayMesh(
       binding.cameras.set(slotId, camera);
       refreshPlayActiveCamera(scene, binding);
     }
-    return mesh;
+    return finishPlayWorldMesh(mesh);
   }
-  return createPrimitiveMesh(scene, name, meshKind);
+  return finishPlayWorldMesh(createPrimitiveMesh(scene, name, meshKind));
+}
+
+function finishPlayWorldMesh(mesh: Mesh): Mesh {
+  applyWorldVisualGroup(mesh, { components: [] });
+  return mesh;
 }
 
 /**

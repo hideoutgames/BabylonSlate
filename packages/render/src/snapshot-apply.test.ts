@@ -78,6 +78,22 @@ describe("createPlayMesh", () => {
     expect(model.isVisible).toBe(false);
   });
 
+  it("puts primitive and model Play meshes in the same world rendering group", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", encodeTriangleGlb()]]);
+    const box = createPlayMesh(scene, 1, "box", null, binding);
+    const model = createPlayMesh(scene, 2, "box", "model-1", binding);
+    await binding.slotAnimLoads?.get(2);
+    expect(box.renderingGroupId).toBe(model.renderingGroupId);
+    expect(box.renderingGroupId).toBeGreaterThan(0);
+    for (const child of model.getChildMeshes()) {
+      expect(child.renderingGroupId).toBe(model.renderingGroupId);
+    }
+  });
+
   it("loads a Model guid once for two Play slots", async () => {
     const handle = createTestEngine();
     handles.push(handle);

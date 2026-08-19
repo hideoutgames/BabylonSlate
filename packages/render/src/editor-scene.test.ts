@@ -1271,7 +1271,7 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("draws the grid as a background underlay below world meshes", () => {
+  it("draws the grid in the world group so meshes can occlude it", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "3d" });
     const sync = new EditorSceneSync(scene);
@@ -1282,11 +1282,12 @@ describe("editor grid", () => {
     );
     const mesh = sync.meshForActor("a");
     expect(grid.mesh.name).toBe(GRID_MESH_NAME);
-    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.background);
+    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
     expect(mesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
+    expect(grid.mesh.material?.disableDepthWrite).toBe(true);
+    expect(grid.mesh.material?.disableDepthTest).not.toBe(true);
     const worldClear = scene.getAutoClearDepthStencilSetup(RENDERING_GROUP.world);
-    expect(worldClear.autoClear).toBe(true);
-    expect(worldClear.depth).toBe(true);
+    expect(worldClear.autoClear).toBe(false);
     grid.dispose();
   });
 });
