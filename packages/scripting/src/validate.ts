@@ -1,5 +1,6 @@
 import type { GraphNode, LogicGraph } from "./ir";
 import { findNode, findPin } from "./ir";
+import { compiledNodeIds } from "./compiled-nodes";
 import { diagnostic, type Diagnostic } from "./diagnostics";
 import {
   listValidationRules,
@@ -758,6 +759,13 @@ function validateTypeRefs(
   return out;
 }
 
+function keepCompiledNodeDiagnostics(
+  diagnostics: readonly Diagnostic[],
+  compiled: ReadonlySet<string>,
+): Diagnostic[] {
+  return diagnostics.filter((d) => !d.nodeId || compiled.has(d.nodeId));
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -765,11 +773,14 @@ export function validateGraphs(
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   for (const graph of graphs) {
-    diagnostics.push(...validateStructural(graph, ctx));
-    diagnostics.push(...validatePinTyping(graph, ctx));
-    diagnostics.push(...validateExecuteJavaScript(graph, ctx));
-    diagnostics.push(...validateMemberBindings(graph, ctx));
-    diagnostics.push(...validateTypeRefs(graph, ctx));
+    const compiled = compiledNodeIds(graph);
+    const keep = (diags: readonly Diagnostic[]) =>
+      keepCompiledNodeDiagnostics(diags, compiled);
+    diagnostics.push(...keep(validateStructural(graph, ctx)));
+    diagnostics.push(...keep(validatePinTyping(graph, ctx)));
+    diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
+    diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
+    diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
   }
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   for (const rule of listValidationRules()) {
