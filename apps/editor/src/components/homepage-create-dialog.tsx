@@ -244,7 +244,8 @@ export function HomepageCreateDialog({
                   </FieldLabel>
                 </Field>
                 <FieldDescription>
-                  Renders black bars to force desired resolution.
+                  On locks WxH with black bars. Off fills the host without
+                  stretching.
                 </FieldDescription>
               </FieldGroup>
             </div>

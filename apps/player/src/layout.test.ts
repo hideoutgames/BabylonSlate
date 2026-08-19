@@ -37,14 +37,14 @@ describe("applyPlayerLayout", () => {
     expect(root.style.background).toBe("#000");
   });
 
-  it("letterboxes a locked framebuffer even when black bars are off", () => {
+  it("fills the host without stretching when black bars are off", () => {
     const root: LayoutRoot = {
       clientWidth: 1600,
       clientHeight: 1200,
       style: { background: "" },
     };
     const canvas = { style: { width: "", height: "", objectFit: "" } } as HTMLCanvasElement;
-    applyPlayerLayout({
+    const size = applyPlayerLayout({
       root: asRoot(root),
       canvas,
       render: {
@@ -55,10 +55,11 @@ describe("applyPlayerLayout", () => {
         blackBars: false,
       },
     });
-    expect(canvas.style.width).toBe("1600px");
-    expect(canvas.style.height).toBe("900px");
+    expect(size).toBeNull();
+    expect(canvas.style.width).toBe("100%");
+    expect(canvas.style.height).toBe("100%");
     expect(canvas.style.objectFit).not.toBe("fill");
-    expect(root.style.background).toBe("#000");
+    expect(root.style.background).toBe("#111");
   });
 
   it("recomputes the letterbox when the host size changes", () => {
@@ -73,7 +74,7 @@ describe("applyPlayerLayout", () => {
       customResolution: true,
       width: 1920,
       height: 1080,
-      blackBars: false,
+      blackBars: true,
     };
     applyPlayerLayout({ root: asRoot(root), canvas, render });
     root.clientWidth = 1920;
