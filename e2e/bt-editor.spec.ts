@@ -215,4 +215,26 @@ test.describe("Behaviour Tree editor UX", { tag: IPAD_TEST_TAG }, () => {
     await page.mouse.up();
     await expect(page.getByTestId("node-palette")).toHaveCount(0);
   });
+
+  test("switches away from a focused Behaviour Tree tab and closes it", async ({
+    page,
+  }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await openPatrolTree(page);
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await page.getByTestId("document-tab-pinned").click();
+    await expect(page.getByTestId("content-browser-asset-grid")).toBeVisible();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="behaviour-tree"]')
+      .getByTestId("document-tab-select")
+      .click();
+    await expect(page.getByTestId("behaviour-tree-editor")).toBeVisible();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="behaviour-tree"]')
+      .getByTestId("document-tab-close")
+      .click();
+    await expect(page.getByTestId("behaviour-tree-editor")).toHaveCount(0);
+    await expect(page.getByTestId("content-browser-asset-grid")).toBeVisible();
+  });
 });
