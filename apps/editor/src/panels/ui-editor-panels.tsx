@@ -206,7 +206,7 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
         onPatchWidget={patchWidget}
         onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
         onPreviewLayout={(id, nextLayout) => layoutSession.preview(id, nextLayout)}
-        onCommitLayout={(id, nextLayout) => layoutSession.commit(nextLayout)}
+        onCommitLayout={(_id, nextLayout) => layoutSession.commit(nextLayout)}
         onPickAsset={setAssetPick}
         resolveNested={resolveNested}
       />

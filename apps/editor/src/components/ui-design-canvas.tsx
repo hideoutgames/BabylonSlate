@@ -92,7 +92,6 @@ export function UiDesignCanvas({
   onLayoutChange,
   panelVisible = true,
   documentActive = true,
-  resolveNested,
   layoutSession: layoutSessionProp,
   registerDesignerHost,
 }: {

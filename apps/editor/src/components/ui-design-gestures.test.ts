@@ -41,7 +41,7 @@ describe("ui-design-gestures", () => {
     const next = applyWidgetDragOffset(
       layout,
       { x: 40, y: 30 },
-      { x: 0, y: 0, width: 200, height: 100 },
+      { width: 200, height: 100 },
     );
     expect(next.left).toBe(30);
     expect(next.top).toBe(50);
