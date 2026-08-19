@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
-import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
   createDefaultPlayHud,
   createDefaultUserInterface,
@@ -11,17 +10,50 @@ import {
 } from "@babylonslate/ui-runtime";
 import { UiDesignCanvas } from "./ui-design-canvas";
 
-const { createUiSurfaceMock } = vi.hoisted(() => ({
-  createUiSurfaceMock: vi.fn(),
-}));
-
-vi.mock("@babylonslate/render", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@babylonslate/render")>();
+const { createUiSurfaceMock, uiHostStats, resetUiHostStats } = vi.hoisted(() => {
+  const uiHostStats = { apply: 0, create: 0, present: 0, commit: 0 };
   return {
-    ...actual,
-    createUiSurface: (...args: unknown[]) => createUiSurfaceMock(...args),
+    createUiSurfaceMock: vi.fn(),
+    uiHostStats,
+    resetUiHostStats: () => {
+      uiHostStats.apply = 0;
+      uiHostStats.create = 0;
+      uiHostStats.present = 0;
+      uiHostStats.commit = 0;
+    },
   };
 });
+
+vi.mock("@babylonslate/render", () => ({
+  createUiSurface: (...args: unknown[]) => createUiSurfaceMock(...args),
+  uiHostStats,
+  resetUiHostStats,
+  FontRegistry: class FontRegistry {},
+  applyFontRegistryToHost: vi.fn(async () => undefined),
+  applyUiControlsIfUnfrozen: (
+    frozen: boolean,
+    host: {
+      clear: () => void;
+      addControl: (control: unknown) => void;
+      markAsDirty: () => void;
+      reconcile?: (controls: unknown[]) => void;
+    },
+    controls: unknown[],
+  ) => {
+    if (frozen) return;
+    uiHostStats.apply += 1;
+    if (host.reconcile) {
+      host.reconcile(controls);
+    } else {
+      host.clear();
+      for (const control of controls) {
+        host.addControl(control);
+      }
+    }
+    host.markAsDirty();
+  },
+  isHardUiPresentFailure: () => false,
+}));
 
 afterEach(() => {
   cleanup();
@@ -32,10 +64,12 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    callback(0);
-    return 1;
+    return setTimeout(() => callback(0), 0) as unknown as number;
   });
-  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal(
+    "cancelAnimationFrame",
+    (handle: number) => clearTimeout(handle),
+  );
 });
 
 function hudCanvasProps() {
@@ -90,6 +124,12 @@ function mockSurface() {
   };
 }
 
+async function flushUiFrame(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 describe("UiDesignCanvas preview fallback", () => {
   it("shows an error instead of a silent black canvas when the surface fails", () => {
     createUiSurfaceMock.mockImplementation(() => {
@@ -102,7 +142,7 @@ describe("UiDesignCanvas preview fallback", () => {
     );
   });
 
-  it("does not show Preview Unavailable when present skips a zero-size ADT", () => {
+  it("does not show Preview Unavailable when present skips a zero-size ADT", async () => {
     const present = vi.fn();
     createUiSurfaceMock.mockReturnValue({
       present,
@@ -128,6 +168,7 @@ describe("UiDesignCanvas preview fallback", () => {
         }
       />,
     );
+    await flushUiFrame();
     expect(present).toHaveBeenCalled();
     expect(screen.queryByTestId("ui-gui-preview-error")).toBeNull();
     const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
@@ -199,7 +240,7 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(addControl).not.toHaveBeenCalled();
   });
 
-  it("resizes the existing surface when the device viewport changes", () => {
+  it("resizes the existing surface when the device viewport changes", async () => {
     const dispose = vi.fn();
     const resizeDesign = vi.fn();
     createUiSurfaceMock.mockReturnValue({
@@ -220,6 +261,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
     const props = hudCanvasProps();
     const { rerender } = render(<UiDesignCanvas {...props} />);
+    await flushUiFrame();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     rerender(
       <UiDesignCanvas
@@ -227,6 +269,7 @@ describe("UiDesignCanvas preview fallback", () => {
         viewport={{ ...props.viewport, width: 800, height: 600 }}
       />,
     );
+    await flushUiFrame();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
     expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
@@ -235,7 +278,7 @@ describe("UiDesignCanvas preview fallback", () => {
     });
   });
 
-  it("re-applies when returning from Logic to Designer", () => {
+  it("re-applies when returning from Logic to Designer", async () => {
     const addControl = vi.fn();
     createUiSurfaceMock.mockReturnValue({
       present: vi.fn(),
@@ -257,8 +300,10 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(
       <UiDesignCanvas {...props} panelVisible documentActive={false} />,
     );
+    await flushUiFrame();
     expect(addControl).not.toHaveBeenCalled();
     rerender(<UiDesignCanvas {...props} panelVisible documentActive />);
+    await flushUiFrame();
     expect(addControl).toHaveBeenCalled();
   });
 

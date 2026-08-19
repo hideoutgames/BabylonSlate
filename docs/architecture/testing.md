@@ -17,7 +17,7 @@ GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 9 Verify 
 
 ## Vitest projects
 
-Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace sets `maxWorkers: 4` (and coverage sets `VITEST_MAX_WORKERS=4`) because this environment's `availableParallelism` is 2, so Vitest's default `cpus - 1` is a single fork. `VITEST_COVERAGE=1` drops `apps/editor` from the jsdom include so v8 instrumentation cannot fill a 4GB heap; `pnpm test:coverage` then runs `pnpm test:editor-unit` (four sequential Vitest shards, `--maxWorkers=1`, 8GB heap, no coverage) so those tests still execute without one fork holding the whole suite.
+Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace sets `maxWorkers: 4` (and coverage sets `VITEST_MAX_WORKERS=4`) because this environment's `availableParallelism` is 2, so Vitest's default `cpus - 1` is a single fork. `VITEST_COVERAGE=1` drops `apps/editor` from the jsdom include so v8 instrumentation cannot fill a 4GB heap; `pnpm test:coverage` then runs `pnpm test:editor-unit` (four sequential Vitest shards, no coverage) so those tests still execute without one fork holding the whole suite. Designer canvas unit tests mock `@babylonslate/render` without `importOriginal` so jsdom does not load Babylon.
 
 | Project | Environment | Covers |
 | --- | --- | --- |
