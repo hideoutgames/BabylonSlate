@@ -406,6 +406,26 @@ function prefabRootPreviewActor() {
   });
 }
 
+/**
+ * Stable key for Prefab mesh-asset loads. `openDocuments` identity churn
+ * (compiler bump, Save All) rebuilds the component list even when the
+ * authored payload is unchanged; keying on that array restarts collection
+ * and can cancel `setMaterialDocuments` before MeshComponent materials bind.
+ */
+export function prefabPreviewLoadKey(
+  components: readonly SerializedComponent[],
+): string {
+  return JSON.stringify(
+    components.map((component) => ({
+      id: component.id,
+      classId: component.classId,
+      parentId: component.parentId ?? null,
+      transform: component.transform ?? null,
+      properties: component.properties,
+    })),
+  );
+}
+
 /** Preview: Prefab Root at the origin plus one actor per component. */
 export function previewSceneFor(
   components: SerializedComponent[],

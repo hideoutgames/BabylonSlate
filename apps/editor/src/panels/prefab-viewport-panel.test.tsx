@@ -1,9 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
+import { createMeshComponent } from "@babylonslate/core";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
 
-const { createEngineMock, play, dispose } = vi.hoisted(() => {
+const {
+  createEngineMock,
+  play,
+  dispose,
+  handle,
+  prefabState,
+  collectPlayMaterialLibrary,
+  collectPlaySpritePayloads,
+  collectPlayTilemapContent,
+  collectPlayTextureBytes,
+  collectPlayModelBytes,
+  collectPlayModelPayloads,
+} = vi.hoisted(() => {
   const disposeFn = vi.fn();
   const handle = {
     engine: { id: "created" },
@@ -33,6 +46,7 @@ const { createEngineMock, play, dispose } = vi.hoisted(() => {
     setMeshAssets: vi.fn(),
     resize: vi.fn(),
     dispose: disposeFn,
+    resourceCache: {},
   };
   const createEngineMock = vi.fn<
     (
@@ -43,7 +57,36 @@ const { createEngineMock, play, dispose } = vi.hoisted(() => {
   createEngineMock.mockReturnValue(handle);
   return {
     dispose: disposeFn,
+    handle,
     createEngineMock,
+    collectPlayMaterialLibrary: vi.fn(async () => ({
+      documents: new Map(),
+      functions: new Map(),
+      textureGuids: [] as string[],
+    })),
+    collectPlaySpritePayloads: vi.fn(async () => []),
+    collectPlayTilemapContent: vi.fn(async () => ({
+      tilesets: [],
+      tilemaps: [],
+    })),
+    collectPlayTextureBytes: vi.fn(async () => new Map()),
+    collectPlayModelBytes: vi.fn(async () => new Map()),
+    collectPlayModelPayloads: vi.fn(async () => new Map()),
+    prefabState: {
+      components: [
+        {
+          id: "prefab-mesh",
+          classId: "MeshComponent",
+          properties: { meshKind: "box", assetGuid: null, materialGuid: null },
+          parentId: null,
+          transform: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+        },
+      ],
+    },
     play: {
       ensureSharedEngine: vi.fn(() => ({ id: "shared-engine" })),
       sharedEngineGeneration: 1,
@@ -70,7 +113,7 @@ vi.mock("../context/play-context", () => ({
 
 vi.mock("../context/prefab-editing-context", () => ({
   usePrefabEditing: () => ({
-    components: [],
+    components: prefabState.components,
     selectedId: null,
     setSelectedId: vi.fn(),
     updateComponentTransform: vi.fn(),
@@ -80,15 +123,12 @@ vi.mock("../context/prefab-editing-context", () => ({
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    collectPlaySpritePayloads: vi.fn(async () => []),
-    collectPlayTilemapContent: vi.fn(async () => ({ tilesets: [], tilemaps: [] })),
-    collectPlayTextureBytes: vi.fn(async () => new Map()),
-    collectPlayModelBytes: vi.fn(async () => new Map()),
-    collectPlayMaterialLibrary: vi.fn(async () => ({
-      documents: {},
-      functions: {},
-      textureGuids: [],
-    })),
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayModelBytes,
+    collectPlayModelPayloads,
+    collectPlayMaterialLibrary,
     projectDocument: null,
   }),
 }));
@@ -124,6 +164,10 @@ describe("PrefabViewportPanel engine", () => {
     cleanup();
     createEngineMock.mockClear();
     dispose.mockClear();
+    handle.loadScene.mockClear();
+    handle.setMaterialDocuments.mockClear();
+    collectPlayMaterialLibrary.mockClear();
+    prefabState.components = [createMeshComponent("prefab-mesh", "box")];
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
@@ -162,5 +206,29 @@ describe("PrefabViewportPanel engine", () => {
       sharedEngine: second,
       present: "rtt",
     });
+  });
+
+  it("loads the preview after the shared Engine is ready with a stable component list", async () => {
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => {
+      expect(handle.loadScene).toHaveBeenCalled();
+      expect(collectPlayMaterialLibrary).toHaveBeenCalled();
+    });
+  });
+
+  it("does not restart material collection when components is a new array of the same payload", async () => {
+    const { rerender } = render(
+      <PrefabViewportPanel {...({} as IDockviewPanelProps)} />,
+    );
+    await waitFor(() => expect(collectPlayMaterialLibrary).toHaveBeenCalled());
+    const loads = collectPlayMaterialLibrary.mock.calls.length;
+    prefabState.components = prefabState.components.map((component) => ({
+      ...component,
+      properties: { ...component.properties },
+    }));
+    rerender(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(collectPlayMaterialLibrary.mock.calls.length).toBe(loads);
   });
 });
