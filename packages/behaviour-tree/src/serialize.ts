@@ -18,6 +18,8 @@ export const BT_PARENT_HANDLE = "parent";
 export const BT_CHILDREN_HANDLE = "children";
 export const BT_LAYOUT_NODE_WIDTH = 220;
 export const BT_LAYOUT_NODE_HEIGHT = 180;
+/** Each decorator/service row is a 44px touch target on the host node. */
+export const BT_LAYOUT_ATTACHMENT_ROW = 44;
 export const BT_DUPLICATE_OFFSET: BtEditorPosition = { x: 40, y: 40 };
 
 export type BtPin = {
@@ -74,10 +76,17 @@ function computeBehaviourTreeLayout(
   const rootId = byId.has(doc.rootId) ? doc.rootId : doc.nodes[0]?.id;
   const positions = new Map<string, { x: number; y: number }>();
   if (!rootId) return positions;
+  let maxAttachments = 0;
+  for (const node of doc.nodes) {
+    maxAttachments = Math.max(
+      maxAttachments,
+      node.decorators.length + node.services.length,
+    );
+  }
+  const nodeHeight =
+    BT_LAYOUT_NODE_HEIGHT + maxAttachments * BT_LAYOUT_ATTACHMENT_ROW;
   const root = hierarchy(toRow(rootId), (row) => row.children);
-  tree<HierarchyRow>().nodeSize([BT_LAYOUT_NODE_WIDTH, BT_LAYOUT_NODE_HEIGHT])(
-    root,
-  );
+  tree<HierarchyRow>().nodeSize([BT_LAYOUT_NODE_WIDTH, nodeHeight])(root);
   root.each((entry) => {
     positions.set(entry.data.id, { x: entry.x ?? 0, y: entry.y ?? 0 });
   });

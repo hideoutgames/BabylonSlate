@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
 import {
   createDefaultPlayHud,
@@ -274,6 +274,7 @@ describe("UiDesignCanvas preview fallback", () => {
     const { rerender } = render(<UiDesignCanvas {...props} />);
     await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(resizeDesign).toHaveBeenCalled());
     rerender(
       <UiDesignCanvas
         {...props}
@@ -283,10 +284,12 @@ describe("UiDesignCanvas preview fallback", () => {
     await flushPaint();
     expect(createUiSurfaceMock).toHaveBeenCalledTimes(1);
     expect(dispose).not.toHaveBeenCalled();
-    expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
-      width: 1920,
-      height: 1080,
-    });
+    await waitFor(() =>
+      expect(resizeDesign).toHaveBeenCalledWith(800, 600, "shortestSide", {
+        width: 1920,
+        height: 1080,
+      }),
+    );
   });
 
   it("re-applies when returning from Logic to Designer", async () => {

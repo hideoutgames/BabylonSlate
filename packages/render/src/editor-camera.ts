@@ -6,7 +6,7 @@ import {
   type PixelPerfectSettings,
 } from "./pixel-perfect";
 
-export const DEFAULT_CAMERA_RADIUS = 8;
+export const DEFAULT_CAMERA_RADIUS = 12;
 export const MIN_CAMERA_RADIUS = 0.5;
 export const MAX_CAMERA_RADIUS = 400;
 

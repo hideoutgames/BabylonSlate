@@ -85,6 +85,11 @@ async function dragClassMemberOntoGraph(
   await page.mouse.up();
 }
 
+
+async function classGraphNodeCount(page: import("@playwright/test").Page) {
+  return page.getByTestId("graph-panel").locator(".react-flow__node").count();
+}
+
 test.describe("Type-asset editors and hierarchy chrome", () => {
   test("ScriptInterface Add Method shows a preview and enables Windows", async ({
     page,
@@ -122,7 +127,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -147,7 +152,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -164,12 +169,13 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
 
     const graph = page.getByTestId("graph-panel");
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
     await dragClassMemberOntoGraph(page, "Target");
     await expect(page.getByTestId("member-access-chooser")).toBeVisible();
     await page.getByTestId("member-access-get").click();
     await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Get Target")).toBeVisible();
   });
 
@@ -177,7 +183,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -197,7 +203,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("my-class-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -210,9 +216,10 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       .click();
     const graph = page.getByTestId("graph-panel");
     const nodes = graph.locator(".react-flow__node");
-    await expect(nodes).toHaveCount(2);
+    const baseline = await classGraphNodeCount(page);
+    expect(baseline).toBeGreaterThan(0);
     await dragClassMemberOntoGraph(page, "Jump");
-    await expect(nodes).toHaveCount(3);
+    await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Call Jump")).toBeVisible();
   });
 
@@ -247,7 +254,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -286,7 +293,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
       await page.getByTestId("content-browser-search").fill("hero");
       await expect(heroTile).toBeVisible({ timeout: 15_000 });
     }
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -312,7 +319,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });
@@ -333,7 +340,7 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     page,
   }) => {
     await openTestProject(page);
-    await openAssetFromBrowser(page, "assets/main.class.babasset");
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
     await expect(page.getByTestId("actor-prefab-panel")).toBeVisible({
       timeout: 15_000,
     });

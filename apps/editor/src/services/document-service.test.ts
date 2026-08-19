@@ -147,6 +147,40 @@ describe("DocumentService", () => {
     expect(doc?.dirty).toBe(true);
   });
 
+  it("keeps scene dirty when switching active document to Class and back", async () => {
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const project = createMockProjectService();
+    const scenePath = MAIN_SCENE_FILE;
+    const graphPath = MAIN_CLASS_FILE;
+    await service.openDocument(project, {
+      kind: "scene",
+      path: scenePath,
+      label: "main.scene",
+    });
+    await service.openDocument(project, {
+      kind: "graph",
+      path: graphPath,
+      label: "main.class",
+    });
+    const sceneId = documentId({ kind: "scene", path: scenePath });
+    const graphId = documentId({ kind: "graph", path: graphPath });
+    const scene = createDefaultScene();
+    scene.name = "Edited";
+    service.updateScene(sceneId, scene);
+    expect(service.getDocument(sceneId)?.dirty).toBe(true);
+
+    service.setActiveDocument(graphId);
+    expect(service.getState().activeDocumentId).toBe(graphId);
+    expect(service.getDocument(sceneId)?.dirty).toBe(true);
+    expect(
+      (service.getDocument(sceneId)?.content as { name?: string })?.name,
+    ).toBe("Edited");
+
+    service.setActiveDocument(sceneId);
+    expect(service.getDocument(sceneId)?.dirty).toBe(true);
+  });
+
   it("reorders scrollable tabs without moving content browser or the pinned scene", async () => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();

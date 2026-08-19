@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_RENDER_PROJECT_SETTINGS } from "@babylonslate/core";
-import { exportGame, zipExport, unzipExport, parseGameManifest } from "./export-game";
+import { exportGame, zipExport, unzipExport, parseGameManifest, SAFE_ZIP_MTIME } from "./export-game";
 import { parseScriptRegistry } from "./scripts";
 import { GAME_MANIFEST_FILE } from "./constants";
 
@@ -58,6 +58,30 @@ describe("exportGame", () => {
     expect(Object.keys(unzipped)).toContain("index.html");
     expect(Object.keys(unzipped)).toContain(GAME_MANIFEST_FILE);
     expect(unzipped["index.html"]).toBeDefined();
+  });
+
+  it("zips with a DOS-safe local noon mtime", () => {
+    expect(SAFE_ZIP_MTIME.getFullYear()).toBe(1980);
+    expect(SAFE_ZIP_MTIME.getHours()).toBe(12);
+    const artifact = {
+      files: new Map([["index.html", new Uint8Array([1])]]),
+      fileCount: 1,
+      warnings: [] as string[],
+      manifest: {
+        version: 1 as const,
+        startupSceneGuid: "s",
+        assets: [],
+        occlusionEnabled: true,
+        reverbWetScale: 1,
+        reverbDecayScale: 1,
+        reverbDampingScale: 1,
+        bundleDebugger: false,
+        pixelsPerUnit: 100,
+        pixelPerfect: false,
+      },
+    };
+    expect(() => zipExport(artifact as never)).not.toThrow();
+    expect(zipExport(artifact as never).byteLength).toBeGreaterThan(0);
   });
 
   it("writes Engine Settings designer presets onto game.json", async () => {

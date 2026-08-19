@@ -750,7 +750,7 @@ const ANIM_GRAPH_OBJECT_WINDOWS: DockWindowDefinition[] = [
   {
     id: "anim-object-inspector",
     component: "anim-object-inspector",
-    title: "Inspector",
+    title: "Details",
     defaultPosition: {
       referencePanelId: "anim-object-graph",
       direction: "right",

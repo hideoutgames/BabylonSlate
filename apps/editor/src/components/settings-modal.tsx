@@ -59,6 +59,7 @@ import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
+import { exportGameFailureMessage } from "../lib/export-game-failure";
 import {
   EngineSettingsForm,
   type EngineSettingsCategoryId,
@@ -358,7 +359,7 @@ export function SettingsModal({
     try {
       const result = await exportGameArtifact();
       if (isErr(result)) {
-        setExportGameError(result.error);
+        setExportGameError(exportGameFailureMessage(result.error));
         return;
       }
       const bytes = zipExportedGame(result.value);
@@ -372,7 +373,8 @@ export function SettingsModal({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      setExportGameError(error instanceof Error ? error.message : String(error));
+      console.error("[editor] Export Game failed", error);
+      setExportGameError(exportGameFailureMessage(error));
     } finally {
       setExportGameBusy(false);
     }

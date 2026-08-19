@@ -38,5 +38,8 @@ export function sceneComponentDisplayLabel(
   const actor = scene.actors.find((entry) => entry.id === actorId);
   const component = actor?.components.find((entry) => entry.id === componentId);
   if (!actor || !component) return undefined;
-  return `${actor.name} ${sceneComponentTitle(component.classId)}`;
+  const title = sceneComponentTitle(component.classId);
+  // Avoid "Camera Camera" when the actor is named after the component kind.
+  if (actor.name === title) return actor.name;
+  return `${actor.name} ${title}`;
 }

@@ -132,7 +132,7 @@ export function AnimTransitionEdge({
           }}
           data-testid={`anim-transition-badge-${id}`}
           data-bidirectional={bidirectional ? "true" : undefined}
-          aria-label="Select transition"
+          aria-label="Open transition rule"
           onClick={(event) => {
             event.stopPropagation();
             setNodes((current) =>
@@ -146,6 +146,7 @@ export function AnimTransitionEdge({
                 selected: edge.id === id,
               })),
             );
+            onEdgeDoubleClick?.(id);
           }}
           onDoubleClick={(event) => {
             event.stopPropagation();
