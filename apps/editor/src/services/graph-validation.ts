@@ -27,6 +27,8 @@ import {
   type PinType,
   type TypeSchemas,
   isDevelopmentOnlyByDefaultTypeId,
+  normalizeIntSwitchCases,
+  normalizeStringSwitchCases,
 } from "@babylonslate/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
@@ -178,6 +180,8 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "enum.switch" ||
     typeId === "enum.select" ||
     typeId === "string.format" ||
+    typeId === "flow.switchInt" ||
+    typeId === "flow.switchString" ||
     typeId === "array.make" ||
     typeId === "map.make" ||
     typeId === uiGetWidgetNodeId ||
@@ -522,6 +526,13 @@ export function hydrateSerializedGraphForEditor(
               )
             : bodyName || "Event";
         properties.title = `Call ${label} Parent`;
+      }
+
+      if (typeId === "flow.switchInt") {
+        properties.cases = normalizeIntSwitchCases(properties.cases).cases;
+      }
+      if (typeId === "flow.switchString") {
+        properties.cases = normalizeStringSwitchCases(properties.cases).cases;
       }
 
       const def = nodeRegistry.get(typeId);
@@ -1450,6 +1461,12 @@ export function materializeLogicGraph(
       registry,
       options,
     );
+    if (typeId === "flow.switchInt") {
+      properties.cases = normalizeIntSwitchCases(properties.cases).cases;
+    }
+    if (typeId === "flow.switchString") {
+      properties.cases = normalizeStringSwitchCases(properties.cases).cases;
+    }
     const regenerate = shouldRegeneratePins(typeId);
     const def = registry.get(typeId);
     if (data?.__pins && !regenerate) {

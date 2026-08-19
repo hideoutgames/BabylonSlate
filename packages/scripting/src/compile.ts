@@ -7,6 +7,13 @@ import { isDevelopmentOnlyNode } from "./development-only";
 import { instrumentJsLoops } from "@babylonslate/debugger";
 import { entryNodes } from "./compiled-nodes";
 import { enumSwitchMemberNameFromPinId } from "./enum-switch-pins";
+import {
+  flowSwitchCaseValueFromPinId,
+} from "./flow-switch-pins";
+import {
+  isFlowSwitchMeta,
+  type StructuredFlowMeta,
+} from "./structured-flow";
 
 export type CompileAnchor = {
   line: number;
@@ -344,6 +351,63 @@ export function compileGraph(
     }
   }
 
+  function emitFlowSwitch(
+    node: GraphNode,
+    meta: StructuredFlowMeta,
+    visited: Set<string>,
+  ): boolean {
+    if (!isFlowSwitchMeta(meta)) return false;
+    const ctx = makeCtx(node);
+    const anchor = {
+      column: 1,
+      assetGuid: options.assetGuid,
+      graphId: graph.id,
+      nodeId: node.id,
+    };
+    const valueExpr = ctx.input(meta.valuePin);
+    const cases = node.pins.filter(
+      (pin) =>
+        pin.kind === "exec" &&
+        pin.direction === "out" &&
+        flowSwitchCaseValueFromPinId(pin.id) !== undefined,
+    );
+    const wiredCases = cases.filter(
+      (pin) => execSuccessors(graph, node.id, pin.name).length > 0,
+    );
+    const defaultTargets = execSuccessors(graph, node.id, "Default");
+    if (wiredCases.length === 0 && defaultTargets.length === 0) {
+      emitBody(`  /* ${node.typeId} ${node.id}: no exec outs */`, anchor);
+      return true;
+    }
+    for (let i = 0; i < wiredCases.length; i++) {
+      const pin = wiredCases[i]!;
+      const raw = flowSwitchCaseValueFromPinId(pin.id) ?? pin.name;
+      const compare =
+        meta.kind === "switchOnInt"
+          ? String(Number(raw))
+          : JSON.stringify(raw);
+      const keyword = i === 0 ? "if" : "} else if";
+      emitBody(`  ${keyword} (${valueExpr} === ${compare}) {`, anchor);
+      for (const target of execSuccessors(graph, node.id, pin.name)) {
+        emitExecChain(target, new Set(visited));
+      }
+    }
+    if (defaultTargets.length > 0) {
+      if (wiredCases.length > 0) {
+        emitBody(`  } else {`, anchor);
+      }
+      for (const target of defaultTargets) {
+        emitExecChain(target, new Set(visited));
+      }
+      if (wiredCases.length > 0) {
+        emitBody(`  }`, anchor);
+      }
+    } else if (wiredCases.length > 0) {
+      emitBody(`  }`, anchor);
+    }
+    return true;
+  }
+
   function emitExecChain(startId: string, visited = new Set<string>()) {
     let current: string | undefined = startId;
     while (current && !visited.has(current)) {
@@ -439,6 +503,13 @@ export function compileGraph(
         } else if (wiredCases.length > 0) {
           emitBody(`  }`, anchor);
         }
+        break;
+      }
+
+      if (
+        def.structuredFlow &&
+        emitFlowSwitch(node, def.structuredFlow, visited)
+      ) {
         break;
       }
 

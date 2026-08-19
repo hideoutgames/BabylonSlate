@@ -2366,3 +2366,120 @@ describe("container constructor hydration", () => {
     expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep"]);
   });
 });
+
+describe("flow switch hydrate", () => {
+  it("regenerates Switch on Int case pins, keeps matching wires, and prunes removed ones", () => {
+    const keepPin = "case:1";
+    const dropPin = "case:9";
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sw",
+          type: "flow.switchInt",
+          position: { x: 0, y: 0 },
+          data: {
+            cases: [1, "", 1, 2],
+            __pins: [
+              {
+                id: "execIn",
+                name: "exec",
+                kind: "exec",
+                direction: "in",
+                type: { kind: "exec" },
+              },
+              {
+                id: keepPin,
+                name: "1",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+              {
+                id: dropPin,
+                name: "9",
+                kind: "exec",
+                direction: "out",
+                type: { kind: "exec" },
+              },
+            ],
+          },
+        },
+        {
+          id: "one",
+          type: "debug.log",
+          position: { x: 80, y: 0 },
+          data: {},
+        },
+        {
+          id: "nine",
+          type: "debug.log",
+          position: { x: 80, y: 40 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "keep",
+          source: "sw",
+          target: "one",
+          sourceHandle: keepPin,
+          targetHandle: "execIn",
+        },
+        {
+          id: "drop",
+          source: "sw",
+          target: "nine",
+          sourceHandle: dropPin,
+          targetHandle: "execIn",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.cases).toEqual([1, 2]);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:1",
+      "case:2",
+      "default",
+    ]);
+    expect(hydrated.edges.map((edge) => edge.id)).toEqual(["keep"]);
+  });
+
+  it("regenerates Switch on String encoded case pins and materializes the same shape", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "sw",
+          type: "flow.switchString",
+          position: { x: 0, y: 0 },
+          data: {
+            cases: ["idle", "", "a/b", "idle"],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.cases).toEqual(["idle", "a/b"]);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:idle",
+      "case:a%2Fb",
+      "default",
+    ]);
+
+    const logic = materializeLogicGraph(hydrated, "g");
+    expect(logic.nodes[0]?.properties.cases).toEqual(["idle", "a/b"]);
+    expect(logic.nodes[0]?.pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "value",
+      "case:idle",
+      "case:a%2Fb",
+      "default",
+    ]);
+  });
+});

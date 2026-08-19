@@ -8,6 +8,9 @@ import {
   INT,
   STRING,
   objectRef,
+  flowSwitchCasePinId,
+  intSwitchCasesOf,
+  stringSwitchCasesOf,
 } from "@babylonslate/scripting";
 import {
   dataMemberPins,
@@ -351,6 +354,48 @@ export const flowNodes: NodeDefinition[] = [
     },
     codegen: () => {
       /* handled specially by compiler */
+    },
+  },
+  {
+    id: "flow.switchInt",
+    title: "Switch on Int",
+    category: "flow",
+    pins: (properties) => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("value", "value", "in", INT),
+      ...intSwitchCasesOf(properties).map((value) =>
+        pin(flowSwitchCasePinId(String(value)), String(value), "out", EXEC),
+      ),
+      pin("default", "Default", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "switchOnInt",
+      valuePin: "value",
+      defaultPin: "default",
+    },
+  },
+  {
+    id: "flow.switchString",
+    title: "Switch on String",
+    category: "flow",
+    pins: (properties) => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("value", "value", "in", STRING),
+      ...stringSwitchCasesOf(properties).map((value) =>
+        pin(flowSwitchCasePinId(value), value, "out", EXEC),
+      ),
+      pin("default", "Default", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "switchOnString",
+      valuePin: "value",
+      defaultPin: "default",
     },
   },
   {

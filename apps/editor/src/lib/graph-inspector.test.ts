@@ -7,10 +7,13 @@ import {
   containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   enumNodePropertyRows,
+  flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
+  isFlowSwitchTypeId,
   logNodePropertyRows,
   parameterRowsFromPinList,
   parameterTypeFromPin,
+  patchFlowSwitchCases,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
   pinTypeFromParameterType,
@@ -42,6 +45,37 @@ describe("containerConstructorPropertyRows", () => {
 
   it("returns no rows for static node types", () => {
     expect(containerConstructorPropertyRows("array.length", {}, vi.fn())).toEqual([]);
+  });
+});
+
+describe("flowSwitchCaseListValues", () => {
+  it("normalizes Switch on Int case rows for NamedListEditor", () => {
+    expect(
+      flowSwitchCaseListValues("flow.switchInt", { cases: [1, "", 1, "2"] }),
+    ).toEqual(["1", "2"]);
+    expect(
+      patchFlowSwitchCases("flow.switchInt", ["3", "", "3", "x", "4"]),
+    ).toEqual({ cases: [3, 4] });
+  });
+
+  it("normalizes Switch on String case rows for NamedListEditor", () => {
+    expect(
+      flowSwitchCaseListValues("flow.switchString", {
+        cases: ["idle", "", "a/b", "idle"],
+      }),
+    ).toEqual(["idle", "a/b"]);
+    expect(
+      patchFlowSwitchCases("flow.switchString", ["run", "", "run", "jump"]),
+    ).toEqual({ cases: ["run", "jump"] });
+  });
+
+  it("ignores unrelated node types", () => {
+    expect(isFlowSwitchTypeId("flow.branch")).toBe(false);
+    expect(isFlowSwitchTypeId("flow.switchInt")).toBe(true);
+    expect(flowSwitchCaseListValues("flow.branch", { cases: ["1"] })).toEqual(
+      [],
+    );
+    expect(patchFlowSwitchCases("flow.branch", ["1"])).toEqual({});
   });
 });
 

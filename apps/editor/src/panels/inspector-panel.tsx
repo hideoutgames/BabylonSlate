@@ -6,6 +6,7 @@ import {
   PIN_PICKER_TYPES,
   PanelFrame,
   ParameterListEditor,
+  NamedListEditor,
   PinListEditor,
   PropertyGrid,
   SearchDropdown,
@@ -71,9 +72,12 @@ import {
   containerConstructorPropertyRows,
   developmentOnlyPropertyRows,
   enumNodePropertyRows,
+  flowSwitchCaseListValues,
   inspectorLiteralPinDefaults,
+  isFlowSwitchTypeId,
   logNodePropertyRows,
   parameterRowsFromPinList,
+  patchFlowSwitchCases,
   pinDefaultPropertyRows,
   pinListFromParameterRows,
   pinsFromNodeData,
@@ -953,6 +957,10 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     selectedNode.data,
     updateNodeData,
   );
+  const isFlowSwitch = isFlowSwitchTypeId(selectedNode.type);
+  const flowSwitchCases = isFlowSwitch
+    ? flowSwitchCaseListValues(selectedNode.type, selectedNode.data)
+    : [];
   const developmentOnlyRows = developmentOnlyPropertyRows(
     selectedNode.type,
     selectedNode.data,
@@ -980,6 +988,19 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           <PropertyGrid
             rows={containerConstructorRows}
             data-testid="inspector-container-constructor"
+          />
+        ) : null}
+        {isFlowSwitch ? (
+          <NamedListEditor
+            title="Cases"
+            values={flowSwitchCases}
+            addPlaceholder={
+              selectedNode.type === "flow.switchInt" ? "0" : "case"
+            }
+            onChange={(values) =>
+              updateNodeData(patchFlowSwitchCases(selectedNode.type, values))
+            }
+            data-testid="inspector-flow-switch-cases"
           />
         ) : null}
         {pinDefaultRows.length > 0 ? (

@@ -21,6 +21,8 @@ import {
   isDevelopmentOnlyNode,
   isDevelopmentOnlyByDefaultTypeId,
   listUnconnectedLiteralPinDefaults,
+  normalizeIntSwitchCases,
+  normalizeStringSwitchCases,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
   pinDefaultAsString,
@@ -570,6 +572,37 @@ export function containerConstructorPropertyRows(
         onPatch({ count: Math.max(0, Math.min(64, Math.floor(value))) }),
     },
   ];
+}
+
+export function isFlowSwitchTypeId(typeId: string): boolean {
+  return typeId === "flow.switchInt" || typeId === "flow.switchString";
+}
+
+/** NamedListEditor display values for Switch on Int / String cases. */
+export function flowSwitchCaseListValues(
+  typeId: string,
+  data: Record<string, unknown>,
+): string[] {
+  if (typeId === "flow.switchInt") {
+    return normalizeIntSwitchCases(data.cases).cases.map(String);
+  }
+  if (typeId === "flow.switchString") {
+    return normalizeStringSwitchCases(data.cases).cases;
+  }
+  return [];
+}
+
+export function patchFlowSwitchCases(
+  typeId: string,
+  values: readonly string[],
+): Record<string, unknown> {
+  if (typeId === "flow.switchInt") {
+    return { cases: normalizeIntSwitchCases(values).cases };
+  }
+  if (typeId === "flow.switchString") {
+    return { cases: normalizeStringSwitchCases(values).cases };
+  }
+  return {};
 }
 
 export function connectedEnumGuidFromSerialized(

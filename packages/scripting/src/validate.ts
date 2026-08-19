@@ -21,6 +21,10 @@ import {
   pinTypeKey,
   resolveWildcardPinTypes,
 } from "./wildcard-resolve";
+import {
+  normalizeIntSwitchCases,
+  normalizeStringSwitchCases,
+} from "./flow-switch-pins";
 
 function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
@@ -792,6 +796,35 @@ function keepCompiledNodeDiagnostics(
   });
 }
 
+function validateFlowSwitchCases(
+  graph: LogicGraph,
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  for (const node of graph.nodes) {
+    if (node.typeId !== "flow.switchInt" && node.typeId !== "flow.switchString") {
+      continue;
+    }
+    const result =
+      node.typeId === "flow.switchInt"
+        ? normalizeIntSwitchCases(node.properties.cases)
+        : normalizeStringSwitchCases(node.properties.cases);
+    for (const warning of result.warnings) {
+      out.push(
+        diagnostic({
+          severity: "warning",
+          code: warning.code,
+          message: warning.message,
+          assetGuid: ctx.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        }),
+      );
+    }
+  }
+  return out;
+}
+
 export function validateGraphs(
   graphs: readonly LogicGraph[],
   ctx: TypeContext,
@@ -807,6 +840,7 @@ export function validateGraphs(
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
     diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
+    diagnostics.push(...keep(validateFlowSwitchCases(graph, ctx)));
   }
   diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
   for (const rule of listValidationRules()) {

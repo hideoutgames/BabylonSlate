@@ -246,6 +246,12 @@ function palettePreferenceScore(
   if (node.id === literalMakeIdForKind(kind)) {
     return 2;
   }
+  if (kind === "int" && catalogTypeId(node) === "flow.switchInt") {
+    return 2;
+  }
+  if (kind === "string" && catalogTypeId(node) === "flow.switchString") {
+    return 2;
+  }
   return 0;
 }
 
