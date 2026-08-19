@@ -51,7 +51,7 @@ export * from "./material-preview";
 export * from "./interface-material-presenter";
 export * from "./post-process-material";
 export * from "./anim-apply";
-export * from "./editor-billboard";
+export * from "./collider-visual";
 export * from "./editor-debug-overlay";
 export * from "./nav-bake-geometry";
 export * from "./nav-debug-overlay";
