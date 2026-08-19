@@ -515,3 +515,164 @@ export function encodeParentedAnimatedTriangleGlb(clipName = "Idle"): Uint8Array
     bin,
   );
 }
+
+export type UvHierarchyGlbOptions = {
+  /** Each part uses its own glTF material (slots 0 and 1) instead of sharing slot 0. */
+  separateMaterials?: boolean;
+  /** Named translation clip on `part-b` (rest → +Y). */
+  clipName?: string;
+  /**
+   * List the MatB mesh before MatA so `getChildMeshes()` visit order is not
+   * glTF material order. Slot mapping must use `/materials/N`, not walk order.
+   */
+  laterMaterialFirst?: boolean;
+};
+
+/**
+ * Two UV'd triangle meshes for adopt / slot / preview tests. Not a product
+ * fixture — any glTF with multiple primitives should behave the same.
+ */
+export function encodeUvHierarchyGlb(
+  options: UvHierarchyGlbOptions = {},
+): Uint8Array {
+  const positionsA = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const positionsB = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const uvs = new Float32Array([0, 0, 1, 0, 0, 1]);
+  const times = new Float32Array([0, 1]);
+  const translations = new Float32Array([0, 0, 0, 0, 1, 0]);
+  const clip = typeof options.clipName === "string";
+  const bin = new Uint8Array(clip ? 152 : 120);
+  let offset = 0;
+  const write = (data: Float32Array) => {
+    bin.set(new Uint8Array(data.buffer), offset);
+    offset += data.byteLength;
+  };
+  write(positionsA);
+  write(uvs);
+  write(positionsB);
+  write(uvs);
+  if (clip) {
+    write(times);
+    write(translations);
+  }
+  const materialB = options.separateMaterials ? 1 : 0;
+  const laterFirst = Boolean(options.laterMaterialFirst);
+  const meshA = {
+    name: "part-a",
+    primitives: [{ attributes: { POSITION: 0, TEXCOORD_0: 1 }, material: 0 }],
+  };
+  const meshB = {
+    name: "part-b",
+    primitives: [
+      {
+        attributes: { POSITION: 2, TEXCOORD_0: 3 },
+        material: materialB,
+      },
+    ],
+  };
+  const nodeA = { name: "part-a", mesh: laterFirst ? 1 : 0 };
+  const nodeB = {
+    name: "part-b",
+    mesh: laterFirst ? 0 : 1,
+    translation: [2, 0, 0] as [number, number, number],
+  };
+  const partBNode = laterFirst ? 0 : 1;
+  return encodeGlb(
+    {
+      asset: { version: "2.0" },
+      scene: 0,
+      scenes: [{ nodes: [0, 1] }],
+      nodes: laterFirst ? [nodeB, nodeA] : [nodeA, nodeB],
+      meshes: laterFirst ? [meshB, meshA] : [meshA, meshB],
+      materials: [
+        {
+          name: "MatA",
+          pbrMetallicRoughness: { baseColorFactor: [1, 0, 0, 1] },
+        },
+        {
+          name: "MatB",
+          pbrMetallicRoughness: { baseColorFactor: [0, 1, 0, 1] },
+        },
+      ],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [1, 1, 0],
+        },
+        {
+          bufferView: 1,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC2",
+          min: [0, 0],
+          max: [1, 1],
+        },
+        {
+          bufferView: 2,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC3",
+          min: [0, 0, 0],
+          max: [1, 1, 0],
+        },
+        {
+          bufferView: 3,
+          componentType: FLOAT,
+          count: 3,
+          type: "VEC2",
+          min: [0, 0],
+          max: [1, 1],
+        },
+        ...(clip
+          ? [
+              {
+                bufferView: 4,
+                componentType: FLOAT,
+                count: 2,
+                type: "SCALAR",
+                min: [0],
+                max: [1],
+              },
+              {
+                bufferView: 5,
+                componentType: FLOAT,
+                count: 2,
+                type: "VEC3",
+              },
+            ]
+          : []),
+      ],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: 36 },
+        { buffer: 0, byteOffset: 36, byteLength: 24 },
+        { buffer: 0, byteOffset: 60, byteLength: 36 },
+        { buffer: 0, byteOffset: 96, byteLength: 24 },
+        ...(clip
+          ? [
+              { buffer: 0, byteOffset: 120, byteLength: 8 },
+              { buffer: 0, byteOffset: 128, byteLength: 24 },
+            ]
+          : []),
+      ],
+      buffers: [{ byteLength: bin.byteLength }],
+      ...(clip
+        ? {
+            animations: [
+              {
+                name: options.clipName,
+                channels: [
+                  { sampler: 0, target: { node: partBNode, path: "translation" } },
+                ],
+                samplers: [{ input: 4, output: 5, interpolation: "LINEAR" }],
+              },
+            ],
+          }
+        : {}),
+    },
+    bin,
+  );
+}

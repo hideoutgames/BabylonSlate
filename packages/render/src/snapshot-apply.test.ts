@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload, embedGlbExternalImages } from "@babylonslate/assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
-import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, glbClipNames } from "./model-mesh";
+import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
@@ -165,7 +165,156 @@ describe("createPlayMesh", () => {
     expect(group?.from).toBeLessThan(group?.to ?? 0);
   });
 
-  it("adopts Kenney with UVs on every visual mesh and slot 0 on all parts", async () => {
+  it("adopts every UV'd glTF part and applies a shared slot to all of them", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const override = new StandardMaterial("slot-0", scene);
+    binding.modelBytes = new Map([["hero-model", encodeUvHierarchyGlb()]]);
+    binding.modelPayloads = new Map([
+      [
+        "hero-model",
+        {
+          clipNames: [],
+          skeletonGuid: null,
+          materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
+        },
+      ],
+    ]);
+    binding.resolveMaterial = (guid) => (guid === "mat-1" ? override : null);
+    const root = createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const visuals = visualMeshes(root);
+    expect(visuals).toHaveLength(2);
+    for (const part of visuals) {
+      expect(part.getVerticesData(VertexBuffer.UVKind)?.length ?? 0).toBeGreaterThan(
+        0,
+      );
+      expect(part.material).toBe(override);
+    }
+  });
+
+  it("maps separate glTF materials to independent Play slots", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const slot0 = new StandardMaterial("slot-0", scene);
+    const slot1 = new StandardMaterial("slot-1", scene);
+    binding.modelBytes = new Map([
+      ["hero-model", encodeUvHierarchyGlb({ separateMaterials: true })],
+    ]);
+    binding.modelPayloads = new Map([
+      [
+        "hero-model",
+        {
+          clipNames: [],
+          skeletonGuid: null,
+          materialSlots: [
+            { index: 0, name: "MatA", materialGuid: "mat-a" },
+            { index: 1, name: "MatB", materialGuid: "mat-b" },
+          ],
+        },
+      ],
+    ]);
+    binding.resolveMaterial = (guid) =>
+      guid === "mat-a" ? slot0 : guid === "mat-b" ? slot1 : null;
+    const root = createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const visuals = visualMeshes(root);
+    expect(visuals).toHaveLength(2);
+    const partA = visuals.find((part) => part.name === "part-a");
+    const partB = visuals.find((part) => part.name === "part-b");
+    expect(partA?.material).toBe(slot0);
+    expect(partB?.material).toBe(slot1);
+  });
+
+  it("seeks a paused GLB clip so animState moves a targeted node", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([
+      ["hero-model", encodeParentedAnimatedTriangleGlb("Walk")],
+    ]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const native = scene.animationGroups.find((group) => group.name === "Walk");
+    expect(native).toBeDefined();
+    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.isPlaying).toBe(false);
+
+    const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
+    expect(target).toBeDefined();
+    const poseAt = () => {
+      target!.computeWorldMatrix(true);
+      const position = target!.getAbsolutePosition();
+      return [position.x, position.y, position.z];
+    };
+    const host = sceneAnimHostFromBinding(binding, {
+      animationGroups: scene.animationGroups,
+    });
+    const command = {
+      type: "animState" as const,
+      slotId: 2,
+      stateId: "walk",
+      normalisedTime: 0,
+      blendWeights: { walk: 1 },
+      clipName: "Walk",
+      clipKind: "animation" as const,
+      clipAssetGuid: "hero-model",
+    };
+    applyAnimStateToScene(host, command);
+    const atStart = poseAt();
+    applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
+    expect(poseAt()).not.toEqual(atStart);
+    expect(native!.isPlaying).toBe(false);
+  });
+
+  it("seeks a named clip on a multi-mesh hierarchy GLB", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([
+      ["hero-model", encodeUvHierarchyGlb({ clipName: "Run" })],
+    ]);
+    createPlayMesh(scene, 2, "box", "hero-model", binding);
+    await binding.slotAnimLoads?.get(2);
+    const native = scene.animationGroups.find((group) => group.name === "Run");
+    expect(native).toBeDefined();
+    expect(native!.animatables.length).toBeGreaterThan(0);
+    expect(native!.isPlaying).toBe(false);
+
+    const target = native!.targetedAnimations[0]?.target as TransformNode | undefined;
+    expect(target).toBeDefined();
+    const poseAt = () => {
+      target!.computeWorldMatrix(true);
+      const position = target!.getAbsolutePosition();
+      return [position.x, position.y, position.z];
+    };
+    const host = sceneAnimHostFromBinding(binding, {
+      animationGroups: scene.animationGroups,
+    });
+    const command = {
+      type: "animState" as const,
+      slotId: 2,
+      stateId: "run",
+      normalisedTime: 0,
+      blendWeights: { run: 1 },
+      clipName: "Run",
+      clipKind: "animation" as const,
+      clipAssetGuid: "hero-model",
+    };
+    applyAnimStateToScene(host, command);
+    const atStart = poseAt();
+    applyAnimStateToScene(host, { ...command, normalisedTime: 1 });
+    expect(poseAt()).not.toEqual(atStart);
+    expect(native!.isPlaying).toBe(false);
+  });
+
+  it("adopts a pack GLB with UVs on every visual mesh and slot 0 on all parts", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -195,7 +344,7 @@ describe("createPlayMesh", () => {
     }
   });
 
-  it("seeks Kenney idle on paused groups with live animatables", async () => {
+  it("seeks pack-GLB idle on paused groups with live animatables", async () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;

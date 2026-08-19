@@ -1,3 +1,4 @@
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh, Material } from "@babylonjs/core";
 
 const CONSTRUCTION_KEY = "babylonslateModelConstructionMaterial";
@@ -32,6 +33,33 @@ export function visualMeshes(root: AbstractMesh): AbstractMesh[] {
     return [root, ...children.filter((mesh) => mesh !== root)];
   }
   return children;
+}
+
+/** World AABB of drawn parts only — skips the hidden placeholder and empty `__root__`. */
+export function visualHierarchyBoundingVectors(root: AbstractMesh): {
+  min: Vector3;
+  max: Vector3;
+} {
+  const parts = visualMeshes(root);
+  const meshes = parts.length > 0 ? parts : [root];
+  let min: Vector3 | undefined;
+  let max: Vector3 | undefined;
+  for (const mesh of meshes) {
+    mesh.computeWorldMatrix(true);
+    if (mesh.getTotalVertices() === 0) continue;
+    const box = mesh.getBoundingInfo().boundingBox;
+    if (!min || !max) {
+      min = box.minimumWorld.clone();
+      max = box.maximumWorld.clone();
+      continue;
+    }
+    Vector3.CheckExtends(box.minimumWorld, min, max);
+    Vector3.CheckExtends(box.maximumWorld, min, max);
+  }
+  if (!min || !max) {
+    return root.getHierarchyBoundingVectors(true);
+  }
+  return { min, max };
 }
 
 export function applyMaterialToVisualMeshes(

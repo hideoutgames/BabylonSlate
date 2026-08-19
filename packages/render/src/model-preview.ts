@@ -9,9 +9,33 @@ import {
   type MaterialPreviewScene,
 } from "./material-preview";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
-import { constructionMaterialOf, visualMeshes } from "./visual-meshes";
+import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
 
 export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
+
+const GLTF_MATERIAL_POINTER = /^\/materials\/(\d+)$/;
+
+type GltfPointerHost = {
+  _internalMetadata?: { gltf?: { pointers?: unknown } };
+  metadata?: { gltf?: { pointers?: unknown } } | null;
+};
+
+function gltfPointers(material: Material): string[] {
+  const host = material as Material & GltfPointerHost;
+  const raw =
+    host._internalMetadata?.gltf?.pointers ?? host.metadata?.gltf?.pointers;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((pointer): pointer is string => typeof pointer === "string");
+}
+
+/** glTF `materials` array index from the loader’s `/materials/N` pointer. */
+function gltfMaterialIndex(material: Material): number | undefined {
+  for (const pointer of gltfPointers(material)) {
+    const match = GLTF_MATERIAL_POINTER.exec(pointer);
+    if (match) return Number(match[1]);
+  }
+  return undefined;
+}
 
 export function applyModelMaterialSlots(
   root: AbstractMesh,
@@ -20,12 +44,33 @@ export function applyModelMaterialSlots(
 ): void {
   const meshes = visualMeshes(root);
   const constructionToSlot = new Map<Material, number>();
+  const usedIndices = new Set<number>();
+  const slotIndices = new Set(slots.map((slot) => slot.index));
+  const slotByName = new Map<string, number>();
+  for (const slot of slots) {
+    if (slot.name.length > 0 && !slotByName.has(slot.name)) {
+      slotByName.set(slot.name, slot.index);
+    }
+  }
+
+  const unusedIndex = (): number => {
+    const unused = slots.find((slot) => !usedIndices.has(slot.index));
+    return unused?.index ?? usedIndices.size;
+  };
 
   for (const mesh of meshes) {
     const construction = constructionMaterialOf(mesh);
-    if (construction && !constructionToSlot.has(construction)) {
-      constructionToSlot.set(construction, constructionToSlot.size);
-    }
+    if (!construction || constructionToSlot.has(construction)) continue;
+    const fromGltf = gltfMaterialIndex(construction);
+    const namedIndex = slotByName.get(construction.name);
+    const index =
+      fromGltf !== undefined && slotIndices.has(fromGltf)
+        ? fromGltf
+        : namedIndex !== undefined
+          ? namedIndex
+          : unusedIndex();
+    constructionToSlot.set(construction, index);
+    usedIndices.add(index);
   }
 
   const byIndex = new Map<number, string | null>();
@@ -95,7 +140,7 @@ export async function loadModelPreviewSource(
   host.mesh.visibility = 0;
   host.mesh.computeWorldMatrix(true);
   aimPreviewCameraAtMesh(host.camera, host.mesh);
-  const extent = host.mesh.getHierarchyBoundingVectors(true);
+  const extent = visualHierarchyBoundingVectors(host.mesh);
   const size = extent.max.subtract(extent.min).length();
   if (Number.isFinite(size) && size > 0) {
     const lower = host.camera.lowerRadiusLimit ?? 0.5;

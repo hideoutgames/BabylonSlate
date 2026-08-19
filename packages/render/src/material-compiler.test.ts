@@ -852,6 +852,60 @@ describe("material compiler", () => {
     expect(sample?.texture).toBe(resolved);
   });
 
+  it("keeps invertY false on the compiled sampling TextureBlock", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    expect(resolved.invertY).toBe(false);
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-tex",
+        sourceNodeId: "tex",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "texture",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const sample = result.material.attachedBlocks.find(
+      (block) => block.getClassName() === "TextureBlock",
+    ) as TextureBlock | undefined;
+    expect(sample?.texture).toBe(resolved);
+    expect(sample?.texture?.invertY).toBe(false);
+  });
+
   it("inlines a material function into the same block graph", () => {
     const scene = host();
     const fn = createDefaultMaterialFunctionDocument("Tint");
