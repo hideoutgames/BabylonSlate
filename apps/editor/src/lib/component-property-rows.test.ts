@@ -270,7 +270,16 @@ describe("componentPropertyRows", () => {
     ).toMatchObject({ kind: "boolean", value: false });
     expect(
       navMesh.rows.find((row) => row.id.endsWith("-autoBakeOnSave")),
-    ).toBeUndefined();
+    ).toMatchObject({ kind: "boolean", label: "Auto Bake On Save", value: false });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsEnabled")),
+    ).toMatchObject({ kind: "boolean", label: "Bake Bounds", value: false });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsMin")),
+    ).toMatchObject({ kind: "vector3" });
+    expect(
+      navMesh.rows.find((row) => row.id.endsWith("-bakeBoundsMax")),
+    ).toMatchObject({ kind: "vector3" });
     expect(
       navMesh.rows.find((row) => row.id.endsWith("-debugOverlay")),
     ).toMatchObject({ kind: "boolean", value: true });

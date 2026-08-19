@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -25,6 +26,10 @@ import {
 } from "@babylonslate/navigation";
 import type { NavBakeCollectExtras } from "@babylonslate/render";
 import type { SerializedScene } from "@babylonslate/core";
+import {
+  navMeshAutoBakeProperties,
+  registerNavBakeSaveFlush,
+} from "../lib/nav-bake-save";
 
 export type NavBakeCollector = (
   extras?: NavBakeCollectExtras,
@@ -82,16 +87,20 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
           waitPaintedFrame,
           collect: async () => {
             const scene = doc.content as SerializedScene;
-            let extras: NavBakeCollectExtras | undefined;
+            const extras: NavBakeCollectExtras = {};
             if (scene.viewportMode === "2d") {
               const { tilemaps, tilesets } =
                 await collectPlayTilemapContent(scene);
-              extras = {
-                tilemapChains: navBakeTilemapChains(
-                  tilemaps,
-                  tilesets,
-                  projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
-                ),
+              extras.tilemapChains = navBakeTilemapChains(
+                tilemaps,
+                tilesets,
+                projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
+              );
+            }
+            if (parsed.bakeBoundsEnabled) {
+              extras.bakeBounds = {
+                min: parsed.bakeBoundsMin,
+                max: parsed.bakeBoundsMax,
               };
             }
             return (
@@ -130,6 +139,17 @@ export function NavBakeProvider({ children }: { children: ReactNode }) {
     },
     [collectPlayTilemapContent, documentId, openDocuments, projectDocument, writeSceneNavmeshChunk],
   );
+
+  useEffect(() => {
+    return registerNavBakeSaveFlush(async () => {
+      const doc = openDocuments.find((entry) => entry.id === documentId);
+      if (!doc || doc.ref.kind !== "scene" || !doc.content) return;
+      const scene = doc.content as SerializedScene;
+      for (const properties of navMeshAutoBakeProperties(scene)) {
+        await startBake(properties);
+      }
+    });
+  }, [documentId, openDocuments, startBake]);
 
   const value = useMemo(
     () => ({

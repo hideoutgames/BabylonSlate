@@ -15,6 +15,9 @@ describe("nav mesh settings", () => {
       tiled: false,
       supportDynamicObstacles: false,
       autoBakeOnSave: false,
+      bakeBoundsEnabled: false,
+      bakeBoundsMin: { x: -50, y: -10, z: -50 },
+      bakeBoundsMax: { x: 50, y: 10, z: 50 },
       debugOverlay: false,
     });
   });
@@ -32,6 +35,17 @@ describe("nav mesh settings", () => {
     expect(parsed.supportDynamicObstacles).toBe(true);
     expect(parsed.debugOverlay).toBe(true);
     expect(parsed.autoBakeOnSave).toBe(false);
+  });
+
+  it("parses bake bounds vectors when enabled", () => {
+    const parsed = parseNavMeshActorSettings({
+      bakeBoundsEnabled: true,
+      bakeBoundsMin: { x: -2, y: -1, z: -2 },
+      bakeBoundsMax: { x: 2, y: 3, z: 2 },
+    });
+    expect(parsed.bakeBoundsEnabled).toBe(true);
+    expect(parsed.bakeBoundsMin).toEqual({ x: -2, y: -1, z: -2 });
+    expect(parsed.bakeBoundsMax).toEqual({ x: 2, y: 3, z: 2 });
   });
 
   it("parses crowd agent params", () => {

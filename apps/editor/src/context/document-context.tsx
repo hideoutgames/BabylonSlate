@@ -109,6 +109,7 @@ import {
 import { loadExportDocuments } from "../services/export-game-inputs";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
+import { flushNavBakeForSave } from "../lib/nav-bake-save";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -1253,6 +1254,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     try {
       await flushAudioReverbForSave();
+      await flushNavBakeForSave();
       captureAllLayouts();
       const dirtyDocs = documentService.getDirtyDocuments();
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
@@ -2836,6 +2838,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         setActiveSceneContent: (scene: SerializedScene) => Promise<boolean>;
         advanceIdleClock: (ms: number) => void;
         guidForPath: (path: string) => string | null;
+        readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
         projectStartupSceneGuid: () => string;
         pluginGuids: () => string[];
         enginePluginLoad: () => {
@@ -3068,6 +3071,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         advanceTestIdleClock(ms);
       },
       guidForPath: (path: string) => projectService.guidForPath(path),
+      readAssetChunk: (path: string, chunkId: string) =>
+        projectService.readAssetChunk(path, chunkId),
       textureEncodeState: (path: string) => {
         const asset = projectService.registry
           ?.list()
