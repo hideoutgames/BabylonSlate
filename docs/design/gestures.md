@@ -138,10 +138,10 @@ Same pinch contract as the viewport: scale about the midpoint, then apply two-fi
 | Left tree: tap asset | Set the grid to that asset’s parent and select the guid |
 | Left tree: Ctrl/Shift/Meta click, horizontal swipe ≥44px, or two-finger tap | Add or range-select folders and assets (same `TreeView` contract as the Outliner) |
 | Left tree: double-tap asset | Open the asset |
-| Left tree: hold ~250ms then drag | Reparent (`moveAsset` / `moveFolder`). If the dragged row is in the current selection, the collapsed selection moves (folder+descendant overlap omits the descendants; folder select does not auto-select children). Dragging an unselected row moves only that row. Pointer capture waits until that hold arms; rows are not `touch-none`, so early movement still scrolls. No context menu on the tree. Root `assets` is not draggable. |
+| Left tree: hold ~250ms then drag | Reparent (`moveAsset` / `moveFolder`). Drop on the **middle** of a folder row moves into that folder; the **top/bottom 8px** of a folder row (1px insert line, no row highlight) moves into that folder’s **parent** instead. Asset rows always resolve to the asset’s parent. If the dragged row is in the current selection, the collapsed selection moves (folder+descendant overlap omits the descendants; folder select does not auto-select children). Dragging an unselected row moves only that row. Pointer capture waits until that hold arms; rows are not `touch-none`, so early movement still scrolls. No context menu on the tree. Root `assets` is not draggable. |
 | Context-menu **Move…** / **Copy to Folder…** | Opens `ContentBrowserMoveDialog` for the whole selection (`moveAsset` / `copyAsset` / `moveFolder` / `copyFolder`) |
 
-Outliner, Components, and UserInterface hierarchy `TreeView`s use **immediate** drag-to-parent (pointer move past 8px; drop on a row makes that row the parent). If the dragged Outliner or Components row is in the current selection, the **collapsed** selection moves: omit descendants of a selected folder or transform/component parent so a parent+child pick cannot double-move or duplicate. Actors that live in a selected folder ride with the folder. Dragging an unselected row moves only that row. A selected Outliner drop that includes folder roots onto an **actor** row is a no-op. In-tree Outliner drops never duplicate actors. A **horizontal swipe ≥44px** on a row adds it to the selection and does not reparent. A **two-finger tap** range-selects from the current selection to that row. Outliner **Ctrl / Shift / Meta** click toggles folders and actors (no Shift-range on desktop). Exclusive folder tap still clears the actor selection so it cannot drive the gizmo. Outliner Duplicate / Delete and UserInterface Visible / Ignore Safe Area / Duplicate / Rename / Delete live on a trailing **⋯** button (no 500ms row long-press). **Double-tap** an outliner row frames that actor (folder rows do not frame). Content Browser folder trees keep hold-to-drag so list scroll still works.
+Outliner, Components, and UserInterface hierarchy `TreeView`s use **immediate** drag-to-parent (pointer move past 8px). Drop on the **middle** of a row nests under that row; the **top/bottom 8px** show a 1px insert line on that row only (not the neighbor) and insert as a **sibling** (`onReparent` `before` / `after`). If the dragged Outliner or Components row is in the current selection, the **collapsed** selection moves: omit descendants of a selected folder or transform/component parent so a parent+child pick cannot double-move or duplicate. Actors that live in a selected folder ride with the folder. Dragging an unselected row moves only that row. A selected Outliner drop that includes folder roots onto an **actor** row is a no-op. In-tree Outliner drops never duplicate actors. A **horizontal swipe ≥44px** on a row adds it to the selection and does not reparent. A **two-finger tap** range-selects from the current selection to that row. Outliner **Ctrl / Shift / Meta** click toggles folders and actors (no Shift-range on desktop). Exclusive folder tap still clears the actor selection so it cannot drive the gizmo. Outliner Duplicate / Delete and UserInterface Visible / Ignore Safe Area / Duplicate / Rename / Delete live on a trailing **⋯** button (no 500ms row long-press). **Double-tap** an outliner row frames that actor (folder rows do not frame). Content Browser folder trees keep hold-to-drag so list scroll still works.
 
 **Outliner actor → viewport:** the Outliner tree sets both `onReparent` and `onExternalDrop`. While the pointer is **outside** the tree, `GraphDropHint` (`outliner-drop-hint`) follows it — `+{actor.name}` over `viewport-canvas`, ban icon anywhere else. Drop on the canvas duplicates that one actor at the drop world position (new id, `{name} Copy`, root `parentId`, keep `folderId`; no children). Folders show the ban hint and do not duplicate. Releases **inside** the tree still reparent/group (table below). This is not Place Actors catalog drag-to-viewport.
 
@@ -151,12 +151,16 @@ In the Outliner the **drop target decides what a drag means**, because folders g
 
 | Drag | Drop on | Result |
 | --- | --- | --- |
-| Actor | Folder row | Joins that folder; transform parent cleared |
-| Actor | Actor row | Becomes that actor's transform child; inherits its folder |
+| Actor | Folder row (middle) | Joins that folder; transform parent cleared |
+| Actor | Before/after a folder row | Sibling of that folder (joins the folder's parent; not grouped into it). Folders still list above actors at a level |
+| Actor | Actor row (middle) | Becomes that actor's transform child; inherits its folder |
+| Actor | Before/after an actor row | Sibling with the same parent/folder; order is spliced. Not attached as a child |
 | Actor | Empty space in the tree | Back to the scene root; folder and parent cleared |
 | Actor | Scene viewport | Duplicate at the drop world position (root; keep folder) |
-| Folder | Folder row | Nests (cycles rejected) |
+| Folder | Folder row (middle) | Nests (cycles rejected) |
+| Folder | Before/after a folder row | Sibling of that folder; folder array order is spliced |
 | Folder | Empty space | Back to the root |
-| Folder | Actor row | No-op when that folder is in the selection; unselected folder unroots |
+| Folder | Actor row (middle) | No-op when that folder is in the selection; unselected folder unroots |
+| Folder | Before/after an actor row | Joins the actor's folder as a sibling folder |
 | Folder | Scene viewport | No-op (ban hint) |
 | Multi-selection | Same targets | Collapsed roots only; actor count unchanged |

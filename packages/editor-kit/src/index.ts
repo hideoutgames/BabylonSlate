@@ -108,8 +108,11 @@ export {
 export {
   TreeView,
   TREE_ROW_HEIGHT,
+  TREE_DROP_EDGE_PX,
   TREE_SWIPE_ADD_PX,
   rangeSelectTreeIds,
+  treeDropPlacement,
+  type TreeDropPlacement,
   type TreeSelectOptions,
   type TreeViewNode,
   type TreeViewProps,

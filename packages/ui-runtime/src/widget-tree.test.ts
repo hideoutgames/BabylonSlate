@@ -50,6 +50,40 @@ describe("widget tree", () => {
     expect(widgetParentId(moved, "b")).toBe(doc.rootId);
   });
 
+  it("reorders siblings before or after an anchor without nesting", () => {
+    const doc = createDefaultUserInterface();
+    const a = createWidget("a", "Button", "A");
+    const b = createWidget("b", "Button", "B");
+    const c = createWidget("c", "Button", "C");
+    let next = insertWidget(doc, a, doc.rootId);
+    next = insertWidget(next, b, doc.rootId);
+    next = insertWidget(next, c, doc.rootId);
+    expect(next.widgets[doc.rootId]?.children).toEqual(["a", "b", "c"]);
+
+    next = reparentWidget(next, "c", "a", "before");
+    expect(next.widgets[doc.rootId]?.children).toEqual(["c", "a", "b"]);
+    expect(widgetParentId(next, "c")).toBe(doc.rootId);
+
+    next = reparentWidget(next, "c", "a", "after");
+    expect(next.widgets[doc.rootId]?.children).toEqual(["a", "c", "b"]);
+    expect(widgetParentId(next, "c")).toBe(doc.rootId);
+  });
+
+  it("nests into a target row and still rejects cycles", () => {
+    const doc = createDefaultUserInterface();
+    const box = createWidget("box", "VerticalBox", "Col");
+    const a = createWidget("a", "Button", "A");
+    const b = createWidget("b", "Button", "B");
+    let next = insertWidget(doc, box, doc.rootId);
+    next = insertWidget(next, a, doc.rootId);
+    next = insertWidget(next, b, "box");
+    next = reparentWidget(next, "a", "box", "into");
+    expect(next.widgets.box?.children).toEqual(["b", "a"]);
+    expect(next.widgets[doc.rootId]?.children).toEqual(["box"]);
+    expect(reparentWidget(next, "box", "a", "into")).toBe(next);
+    expect(reparentWidget(next, "box", "a", "before")).toBe(next);
+  });
+
   it("duplicates a widget as a sibling with a new id", () => {
     const doc = createDefaultUserInterface();
     const button = createWidget("btn", "Button", "Play", defaultAddLayout("Button"));

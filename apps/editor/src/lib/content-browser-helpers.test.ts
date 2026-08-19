@@ -515,6 +515,21 @@ describe("content-browser-helpers", () => {
       destinationPath: "assets/fx",
       id: "assets/textures",
     });
+    expect(
+      contentBrowserMoveFromDrop(
+        "assets/textures/dirt.babasset",
+        "assets/fx",
+        rows,
+        undefined,
+        "before",
+      ),
+    ).toEqual({
+      kind: "asset",
+      sourcePath: "assets/textures",
+      destinationPath: "assets",
+      id: "assets/textures/dirt.babasset",
+      guid: "dirt-guid",
+    });
   });
 
   it("rejects illegal tree drops including dragging the assets root", () => {

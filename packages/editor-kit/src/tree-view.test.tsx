@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import {
+  TREE_DROP_EDGE_PX,
   TREE_ROW_HEIGHT,
   TREE_SWIPE_ADD_PX,
   TreeView,
   rangeSelectTreeIds,
+  treeDropPlacement,
   type TreeViewNode,
 } from "./tree-view";
 import { dispatchPointerEvent } from "./test-support/pointer-events";
@@ -23,6 +25,17 @@ describe("TreeView", () => {
 
   it("uses compact chrome-row height", () => {
     expect(TREE_ROW_HEIGHT).toBe(28);
+    expect(TREE_DROP_EDGE_PX).toBe(8);
+  });
+
+  it("classifies drop placement from the Y offset inside a row", () => {
+    expect(treeDropPlacement(0)).toBe("before");
+    expect(treeDropPlacement(7)).toBe("before");
+    expect(treeDropPlacement(8)).toBe("into");
+    expect(treeDropPlacement(14)).toBe("into");
+    expect(treeDropPlacement(TREE_ROW_HEIGHT - 9)).toBe("into");
+    expect(treeDropPlacement(TREE_ROW_HEIGHT - 8)).toBe("after");
+    expect(treeDropPlacement(TREE_ROW_HEIGHT - 1)).toBe("after");
   });
 
   it("renders one row per visible node with disclosure state", () => {
@@ -184,10 +197,10 @@ describe("TreeView", () => {
     act(() => {
       vi.advanceTimersByTime(DRAG_ARM_MS);
     });
-    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 80 });
-    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 80 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 70 });
 
-    expect(onReparent).toHaveBeenCalledWith("child", "other");
+    expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
     vi.useRealTimers();
   });
 
@@ -211,7 +224,7 @@ describe("TreeView", () => {
     dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 70 });
     dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 70 });
 
-    expect(onReparent).toHaveBeenCalledWith("child", "other");
+    expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
   });
 
   it("does not reparent when the pointer moves before the hold arms", () => {
@@ -561,9 +574,107 @@ describe("TreeView", () => {
       clientX: 10,
       clientY: 70,
     });
-    expect(onReparent).toHaveBeenCalledWith("child", "other");
+    expect(onReparent).toHaveBeenCalledWith("child", "other", "into");
     expect(onExternalDrop).not.toHaveBeenCalled();
   });
+
+  it("shows a before-line on the hovered row without outlining it or the row above", () => {
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={() => {}}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    act(() => {
+      dispatchPointerEvent(tree, "pointermove", { clientX: 10, clientY: 58 });
+    });
+
+    const other = screen.getByTestId("tree-row-other");
+    const child = screen.getByTestId("tree-row-child");
+    expect(other.getAttribute("data-drop-before")).toBe("true");
+    expect(other.getAttribute("data-drop-target")).toBeNull();
+    expect(other.getAttribute("data-drop-after")).toBeNull();
+    expect(child.getAttribute("data-drop-target")).toBeNull();
+    expect(child.getAttribute("data-drop-before")).toBeNull();
+    expect(screen.getByTestId("tree-drop-before-other")).toBeTruthy();
+    expect(other.className).not.toContain("outline-ring");
+  });
+
+  it("shows an after-line on the hovered row without outlining the next row", () => {
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={() => {}}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    act(() => {
+      dispatchPointerEvent(tree, "pointermove", { clientX: 10, clientY: 27 });
+    });
+
+    const root = screen.getByTestId("tree-row-root");
+    const child = screen.getByTestId("tree-row-child");
+    expect(root.getAttribute("data-drop-after")).toBe("true");
+    expect(root.getAttribute("data-drop-target")).toBeNull();
+    expect(child.getAttribute("data-drop-before")).toBeNull();
+    expect(child.getAttribute("data-drop-target")).toBeNull();
+    expect(screen.getByTestId("tree-drop-after-root")).toBeTruthy();
+    expect(root.className).not.toContain("outline-ring");
+  });
+
+  it("reparents before a row when released in the top edge band", () => {
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 58 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 58 });
+    expect(onReparent).toHaveBeenCalledWith("child", "other", "before");
+  });
+
+  it("reparents after a row when released in the bottom edge band", () => {
+    const onReparent = vi.fn();
+    render(
+      <TreeView
+        nodes={nodes}
+        onReparent={onReparent}
+        reparentArm="immediate"
+        data-testid="tree"
+      />,
+    );
+    const tree = screen.getByTestId("tree");
+    tree.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, right: 200, bottom: 84 }) as DOMRect;
+    const row = screen.getByTestId("tree-row-child");
+    dispatchPointerEvent(row, "pointerdown", { clientX: 10, clientY: 40 });
+    dispatchPointerEvent(row, "pointermove", { clientX: 10, clientY: 27 });
+    dispatchPointerEvent(row, "pointerup", { clientX: 10, clientY: 27 });
+    expect(onReparent).toHaveBeenCalledWith("child", "root", "after");
+  });
+
 
   it("reports external drag move outside the tree when onReparent is also set", () => {
     const onExternalDragMove = vi.fn();
