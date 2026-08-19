@@ -1215,6 +1215,7 @@ The unzip-serve-boot-tick smoke in 15 remains required. Preview Build is the edi
 The project is built by autonomous agents working in parallel, which is a failure mode the architecture has to account for, not just a staffing note.
 
 - **One slice, one PR, one owner.** Each roadmap slice names the packages it may touch. Two agents never hold the same package at once, which is the main reason the package boundaries above are drawn as narrowly as they are.
+- **Draft until local verify; ready once; ~8 non-draft PRs.** Coding may run in parallel; GitHub Verify is a shared ~20-job pool. Keep PRs draft until `pnpm verify` is green, mark ready once, and do not pile more than about eight ready PRs. Rule: [.cursor/rules/github-actions-pr-cadence.mdc](../.cursor/rules/github-actions-pr-cadence.mdc).
 - **API before implementation.** A slice that others depend on lands its types and a failing test suite first, so downstream agents can start against a stable signature instead of guessing.
 - **Every PR runs the code-review skill** against the merge-base and reports both axes before being marked ready. Findings are recorded in `docs/agents/issue-tracker.md` rather than lost in a PR thread.
 - **Shared surfaces need a design note before code**: the bridge protocol, the pin type table, the container formats and the command layer. A note in `docs/architecture/` is cheaper than two agents inventing incompatible halves of the same protocol.
