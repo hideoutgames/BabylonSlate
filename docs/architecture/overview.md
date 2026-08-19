@@ -77,7 +77,7 @@ New editor tabs for assets are per-document **DockView** layouts (`DockviewShell
 
 Wire every new kind through `apps/editor/src/shell/window-catalog.ts` (`DockviewDocumentKind` + `listDockWindows`), `panel-registry.tsx`, `document-workspace.tsx` (`DockviewShell` with the real kind), `documentKindForAssetType`, and `FOCUS_PRIMARY_PANEL`. Default layouts add `primaryDockPanel(kind)` first so side docks can split from it. **Windows** stays disabled unless `isDockviewDocumentKind(activeKind)` is true. Agent rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../../.cursor/rules/dockview-editor-tabs.mdc).
 
-Existing compact Texture `asset-settings` tabs and pinned Content Browser are exceptions until converted — do not add new types to that path. Model, Skeleton, Animation, and Audio open Sprite-style DockView documents (**Preview** + **Details**; Audio also has **Clips**). Skybox Creator is a DockView helper (not a Skybox document).
+Existing compact Texture `asset-settings` tabs and pinned Content Browser are exceptions until converted — do not add new types to that path. Model, Skeleton, Animation, and Audio open Sprite-style DockView documents (**Preview** + **Details**; Audio also has **Clips**). Skybox Creator is a DockView helper (not a Skybox document) with **Preview**, **Cubemap**, and **Details**.
 
 ## Package rules
 

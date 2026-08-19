@@ -89,6 +89,8 @@ export type ParticleSystemPayload = {
   space: ParticleSpace;
   looping: boolean;
   duration: number;
+  /** Editor System Preview only. Ignored at runtime. Missing → true. */
+  previewSkybox: boolean;
 };
 
 export type ParticleDiagnostic = {
@@ -242,6 +244,7 @@ export function createDefaultParticleSystemPayload(): ParticleSystemPayload {
     space: "world",
     looping: true,
     duration: 2,
+    previewSkybox: true,
   };
 }
 
@@ -445,6 +448,7 @@ export function normalizeParticleSystemPayload(
     space: rec.space === "local" ? "local" : "world",
     looping: rec.looping === false ? false : true,
     duration: nonNegative(rec.duration, defaults.duration),
+    previewSkybox: rec.previewSkybox === false ? false : true,
   };
 }
 

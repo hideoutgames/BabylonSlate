@@ -8,7 +8,25 @@ import {
   ParticleEmitterEditor,
   ParticleEmitterPreview,
   ParticleSystemEditor,
+  ParticleSystemPreview,
 } from "./particle-editor";
+import { ParticlePreviewCanvas } from "./particle-preview-canvas";
+import { systemPreviewLibrary } from "../lib/play-particles";
+
+if (typeof window !== "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  Object.defineProperty(window, "PointerEvent", {
+    configurable: true,
+    writable: true,
+    value: PointerEventPolyfill,
+  });
+}
+
+const loadAssetDocument = vi.hoisted(() => vi.fn());
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
@@ -43,11 +61,13 @@ vi.mock("../context/document-context", () => ({
       ],
     },
     openDocuments: [],
+    loadAssetDocument,
   }),
 }));
 
 afterEach(() => {
   cleanup();
+  loadAssetDocument.mockReset();
 });
 
 describe("ParticleEmitterEditor", () => {
@@ -112,6 +132,21 @@ describe("ParticleEmitterEditor", () => {
     );
     expect(screen.getByTestId("particle-emitter-preview-canvas")).toBeTruthy();
   });
+
+  it("signals Loading Preview while the particle canvas has no Engine", () => {
+    render(
+      <ParticleEmitterPreview
+        payload={
+          {
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    expect(screen.getByTestId("particle-preview-loading")).toBeTruthy();
+    expect(screen.getByText("Loading Preview")).toBeTruthy();
+  });
 });
 
 describe("ParticleSystemEditor", () => {
@@ -133,5 +168,74 @@ describe("ParticleSystemEditor", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ emitterGuids: ["em-1"] }),
     );
+  });
+
+  it("toggles Preview Skybox on the System payload", () => {
+    const payload = createDefaultParticleSystemPayload();
+    const onChange = vi.fn();
+    render(
+      <ParticleSystemEditor
+        payload={payload as unknown as Record<string, unknown>}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByText("Preview Skybox")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-previewSkybox"));
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ previewSkybox: false }),
+    );
+  });
+});
+
+describe("ParticleSystemPreview", () => {
+  it("loads closed Emitter documents instead of empty registry headers", async () => {
+    loadAssetDocument.mockResolvedValue({
+      ...createDefaultParticleEmitterPayload(),
+      textureGuid: "tex-1",
+    });
+    render(
+      <ParticleSystemPreview
+        payload={
+          {
+            ...createDefaultParticleSystemPayload(),
+            emitterGuids: ["em-1"],
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    expect(screen.getByTestId("particle-preview-loading")).toBeTruthy();
+    expect(screen.getByText("Loading Preview")).toBeTruthy();
+    await waitFor(() => {
+      expect(loadAssetDocument).toHaveBeenCalledWith(
+        "particle-emitter",
+        "assets/Sparks.emitter.babasset",
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("particle-system-preview-canvas")).toBeTruthy();
+    });
+  });
+});
+
+describe("ParticlePreviewCanvas", () => {
+  it("shows No Texture instead of a black canvas when every Emitter skipped a Texture", () => {
+    const library = systemPreviewLibrary(
+      {
+        ...createDefaultParticleSystemPayload(),
+        emitterGuids: ["em-1"],
+      },
+      new Map([
+        ["em-1", createDefaultParticleEmitterPayload()],
+      ]),
+    );
+    render(
+      <ParticlePreviewCanvas
+        library={library}
+        systemGuid="preview-sys"
+        testId="particle-system-preview-canvas"
+      />,
+    );
+    expect(screen.getByText("No Texture")).toBeTruthy();
+    expect(screen.queryByTestId("particle-system-preview-canvas")).toBeNull();
   });
 });

@@ -102,7 +102,7 @@ export function SkyboxCreatorPreviewCanvas({
   return (
     <canvas
       ref={canvasRef}
-      className="h-full min-h-[160px] w-full rounded-md border border-border"
+      className="h-full w-full rounded-md border border-border"
       data-testid={testId}
     />
   );

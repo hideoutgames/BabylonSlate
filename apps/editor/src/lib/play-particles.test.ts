@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   emptyPlayParticleLibrary,
   emitterPreviewLibrary,
   emittersFromRegistry,
+  loadEmittersForPreview,
   particleMaterialGuidsFromLibrary,
   particleTextureGuidsFromLibrary,
   playParticleLibraryFromAssets,
@@ -110,5 +111,73 @@ describe("playParticleLibraryFromAssets", () => {
         new Map(),
       ).get("em-1")?.capacity,
     ).toBe(32);
+  });
+
+  it("does not treat an empty registry header as an authored Emitter look", () => {
+    expect(
+      emittersFromRegistry(
+        [
+          {
+            header: {
+              guid: "em-1",
+              type: "ParticleEmitter",
+              payload: {},
+            },
+          },
+        ],
+        new Map(),
+      ).get("em-1")?.textureGuid,
+    ).toBeNull();
+  });
+
+  it("loads closed Emitter document chunks instead of empty registry headers", async () => {
+    const loadDocument = vi.fn(async () => ({
+      textureGuid: "tex-1",
+      capacity: 64,
+    }));
+    const emitters = await loadEmittersForPreview({
+      system: {
+        ...createDefaultParticleSystemPayload(),
+        emitterGuids: ["em-1"],
+      },
+      assets: [
+        {
+          header: {
+            guid: "em-1",
+            type: "ParticleEmitter",
+            payload: {},
+          },
+          path: "assets/Sparks.emitter.babasset",
+        },
+      ],
+      openPayloads: new Map(),
+      loadDocument,
+    });
+    expect(loadDocument).toHaveBeenCalledWith(
+      "particle-emitter",
+      "assets/Sparks.emitter.babasset",
+    );
+    expect(emitters.get("em-1")?.textureGuid).toBe("tex-1");
+    expect(emitters.get("em-1")?.capacity).toBe(64);
+  });
+
+  it("prefers an open Emitter tab over a disk load", async () => {
+    const loadDocument = vi.fn(async () => ({ textureGuid: "from-disk" }));
+    const emitters = await loadEmittersForPreview({
+      system: {
+        ...createDefaultParticleSystemPayload(),
+        emitterGuids: ["em-1"],
+      },
+      assets: [
+        {
+          header: { guid: "em-1", type: "ParticleEmitter" },
+          path: "assets/Sparks.emitter.babasset",
+        },
+      ],
+      openPayloads: new Map([["em-1", { textureGuid: "from-tab" }]]),
+      loadDocument,
+    });
+    expect(loadDocument).not.toHaveBeenCalled();
+    expect(emitters.get("em-1")?.textureGuid).toBe("from-tab");
   });
 });

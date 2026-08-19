@@ -1,4 +1,5 @@
-import { ParticleSystem, RawTexture } from "@babylonjs/core";
+import { NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
+import { ParticleTextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleTextureBlock";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   PARTICLE_BLENDMODE_STANDARD,
@@ -143,5 +144,31 @@ describe("particle-system-factory", () => {
     });
     expect(cone.particleTexture).toBe(texture);
     cone.dispose(false);
+  });
+
+  it("copies particleTexture onto ParticleTextureBlock before createEffectForParticles", () => {
+    const { scene, texture } = host();
+    const system = createBabylonParticleSystem("nme", scene, 16, false);
+    const block = new ParticleTextureBlock("particleTex");
+    let boundDuringEffect: unknown = null;
+    const material = {
+      mode: NodeMaterialModes.Particle,
+      attachedBlocks: [block],
+      createEffectForParticles: () => {
+        boundDuringEffect = block.texture;
+      },
+    };
+    applyParticleLook({
+      system,
+      emitter: createDefaultParticleEmitterPayload(),
+      systemPayload: createDefaultParticleSystemPayload(),
+      gpu: false,
+      texture,
+      material: material as never,
+    });
+    expect(boundDuringEffect).toBe(texture);
+    expect(block.texture).toBe(texture);
+    expect(system.particleTexture).toBe(texture);
+    system.dispose(false);
   });
 });

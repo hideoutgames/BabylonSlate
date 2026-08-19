@@ -241,8 +241,17 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("animation")).toBe("animation-preview");
     expect(listDockWindows("skybox-creator").map((entry) => entry.id)).toEqual([
       "skybox-creator-preview",
+      "skybox-creator-cubemap",
       "skybox-creator-details",
     ]);
+    expect(
+      listDockWindows("skybox-creator").find(
+        (entry) => entry.id === "skybox-creator-cubemap",
+      )?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "skybox-creator-preview",
+      direction: "below",
+    });
     expect(
       listDockWindows("skybox-creator").find(
         (entry) => entry.id === "skybox-creator-details",

@@ -10,6 +10,8 @@ import { nextCopyName, stripAssetFileSuffix } from "./unique-names";
 
 export const SKYBOX_CREATOR_NET_COLS = 4;
 export const SKYBOX_CREATOR_NET_ROWS = 3;
+export const SKYBOX_CREATOR_NET_ASPECT =
+  SKYBOX_CREATOR_NET_COLS / SKYBOX_CREATOR_NET_ROWS;
 
 export const SKYBOX_CREATOR_COMPASS_FACES = [
   "up",
@@ -47,8 +49,27 @@ export const SKYBOX_CREATOR_COMPASS_TO_BABYLON: Record<
   down: "ny",
 };
 
+export type SkyboxCreatorSourcePlacement = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type SkyboxCreatorSourcePlacementHandle =
+  | "n"
+  | "s"
+  | "e"
+  | "w"
+  | "ne"
+  | "nw"
+  | "se"
+  | "sw"
+  | "move";
+
 export type SkyboxCreatorPayload = {
   sourceTextureGuid: string | null;
+  sourcePlacement: SkyboxCreatorSourcePlacement | null;
   generatedFaces: SkyboxFaces;
 };
 
@@ -81,9 +102,123 @@ function nullableGuid(value: unknown): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function parseSkyboxCreatorSourcePlacement(
+  value: unknown,
+): SkyboxCreatorSourcePlacement | null {
+  const source = asRecord(value);
+  const x = finiteNumber(source.x);
+  const y = finiteNumber(source.y);
+  const width = finiteNumber(source.width);
+  const height = finiteNumber(source.height);
+  if (x === null || y === null || width === null || height === null) {
+    return null;
+  }
+  return {
+    x,
+    y,
+    width: Math.max(0.001, width),
+    height: Math.max(0.001, height),
+  };
+}
+
+export function defaultSkyboxCreatorSourcePlacement(
+  sourceWidth: number,
+  sourceHeight: number,
+): SkyboxCreatorSourcePlacement {
+  const width = Math.max(1, sourceWidth);
+  const height = Math.max(1, sourceHeight);
+  const sourceAspect = width / height;
+  if (sourceAspect > SKYBOX_CREATOR_NET_ASPECT) {
+    const placedHeight = SKYBOX_CREATOR_NET_ASPECT / sourceAspect;
+    return {
+      x: 0,
+      y: (1 - placedHeight) / 2,
+      width: 1,
+      height: placedHeight,
+    };
+  }
+  const placedWidth = sourceAspect / SKYBOX_CREATOR_NET_ASPECT;
+  return {
+    x: (1 - placedWidth) / 2,
+    y: 0,
+    width: placedWidth,
+    height: 1,
+  };
+}
+
+export function letterboxSize(
+  hostWidth: number,
+  hostHeight: number,
+  aspect = SKYBOX_CREATOR_NET_ASPECT,
+): { width: number; height: number; x: number; y: number } {
+  const width = Math.max(0, hostWidth);
+  const height = Math.max(0, hostHeight);
+  if (width === 0 || height === 0 || aspect <= 0) {
+    return { width: 0, height: 0, x: 0, y: 0 };
+  }
+  if (width / height > aspect) {
+    const fittedWidth = height * aspect;
+    return {
+      width: fittedWidth,
+      height,
+      x: (width - fittedWidth) / 2,
+      y: 0,
+    };
+  }
+  const fittedHeight = width / aspect;
+  return {
+    width,
+    height: fittedHeight,
+    x: 0,
+    y: (height - fittedHeight) / 2,
+  };
+}
+
+export function resizeSkyboxCreatorSourcePlacement(
+  start: SkyboxCreatorSourcePlacement,
+  handle: SkyboxCreatorSourcePlacementHandle,
+  pointer: { x: number; y: number },
+  origin: { x: number; y: number },
+): SkyboxCreatorSourcePlacement {
+  const right = start.x + start.width;
+  const bottom = start.y + start.height;
+  if (handle === "move") {
+    return {
+      x: start.x + (pointer.x - origin.x),
+      y: start.y + (pointer.y - origin.y),
+      width: Math.max(0.001, start.width),
+      height: Math.max(0.001, start.height),
+    };
+  }
+  let x = start.x;
+  let y = start.y;
+  let width = start.width;
+  let height = start.height;
+  if (handle.includes("e")) {
+    width = Math.max(0.001, pointer.x - start.x);
+  }
+  if (handle.includes("w")) {
+    x = Math.min(pointer.x, right - 0.001);
+    width = right - x;
+  }
+  if (handle.includes("s")) {
+    height = Math.max(0.001, pointer.y - start.y);
+  }
+  if (handle.includes("n")) {
+    y = Math.min(pointer.y, bottom - 0.001);
+    height = bottom - y;
+  }
+  return parseSkyboxCreatorSourcePlacement({ x, y, width, height }) ?? start;
+}
+
 export function createDefaultSkyboxCreatorPayload(): SkyboxCreatorPayload {
   return {
     sourceTextureGuid: null,
+    sourcePlacement: null,
     generatedFaces: emptySkyboxFaces(),
   };
 }
@@ -94,6 +229,7 @@ export function normalizeSkyboxCreatorPayload(
   const source = asRecord(payload);
   return {
     sourceTextureGuid: nullableGuid(source.sourceTextureGuid),
+    sourcePlacement: parseSkyboxCreatorSourcePlacement(source.sourcePlacement),
     generatedFaces: parseSkyboxFaces(source.generatedFaces),
   };
 }
@@ -249,17 +385,22 @@ export function fitSourceIntoSkyboxNet(
   rgba: Uint8Array,
   width: number,
   height: number,
+  placement?: SkyboxCreatorSourcePlacement | null,
 ): FitSourceIntoSkyboxNetResult {
   const sourceWidth = Math.max(1, Math.floor(width));
   const sourceHeight = Math.max(1, Math.floor(height));
   const faceSize = skyboxCreatorFaceSize(sourceWidth, sourceHeight);
   const netWidth = SKYBOX_CREATOR_NET_COLS * faceSize;
   const netHeight = SKYBOX_CREATOR_NET_ROWS * faceSize;
-  const scale = Math.min(netWidth / sourceWidth, netHeight / sourceHeight);
-  const destWidth = sourceWidth * scale;
-  const destHeight = sourceHeight * scale;
-  const destX = (netWidth - destWidth) / 2;
-  const destY = (netHeight - destHeight) / 2;
+  const destPlacement =
+    parseSkyboxCreatorSourcePlacement(placement) ??
+    defaultSkyboxCreatorSourcePlacement(sourceWidth, sourceHeight);
+  const destWidth = destPlacement.width * netWidth;
+  const destHeight = destPlacement.height * netHeight;
+  const destX = destPlacement.x * netWidth;
+  const destY = destPlacement.y * netHeight;
+  const scaleX = destWidth / sourceWidth;
+  const scaleY = destHeight / sourceHeight;
   const net = new Uint8Array(netWidth * netHeight * 4);
 
   for (let ny = 0; ny < netHeight; ny++) {
@@ -270,12 +411,12 @@ export function fitSourceIntoSkyboxNet(
         nx < destX + destWidth &&
         ny >= destY &&
         ny < destY + destHeight;
-      if (!inside || scale <= 0) {
+      if (!inside || scaleX <= 0 || scaleY <= 0) {
         fillPixel(net, destIndex, LETTERBOX);
         continue;
       }
-      const sx = Math.floor((nx - destX) / scale);
-      const sy = Math.floor((ny - destY) / scale);
+      const sx = Math.floor((nx - destX) / scaleX);
+      const sy = Math.floor((ny - destY) / scaleY);
       if (sx < 0 || sy < 0 || sx >= sourceWidth || sy >= sourceHeight) {
         fillPixel(net, destIndex, LETTERBOX);
         continue;
