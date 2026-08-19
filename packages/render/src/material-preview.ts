@@ -12,6 +12,7 @@ import {
   type PostProcess,
 } from "@babylonjs/core";
 import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
+import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { createMeshFromModelBytes } from "./model-mesh";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
@@ -398,7 +399,7 @@ export function createMaterialPreviewPresenter(
         const bytes =
           buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
         ctx.putImageData(
-          new ImageData(new Uint8ClampedArray(bytes), width, height),
+          new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
           0,
           0,
         );

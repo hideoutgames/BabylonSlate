@@ -67,14 +67,18 @@ class FakeCanvas {
     return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight };
   }
 
+  capturedImages: Array<{ data: Uint8ClampedArray }> = [];
+
   getContext(): {
     clearRect: () => void;
-    putImageData: () => void;
+    putImageData: (image: { data: Uint8ClampedArray }) => void;
     createImageData: (width: number, height: number) => ImageData;
   } {
     return {
       clearRect: () => {},
-      putImageData: () => {},
+      putImageData: (image) => {
+        this.capturedImages.push(image);
+      },
       createImageData: (width, height) =>
         ({ data: new Uint8ClampedArray(width * height * 4), width, height }) as ImageData,
     };
@@ -474,6 +478,60 @@ describe("material preview presenter", () => {
     canvas.clientHeight = 0;
     presenter.present();
     expect(render).not.toHaveBeenCalled();
+  });
+
+  it("flips WebGL readPixels so the 2D canvas is not upside down", async () => {
+    const width = 320;
+    const height = 180;
+    const row = width * 4;
+    const gpu = new Uint8Array(width * height * 4);
+    for (let x = 0; x < width; x++) {
+      const bottom = x * 4;
+      gpu[bottom] = 255;
+      gpu[bottom + 3] = 255;
+      const top = (height - 1) * row + x * 4;
+      gpu[top + 2] = 255;
+      gpu[top + 3] = 255;
+    }
+    const readPixels = vi
+      .spyOn(RenderTargetTexture.prototype, "readPixels")
+      .mockResolvedValue(gpu);
+    disposers.push(() => readPixels.mockRestore());
+    const ImageDataStub = class {
+      data: Uint8ClampedArray;
+      width: number;
+      height: number;
+      constructor(data: Uint8ClampedArray, width: number, height: number) {
+        this.data = data;
+        this.width = width;
+        this.height = height;
+      }
+    };
+    const previousImageData = (globalThis as { ImageData?: unknown }).ImageData;
+    (globalThis as { ImageData: unknown }).ImageData = ImageDataStub;
+    disposers.push(() => {
+      if (previousImageData) {
+        (globalThis as { ImageData: unknown }).ImageData = previousImageData;
+      } else {
+        delete (globalThis as { ImageData?: unknown }).ImageData;
+      }
+    });
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const presenter = createMaterialPreviewPresenter(
+      host,
+      canvas as unknown as HTMLCanvasElement,
+      { maxFps: 1000 },
+    );
+    disposers.push(() => presenter.dispose());
+    presenter.present({ force: true });
+    await vi.waitFor(() => expect(canvas.capturedImages.length).toBeGreaterThan(0));
+    const image = canvas.capturedImages[0]!;
+    expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
+    expect([
+      ...image.data.subarray((height - 1) * row, (height - 1) * row + 4),
+    ]).toEqual([255, 0, 0, 255]);
   });
 
   it("clears the camera output target on dispose", () => {

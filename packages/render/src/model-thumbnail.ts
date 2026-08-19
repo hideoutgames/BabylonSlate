@@ -6,6 +6,7 @@ import {
   createModelPreviewScene,
   loadModelPreviewSource,
 } from "./model-preview";
+import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { encodeRgbaPng } from "./png-encode";
 
 function rgbaBytesFromReadback(
@@ -55,7 +56,11 @@ export async function captureModelThumbnailPng(
     if (!buffer) return null;
     const pixels = rgbaBytesFromReadback(buffer, size * size * 4);
     if (!pixels) return null;
-    return encodeRgbaPng(size, size, pixels);
+    return encodeRgbaPng(
+      size,
+      size,
+      new Uint8Array(flipReadPixelsRgba(pixels, size, size)),
+    );
   } catch {
     return null;
   } finally {

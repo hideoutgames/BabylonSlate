@@ -9,6 +9,7 @@ import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import { Image } from "@babylonjs/gui/2D/controls/image";
+import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { MaterialLibrary, materialUnavailable } from "./material-library";
 
 export interface InterfaceMaterialPresenter {
@@ -64,7 +65,7 @@ function blitTextureToCanvas(
       const bytes =
         buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer.buffer);
       ctx.putImageData(
-        new ImageData(new Uint8ClampedArray(bytes), width, height),
+        new ImageData(flipReadPixelsRgba(bytes, width, height), width, height),
         0,
         0,
       );
