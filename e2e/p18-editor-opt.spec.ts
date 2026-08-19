@@ -5,6 +5,7 @@ import {
   openContentBrowser,
   openMainScene,
   openTestProject,
+  selectContentBrowserAssetsFolder,
 } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 
@@ -60,12 +61,14 @@ async function openOrCreateAsset(
   assetPath: string,
 ): Promise<void> {
   await openContentBrowser(page);
+  await selectContentBrowserAssetsFolder(page);
   const search = page.getByTestId("content-browser-search");
   await search.fill(name);
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
   if ((await tile.count()) === 0) {
     await search.fill("");
     await createContentBrowserAsset(page, type, name);
+    await selectContentBrowserAssetsFolder(page);
     await search.fill(name);
   }
   await expect(tile).toBeVisible({ timeout: 15_000 });

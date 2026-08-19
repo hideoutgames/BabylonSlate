@@ -83,6 +83,20 @@ export async function openContentBrowser(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Grid search is the current folder only; click the project assets root. */
+export async function selectContentBrowserAssetsFolder(
+  page: Page,
+): Promise<void> {
+  const tree = page.getByTestId("content-browser-folder-tree");
+  await expect(tree).toBeVisible();
+  await tree.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  const assetsRow = page.getByTestId("tree-row-assets");
+  await expect(assetsRow).toBeVisible();
+  await assetsRow.click();
+}
+
 /** Create an authored asset from the Content Browser New Asset dialog. */
 export async function createContentBrowserAsset(
   page: Page,
@@ -90,6 +104,7 @@ export async function createContentBrowserAsset(
   name: string,
 ): Promise<void> {
   await openContentBrowser(page);
+  await selectContentBrowserAssetsFolder(page);
   await page.getByTestId("content-browser-new-asset").click();
   await expect(
     page.getByTestId("content-browser-new-asset-dialog"),
@@ -109,6 +124,7 @@ export async function openAssetFromBrowser(
   assetPath: string,
 ): Promise<void> {
   await openContentBrowser(page);
+  await selectContentBrowserAssetsFolder(page);
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
   if (!(await tile.isVisible())) {
     const stem = (assetPath.split("/").pop() ?? assetPath).replace(
