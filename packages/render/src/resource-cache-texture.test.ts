@@ -42,7 +42,8 @@ describe("resource cache getTexture", () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const defaulted = cache.getTexture("sprite", engine, bytes);
     const material = getMaterialTexture(cache, "mat", engine, bytes);
-    expect(defaulted.invertY).toBe(true);
+    expect(defaulted).toBeInstanceOf(Texture);
+    expect((defaulted as Texture).invertY).toBe(true);
     expect(material).not.toBeNull();
     expect(material!.invertY).toBe(false);
     cache.dispose();

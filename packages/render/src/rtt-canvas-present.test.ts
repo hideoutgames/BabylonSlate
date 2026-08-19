@@ -14,12 +14,14 @@ class FakeCanvas {
   width = 0;
   height = 0;
   putCalls = 0;
+  capturedImages: Array<{ data: Uint8ClampedArray }> = [];
 
   getContext(kind: string) {
     if (kind !== "2d") return null;
     return {
-      putImageData: () => {
+      putImageData: (image?: { data: Uint8ClampedArray }) => {
         this.putCalls += 1;
+        if (image) this.capturedImages.push(image);
       },
     };
   }
@@ -116,17 +118,7 @@ describe("createRttCanvasPresent", () => {
       gpu[top + 2] = 255;
       gpu[top + 3] = 255;
     }
-    const captured: Array<{ data: Uint8ClampedArray }> = [];
     const fake = canvas as unknown as FakeCanvas;
-    fake.getContext = (kind: string) => {
-      if (kind !== "2d") return null;
-      return {
-        putImageData: (image: { data: Uint8ClampedArray }) => {
-          fake.putCalls += 1;
-          captured.push(image);
-        },
-      };
-    };
     const ImageDataStub = class {
       constructor(
         readonly data: Uint8ClampedArray,
@@ -145,8 +137,8 @@ describe("createRttCanvasPresent", () => {
         gpu as unknown as Awaited<ReturnType<RenderTargetTexture["readPixels"]>>,
       );
     present.blit();
-    await vi.waitFor(() => expect(captured.length).toBeGreaterThan(0));
-    const image = captured[0]!;
+    await vi.waitFor(() => expect(fake.capturedImages.length).toBeGreaterThan(0));
+    const image = fake.capturedImages[0]!;
     expect([...image.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]);
     expect([
       ...image.data.subarray((height - 1) * row, (height - 1) * row + 4),
