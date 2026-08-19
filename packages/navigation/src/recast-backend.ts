@@ -105,7 +105,11 @@ export async function generateNavMesh(
         result.navMesh.destroy();
       }
     }
-    throw new Error("generateNavMesh failed");
+    throw new Error(
+      result.error
+        ? `generateNavMesh failed: ${result.error}`
+        : "generateNavMesh failed",
+    );
   }
   const result = generateSoloNavMesh(
     input.positions,
@@ -119,7 +123,11 @@ export async function generateNavMesh(
       result.navMesh.destroy();
     }
   }
-  throw new Error("generateNavMesh failed");
+  throw new Error(
+    result.error
+      ? `generateNavMesh failed: ${result.error}`
+      : "generateNavMesh failed",
+  );
 }
 
 class RecastNavigationBackend implements NavigationBackend {
