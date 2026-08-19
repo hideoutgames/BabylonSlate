@@ -115,6 +115,7 @@ export function arrayRemoveItem<T>(
 export function arrayClear<T>(
   _array?: readonly T[] | null | undefined,
 ): T[] {
+  void _array;
   return [];
 }
 
@@ -197,6 +198,7 @@ export function mapIsEmpty(map: Map<unknown, unknown> | null | undefined): boole
 export function mapClear<K, V>(
   _map?: Map<K, V> | null | undefined,
 ): Map<K, V> {
+  void _map;
   return new Map<K, V>();
 }
 
