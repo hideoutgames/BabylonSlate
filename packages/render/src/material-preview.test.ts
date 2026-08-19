@@ -155,7 +155,7 @@ describe("material preview scene", () => {
   it("falls back to a cube when a custom mesh has no bytes", () => {
     const scene = new Scene(engine());
     disposers.push(() => scene.dispose());
-    const mesh = createMaterialPreviewMesh(scene, "custom", null);
+    const mesh = createMaterialPreviewMesh(scene, "custom");
     expect(mesh.getTotalVertices()).toBe(24);
     expect(mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
   });

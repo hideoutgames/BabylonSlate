@@ -49,7 +49,6 @@ export function aimPreviewCameraAtMesh(
 export function createMaterialPreviewMesh(
   scene: Scene,
   kind: MaterialPreviewMesh,
-  _customMeshBytes?: Uint8Array | null,
 ): Mesh {
   const name = MATERIAL_PREVIEW_MESH_NAME;
   switch (kind) {
