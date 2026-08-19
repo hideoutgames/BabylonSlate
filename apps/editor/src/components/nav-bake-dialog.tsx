@@ -13,6 +13,7 @@ export type NavBakeDialogProps = {
   phase: NavBakePhase;
   cancellable?: boolean;
   onCancel?: () => void;
+  onDismiss?: () => void;
   error?: string | null;
 };
 
@@ -28,6 +29,7 @@ export function NavBakeDialog({
   phase,
   cancellable = false,
   onCancel,
+  onDismiss,
   error,
 }: NavBakeDialogProps) {
   return (
@@ -49,7 +51,16 @@ export function NavBakeDialog({
         >
           {error ?? PHASE_COPY[phase]}
         </p>
-        {cancellable ? (
+        {error && onDismiss ? (
+          <Button
+            type="button"
+            variant="outline"
+            data-testid="nav-bake-dismiss"
+            onClick={onDismiss}
+          >
+            Close
+          </Button>
+        ) : cancellable ? (
           <Button
             type="button"
             variant="outline"

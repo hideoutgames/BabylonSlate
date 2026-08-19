@@ -32,10 +32,10 @@ Recast settings (`NavMeshSettings`) are data: cell size/height, walkable slope/h
 
 - Place Actors **NavMesh** spawns an Actor with `NavMeshComponent` (Recast numbers, solo/tiled enum, support-dynamic-obstacles, **Auto Bake On Save** default off, **Bake Bounds** plus min/max, debug overlay). Not an Add Component row.
 - Place Actors **NavMesh Blocker** spawns an Actor with `NavMeshBlockerComponent` (`dynamic` default false, `kind` box/cylinder, `area` unwalkable/cost, **Cost** number when Area is Cost, default 10, min > 1). Scale is the blocker size. Not Add Component / Search.
-- Details **Bake NavMesh** opens a non-dismissable modal on a painted frame, collects geometry, runs `generateNavMesh` in a dedicated bake worker (tile cache when Support Dynamic Obstacles is on), writes the Scene `navmesh` chunk.
+- Details **Bake NavMesh** opens a non-dismissable modal on a painted frame, collects geometry, runs `generateNavMesh` in a dedicated bake worker (tile cache when Support Dynamic Obstacles is on), writes the Scene `navmesh` chunk. A failed bake keeps the modal open with the Recast error and a Close control (Save still continues).
 - Save with Auto Bake On Save awaits `flushNavBakeForSave()` (same `startBake` / `NavBakeDialog` as Bake). Export does **not** auto-bake. Only **mounted** scene workspaces register a collector — an idle-unmounted P18 scene tab will not bake on Save until it remounts.
-- 3D collect: `MeshComponent` world meshes (triangle winding reversed for Recast +Y) + static unwalkable blockers. Dynamic / cost blockers are skipped at bake. When Bake Bounds is on, meshes whose world AABB misses the box are dropped.
-- 2D collect: Recast XZ walkable quad from actor XY bounds (or the bounds box XY when enabled), `ColliderComponent` 2D shapes, tilemap collision chains (`tilemapCollisionChains` / `navBakeTilemapChains`), remapped static blockers. MeshComponent XY verts are not fed to Recast.
+- 3D collect: `MeshComponent` world meshes — origin-root / glTF **visual children**, triangle winding reversed for Recast +Y; skip editor pick proxies — plus static unwalkable blockers. Dynamic / cost blockers are skipped at bake. When Bake Bounds is on, meshes, tilemap chains, and static blockers whose AABB misses the box are dropped.
+- 2D collect: Recast XZ walkable quad from actor XY bounds (or the bounds box XY when enabled), `ColliderComponent` 2D shapes whose actor XY is inside the box, tilemap collision chains (`tilemapCollisionChains` / `navBakeTilemapChains`) that intersect the box XY, remapped static blockers in-box. MeshComponent XY verts are not fed to Recast.
 - Debug overlay: Recast primitives → Babylon wireframe when `debugOverlay` is on.
 - Play reads the Scene chunk (`readPlayNavmeshBytes`) and posts `loadNavMesh` **before** `realizePlayWorld`. `NavAgentComponent` registers `addAgent`; dynamic **unwalkable** blockers register `addObstacle`; **cost** blockers (static and dynamic) call `applyCostVolume`; `tickCrowd` copies pose + `facingYawFromVelocity` into the snapshot and re-stamps moving dynamic cost volumes.
 
@@ -62,7 +62,7 @@ Compiled graphs call `ctx.findPathTo` / `ctx.moveTo` / `ctx.stopMovement` / `ctx
 
 ## Honest residuals
 
-- Auto-bake-on-save default **off**. Unmounted P18 scene workspaces have no bake collector, so Save will not open the modal for those tabs.
+- Auto-bake-on-save default **off**. Unmounted P18 scene workspaces have no bake collector, so Save will not open the modal for those tabs. Closing the Viewport panel on a mounted scene also unregisters collect (no painted meshes).
 - Geometry collect runs on the painted modal frame and retries a few extra frames if the first collect is empty (Viewport meshes can lag the Save click). It is not chunked across frames; the blocking modal still covers that stall.
 - Cost volumes mark overlapping Recast polygons (`queryPolygons` AABB → `setPolyArea`). Large simplified polys can extend the expensive region past the authored box. Unwalkable obstacles still carve; cost does not call `addObstacle`.
 - Tiled generate without `supportDynamicObstacles` still uses solo unless the dynamic-obstacles toggle is on.
