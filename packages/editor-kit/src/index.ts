@@ -35,6 +35,7 @@ export {
 export { usePreventDocumentOverscroll } from "./use-prevent-document-overscroll";
 export {
   canScrollInDirection,
+  isCoarsePointerEnvironment,
   isScrollableAxis,
   shouldPreventDocumentOverscroll,
   type ScrollAxis,
