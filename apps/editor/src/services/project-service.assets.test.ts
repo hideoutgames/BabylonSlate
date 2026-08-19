@@ -424,6 +424,31 @@ describe("project documents as .babasset", () => {
     );
   });
 
+  it("keeps a Scene navmesh extra chunk when saveDocument rewrites the JSON body", async () => {
+    const { service } = await scaffolded();
+    const scene = (await service.loadDocument(
+      "scene",
+      MAIN_SCENE_FILE,
+    )) as SerializedScene;
+    const bake = new Uint8Array(70 * 1024).fill(7);
+    await service.writeSceneNavmeshChunk(
+      MAIN_SCENE_FILE,
+      bake,
+      scene as unknown as Record<string, unknown>,
+    );
+    await service.saveDocument("scene", MAIN_SCENE_FILE, {
+      ...scene,
+      name: "AfterSave",
+    });
+    expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(
+      bake,
+    );
+    expect(
+      ((await service.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene)
+        .name,
+    ).toBe("AfterSave");
+  });
+
   it("writes a Scene audioReverb extra chunk and keeps navmesh", async () => {
     const { service } = await scaffolded();
     const scene = (await service.loadDocument(

@@ -1,5 +1,6 @@
 export type {
   NavAgentParams,
+  NavCostVolume,
   NavMeshGenerateInput,
   NavMeshGenerateSettings,
   NavMeshSettings,

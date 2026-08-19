@@ -17,6 +17,7 @@ import {
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
+  spriteAnimationDurationMs,
   type AnimationPayload,
   type AudioChannelPayload,
   type AudioMixerPayload,
@@ -69,6 +70,7 @@ export type PackedGameContent = {
   animGraphs: Array<{ guid: string; document: unknown }>;
   behaviourTrees: Array<{ guid: string; document: unknown }>;
   blackboards: Array<{ guid: string; document: unknown }>;
+  animClipCatalog: AnimClipCatalogEntry[];
   navmeshBytes: Uint8Array | null;
   navmeshByScene: Map<string, Uint8Array>;
   audioReverbBytes: Uint8Array | null;
@@ -236,8 +238,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     game.textureBytes,
   );
 
-  const clipCatalog: AnimClipCatalogEntry[] = [...animationPayloads.entries()].map(
-    ([guid, payload]) => ({
+  const clipCatalog: AnimClipCatalogEntry[] = [
+    ...[...animationPayloads.entries()].map(([guid, payload]) => ({
       guid,
       type: "Animation",
       name: animationNames.get(guid) ?? payload.clipName,
@@ -245,8 +247,14 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
       ...(payload.skeletonGuid ? { skeletonGuid: payload.skeletonGuid } : {}),
       ...(payload.modelGuid ? { modelGuid: payload.modelGuid } : {}),
-    }),
-  );
+    })),
+    ...[...sizedSpriteAnimations.entries()].map(([guid, payload]) => ({
+      guid,
+      type: "SpriteAnimation",
+      name: guid,
+      durationMs: spriteAnimationDurationMs(payload),
+    })),
+  ];
   const resolvedAnimGraphs = animGraphs.map((entry) => {
     const document = parseAnimGraphDocument(entry.document);
     if (!document) return entry;
@@ -264,6 +272,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     animGraphs: resolvedAnimGraphs,
     behaviourTrees,
     blackboards,
+    animClipCatalog: clipCatalog,
     navmeshBytes,
     navmeshByScene,
     audioReverbBytes,

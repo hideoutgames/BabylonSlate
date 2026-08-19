@@ -132,7 +132,10 @@ function field(
   return { id, label, kind, key, ...extra };
 }
 
-export function propertyFieldsForClassId(classId: string): BtPropertyField[] {
+export function propertyFieldsForClassId(
+  classId: string,
+  properties: Record<string, unknown> = {},
+): BtPropertyField[] {
   switch (builtinClassId(classId)) {
     case "bt.task.wait":
     case "bt.decorator.cooldown":
@@ -149,6 +152,22 @@ export function propertyFieldsForClassId(classId: string): BtPropertyField[] {
         field("destination", "Destination", "vector3", "destination"),
         field("acceptRadius", "Accept Radius", "number", "acceptRadius", { min: 0 }),
       ];
+    case "bt.task.rotateToFace":
+      return [field("target", "Target", "vector3", "target")];
+    case "bt.task.playAnimation": {
+      const sprite = properties.clipKind === "sprite";
+      return [
+        field("clipKind", "Clip Kind", "enum", "clipKind", {
+          options: [
+            { value: "animation", label: "Animation" },
+            { value: "sprite", label: "Sprite" },
+          ],
+        }),
+        field("clipAssetGuid", "Clip Asset", "asset", "clipAssetGuid", {
+          assetType: sprite ? "SpriteAnimation" : "Animation",
+        }),
+      ];
+    }
     case "bt.task.playSound":
       return [
         field("audioAssetGuid", "Audio", "asset", "audioAssetGuid", {
@@ -183,6 +202,10 @@ export function defaultPropertiesForClassId(classId: string): Record<string, unk
       return { key: "", value: true };
     case "bt.task.moveTo":
       return { destination: { x: 0, y: 0, z: 0 }, acceptRadius: 0.5 };
+    case "bt.task.rotateToFace":
+      return { target: { x: 0, y: 0, z: 1 } };
+    case "bt.task.playAnimation":
+      return { clipKind: "animation", clipAssetGuid: "" };
     case "bt.task.playSound":
       return { audioAssetGuid: "", volume: 1 };
     case "bt.decorator.blackboardIsSet":

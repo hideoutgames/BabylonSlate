@@ -8,6 +8,9 @@ export type NavMeshActorSettings = NavMeshSettings & {
   tiled: boolean;
   supportDynamicObstacles: boolean;
   autoBakeOnSave: boolean;
+  bakeBoundsEnabled: boolean;
+  bakeBoundsMin: { x: number; y: number; z: number };
+  bakeBoundsMax: { x: number; y: number; z: number };
   debugOverlay: boolean;
 };
 
@@ -26,12 +29,35 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function asVector3(
+  value: unknown,
+  fallback: { x: number; y: number; z: number },
+): { x: number; y: number; z: number } {
+  if (Array.isArray(value) && value.length >= 3) {
+    return {
+      x: asNumber(value[0], fallback.x),
+      y: asNumber(value[1], fallback.y),
+      z: asNumber(value[2], fallback.z),
+    };
+  }
+  if (!value || typeof value !== "object") return { ...fallback };
+  const row = value as { x?: unknown; y?: unknown; z?: unknown };
+  return {
+    x: asNumber(row.x, fallback.x),
+    y: asNumber(row.y, fallback.y),
+    z: asNumber(row.z, fallback.z),
+  };
+}
+
 export function defaultNavMeshComponentProperties(): NavMeshActorSettings {
   return {
     ...DEFAULT_NAV_MESH_SETTINGS,
     tiled: false,
     supportDynamicObstacles: false,
     autoBakeOnSave: false,
+    bakeBoundsEnabled: false,
+    bakeBoundsMin: { x: -50, y: -10, z: -50 },
+    bakeBoundsMax: { x: 50, y: 10, z: 50 },
     debugOverlay: false,
   };
 }
@@ -78,6 +104,12 @@ export function parseNavMeshActorSettings(
       defaults.supportDynamicObstacles,
     ),
     autoBakeOnSave: asBoolean(properties.autoBakeOnSave, defaults.autoBakeOnSave),
+    bakeBoundsEnabled: asBoolean(
+      properties.bakeBoundsEnabled,
+      defaults.bakeBoundsEnabled,
+    ),
+    bakeBoundsMin: asVector3(properties.bakeBoundsMin, defaults.bakeBoundsMin),
+    bakeBoundsMax: asVector3(properties.bakeBoundsMax, defaults.bakeBoundsMax),
     debugOverlay: asBoolean(properties.debugOverlay, defaults.debugOverlay),
   };
 }
@@ -107,10 +139,16 @@ export type NavMeshBlockerProperties = {
   dynamic: boolean;
   kind: "box" | "cylinder";
   area: "unwalkable" | "cost";
+  cost: number;
 };
 
 export function defaultNavMeshBlockerComponentProperties(): NavMeshBlockerProperties {
-  return { dynamic: false, kind: "box", area: "unwalkable" };
+  return { dynamic: false, kind: "box", area: "unwalkable", cost: 10 };
+}
+
+function asCost(value: unknown): number {
+  const n = asNumber(value, 10);
+  return n > 1 ? n : 10;
 }
 
 export function parseNavMeshBlockerProperties(
@@ -121,6 +159,7 @@ export function parseNavMeshBlockerProperties(
     dynamic: asBoolean(properties.dynamic, defaults.dynamic),
     kind: properties.kind === "cylinder" ? "cylinder" : "box",
     area: properties.area === "cost" ? "cost" : "unwalkable",
+    cost: asCost(properties.cost),
   };
 }
 

@@ -13,7 +13,7 @@ import type {
   EvaluateBehaviourTreeOptions,
 } from "./types";
 
-import { BUILTIN_TASKS, builtinClassId } from "./builtins";
+import { BUILTIN_TASKS, HOST_TASKS, builtinClassId } from "./builtins";
 
 function cloneMemory(
   source: Record<string, Record<string, unknown>> | undefined,
@@ -109,7 +109,7 @@ function tickTask(
   host?: BtTaskHost,
 ): BtResult {
   const classId = builtinClassId(node.classId);
-  if (host && (!BUILTIN_TASKS.has(classId) || classId === "bt.task.moveTo" || classId === "bt.task.playSound")) {
+  if (host && (!BUILTIN_TASKS.has(classId) || HOST_TASKS.has(classId))) {
     return host.tick(node, blackboard, dtSeconds, memory);
   }
   switch (classId) {

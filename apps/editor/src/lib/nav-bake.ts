@@ -31,16 +31,25 @@ function throwIfAborted(signal?: AbortSignal): void {
   throw error;
 }
 
+function geometryReady(geometry: NavBakeGeometry): boolean {
+  return geometry.positions.length >= 9 && geometry.indices.length >= 3;
+}
+
+/** First-frame collect can miss meshes while the Viewport engine catches up. */
+const COLLECT_ATTEMPTS = 8;
+
 export async function runNavBake(options: RunNavBakeOptions): Promise<Uint8Array> {
   options.onPhase("showing");
   await options.waitPaintedFrame();
   throwIfAborted(options.signal);
   options.onPhase("collecting");
-  const geometry = await options.collect();
-  if (
-    geometry.positions.length < 9 ||
-    geometry.indices.length < 3
-  ) {
+  let geometry = await options.collect();
+  for (let attempt = 1; attempt < COLLECT_ATTEMPTS && !geometryReady(geometry); attempt += 1) {
+    throwIfAborted(options.signal);
+    await options.waitPaintedFrame();
+    geometry = await options.collect();
+  }
+  if (!geometryReady(geometry)) {
     throw new Error("Navmesh bake needs scene geometry (MeshComponent actors).");
   }
   throwIfAborted(options.signal);

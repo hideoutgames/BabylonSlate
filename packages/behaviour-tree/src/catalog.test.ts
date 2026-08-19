@@ -50,6 +50,59 @@ describe("propertyFieldsForClassId", () => {
     ]);
   });
 
+  it("returns Rotate To Face target vector", () => {
+    expect(propertyFieldsForClassId("bt.task.rotateToFace")).toEqual([
+      expect.objectContaining({
+        id: "target",
+        kind: "vector3",
+        key: "target",
+        label: "Target",
+      }),
+    ]);
+    expect(defaultPropertiesForClassId("bt.task.rotateToFace")).toEqual({
+      target: { x: 0, y: 0, z: 1 },
+    });
+  });
+
+  it("returns Play Animation clip kind and Animation picker by default", () => {
+    expect(propertyFieldsForClassId("bt.task.playAnimation")).toEqual([
+      expect.objectContaining({
+        id: "clipKind",
+        kind: "enum",
+        key: "clipKind",
+        label: "Clip Kind",
+        options: [
+          { value: "animation", label: "Animation" },
+          { value: "sprite", label: "Sprite" },
+        ],
+      }),
+      expect.objectContaining({
+        id: "clipAssetGuid",
+        kind: "asset",
+        key: "clipAssetGuid",
+        assetType: "Animation",
+      }),
+    ]);
+    expect(defaultPropertiesForClassId("bt.task.playAnimation")).toEqual({
+      clipKind: "animation",
+      clipAssetGuid: "",
+    });
+  });
+
+  it("switches Play Animation picker to Sprite Animation when clipKind is sprite", () => {
+    expect(
+      propertyFieldsForClassId("bt.task.playAnimation", { clipKind: "sprite" }),
+    ).toEqual([
+      expect.objectContaining({ id: "clipKind", key: "clipKind" }),
+      expect.objectContaining({
+        id: "clipAssetGuid",
+        kind: "asset",
+        key: "clipAssetGuid",
+        assetType: "SpriteAnimation",
+      }),
+    ]);
+  });
+
   it("returns Play Sound audio picker and volume", () => {
     expect(propertyFieldsForClassId("bt.task.playSound")).toEqual([
       expect.objectContaining({

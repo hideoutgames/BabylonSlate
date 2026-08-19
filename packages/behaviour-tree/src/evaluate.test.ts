@@ -132,6 +132,44 @@ describe("evaluateBehaviourTree", () => {
     expect(next.status).toBe("success");
   });
 
+  it("ticks Rotate To Face and Play Animation through the host when one is provided", () => {
+    const rotate = node("face", "task", "bt.task.rotateToFace");
+    rotate.properties = { target: { x: 1, y: 0, z: 0 } };
+    const anim = node("anim", "task", "bt.task.playAnimation");
+    anim.properties = { clipKind: "animation", clipAssetGuid: "walk-1" };
+    const ticks: string[] = [];
+    const host = {
+      tick: (task: { classId: string }) => {
+        ticks.push(task.classId);
+        return "success" as const;
+      },
+    };
+    expect(
+      evaluateBehaviourTree(tree([rotate], "face"), null, 1 / 60, { host }).status,
+    ).toBe("success");
+    expect(
+      evaluateBehaviourTree(tree([anim], "anim"), null, 1 / 60, { host }).status,
+    ).toBe("success");
+    expect(ticks).toEqual(["bt.task.rotateToFace", "bt.task.playAnimation"]);
+  });
+
+  it("succeeds Rotate To Face and Play Animation without a host", () => {
+    expect(
+      evaluateBehaviourTree(
+        tree([node("face", "task", "bt.task.rotateToFace")], "face"),
+        null,
+        1 / 60,
+      ).status,
+    ).toBe("success");
+    expect(
+      evaluateBehaviourTree(
+        tree([node("anim", "task", "bt.task.playAnimation")], "anim"),
+        null,
+        1 / 60,
+      ).status,
+    ).toBe("success");
+  });
+
   it("ticks every parallel child and fails if any fail", () => {
     const doc = tree(
       [

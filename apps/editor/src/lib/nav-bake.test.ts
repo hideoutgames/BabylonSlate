@@ -36,6 +36,30 @@ describe("runNavBake", () => {
     expect(write).toHaveBeenCalledWith(new Uint8Array([7, 8, 9]));
   });
 
+  it("retries collect when the first painted frame has no geometry yet", async () => {
+    const generate = vi.fn(async () => new Uint8Array([4, 5]));
+    const write = vi.fn(async () => {});
+    let calls = 0;
+    await runNavBake({
+      waitPaintedFrame: async () => {},
+      collect: () => {
+        calls += 1;
+        if (calls === 1) return { positions: [], indices: [] };
+        return {
+          positions: [0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1],
+          indices: [0, 3, 2, 0, 2, 1],
+        };
+      },
+      generate,
+      write,
+      settings: {},
+      onPhase: () => {},
+    });
+    expect(calls).toBe(2);
+    expect(generate).toHaveBeenCalledOnce();
+    expect(write).toHaveBeenCalledWith(new Uint8Array([4, 5]));
+  });
+
   it("does not generate when collect returns empty geometry", async () => {
     const generate = vi.fn(async () => new Uint8Array([1]));
     await expect(

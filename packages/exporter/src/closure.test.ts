@@ -204,6 +204,65 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-tex");
   });
 
+  it("keeps a Behaviour Tree Play Animation clipAssetGuid in the closure", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("guard", "Guard", {
+          components: [
+            {
+              id: "bt-1",
+              classId: "BehaviourTreeComponent",
+              properties: { treeGuid: "tree-1" },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "tree-1",
+          type: "BehaviourTree",
+          name: "Guard",
+          dependencies: [],
+        }),
+        asset({
+          guid: "idle-1",
+          type: "SpriteAnimation",
+          name: "Idle",
+          dependencies: [],
+        }),
+        asset({ guid: "unused-anim", type: "SpriteAnimation", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => {
+        if (guid === "tree-1") {
+          return {
+            nodes: [
+              {
+                classId: "bt.task.playAnimation",
+                properties: { clipKind: "sprite", clipAssetGuid: "idle-1" },
+              },
+            ],
+          };
+        }
+        return null;
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "tree-1", "idle-1"]),
+    );
+    expect(result.value).not.toContain("unused-anim");
+  });
+
   it("follows graph pin guids and header dependencies", () => {
     const graph: SerializedGraph = {
       nodes: [
