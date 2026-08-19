@@ -67,6 +67,8 @@ import {
   validateSerializedGraph,
 } from "../services/graph-validation";
 import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
+import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
 import { GlobalSearchDialog } from "./global-search-dialog";
 import { IconActionButton } from "./icon-action-button";
@@ -481,22 +483,38 @@ export function EditorChromeBar({
                           openDocuments,
                         }),
                       );
-                      return validateSerializedGraph(
-                        doc.content as SerializedGraph,
-                        {
-                          assetGuid: doc.ref.path,
-                          graphId: doc.id,
-                          classId: classIdForGraphPath(doc.ref.path),
-                          hierarchy: classHierarchyFromParentOf(parentOf),
-                          members: classMemberSymbolsFromGraphs(classGraphs),
-                          knownClassIds: knownClassIdSet(
-                            parentOf,
-                            Object.keys(classGraphs),
-                          ),
-                          enums: typeSchemas.enums,
-                          structs: typeSchemas.structs,
-                        },
-                      );
+                      return [
+                        ...validateSerializedGraph(
+                          doc.content as SerializedGraph,
+                          {
+                            assetGuid: doc.ref.path,
+                            graphId: doc.id,
+                            classId: classIdForGraphPath(doc.ref.path),
+                            hierarchy: classHierarchyFromParentOf(parentOf),
+                            members: classMemberSymbolsFromGraphs(classGraphs),
+                            knownClassIds: knownClassIdSet(
+                              parentOf,
+                              Object.keys(classGraphs),
+                            ),
+                            enums: typeSchemas.enums,
+                            structs: typeSchemas.structs,
+                          },
+                        ),
+                        ...physicsPairingDiagnostics(
+                          [
+                            {
+                              id: PREFAB_ROOT_ID,
+                              components:
+                                (doc.content as SerializedGraph).components ??
+                                [],
+                            },
+                          ],
+                          {
+                            assetGuid: doc.ref.path,
+                            graphId: doc.id,
+                          },
+                        ),
+                      ];
                     }),
                   );
                   void collectScriptBundles();
