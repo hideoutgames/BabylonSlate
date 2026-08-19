@@ -424,7 +424,7 @@ describe("engine plugin pack and unpack", () => {
     );
     const zip = zipSync(record, {
       level: 6,
-      mtime: new Date(Date.UTC(1980, 0, 1)),
+      mtime: new Date(1980, 0, 1, 12, 0, 0),
     });
     const inspected = await inspectBabplugin(zip);
     expect(inspected.settings.pluginGuid).toBe(STARTER_CONTENT_PLUGIN_GUID);

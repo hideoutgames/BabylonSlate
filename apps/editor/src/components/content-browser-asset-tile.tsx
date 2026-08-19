@@ -27,7 +27,11 @@ export interface ContentBrowserAssetTileProps {
   asset: IndexedAsset;
   selected: boolean;
   onOpen: () => void;
-  onSelect: () => void;
+  onSelect: (event: {
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+  }) => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
   consumeSelectClick?: () => boolean;
   thumbnailUrl: string | null;
@@ -79,7 +83,7 @@ export function ContentBrowserAssetTile({
           event.stopPropagation();
           if (event.button !== 0) return;
           if (consumeSelectClick?.()) return;
-          onSelect();
+          onSelect(event);
         }}
         onDoubleClick={(event) => {
           event.stopPropagation();

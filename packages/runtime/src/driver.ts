@@ -116,6 +116,7 @@ import {
   parseNavAgentParams,
   parseNavMeshBlockerProperties,
   recastToWorld,
+  rotatedBoxWorldAabb,
   worldToRecast,
   type NavigationBackend,
   type NavObstacleKind,
@@ -1270,17 +1271,26 @@ class InProcessRuntime implements RuntimeDriver {
       const props = parseNavMeshBlockerProperties(
         Object.fromEntries(component.variables),
       );
-      const size = {
-        x: Math.abs(actor.transform.scale.x) || 1,
-        y: Math.abs(actor.transform.scale.y) || 1,
-        z: Math.abs(actor.transform.scale.z) || 1,
-      };
-      const pose = this.toNavObstaclePose({
-        x: actor.transform.position.x,
-        y: actor.transform.position.y,
-        z: actor.transform.position.z,
-      });
-      const navSize = this.toNavObstacleSize(size);
+      const aabb = rotatedBoxWorldAabb(
+        [
+          actor.transform.position.x,
+          actor.transform.position.y,
+          actor.transform.position.z,
+        ],
+        [
+          actor.transform.rotation.x,
+          actor.transform.rotation.y,
+          actor.transform.rotation.z,
+          actor.transform.rotation.w,
+        ],
+        [
+          actor.transform.scale.x,
+          actor.transform.scale.y,
+          actor.transform.scale.z,
+        ],
+      );
+      const pose = this.toNavObstaclePose(aabb.center);
+      const navSize = this.toNavObstacleSize(aabb.size);
       if (props.area === "cost") {
         this.nav.applyCostVolume({
           id: actor.guid,
@@ -1292,7 +1302,7 @@ class InProcessRuntime implements RuntimeDriver {
         continue;
       }
       if (!props.dynamic) continue;
-      this.nav.addObstacle(props.kind, pose, navSize);
+      this.nav.addObstacle("box", pose, navSize);
     }
   }
 
@@ -1309,20 +1319,29 @@ class InProcessRuntime implements RuntimeDriver {
         Object.fromEntries(component.variables),
       );
       if (props.area !== "cost" || !props.dynamic) continue;
-      const size = {
-        x: Math.abs(actor.transform.scale.x) || 1,
-        y: Math.abs(actor.transform.scale.y) || 1,
-        z: Math.abs(actor.transform.scale.z) || 1,
-      };
+      const aabb = rotatedBoxWorldAabb(
+        [
+          actor.transform.position.x,
+          actor.transform.position.y,
+          actor.transform.position.z,
+        ],
+        [
+          actor.transform.rotation.x,
+          actor.transform.rotation.y,
+          actor.transform.rotation.z,
+          actor.transform.rotation.w,
+        ],
+        [
+          actor.transform.scale.x,
+          actor.transform.scale.y,
+          actor.transform.scale.z,
+        ],
+      );
       this.nav.applyCostVolume({
         id: actor.guid,
         kind: props.kind,
-        pose: this.toNavObstaclePose({
-          x: actor.transform.position.x,
-          y: actor.transform.position.y,
-          z: actor.transform.position.z,
-        }),
-        size: this.toNavObstacleSize(size),
+        pose: this.toNavObstaclePose(aabb.center),
+        size: this.toNavObstacleSize(aabb.size),
         cost: props.cost,
       });
     }

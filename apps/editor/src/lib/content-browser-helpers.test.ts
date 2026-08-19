@@ -63,6 +63,7 @@ import {
   paintSelectTiles,
   resolveContentBrowserPaintHit,
   applyContentBrowserTreeSelect,
+  applyContentBrowserTileSelect,
   type ContentBrowserTreeRow,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
@@ -1589,6 +1590,47 @@ describe("content-browser-helpers", () => {
     expect([...selected.folderPaths]).toEqual(["assets/fx"]);
   });
 
+  it("toggles and range-selects Content Browser grid tiles with modifiers", () => {
+    const ordered = [
+      { kind: "folder" as const, path: "assets/fx" },
+      { kind: "asset" as const, guid: "a" },
+      { kind: "asset" as const, guid: "b" },
+    ];
+    const first = applyContentBrowserTileSelect(
+      { kind: "asset", guid: "a" },
+      undefined,
+      ordered,
+      { selectedGuids: new Set(), selectedFolderPaths: new Set() },
+    );
+    expect([...first.guids]).toEqual(["a"]);
+    expect(first.anchorKey).toBe("a:a");
+
+    const toggled = applyContentBrowserTileSelect(
+      { kind: "asset", guid: "b" },
+      { additive: true },
+      ordered,
+      {
+        selectedGuids: first.guids,
+        selectedFolderPaths: first.folderPaths,
+        anchorKey: first.anchorKey,
+      },
+    );
+    expect([...toggled.guids].sort()).toEqual(["a", "b"]);
+
+    const ranged = applyContentBrowserTileSelect(
+      { kind: "asset", guid: "b" },
+      { range: true },
+      ordered,
+      {
+        selectedGuids: new Set(["a"]),
+        selectedFolderPaths: new Set(),
+        anchorKey: "a:a",
+      },
+    );
+    expect([...ranged.guids].sort()).toEqual(["a", "b"]);
+    expect([...ranged.folderPaths]).toEqual([]);
+  });
+
   it("paints a union of assets and folders dragged over, ignoring prior selection", () => {
     const selected = paintSelectTiles([
       { kind: "asset", guid: "scene-1" },
@@ -1632,6 +1674,7 @@ describe("content-browser-helpers", () => {
     expect(
       contentBrowserContextActions({ assetCount: 1, folderCount: 0 }),
     ).toEqual([
+      "open",
       "duplicate",
       "rename",
       "move",
@@ -1665,6 +1708,7 @@ describe("content-browser-helpers", () => {
         canRetarget: true,
       }),
     ).toEqual([
+      "open",
       "duplicate",
       "rename",
       "retarget",

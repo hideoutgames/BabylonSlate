@@ -22,6 +22,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("NavAgentComponent");
     expect(ids).not.toContain("NavMeshComponent");
     expect(ids).not.toContain("NavMeshBlockerComponent");
+    expect(ids).not.toContain("BlockingVolumeComponent");
     expect(ids).toContain("RigidBodyComponent");
     expect(ids).toContain("ColliderComponent");
     expect(ids).toContain("AudioComponent");

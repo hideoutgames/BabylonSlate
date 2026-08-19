@@ -26,6 +26,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
         "Navigation",
         "Audio",
         "Particles",
+        "Physics",
       ]),
     );
     expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(
@@ -147,6 +148,15 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.dynamic).toBe(false);
     expect(actor.components[0]?.properties.kind).toBe("box");
     expect(actor.components[0]?.properties.area).toBe("unwalkable");
+  });
+
+  it("spawns a Blocking Volume under Physics", () => {
+    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "blocking-volume")!;
+    expect(item.category).toBe("Physics");
+    expect(visualForPlaceActor(item).iconKey).toBe("BlockingVolumeComponent");
+    const actor = spawnPlacedActor(scene, item, "actor-wall", ORIGIN);
+    expect(actor.name).toBe("Blocking Volume");
+    expect(actor.components[0]?.classId).toBe("BlockingVolumeComponent");
   });
 
   it("spawns a camera with explicit projection defaults", () => {

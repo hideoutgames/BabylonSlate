@@ -8,6 +8,8 @@ export type SolidBlockerInput = {
   kind: NavObstacleKind;
   pose: NavPoint;
   size: NavPoint;
+  /** World quaternion. Missing is identity (axis-aligned). */
+  rotation?: { x: number; y: number; z: number; w: number };
 };
 
 export type XyBounds = {
@@ -50,23 +52,130 @@ function pushQuad(
   );
 }
 
-function boxMesh(pose: NavPoint, size: NavPoint): {
+const IDENTITY_ROTATION = { x: 0, y: 0, z: 0, w: 1 };
+
+function rotatePoint(
+  rotation: { x: number; y: number; z: number; w: number },
+  point: NavPoint,
+): NavPoint {
+  const { x: qx, y: qy, z: qz, w: qw } = rotation;
+  const tx = 2 * (qy * point.z - qz * point.y);
+  const ty = 2 * (qz * point.x - qx * point.z);
+  const tz = 2 * (qx * point.y - qy * point.x);
+  return {
+    x: point.x + qw * tx + (qy * tz - qz * ty),
+    y: point.y + qw * ty + (qz * tx - qx * tz),
+    z: point.z + qw * tz + (qx * ty - qy * tx),
+  };
+}
+
+function addPoint(a: NavPoint, b: NavPoint): NavPoint {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+function asRotation(
+  value: { x: number; y: number; z: number; w: number } | undefined,
+): { x: number; y: number; z: number; w: number } {
+  if (!value) return IDENTITY_ROTATION;
+  const { x, y, z, w } = value;
+  if (![x, y, z, w].every((entry) => typeof entry === "number" && Number.isFinite(entry))) {
+    return IDENTITY_ROTATION;
+  }
+  const length = Math.hypot(x, y, z, w);
+  if (length < 1e-8) return IDENTITY_ROTATION;
+  return { x: x / length, y: y / length, z: z / length, w: w / length };
+}
+
+/** World AABB of a box whose local size is `scale` and whose center is `position`. */
+export function rotatedBoxWorldAabb(
+  position: [number, number, number],
+  rotation: [number, number, number, number],
+  scale: [number, number, number],
+): { center: NavPoint; size: NavPoint; min: NavPoint; max: NavPoint } {
+  const hx = Math.abs(scale[0] ?? 1) / 2;
+  const hy = Math.abs(scale[1] ?? 1) / 2;
+  const hz = Math.abs(scale[2] ?? 1) / 2;
+  const quat = asRotation({
+    x: rotation[0] ?? 0,
+    y: rotation[1] ?? 0,
+    z: rotation[2] ?? 0,
+    w: rotation[3] ?? 1,
+  });
+  const origin = { x: position[0], y: position[1], z: position[2] };
+  const signs: Array<[number, number, number]> = [
+    [-1, -1, -1],
+    [1, -1, -1],
+    [1, 1, -1],
+    [-1, 1, -1],
+    [-1, -1, 1],
+    [1, -1, 1],
+    [1, 1, 1],
+    [-1, 1, 1],
+  ];
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (const [sx, sy, sz] of signs) {
+    const world = addPoint(
+      origin,
+      rotatePoint(quat, { x: sx * hx, y: sy * hy, z: sz * hz }),
+    );
+    minX = Math.min(minX, world.x);
+    minY = Math.min(minY, world.y);
+    minZ = Math.min(minZ, world.z);
+    maxX = Math.max(maxX, world.x);
+    maxY = Math.max(maxY, world.y);
+    maxZ = Math.max(maxZ, world.z);
+  }
+  return {
+    min: { x: minX, y: minY, z: minZ },
+    max: { x: maxX, y: maxY, z: maxZ },
+    center: {
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+      z: (minZ + maxZ) / 2,
+    },
+    size: {
+      x: Math.max(0.05, maxX - minX),
+      y: Math.max(0.05, maxY - minY),
+      z: Math.max(0.05, maxZ - minZ),
+    },
+  };
+}
+
+function transformLocalPoint(
+  pose: NavPoint,
+  rotation: { x: number; y: number; z: number; w: number } | undefined,
+  local: NavPoint,
+): NavPoint {
+  return addPoint(pose, rotatePoint(asRotation(rotation), local));
+}
+
+function boxMesh(
+  pose: NavPoint,
+  size: NavPoint,
+  rotation?: { x: number; y: number; z: number; w: number },
+): {
   positions: number[];
   indices: number[];
 } {
   const hx = Math.max(size.x, 0.05) / 2;
   const hy = Math.max(size.y, 0.05) / 2;
   const hz = Math.max(size.z, 0.05) / 2;
-  const verts: NavPoint[] = [
-    { x: pose.x - hx, y: pose.y - hy, z: pose.z - hz },
-    { x: pose.x + hx, y: pose.y - hy, z: pose.z - hz },
-    { x: pose.x + hx, y: pose.y + hy, z: pose.z - hz },
-    { x: pose.x - hx, y: pose.y + hy, z: pose.z - hz },
-    { x: pose.x - hx, y: pose.y - hy, z: pose.z + hz },
-    { x: pose.x + hx, y: pose.y - hy, z: pose.z + hz },
-    { x: pose.x + hx, y: pose.y + hy, z: pose.z + hz },
-    { x: pose.x - hx, y: pose.y + hy, z: pose.z + hz },
+  const local: NavPoint[] = [
+    { x: -hx, y: -hy, z: -hz },
+    { x: hx, y: -hy, z: -hz },
+    { x: hx, y: hy, z: -hz },
+    { x: -hx, y: hy, z: -hz },
+    { x: -hx, y: -hy, z: hz },
+    { x: hx, y: -hy, z: hz },
+    { x: hx, y: hy, z: hz },
+    { x: -hx, y: hy, z: hz },
   ];
+  const verts = local.map((point) => transformLocalPoint(pose, rotation, point));
   const positions: number[] = [];
   const indices: number[] = [];
   for (const face of BOX_FACE_QUADS) {
@@ -80,41 +189,46 @@ function boxMesh(pose: NavPoint, size: NavPoint): {
   return { positions, indices };
 }
 
-function cylinderMesh(pose: NavPoint, size: NavPoint): {
+function cylinderMesh(
+  pose: NavPoint,
+  size: NavPoint,
+  rotation?: { x: number; y: number; z: number; w: number },
+): {
   positions: number[];
   indices: number[];
 } {
   const radius = Math.max(size.x, 0.05);
   const height = Math.max(size.y, 0.05);
   const segments = 12;
-  const y0 = pose.y;
-  const y1 = pose.y + height;
+  const y0 = -height / 2;
+  const y1 = height / 2;
   const positions: number[] = [];
   const indices: number[] = [];
   const ring: NavPoint[] = [];
   for (let i = 0; i < segments; i += 1) {
     const angle = (i / segments) * Math.PI * 2;
     ring.push({
-      x: pose.x + Math.cos(angle) * radius,
+      x: Math.cos(angle) * radius,
       y: 0,
-      z: pose.z + Math.sin(angle) * radius,
+      z: Math.sin(angle) * radius,
     });
   }
+  const world = (local: NavPoint) => transformLocalPoint(pose, rotation, local);
   for (let i = 0; i < segments; i += 1) {
     const a = ring[i]!;
     const b = ring[(i + 1) % segments]!;
     pushQuad(positions, indices, [
-      { x: a.x, y: y0, z: a.z },
-      { x: b.x, y: y0, z: b.z },
-      { x: b.x, y: y1, z: b.z },
-      { x: a.x, y: y1, z: a.z },
+      world({ x: a.x, y: y0, z: a.z }),
+      world({ x: b.x, y: y0, z: b.z }),
+      world({ x: b.x, y: y1, z: b.z }),
+      world({ x: a.x, y: y1, z: a.z }),
     ]);
   }
   const bottom: NavPoint[] = [];
   const top: NavPoint[] = [];
   for (const point of ring) {
-    bottom.push({ x: point.x, y: y0, z: point.z });
-    top.push({ x: point.x, y: y1, z: point.z });
+    bottom.push(world({ x: point.x, y: y0, z: point.z }));
+    top.push(world({ x: point.x, y: y1, z: point.z }));
   }
   for (let i = 1; i < segments - 1; i += 1) {
     const base = positions.length / 3;
@@ -152,8 +266,10 @@ export function solidBlockerMesh(input: SolidBlockerInput): {
   positions: number[];
   indices: number[];
 } {
-  if (input.kind === "cylinder") return cylinderMesh(input.pose, input.size);
-  return boxMesh(input.pose, input.size);
+  if (input.kind === "cylinder") {
+    return cylinderMesh(input.pose, input.size, input.rotation);
+  }
+  return boxMesh(input.pose, input.size, input.rotation);
 }
 
 /** Recast XZ walkable quad from a 2D XY bounds. Recast Y is up. */
@@ -227,6 +343,7 @@ export function recastWallsFromXyChains(
 export type BlockerActorBakeInput = {
   transform: {
     position: [number, number, number];
+    rotation?: [number, number, number, number];
     scale?: [number, number, number];
   };
   components: Array<{ classId: string; properties: Record<string, unknown> }>;
@@ -262,37 +379,36 @@ function aabbIntersects(
   );
 }
 
+function recastRotationFromWorld(
+  rotation: [number, number, number, number] | undefined,
+  viewportMode: "2d" | "3d",
+): { x: number; y: number; z: number; w: number } {
+  const quat = asRotation(
+    rotation
+      ? { x: rotation[0], y: rotation[1], z: rotation[2], w: rotation[3] }
+      : undefined,
+  );
+  if (viewportMode !== "2d") return quat;
+  return { x: quat.x, y: quat.z, z: quat.y, w: quat.w };
+}
+
 function blockerIntersectsBakeBounds(
   position: [number, number, number],
+  rotation: [number, number, number, number] | undefined,
   scale: [number, number, number],
   viewportMode: "2d" | "3d",
   bounds: NavBakeBounds,
 ): boolean {
-  const sx = Math.abs(scale[0] ?? 1);
-  const sy = Math.abs(scale[1] ?? 1);
-  const sz = Math.abs(scale[2] ?? 1);
+  const quat = rotation ?? [0, 0, 0, 1];
+  const aabb = rotatedBoxWorldAabb(position, quat, scale);
   if (viewportMode === "2d") {
-    const hx = sx / 2;
-    const hy = sy / 2;
     return aabbIntersects(
-      { x: position[0] - hx, y: position[1] - hy, z: -1 },
-      { x: position[0] + hx, y: position[1] + hy, z: 1 },
+      { x: aabb.min.x, y: aabb.min.y, z: -1 },
+      { x: aabb.max.x, y: aabb.max.y, z: 1 },
       bounds,
     );
   }
-  return aabbIntersects(
-    {
-      x: position[0] - sx / 2,
-      y: position[1] - sy / 2,
-      z: position[2] - sz / 2,
-    },
-    {
-      x: position[0] + sx / 2,
-      y: position[1] + sy / 2,
-      z: position[2] + sz / 2,
-    },
-    bounds,
-  );
+  return aabbIntersects(aabb.min, aabb.max, bounds);
 }
 
 /** Static unwalkable blockers become bake solids. Dynamic / cost are skipped. */
@@ -310,10 +426,17 @@ export function staticBlockerBakeParts(
       const kind: NavObstacleKind =
         component.properties.kind === "cylinder" ? "cylinder" : "box";
       const position = actor.transform.position;
+      const rotation = actor.transform.rotation ?? [0, 0, 0, 1];
       const scale = actor.transform.scale ?? [1, 1, 1];
       if (
         bakeBounds &&
-        !blockerIntersectsBakeBounds(position, scale, viewportMode, bakeBounds)
+        !blockerIntersectsBakeBounds(
+          position,
+          rotation,
+          scale,
+          viewportMode,
+          bakeBounds,
+        )
       ) {
         continue;
       }
@@ -332,6 +455,7 @@ export function staticBlockerBakeParts(
               y: 2,
               z: Math.abs(scale[1] ?? 1),
             },
+            rotation: recastRotationFromWorld(rotation, "2d"),
           }),
         );
       } else {
@@ -344,6 +468,7 @@ export function staticBlockerBakeParts(
               y: Math.abs(scale[1] ?? 1),
               z: Math.abs(scale[2] ?? 1),
             },
+            rotation: recastRotationFromWorld(rotation, "3d"),
           }),
         );
       }

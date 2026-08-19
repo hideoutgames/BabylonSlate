@@ -18,7 +18,11 @@ export interface ContentBrowserFolderTileProps {
   name: string;
   selected: boolean;
   onOpen: () => void;
-  onSelect: () => void;
+  onSelect: (event: {
+    ctrlKey: boolean;
+    metaKey: boolean;
+    shiftKey: boolean;
+  }) => void;
   onLongPressMenu: (clientX: number, clientY: number) => void;
   consumeSelectClick?: () => boolean;
 }
@@ -56,7 +60,7 @@ export function ContentBrowserFolderTile({
           event.stopPropagation();
           if (event.button !== 0) return;
           if (consumeSelectClick?.()) return;
-          onSelect();
+          onSelect(event);
         }}
         onDoubleClick={(event) => {
           event.stopPropagation();

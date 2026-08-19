@@ -408,6 +408,8 @@ export function BehaviourTreeGraphPanel(_props: IDockviewPanelProps) {
           nodeDragHandle=".bt-node-drag-handle"
           connectEndMode="add-node"
           replaceIncomingOnConnect
+          deleteKeyCode={null}
+          nodesFocusable={false}
           sessionViewport={sessionViewport}
           onSessionViewportChange={onSessionViewportChange}
           canConnect={(connection) => {
@@ -791,7 +793,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
             kind: "asset" as const,
             label: field.label,
             value: guid || null,
-            placeholder: field.assetType ?? "None",
+            placeholder: "None",
             onPick: () =>
               setAssetPick({
                 key: field.key,

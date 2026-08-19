@@ -99,6 +99,10 @@ Same pinch contract as the viewport: scale about the midpoint, then apply two-fi
 | Two-finger pinch | Tilemap Paint canvas | Zoom about the midpoint; translation pans (`applyPinchView`). Cell size clamped 8–96 CSS px (default 32) |
 | Wheel | Tilemap Paint canvas | Zoom about the cursor (`applyWheelZoom`) |
 
+## UserInterface designer
+
+Wheel and two-finger pinch zoom about the pointer / finger centroid (`zoomAtPoint` / `pinchView`). The canvas CSS `transform-origin` stays `0 0`. Two-finger translation pans. Add Widget does not change pan/zoom; **Frame Selection** is a toolbar action.
+
 ## Graph (React Flow)
 
 - One-finger pan/zoom inside graph panel only. Zoom-out floor is 10% (`GRAPH_MIN_ZOOM` 0.1); zoom-in ceiling is 1.5. Pinch, wheel, and Controls zoom; **double-tap / double-click does not** (`zoomOnDoubleClick={false}`). **Tap empty pane** clears selection. **Hold empty pane ~250ms, then move** marquees via a custom overlay painted **above** React Flow (`attachGraphPaneMarquee`; do not steal one-finger pan until the hold arms). Once armed, mouse/touch pan events are swallowed and XYFlow `panOnDrag` is turned off so the overlay can select. XYFlow `selectionOnDrag` is not used — it cannot convert a gesture that already started as a pan. Canvas background uses chrome `--card` for contrast.

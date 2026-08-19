@@ -82,7 +82,8 @@ describe("createDefaultScene skybox", () => {
     expect(light?.properties.color).toEqual([1, 0.96, 0.88]);
     expect(light?.properties.intensity).toBe(1.5);
     expect(light?.properties.castShadows).toBe(true);
-    expect(scene.actors.some((actor) => actor.name === "Cube")).toBe(true);
+    expect(scene.actors.some((actor) => actor.name === "Cube")).toBe(false);
+    expect(scene.actors.some((actor) => actor.name === "Actor")).toBe(true);
     expect(scene.settings.environmentColor).toEqual([0.45, 0.62, 0.85]);
   });
 
@@ -93,7 +94,7 @@ describe("createDefaultScene skybox", () => {
       actors: scene.actors.filter((actor) => actor.id !== "actor-skybox"),
     };
     expect(without.actors.map((actor) => actor.name)).toEqual([
-      "Cube",
+      "Actor",
       "Directional Light",
       "Camera",
     ]);

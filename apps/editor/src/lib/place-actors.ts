@@ -29,6 +29,7 @@ export type PlaceActorKind =
   | { type: "text3d" }
   | { type: "navmesh" }
   | { type: "navmesh-blocker" }
+  | { type: "blocking-volume" }
   | { type: "audio" }
   | { type: "particle" }
   | { type: "empty" }
@@ -99,6 +100,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "NavMesh Blocker",
     category: "Navigation",
     kind: { type: "navmesh-blocker" },
+  },
+  {
+    id: "blocking-volume",
+    title: "Blocking Volume",
+    category: "Physics",
+    kind: { type: "blocking-volume" },
   },
   {
     id: "audio",
@@ -193,6 +200,12 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "navmesh-blocker") {
     return resolveTypeVisual({
       classId: "NavMeshBlockerComponent",
+      family: "class",
+    });
+  }
+  if (kind.type === "blocking-volume") {
+    return resolveTypeVisual({
+      classId: "BlockingVolumeComponent",
       family: "class",
     });
   }
@@ -301,6 +314,18 @@ export function spawnPlacedActor(
           id: `${id}-blocker`,
           classId: "NavMeshBlockerComponent",
           properties: defaultPropertiesFor("NavMeshBlockerComponent"),
+        },
+      ],
+    });
+  }
+  if (kind.type === "blocking-volume") {
+    return createActor(id, "Blocking Volume", {
+      transform,
+      components: [
+        {
+          id: `${id}-blocking`,
+          classId: "BlockingVolumeComponent",
+          properties: defaultPropertiesFor("BlockingVolumeComponent"),
         },
       ],
     });

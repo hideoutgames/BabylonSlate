@@ -89,9 +89,8 @@ import {
   ASSETS_ROOT,
   addSelectedAssetGuid,
   addSelectedFolderPath,
-  exclusiveSelectAsset,
-  exclusiveSelectFolder,
   applyContentBrowserTreeSelect,
+  applyContentBrowserTileSelect,
   buildNewAssetResult,
   classParentLookup,
   collectFolderGuidsFromTrees,
@@ -229,6 +228,7 @@ export function ContentBrowserWorkspace({
   const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(
     () => new Set(),
   );
+  const [tileAnchorKey, setTileAnchorKey] = useState<string | null>(null);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     () => new Set(),
   );
@@ -514,6 +514,41 @@ export function ContentBrowserWorkspace({
     }
     return items;
   }, [childFolders, visibleAssets]);
+
+  const orderedTileHits = useMemo(
+    () =>
+      gridItems.map((item) =>
+        item.kind === "folder"
+          ? ({ kind: "folder" as const, path: item.path })
+          : ({ kind: "asset" as const, guid: item.asset.header.guid }),
+      ),
+    [gridItems],
+  );
+
+  const selectGridTile = useCallback(
+    (
+      hit: { kind: "asset"; guid: string } | { kind: "folder"; path: string },
+      event: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
+    ) => {
+      const next = applyContentBrowserTileSelect(
+        hit,
+        {
+          additive: event.ctrlKey || event.metaKey,
+          range: event.shiftKey,
+        },
+        orderedTileHits,
+        {
+          selectedGuids,
+          selectedFolderPaths,
+          anchorKey: tileAnchorKey,
+        },
+      );
+      setSelectedGuids(next.guids);
+      setSelectedFolderPaths(next.folderPaths);
+      setTileAnchorKey(next.anchorKey);
+    },
+    [orderedTileHits, selectedFolderPaths, selectedGuids, tileAnchorKey],
+  );
 
   const { scrollerRef, slice, spacerHeight } = useContentBrowserGridWindow(
     gridItems.length,
@@ -807,6 +842,17 @@ export function ContentBrowserWorkspace({
   const tileContextItems = useMemo(
     () => [
       {
+        id: "open" as const,
+        label: "Open",
+        onSelect: () => {
+          const guid = menuTargetGuidsRef.current[0];
+          if (!guid || !assetRegistry) return;
+          const asset = assetRegistry.getByGuid(guid);
+          if (!asset) return;
+          void openOrFocusDocument(asset);
+        },
+      },
+      {
         id: "duplicate" as const,
         label: "Duplicate",
         onSelect: () => {
@@ -919,6 +965,7 @@ export function ContentBrowserWorkspace({
     [
       assetRegistry,
       openMoveForSnapshot,
+      openOrFocusDocument,
       refreshAssetRegistry,
       requestDeleteSnapshot,
       selectedFolderPath,
@@ -1846,10 +1893,31 @@ export function ContentBrowserWorkspace({
             className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
             data-testid="content-browser-asset-grid"
             style={paintBind.style}
+            tabIndex={0}
             onClick={() => {
               if (consumeSelectClick()) return;
               setSelectedGuids(new Set());
               setSelectedFolderPaths(new Set());
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.defaultPrevented) return;
+              const target = event.target;
+              if (
+                target instanceof HTMLElement &&
+                (target.tagName === "INPUT" ||
+                  target.tagName === "TEXTAREA" ||
+                  target.isContentEditable)
+              ) {
+                return;
+              }
+              if (selectedGuids.size !== 1 || selectedFolderPaths.size !== 0) {
+                return;
+              }
+              const guid = [...selectedGuids][0]!;
+              const asset = assetRegistry?.getByGuid(guid);
+              if (!asset) return;
+              event.preventDefault();
+              void openOrFocusDocument(asset);
             }}
             onDoubleClick={(event) => {
               if (
@@ -1894,9 +1962,10 @@ export function ContentBrowserWorkspace({
                             name={item.name}
                             selected={selectedFolderPaths.has(item.path)}
                             consumeSelectClick={consumeSelectClick}
-                            onSelect={() =>
-                              applyTileSelection(
-                                exclusiveSelectFolder(item.path),
+                            onSelect={(event) =>
+                              selectGridTile(
+                                { kind: "folder", path: item.path },
+                                event,
                               )
                             }
                             onOpen={() => {
@@ -1929,9 +1998,10 @@ export function ContentBrowserWorkspace({
                             compileErrorGuids.has(asset.header.guid) ||
                             compileErrorGuids.has(asset.path)
                           }
-                          onSelect={() =>
-                            applyTileSelection(
-                              exclusiveSelectAsset(asset.header.guid),
+                          onSelect={(event) =>
+                            selectGridTile(
+                              { kind: "asset", guid: asset.header.guid },
+                              event,
                             )
                           }
                           consumeSelectClick={consumeSelectClick}
