@@ -190,6 +190,7 @@ function hudWithNestedChip() {
 describe("UiDesigner", () => {
   it("exposes alignment, left/top, and size in Details", () => {
     renderHud();
+    fireEvent.click(screen.getByTestId("ui-widget-stick"));
     expect(screen.getByTestId("ui-anchor-preset")).toBeTruthy();
     expect(screen.getByTestId("property-left")).toBeTruthy();
     expect(screen.getByTestId("property-top")).toBeTruthy();
@@ -198,10 +199,10 @@ describe("UiDesigner", () => {
     expect(screen.getByTestId("property-row-transform-center")).toBeTruthy();
     expect(screen.getByTestId("property-layout-padding-left")).toBeTruthy();
     fireEvent.click(screen.getByTestId("ui-widget-header"));
-    expect(screen.getByTestId("property-left")).toBeTruthy();
-    expect(screen.getByTestId("property-top")).toBeTruthy();
-    expect(screen.getByTestId("property-width")).toBeTruthy();
+    expect(screen.getByTestId("property-inset-left")).toBeTruthy();
+    expect(screen.getByTestId("property-inset-right")).toBeTruthy();
     expect(screen.getByTestId("property-height")).toBeTruthy();
+    expect(screen.queryByTestId("property-width")).toBeNull();
     expect(screen.queryByTestId("property-offset-min-x")).toBeNull();
     fireEvent.click(screen.getByTestId("ui-widget-stick"));
     expect(screen.getByTestId("ui-resize-se")).toBeTruthy();
@@ -262,6 +263,7 @@ describe("UiDesigner", () => {
     expect(button!.layout.horizontalAlignment).toBe("center");
     expect(button!.layout.verticalAlignment).toBe("center");
     expect(button!.style?.background).toBe("#333333");
+    expect(screen.getByTestId("ui-design-frame")).toBeTruthy();
   });
 
   it("deletes a widget from the hierarchy settings menu", () => {
