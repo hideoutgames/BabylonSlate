@@ -461,7 +461,7 @@ describe("Homepage Create Project dialog", () => {
     );
     expect(dialog.textContent).not.toMatch(/letterboxes/i);
     expect(dialog.textContent).toContain(
-      "On locks WxH with black bars. Off fills the host without stretching.",
+      "On locks WxH with bars. Off fills without stretching.",
     );
   });
 

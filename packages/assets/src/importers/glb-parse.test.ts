@@ -109,6 +109,61 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.animations[0]).toEqual({ name: "idle", durationMs: 500 });
   });
 
+  it("does not invent a hierarchy skeleton for two independent animated meshes", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "crate", mesh: 0 },
+          { name: "door", mesh: 1 },
+        ],
+        meshes: [{ primitives: [] }, { primitives: [] }],
+        animations: [
+          {
+            name: "props",
+            channels: [
+              { target: { node: 0, path: "rotation" }, sampler: 0 },
+              { target: { node: 1, path: "rotation" }, sampler: 0 },
+            ],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+        accessors: [{ componentType: 5126, type: "SCALAR", count: 2, max: [1] }],
+      }),
+    );
+    expect(browse!.rigKind).toBe("none");
+    expect(browse!.boneNames).toEqual([]);
+  });
+
+  it("limits hierarchy boneNames to the animated parented-mesh tree", () => {
+    const browse = parseGltfJsonForBrowse(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        nodes: [
+          { name: "character", children: [1] },
+          { name: "root", children: [2, 3] },
+          { name: "torso", mesh: 0 },
+          { name: "head", mesh: 1 },
+          { name: "crate", mesh: 2 },
+        ],
+        meshes: [{ primitives: [] }, { primitives: [] }, { primitives: [] }],
+        animations: [
+          {
+            name: "idle",
+            channels: [
+              { target: { node: 2, path: "rotation" }, sampler: 0 },
+              { target: { node: 3, path: "rotation" }, sampler: 0 },
+            ],
+            samplers: [{ input: 0, output: 1 }],
+          },
+        ],
+        accessors: [{ componentType: 5126, type: "SCALAR", count: 2, max: [0.5] }],
+      }),
+    );
+    expect(browse!.rigKind).toBe("hierarchy");
+    expect(browse!.boneNames).toEqual(["character", "root", "torso", "head"]);
+  });
+
   it("does not invent a skeleton for a one-node object clip", () => {
     const browse = parseGltfJsonForBrowse(
       JSON.stringify({
@@ -154,7 +209,7 @@ describe("parseGlbForBrowse", () => {
     expect(browse!.boneNames).toEqual(["torso", "head"]);
   });
 
-  it("classifies hierarchy when one clip targets a parent with a mesh descendant", () => {
+  it("does not invent a hierarchy skeleton from one targeted ancestor and a single mesh descendant", () => {
     const browse = parseGltfJsonForBrowse(
       JSON.stringify({
         asset: { version: "2.0" },
@@ -173,8 +228,9 @@ describe("parseGlbForBrowse", () => {
         ],
       }),
     );
-    expect(browse!.rigKind).toBe("hierarchy");
-    expect(browse!.boneNames).toEqual(["character", "empty", "torso"]);
+    // #361: hierarchy needs two or more parented Mesh parts that share an ancestor.
+    expect(browse!.rigKind).toBe("none");
+    expect(browse!.boneNames).toEqual([]);
   });
 
   it("importModel wires browsable dependents with pixel chunks from GLB", async () => {

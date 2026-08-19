@@ -98,7 +98,7 @@ glTF character content is two rigs:
 | `skin` | `skins[]` + `JOINTS_0` / `WEIGHTS_0` | Native paused groups on the actor Model | `SkeletonViewer` on a real skinned mesh | `AnimatorAvatar.retargetAnimationGroup` at rest pose |
 | `hierarchy` | Parented meshes, no skins (Kenney Mannequin) | Native groups already target part **Mesh** nodes | `createLinkedSkeletonFromNodeRig` (walk `TransformNode` **including Mesh**, skip cameras/lights) + dummy overlay mesh for `SkeletonViewer` only — do not assign a skeleton onto unweighted character meshes | Same API after `withTransformNodeAnimationTargets` / `retargetAnimationGroupWithMeshProxy` (Mesh → same-name `TransformNode` proxy). Stock Babylon helpers skip Mesh nodes. |
 
-Root-only object clips and static meshes create no Skeleton. Do not invent vertex weights. Native Play/preview of a hierarchy Model does not retarget and does not skin the character meshes.
+Root-only object clips, two independent animated meshes, and static meshes create no Skeleton. Browse import (`classifyGltfRig`) requires parented mesh parts that share an ancestor; `boneNames` is that tree, not every mesh in the file. Do not invent vertex weights. Native Play/preview of a hierarchy Model does not retarget and does not skin the character meshes.
 
 Helpers live in `@babylonslate/render` (`node-rig.ts`) because `@babylonslate/assets` cannot import Babylon. Linked bones skip loader `__root__` and the hidden `materialPreviewMesh` placeholder. Skeleton / Animation previews attach the viewer to `previewRigRoot` (first glTF child of that placeholder). Content Browser Retarget probes via `animationRetargetHasMatches(engine, …)` which owns a throwaway Scene. Editor previews reuse `attachMaterialPreviewGestures` and `aimPreviewCameraAtMesh`.
 

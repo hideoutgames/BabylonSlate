@@ -1,7 +1,9 @@
 /**
  * Browse-quality GLB/glTF parse for Content Browser dependents (P2).
- * Extracts materials, embedded images/textures, and animation names from the
- * glTF JSON + BIN chunk. Full runtime mesh/skin fidelity stays deferred.
+ * Extracts materials, embedded images/textures, animation names, and rig
+ * classification (`skin` joints, parented-mesh `hierarchy`, or `none`) from the
+ * glTF JSON + BIN chunk. Play/preview load the stored GLB with both skeleton
+ * kinds; this parse only names Catalog dependents.
  */
 
 export interface GlbBrowseImage {
@@ -386,29 +388,103 @@ function classifyGltfRig(
       if (typeof target?.node === "number") targeted.add(target.node);
     }
   }
+  if (targeted.size === 0) return { rigKind: "none", boneNames: [] };
 
-  const treeNames = hierarchyBoneNames(nodes);
-  const targetsTree =
-    targeted.size >= 2 ||
-    [...targeted].some((index) => {
-      const node = nodes[index] as Record<string, unknown> | undefined;
-      return Array.isArray(node?.children) && node.children.length > 0;
-    });
-  if (treeNames.length > 0 && targeted.size > 0 && targetsTree) {
-    return { rigKind: "hierarchy", boneNames: treeNames };
+  const parent = buildParentIndex(nodes);
+  const meshParts = new Set<number>();
+  for (const index of targeted) collectMeshParts(nodes, index, meshParts);
+  if (!parentedMeshesShareAncestor([...meshParts], parent)) {
+    return { rigKind: "none", boneNames: [] };
   }
-  return { rigKind: "none", boneNames: [] };
+  return {
+    rigKind: "hierarchy",
+    boneNames: hierarchyBoneNamesForTree(nodes, meshParts, parent),
+  };
 }
 
-function hierarchyBoneNames(nodes: unknown[]): string[] {
+function nodeChildren(node: Record<string, unknown> | undefined): number[] {
+  if (!Array.isArray(node?.children)) return [];
+  return node.children.filter((child): child is number => typeof child === "number");
+}
+
+function buildParentIndex(nodes: unknown[]): Array<number | undefined> {
+  const parent: Array<number | undefined> = Array.from({ length: nodes.length });
+  for (let i = 0; i < nodes.length; i++) {
+    for (const child of nodeChildren(nodes[i] as Record<string, unknown> | undefined)) {
+      if (child >= 0 && child < nodes.length) parent[child] = i;
+    }
+  }
+  return parent;
+}
+
+function collectMeshParts(
+  nodes: unknown[],
+  start: number,
+  out: Set<number>,
+): void {
+  const stack = [start];
+  const seen = new Set<number>();
+  while (stack.length > 0) {
+    const index = stack.pop()!;
+    if (seen.has(index)) continue;
+    seen.add(index);
+    const node = nodes[index] as Record<string, unknown> | undefined;
+    if (typeof node?.mesh === "number") out.add(index);
+    for (const child of nodeChildren(node)) stack.push(child);
+  }
+}
+
+function ancestorChain(
+  index: number,
+  parent: Array<number | undefined>,
+): number[] {
+  const chain: number[] = [];
+  const seen = new Set<number>();
+  let current = parent[index];
+  while (current !== undefined && !seen.has(current)) {
+    seen.add(current);
+    chain.push(current);
+    current = parent[current];
+  }
+  return chain;
+}
+
+/** Mannequin-style: two or more parented mesh parts share a transform ancestor. */
+function parentedMeshesShareAncestor(
+  meshParts: number[],
+  parent: Array<number | undefined>,
+): boolean {
+  const parented = meshParts.filter((index) => parent[index] !== undefined);
+  if (parented.length < 2) return false;
+  for (let i = 0; i < parented.length; i++) {
+    const a = parented[i]!;
+    const related = new Set(ancestorChain(a, parent));
+    related.add(a);
+    for (let j = i + 1; j < parented.length; j++) {
+      const b = parented[j]!;
+      if (related.has(b)) return true;
+      for (const ancestor of ancestorChain(b, parent)) {
+        if (related.has(ancestor)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hierarchyBoneNamesForTree(
+  nodes: unknown[],
+  meshParts: Iterable<number>,
+  parent: Array<number | undefined>,
+): string[] {
+  const include = new Set<number>();
+  for (const mesh of meshParts) {
+    include.add(mesh);
+    for (const ancestor of ancestorChain(mesh, parent)) include.add(ancestor);
+  }
   const names: string[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i] as Record<string, unknown> | undefined;
-    if (!node) continue;
-    const hasMesh = typeof node.mesh === "number";
-    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-    if (!hasMesh && !hasChildren) continue;
+    if (!include.has(i)) continue;
     const name = nodeName(nodes, i);
     if (!isCatalogBoneName(name) || seen.has(name)) continue;
     seen.add(name);
