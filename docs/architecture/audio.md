@@ -128,7 +128,7 @@ Named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in
 
 ## Scripting and BT
 
-`assetRef(assetType)` is a guid-string pin family (literal default; Inspector `AssetPicker` with `allowedTypes`). **Play Sound** / **Set Channel Volume** / **Set Global Volume** sit on Class and Actor palettes. BT **PlaySound** succeeds when the Audio guid is in the Play library and fails when missing. No Babylon imports in scripting / BT packages.
+`assetRef(assetType)` is a guid-string pin family (literal default; Inspector `AssetPicker` with `allowedTypes`). **Play Sound** / **Set Channel Volume** / **Set Global Volume** sit on Class and Actor palettes. BT **PlaySound** uses the same `playSound` → `AudioService` path (omit `loop`; stable `voiceId` `bt:${actor.guid}:${node.id}` so abort / retrigger `stopSound`s). Succeeds when the Audio guid is in the Play library and fails when missing. No Babylon imports in scripting / BT packages.
 
 ## Test hatch
 
@@ -138,6 +138,6 @@ Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/re
 
 ## Out of P16
 
-Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture `asset-settings` to DockView, BT RotateToFace / PlayAnimation (P19). Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Audio Preview may draw a read-only PCM peak plot; that is not waveform editing.
+Streaming music, mic capture, authored acoustic zones/materials, **triangle** runtime occlusion/ray tracing, waveform **editing**, DSP plugins, IR convolution, converting Texture `asset-settings` to DockView. Voxel DDA muffling on the existing occupancy bake is additive (still no triangle rays). Audio Preview may draw a read-only PCM peak plot; that is not waveform editing.
 
 See [render.md](render.md), [bridge.md](bridge.md), [scripting.md](scripting.md), [exporter.md](exporter.md). Spec: [engineplan.md](../engineplan.md) §2.6.
