@@ -1,5 +1,18 @@
 import { expect, type Page } from "@playwright/test";
 
+/** Click the Homepage TestProject row (name with or without `.babproject`). */
+export async function clickListedTestProject(page: Page): Promise<void> {
+  const listed = page.getByTestId("open-listed-project-TestProject");
+  const listedLegacy = page.getByTestId(
+    "open-listed-project-TestProject.babproject",
+  );
+  if ((await listed.count()) > 0) {
+    await listed.click();
+    return;
+  }
+  await listedLegacy.click();
+}
+
 /** Homepage → Create Project dialog (test-mode name TestProject) → editor chrome.
  *  If TestProject is already listed (shared OPFS), open it instead of Create.
  */
@@ -34,6 +47,16 @@ export async function openTestProject(
   );
   await page.getByTestId("create-project-submit").click();
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
+}
+
+/** Click the TestProject row on the homepage (name may omit `.babproject`). */
+export async function clickListedTestProject(page: Page): Promise<void> {
+  const listed = page.getByTestId("open-listed-project-TestProject");
+  if ((await listed.count()) > 0) {
+    await listed.click();
+    return;
+  }
+  await page.getByTestId("open-listed-project-TestProject.babproject").click();
 }
 
 /** Submit Create when the name is free; otherwise dismiss and open the listed project. */

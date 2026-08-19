@@ -1,0 +1,31 @@
+---
+description: Keep PRs draft until local verify; mark ready once; cap non-draft PRs so GitHub Actions stays under the job cap
+alwaysApply: true
+---
+
+# GitHub Actions — PR cadence
+
+GitHub Free public repos cap concurrent jobs at 20. Verify uses two jobs and e2e takes ~20–25 min. **Ready** PRs consume that pool; **drafts** do not (`.github/workflows/verify.yml` skips draft jobs).
+
+## Stay draft until local verify
+
+- Open PRs as draft. Keep them draft through intermediate commits.
+- Local `pnpm verify` is the inner gate. Do not poll Actions after every push.
+
+## Mark ready once
+
+- Mark ready only after local `pnpm verify` passes and the PR is the merge candidate.
+- Do not mark ready on the first push, then keep pushing. Each later synchronize cancels in-progress Verify and starts a new e2e.
+
+```text
+# ❌ BAD — ready immediately, five more pushes, wait on Actions while still editing
+# ✅ GOOD — draft until pnpm verify is green, mark ready once, merge when CI is green
+```
+
+## At most ~8 non-draft PRs
+
+Before marking ready, count open non-draft PRs targeting `main`. If there are already about eight, **stay draft**. Do not mark ready to “get in the queue.”
+
+Many agents may code in parallel. Only a handful should be ready and waiting on Verify. Merge when green so slots free.
+
+Do not use larger GitHub runners to raise the cap. See [github-actions-standard-runners.mdc](github-actions-standard-runners.mdc).

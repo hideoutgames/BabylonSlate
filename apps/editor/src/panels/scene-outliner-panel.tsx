@@ -11,6 +11,7 @@ import {
   resolveActorTypeVisual,
   walkAncestry,
   type NestedMenuItem,
+  type TreeDropPlacement,
   type TreeSelectOptions,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
@@ -497,17 +498,23 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   /**
    * Drop on a folder groups; drop on an actor attaches; drop on empty space
-   * clears both. A selected drag moves collapsed roots only so parent+child
-   * picks cannot double-move or duplicate rows.
+   * clears both. Before/after a row inserts as a sibling of that row instead.
+   * A selected drag moves collapsed roots only so parent+child picks cannot
+   * double-move or duplicate rows.
    */
   const reparentRow = useCallback(
-    (dragRowId: string, targetRowId: string | null) => {
+    (
+      dragRowId: string,
+      targetRowId: string | null,
+      placement?: TreeDropPlacement,
+    ) => {
       if (!scene) return;
       const moves = outlinerTreeDropMoves({
         dragRowId,
         targetRowId,
         selectedRowIds,
         scene,
+        placement,
       });
       if (moves.length === 0) return;
       mutate(applyOutlinerDropMoves(scene, moves));

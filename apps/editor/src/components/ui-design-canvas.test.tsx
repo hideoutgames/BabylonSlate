@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
 import { resetUiHostStats, uiHostStats } from "@babylonslate/render";
 import {
@@ -298,6 +298,68 @@ describe("UiDesignCanvas preview fallback", () => {
     expect(id).toBe("stick");
     expect(layout.left).not.toBe(props.ui.widgets.stick?.layout.left);
     expect(uiHostStats.commit).toBe(1);
+  });
+
+  it("keeps a nested UserInterface subtree while dragging the host slot", () => {
+    createUiSurfaceMock.mockReturnValue(mockSurface());
+    const chip = createDefaultUserInterface("Chip");
+    const label = createWidget(
+      "label",
+      "Text",
+      "HP",
+      pinLayout("left", "top", 80, 20),
+    );
+    label.props.text = "HP";
+    chip.widgets.canvas!.children = ["label"];
+    chip.widgets.label = label;
+
+    const ui = createDefaultUserInterface("HUD");
+    const host = createWidget(
+      "chip",
+      "UserInterface",
+      "Chip",
+      pinLayout("left", "top", 80, 20, 0, 0),
+    );
+    host.nestedUiGuid = "chip-guid";
+    ui.widgets.canvas!.children = ["chip"];
+    ui.widgets.chip = host;
+
+    const resolveNested = (guid: string) => (guid === "chip-guid" ? chip : null);
+    const viewport = {
+      id: "desktop-16-9",
+      width: 1920,
+      height: 1080,
+      safeArea: { left: 0, right: 0, top: 0, bottom: 0 },
+    };
+    const layout = layoutUserInterface(ui, viewport, {
+      designSpace: true,
+      safeArea: viewport.safeArea,
+      resolveNested,
+    });
+    render(
+      <UiDesignCanvas
+        ui={ui}
+        viewport={viewport}
+        layout={layout}
+        controls={describeUiControls(ui, layout)}
+        selectedId="chip"
+        view={{ zoom: 1, panX: 0, panY: 0 }}
+        previewScale={1}
+        bitmapScale={1}
+        sharedEngine={{} as Engine}
+        onSelect={() => {}}
+        onViewChange={() => {}}
+        onLayoutChange={() => {}}
+        resolveNested={resolveNested}
+      />,
+    );
+    expect(screen.getByTestId("ui-widget-chip/label")).toBeTruthy();
+    const chipHit = screen.getByTestId("ui-widget-chip");
+    act(() => {
+      dispatchPointerEvent(chipHit, "pointerdown", { clientX: 10, clientY: 10 });
+      dispatchPointerEvent(chipHit, "pointermove", { clientX: 55, clientY: 10 });
+    });
+    expect(screen.getByTestId("ui-widget-chip/label")).toBeTruthy();
   });
 
   it("moves the widget under the pointer when selected handles overlap it", () => {

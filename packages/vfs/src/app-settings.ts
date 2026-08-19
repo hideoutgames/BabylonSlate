@@ -56,6 +56,7 @@ export const engineSettingsSchema = z.object({
         name: z.string(),
         tier: z.enum(["documents", "external", "opfs"]),
         lastOpenedAt: z.string(),
+        createdAt: z.string().optional(),
         bookmark: z.string().nullable().optional(),
       }),
     )

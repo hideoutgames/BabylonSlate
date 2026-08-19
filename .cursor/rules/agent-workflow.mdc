@@ -100,8 +100,8 @@ Never AI-generate artwork, videos, icons, 3D models, or similar media. See [no-a
 
 ### Workflow
 
-1. Open or update a PR targeting `main` (use `ManagePullRequest`, not `gh` for create/update/merge).
-2. Mark draft PRs **ready** once local verification passes.
-3. Fix any failing CI before merging; push fixes until CI is green.
+1. Open or update a PR targeting `main` (use `ManagePullRequest`, not `gh` for create/update/merge). Open it **draft**.
+2. Keep the PR draft until local `pnpm verify` passes. Then mark ready **once** — not on the first push, and not if ~8 non-draft PRs already target `main`. Detail: [github-actions-pr-cadence.mdc](github-actions-pr-cadence.mdc).
+3. After ready, avoid extra pushes; each synchronize restarts Verify (~25 min e2e). Fix any failing CI before merging.
 4. **Merge the PR into `main` automatically** when all merge gates pass.
 5. Prefer merge commits (not squash) when the PR contains multiple logical commits, unless the user specifies otherwise.

@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
+import { copyEngineDefaultSkyboxFaces } from "../editor/vite-engine-skybox";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(rootDir, "../..");
@@ -22,6 +23,7 @@ function copyRuntimePublic(): Plugin {
     );
     copyIfPresent(path.join(editorPublic, "havok"), path.join(dest, "havok"));
     copyIfPresent(path.join(editorPublic, "ktx2"), path.join(dest, "ktx2"));
+    copyEngineDefaultSkyboxFaces(repoRoot, dest);
   };
   return {
     name: "copy-runtime-public",

@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { closeProjectViaSettings } from "./close-project";
 import {
+  clickListedTestProject,
   createContentBrowserAsset,
   openAssetFromBrowser,
   openContentBrowser,
@@ -201,14 +202,7 @@ test.describe("Skybox Creator helper", () => {
     await expect(page.getByTestId("homepage")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("homepage")).toBeVisible();
-    const listed = page.getByTestId("open-listed-project-TestProject");
-    if ((await listed.count()) > 0) {
-      await listed.click();
-    } else {
-      await page
-        .getByTestId("open-listed-project-TestProject.babproject")
-        .click();
-    }
+    await clickListedTestProject(page);
     await expect(page.getByTestId("editor-chrome-bar")).toBeVisible();
     await openContentBrowser(page);
     await expect(page.locator(`[data-asset-path="${HELPER_PATH}"]`)).toBeVisible();
