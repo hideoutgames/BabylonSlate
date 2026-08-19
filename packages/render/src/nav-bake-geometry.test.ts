@@ -5,6 +5,7 @@ import {
   createMeshComponent,
   type SerializedScene,
 } from "@babylonslate/core";
+import { generateNavMesh } from "@babylonslate/navigation";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { collectNavBakeGeometry } from "./nav-bake-geometry";
@@ -55,6 +56,25 @@ describe("collectNavBakeGeometry", () => {
     const geometry = collectNavBakeGeometry(sync, sceneData);
     expect(geometry.positions.length).toBeGreaterThan(9);
     expect(geometry.indices.length).toBeGreaterThan(3);
+    sync.dispose();
+  });
+
+  it("bakes Recast navmesh bytes from a collected Ground mesh", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const sync = new EditorSceneSync(handle.scene);
+    const sceneData: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("ground", "Ground", {
+          components: [createMeshComponent("mesh", "ground")],
+        }),
+      ],
+    };
+    sync.apply(sceneData);
+    const geometry = collectNavBakeGeometry(sync, sceneData);
+    const bytes = await generateNavMesh(geometry);
+    expect(bytes.byteLength).toBeGreaterThan(32);
     sync.dispose();
   });
 

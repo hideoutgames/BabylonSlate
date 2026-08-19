@@ -138,11 +138,21 @@ function meshPart(
   const world = mesh.getWorldMatrix();
   return {
     positions,
-    indices,
+    indices: reversedTriangles(indices),
     transform: (x, y, z) => {
       scratch.set(x, y, z);
       Vector3.TransformCoordinatesToRef(scratch, world, scratch);
       return { x: scratch.x, y: scratch.y, z: scratch.z };
     },
   };
+}
+
+/** Babylon is left-handed; Recast wants CCW triangles with +Y normals. */
+function reversedTriangles(indices: ArrayLike<number>): number[] {
+  const out: number[] = [];
+  const count = Math.floor(indices.length / 3) * 3;
+  for (let i = 0; i < count; i += 3) {
+    out.push(Number(indices[i]), Number(indices[i + 2]), Number(indices[i + 1]));
+  }
+  return out;
 }
