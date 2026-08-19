@@ -574,6 +574,16 @@ describe("developmentOnlyPropertyRows", () => {
     const row = rows[0];
     if (row?.kind === "boolean") row.onChange(false);
     expect(onPatch).toHaveBeenCalledWith({ developmentOnly: false });
+    const printString = developmentOnlyPropertyRows(
+      "debug.printString",
+      {},
+      onPatch,
+    );
+    expect(printString[0]).toMatchObject({
+      kind: "boolean",
+      value: true,
+      defaultValue: true,
+    });
   });
 
   it("shows Development Only unchecked for Log unless flagged", () => {

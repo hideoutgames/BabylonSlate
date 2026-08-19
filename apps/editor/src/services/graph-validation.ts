@@ -1238,7 +1238,7 @@ export function scriptPaletteNodes(
       defaultData.severity = "log";
       defaultData.category = "Script";
     }
-    if (def.id === "debug.print") {
+    if (def.developmentOnlyByDefault) {
       defaultData.developmentOnly = true;
     }
     if (

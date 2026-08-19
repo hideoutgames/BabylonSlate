@@ -18,6 +18,7 @@ import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { guiTextureBytesFromGame, type LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
+import { mountPlayerPrintOverlay } from "./print-overlay";
 import {
   packedBootControls,
   packedContentFromGame,
@@ -144,6 +145,7 @@ export function startPlayer(options: {
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
+  const printHud = mountPlayerPrintOverlay(canvas.parentElement ?? canvas);
   if (typeof window !== "undefined") {
     (
       window as { __babylonslateAudioStats?: typeof audioStats }
@@ -256,12 +258,16 @@ export function startPlayer(options: {
     worker?.terminate();
     worker = null;
     runtime?.stop();
+    printHud.dispose();
   };
 
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
     applyPlayerActiveScene(handle, game.scenes, command);
     applyPlayerUiCommand(uiHost, command);
+    if (command.type === "print") {
+      printHud.applyPrint(command);
+    }
     if (command.type === "setInputMode") {
       input?.setInputMode(String(command.mode ?? "All"));
     }
@@ -410,6 +416,7 @@ export function startPlayer(options: {
       input?.dispose();
       releaseUnlock();
       uiHost.dispose();
+      printHud.dispose();
       worker?.terminate();
       runtime?.stop();
       handle.dispose();

@@ -11,5 +11,6 @@ export * from "./guid-result";
 export * from "./math-rng";
 export * from "./euler";
 export * from "./format-value";
+export * from "./print-hud";
 export * from "./play-preview-aspect";
 export * from "./input-mode";

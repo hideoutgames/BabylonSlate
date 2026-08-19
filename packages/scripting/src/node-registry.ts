@@ -1,5 +1,6 @@
 import type { PinType } from "./types";
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
+import { registerDevelopmentOnlyByDefaultTypeId } from "./development-only";
 
 /** 1-based line in a hoist chunk mapped to an ExecuteJavaScript body line. */
 export type HoistBodyAnchor = {
@@ -43,6 +44,12 @@ export type NodeDefinition = {
   latent?: boolean;
   /** Hidden from runtime graph palettes unless the host is an editor graph. */
   editorOnly?: boolean;
+  /**
+   * When the Inspector flag is omitted, export compiles strip this node.
+   * Print, Print String, and Draw Debug opt in so shipping games stay clean
+   * unless the author unchecks Development Only.
+   */
+  developmentOnlyByDefault?: boolean;
 };
 
 export class NodeRegistry {
@@ -53,6 +60,9 @@ export class NodeRegistry {
       throw new Error(`Node already registered: ${def.id}`);
     }
     this.defs.set(def.id, def);
+    if (def.developmentOnlyByDefault) {
+      registerDevelopmentOnlyByDefaultTypeId(def.id);
+    }
   }
 
   registerAll(defs: readonly NodeDefinition[]): void {

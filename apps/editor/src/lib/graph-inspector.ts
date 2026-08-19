@@ -19,6 +19,7 @@ import {
   defaultJsValue,
   hydrateStructInstance,
   isDevelopmentOnlyNode,
+  isDevelopmentOnlyByDefaultTypeId,
   listUnconnectedLiteralPinDefaults,
   pinDefaultAsBoolean,
   pinDefaultAsNumber,
@@ -610,7 +611,7 @@ export function developmentOnlyPropertyRows(
         pins: [],
         properties: data,
       }),
-      defaultValue: typeId === "debug.print",
+      defaultValue: isDevelopmentOnlyByDefaultTypeId(typeId),
       onChange: (value) => onPatch({ developmentOnly: value }),
     },
   ];

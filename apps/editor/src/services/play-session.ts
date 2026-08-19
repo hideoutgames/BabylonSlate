@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, printHudCssColor, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -658,7 +658,7 @@ export function startPlaySession(options: {
         message: command.message,
         key: command.key ?? "",
         duration: command.duration ?? 2,
-        color: cssColor(command.color),
+        color: printHudCssColor(command.color),
       });
     }
     if (command.type === "stats") {
@@ -1038,21 +1038,6 @@ export function startPlaySession(options: {
       return stopResult;
     },
   };
-}
-
-/** Print colors arrive as linear 0..1 RGBA vectors from the graph. */
-function cssColor(color?: {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-}): string {
-  if (!color) return "#ffffff";
-  const channel = (v: number) =>
-    Math.max(0, Math.min(255, Math.round((Number(v) || 0) * 255)));
-  return `rgba(${channel(color.x)}, ${channel(color.y)}, ${channel(color.z)}, ${
-    color.w ?? 1
-  })`;
 }
 
 export const PREVIEW_FIXTURE_NODE_ID = FIXTURE_NODE;

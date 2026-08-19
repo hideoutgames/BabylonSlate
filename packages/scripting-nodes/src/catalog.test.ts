@@ -25,6 +25,7 @@ describe("node catalog", () => {
     expect(registry.get("debug.log")).toBeDefined();
     expect(registry.get("debug.executeJavaScript")).toBeDefined();
     expect(registry.get("debug.print")).toBeDefined();
+    expect(registry.get("debug.printString")?.title).toBe("Print String");
     expect(registry.get("render.setResolution")).toBeDefined();
     expect(registry.get("camera.possess")).toBeDefined();
     expect(registry.get("light.setIntensity")).toBeDefined();
