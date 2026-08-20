@@ -171,6 +171,24 @@ function netCellFace(col: number, row: number): SkyboxCreatorCompassFace | null 
   return null;
 }
 
+function placementFromKey(key: string): SkyboxCreatorSourcePlacement | null {
+  if (!key) return null;
+  const parts = key.split(",").map(Number);
+  const x = parts[0];
+  const y = parts[1];
+  const width = parts[2];
+  const height = parts[3];
+  if (
+    x === undefined ||
+    y === undefined ||
+    width === undefined ||
+    height === undefined
+  ) {
+    return null;
+  }
+  return { x, y, width, height };
+}
+
 function CreateSkyboxButton({
   onClick,
   disabled,
@@ -508,9 +526,8 @@ export function SkyboxCreatorCubemap({
   const [facePngs, setFacePngs] = useState<SkyboxCreatorPreviewFacePngs | null>(
     null,
   );
-  const placement = helper.sourcePlacement;
-  const placementKey = placement
-    ? `${placement.x},${placement.y},${placement.width},${placement.height}`
+  const placementKey = helper.sourcePlacement
+    ? `${helper.sourcePlacement.x},${helper.sourcePlacement.y},${helper.sourcePlacement.width},${helper.sourcePlacement.height}`
     : "";
 
   useEffect(() => {
@@ -522,7 +539,7 @@ export function SkyboxCreatorCubemap({
       decoded.rgba,
       decoded.width,
       decoded.height,
-      placement,
+      placementFromKey(placementKey),
     );
     const pngs = {} as SkyboxCreatorPreviewFacePngs;
     for (const key of SKYBOX_FACE_KEYS) {
