@@ -892,6 +892,7 @@ describe("scene-referenced Play content", () => {
         {
           clipNames: [],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
             { index: 1, name: "Eyes", materialGuid: null },
@@ -903,6 +904,7 @@ describe("scene-referenced Play content", () => {
         {
           clipNames: [],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }],
         },
       ],

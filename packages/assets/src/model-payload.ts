@@ -4,10 +4,24 @@ export interface ModelMaterialSlot {
   materialGuid: string | null;
 }
 
+/** Importer fallback when Engine Settings are not passed. Not used for missing payload fields. */
+export const DEFAULT_MODEL_IMPORT_SCALE = 10;
+
 export interface ModelPayload {
   materialSlots: ModelMaterialSlot[];
   clipNames: string[];
   skeletonGuid: string | null;
+  /**
+   * Uniform multiplier applied under the actor root at load.
+   * Missing / invalid values normalize to 1 so legacy assets keep authored size.
+   */
+  importScale: number;
+}
+
+export function normalizeModelImportScale(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 1;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -63,6 +77,7 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
     materialSlots,
     clipNames: stringList(record.clipNames),
     skeletonGuid: nullableGuid(record.skeletonGuid),
+    importScale: normalizeModelImportScale(record.importScale),
   };
 }
 

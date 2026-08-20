@@ -134,4 +134,38 @@ describe("beginSlotModelAnimLoad", () => {
     await beginSlotModelAnimLoad(scene, binding, 2, "model-1", view, root);
     expect(visualMeshes(root).length).toBeGreaterThan(0);
   });
+
+  it("scales instantiated glTF under a child so actor scaling stays scene TRS", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.modelPayloads = new Map([
+      [
+        "model-1",
+        {
+          materialSlots: [],
+          clipNames: [],
+          skeletonGuid: null,
+          importScale: 10,
+        },
+      ],
+    ]);
+    const root = createModelActorRoot(scene, "actor-2");
+    root.scaling.set(2, 2, 2);
+    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", encodeTriangleGlb(), root);
+    expect(root.scaling.x).toBe(2);
+    expect(root.scaling.y).toBe(2);
+    expect(root.scaling.z).toBe(2);
+    const wrapper = root.getChildTransformNodes(true).find(
+      (node) => node.name === "__importScale",
+    );
+    expect(wrapper?.scaling.x).toBe(10);
+    const visual = visualMeshes(root)[0];
+    expect(visual).toBeDefined();
+    visual!.computeWorldMatrix(true);
+    const world = visual!.getWorldMatrix();
+    const scale = world.getRow(0);
+    expect(Math.hypot(scale.x, scale.y, scale.z)).toBeCloseTo(20, 5);
+  });
 });

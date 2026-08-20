@@ -73,6 +73,18 @@ export const engineSettingsSchema = z.object({
   undoHistoryLength: z.number().int().positive().default(50),
   viewportFrameCap: z.number().positive().default(30),
   hardwareScalingLevel: z.number().positive().default(1),
+  modelImportDefaultScale: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.max(0.0001, value);
+  }, z.number().positive().default(10)),
+  viewportFlySpeed: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.max(0.0001, value);
+  }, z.number().positive().default(8)),
+  viewportGridSize: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.max(0.0001, value);
+  }, z.number().positive().default(1)),
   postProcessingEnabled: z.boolean().default(true),
   thumbnailsEnabled: z.boolean().default(true),
   graphDefaultZoom: z.preprocess((value) => {

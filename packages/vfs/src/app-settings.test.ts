@@ -50,6 +50,9 @@ describe("app settings", () => {
     expect(settings.debuggerDefaults.overlayInspector).toBe(true);
     expect(settings.debuggerDefaults.pauseOnPlay).toBe(false);
     expect(settings.postProcessingEnabled).toBe(true);
+    expect(settings.modelImportDefaultScale).toBe(10);
+    expect(settings.viewportFlySpeed).toBe(8);
+    expect(settings.viewportGridSize).toBe(1);
   });
 
   it("fills viewportFrameCap at 30 when saved JSON omits the field", () => {
@@ -57,6 +60,32 @@ describe("app settings", () => {
       undoHistoryLength: 50,
     });
     expect(parsed.viewportFrameCap).toBe(30);
+  });
+
+  it("fills model import default scale at 10 when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.modelImportDefaultScale).toBe(10);
+  });
+
+  it("clamps model import default scale to a positive finite number", () => {
+    expect(
+      engineSettingsSchema.parse({ modelImportDefaultScale: 0 })
+        .modelImportDefaultScale,
+    ).toBeGreaterThan(0);
+    expect(
+      engineSettingsSchema.parse({ modelImportDefaultScale: -4 })
+        .modelImportDefaultScale,
+    ).toBeGreaterThan(0);
+  });
+
+  it("fills viewport fly speed and grid size when saved JSON omits them", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.viewportFlySpeed).toBe(8);
+    expect(parsed.viewportGridSize).toBe(1);
   });
 
   it("fills UserInterface designer presets when saved JSON omits the field", () => {
