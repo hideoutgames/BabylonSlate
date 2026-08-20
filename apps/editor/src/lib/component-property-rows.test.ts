@@ -84,10 +84,7 @@ describe("componentPropertyRows", () => {
       displayType: "Mesh",
       visual: { assetType: "Mesh" },
     });
-    expect(rows.find((row) => row.id.endsWith("-meshKind"))).toMatchObject({
-      kind: "enum",
-      value: "box",
-    });
+    expect(rows.find((row) => row.id.endsWith("-meshKind"))).toBeUndefined();
     if (asset?.kind === "asset") asset.onPick();
     expect(onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -95,6 +92,18 @@ describe("componentPropertyRows", () => {
         allowedTypes: ["Mesh", "Model"],
       }),
     );
+  });
+
+  it("exposes Mesh Kind only when MeshComponent has no Model or Mesh asset", () => {
+    const { rows } = rowsFor({
+      id: "mesh",
+      classId: "MeshComponent",
+      properties: { meshKind: "sphere", assetGuid: null },
+    });
+    expect(rows.find((row) => row.id.endsWith("-meshKind"))).toMatchObject({
+      kind: "enum",
+      value: "sphere",
+    });
   });
 
   it("exposes 3D Text text, size, depth, color, and Font picker", () => {
