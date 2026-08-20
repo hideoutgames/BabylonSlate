@@ -361,6 +361,14 @@ export function applyPlayHudUiCommand(
       return document ? { ...entry, document } : entry;
     });
   }
+  if (
+    command.type !== "uiAddWidget" &&
+    command.type !== "uiRemoveWidget" &&
+    command.type !== "uiReparentWidget" &&
+    command.type !== "uiPatchLayout"
+  ) {
+    return [...instances];
+  }
   const current = instances.find((entry) => entry.instanceId === command.instanceId);
   if (!current) return [...instances];
   const seed = seedHudDocument(current, library);

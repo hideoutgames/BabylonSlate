@@ -506,8 +506,9 @@ export function ClassMembersView({
         const sectionId = row.id.replace(/^section-/, "");
         const section = treeSections.find((entry) => entry.id === sectionId);
         if (!section || section.kind === "widget") return row;
+        const kind = section.kind;
         if (
-          !classAllowsMemberKind(section.kind, {
+          !classAllowsMemberKind(kind, {
             parentClass: membersOptions?.parentClass,
             parentOf: membersOptions?.parentOf,
             assetType: membersOptions?.assetType,
@@ -524,7 +525,7 @@ export function ClassMembersView({
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
                 event.stopPropagation();
-                addKind(section.kind, section.local === true);
+                addKind(kind, section.local === true);
               }}
             >
               <PlusIcon />
