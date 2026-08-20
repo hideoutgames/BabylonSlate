@@ -85,6 +85,142 @@ describe("AudioService", () => {
     expect(service.stats().accountedBytes).toBe(0);
   });
 
+  it("loads source bytes on first playSound and skips unused assets", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const reads: string[] = [];
+    const service = new AudioService({
+      backend,
+      loadSourceBytes: async ({ assetGuid, chunkId }) => {
+        reads.push(`${assetGuid}:${chunkId}`);
+        if (assetGuid !== "jump") return null;
+        return new Uint8Array([1, 2, 3, 4]);
+      },
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: createDefaultAudioPayload(),
+          bed: createDefaultAudioPayload(),
+        },
+      }),
+    );
+    await service.unlockAsync();
+    expect(reads).toEqual([]);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(reads).toEqual(["jump:source"]);
+    expect(backend.plays).toHaveLength(1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 2,
+    });
+    await service.flush();
+    expect(reads).toEqual(["jump:source"]);
+    expect(backend.plays).toHaveLength(2);
+    service.dispose();
+  });
+
+  it("loads only the chosen weighted clip chunkId", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const reads: string[] = [];
+    const service = new AudioService({
+      backend,
+      random: () => 0.99,
+      loadSourceBytes: async ({ assetGuid, chunkId }) => {
+        reads.push(`${assetGuid}:${chunkId}`);
+        return new Uint8Array([1, 2, 3, 4]);
+      },
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: {
+            clips: [
+              { chunkId: "source", name: "a", weight: 1 },
+              { chunkId: "source:2", name: "b", weight: 1 },
+            ],
+          },
+        },
+      }),
+    );
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(reads).toEqual(["jump:source:2"]);
+    expect(backend.plays).toHaveLength(1);
+    service.dispose();
+  });
+
+  it("diagnoses a lazy load miss without throwing", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
+    const service = new AudioService({
+      backend,
+      onDiagnostic: (entry) => diagnostics.push(entry),
+      loadSourceBytes: async () => null,
+    });
+    service.setLibrary(library({ audio: { jump: createDefaultAudioPayload() } }));
+    await service.unlockAsync();
+    expect(() =>
+      service.handleCommand({
+        type: "playSound",
+        assetGuid: "jump",
+        volume: 1,
+        frameId: 1,
+      }),
+    ).not.toThrow();
+    await service.flush();
+    expect(backend.plays).toHaveLength(0);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({ code: "audio.missing_source", assetGuid: "jump" }),
+    ]);
+    service.dispose();
+  });
+
+  it("resumes the backend on unlock before loading queued source bytes", async () => {
+    const order: string[] = [];
+    const backend = new FakeAudioPlaybackBackend();
+    const resume = backend.unlockAsync.bind(backend);
+    backend.unlockAsync = async () => {
+      order.push("unlock");
+      await resume();
+    };
+    const service = new AudioService({
+      backend,
+      loadSourceBytes: async ({ assetGuid, chunkId }) => {
+        order.push(`load:${assetGuid}:${chunkId}`);
+        return new Uint8Array([1, 2, 3, 4]);
+      },
+    });
+    service.setLibrary(
+      library({ audio: { jump: createDefaultAudioPayload() } }),
+    );
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    const unlocking = service.unlockAsync();
+    expect(order).toEqual(["unlock"]);
+    await unlocking;
+    expect(order).toEqual(["unlock", "load:jump:source"]);
+    expect(backend.plays).toHaveLength(1);
+    service.dispose();
+  });
+
   it("nulls missing Audio Channel and Attenuation refs with diagnostics", () => {
     const diagnostics: Array<{ code: string }> = [];
     const service = new AudioService({

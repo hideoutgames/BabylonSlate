@@ -8,6 +8,7 @@ import {
   compileGraphDocument,
   compileGraphDocuments,
   compileGraphDocumentsForExport,
+  GraphScriptCompileCache,
   graphCompileSignature,
   graphsNeedCompile,
   spawnListForScripts,
@@ -546,6 +547,170 @@ describe("graphsNeedCompile", () => {
   });
 });
 
+describe("GraphScriptCompileCache", () => {
+  it("Play-prepares many graphs without recompiling an unchanged graph", () => {
+    const cache = new GraphScriptCompileCache();
+    const documents = Array.from({ length: 24 }, (_, index) => ({
+      path: `assets/g${index}.class.babasset`,
+      content: tickToLog,
+    }));
+    const first = compileGraphDocuments(documents, { cache });
+    expect(first).toHaveLength(24);
+    expect(cache.compiles).toBe(24);
+    const second = compileGraphDocuments(documents, { cache });
+    expect(second.map((script) => script.source)).toEqual(
+      first.map((script) => script.source),
+    );
+    expect(cache.compiles).toBe(24);
+    const moved: SerializedGraph = {
+      ...tickToLog,
+      nodes: tickToLog.nodes.map((node) => ({
+        ...node,
+        position: { x: 99, y: 40 },
+      })),
+    };
+    compileGraphDocuments(
+      documents.map((doc, index) =>
+        index === 0 ? { ...doc, content: moved } : doc,
+      ),
+      { cache },
+    );
+    expect(cache.compiles).toBe(24);
+    const edited: SerializedGraph = {
+      ...tickToLog,
+      nodes: tickToLog.nodes.map((node) =>
+        node.id === "log"
+          ? { ...node, data: { message: "changed" } }
+          : node,
+      ),
+    };
+    compileGraphDocuments(
+      documents.map((doc, index) =>
+        index === 0 ? { ...doc, content: edited } : doc,
+      ),
+      { cache },
+    );
+    expect(cache.compiles).toBe(25);
+  });
+
+  it("does not reuse a Play bundle for a Development Only export compile", () => {
+    const cache = new GraphScriptCompileCache();
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache },
+    );
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache, stripDevelopmentOnly: true },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("fingerprints type schemas instead of embedding them in every cache key", () => {
+    const cache = new GraphScriptCompileCache();
+    const enums = {
+      "enum-1": {
+        name: "Huge",
+        members: Array.from({ length: 80 }, (_, index) => ({
+          name: `Member${index}`,
+          value: index,
+        })),
+      },
+    };
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache, enums },
+    );
+    const key = [...cache.graphs.keys()][0] ?? "";
+    expect(key).not.toContain("Member79");
+    expect(key.length).toBeLessThan(800);
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache, enums: structuredClone(enums) },
+    );
+    expect(cache.compiles).toBe(1);
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      {
+        cache,
+        enums: {
+          "enum-1": {
+            name: "Huge",
+            members: [{ name: "Changed", value: 0 }],
+          },
+        },
+      },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("retries a graph that threw during codegen instead of caching the failure", () => {
+    const cache = new GraphScriptCompileCache();
+    const broken = {
+      nodes: [{ id: "x", type: "flow.entry", position: { x: 0, y: 0 } }],
+      edges: [],
+    } as unknown as SerializedGraph;
+    compileGraphDocuments(
+      [{ path: "broken.graph.babasset", content: broken }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+    expect(cache.graphs.size).toBe(0);
+    compileGraphDocuments(
+      [{ path: "broken.graph.babasset", content: broken }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("forgets compiled bundles when the project cache is cleared", () => {
+    const cache = new GraphScriptCompileCache();
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache },
+    );
+    cache.clear();
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+  });
+
+  it("treats classId and parentClassId as part of the cache key", () => {
+    const cache = new GraphScriptCompileCache();
+    const doc = { path: "assets/main.class.babasset", content: tickToLog };
+    compileGraphDocuments([{ ...doc, classId: "Hero" }], { cache });
+    compileGraphDocuments([{ ...doc, classId: "Hero" }], { cache });
+    expect(cache.compiles).toBe(1);
+    compileGraphDocuments([{ ...doc, classId: "Villain" }], { cache });
+    expect(cache.compiles).toBe(2);
+    compileGraphDocuments(
+      [{ ...doc, classId: "Hero", parentClassId: "Pawn" }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(3);
+  });
+
+  it("caches an empty graph null bundle instead of retrying codegen", () => {
+    const cache = new GraphScriptCompileCache();
+    const empty: SerializedGraph = { nodes: [], edges: [] };
+    expect(
+      compileGraphDocuments(
+        [{ path: "assets/empty.class.babasset", content: empty }],
+        { cache },
+      ),
+    ).toEqual([]);
+    expect(cache.compiles).toBe(1);
+    expect([...cache.graphs.values()]).toEqual([null]);
+    compileGraphDocuments(
+      [{ path: "assets/empty.class.babasset", content: empty }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+  });
+});
+
 describe("compileAnimGraphScripts", () => {
   it("compiles Animation Object lifecycle and each transition rule", async () => {
     const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
@@ -587,6 +752,103 @@ describe("compileAnimGraphScripts", () => {
     );
     expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
     expect(scripts[1]?.source).toContain("enter: (true)");
+  });
+
+  it("reuses Animation Graph compiles when the document is unchanged", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const doc = createDefaultAnimGraph();
+    const entry = {
+      guid: "graph-1",
+      path: "assets/Loco.anim.babasset",
+      document: doc,
+    };
+    const first = compileAnimGraphScripts([entry], { cache });
+    expect(first.length).toBeGreaterThan(0);
+    expect(cache.compiles).toBe(1);
+    const second = compileAnimGraphScripts([entry], { cache });
+    expect(second).toEqual(first);
+    expect(cache.compiles).toBe(1);
+  });
+
+  it("does not recompile an Animation Graph after a position-only canvas nudge", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const doc = createDefaultAnimGraph();
+    const entry = {
+      guid: "graph-1",
+      path: "assets/Loco.anim.babasset",
+      document: doc,
+    };
+    compileAnimGraphScripts([entry], { cache });
+    expect(cache.compiles).toBe(1);
+    const nudged = createDefaultAnimGraph();
+    nudged.animationObject = {
+      ...nudged.animationObject,
+      nodes: nudged.animationObject.nodes.map((node) => ({
+        ...node,
+        position: { x: 99, y: 40 },
+      })),
+    };
+    nudged.states = nudged.states.map((state) => ({
+      ...state,
+      position: { x: 50, y: 80 },
+    }));
+    compileAnimGraphScripts(
+      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: nudged }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+  });
+
+  it("recompiles an Animation Graph when animation object data changes", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const doc = createDefaultAnimGraph();
+    compileAnimGraphScripts(
+      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+    const edited = createDefaultAnimGraph();
+    edited.animationObject = {
+      ...edited.animationObject,
+      nodes: edited.animationObject.nodes.map((node) =>
+        node.id === "event-update"
+          ? { ...node, data: { ...node.data, title: "changed" } }
+          : node,
+      ),
+    };
+    compileAnimGraphScripts(
+      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: edited }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("does not reuse a Play Animation Graph compile for a Development Only export", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const entry = {
+      guid: "graph-1",
+      path: "assets/Loco.anim.babasset",
+      document: createDefaultAnimGraph(),
+    };
+    compileAnimGraphScripts([entry], { cache });
+    compileAnimGraphScripts([entry], { cache, stripDevelopmentOnly: true });
+    expect(cache.compiles).toBe(2);
   });
 
   it("compiles a one-way Exit State as true even when a variable is wired to it", async () => {

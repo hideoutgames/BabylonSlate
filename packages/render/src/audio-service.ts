@@ -1,6 +1,7 @@
 import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
+  AUDIO_DEFAULT_SOURCE_CHUNK,
   clampAudioGain,
   computeDopplerPlaybackRate,
   createDefaultAudioPayload,
@@ -35,6 +36,11 @@ export type AudioDiagnostic = {
   message: string;
   assetGuid?: string;
 };
+
+export type AudioSourceBytesLoader = (request: {
+  assetGuid: string;
+  chunkId: string;
+}) => Promise<Uint8Array | null | undefined>;
 
 export type AudioLibrary = {
   mixerGuid: string | null;
@@ -132,8 +138,10 @@ export class AudioService {
   private readonly cache: AudioBufferCache;
   private readonly ownedCache: boolean;
   private readonly onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
+  private readonly loadSourceBytes?: AudioSourceBytesLoader;
   private library: AudioLibrary = emptyLibrary();
   private readonly sourceBytes = new Map<string, Uint8Array>();
+  private readonly sourceLoads = new Map<string, Promise<Uint8Array | null>>();
   private readonly sessionChannelVolumes = new Map<string, number>();
   private readonly actorSlots = new Map<string, number>();
   private readonly slotPoses = new Map<number, AudioPose>();
@@ -164,6 +172,7 @@ export class AudioService {
     backend: AudioPlaybackBackend;
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
+    loadSourceBytes?: AudioSourceBytesLoader;
     now?: () => number;
     random?: () => number;
   }) {
@@ -171,6 +180,7 @@ export class AudioService {
     this.ownedCache = !options.cache;
     this.cache = options.cache ?? new AudioBufferCache();
     this.onDiagnostic = options.onDiagnostic;
+    this.loadSourceBytes = options.loadSourceBytes;
     this.now = options.now ?? (() => performance.now());
     this.random = options.random ?? Math.random;
     this.backend.onVoiceEnded = (voiceId) => {
@@ -341,6 +351,7 @@ export class AudioService {
     }
     this.queue = [];
     this.sourceBytes.clear();
+    this.sourceLoads.clear();
     this.sessionChannelVolumes.clear();
     this.actorSlots.clear();
     this.slotPoses.clear();
@@ -404,6 +415,36 @@ export class AudioService {
     await this.play(command);
   }
 
+  private async resolveSourceBytes(
+    assetGuid: string,
+    chunkId: string,
+    cacheKey: string,
+  ): Promise<Uint8Array | null> {
+    const cached =
+      this.sourceBytes.get(cacheKey) ??
+      this.sourceBytes.get(assetGuid) ??
+      this.cache.get(cacheKey) ??
+      this.cache.get(assetGuid);
+    if (cached && cached.byteLength > 0) return cached;
+    if (!this.loadSourceBytes) return cached ?? null;
+    const inflight = this.sourceLoads.get(cacheKey);
+    if (inflight) return inflight;
+    const load = this.loadSourceBytes({ assetGuid, chunkId })
+      .then((bytes) => {
+        if (!bytes || bytes.byteLength === 0) return null;
+        this.setSourceBytes(cacheKey, bytes);
+        if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+          this.setSourceBytes(assetGuid, bytes);
+        }
+        return bytes;
+      })
+      .finally(() => {
+        this.sourceLoads.delete(cacheKey);
+      });
+    this.sourceLoads.set(cacheKey, load);
+    return load;
+  }
+
   private async play(
     command: Extract<CommandMessage, { type: "playSound" }>,
   ): Promise<void> {
@@ -425,11 +466,7 @@ export class AudioService {
     const clip = pickWeightedAudioClip(payload.clips, this.random);
     const pitch = resolveAudioPitch(payload, this.random);
     const cacheKey = audioClipCacheKey(assetGuid, clip.chunkId);
-    const source =
-      this.sourceBytes.get(cacheKey) ??
-      this.sourceBytes.get(assetGuid) ??
-      this.cache.get(cacheKey) ??
-      this.cache.get(assetGuid);
+    const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
     if (!source || source.byteLength === 0) {
       this.onDiagnostic?.({
         code: "audio.missing_source",

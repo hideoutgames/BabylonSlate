@@ -118,6 +118,7 @@ export interface PlayOverlayProps {
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   retargetAnimationLoads?: ReadonlyMap<string, readonly RetargetAnimationLoad[]>;
   audioBytes?: ReadonlyMap<string, Uint8Array>;
+  loadAudioSourceBytes?: import("@babylonslate/render").AudioSourceBytesLoader;
   audioLibrary?: PlayAudioLibrary;
   animClipCatalog?: readonly AnimClipCatalogEntry[];
   particleLibrary?: PlayParticleLibrary;
@@ -185,6 +186,7 @@ export function PlayOverlay({
   modelClipAnimationGuids,
   retargetAnimationLoads,
   audioBytes,
+  loadAudioSourceBytes,
   audioLibrary,
   animClipCatalog,
   particleLibrary,
@@ -287,6 +289,8 @@ export function PlayOverlay({
   retargetAnimationLoadsRef.current = retargetAnimationLoads;
   const audioBytesRef = useRef(audioBytes);
   audioBytesRef.current = audioBytes;
+  const loadAudioSourceBytesRef = useRef(loadAudioSourceBytes);
+  loadAudioSourceBytesRef.current = loadAudioSourceBytes;
   const audioLibraryRef = useRef(audioLibrary);
   audioLibraryRef.current = audioLibrary;
   const animClipCatalogRef = useRef(animClipCatalog);
@@ -415,6 +419,7 @@ export function PlayOverlay({
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
       retargetAnimationLoads: retargetAnimationLoadsRef.current,
       audioBytes: audioBytesRef.current,
+      loadAudioSourceBytes: loadAudioSourceBytesRef.current,
       audioLibrary: audioLibraryRef.current,
       animClipCatalog: animClipCatalogRef.current,
       particleLibrary: particleLibraryRef.current,

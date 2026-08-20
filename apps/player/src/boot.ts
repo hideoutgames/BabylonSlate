@@ -22,7 +22,7 @@ import {
 import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
-import { guiTextureBytesFromGame, type LoadedGame } from "./artifact";
+import { createGameAudioSourceLoader, guiTextureBytesFromGame, type LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import {
@@ -106,6 +106,7 @@ export function startPlayer(options: {
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
     audioBytes: game.audioBytes,
+    loadAudioSourceBytes: createGameAudioSourceLoader(game),
     audioLibrary: content.audioLibrary,
     particleLibrary: content.particleLibrary,
     audioReverbBytes: content.audioReverbBytes,
