@@ -168,7 +168,12 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "viewport",
     label: "Viewport",
-    keywords: "frame cap hardware scaling post processing",
+    keywords: "frame cap hardware scaling post processing camera speed fly",
+  },
+  {
+    id: "assets",
+    label: "Assets",
+    keywords: "model import default scale glb gltf",
   },
   {
     id: "graph",
@@ -205,7 +210,7 @@ const GENERIC_FONT_FALLBACKS = [
 ] as const;
 
 const ENGINE_GROUPS: CatalogCategoryGroup[] = [
-  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "ui", "thumbnails", "focus"] },
+  { label: "Editor", ids: ["appearance", "undo", "viewport", "graph", "ui", "assets", "thumbnails", "focus"] },
   { label: "Projects", ids: ["templates"] },
 ];
 
@@ -304,6 +309,9 @@ export function SettingsModal({
         uiDesignerPresets: next.uiDesignerPresets,
         hardwareScalingLevel: next.hardwareScalingLevel,
         postProcessingEnabled: next.postProcessingEnabled,
+        viewportFlySpeed: next.viewportFlySpeed,
+        viewportGridSize: next.viewportGridSize,
+        modelImportDefaultScale: next.modelImportDefaultScale,
       });
       await onEngineSaved?.();
     },

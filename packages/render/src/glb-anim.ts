@@ -5,11 +5,12 @@ import type {
   AssetContainer,
   InstantiatedEntries,
   Node,
-  TransformNode,
 } from "@babylonjs/core";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { Scene } from "@babylonjs/core/scene";
+import { normalizeModelImportScale } from "@babylonslate/assets";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
@@ -40,6 +41,7 @@ export type ModelAnimLoadBinding = Pick<
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
 const MODEL_INSTANCE_KEY = "babylonslateModelInstance";
 const MODEL_LOAD_KEY = "babylonslateModelLoadKey";
+export const MODEL_IMPORT_SCALE_NODE_NAME = "__importScale";
 
 type ModelPlaceholderMeta = {
   [MODEL_PLACEHOLDER_KEY]?: boolean;
@@ -79,8 +81,25 @@ export function glbContainerLoadCount(scene: Scene): number {
   return glbCaches.get(scene)?.loadCount ?? 0;
 }
 
-function modelLoadKey(guid: string, bytes: Uint8Array): string {
-  return `${guid}:${bytes.byteLength}`;
+function modelLoadKey(guid: string, bytes: Uint8Array, importScale: number): string {
+  return `${guid}:${bytes.byteLength}:${importScale}`;
+}
+
+/** Child of the actor placeholder so scene TRS and import scale stay independent. */
+export function applyModelImportScale(
+  placeholder: AbstractMesh,
+  scale: number,
+): TransformNode {
+  let wrapper = placeholder
+    .getChildTransformNodes(true)
+    .find((node) => node.name === MODEL_IMPORT_SCALE_NODE_NAME);
+  if (!wrapper) {
+    wrapper = new TransformNode(MODEL_IMPORT_SCALE_NODE_NAME, placeholder.getScene());
+    wrapper.parent = placeholder;
+  }
+  const next = normalizeModelImportScale(scale);
+  wrapper.scaling.set(next, next, next);
+  return wrapper;
 }
 
 function asPlaceholderMeta(mesh: AbstractMesh): ModelPlaceholderMeta {
@@ -257,13 +276,15 @@ function keepSourceName(sourceName: string): string {
 function instantiateUnderPlaceholder(
   placeholder: AbstractMesh,
   container: AssetContainer,
+  importScale: number,
 ): InstantiatedEntries {
   disposePlaceholderInstance(placeholder);
   const instance = container.instantiateModelsToScene(keepSourceName, true, {
     doNotInstantiate: true,
   });
+  const wrapper = applyModelImportScale(placeholder, importScale);
   for (const node of instance.rootNodes) {
-    node.parent = placeholder;
+    node.parent = wrapper;
   }
   const group = placeholder.renderingGroupId;
   for (const child of placeholder.getChildMeshes()) {
@@ -290,7 +311,10 @@ export function beginSlotModelAnimLoad(
   if (!isGltfModelBytes(bytes)) {
     return Promise.resolve();
   }
-  const key = modelLoadKey(clipAssetGuid, bytes);
+  const importScale = normalizeModelImportScale(
+    binding.modelPayloads?.get(clipAssetGuid)?.importScale,
+  );
+  const key = modelLoadKey(clipAssetGuid, bytes, importScale);
   const meta = asPlaceholderMeta(placeholder);
   if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
     return Promise.resolve();
@@ -305,7 +329,11 @@ export function beginSlotModelAnimLoad(
       if (placeholder.isDisposed()) {
         return;
       }
-      const instance = instantiateUnderPlaceholder(placeholder, container);
+      const instance = instantiateUnderPlaceholder(
+        placeholder,
+        container,
+        importScale,
+      );
       meta[MODEL_LOAD_KEY] = key;
       if (!binding.slotAnimationGroups) binding.slotAnimationGroups = new Map();
       const clipGuids = binding.modelClipAnimationGuids?.get(clipAssetGuid);

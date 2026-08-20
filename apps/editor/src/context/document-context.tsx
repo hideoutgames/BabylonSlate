@@ -161,6 +161,7 @@ import {
   classDocumentShowsPrefab,
   classParentLookup,
 } from "../lib/content-browser-helpers";
+import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   classAssetPaths,
   createProjectPluginAndRevealContent,
@@ -339,6 +340,14 @@ interface DocumentContextValue {
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
+  /**
+   * Change Class `header.parentClass` without rewriting the graph payload.
+   * Returns an error string when the reparent is rejected.
+   */
+  reparentClassDocument: (
+    id: string,
+    newParentId: string,
+  ) => Promise<string | null>;
   /** Apply a scene edit through the command layer (marks dirty + undoable). */
   applySceneChange: (id: string, next: SerializedScene) => Promise<boolean>;
   applyAssetDocumentChange: (
@@ -1900,6 +1909,41 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
+  const reparentClassDocument = useCallback(
+    async (id: string, newParentId: string): Promise<string | null> => {
+      const doc = documentService.getState().openDocuments.get(id);
+      if (!doc || doc.ref.kind !== "graph" || !doc.content) {
+        return "Class document is not open.";
+      }
+      if (
+        isMutatingApplyBlocked(
+          sourceControlRef.current,
+          doc.ref.path,
+          isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+        )
+      ) {
+        return "This Class is locked.";
+      }
+      const classId = classIdForGraphPath(doc.ref.path);
+      const assets = projectService.registry?.list() ?? [];
+      const preview = tryReparentUserClass({
+        classId,
+        newParentId,
+        assets,
+      });
+      if (preview.ok === false) return preview.error;
+      await projectService.saveDocument(
+        "graph",
+        doc.ref.path,
+        doc.content as SerializedGraph,
+        { parentClass: newParentId },
+      );
+      bump();
+      return null;
+    },
+    [bump, documentService, projectService],
+  );
+
   const applySceneChange = useCallback(
     async (id: string, next: SerializedScene): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
@@ -3234,8 +3278,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         .__babylonslateTestTouchAxes;
     };
   }, [
-    applyGraphChange,
-    applySceneChange,
+      applyGraphChange,
+      reparentClassDocument,
+      applySceneChange,
     applyAssetDocumentChange,
     bump,
     documentService,
@@ -3695,6 +3740,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateScene,
       updateGraph,
       applyGraphChange,
+      reparentClassDocument,
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
@@ -3890,6 +3936,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateScene,
       updateGraph,
       applyGraphChange,
+      reparentClassDocument,
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,

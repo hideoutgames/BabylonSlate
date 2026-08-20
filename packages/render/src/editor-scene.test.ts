@@ -1176,6 +1176,7 @@ describe("EditorSceneSync", () => {
           {
             clipNames: [],
             skeletonGuid: null,
+            importScale: 1,
             materialSlots: [
               { index: 0, name: "Hero Mat", materialGuid: "mat-slot" },
             ],
@@ -1218,6 +1219,7 @@ describe("EditorSceneSync", () => {
           {
             clipNames: [],
             skeletonGuid: null,
+            importScale: 1,
             materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
           },
         ],
@@ -1258,6 +1260,7 @@ describe("EditorSceneSync", () => {
           {
             clipNames: [],
             skeletonGuid: null,
+            importScale: 1,
             materialSlots: [
               { index: 0, name: "MatA", materialGuid: "mat-a" },
               { index: 1, name: "MatB", materialGuid: "mat-b" },
@@ -1293,6 +1296,7 @@ describe("EditorSceneSync", () => {
           {
             clipNames: ["idle"],
             skeletonGuid: null,
+            importScale: 1,
             materialSlots: [
               { index: 0, name: "texture-d", materialGuid: "mat-1" },
             ],

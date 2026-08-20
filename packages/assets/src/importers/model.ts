@@ -2,7 +2,7 @@ import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
-import { normalizeModelPayload } from "../model-payload";
+import { normalizeModelPayload, DEFAULT_MODEL_IMPORT_SCALE } from "../model-payload";
 import { normalizeSkeletonPayload } from "../skeleton-payload";
 import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
@@ -64,7 +64,7 @@ export async function importModel(
   if (!browse) {
     throw new Error(UNSUPPORTED_MODEL_FORMAT);
   }
-  return importFromBrowse(name, mime, bytes, browse);
+  return importFromBrowse(name, mime, bytes, browse, options.modelImportScale);
 }
 
 function uniqueImportName(base: string, used: string[]): string {
@@ -78,6 +78,7 @@ function importFromBrowse(
   mime: string,
   bytes: Uint8Array,
   browse: GlbBrowseParse,
+  modelImportScale?: number,
 ): ImportResult[] {
   const results: ImportResult[] = [];
   const imageGuids: string[] = [];
@@ -244,6 +245,12 @@ function importFromBrowse(
           materialGuid: guid,
         })),
         skeletonGuid,
+        importScale:
+          typeof modelImportScale === "number" &&
+          Number.isFinite(modelImportScale) &&
+          modelImportScale > 0
+            ? modelImportScale
+            : DEFAULT_MODEL_IMPORT_SCALE,
       }),
     } as Record<string, unknown>,
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],

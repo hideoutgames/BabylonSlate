@@ -38,7 +38,7 @@ import {
 } from "./gizmo-multi-select";
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
-import { attachViewportFlyKeys } from "./viewport-fly-keys";
+import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
 import { configureKtx2Transcoder } from "./ktx2-transcoder";
 import {
   documentEditorColorScheme,
@@ -238,6 +238,8 @@ export interface CreateEngineOptions {
   onGizmoDragEnd?: () => void;
   /** When false, WASD does not fly the editor camera (Play overlay). */
   editorFlyEnabled?: () => boolean;
+  /** World units/s for WASD. Read each tick so Engine Settings apply live. */
+  editorFlySpeed?: () => number;
   /** Viewport clear color scheme; defaults from `html.dark` when present. */
   colorScheme?: EditorColorScheme;
   /** Play `clearColor` from scene `settings.environmentColor`. */
@@ -842,6 +844,7 @@ export function createEngine(
         ? null
         : attachViewportFlyKeys(window, cameraController, canvas, {
             scheduler,
+            speed: () => options.editorFlySpeed?.() ?? DEFAULT_FLY_SPEED,
             isEnabled: () =>
               !previewGameCamera && options.editorFlyEnabled?.() !== false,
           });

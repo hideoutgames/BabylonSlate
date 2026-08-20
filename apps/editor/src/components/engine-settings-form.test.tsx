@@ -62,6 +62,33 @@ describe("EngineSettingsForm viewport", () => {
     expect(toggle.className).not.toMatch(/min-h-\[var\(--touch-target/);
     expect(toggle.closest("[data-slot='field']")?.querySelector("[data-slot='field-content']")).not.toBeNull();
   });
+
+  it("shows camera speed 8", () => {
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={() => {}}
+        categoryId="viewport"
+      />,
+    );
+    expect(getByTestId("setting-fly-speed")).toHaveProperty("value", "8");
+  });
+});
+
+describe("EngineSettingsForm assets", () => {
+  it("shows model import default scale 10", () => {
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={() => {}}
+        categoryId="assets"
+      />,
+    );
+    expect(getByTestId("setting-model-import-scale")).toHaveProperty(
+      "value",
+      "10",
+    );
+  });
 });
 
 describe("EngineSettingsForm User Interface presets", () => {
