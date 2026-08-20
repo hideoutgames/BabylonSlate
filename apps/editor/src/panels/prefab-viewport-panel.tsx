@@ -282,6 +282,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     engineRef.current?.editor?.setGridSettings({
       tileSize: gridSize,
       tileSubdivisions: 4,
+      cameraBounds2D: { width: 16, height: 9 },
       showGrid: gridVisible,
     });
   }, [snapEnabled, gridSize, gridVisible]);

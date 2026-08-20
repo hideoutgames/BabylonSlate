@@ -1,4 +1,4 @@
-import { err, ok, type Result } from "@babylonslate/core";
+import { err, type Result } from "@babylonslate/core";
 import {
   ClassRegistry,
   isLockedEngineClassId,

@@ -1931,7 +1931,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         newParentId,
         assets,
       });
-      if (!preview.ok) return preview.error;
+      if (preview.ok === false) return preview.error;
       await projectService.saveDocument(
         "graph",
         doc.ref.path,
