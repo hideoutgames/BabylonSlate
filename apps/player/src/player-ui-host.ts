@@ -301,6 +301,13 @@ export function applyPlayerUiCommand(
   command: { type: string } & Record<string, unknown>,
 ): boolean {
   if (command.type === "uiApply") {
+    if (
+      command.target &&
+      typeof command.target === "object" &&
+      (command.target as { kind?: string }).kind === "world"
+    ) {
+      return true;
+    }
     host.apply(String(command.instanceId ?? ""), String(command.assetGuid ?? ""));
     return true;
   }

@@ -380,7 +380,7 @@ Command catalog and slice order: [console-commands.md](../architecture/console-c
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9 packages. Authoring-surface hosts (canvas gestures, Logic palette, Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Expression-only Custom GLSL (`CustomBlock`) landed on `cursor/material-shader-improvements-fa96`. Residual ADT mesh HUD / a richer GLSL IDE stays later polish.
+P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9 packages. Authoring-surface hosts (canvas gestures, Logic palette, Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Expression-only Custom GLSL (`CustomBlock`) landed on `cursor/material-shader-improvements-fa96`. World-space `WidgetComponent` `CreateForMesh` landed on `cursor/widget-component-planes-afda`. A richer GLSL IDE stays later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -430,7 +430,7 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 | G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19** (Done), not this wave |
 
-Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass.
+Parked with this wave: pin flash, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass. World-space `WidgetComponent` `CreateForMesh` unparked (`cursor/widget-component-planes-afda`).
 
 ### P9 follow-ups / open deferrals
 
@@ -441,7 +441,7 @@ Parked with this wave: pin flash, `WidgetComponent` `CreateForMesh`, a richer Cu
 | `NodeMaterial.Parse` + live Babylon preview | `applyShaderGraphPreview` throttles `compileShaderGraphForRender` then `NodeMaterial.Parse` (injected `forceCompilationAsync` / parser in tests). Shader tab hosts a preview canvas; catalog `__pins` hydrated | Done (`cursor/authoring-surface-8678`) |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
 | Play engine applies sprite-clip UVs from `animState` | `applyAnimStateToScene` calls `applySpriteAnimFrame` when `clipKind === "sprite"`; Play loads sprite payloads from scene `SpriteComponent` guids | Done (`cursor/play-path-harden-8678`) |
-| World-space `WidgetComponent` (`CreateForMesh`) | Class id stays in the object model; Add Component and Search no longer advertise it until `CreateForMesh` exists | Later polish |
+| World-space `WidgetComponent` (`CreateForMesh`) | Owned plane + mesh ADT; Add Component / Search / Place Actors **Widget**; Play auto-mounts world `uiApply` | Done (`cursor/widget-component-planes-afda`) |
 | Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
 | Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
 | UserInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details; Logic Class docks on `payload.logic` | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |

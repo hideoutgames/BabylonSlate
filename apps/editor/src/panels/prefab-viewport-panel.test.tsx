@@ -17,6 +17,7 @@ const {
   collectPlayFontFacetypeBytes,
   collectPlayModelBytes,
   collectPlayModelPayloads,
+  collectPlayUiLibrary,
 } = vi.hoisted(() => {
   const disposeFn = vi.fn();
   const handle = {
@@ -77,6 +78,7 @@ const {
     collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
     collectPlayModelBytes: vi.fn(async () => new Map()),
     collectPlayModelPayloads: vi.fn(async () => new Map()),
+    collectPlayUiLibrary: vi.fn(async () => ({})),
     prefabState: {
       components: [
         {
@@ -135,6 +137,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
+    collectPlayUiLibrary,
     projectDocument: null,
     openDocuments: [],
     assetRegistry: null,

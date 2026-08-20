@@ -93,6 +93,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Extruded world-space text",
     "Rendering",
   ),
+  engineComponent(
+    "WidgetComponent",
+    "Widget",
+    "World-space User Interface plane",
+    "Rendering",
+  ),
   engineComponent("CameraComponent", "Camera", "Scene camera", "Camera"),
   engineComponent(
     "AudioComponent",
@@ -133,7 +139,7 @@ export function defaultPropertiesFor(
     case "TilemapComponent":
       return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
     case "WidgetComponent":
-      return { uiAssetGuid: null, viewportLayer: false };
+      return { uiAssetGuid: null, twoSided: false, width: 1, height: 1 };
     case "AnimationGraphComponent":
       return { graphGuid: null };
     case "BehaviourTreeComponent":
@@ -205,10 +211,10 @@ const PROJECT_ASSET_BINDINGS: Record<
   Tilemap: { classId: "TilemapComponent", property: "assetGuid" },
   AnimationGraph: { classId: "AnimationGraphComponent", property: "graphGuid" },
   BehaviourTree: { classId: "BehaviourTreeComponent", property: "treeGuid" },
+  UserInterface: { classId: "WidgetComponent", property: "uiAssetGuid" },
 };
 
 const HIDDEN_COMPONENT_ANCESTORS = new Set([
-  "WidgetComponent",
   "NavMeshComponent",
   "NavMeshBlockerComponent",
   "BlockingVolumeComponent",

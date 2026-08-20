@@ -420,6 +420,7 @@ export function PlayOverlay({
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
       fontFacetypeBytes: fontFacetypeBytesRef.current,
+      uiDocuments: new Map(Object.entries(uiLibraryRef.current)),
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,

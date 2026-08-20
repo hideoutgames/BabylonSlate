@@ -308,6 +308,23 @@ describe("applyPlayUiCommand", () => {
     ).toBe(false);
   });
 
+  it("does not forward world WidgetComponent applies onto the HUD host", () => {
+    const onUiApply = vi.fn();
+    expect(
+      applyPlayUiCommand(
+        {
+          type: "uiApply",
+          instanceId: "ui-1",
+          classId: "UserInterface:panel-ui",
+          assetGuid: "panel-ui",
+          target: { kind: "world", slotId: 0, componentId: "widget-comp" },
+        },
+        { onUiApply },
+      ),
+    ).toBe(true);
+    expect(onUiApply).not.toHaveBeenCalled();
+  });
+
   it("ignores non-UI commands", () => {
     expect(
       applyPlayUiCommand(
@@ -371,6 +388,9 @@ describe("shouldForwardPlayEngineCommand", () => {
     expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setShowAudioDebug")).toBe(true);
     expect(shouldForwardPlayEngineCommand("debugDraw")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("uiApply")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("uiRemove")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("setInputMode")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });
 });

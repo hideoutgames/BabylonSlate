@@ -148,6 +148,10 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "debugColliders",
   "debugDraw",
   "animState",
+  "uiApply",
+  "uiRemove",
+  "uiSetVisible",
+  "setInputMode",
 ]);
 
 export function shouldForwardPlayEngineCommand(type: string): boolean {
@@ -195,6 +199,7 @@ export function applyPlayUiCommand(
     return true;
   }
   if (command.type === "uiApply") {
+    if (command.target?.kind === "world") return true;
     handlers.onUiApply?.(command.instanceId, command.classId, command.assetGuid);
     return true;
   }
@@ -514,6 +519,7 @@ export function startPlaySession(options: {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
+  uiDocuments?: ReadonlyMap<string, import("@babylonslate/ui-runtime").UserInterfaceDocument>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -570,6 +576,9 @@ export function startPlaySession(options: {
     textures: textureCountBefore,
   };
 
+  let worker: GameWorkerHost | null = null;
+  let runtime: RuntimeDriver | null = null;
+
   const handle = createEngine(canvas, {
     sharedEngine,
     playMode: true,
@@ -581,6 +590,7 @@ export function startPlaySession(options: {
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
     fontFacetypeBytes: options.fontFacetypeBytes,
+    uiDocuments: options.uiDocuments,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
@@ -614,6 +624,9 @@ export function startPlaySession(options: {
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },
+    onWidgetEvent: (event) => {
+      dispatchPlayUiWidgetEvent({ worker, runtime }, event);
+    },
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);
@@ -621,8 +634,6 @@ export function startPlaySession(options: {
   handle.scheduler.invalidate("play");
   liveBefore.meshes = handle.liveObjectCounts().meshes;
 
-  let worker: GameWorkerHost | null = null;
-  let runtime: RuntimeDriver | null = null;
   let runtimeMode: "worker" | "in-process" = "in-process";
   let pauseGate: ReturnType<typeof createPlayPauseGate> | null = null;
   // Aggregates diagnostics received over the command channel (Worker mode).
@@ -676,6 +687,7 @@ export function startPlaySession(options: {
         handle.applySceneEnvironment(scene);
         handle.resetAudioSession();
         handle.resetParticleSession();
+        handle.resetWidgetSession();
       }
     }
     if (command.type === "log") {

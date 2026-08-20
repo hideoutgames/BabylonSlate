@@ -15,7 +15,7 @@ describe("Add Component catalog", () => {
   it("lists RigidBody and Collider alongside render components", () => {
     const ids = ADDABLE_COMPONENT_CLASSES.map((entry) => entry.id);
     expect(ids).toContain("SpriteComponent");
-    expect(ids).not.toContain("WidgetComponent");
+    expect(ids).toContain("WidgetComponent");
     expect(ids).toContain("TilemapComponent");
     expect(ids).toContain("AnimationGraphComponent");
     expect(ids).toContain("BehaviourTreeComponent");
@@ -54,6 +54,7 @@ describe("Add Component catalog", () => {
       "LightComponent",
       "SkyboxComponent",
       "Text3DComponent",
+      "WidgetComponent",
     ]);
     expect(byCategory.get("UI")).toBeUndefined();
     expect(byCategory.get("Animation")).toEqual(["AnimationGraphComponent"]);
@@ -110,6 +111,12 @@ describe("Add Component catalog", () => {
       playOnStart: true,
       sortingLayer: "Default",
       orderInLayer: 0,
+    });
+    expect(defaultPropertiesFor("WidgetComponent")).toEqual({
+      uiAssetGuid: null,
+      twoSided: false,
+      width: 1,
+      height: 1,
     });
   });
 
@@ -219,7 +226,7 @@ describe("projectAddComponentItems", () => {
     ]);
   });
 
-  it("binds Audio, ParticleSystem, Sprite, Tilemap, AnimationGraph, and BehaviourTree", () => {
+  it("binds Audio, ParticleSystem, Sprite, Tilemap, AnimationGraph, BehaviourTree, and UserInterface", () => {
     const items = projectAddComponentItems([
       asset({ guid: "beep", name: "Beep", type: "Audio" }),
       asset({ guid: "fx", name: "Fire", type: "ParticleSystem" }),
@@ -227,6 +234,7 @@ describe("projectAddComponentItems", () => {
       asset({ guid: "map", name: "Dungeon", type: "Tilemap" }),
       asset({ guid: "anim", name: "Locomotion", type: "AnimationGraph" }),
       asset({ guid: "bt", name: "Guard", type: "BehaviourTree" }),
+      asset({ guid: "hud", name: "HUD", type: "UserInterface" }),
     ]);
     expect(
       items.map((item) => ({
@@ -264,6 +272,11 @@ describe("projectAddComponentItems", () => {
         id: "asset-bt",
         classId: "BehaviourTreeComponent",
         properties: { treeGuid: "bt" },
+      },
+      {
+        id: "asset-hud",
+        classId: "WidgetComponent",
+        properties: { uiAssetGuid: "hud" },
       },
     ]);
   });
@@ -338,11 +351,11 @@ describe("projectAddComponentItems", () => {
     const items = projectAddComponentItems([
       asset({ guid: "tex", name: "Grass", type: "Texture" }),
       asset({
-        guid: "ui",
-        name: "Hud",
+        guid: "hudClass",
+        name: "HudWidget",
         type: "Class",
         parentClass: "WidgetComponent",
-        path: "assets/Hud.class.babasset",
+        path: "assets/HudWidget.class.babasset",
       }),
       asset({
         guid: "nav",
@@ -352,7 +365,7 @@ describe("projectAddComponentItems", () => {
         path: "assets/RoomNav.class.babasset",
       }),
     ]);
-    expect(items.map((item) => item.classId)).toEqual([]);
+    expect(items.map((item) => item.classId)).toEqual(["HudWidget"]);
   });
 });
 

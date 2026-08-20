@@ -316,5 +316,5 @@ the same library and blit to GUI Images ([ui-runtime.md](ui-runtime.md)).
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.
 - Surface and post-process materials cannot be assigned to HUD Material widgets
-  (Interface domain only). World-space `WidgetComponent` / `CreateForMesh` is
-  still hidden.
+  (Interface domain only). World-space `WidgetComponent` paints UserInterface
+  documents onto an owned plane via `CreateForMesh` ([ui-runtime.md](ui-runtime.md)).

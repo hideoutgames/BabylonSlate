@@ -35,6 +35,7 @@ import {
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText3DProperties,
+  parseWidgetComponentProperties,
   parseInputMode,
   type Transform,
   userInterfaceAssetGuidFromClassId,
@@ -365,6 +366,7 @@ class InProcessRuntime implements RuntimeDriver {
     string,
     UserInterfaceWidgetMeta[]
   >();
+  private readonly widgetUiByComponent = new Map<string, string>();
   private readonly userInterfaceTrees = new Map<string, UserInterfaceDocument>();
   private readonly userInterfaceInstanceTrees = new Map<
     string,
@@ -624,6 +626,7 @@ class InProcessRuntime implements RuntimeDriver {
         if (!actor) return;
         this.emitAudioStops(actor);
         this.emitParticleStops(actor);
+        this.emitWidgetStops(actor);
         this.world.destroyActor(actor.guid);
       },
       addComponent: (actor, classId, transform) => {
@@ -1006,6 +1009,7 @@ class InProcessRuntime implements RuntimeDriver {
       const slotId = this.slotByGuid.get(actor.guid);
       this.emitAudioStops(actor);
       this.emitParticleStops(actor);
+      this.emitWidgetStops(actor);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
         this.slotByGuid.delete(actor.guid);
@@ -2170,6 +2174,7 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "TilemapComponent" ||
           component.classId === "SkyboxComponent" ||
           component.classId === "Text3DComponent" ||
+          component.classId === "WidgetComponent" ||
           (component.classId === "ColliderComponent" &&
             component.getVariable("renderInGame") === true)),
     );
@@ -2199,6 +2204,9 @@ class InProcessRuntime implements RuntimeDriver {
       const text3dComp = renderables.find(
         (component) => component.classId === "Text3DComponent",
       );
+      const widgetComp = renderables.find(
+        (component) => component.classId === "WidgetComponent",
+      );
       this.emit({
         type: "assignMesh",
         slotId,
@@ -2220,6 +2228,16 @@ class InProcessRuntime implements RuntimeDriver {
                 depth: text3dComp.getVariable("depth"),
                 color: text3dComp.getVariable("color"),
                 fontAssetGuid: text3dComp.getVariable("fontAssetGuid"),
+              }),
+            }
+          : {}),
+        ...(widgetComp
+          ? {
+              widget: parseWidgetComponentProperties({
+                uiAssetGuid: widgetComp.getVariable("uiAssetGuid"),
+                twoSided: widgetComp.getVariable("twoSided"),
+                width: widgetComp.getVariable("width"),
+                height: widgetComp.getVariable("height"),
               }),
             }
           : {}),
@@ -2398,6 +2416,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.emitMeshAssignment(actor, slotId);
     this.emitAudioComponents(actor);
     this.emitParticleComponents(actor);
+    this.emitWidgetUserInterfaces(actor, slotId);
     this.world.spawnActorNow(actor);
   }
 
@@ -2474,6 +2493,42 @@ class InProcessRuntime implements RuntimeDriver {
         componentId: component.guid,
         particleSystemGuid: null,
       });
+    }
+  }
+
+  private emitWidgetUserInterfaces(actor: Actor, slotId: number): void {
+    for (const component of actor.components) {
+      if (component.destroyed || component.classId !== "WidgetComponent") continue;
+      const parsed = parseWidgetComponentProperties({
+        uiAssetGuid: component.getVariable("uiAssetGuid"),
+        twoSided: component.getVariable("twoSided"),
+        width: component.getVariable("width"),
+        height: component.getVariable("height"),
+      });
+      const assetGuid = parsed.uiAssetGuid ?? component.assetGuid;
+      if (!assetGuid) continue;
+      const classId = userInterfaceClassId(assetGuid);
+      const instanceId = `ui-${++this.uiInstanceSeq}`;
+      this.mountUserInterface({
+        classId,
+        assetGuid,
+        instanceId,
+        emitCommands: true,
+        seenGuids: new Set(),
+        target: { kind: "world", slotId, componentId: component.guid },
+      });
+      this.widgetUiByComponent.set(component.guid, instanceId);
+    }
+  }
+
+  private emitWidgetStops(actor: Actor): void {
+    for (const component of actor.components) {
+      if (component.classId !== "WidgetComponent") continue;
+      const instanceId = this.widgetUiByComponent.get(component.guid);
+      if (!instanceId) continue;
+      this.widgetUiByComponent.delete(component.guid);
+      const ui = this.userInterfaces.get(instanceId);
+      if (ui) this.teardownUserInterface(ui);
     }
   }
 
@@ -2947,8 +3002,9 @@ class InProcessRuntime implements RuntimeDriver {
     instanceId: string;
     emitCommands: boolean;
     seenGuids: Set<string>;
+    target?: { kind: "world"; slotId: number; componentId: string };
   }): UserInterface {
-    const { classId, assetGuid, instanceId, emitCommands, seenGuids } = options;
+    const { classId, assetGuid, instanceId, emitCommands, seenGuids, target } = options;
     const nextSeen = new Set(seenGuids);
     nextSeen.add(assetGuid);
     this.ensureUserInterfaceClass(classId, assetGuid);
@@ -3024,6 +3080,7 @@ class InProcessRuntime implements RuntimeDriver {
         instanceId,
         classId,
         assetGuid,
+        ...(target ? { target } : {}),
       });
     }
     return ui;
@@ -3317,6 +3374,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "Text3DComponent") return "text3d";
+  if (component.classId === "WidgetComponent") return "widget";
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");
     return `collider:${JSON.stringify(shape ?? {})}`;
@@ -3378,6 +3436,16 @@ function playMeshPartOf(
             depth: component.getVariable("depth"),
             color: component.getVariable("color"),
             fontAssetGuid: component.getVariable("fontAssetGuid"),
+          }),
+        }
+      : {}),
+    ...(component.classId === "WidgetComponent"
+      ? {
+          widget: parseWidgetComponentProperties({
+            uiAssetGuid: component.getVariable("uiAssetGuid"),
+            twoSided: component.getVariable("twoSided"),
+            width: component.getVariable("width"),
+            height: component.getVariable("height"),
           }),
         }
       : {}),

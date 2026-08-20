@@ -26,6 +26,22 @@ describe("UserInterface command and control contracts", () => {
     });
   });
 
+  it("uiApply carries an optional world target for WidgetComponent", () => {
+    const command = {
+      type: "uiApply",
+      instanceId: "ui-1",
+      classId: "UserInterface:panel-guid",
+      assetGuid: "panel-guid",
+      target: { kind: "world", slotId: 0, componentId: "widget-comp" },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("uiApply");
+    expect(command.target).toEqual({
+      kind: "world",
+      slotId: 0,
+      componentId: "widget-comp",
+    });
+  });
+
   it("uiSetVisible is instance-scoped", () => {
     const command = {
       type: "uiSetVisible",

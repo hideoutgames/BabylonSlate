@@ -225,13 +225,22 @@ describe("componentPropertyRows", () => {
     const widget = rowsFor({
       id: "hud",
       classId: "WidgetComponent",
-      properties: { uiAssetGuid: "ui-1", viewportLayer: false },
+      properties: { uiAssetGuid: "ui-1", twoSided: true, width: 2, height: 0.5 },
     });
     const ui = widget.rows.find((row) => row.id.endsWith("-uiAssetGuid"));
     expect(ui).toMatchObject({ kind: "asset", displayLabel: "HUD" });
     if (ui?.kind === "asset") ui.onPick();
     expect(widget.onPickAsset).toHaveBeenCalledWith(
       expect.objectContaining({ allowedTypes: ["UserInterface"] }),
+    );
+    const twoSided = widget.rows.find((row) => row.id.endsWith("-twoSided"));
+    expect(twoSided).toMatchObject({ kind: "boolean", label: "Two Sided", value: true });
+    const width = widget.rows.find((row) => row.id.endsWith("-width"));
+    const height = widget.rows.find((row) => row.id.endsWith("-height"));
+    expect(width).toMatchObject({ kind: "number", label: "Width", value: 2 });
+    expect(height).toMatchObject({ kind: "number", label: "Height", value: 0.5 });
+    expect(widget.rows.some((row) => row.id.endsWith("-viewportLayer"))).toBe(
+      false,
     );
 
     const graph = rowsFor({
