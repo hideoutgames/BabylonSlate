@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  ActivityIcon,
   BoxIcon,
   BoxesIcon,
   BracesIcon,
@@ -196,6 +197,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   ParticleEmitter: WindIcon,
   ParticleSystem: SparklesIcon,
   SkyboxCreator: CloudIcon,
+  Trace: ActivityIcon,
   Font: TypeIcon,
   Animation: FilmIcon,
   Skeleton: PersonStandingIcon,
@@ -251,6 +253,7 @@ const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   ParticleEmitter: "material",
   ParticleSystem: "material",
   SkyboxCreator: "material",
+  Trace: "class",
   Font: "font",
   Animation: "animation",
   Skeleton: "animation",

@@ -33,6 +33,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   skeleton: ["skeleton-preview"],
   animation: ["animation-preview"],
   "skybox-creator": ["skybox-creator-preview"],
+  trace: ["trace-timeline"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -151,6 +152,7 @@ export const engineSettingsSchema = z.object({
       "skybox-creator": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["skybox-creator"],
       ),
+      trace: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.trace),
     })
     .default(mutableFocusKeepPanels),
   uiDesignerPresets: z

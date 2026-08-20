@@ -57,4 +57,10 @@ describe("panelComponents", () => {
     expect(panelComponents["skybox-creator-cubemap"]).toBeTypeOf("function");
     expect(panelComponents["skybox-creator-details"]).toBeTypeOf("function");
   });
+
+  it("registers Trace Timeline, Snapshot, and Log docks", () => {
+    expect(panelComponents["trace-timeline"]).toBeTypeOf("function");
+    expect(panelComponents["trace-snapshot"]).toBeTypeOf("function");
+    expect(panelComponents["trace-log"]).toBeTypeOf("function");
+  });
 });

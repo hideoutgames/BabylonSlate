@@ -41,6 +41,7 @@ describe("app settings", () => {
       skeleton: ["skeleton-preview"],
       animation: ["animation-preview"],
       "skybox-creator": ["skybox-creator-preview"],
+      trace: ["trace-timeline"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);

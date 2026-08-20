@@ -262,6 +262,33 @@ describe("listDockWindows", () => {
       initialWidth: 280,
     });
     expect(primaryDockPanel("skybox-creator")).toBe("skybox-creator-preview");
+    expect(listDockWindows("trace").map((entry) => entry.id)).toEqual([
+      "trace-timeline",
+      "trace-snapshot",
+      "trace-log",
+    ]);
+    expect(listDockWindows("trace").map((entry) => entry.title)).toEqual([
+      "Timeline",
+      "Snapshot",
+      "Log",
+    ]);
+    expect(
+      listDockWindows("trace").find((entry) => entry.id === "trace-snapshot")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "trace-timeline",
+      direction: "right",
+      initialWidth: 320,
+    });
+    expect(
+      listDockWindows("trace").find((entry) => entry.id === "trace-log")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "trace-timeline",
+      direction: "below",
+      initialHeight: 220,
+    });
+    expect(primaryDockPanel("trace")).toBe("trace-timeline");
     expect(
       listDockWindows("sprite-animation").find(
         (entry) => entry.id === "sprite-animation-details",
