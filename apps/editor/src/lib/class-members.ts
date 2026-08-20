@@ -167,7 +167,7 @@ function parentLookup(
   return options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
 }
 
-function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
+export function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
   return (
     options?.assetType === "UserInterface" ||
     ancestryChain(options).includes("UserInterface")

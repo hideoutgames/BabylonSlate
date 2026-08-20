@@ -1001,6 +1001,17 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.mouseRelease")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
     expect(nodes.some((node) => node.id === "ui.getWidget")).toBe(false);
+    const addWidget = nodes.find((node) => node.id === "ui.addWidget");
+    expect(addWidget?.title).toBe("Add Widget");
+    expect(addWidget?.defaultData).toMatchObject({ implicitSelf: true });
+    expect(addWidget?.pins.some((pin) => pin.id === "target")).toBe(false);
+  });
+
+  it("keeps Add Widget Target on Actor hosts", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    const addWidget = nodes.find((node) => node.id === "ui.addWidget");
+    expect(addWidget?.defaultData).toMatchObject({ implicitSelf: false });
+    expect(addWidget?.pins.some((pin) => pin.id === "target")).toBe(true);
   });
 
   it("injects bound Get Widget rows for the document widget ids", () => {

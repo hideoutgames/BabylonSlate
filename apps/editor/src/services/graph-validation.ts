@@ -54,6 +54,7 @@ import {
   ensureCallParentForEvent,
   inheritedCustomEventSeeds,
   isScriptCatalogNodeAllowed,
+  isUserInterfaceLogicHost,
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
   SEEDED_NATIVE_EVENT_TYPES,
@@ -1480,6 +1481,15 @@ function scriptPaletteCatalogNodes(
       }
       if (def.id === "input.setInputMode") {
         defaultData.mode = "All";
+      }
+      if (
+        def.id === "ui.addWidget" ||
+        def.id === "ui.setWidgetParent" ||
+        def.id === "ui.removeWidget" ||
+        def.id === "ui.setWidgetLayout" ||
+        def.id === "ui.getWidgetLayout"
+      ) {
+        defaultData.implicitSelf = isUserInterfaceLogicHost(options);
       }
       const pins = def.pins(defaultData);
       if (def.editorOnly) defaultData.__editorOnly = true;

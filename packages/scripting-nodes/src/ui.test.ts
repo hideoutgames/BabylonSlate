@@ -317,3 +317,88 @@ describe("ui compile goldens", () => {
     );
   });
 });
+
+describe("ui hierarchy mutation nodes", () => {
+  it("Add Widget takes Kind, Name, optional Parent, and returns a Widget ref", () => {
+    const add = uiNodes.find((node) => node.id === "ui.addWidget");
+    expect(add?.title).toBe("Add Widget");
+    const pins = add!.pins({ implicitSelf: true });
+    expect(pins.map((entry) => entry.id)).toEqual([
+      "execIn",
+      "execOut",
+      "kind",
+      "name",
+      "parent",
+      "widget",
+    ]);
+    expect(pins.find((entry) => entry.id === "kind")?.type).toEqual(
+      classRef("Widget"),
+    );
+    expect(pins.find((entry) => entry.id === "parent")?.optional).toBe(true);
+    expect(pins.find((entry) => entry.id === "widget")?.type).toEqual(
+      objectRef("Widget"),
+    );
+    expect(pins.some((entry) => entry.id === "target")).toBe(false);
+    const ctx = mockCtx();
+    ctx.node.properties = { implicitSelf: true };
+    add!.codegen(ctx);
+    expect(ctx.emits.join("\n")).toContain(
+      "_out_widget = ctx.addWidget(IN_kind, IN_name, IN_parent)",
+    );
+  });
+
+  it("Add Widget keeps an explicit UserInterface Target when implicitSelf is off", () => {
+    const add = uiNodes.find((node) => node.id === "ui.addWidget");
+    const pins = add!.pins({ implicitSelf: false });
+    expect(pins.find((entry) => entry.id === "target")?.type).toEqual(
+      objectRef("UserInterface"),
+    );
+    const ctx = mockCtx();
+    ctx.node.properties = { implicitSelf: false };
+    add!.codegen(ctx);
+    expect(ctx.emits.join("\n")).toContain(
+      "_out_widget = ctx.addWidgetOn(IN_target, IN_kind, IN_name, IN_parent)",
+    );
+  });
+
+  it("Set Widget Parent, Remove Widget, and layout nodes use Widget object refs", () => {
+    const setParent = uiNodes.find((node) => node.id === "ui.setWidgetParent");
+    expect(setParent?.title).toBe("Set Widget Parent");
+    expect(
+      setParent!.pins({ implicitSelf: true }).map((entry) => entry.id),
+    ).toEqual(["execIn", "execOut", "widget", "parent", "index"]);
+    const ctx = mockCtx();
+    setParent!.codegen(ctx);
+    expect(ctx.emits.join("\n")).toContain(
+      "ctx.setWidgetParent(IN_widget, IN_parent, IN_index)",
+    );
+
+    const remove = uiNodes.find((node) => node.id === "ui.removeWidget");
+    expect(remove?.title).toBe("Remove Widget");
+    remove!.codegen(ctx);
+    expect(ctx.emits.join("\n")).toContain("ctx.removeWidget(IN_widget)");
+
+    const setLayout = uiNodes.find((node) => node.id === "ui.setWidgetLayout");
+    expect(setLayout?.title).toBe("Set Widget Layout");
+    ctx.graph.edges = [
+      {
+        id: "e-left",
+        sourceNodeId: "lit",
+        sourcePinId: "value",
+        targetNodeId: ctx.node.id,
+        targetPinId: "left",
+      },
+    ];
+    setLayout!.codegen(ctx);
+    expect(ctx.emits.join("\n")).toContain("ctx.setWidgetLayout(IN_widget");
+    expect(ctx.emits.join("\n")).toContain("left:");
+
+    const getLayout = uiNodes.find((node) => node.id === "ui.getWidgetLayout");
+    expect(getLayout?.title).toBe("Get Widget Layout");
+    expect(getLayout?.pure).toBe(true);
+    expect(getLayout!.codegen(ctx)).toMatchObject({
+      left: expect.stringContaining("ctx.getWidgetLayout(IN_widget)"),
+    });
+  });
+});
+

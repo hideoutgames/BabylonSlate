@@ -16,6 +16,24 @@ export type UserInterfaceWidgetMeta = {
 export type UserInterfaceRuntimeDocument = {
   guid: string;
   widgets: UserInterfaceWidgetMeta[];
+  /** Full widget tree for runtime hierarchy mutation. */
+  document?: unknown;
+};
+
+export type UiLayoutPatch = {
+  left?: number;
+  top?: number;
+  leftUnit?: string;
+  topUnit?: string;
+  width?: number;
+  height?: number;
+  widthUnit?: string;
+  heightUnit?: string;
+  rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+  horizontalAlignment?: string;
+  verticalAlignment?: string;
 };
 
 export type UiWidgetEventKind =
@@ -398,6 +416,32 @@ export type CommandMessage =
       instanceId: string;
       widgetId: string;
       visible: boolean;
+    }
+    | {
+      type: "uiAddWidget";
+      instanceId: string;
+      widgetId: string;
+      kind: string;
+      name: string;
+      parentId: string;
+    }
+    | {
+      type: "uiRemoveWidget";
+      instanceId: string;
+      widgetId: string;
+    }
+    | {
+      type: "uiReparentWidget";
+      instanceId: string;
+      widgetId: string;
+      parentId: string;
+      siblingIndex?: number;
+    }
+    | {
+      type: "uiPatchLayout";
+      instanceId: string;
+      widgetId: string;
+      layout: UiLayoutPatch;
     }
     | {
       type: "uiApply";

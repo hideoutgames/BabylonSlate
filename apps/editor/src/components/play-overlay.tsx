@@ -73,7 +73,7 @@ import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
 import { PlayHudOverlay } from "./play-hud-overlay";
 import {
-  applyPlayHudInstance,
+  applyPlayHudUiCommand,
   applyPlayHudVisibility,
   lookupInterfaceMaterialDocument,
   playUserInterfaceRuntimeDocuments,
@@ -261,6 +261,8 @@ export function PlayOverlay({
   };
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
+  const uiLibraryRef = useRef(uiLibrary);
+  uiLibraryRef.current = uiLibrary;
   const animGraphsRef = useRef(animGraphs);
   animGraphsRef.current = animGraphs;
   const behaviourTreesRef = useRef(behaviourTrees);
@@ -464,11 +466,21 @@ export function PlayOverlay({
       },
       onUiApply: (instanceId, classId, assetGuid) => {
         setHudInstances((prev) =>
-          applyPlayHudInstance(prev, instanceId, assetGuid, classId),
+          applyPlayHudUiCommand(prev, uiLibraryRef.current, {
+            type: "uiApply",
+            instanceId,
+            classId,
+            assetGuid,
+          }),
         );
       },
       onUiRemove: (instanceId) => {
         setHudInstances((prev) => removePlayHudInstance(prev, instanceId));
+      },
+      onUiTreeCommand: (command) => {
+        setHudInstances((prev) =>
+          applyPlayHudUiCommand(prev, uiLibraryRef.current, command),
+        );
       },
       onSetInputMode: (mode) => {
         setInputMode(mode);

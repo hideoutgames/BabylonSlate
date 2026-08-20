@@ -129,6 +129,19 @@ export {
   reparentWidget,
   widgetParentId,
 } from "./widget-tree";
+export {
+  applyUiTreeAddWidget,
+  applyUiTreePatchLayout,
+  applyUiTreeRemoveWidget,
+  applyUiTreeReparentWidget,
+  cloneUserInterfaceDocument,
+  userInterfaceDocumentFromMeta,
+} from "./instance-tree";
+export type {
+  UiTreeAddWidget,
+  UiTreeReparentWidget,
+  WidgetLayoutPatch,
+} from "./instance-tree";
 export { resolveUiAdtIdeal } from "./adt-ideal";
 export type { UiAdtIdeal } from "./adt-ideal";
 export {
