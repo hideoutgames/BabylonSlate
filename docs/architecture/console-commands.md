@@ -103,7 +103,7 @@ Seven core setters plus `help`. Optional args print the current value.
 | `framecap [fps]` | Play/player `scheduler.setFrameCap`. No arg → print current. |
 | `volume [0..1]` | Emit `setGlobalVolume` (same as the graph node). No arg → print current. |
 | `quit` | Unchanged. |
-| `help [name]` | Core. No arg: names + one-line descriptions, user commands included, grouped by category (`engine` vs authored category). With a name: parameters and enum values. Stripped debug names still print “not available in this build” rather than “unknown”. |
+| `help [name]` | Core. No arg: names + one-line descriptions, user commands included, grouped by category (`engine` vs authored category). With a name: parameters and enum values. Stripped debug names still print “not available in this build” rather than “unknown”. `help` is **registry-driven**: registering a builtin in `builtinCommands()` (plus `CORE_COMMAND_NAMES` / `DEBUG_COMMAND_NAMES`) or a user `BDebugCommand` is enough — do not duplicate a help string. |
 
 `help` ships in release so `ExecuteConsoleCommand("help")` and a bundled-debugger player console can list what is actually registered.
 
