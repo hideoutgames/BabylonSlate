@@ -28,13 +28,11 @@ Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
 ## Lifecycle
 
-**P20** (`p20-search-on-demand`) drops the warm index. Until that slice lands, today's code still rebuilds on project open / `remountRegistry` and upserts after save/edit.
-
-Target lifecycle:
+**P20** (`p20-search-on-demand`, **Done**) dropped the warm index.
 
 - Do **not** rebuild on project open or keep a warm index across edits.
 - **Rebuild when Global Search is initiated** (toolbar / `Ctrl/Cmd+K` opens the dialog). Include **open document** JSON so unsaved edits are in that snapshot.
-- Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (empty/spinner while pending). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
+- Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (`data-testid="global-search-pending"` Empty spinner). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
 - Drop continuous upsert / rebuild-on-import as the source of truth.
 - **Clear** on Close Project.
 - Result cap ~80 stays; the result body is **not** virtualised (`p20-log-virtualize` windows `SearchDialog` pick lists, not this hit list).

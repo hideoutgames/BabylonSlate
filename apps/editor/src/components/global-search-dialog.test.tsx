@@ -11,9 +11,19 @@ const hits: SearchEntry[] = Array.from({ length: 40 }, (_, index) => ({
   target: { kind: "class", classId: `Hit${index}` },
 }));
 
+const searchState = vi.hoisted(() => ({
+  status: "ready" as "idle" | "pending" | "ready",
+  beginSearchRebuild: vi.fn(),
+  cancelSearchRebuild: vi.fn(),
+}));
+
 vi.mock("../context/project-search-context", () => ({
   useProjectSearch: () => ({
-    query: (needle: string) => (needle.trim() ? hits : []),
+    query: (needle: string) =>
+      searchState.status === "pending" || !needle.trim() ? [] : hits,
+    searchStatus: searchState.status,
+    beginSearchRebuild: searchState.beginSearchRebuild,
+    cancelSearchRebuild: searchState.cancelSearchRebuild,
     pendingTarget: null,
     clearPendingTarget: () => {},
     openSearchResult: async () => {},
@@ -22,6 +32,9 @@ vi.mock("../context/project-search-context", () => ({
 
 afterEach(() => {
   cleanup();
+  searchState.status = "ready";
+  searchState.beginSearchRebuild.mockClear();
+  searchState.cancelSearchRebuild.mockClear();
 });
 
 describe("GlobalSearchDialog", () => {
@@ -55,5 +68,28 @@ describe("GlobalSearchDialog", () => {
     expect(results.querySelectorAll('[data-testid^="global-search-item-"]').length).toBe(
       40,
     );
+  });
+
+  it("rebuilds when opened and cancels when closed", () => {
+    const { rerender } = render(
+      <GlobalSearchDialog open onOpenChange={() => {}} />,
+    );
+    expect(searchState.beginSearchRebuild).toHaveBeenCalled();
+    rerender(<GlobalSearchDialog open={false} onOpenChange={() => {}} />);
+    expect(searchState.cancelSearchRebuild).toHaveBeenCalled();
+  });
+
+  it("shows a pending empty state instead of no matches while indexing", () => {
+    searchState.status = "pending";
+    const { getByTestId, queryByTestId } = render(
+      <GlobalSearchDialog open onOpenChange={() => {}} />,
+    );
+    expect(getByTestId("global-search-pending")).toBeTruthy();
+    fireEvent.change(getByTestId("global-search-query"), {
+      target: { value: "hit" },
+    });
+    expect(getByTestId("global-search-pending")).toBeTruthy();
+    expect(queryByTestId("global-search-no-matches")).toBeNull();
+    expect(queryByTestId("global-search-group-class")).toBeNull();
   });
 });

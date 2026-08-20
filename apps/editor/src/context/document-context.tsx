@@ -1873,7 +1873,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateGraph(id, current);
-      projectService.indexOpenDocument(doc.ref.path, current);
       await notifyDocumentEdited({
         scheduleDebouncedSave,
         bump,
@@ -1924,7 +1923,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
       documentService.updateScene(id, current);
-      projectService.indexOpenDocument(doc.ref.path, current);
       await notifyDocumentEdited({
         scheduleDebouncedSave,
         bump,
@@ -1982,7 +1980,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const command = new SetAssetDocumentCommand(previous, next, mergeKey);
       const current = editSessionRef.current.apply(id, previous, command).doc;
       documentService.updateAssetDocument(id, current);
-      projectService.indexOpenDocument(doc.ref.path, current);
       await notifyDocumentEdited({
         scheduleDebouncedSave,
         bump,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { SearchIcon } from "lucide-react";
+import { Loader2Icon, SearchIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Badge } from "@babylonslate/ui/components/badge";
 import {
@@ -28,12 +28,24 @@ export function GlobalSearchDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { query, openSearchResult } = useProjectSearch();
+  const {
+    query,
+    openSearchResult,
+    searchStatus,
+    beginSearchRebuild,
+    cancelSearchRebuild,
+  } = useProjectSearch();
   const [needle, setNeedle] = useState("");
+  const pending = searchStatus === "pending";
 
   useEffect(() => {
-    if (!open) setNeedle("");
-  }, [open]);
+    if (open) {
+      beginSearchRebuild();
+      return;
+    }
+    cancelSearchRebuild();
+    setNeedle("");
+  }, [beginSearchRebuild, cancelSearchRebuild, open]);
 
   const grouped = useMemo(
     () => groupSearchEntries(query(needle)),
@@ -69,7 +81,19 @@ export function GlobalSearchDialog({
           className="min-h-0 flex-1 overflow-y-auto"
           data-testid="global-search-results"
         >
-          {!hasQuery ? (
+          {pending ? (
+            <Empty className="border-0 py-8" data-testid="global-search-pending">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Loader2Icon className="animate-spin" />
+                </EmptyMedia>
+                <EmptyTitle>Indexing Project</EmptyTitle>
+                <EmptyDescription>
+                  Building the search snapshot.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : !hasQuery ? (
             <Empty className="border-0 py-8" data-testid="global-search-empty">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
