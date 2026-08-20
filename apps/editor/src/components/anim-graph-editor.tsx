@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   ANIM_STATE_LAYOUT_GAP_X,
@@ -68,6 +68,8 @@ import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
   defaultNodeRegistry,
   hydrateSerializedGraphForEditor,
+  ScriptPaletteCache,
+  scriptPaletteInjectorKey,
   scriptPaletteNodes,
   validateSerializedGraph,
 } from "../services/graph-validation";
@@ -425,6 +427,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     ruleSurface,
   );
   const { setDiagnostics, diagnostics, focusDiagnostic } = useValidation();
+  const [rulePaletteOpen, setRulePaletteOpen] = useState(false);
+  const rulePaletteCacheRef = useRef(new ScriptPaletteCache());
   const graphDiagnostics = useMemo(
     () =>
       diagnostics.map((row) => ({
@@ -462,14 +466,21 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
       defaultNodeRegistry,
     );
   }, [doc.transitions, openTransition, ruleMembers]);
+  const rulePaletteInput = {
+    parentClass: "BObject",
+    animationGraphHost: "rule" as const,
+    graph: { nodes: [], edges: [], members: ruleMembers },
+  };
+  const rulePaletteInputRef = useRef(rulePaletteInput);
+  rulePaletteInputRef.current = rulePaletteInput;
+  const rulePaletteKey = scriptPaletteInjectorKey(rulePaletteInput);
   const rulePalette = useMemo(
     () =>
-      scriptPaletteNodes(defaultNodeRegistry, {
-        parentClass: "BObject",
-        animationGraphHost: "rule",
-        graph: { nodes: [], edges: [], members: ruleMembers },
+      scriptPaletteNodes(defaultNodeRegistry, rulePaletteInputRef.current, {
+        injectors: rulePaletteOpen,
+        cache: rulePaletteCacheRef.current,
       }),
-    [ruleMembers],
+    [rulePaletteKey, rulePaletteOpen],
   );
 
   useEffect(() => {
@@ -535,6 +546,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             key={openTransition.id}
             initialGraph={ruleGraph}
             paletteNodes={rulePalette}
+            onPaletteOpenChange={setRulePaletteOpen}
             diagnostics={graphDiagnostics}
             sessionViewport={sessionViewport}
             onSessionViewportChange={onSessionViewportChange}

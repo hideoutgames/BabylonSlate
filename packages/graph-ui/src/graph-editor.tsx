@@ -150,6 +150,8 @@ export interface GraphEditorProps {
   /** Selected canvas edge ids; not part of the serialized graph. */
   onEdgeSelectionChange?: (edgeIds: string[]) => void;
   paletteNodes?: PaletteNode[];
+  /** Host can defer heavy injector generation until Add Node is open. */
+  onPaletteOpenChange?: (open: boolean) => void;
   colorMode?: "light" | "dark";
   defaultZoom?: number;
   /** Restore pan/zoom after workspace remount; skips the mount `fitView`. */
@@ -407,6 +409,7 @@ function GraphEditorCanvas({
   onEdgeDoubleClick,
   onEdgeSelectionChange,
   paletteNodes,
+  onPaletteOpenChange,
   colorMode = "dark",
   defaultZoom = GRAPH_DEFAULT_ZOOM,
   sessionViewport = null,
@@ -464,6 +467,12 @@ function GraphEditorCanvas({
   const pendingPinRef = useRef(pendingPin);
   pendingPinRef.current = pendingPin;
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const onPaletteOpenChangeRef = useRef(onPaletteOpenChange);
+  onPaletteOpenChangeRef.current = onPaletteOpenChange;
+  const setPaletteOpenState = useCallback((next: boolean) => {
+    setPaletteOpen(next);
+    onPaletteOpenChangeRef.current?.(next);
+  }, []);
   const [pendingConnect, setPendingConnect] = useState<{
     pin?: SerializedPin;
     nodeId?: string;
@@ -976,7 +985,7 @@ function GraphEditorCanvas({
       if (action === "add-node") {
         const position = screenToFlowPosition(point);
         setPendingConnect({ pin, nodeId: fromNode.id, position });
-        setPaletteOpen(true);
+        setPaletteOpenState(true);
         finishGesture();
         return;
       }
@@ -1324,7 +1333,7 @@ function GraphEditorCanvas({
         emptyPaneDoubleTapAddsNode
       ) {
         setPendingConnect(null);
-        setPaletteOpen(true);
+        setPaletteOpenState(true);
       }
       lastPaneTapRef.current = now;
     },
@@ -1361,7 +1370,7 @@ function GraphEditorCanvas({
       }
       if (paletteNodes && paletteNodes.length > 0) {
         setPendingConnect(null);
-        setPaletteOpen(true);
+        setPaletteOpenState(true);
       }
     },
     [contextMenuItemsForNode, paletteNodes, paneMenu.openMenuAt, readOnly],
@@ -1677,7 +1686,7 @@ function GraphEditorCanvas({
               title="Add node"
               onClick={() => {
                 setPendingConnect(null);
-                setPaletteOpen(true);
+                setPaletteOpenState(true);
               }}
               data-testid="graph-add-node"
             >
@@ -1836,7 +1845,7 @@ function GraphEditorCanvas({
         <NodePalette
           open={paletteOpen}
           onOpenChange={(next) => {
-            setPaletteOpen(next);
+            setPaletteOpenState(next);
             if (!next) setPendingConnect(null);
           }}
           paletteNodes={paletteNodes}

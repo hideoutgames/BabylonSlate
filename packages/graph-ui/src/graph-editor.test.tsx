@@ -1997,6 +1997,21 @@ describe("GraphEditor", () => {
     expect(getByTestId("node-palette-body")).toBeTruthy();
   });
 
+  it("notifies the host when Add Node opens and closes", () => {
+    const onPaletteOpenChange = vi.fn();
+    const { getByTestId, getByRole } = render(
+      <GraphEditor
+        initialGraph={{ nodes: [], edges: [] }}
+        paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
+        onPaletteOpenChange={onPaletteOpenChange}
+      />,
+    );
+    fireEvent.click(getByTestId("graph-add-node"));
+    expect(onPaletteOpenChange).toHaveBeenCalledWith(true);
+    fireEvent.click(getByRole("button", { name: "Close" }));
+    expect(onPaletteOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("opens Add node from an empty-pane context menu without node items", () => {
     const { container, getByTestId } = render(
       <GraphEditor
