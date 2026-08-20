@@ -80,6 +80,7 @@ describe("Playwright iPad project filter", () => {
       "editor-theme.spec.ts",
       "engine-settings.spec.ts",
       "debug-menu.spec.ts",
+      "p8-trace.spec.ts",
     ]) {
       expect(ipadFiles, `${file} is desktop-only`).not.toContain(file);
     }

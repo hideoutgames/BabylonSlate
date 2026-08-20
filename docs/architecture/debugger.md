@@ -119,7 +119,7 @@ Bridge: `{ type: "inspect" }` control → `{ type: "inspectSnapshot", snapshot }
 
 ## Trace recorder
 
-`snapshot start` / `snapshot stop` fill a `TraceRecorder` (stats, logs, prints, world snapshots, input, RNG seed) with a byte budget. Stop emits a `trace` command. `@babylonslate/assets` round-trips the payload as a `Trace` document (`.babtrace` uses the `.babasset` container). Play shows a scrubbable `TracePlayback` panel. Headless replay: same seed + tick count → same `stringifyWorldSnapshot`.
+`snapshot start` / `snapshot stop` fill a `TraceRecorder` (stats, logs, prints, world snapshots, input, RNG seed) with a byte budget. Stop emits a `trace` command. Runtime `stop()` also finalizes an in-flight recording. `@babylonslate/assets` writes the payload as a `Trace` document under app-private derived data (`derived/{projectGuid}/traces/*.babtrace`, same root as thumbnails/journal — not `assets/` / Content Browser). Overlay Play does not show a playback card. When Play ends with a payload, the editor opens a read-only DockView **Trace** tab: Timeline graphs (script/physics ms vs tick) + scrubber, Snapshot of the selected frame, and Log filtered to a window of ticks around the scrubber (logs **and** prints). Headless replay: seed + ticks **or** feeding each frame’s `inputEvents` then `tick()` → same `stringifyWorldSnapshot`.
 
 ## Export settings (P14)
 
