@@ -586,6 +586,26 @@ export const flowNodes: NodeDefinition[] = [
     },
   },
   {
+    id: "flow.whileLoop",
+    title: "While Loop",
+    category: "flow",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("condition", "Condition", "in", BOOL),
+      pin("loopBody", "Loop Body", "out", EXEC),
+      pin("completed", "Completed", "out", EXEC),
+    ],
+    codegen: () => {
+      /* structuredFlow: handled by compiler */
+    },
+    structuredFlow: {
+      kind: "whileLoop",
+      conditionPin: "condition",
+      loopBodyPin: "loopBody",
+      completedPin: "completed",
+    },
+  },
+  {
     id: "flow.break",
     title: "Break",
     category: "flow",

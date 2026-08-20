@@ -199,4 +199,68 @@ describe("compile structured flow metadata", () => {
     expect(src).toMatch(/if\s*\(/);
     expect(src).toMatch(/\}\s*else\s*\{/);
   });
+
+  it("emits a while-loop from structuredFlow whileLoop", () => {
+    const registry = registryWith(
+      "flow.whileLoop",
+      "While Loop",
+      [
+        pin("execIn", "exec", "in", EXEC),
+        pin("condition", "Condition", "in", BOOL),
+        pin("loopBody", "Loop Body", "out", EXEC),
+        pin("completed", "Completed", "out", EXEC),
+      ],
+      {
+        kind: "whileLoop",
+        conditionPin: "condition",
+        loopBodyPin: "loopBody",
+        completedPin: "completed",
+      },
+    );
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "entry",
+          typeId: "flow.entry",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "loop",
+          typeId: "flow.whileLoop",
+          position: { x: 40, y: 0 },
+          pins: registry.get("flow.whileLoop")!.pins({}),
+          properties: { condition: true },
+        },
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 80, y: 0 },
+          pins: registry.get("debug.log")!.pins({}),
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "entry",
+          sourcePinId: "execOut",
+          targetNodeId: "loop",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "loop",
+          sourcePinId: "loopBody",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toMatch(/while\s*\(/);
+  });
 });

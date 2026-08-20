@@ -75,6 +75,7 @@ describe("structured flow catalog", () => {
       "flow.forEachWithBreak",
       "flow.forEachMap",
       "flow.forEachMapWithBreak",
+      "flow.whileLoop",
       "flow.break",
       "flow.doOnce",
       "flow.doN",
@@ -99,6 +100,7 @@ describe("structured flow catalog", () => {
     expect(registry.get("flow.forEachMapWithBreak")?.title).toBe(
       "For Each Map With Break",
     );
+    expect(registry.get("flow.whileLoop")?.title).toBe("While Loop");
     expect(registry.get("flow.break")?.title).toBe("Break");
     expect(registry.get("flow.doOnce")?.title).toBe("Do Once");
     expect(registry.get("flow.doN")?.title).toBe("Do N");
@@ -115,6 +117,9 @@ describe("structured flow catalog", () => {
     expect(registry.get("flow.forEach")?.structuredFlow?.kind).toBe("forEach");
     expect(registry.get("flow.forEachMap")?.structuredFlow?.kind).toBe(
       "forEachMap",
+    );
+    expect(registry.get("flow.whileLoop")?.structuredFlow?.kind).toBe(
+      "whileLoop",
     );
     expect(registry.get("flow.break")?.structuredFlow?.kind).toBe("break");
     expect(registry.get("flow.doOnce")?.structuredFlow?.kind).toBe("doOnce");

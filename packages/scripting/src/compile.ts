@@ -478,6 +478,16 @@ export function compileGraph(
       return true;
     }
 
+    if (meta.kind === "whileLoop") {
+      const conditionExpr = ctx.input(meta.conditionPin);
+      emitBody(`  while (${conditionExpr}) {`, anchor);
+      if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+      emitBody(`  }`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.completedPin), visited);
+      return true;
+    }
+
     if (isLoopMeta(meta)) {
       declareDataOuts(node, ctx);
       const indexSlot = ctx.output(meta.indexPin);
