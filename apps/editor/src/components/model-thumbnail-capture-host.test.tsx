@@ -3,11 +3,16 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
 
-const captureModelThumbnailPng = vi.fn(
-  async (..._args: unknown[]) => new Uint8Array([137, 80, 78, 71]),
-);
+const captureModelThumbnailPng = vi.fn<
+  (
+    engine: unknown,
+    bytes: Uint8Array,
+    slots: unknown,
+    resolveMaterial: (guid: string) => unknown,
+  ) => Promise<Uint8Array>
+>(async () => new Uint8Array([137, 80, 78, 71]));
 const MaterialLibrary = vi.fn();
-const resourceCacheForEngine = vi.fn((..._args: unknown[]) => ({}));
+const resourceCacheForEngine = vi.fn(() => ({}));
 const collectPlayMaterialLibrary = vi.fn(async () => ({
   documents: new Map(),
   functions: new Map(),
@@ -18,8 +23,12 @@ const writeAssetThumbnail = vi.fn(async () => undefined);
 const readAssetChunk = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
 
 vi.mock("@babylonslate/render", () => ({
-  captureModelThumbnailPng: (...args: unknown[]) =>
-    captureModelThumbnailPng(...args),
+  captureModelThumbnailPng: (
+    engine: unknown,
+    bytes: Uint8Array,
+    slots: unknown,
+    resolveMaterial: (guid: string) => unknown,
+  ) => captureModelThumbnailPng(engine, bytes, slots, resolveMaterial),
   MaterialLibrary: class {
     constructor() {
       MaterialLibrary();
@@ -29,8 +38,7 @@ vi.mock("@babylonslate/render", () => ({
     }
     dispose() {}
   },
-  resourceCacheForEngine: (...args: unknown[]) =>
-    resourceCacheForEngine(...args),
+  resourceCacheForEngine: () => resourceCacheForEngine(),
   getMaterialTexture: vi.fn(),
   materialUnavailable: () => true,
 }));
