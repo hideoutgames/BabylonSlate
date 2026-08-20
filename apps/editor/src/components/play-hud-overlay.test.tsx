@@ -339,7 +339,7 @@ describe("PlayHudOverlay images", () => {
     });
     const texture = { name: "tex-1" };
     const resolveTexture = (guid: string) =>
-      guid === "tex-1" ? texture : null;
+      guid === "tex-1" ? (texture as never) : null;
     render(
       <PlayHudOverlay
         scene={{} as never}
