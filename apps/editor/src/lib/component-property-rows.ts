@@ -11,6 +11,7 @@ import {
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText3DProperties,
+  parseWidgetComponentProperties,
   SKYBOX_FACE_KEYS,
   userInterfaceClassId,
   type SerializedComponent,
@@ -496,7 +497,8 @@ export function componentPropertyRows(
           new Set(["assetGuid", "sortingLayer"]),
         ),
       ];
-    case "WidgetComponent":
+    case "WidgetComponent": {
+      const parsed = parseWidgetComponentProperties(component.properties);
       return [
         assetRow(
           actorId,
@@ -508,8 +510,37 @@ export function componentPropertyRows(
           context,
           "Pick User Interface",
         ),
-        ...genericRows(actorId, component, update, new Set(["uiAssetGuid"])),
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "twoSided"),
+          label: "Two Sided",
+          value: parsed.twoSided,
+          onChange: (next) => update("twoSided", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "width"),
+          label: "Width",
+          value: parsed.width,
+          min: 0.01,
+          onChange: (next) => update("width", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "height"),
+          label: "Height",
+          value: parsed.height,
+          min: 0.01,
+          onChange: (next) => update("height", next),
+        },
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["uiAssetGuid", "twoSided", "width", "height", "viewportLayer"]),
+        ),
       ];
+    }
     case "AnimationGraphComponent":
       return [
         assetRow(
