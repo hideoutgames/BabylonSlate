@@ -330,7 +330,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     structures: typeAssets.structures,
     enums: typeAssets.enums,
     animationGraphHost:
-      doc?.ref.kind === "anim-graph" ? "object" : undefined,
+      doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
   };
   const paletteInputRef = useRef(paletteInput);
   paletteInputRef.current = paletteInput;
