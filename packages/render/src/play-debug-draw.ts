@@ -11,13 +11,15 @@ import {
 import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { eulerDegreesToQuaternion } from "@babylonslate/core";
+import { RENDERING_GROUP } from "./sorting";
 
 export const PLAY_DEBUG_DRAW_PREFIX = "playDebugDraw:";
 
 type DrawEntry = {
   meshes: AbstractMesh[];
-  remainingFrames: number | null;
+  birthTick: number | null;
   remainingMs: number | null;
+  presented: boolean;
 };
 
 function asNumber(value: unknown, fallback: number): number {
@@ -66,7 +68,14 @@ function markOverlay(mesh: AbstractMesh): void {
   mesh.isPickable = false;
   mesh.receiveShadows = false;
   mesh.applyFog = false;
+  mesh.renderingGroupId = RENDERING_GROUP.world;
   mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
+  for (const child of mesh.getChildMeshes()) {
+    child.renderingGroupId = RENDERING_GROUP.world;
+    child.isPickable = false;
+    child.receiveShadows = false;
+    child.applyFog = false;
+  }
 }
 
 function posePoint(local: Vector3, origin: Vector3, rotation: Quaternion): Vector3 {
@@ -84,12 +93,14 @@ function orthonormalBasis(direction: Vector3): { right: Vector3; up: Vector3 } {
 
 export type PlayDebugDrawController = {
   applyCommand(command: CommandMessage): boolean;
+  noteSimTick(tickIndex: number): void;
   dispose(): void;
 };
 
 export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
   const entries: DrawEntry[] = [];
   let seq = 0;
+  let lastSimTick = 0;
 
   const nextName = (kind: string): string =>
     `${PLAY_DEBUG_DRAW_PREFIX}${kind}:${seq++}`;
@@ -524,20 +535,33 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
     entry.meshes.length = 0;
   };
 
+  const dropExpiredSimDraws = (assignBirth: boolean): void => {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i]!;
+      if (entry.remainingMs != null) continue;
+      if (entry.birthTick == null) {
+        if (assignBirth) entry.birthTick = lastSimTick;
+        continue;
+      }
+      if (!entry.presented || entry.birthTick >= lastSimTick) continue;
+      drop(entry);
+      entries.splice(i, 1);
+    }
+  };
+
   const observer: Observer<Scene> = scene.onAfterRenderObservable.add(() => {
     const dt = scene.getEngine().getDeltaTime();
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i]!;
-      if (entry.remainingFrames != null) {
-        entry.remainingFrames -= 1;
-        if (entry.remainingFrames > 0) continue;
-      } else if (entry.remainingMs != null) {
+      entry.presented = true;
+      if (entry.remainingMs != null) {
         entry.remainingMs -= dt;
         if (entry.remainingMs > 0) continue;
+        drop(entry);
+        entries.splice(i, 1);
       }
-      drop(entry);
-      entries.splice(i, 1);
     }
+    dropExpiredSimDraws(false);
   })!;
 
   return {
@@ -548,10 +572,15 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
       if (meshes.length === 0) return true;
       entries.push({
         meshes,
-        remainingFrames: duration <= 0 ? 1 : null,
+        birthTick: null,
         remainingMs: duration > 0 ? duration * 1000 : null,
+        presented: false,
       });
       return true;
+    },
+    noteSimTick(tickIndex) {
+      lastSimTick = tickIndex;
+      dropExpiredSimDraws(true);
     },
     dispose() {
       scene.onAfterRenderObservable.remove(observer);

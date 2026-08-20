@@ -69,8 +69,9 @@ describe("play console visualization", () => {
     ]);
     const box = scene.getMeshByName("playConsoleViz:box");
     expect(box).not.toBeNull();
+    expect(box?.renderingGroupId).toBe(1);
     expect(box?.rotationQuaternion?.y).toBeCloseTo(1);
-    expect(scene.getMeshByName("playConsoleViz:sphere")).not.toBeNull();
+    expect(scene.getMeshByName("playConsoleViz:sphere")?.renderingGroupId).toBe(1);
     expect(scene.getMeshByName("playConsoleViz:circle")).not.toBeNull();
     expect(scene.getMeshByName("playConsoleViz:line")).not.toBeNull();
     overlay.sync([]);
