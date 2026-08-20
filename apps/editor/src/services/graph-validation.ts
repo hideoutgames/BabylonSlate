@@ -1760,7 +1760,7 @@ export function validateSerializedGraph(
   };
   if (isLogicGraphPayload(content)) {
     return [
-      ...validateGraphs([content], ctx),
+      ...validateGraphs([content], ctx, { registry }),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
       ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
     ];
@@ -1787,7 +1787,7 @@ export function validateSerializedGraph(
     );
   }
   return [
-    ...validateGraphs(graphs, ctx),
+    ...validateGraphs(graphs, ctx, { registry }),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
     ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];
