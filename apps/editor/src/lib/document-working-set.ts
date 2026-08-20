@@ -16,12 +16,30 @@ export type DocumentWorkingSetInput = {
   contentBrowserId?: string;
   idleMs?: number;
   maxWarm?: number;
+  /** Always mounted when still open (overlay Play Scene viewports). */
+  pinIds?: readonly string[];
 };
 
 /**
+ * Scene document ids to keep mounted while overlay Play owns the Engine canvas.
+ * Preview Build does not pin — it runs in an isolated player iframe.
+ */
+export function overlayPlayScenePinIds(input: {
+  overlayPlaying: boolean;
+  tabIds: readonly string[];
+  documents: readonly { id: string; kind: string }[];
+}): string[] {
+  if (!input.overlayPlaying) return [];
+  const open = new Set(input.tabIds);
+  return input.documents
+    .filter((doc) => doc.kind === "scene" && open.has(doc.id))
+    .map((doc) => doc.id);
+}
+
+/**
  * Which open chrome tabs should keep their document workspace mounted.
- * Content Browser and the active tab always mount. Other tabs stay warm
- * until `idleMs` after `lastActiveAt`, capped at `maxWarm` non-CB ids.
+ * Content Browser, the active tab, and `pinIds` always mount. Other tabs stay
+ * warm until `idleMs` after `lastActiveAt`, capped at `maxWarm` non-CB ids.
  */
 export function selectMountedDocumentIds(
   input: DocumentWorkingSetInput,
@@ -31,12 +49,18 @@ export function selectMountedDocumentIds(
   const maxWarm = input.maxWarm ?? MAX_WARM_DOCUMENT_WORKSPACES;
   const open = new Set(input.tabIds);
   const mounted = new Set<string>();
+  const pinned = new Set(
+    (input.pinIds ?? []).filter((id) => open.has(id)),
+  );
 
   if (open.has(contentBrowserId)) mounted.add(contentBrowserId);
   if (input.activeId && open.has(input.activeId)) mounted.add(input.activeId);
+  for (const id of pinned) mounted.add(id);
 
   const warmInactive = input.tabIds.filter((id) => {
-    if (id === contentBrowserId || id === input.activeId) return false;
+    if (id === contentBrowserId || id === input.activeId || pinned.has(id)) {
+      return false;
+    }
     const at = input.lastActiveAt.get(id);
     if (at === undefined) return false;
     return input.now - at < idleMs;
@@ -98,6 +122,7 @@ export function advanceTestIdleClock(ms: number): void {
 export function useDocumentWorkingSet(
   tabIds: readonly string[],
   activeId: string | null,
+  pinIds: readonly string[] = [],
 ): Set<string> {
   const clockRef = useRef(createIdleClock());
   if (isTestModeEnabled()) testIdleClock = clockRef.current;
@@ -105,6 +130,7 @@ export function useDocumentWorkingSet(
   const prevActiveRef = useRef<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [generation, setGeneration] = useState(0);
+  const pinKey = pinIds.join("\0");
 
   if (prevActiveRef.current !== activeId) {
     const now = clockRef.current.now();
@@ -142,10 +168,14 @@ export function useDocumentWorkingSet(
       activeId,
       lastActiveAt: lastActiveAtRef.current,
       now,
+      pinIds,
     });
+    const pinned = new Set(pinIds);
     let soonest = Number.POSITIVE_INFINITY;
     for (const id of mounted) {
-      if (id === CONTENT_BROWSER_ID || id === activeId) continue;
+      if (id === CONTENT_BROWSER_ID || id === activeId || pinned.has(id)) {
+        continue;
+      }
       const at = lastActiveAtRef.current.get(id);
       if (at === undefined) continue;
       const remaining = DOCUMENT_IDLE_UNMOUNT_MS - (now - at);
@@ -157,13 +187,14 @@ export function useDocumentWorkingSet(
       soonest,
     );
     return () => window.clearTimeout(timer);
-    // tabIds is hashed so a new array with the same ids does not reset the timer.
-  }, [tabIds.join("\0"), activeId, paused, generation]);
+    // tabIds / pinIds are hashed so a new array with the same ids does not reset the timer.
+  }, [tabIds.join("\0"), activeId, pinKey, paused, generation]);
 
   return selectMountedDocumentIds({
     tabIds,
     activeId,
     lastActiveAt: lastActiveAtRef.current,
     now: clockRef.current.now(),
+    pinIds,
   });
 }

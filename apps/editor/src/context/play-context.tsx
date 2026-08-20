@@ -129,6 +129,7 @@ import {
 } from "../lib/viewport-render-gate";
 import {
   isUsableEngine,
+  nextRegisteredSharedEngine,
   nextSharedEngineGeneration,
 } from "../lib/shared-engine-generation";
 
@@ -188,6 +189,8 @@ interface PlayContextValue {
 
 const PlayContext = createContext<PlayContextValue | null>(null);
 const OutputLogContext = createContext<{ lines: string[] }>({ lines: [] });
+/** Isolated from PlayContext so DocumentWorkspace does not rerender on logs. */
+const OverlayPlayingContext = createContext(false);
 
 export function PlayProvider({ children }: { children: ReactNode }) {
   const engineRef = useRef<Engine | null>(null);
@@ -198,6 +201,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
   const pendingScriptsRef = useRef<ScriptBundleEntry[] | null>(null);
   const [playing, setPlaying] = useState(false);
+  const playingRef = useRef(false);
   const [preparing, setPreparing] = useState(false);
   const [playAwaitingMigration, setPlayAwaitingMigration] = useState(false);
   const [prepareState, setPrepareState] = useState<{
@@ -233,6 +237,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   );
   const [startupAlertOpen, setStartupAlertOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewOpenRef = useRef(false);
   const [previewSrc, setPreviewSrc] = useState(() => playerPreviewSrc(0));
   const [previewPhase, setPreviewPhase] = useState<PreviewPreparePhase | null>(
     null,
@@ -253,6 +258,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   );
   const playImageUrlsRef = useRef(playImageUrls);
   playImageUrlsRef.current = playImageUrls;
+  playingRef.current = playing;
+  previewOpenRef.current = previewOpen;
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
     [],
   );
@@ -464,7 +471,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   const registerSharedEngine = useCallback((engine: Engine | null) => {
     const previous = engineRef.current;
-    const next = isUsableEngine(engine) ? engine : ownedEngineRef.current;
+    const next = nextRegisteredSharedEngine({
+      incoming: engine,
+      previous,
+      owned: ownedEngineRef.current,
+      overlayPlaying: playingRef.current && !previewOpenRef.current,
+    });
     engineRef.current = isUsableEngine(next) ? next : null;
     setSharedEngineGeneration((current) =>
       nextSharedEngineGeneration(current, engineRef.current, previous),
@@ -1151,6 +1163,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   return (
     <PlayContext.Provider value={value}>
+      <OverlayPlayingContext.Provider value={playing && !previewOpen}>
       <OutputLogContext.Provider value={{ lines: logLines }}>
         {children}
         {previewPhase ? (
@@ -1333,6 +1346,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           </span>
         ) : null}
       </OutputLogContext.Provider>
+      </OverlayPlayingContext.Provider>
     </PlayContext.Provider>
   );
 }
@@ -1347,6 +1361,11 @@ export function usePlay(): PlayContextValue {
 
 export function useOptionalPlay(): PlayContextValue | null {
   return useContext(PlayContext);
+}
+
+/** Overlay Play (not Preview Build). Stable while the session runs. */
+export function useOverlayPlaying(): boolean {
+  return useContext(OverlayPlayingContext);
 }
 
 export function useOutputLog(): { lines: string[] } {

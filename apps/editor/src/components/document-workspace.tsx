@@ -19,10 +19,14 @@ import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
+import { useOverlayPlaying } from "../context/play-context";
 import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
 import { TracePlaybackProvider } from "./trace-editor";
 import { sceneFocusActorId } from "../lib/search-navigation";
-import { useDocumentWorkingSet } from "../lib/document-working-set";
+import {
+  overlayPlayScenePinIds,
+  useDocumentWorkingSet,
+} from "../lib/document-working-set";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { AssetDocumentWorkspace } from "./asset-document-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
@@ -272,6 +276,8 @@ export function DocumentWorkspace() {
     assetRegistry,
   } = useDocuments();
 
+  const overlayPlaying = useOverlayPlaying();
+
   const projectKey = projectDocument?.metadata.name ?? null;
 
   const resolvedActiveId =
@@ -281,9 +287,19 @@ export function DocumentWorkspace() {
         ? activeDocumentId
         : (tabOrder.find((id) => id === CONTENT_BROWSER_ID) ?? tabOrder[0]);
 
+  const workingTabIds = projectKey ? tabOrder : [];
+  const pinIds = overlayPlayScenePinIds({
+    overlayPlaying,
+    tabIds: workingTabIds,
+    documents: openDocuments.map((doc) => ({
+      id: doc.id,
+      kind: doc.ref.kind,
+    })),
+  });
   const mountedIds = useDocumentWorkingSet(
-    projectKey ? tabOrder : [],
+    workingTabIds,
     projectKey ? resolvedActiveId : null,
+    pinIds,
   );
 
   if (tabOrder.length === 0) {

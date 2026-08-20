@@ -197,4 +197,54 @@ test.describe("P18 iPad editor optimisation", () => {
       .click();
     await expect(visibleGraphWorkspace(page)).toBeVisible();
   });
+
+  test("overlay Play keeps ticking after Scene idle grace", async ({ page }) => {
+    test.setTimeout(E2E_TIMEOUT_MS);
+    await openTestProject(page);
+    await openMainScene(page);
+    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(1);
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await expect(page.getByTestId("document-workspace-graph")).toBeVisible();
+
+    await clickPlayAndWaitForOverlay(page);
+    await page.getByTestId("play-inspector-toggle").click();
+    await expect(page.getByTestId("debug-inspect")).toBeVisible();
+    const firstTick = Number(
+      await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+    );
+    await expect
+      .poll(
+        async () =>
+          Number(
+            await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+          ),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(firstTick);
+
+    const runningTick = Number(
+      await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+    );
+    await advanceIdleClock(page, DOCUMENT_IDLE_UNMOUNT_MS);
+    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(1);
+    await expect(page.getByTestId("play-overlay")).toBeVisible();
+    const afterIdleTick = Number(
+      await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+    );
+    expect(afterIdleTick).toBeGreaterThanOrEqual(runningTick);
+    await expect
+      .poll(
+        async () =>
+          Number(
+            await page.getByTestId("debug-inspect-tick").getAttribute("data-tick"),
+          ),
+        { timeout: 15_000 },
+      )
+      .toBeGreaterThan(afterIdleTick);
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("debug-inspect")).toHaveCount(0);
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  });
 });
