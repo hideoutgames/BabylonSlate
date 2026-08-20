@@ -295,7 +295,8 @@ export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
         if (typeof texture.source !== "number") return texture;
         const next = indexMap.get(texture.source);
         if (next === undefined) {
-          const { source: _source, ...rest } = texture;
+          const rest = { ...texture };
+          delete rest.source;
           return rest;
         }
         return { ...texture, source: next };
@@ -325,7 +326,8 @@ function gltfJsonToGlb(
     const sidecar = sidecarBytesForUri(bufferUri, sidecars);
     if (sidecar) {
       bin = sidecar;
-      const { uri: _uri, ...rest } = buffer0;
+      const rest = { ...buffer0 };
+      delete rest.uri;
       buffers[0] = { ...rest, byteLength: bin.byteLength };
       json.buffers = buffers;
     }
