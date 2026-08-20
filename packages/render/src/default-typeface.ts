@@ -93,19 +93,50 @@ function clockwiseRect(x0: number, y0: number, x1: number, y1: number): string {
   return `m ${x0} ${y1} l ${x0} ${y0} l ${x1} ${y0} l ${x1} ${y1} l ${x0} ${y1} `;
 }
 
+function pixelOn(rows: readonly number[], row: number, col: number): boolean {
+  return (((rows[row] ?? 0) >> (COLS - 1 - col)) & 1) === 1;
+}
+
+/** Merge lit 5×7 pixels into rectangles so each run is one contour, not one cube. */
+function greedyRects(rows: readonly number[]): Array<{
+  c0: number;
+  c1: number;
+  r0: number;
+  r1: number;
+}> {
+  const visited: boolean[][] = Array.from({ length: ROWS }, () =>
+    Array.from({ length: COLS }, () => false),
+  );
+  const rects: Array<{ c0: number; c1: number; r0: number; r1: number }> = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (visited[r]![c] || !pixelOn(rows, r, c)) continue;
+      let c1 = c + 1;
+      while (c1 < COLS && pixelOn(rows, r, c1) && !visited[r]![c1]) c1++;
+      let r1 = r + 1;
+      grow: while (r1 < ROWS) {
+        for (let cc = c; cc < c1; cc++) {
+          if (!pixelOn(rows, r1, cc) || visited[r1]![cc]) break grow;
+        }
+        r1++;
+      }
+      for (let rr = r; rr < r1; rr++) {
+        for (let cc = c; cc < c1; cc++) visited[rr]![cc] = true;
+      }
+      rects.push({ c0: c, c1, r0: r, r1 });
+    }
+  }
+  return rects;
+}
+
 function outlineFor(rows: readonly number[]): string {
   let outline = "";
-  for (let r = 0; r < ROWS; r++) {
-    const bits = rows[r] ?? 0;
-    for (let c = 0; c < COLS; c++) {
-      const on = (bits >> (COLS - 1 - c)) & 1;
-      if (!on) continue;
-      const x0 = c * PIXEL;
-      const x1 = x0 + PIXEL;
-      const y1 = (ROWS - r) * PIXEL;
-      const y0 = y1 - PIXEL;
-      outline += clockwiseRect(x0, y0, x1, y1);
-    }
+  for (const rect of greedyRects(rows)) {
+    const x0 = rect.c0 * PIXEL;
+    const x1 = rect.c1 * PIXEL;
+    const y1 = (ROWS - rect.r0) * PIXEL;
+    const y0 = (ROWS - rect.r1) * PIXEL;
+    outline += clockwiseRect(x0, y0, x1, y1);
   }
   return outline.trimEnd();
 }
