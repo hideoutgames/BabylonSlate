@@ -370,7 +370,7 @@ function compileGraphDocumentCached(
   if (cache && key && cache.graphs.has(key)) {
     return cache.graphs.get(key) ?? null;
   }
-  cache && (cache.compiles += 1);
+  if (cache) cache.compiles += 1;
   try {
     const script = compileGraphDocument(doc.content, {
       path: doc.path,
