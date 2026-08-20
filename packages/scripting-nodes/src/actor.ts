@@ -101,4 +101,75 @@ export const actorNodes: NodeDefinition[] = [
       out: `ctx.getActorOfClass(${ctx.input("classId")})`,
     }),
   },
+  {
+    id: "actor.attach",
+    title: "Attach Actor",
+    category: "actor",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("target", "Target", "in", actorRef("Actor")),
+      pin("parent", "Parent", "in", actorRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `ctx.attachActor(${ctx.input("target")}, ${ctx.input("parent")});`,
+      );
+    },
+  },
+  {
+    id: "actor.detach",
+    title: "Detach Actor",
+    category: "actor",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("target", "Target", "in", actorRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(`ctx.detachActor(${ctx.input("target")});`);
+    },
+  },
+  {
+    id: "actor.getParent",
+    title: "Get Parent",
+    category: "actor",
+    pure: true,
+    pins: () => [
+      pin("target", "Target", "in", actorRef("Actor")),
+      pin("out", "Out", "out", actorRef("Actor")),
+    ],
+    codegen: (ctx) => ({
+      out: `ctx.getParent(${ctx.input("target")})`,
+    }),
+  },
+  {
+    id: "actor.setOwner",
+    title: "Set Owner",
+    category: "actor",
+    pins: () => [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
+      pin("target", "Target", "in", actorRef("Actor")),
+      pin("owner", "Owner", "in", actorRef("Actor")),
+    ],
+    codegen: (ctx) => {
+      ctx.emit(
+        `ctx.setOwner(${ctx.input("target")}, ${ctx.input("owner")});`,
+      );
+    },
+  },
+  {
+    id: "actor.getOwner",
+    title: "Get Owner",
+    category: "actor",
+    pure: true,
+    pins: () => [
+      pin("target", "Target", "in", actorRef("Actor")),
+      pin("out", "Out", "out", actorRef("Actor")),
+    ],
+    codegen: (ctx) => ({
+      out: `ctx.getOwner(${ctx.input("target")})`,
+    }),
+  },
 ];

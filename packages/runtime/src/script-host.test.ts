@@ -1292,6 +1292,52 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("Attach Actor and Set Owner write parentId and ownerId before queries", async () => {
+    const registry = createDefaultNodeRegistry();
+    const parentGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay")],
+      edges: [],
+    };
+    const childGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "parent", "actor.getOfClass", {
+          "default:classId": "Anchor",
+        }),
+        node(registry, "attach", "actor.attach"),
+        node(registry, "owner", "actor.setOwner"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "attach", "execIn"),
+        edge("e2", "self", "out", "attach", "target"),
+        edge("e3", "parent", "out", "attach", "parent"),
+        edge("e4", "attach", "execOut", "owner", "execIn"),
+        edge("e5", "self", "out", "owner", "target"),
+        edge("e6", "parent", "out", "owner", "owner"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+    });
+    await runtime.loadScripts([
+      toScript(parentGraph, registry, "Anchor", "anchor-asset"),
+      toScript(childGraph, registry, "Child", "child-attach-asset"),
+    ]);
+    const parent = runtime.spawnScriptedActor({ classId: "Anchor" });
+    const child = runtime.spawnScriptedActor({ classId: "Child" });
+    runtime.start();
+    runtime.tick();
+    expect(child?.getVariable("parentId")).toBe(parent?.guid);
+    expect(child?.getVariable("ownerId")).toBe(parent?.guid);
+    runtime.stop();
+  });
+
   it("Call Interface uses compiled function implementations", async () => {
     const registry = createDefaultNodeRegistry();
     const pins = [
