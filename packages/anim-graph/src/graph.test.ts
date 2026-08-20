@@ -18,6 +18,8 @@ import {
   hydrateAnimGraphForEditor,
   animGraphMembersFromVariables,
   setTransitionBidirectional,
+  flipTransitionDirection,
+  decorateTransitionRuleGraph,
 } from "./index";
 
 describe("anim graph evaluator", () => {
@@ -268,6 +270,56 @@ describe("anim graph evaluator", () => {
     expect(next.transitions.map((row) => `${row.fromStateId}->${row.toStateId}`).sort()).toEqual(
       ["idle->run", "run->idle"],
     );
+  });
+
+  it("flips a one-way transition and no-ops when a reverse row exists", () => {
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    const oneWay = {
+      ...doc,
+      transitions: [
+        {
+          id: "idle-to-run",
+          fromStateId: "idle",
+          toStateId: "run",
+          blendSeconds: 0.2,
+          priority: 1,
+          sourceHandle: "right-out",
+          targetHandle: "left-in",
+          ruleGraph: createDefaultTransitionRuleGraph(),
+        },
+      ],
+    };
+    const flipped = flipTransitionDirection(oneWay, "idle-to-run");
+    expect(flipped.transitions[0]).toMatchObject({
+      id: "idle-to-run",
+      fromStateId: "run",
+      toStateId: "idle",
+      blendSeconds: 0.2,
+      priority: 1,
+      sourceHandle: "left-out",
+      targetHandle: "right-in",
+    });
+    const both = setTransitionBidirectional(oneWay, "idle-to-run", true);
+    expect(flipTransitionDirection(both, "idle-to-run")).toBe(both);
+  });
+
+  it("disables Exit State on a one-way rule graph and restores it for both ways", () => {
+    const graph = createDefaultTransitionRuleGraph();
+    const oneWay = decorateTransitionRuleGraph(graph, true);
+    expect(oneWay.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBe(
+      true,
+    );
+    expect(oneWay.nodes.find((node) => node.type === ANIM_RULE_ENTER_TYPE)?.data.__disabled).toBeUndefined();
+    const both = decorateTransitionRuleGraph(oneWay, false);
+    expect(both.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBeUndefined();
   });
 
   it("does not take a both-ways reverse from idle when the forward condition is false", () => {

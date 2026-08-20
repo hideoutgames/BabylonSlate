@@ -10,6 +10,8 @@ import type {
 import {
   animGraphScriptClassId,
   animRuleScriptClassId,
+  decorateTransitionRuleGraph,
+  findReverseTransition,
   parseAnimGraphDocument,
   type AnimGraphDocument,
 } from "@babylonslate/anim-graph";
@@ -391,10 +393,18 @@ export function compileAnimGraphScripts(
         });
       }
       for (const transition of doc.transitions) {
-        const ruleGraph = transition.ruleGraph ?? {
-          nodes: [],
-          edges: [],
-        };
+        const oneWay = !findReverseTransition(
+          doc.transitions,
+          transition.fromStateId,
+          transition.toStateId,
+        );
+        const ruleGraph = decorateTransitionRuleGraph(
+          transition.ruleGraph ?? {
+            nodes: [],
+            edges: [],
+          },
+          oneWay,
+        );
         const logic = materializeLogicGraph(
           ruleGraph,
           `rule-${transition.id}`,

@@ -969,7 +969,7 @@ function mapGraphNodes(
   };
 }
 
-function syncVariableAccessNodes(
+export function syncVariableAccessNodes(
   graph: SerializedGraph,
   member: GraphClassMember,
   previous?: GraphClassMember,

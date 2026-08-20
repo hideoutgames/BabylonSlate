@@ -369,6 +369,33 @@ function migrateConditionToRuleGraph(
   return graph;
 }
 
+export function decorateTransitionRuleGraph(
+  graph: SerializedGraph,
+  oneWay: boolean,
+): SerializedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (node.type !== ANIM_RULE_EXIT_TYPE) {
+        if (node.data.__disabled !== true) return node;
+        const data = { ...node.data };
+        delete data.__disabled;
+        return { ...node, data };
+      }
+      if (oneWay) {
+        return {
+          ...node,
+          data: { ...node.data, __disabled: true },
+        };
+      }
+      if (node.data.__disabled !== true) return node;
+      const data = { ...node.data };
+      delete data.__disabled;
+      return { ...node, data };
+    }),
+  };
+}
+
 export function validateAnimGraph(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[] = [],

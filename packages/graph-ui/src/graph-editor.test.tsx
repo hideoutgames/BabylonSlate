@@ -3337,6 +3337,67 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("does not open a transition when the animation badge is clicked or double-clicked", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onEdgeDoubleClick = vi.fn();
+      const graph = graphWithWiredPins();
+      graph.edges = graph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransition",
+      }));
+      const { container } = render(
+        <GraphEditor
+          initialGraph={graph}
+          edgeTypes={animGraphEdgeTypes}
+          defaultEdgeOptions={{ type: "animTransition" }}
+          onEdgeDoubleClick={onEdgeDoubleClick}
+        />,
+      );
+      const badge = await waitFor(() => {
+        const found = container.querySelector(
+          '[data-testid="anim-transition-badge-e:log-a:execOut:log-b:execIn"]',
+        );
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      fireEvent.click(badge);
+      fireEvent.doubleClick(badge);
+      expect(onEdgeDoubleClick).not.toHaveBeenCalled();
+      expect(badge.getAttribute("aria-label")).toBe("Select Transition");
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("dims a disabled node", async () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "exit-state",
+                type: "anim.rule.exitState",
+                position: { x: 0, y: 0 },
+                data: { title: "Exit State", __disabled: true, __pins: [] },
+              },
+            ],
+            edges: [],
+          }}
+        />,
+      );
+      await waitFor(() => {
+        expect(
+          container.querySelector('[data-disabled="true"]'),
+        ).not.toBeNull();
+      });
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("clears edge selection when the pane is clicked", async () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

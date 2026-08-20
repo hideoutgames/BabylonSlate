@@ -53,6 +53,7 @@ import {
   deletableNodeIds,
   graphChangeKindFromNodeChanges,
   isProtectedNode,
+  isDisabledNode,
   lockNodeDragAxis,
   allocateGraphDragTransaction,
   nodeChangesMutateGraph,
@@ -677,6 +678,18 @@ function GraphEditorCanvas({
       target: string,
       targetHandle: string,
     ) => {
+      const sourceNode = graphStateRef.current.nodes.find(
+        (node) => node.id === source,
+      );
+      const targetNode = graphStateRef.current.nodes.find(
+        (node) => node.id === target,
+      );
+      if (
+        (sourceNode && isDisabledNode(sourceNode)) ||
+        (targetNode && isDisabledNode(targetNode))
+      ) {
+        return;
+      }
       const id = createEdgeId(source, sourceHandle, target, targetHandle);
       setEdges((current) => {
         const next = edgesAfterConnect(
@@ -727,6 +740,8 @@ function GraphEditorCanvas({
         onPinSelect?.(nodeId, pinId);
         return;
       }
+      const tapped = graphStateRef.current.nodes.find((node) => node.id === nodeId);
+      if (tapped && isDisabledNode(tapped)) return;
       if (direction === "out") {
         const next = { nodeId, pinId };
         pendingPinRef.current = next;
@@ -799,6 +814,18 @@ function GraphEditorCanvas({
         next.targetHandle,
       );
       if (!sourcePin || !targetPin) return true;
+      const sourceNode = graphStateRef.current.nodes.find(
+        (node) => node.id === next.source,
+      );
+      const targetNode = graphStateRef.current.nodes.find(
+        (node) => node.id === next.target,
+      );
+      if (
+        (sourceNode && isDisabledNode(sourceNode)) ||
+        (targetNode && isDisabledNode(targetNode))
+      ) {
+        return false;
+      }
       if (!pinsAreCompatible(sourcePin, targetPin, pinCompatibility)) {
         return false;
       }

@@ -10,7 +10,6 @@ import {
 } from "@xyflow/react";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { displayNodeTitle } from "./graph-connect";
-import { useGraphEditorContext } from "./graph-editor-context";
 import { animTransitionPath } from "./anim-transition-path";
 
 type AnimStateSide = "top" | "right" | "bottom" | "left";
@@ -99,7 +98,6 @@ export function AnimTransitionEdge({
   selected,
   type,
 }: EdgeProps) {
-  const { onEdgeDoubleClick } = useGraphEditorContext();
   const { setEdges, setNodes } = useReactFlow();
   const { path: edgePath, labelX, labelY, angle } = animTransitionPath({
     sourceX,
@@ -132,7 +130,7 @@ export function AnimTransitionEdge({
           }}
           data-testid={`anim-transition-badge-${id}`}
           data-bidirectional={bidirectional ? "true" : undefined}
-          aria-label="Open transition rule"
+          aria-label="Select Transition"
           onClick={(event) => {
             event.stopPropagation();
             setNodes((current) =>
@@ -146,11 +144,9 @@ export function AnimTransitionEdge({
                 selected: edge.id === id,
               })),
             );
-            onEdgeDoubleClick?.(id);
           }}
           onDoubleClick={(event) => {
             event.stopPropagation();
-            onEdgeDoubleClick?.(id);
           }}
         />
       </EdgeLabelRenderer>
