@@ -148,12 +148,14 @@ export async function applyKenneyMannequinEmptyScaffold(options: {
   registry: AssetRegistry;
   scene: SerializedScene;
   mannequinBytes: Uint8Array;
+  modelImportScale?: number;
 }): Promise<SerializedScene> {
   const created = await options.registry.importFile(
     "project",
     MANNEQUIN_ASSET_FOLDER,
     "mannequin.glb",
     options.mannequinBytes,
+    { modelImportScale: options.modelImportScale },
   );
   const model = created.find((asset) => asset.header.type === "Model");
   const skeleton = created.find((asset) => asset.header.type === "Skeleton");

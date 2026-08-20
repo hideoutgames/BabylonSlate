@@ -21,6 +21,9 @@ export function dispatchEngineSettingsChanged(settings: {
   uiDesignerPresets?: EngineSettings["uiDesignerPresets"];
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
+  viewportFlySpeed?: number;
+  viewportGridSize?: number;
+  modelImportDefaultScale?: number;
 }): void {
   window.dispatchEvent(
     new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, { detail: settings }),

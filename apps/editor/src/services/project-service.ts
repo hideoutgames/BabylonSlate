@@ -85,7 +85,7 @@ import {
   type InspectedBabplugin,
   type PluginImportPlan,
 } from "@babylonslate/assets";
-import { isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
+import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
 import {
   assetHeaderDependencies,
@@ -1101,10 +1101,12 @@ export class ProjectService {
       "scene",
       MAIN_SCENE_FILE,
     )) as SerializedScene;
+    const engineSettings = await createAppSettingsStore().load();
     const next = await applyKenneyMannequinEmptyScaffold({
       registry,
       scene,
       mannequinBytes: await loadKenneyMannequinGlb(),
+      modelImportScale: engineSettings.modelImportDefaultScale,
     });
     await this.saveDocument("scene", MAIN_SCENE_FILE, next);
     if (await this.storage.exists(MAIN_CLASS_FILE)) {

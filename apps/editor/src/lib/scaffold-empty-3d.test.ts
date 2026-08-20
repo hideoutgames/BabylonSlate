@@ -51,7 +51,15 @@ describe("applyKenneyMannequinEmptyScaffold", () => {
       registry: registry as never,
       scene: createDefaultScene(),
       mannequinBytes: new Uint8Array([1, 2, 3]),
+      modelImportScale: 10,
     });
+    expect(registry.importFile).toHaveBeenCalledWith(
+      "project",
+      "Mannequin",
+      "mannequin.glb",
+      expect.any(Uint8Array),
+      { modelImportScale: 10 },
+    );
 
     const actor = scene.actors.find((entry) => entry.id === MANNEQUIN_ACTOR_ID);
     expect(actor?.classId).toBe(MANNEQUIN_CLASS_ID);

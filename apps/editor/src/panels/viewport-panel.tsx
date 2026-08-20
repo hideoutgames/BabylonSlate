@@ -36,6 +36,7 @@ import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
+import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
@@ -93,6 +94,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     pivotAroundCenter,
     viewportShadingMode,
   } = useSceneEditing();
+  const { flySpeed } = useEditorViewportPrefs();
+  const flySpeedRef = useRef(flySpeed);
+  flySpeedRef.current = flySpeed;
   const { registerSharedEngine, registerScheduler, playing } = usePlay();
   const navBake = useOptionalNavBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
@@ -253,6 +257,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       },
       onGizmoDragEnd: () => commitGizmoTransform(),
       editorFlyEnabled: () => !playingRef.current,
+      editorFlySpeed: () => flySpeedRef.current,
     });
     engineRef.current = handle;
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
@@ -690,6 +695,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">
             <ViewportJoystick
+              speed={flySpeed}
               onFly={(forward, right) => {
                 const camera = engineRef.current?.editor?.camera;
                 if (camera) applyViewportJoystickSteer(camera, forward, right);

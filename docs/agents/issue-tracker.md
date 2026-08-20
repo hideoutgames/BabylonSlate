@@ -277,7 +277,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Item | Owner | Notes |
 | --- | --- | --- |
 | Pin flash on tap-to-navigate | later polish (`graph-ui`, editor) | Selects + fits node; pins carry `data-error` but no flash yet |
-| Class re-parent UX | later polish (`apps/editor`, object-model) | `ClassRegistry.reparent` exists; Class panel has no change-parent UI |
+| Class re-parent UX | later polish (`apps/editor`, object-model) | Prefab Root Parent Class shipped (header-only). Class panel still has no change-parent UI |
 | ExecuteJavaScript editor gaps | later polish (`apps/editor`) | Identifier uniqueness / `execJs_` prefix, Inspector async toggle, lazy CodeMirror chunk, import disclosure of JS bodies |
 | Engine Settings “don’t ask again” | later polish (`apps/editor`) | Play Anyway exists; no permanent skip preference |
 | Class / outliner validation icons | later polish (`apps/editor`) | `hasError` on Class members is never set |

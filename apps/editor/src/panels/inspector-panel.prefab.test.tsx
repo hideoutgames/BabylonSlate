@@ -57,13 +57,26 @@ vi.mock("../context/document-context", () => ({
       },
     ],
     applyGraphChange,
+    assetRegistry: {
+      list: () => [
+        {
+          path: "assets/Hero.class.babasset",
+          header: {
+            type: "Class",
+            name: "Hero",
+            parentClass: "Actor",
+            guid: "hero-1",
+          },
+        },
+      ],
+    },
     projectDocument: {
       settings: {
         twoD: { sortingLayers: ["Default"] },
         input: { actions: [], axes: [] },
       },
     },
-    assetRegistry: { list: () => [] },
+    reparentClassDocument: vi.fn(async () => null),
   }),
 }));
 
@@ -148,7 +161,14 @@ describe("Inspector prefab component details", () => {
     expect(screen.queryByTestId("inspector-prefab-component")).toBeNull();
   });
 
-  it("describes Prefab Origin when Prefab Root is selected without a member", () => {
+  it("shows Parent Class on Prefab Root", () => {
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(screen.getByTestId("inspector-parent-class").textContent).toContain(
+      "Actor",
+    );
+  });
+
+  it("shows Prefab Origin on Prefab Root", () => {
     renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
     expect(screen.getByTestId("inspector-prefab-origin")).toBeTruthy();
   });

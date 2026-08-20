@@ -166,7 +166,11 @@ function NestedMenuItems({
                 {item.label}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent
-                className={size === "touch" ? "w-auto min-w-48" : undefined}
+                className={
+                  size === "touch"
+                    ? "w-auto min-w-48"
+                    : "w-max min-w-56 whitespace-nowrap"
+                }
                 data-testid={item.contentTestId ?? `context-menu-sub-${item.id}`}
               >
                 <NestedMenuItems items={item.items} size={size} />
