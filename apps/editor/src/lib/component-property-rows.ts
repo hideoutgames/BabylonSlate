@@ -409,16 +409,25 @@ export function componentPropertyRows(
   context: ComponentPropertyContext,
 ): PropertyRow[] {
   switch (component.classId) {
-    case "MeshComponent":
+    case "MeshComponent": {
+      const assetGuid =
+        typeof component.properties.assetGuid === "string"
+          ? component.properties.assetGuid.trim()
+          : "";
+      const meshKindRow: PropertyRow[] = assetGuid
+        ? []
+        : [
+            {
+              kind: "enum",
+              id: rowId(actorId, component.id, "meshKind"),
+              label: "Mesh Kind",
+              value: String(component.properties.meshKind ?? "box"),
+              options: MESH_KINDS.map((kind) => ({ value: kind, label: kind })),
+              onChange: (next) => update("meshKind", next),
+            },
+          ];
       return [
-        {
-          kind: "enum",
-          id: rowId(actorId, component.id, "meshKind"),
-          label: "Mesh Kind",
-          value: String(component.properties.meshKind ?? "box"),
-          options: MESH_KINDS.map((kind) => ({ value: kind, label: kind })),
-          onChange: (next) => update("meshKind", next),
-        },
+        ...meshKindRow,
         assetRow(
           actorId,
           component,
@@ -446,6 +455,7 @@ export function componentPropertyRows(
           new Set(["meshKind", "assetGuid", "materialGuid"]),
         ),
       ];
+    }
     case "SpriteComponent":
       return [
         assetRow(

@@ -1,5 +1,6 @@
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export * from "./create-null-engine";
 export * from "./ktx2-transcoder";

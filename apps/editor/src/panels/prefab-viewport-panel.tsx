@@ -309,7 +309,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   return (
     <div
-      className="relative flex h-full min-h-0 w-full flex-col bg-background"
+      className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="prefab-viewport-panel"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
@@ -319,7 +319,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="h-full min-h-0 w-full flex-1 touch-none"
+        className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="prefab-preview-canvas"
       />
       <canvas

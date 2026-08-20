@@ -52,7 +52,12 @@ import {
 } from "./gizmo-host";
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
-import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { isEditorModelPlaceholder } from "./glb-anim";
+import {
+  editorComponentMeshName,
+  editorMeshName,
+  isEditorActorOrigin,
+} from "./scene-loader";
 import { RENDERING_GROUP } from "./sorting";
 
 function kenneyMannequinGlb(): Uint8Array {
@@ -803,6 +808,81 @@ describe("EditorSceneSync", () => {
     expect(root?.getTotalVertices()).toBe(0);
     expect(root?.isPickable).toBe(false);
     expect(root?.isVisible).toBe(false);
+  });
+
+  it("lists drawn glTF parts for outline, not the hidden Model placeholder", async () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    const root = sync.meshForActor("a");
+    await sync.whenEditorModelsReady();
+    const visuals = sync.visualMeshesForActor("a");
+    expect(visuals.length).toBeGreaterThan(0);
+    expect(visuals.some((part) => part.getTotalVertices() > 0)).toBe(true);
+    expect(visuals.some((part) => isEditorModelPlaceholder(part))).toBe(false);
+    expect(visuals).not.toContain(root);
+  });
+
+  it("loads the Model GLB under the MeshComponent child when a collider forces an origin", async () => {
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("prefab-mesh", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    sync.apply(
+      sceneWith([
+        createActor("hero", "Mannequin", {
+          components: [
+            mesh,
+            {
+              id: "col",
+              classId: "ColliderComponent",
+              properties: {
+                shape: { kind: "capsule", radius: 0.5, halfHeight: 1 },
+              },
+            },
+          ],
+        }),
+      ]),
+    );
+    await sync.whenEditorModelsReady();
+    const origin = sync.meshForActor("hero");
+    expect(origin).not.toBeNull();
+    expect(isEditorActorOrigin(origin!)).toBe(true);
+    const componentRoot = scene.getMeshByName(
+      editorComponentMeshName("hero", "prefab-mesh"),
+    );
+    expect(componentRoot).not.toBeNull();
+    expect(isEditorModelPlaceholder(componentRoot!)).toBe(true);
+    expect(componentRoot!.isPickable).toBe(false);
+    await vi.waitFor(() => {
+      expect(visualMeshes(componentRoot!).length).toBeGreaterThan(0);
+    });
+    for (const part of visualMeshes(componentRoot!)) {
+      expect(part.isDescendantOf(componentRoot!)).toBe(true);
+      expect(part.isPickable).toBe(true);
+    }
+    expect(
+      origin!
+        .getChildMeshes(true)
+        .filter((child) => child.getTotalVertices() > 0)
+        .every((child) => child === componentRoot || child.parent === origin),
+    ).toBe(true);
+    expect(
+      visualMeshes(componentRoot!).some((part) => part.parent === origin),
+    ).toBe(false);
+    expect(
+      sync
+        .visualMeshesForActor("hero")
+        .some((part) => part.getTotalVertices() > 0 && part !== componentRoot),
+    ).toBe(true);
   });
 
   it("keeps the actor root when model bytes arrive after the first apply", async () => {

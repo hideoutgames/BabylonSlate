@@ -687,6 +687,15 @@ export function isEditorActorOrigin(mesh: Mesh): boolean {
   );
 }
 
+function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): void {
+  hideModelPlaceholder(mesh);
+  for (const child of mesh.getChildMeshes()) {
+    if (!(child instanceof Mesh)) continue;
+    child.isVisible = actor.visible;
+    child.isPickable = visualIsPickable(child, actor.locked);
+  }
+}
+
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   applySerializedTransform(mesh, actor.transform);
   const origin = isEditorActorOrigin(mesh);
@@ -698,12 +707,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     mesh.renderingGroupId = RENDERING_GROUP.background;
   }
   if (isEditorModelPlaceholder(mesh)) {
-    hideModelPlaceholder(mesh);
-    for (const child of mesh.getChildMeshes()) {
-      if (!(child instanceof Mesh)) continue;
-      child.isVisible = actor.visible;
-      child.isPickable = visualIsPickable(child, actor.locked);
-    }
+    applyModelPlaceholderVisibility(mesh, actor);
     return;
   }
   mesh.isVisible = actor.visible;
@@ -712,6 +716,10 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   for (const child of childMeshesOf(mesh)) {
     if (isEditorBillboardMesh(child)) {
       syncEditorBillboardParentScale(child);
+    }
+    if (isEditorModelPlaceholder(child)) {
+      applyModelPlaceholderVisibility(child, actor);
+      continue;
     }
     if (!child.name.includes(EDITOR_COMPONENT_MESH_SEP)) continue;
     const afterPipe = child.name.slice(
@@ -758,6 +766,21 @@ export function visualMeshesOfActorRoot(mesh: Mesh): Mesh[] {
   return parts.length > 0 ? parts : [mesh];
 }
 
+/** GLB instantiate target: MeshComponent child under an origin, else the actor root. */
+export function editorModelLoadTarget(
+  root: Mesh,
+  actor: SerializedActor,
+): Mesh {
+  const component = actor.components.find((entry) => {
+    if (entry.classId !== "MeshComponent") return false;
+    const guid = entry.properties.assetGuid;
+    return typeof guid === "string" && guid.length > 0;
+  });
+  if (!component || !isEditorActorOrigin(root)) return root;
+  const name = editorComponentMeshName(actor.id, component.id);
+  return visualMeshesOfActorRoot(root).find((mesh) => mesh.name === name) ?? root;
+}
+
 /** Full rebuild of the editor scene; `EditorSceneSync` does incremental work. */
 export function applySceneToBabylonScene(
   scene: Scene,
@@ -787,13 +810,14 @@ export function applySceneToBabylonScene(
     const bytes =
       typeof guid === "string" ? assets?.modelBytes?.get(guid) : undefined;
     if (typeof guid === "string" && bytes && isGltfModelBytes(bytes)) {
+      const placeholder = editorModelLoadTarget(mesh, actor);
       void beginSlotModelAnimLoad(
         scene,
         loadBinding,
         ++loadSlot,
         guid,
         bytes,
-        mesh,
+        placeholder,
         () => applyActorTransform(mesh, actor),
       );
     }

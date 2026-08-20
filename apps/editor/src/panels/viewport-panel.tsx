@@ -626,7 +626,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   return (
     <div
       ref={panelRef}
-      className="relative flex h-full w-full flex-col bg-background"
+      className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="viewport-panel"
       data-scene-ready={sceneReady ? "true" : "false"}
       {...bind}
@@ -641,7 +641,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="h-full w-full flex-1 touch-none"
+        className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
       {marqueeRect ? (
