@@ -29,6 +29,7 @@ const {
       },
       setPreviewCanvas: vi.fn(),
       setViewportMode: vi.fn(),
+      setViewportShadingMode: vi.fn(),
       setSelectedActors: vi.fn(),
       syncSelectionDebug: vi.fn(),
       gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
@@ -146,6 +147,7 @@ vi.mock("../context/scene-editing-context", () => ({
     saveEditorCameraPose: vi.fn(),
     loadEditorCameraPose: vi.fn(() => null),
     pivotAroundCenter: false,
+    viewportShadingMode: "pbr",
     setFrameActorHandler: vi.fn(),
   }),
 }));
