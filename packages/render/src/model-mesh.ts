@@ -265,6 +265,17 @@ export function isGltfModelBytes(
   }
 }
 
+/**
+ * Copy a babasset / payload `subarray` into a packed buffer. Some glTF paths
+ * read `bytes.buffer` without `byteOffset`, so a view into a .babasset file
+ * fails to parse.
+ */
+export function packedGltfBytes(bytes: Uint8Array): Uint8Array {
+  const packed =
+    bytes.byteOffset === 0 && bytes.buffer.byteLength === bytes.byteLength;
+  return packed ? bytes : bytes.slice();
+}
+
 export function gltfLoaderExtension(bytes: Uint8Array): ".glb" | ".gltf" {
   return splitGlb(bytes) ? ".glb" : ".gltf";
 }
