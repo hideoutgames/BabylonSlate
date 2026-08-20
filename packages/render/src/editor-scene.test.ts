@@ -930,6 +930,26 @@ describe("EditorSceneSync", () => {
     expect(visualMeshes(root!).length).toBeGreaterThan(0);
   });
 
+  it("puts instantiated GLB parts on the frozen active-mesh list", async () => {
+    const { scene } = createHandle();
+    createEditorCamera(scene, { mode: "3d" });
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    sync.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    sync.apply(sceneWith([createActor("a", "A", { components: [mesh] })]));
+    const root = sync.meshForActor("a");
+    await sync.whenEditorModelsReady();
+    const parts = visualMeshes(root!).filter((part) => part.getTotalVertices() > 0);
+    expect(parts.length).toBeGreaterThan(0);
+    expect(scene._activeMeshesFrozen).toBe(true);
+    const active = scene.getActiveMeshes();
+    const listed = active.data.slice(0, active.length);
+    expect(parts.some((part) => listed.includes(part))).toBe(true);
+  });
+
   it("loads a Model guid once for two actors on the same scene", async () => {
     const { scene } = createHandle();
     const bytes = encodeTriangleGlb();
