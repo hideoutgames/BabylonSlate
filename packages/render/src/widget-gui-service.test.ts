@@ -104,7 +104,7 @@ describe("WidgetGuiService", () => {
     });
     const doc = createDefaultUserInterface("Panel");
     doc.viewportLayer = false;
-    const label = createWidget("title", "Text", "Title");
+    const label = createWidget("title", "TextBlock", "Title");
     label.layout = pinLayout("center", "center", 80, 24);
     doc.widgets[label.id] = label;
     doc.widgets[doc.rootId]!.children = [label.id];

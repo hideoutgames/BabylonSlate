@@ -48,7 +48,7 @@ describe("WidgetComponent editor mesh", () => {
     const mesh = handle.scene.getMeshByName(editorMeshName("sign"));
     expect(mesh).toBeInstanceOf(Mesh);
     expect((mesh?.metadata as { widget?: boolean } | null)?.widget).toBe(true);
-    expect(mesh?.sideOrientation).toBe(Mesh.FRONTSIDE);
+    expect((mesh as Mesh | null)?.sideOrientation).toBe(Mesh.FRONTSIDE);
 
     const before = actorVisualFingerprint(actor);
     actor.components[0]!.properties.twoSided = true;
@@ -98,6 +98,6 @@ describe("WidgetComponent editor mesh", () => {
     );
     const mesh = handle.scene.getMeshByName(editorMeshName("sign"));
     expect(mesh?.material?.backFaceCulling).toBe(false);
-    expect(mesh?.sideOrientation).toBe(Mesh.DOUBLESIDE);
+    expect((mesh as Mesh | null)?.sideOrientation).toBe(Mesh.DOUBLESIDE);
   });
 });
