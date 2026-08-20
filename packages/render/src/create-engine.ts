@@ -47,6 +47,8 @@ import {
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene } from "./scene-loader";
+import { isEditorModelPlaceholder } from "./glb-anim";
+import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { isSkyboxMesh } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
@@ -850,7 +852,12 @@ export function createEngine(
           parentIdOf,
           (id) => {
             const mesh = editorSync.meshForActor(id);
-            return mesh !== null && mesh.isPickable;
+            if (!mesh) return false;
+            const locked = editorSync
+              .serializedScene()
+              ?.actors.find((actor) => actor.id === id)?.locked;
+            if (locked) return false;
+            return mesh.isPickable || isEditorModelPlaceholder(mesh);
           },
         );
         gizmos.attachTo(
@@ -915,6 +922,7 @@ export function createEngine(
 
   const resize = () => {
     if (!presentRtt) {
+      snapCanvasDrawingBuffer(canvas);
       engine.resize();
     } else {
       rttPresent?.clear();
