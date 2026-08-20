@@ -166,6 +166,7 @@ describe("beginSlotModelAnimLoad", () => {
     visual!.computeWorldMatrix(true);
     const world = visual!.getWorldMatrix();
     const scale = world.getRow(0);
-    expect(Math.hypot(scale.x, scale.y, scale.z)).toBeCloseTo(20, 5);
+    expect(scale).toBeTruthy();
+    expect(Math.hypot(scale!.x, scale!.y, scale!.z)).toBeCloseTo(20, 5);
   });
 });
