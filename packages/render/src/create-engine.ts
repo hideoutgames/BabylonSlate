@@ -46,7 +46,7 @@ import {
   sceneClearColor,
   type EditorColorScheme,
 } from "./editor-clear-color";
-import { applySceneToBabylonScene } from "./scene-loader";
+import { applySceneToBabylonScene, unfreezeActorWorldMatrix, freezeStaticActorWorldMatrix } from "./scene-loader";
 import { isEditorModelPlaceholder } from "./glb-anim";
 import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { isSkyboxMesh } from "./skybox";
@@ -121,6 +121,11 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
+import {
+  applyEditorMaterialFreeze,
+  prewarmSceneMaterials as warmSceneMaterials,
+  SCENE_LOOKUP_MAPS,
+} from "./scene-perf";
 
 export interface EngineHandle {
   engine: Engine;
@@ -177,6 +182,10 @@ export interface EngineHandle {
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => void;
+  /** Material asset guids whose editor tab is open — those stay unfrozen. */
+  setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
+  /** Compile shaders before the first editor draw (scene-load warm). */
+  prewarmSceneMaterials: () => Promise<void>;
   /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
@@ -461,7 +470,7 @@ export function createEngine(
     engine.registerView(canvas, undefined, true);
   }
 
-  const scene = new Scene(engine);
+  const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
     ? sceneClearColor(options.environmentColor)
@@ -584,6 +593,7 @@ export function createEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  const editingMaterialGuids = new Set<string>();
   const materialLibrary = new MaterialLibrary({
     functions: () => Object.fromEntries(materialFunctions),
     resolveTexture: (guid) => {
@@ -675,6 +685,7 @@ export function createEngine(
     );
     if (editorSync) {
       editorSync.apply(sceneData);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
       rebuildPostProcessStack();
       return;
     }
@@ -739,6 +750,11 @@ export function createEngine(
             (mesh): mesh is NonNullable<typeof mesh> =>
               mesh !== null && mesh !== attached,
           );
+        for (const root of roots) {
+          const mesh = editorSync.meshForActor(root);
+          if (mesh) unfreezeActorWorldMatrix(mesh);
+        }
+        if (attached instanceof Mesh) unfreezeActorWorldMatrix(attached);
         multiSelectDrag = beginGizmoMultiSelectDrag(attached, followers);
         options.onGizmoDragStart?.();
       },
@@ -755,6 +771,12 @@ export function createEngine(
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
         multiSelectDrag = null;
+        const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
+        for (const root of roots) {
+          const mesh = editorSync.meshForActor(root);
+          if (mesh) freezeStaticActorWorldMatrix(mesh);
+        }
+        if (attached instanceof Mesh) freezeStaticActorWorldMatrix(attached);
         options.onGizmoDragEnd?.();
       },
     });
@@ -1287,7 +1309,18 @@ export function createEngine(
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
       scheduler.invalidate("asset");
+    },
+    setEditingMaterialGuids: (guids) => {
+      editingMaterialGuids.clear();
+      for (const guid of guids) editingMaterialGuids.add(guid);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
+      scheduler.invalidate("asset");
+    },
+    prewarmSceneMaterials: async () => {
+      await warmSceneMaterials(scene);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {

@@ -22,12 +22,18 @@ import {
   createActorMesh,
   editorComponentMeshName,
   editorModelLoadTarget,
+  freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
   visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
 import { applySortingToMesh, resolveSortingLayer } from "./sorting";
+import {
+  freezeEditorActiveMeshes,
+  isStructuralEditorChange,
+  unfreezeEditorActiveMeshes,
+} from "./scene-perf";
 import { isColliderVisualMesh } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 
@@ -149,6 +155,9 @@ export class EditorSceneSync {
   }
 
   apply(sceneData: SerializedScene): void {
+    if (isStructuralEditorChange(this.lastScene, sceneData)) {
+      unfreezeEditorActiveMeshes(this.scene);
+    }
     this.liveIds.clear();
 
     for (const actor of sceneData.actors) {
@@ -217,6 +226,11 @@ export class EditorSceneSync {
       assets: this.assets,
     });
     this.onAfterApply?.();
+    for (const actor of sceneData.actors) {
+      const mesh = this.meshes.get(actor.id);
+      if (mesh) freezeStaticActorWorldMatrix(mesh);
+    }
+    freezeEditorActiveMeshes(this.scene);
   }
 
   serializedScene(): SerializedScene | null {

@@ -1,4 +1,8 @@
-export const SCENE_LOAD_PHASES = ["Collecting Assets", "Loading Models"] as const;
+export const SCENE_LOAD_PHASES = [
+  "Collecting Assets",
+  "Loading Models",
+  "Warming Shaders",
+] as const;
 
 export type SceneViewportLoadPhase = (typeof SCENE_LOAD_PHASES)[number];
 
@@ -13,11 +17,14 @@ export function isSceneViewportRemountLoad(
 export async function runSceneViewportBlockingLoad(options: {
   collect: () => Promise<void>;
   whenModelsReady: () => Promise<void>;
+  warmShaders: () => Promise<void>;
   onProgress: (value: number, phase: SceneViewportLoadPhase) => void;
 }): Promise<void> {
   options.onProgress(0, "Collecting Assets");
   await options.collect();
-  options.onProgress(50, "Loading Models");
+  options.onProgress(34, "Loading Models");
   await options.whenModelsReady();
-  options.onProgress(100, "Loading Models");
+  options.onProgress(67, "Warming Shaders");
+  await options.warmShaders();
+  options.onProgress(100, "Warming Shaders");
 }

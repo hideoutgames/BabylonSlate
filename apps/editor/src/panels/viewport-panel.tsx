@@ -71,6 +71,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     readAssetChunk,
+    assetRegistry,
   } = useDocuments();
   const {
     selectedActorIds,
@@ -417,6 +418,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
               if (cancelled || engineRef.current !== handle) return;
               await handle.whenEditorModelsReady();
             },
+            warmShaders: async () => {
+              if (cancelled || engineRef.current !== handle) return;
+              await handle.prewarmSceneMaterials();
+            },
             onProgress: (progress, phase) => {
               if (cancelled) return;
               setSceneLoad({ open: true, progress, phase });
@@ -433,7 +438,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           setSceneLoad({
             open: false,
             progress: 100,
-            phase: "Loading Models",
+            phase: "Warming Shaders",
           });
           setSceneReady(true);
         }
@@ -453,6 +458,24 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
   ]);
+
+  useEffect(() => {
+    const handle = engineRef.current;
+    if (!handle) return;
+    const byPath = new Map(
+      (assetRegistry?.list({ type: "Material" }) ?? []).map((asset) => [
+        asset.path,
+        asset.header.guid,
+      ]),
+    );
+    const guids = new Set<string>();
+    for (const doc of openDocuments) {
+      if (doc.ref.kind !== "material") continue;
+      const guid = byPath.get(doc.ref.path);
+      if (guid) guids.add(guid);
+    }
+    handle.setEditingMaterialGuids(guids);
+  }, [openDocuments, assetRegistry]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);
