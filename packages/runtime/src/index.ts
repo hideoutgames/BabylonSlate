@@ -4,6 +4,7 @@ export {
   type RuntimeDriverOptions,
   type TransportMode,
 } from "./driver";
+export { replayTracePayload, rawInputFromTraceEvents } from "./trace-replay";
 export {
   applyInspectSelectionToConsoleLine,
   formatDumpActors,
