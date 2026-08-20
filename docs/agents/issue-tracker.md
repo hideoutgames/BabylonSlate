@@ -172,6 +172,10 @@ Agents must never create visual or spatial media with AI (images, video, icons, 
 - If artwork is missing, stop and ask a human. Do not generate a stand-in.
 - Rule: [.cursor/rules/no-ai-artwork.mdc](../../.cursor/rules/no-ai-artwork.mdc).
 
+## Investigate skill
+
+Read-only deep investigation of the repo from the user's prompt: [`.cursor/skills/investigate/SKILL.md`](../../.cursor/skills/investigate/SKILL.md). No code changes. The parent agent keeps investigation context and dispatches more `explore` sub-agents as the scope grows. Distinct from [ask](../../.cursor/skills/ask/SKILL.md) (short Q&A).
+
 ## BabylonJS skill
 
 Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** work. UserInterface is Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
