@@ -53,6 +53,7 @@ import { isSkyboxMesh } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
+  syncAuthoredCamerasFromMeshes,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -741,6 +742,8 @@ export function createEngine(
       return live;
     };
     const gizmosRef: { host: GizmoHost | null } = { host: null };
+    const debugOverlayInstance = new EditorDebugOverlay(scene);
+    debugOverlay = debugOverlayInstance;
     const gizmos = createGizmoHost(scene, {
       mode,
       scheduler,
@@ -766,6 +769,13 @@ export function createEngine(
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
+        const sceneData = editorSync.serializedScene();
+        if (sceneData) {
+          syncAuthoredCamerasFromMeshes(scene, sceneData, (id) =>
+            editorSync.meshForActor(id),
+          );
+        }
+        debugOverlayInstance.followLivePose();
         options.onGizmoDrag?.();
       },
       onDragEnd: () => {
@@ -784,8 +794,6 @@ export function createEngine(
       },
     });
     gizmosRef.host = gizmos;
-    const debugOverlayInstance = new EditorDebugOverlay(scene);
-    debugOverlay = debugOverlayInstance;
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,

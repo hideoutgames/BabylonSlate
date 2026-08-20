@@ -70,6 +70,12 @@ export const DEFAULT_GIZMO_HANDLE_SCALE = 1.8;
 /** Invisible pick meshes, scaled independently of the thin visual shafts. */
 export const GIZMO_COLLIDER_SCALE = 2.5;
 
+/**
+ * Floor for Babylon's perspective gizmo `scaleRatio * depth`. Depth ~0 when the
+ * attached mesh sits on the editor eye (default Camera actor).
+ */
+export const GIZMO_MIN_CAMERA_DISTANCE = 2;
+
 /** Rotation torus tube multiplier; independent of thin translate/scale shafts. */
 export const GIZMO_ROTATION_THICKNESS = 8;
 
@@ -145,6 +151,22 @@ export function gizmoAxisEnabledFlags(
       uniform: tool === "scale",
     },
   };
+}
+
+/**
+ * Clamp Babylon's perspective gizmo scale so handles stay pickable when the
+ * attached mesh is on (or behind) the editor camera.
+ */
+export function clampGizmoScreenScale(
+  currentScale: number,
+  scaleRatio: number,
+  minDistance: number = GIZMO_MIN_CAMERA_DISTANCE,
+): number {
+  const minAbs = Math.abs(scaleRatio) * minDistance;
+  if (!Number.isFinite(currentScale) || Math.abs(currentScale) < minAbs) {
+    return (Math.sign(currentScale) || 1) * minAbs;
+  }
+  return currentScale;
 }
 
 function brighten(color: Color3, amount = 0.38): Color3 {
@@ -357,6 +379,20 @@ export function createGizmoHost(
     axis.dragBehavior.onDragEndObservable.add(endDrag);
   }
 
+  const clampHandleScale = () => {
+    for (const axis of axisHandles) {
+      const mesh = axis._rootMesh;
+      mesh.scaling.set(
+        clampGizmoScreenScale(mesh.scaling.x, axis.scaleRatio),
+        clampGizmoScreenScale(mesh.scaling.y, axis.scaleRatio),
+        clampGizmoScreenScale(mesh.scaling.z, axis.scaleRatio),
+      );
+    }
+  };
+  const scaleObserver = layer.utilityLayerScene.onBeforeRenderObservable.add(
+    clampHandleScale,
+  );
+
   const applyAxisVisibility = () => {
     const flags = gizmoAxisEnabledFlags(mode, tool);
     position.xGizmo.isEnabled = flags.position.x;
@@ -447,6 +483,9 @@ export function createGizmoHost(
     dispose: () => {
       releaseLease?.();
       releaseLease = null;
+      if (scaleObserver) {
+        layer.utilityLayerScene.onBeforeRenderObservable.remove(scaleObserver);
+      }
       for (const gizmo of gizmos) {
         gizmo.dispose();
       }
