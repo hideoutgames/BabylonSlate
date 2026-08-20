@@ -242,6 +242,8 @@ test.describe("P18 iPad editor optimisation", () => {
       )
       .toBeGreaterThan(afterIdleTick);
 
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("debug-inspect")).toHaveCount(0);
     await page.getByTestId("play-overlay-close").click();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
