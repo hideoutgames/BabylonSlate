@@ -18,8 +18,12 @@ import {
 import {
   compileGraph,
   compileTransitionRuleGraph,
-  type LogicGraph,
+  collectLatentFunctions,
+  isLatentFunctionKey,
   isLogicGraphPayload,
+  latentSourcesFromSerializedGraph,
+  type LatentFunctionSource,
+  type LogicGraph,
 } from "@babylonslate/scripting";
 import { localVariablePreamble } from "@babylonslate/scripting-nodes";
 import { defaultNodeRegistry, materializeLogicGraph, type HydrateGraphOptions } from "./graph-validation";
@@ -117,6 +121,8 @@ export function compileGraphDocument(
     instrumentInfiniteLoops?: boolean;
     enums?: HydrateGraphOptions["enums"];
     structs?: HydrateGraphOptions["structs"];
+    latentFunctions?: ReadonlySet<string>;
+    parentOf?: (classId: string) => string | null | undefined;
   },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
@@ -125,6 +131,27 @@ export function compileGraphDocument(
     enums: options.enums,
     structs: options.structs,
   };
+  const classId = options.classId?.trim() || classIdForGraphPath(options.path);
+  const parentOf =
+    options.parentOf ??
+    ((id: string) =>
+      id === classId ? (options.parentClassId ?? null) : null);
+  const latentFunctions =
+    options.latentFunctions ??
+    collectLatentFunctions(
+      serialized
+        ? latentSourcesFromSerializedGraph(classId, serialized)
+        : [],
+      defaultNodeRegistry,
+      parentOf,
+    );
+  const isLatentFunction = (targetClassId: string, functionName: string) =>
+    isLatentFunctionKey(
+      targetClassId,
+      functionName,
+      latentFunctions,
+      parentOf,
+    );
   const logic = materializeLogicGraph(content, graphId, "event", typeOptions);
   const instrumentInfiniteLoops =
     options.instrumentInfiniteLoops ?? options.stripDevelopmentOnly !== true;
@@ -136,6 +163,7 @@ export function compileGraphDocument(
         registry: defaultNodeRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
+        isLatentFunction,
       }),
     );
   }
@@ -161,6 +189,7 @@ export function compileGraphDocument(
           stripDevelopmentOnly: options.stripDevelopmentOnly,
           instrumentInfiniteLoops,
           localPreamble: localVariablePreamble(locals),
+          isLatentFunction,
         }),
       );
     }
@@ -181,7 +210,6 @@ export function compileGraphDocument(
     }
     entryPoints.push(...extra.entryPoints);
   }
-  const classId = options.classId?.trim() || classIdForGraphPath(options.path);
   const metadata = classMetadataFromGraph(content, options.parentClassId);
   return {
     assetGuid: options.path,
@@ -383,7 +411,10 @@ function graphDocumentCompileCacheKey(
     classId?: string;
     parentClassId?: string | null;
   },
-  options: GraphCompileCacheOptions & { typesFingerprint?: string },
+  options: GraphCompileCacheOptions & {
+    typesFingerprint?: string;
+    latentFingerprint?: string;
+  },
 ): string {
   const content = isLogicGraphPayload(doc.content)
     ? { nodes: doc.content.nodes, edges: doc.content.edges }
@@ -398,6 +429,7 @@ function graphDocumentCompileCacheKey(
     types:
       options.typesFingerprint ??
       typeSchemasFingerprint(options.enums, options.structs),
+    latent: options.latentFingerprint ?? "",
   });
 }
 
@@ -424,6 +456,9 @@ function compileGraphDocumentCached(
   options: GraphCompileCacheOptions & {
     cache?: GraphScriptCompileCache;
     typesFingerprint?: string;
+    latentFunctions?: ReadonlySet<string>;
+    latentFingerprint?: string;
+    parentOf?: (classId: string) => string | null | undefined;
   },
 ): ScriptBundleEntry | null {
   const cache = options.cache;
@@ -440,6 +475,8 @@ function compileGraphDocumentCached(
       stripDevelopmentOnly: options.stripDevelopmentOnly,
       enums: options.enums,
       structs: options.structs,
+      latentFunctions: options.latentFunctions,
+      parentOf: options.parentOf,
     });
     if (cache && key) cache.graphs.set(key, script);
     return script;
@@ -449,6 +486,47 @@ function compileGraphDocumentCached(
     console.error(`[play] failed to compile ${doc.path}`, error);
     return null;
   }
+}
+
+function documentClassId(doc: {
+  path: string;
+  classId?: string;
+}): string {
+  return doc.classId?.trim() || classIdForGraphPath(doc.path);
+}
+
+function projectLatentFunctions(
+  documents: ReadonlyArray<{
+    path: string;
+    content: SerializedGraph | LogicGraph;
+    classId?: string;
+    parentClassId?: string | null;
+  }>,
+): {
+  latentFunctions: Set<string>;
+  parentOf: (classId: string) => string | null;
+  fingerprint: string;
+} {
+  const parentByClass = new Map<string, string | null>();
+  const sources: LatentFunctionSource[] = [];
+  for (const doc of documents) {
+    const classId = documentClassId(doc);
+    parentByClass.set(classId, doc.parentClassId ?? null);
+    if (!isLogicGraphPayload(doc.content)) {
+      sources.push(...latentSourcesFromSerializedGraph(classId, doc.content));
+    }
+  }
+  const parentOf = (classId: string) => parentByClass.get(classId) ?? null;
+  const latentFunctions = collectLatentFunctions(
+    sources,
+    defaultNodeRegistry,
+    parentOf,
+  );
+  return {
+    latentFunctions,
+    parentOf,
+    fingerprint: [...latentFunctions].sort().join("\n"),
+  };
 }
 
 export function compileGraphDocuments(
@@ -464,11 +542,15 @@ export function compileGraphDocuments(
     options.enums,
     options.structs,
   );
+  const project = projectLatentFunctions(documents);
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
     const script = compileGraphDocumentCached(doc, {
       ...options,
       typesFingerprint,
+      latentFunctions: project.latentFunctions,
+      latentFingerprint: project.fingerprint,
+      parentOf: project.parentOf,
     });
     if (script) scripts.push(script);
   }

@@ -6,6 +6,7 @@ export * from "./validate";
 export * from "./compiled-nodes";
 export * from "./node-registry";
 export * from "./compile";
+export * from "./latent-functions";
 export * from "./development-only";
 export * from "./wildcard";
 export * from "./wildcard-resolve";

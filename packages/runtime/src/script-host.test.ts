@@ -83,8 +83,9 @@ function toScript(
   registry: NodeRegistry,
   classId: string,
   assetGuid: string,
+  extra: { isLatentFunction?: (classId: string, functionName: string) => boolean } = {},
 ): CompiledScript {
-  const compiled = compileGraph(graph, { assetGuid, registry });
+  const compiled = compileGraph(graph, { assetGuid, registry, ...extra });
   return {
     assetGuid,
     classId,
@@ -1136,6 +1137,152 @@ describe("script host runs compiled graphs", () => {
     runtime.tick();
     await Promise.resolve();
     expect(commands.filter((c) => c.type === "log")).toHaveLength(1);
+    runtime.stop();
+  });
+
+  it("Call Function to a delayed Function waits like Delay and returns Output after the wait", async () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+      { name: "result", typeId: "float", direction: "out" },
+    ];
+    const waitGraph: LogicGraph = {
+      id: "Wait",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "delay", "timers.delay", { duration: 0.25 }),
+        node(registry, "out", "flow.function.output", {
+          pins,
+          "default:result": 7,
+        }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "delay", "execIn"),
+        edge("e2", "delay", "execOut", "out", "then"),
+      ],
+    };
+    const eventGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Wait",
+          classId: "Hero",
+          implicitSelf: true,
+          pins,
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "call", "exec"),
+        edge("e2", "call", "then", "log", "execIn"),
+        edge("e3", "call", "result", "log", "message"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      dt: 0.1,
+      onCommand: (command) => commands.push(command),
+    });
+    const script = withFunctionExport(
+      toScript(eventGraph, registry, "Hero", "hero-wait-asset", {
+        isLatentFunction: (_classId, functionName) => functionName === "Wait",
+      }),
+      waitGraph,
+      registry,
+      "Wait",
+    );
+    expect(script.entryPoints.some((entry) => entry.event === "onBeginPlay" && entry.isAsync)).toBe(
+      true,
+    );
+    await runtime.loadScripts([script]);
+    runtime.spawnScriptedActor({ classId: "Hero" });
+    runtime.start();
+    runtime.tick();
+    runtime.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
+
+    runtime.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    const logs = commands.filter((c) => c.type === "log");
+    expect(logs).toHaveLength(1);
+    expect(String((logs[0] as { message: string }).message)).toContain("7");
+    runtime.stop();
+  });
+
+  it("does not re-enter Tick while a Call to a delayed Function is pending", async () => {
+    const registry = createDefaultNodeRegistry();
+    const pins = [
+      { name: "exec", typeId: "exec", direction: "in" },
+      { name: "then", typeId: "exec", direction: "out" },
+    ];
+    const waitGraph: LogicGraph = {
+      id: "Wait",
+      kind: "function",
+      nodes: [
+        node(registry, "in", "flow.function.input", { pins }),
+        node(registry, "delay", "timers.delay", { duration: 5 }),
+        node(registry, "out", "flow.function.output", { pins }),
+      ],
+      edges: [
+        edge("e1", "in", "exec", "delay", "execIn"),
+        edge("e2", "delay", "execOut", "out", "then"),
+      ],
+    };
+    const eventGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "call", "functions.call", {
+          functionName: "Wait",
+          classId: "Waiter",
+          implicitSelf: true,
+          pins,
+        }),
+        node(registry, "log", "debug.log", { message: "after delay" }),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "call", "exec"),
+        edge("e2", "call", "then", "log", "execIn"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    const script = withFunctionExport(
+      toScript(eventGraph, registry, "Waiter", "waiter-fn-asset", {
+        isLatentFunction: (_classId, functionName) => functionName === "Wait",
+      }),
+      waitGraph,
+      registry,
+      "Wait",
+    );
+    expect(script.entryPoints[0]).toMatchObject({
+      event: "onTick",
+      isAsync: true,
+    });
+    await runtime.loadScripts([script]);
+    runtime.spawnScriptedActor({ classId: "Waiter" });
+    runtime.start();
+    runtime.tick();
+    runtime.tick();
+    runtime.tick();
+    await Promise.resolve();
+    expect(commands.filter((c) => c.type === "log")).toHaveLength(0);
     runtime.stop();
   });
 
