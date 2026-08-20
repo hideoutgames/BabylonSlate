@@ -1120,6 +1120,8 @@ describe("createPlayMesh", () => {
     expect(firstWorld).not.toBe(secondWorld);
     expect(firstWorld.getTranslation().asArray()).toEqual([-3, 1, 0]);
     expect(secondWorld.getTranslation().asArray()).toEqual([4, -1, 0]);
+    expect(binding.meshes.get(0)!.isWorldMatrixFrozen).toBe(true);
+    expect(binding.meshes.get(1)!.isWorldMatrixFrozen).toBe(true);
   });
 
   it("rebuilds a slot visual when assignMesh arrives after the first snapshot", () => {
@@ -1313,6 +1315,8 @@ describe("createPlayMesh", () => {
       ],
     });
     expect(mesh!.isVisible).toBe(true);
+    expect(mesh!.isWorldMatrixFrozen).toBe(false);
+    expect(mesh!.infiniteDistance).toBe(true);
   });
 
   it("creates a 3D Text mesh for meshKind text3d", () => {

@@ -482,6 +482,8 @@ export function createEngine(
     // Intermediate disables color clear (assumes a full-bleed skybox). Play
     // scenes often have none, so restore autoClear to avoid additive trails.
     scene.autoClear = true;
+  } else {
+    scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
   }
   if (presentRtt) {
     // RTT clear targets the preview buffer, not Scene/Play's framebuffer.

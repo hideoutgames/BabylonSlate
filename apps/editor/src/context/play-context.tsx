@@ -22,6 +22,7 @@ import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
+import { appendOutputLogLine } from "../lib/output-log-ring";
 import {
   emptyPlayParticleLibrary,
   particleMaterialGuidsFromLibrary,
@@ -452,7 +453,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, [persistDebuggerDefaults]);
 
   const appendLog = useCallback((line: string) => {
-    setLogLines((prev) => [...prev.slice(-500), line]);
+    setLogLines((prev) => appendOutputLogLine(prev, line));
   }, []);
 
   useEffect(

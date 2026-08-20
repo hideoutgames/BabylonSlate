@@ -106,6 +106,7 @@ afterEach(() => {
   selectActor.mockClear();
   setDiagnostics.mockClear();
   setFocusDiagnostic.mockClear();
+  clearFocusedNode.mockClear();
   diagnostics.current = [pairingWarning];
 });
 
@@ -115,6 +116,22 @@ describe("CompilerResultsPanel", () => {
     fireEvent.click(screen.getByTestId("compiler-result-row"));
     expect(selectActor).toHaveBeenCalledWith("hero");
     expect(setFocusDiagnostic).toHaveBeenCalled();
+  });
+
+  it("focuses the graph node when a diagnostic with a nodeId is tapped", () => {
+    const graphDiagnostic: Diagnostic = {
+      severity: "error",
+      code: "graph.missing_exec",
+      message: "Exec pin is not connected.",
+      assetGuid: "assets/Hero.class.babasset",
+      graphId: "class:assets/Hero.class.babasset",
+      nodeId: "tick",
+    };
+    diagnostics.current = [graphDiagnostic];
+    render(<CompilerResultsPanel {...({} as IDockviewPanelProps)} />);
+    fireEvent.click(screen.getByTestId("compiler-result-row"));
+    expect(setFocusDiagnostic).toHaveBeenCalledWith(graphDiagnostic);
+    expect(clearFocusedNode).toHaveBeenCalled();
   });
 
   it("windows a large diagnostic set to the viewport plus overscan", () => {

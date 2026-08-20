@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, ScenePerformancePriority } from "@babylonjs/core";
+import { NullEngine, PBRMaterial, ScenePerformancePriority, Mesh } from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  DEFAULT_SCENE_SKYBOX_ACTOR_ID,
+  DEFAULT_SCENE_SUN_ACTOR_ID,
+  DEFAULT_SCENE_SUN_COMPONENT_ID,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine } from "./create-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { GRID_MESH_NAME } from "./editor-grid";
 import { encodeTriangleGlb } from "./model-mesh";
-import { editorMeshName } from "./scene-loader";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
 
 class FakeCanvas {
@@ -113,6 +116,9 @@ describe("p20-editor-scene-freeze", () => {
     expect(play.scene.skipPointerMovePicking).toBe(true);
     expect(play.scene.performancePriority).toBe(
       ScenePerformancePriority.Intermediate,
+    );
+    expect(editor.scene.performancePriority).toBe(
+      ScenePerformancePriority.BackwardCompatible,
     );
     expect(play.scene.autoClear).toBe(true);
     expect(editor.scheduler.shouldRender(0)).toBe(true);
@@ -226,6 +232,28 @@ describe("p20-editor-scene-freeze", () => {
       {} as never,
     );
     expect(mesh!.isWorldMatrixFrozen).toBe(true);
+  });
+
+  it("does not freeze skybox, billboard, or grid world matrices", () => {
+    const handle = editorHandle();
+    handle.loadScene(createDefaultScene());
+    const skybox = handle.editor?.sync.meshForActor(DEFAULT_SCENE_SKYBOX_ACTOR_ID);
+    expect(skybox).not.toBeNull();
+    expect(skybox!.isWorldMatrixFrozen).toBe(false);
+
+    const grid = handle.editor?.grid.mesh;
+    expect(grid?.name).toBe(GRID_MESH_NAME);
+    expect(grid!.isWorldMatrixFrozen).toBe(false);
+
+    const icon = handle.scene.getMeshByName(
+      editorComponentMeshName(
+        DEFAULT_SCENE_SUN_ACTOR_ID,
+        DEFAULT_SCENE_SUN_COMPONENT_ID,
+      ),
+    );
+    expect(icon).not.toBeNull();
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(icon!.isWorldMatrixFrozen).toBe(false);
   });
 
   it("freezes scene materials except those open for editing", () => {
