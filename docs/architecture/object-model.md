@@ -74,7 +74,7 @@ See [physics.md](physics.md) for RigidBody / Collider property schemas, pairing 
 - Classes declare implemented interface guids; handlers are injectable so P5 can bind compiled graphs without changing the dispatch shape (see [scripting.md](scripting.md)).
 - `World.createActor` copies `ClassRegistry.inheritedInterfaces` onto the instance unless the caller passes `implementedInterfaces`. `UserInterface` / `Widget` instances are created by the runtime apply path, not `createActor`.
 - Play `ScriptHost.callInterface` calls `dispatchInterface` against the world's `InterfaceRegistry` so a missing implementation returns pin defaults instead of `undefined`.
-- `ScriptHost.invokeEvent(classId, event, self?, args?)` and compiled `ctx.invokeCustomEvent(target, eventName, args)` pass `args` into the entry as `ctx.commandArgs` (alias `ctx.args`). Cross-instance Call dispatches on `target.classId` with `self = target`. `ctx.invokeFunction(target, functionName, args)` looks up `exports[functionName]` on `target.classId` (function graphs have no lifecycle `point.event`) and returns the result or `{}`. See [scripting.md](scripting.md).
+- `ScriptHost.invokeEvent(classId, event, self?, args?)` and compiled `ctx.invokeCustomEvent(target, eventName, args)` pass `args` into the entry as `ctx.commandArgs` (alias `ctx.args`). Cross-instance Call dispatches on `target.classId` with `self = target`. `ctx.invokeFunction(target, functionName, args)` looks up `exports[functionName]` on `target.classId` (function graphs have no lifecycle `point.event`) and returns the result or `{}`, or a Promise of that object when the export is async. See [scripting.md](scripting.md).
 
 ## Re-parenting
 
