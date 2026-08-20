@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { CommandMessage, DebugDrawCommand } from "@babylonslate/bridge";
 import { createTestEngine } from "./create-null-engine";
 import { createPlayDebugDraw, PLAY_DEBUG_DRAW_PREFIX } from "./play-debug-draw";
+import { RENDERING_GROUP } from "./sorting";
 import { setupDefaultViewport } from "./viewport";
 
-function overlayMeshes(scene: { meshes: Array<{ name: string; metadata?: unknown }> }) {
+function overlayMeshes(scene: {
+  meshes: Array<{ name: string; metadata?: unknown; renderingGroupId?: number }>;
+}) {
   return scene.meshes.filter((mesh) => {
     const meta = mesh.metadata as { playDebugOverlay?: boolean } | null;
     return mesh.name.startsWith(PLAY_DEBUG_DRAW_PREFIX) || meta?.playDebugOverlay === true;
@@ -24,7 +27,7 @@ function draw(
 }
 
 describe("play debug draw", () => {
-  it("draws a duration-0 line for one frame then expires it", () => {
+  it("draws duration-0 lines in the world group and keeps them across extra presents", () => {
     const { engine, scene } = createTestEngine();
     setupDefaultViewport(scene);
     const overlay = createPlayDebugDraw(scene);
@@ -44,11 +47,85 @@ describe("play debug draw", () => {
     expect(
       created.every((mesh) => {
         const meta = mesh.metadata as { playDebugOverlay?: boolean } | null;
-        return meta?.playDebugOverlay === true;
+        return (
+          meta?.playDebugOverlay === true &&
+          mesh.renderingGroupId === RENDERING_GROUP.world
+        );
       }),
     ).toBe(true);
     scene.render();
+    scene.render();
+    scene.render();
+    expect(overlayMeshes(scene).length).toBeGreaterThan(0);
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("expires a presented duration-0 line on a later sim tick", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const overlay = createPlayDebugDraw(scene);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    overlay.noteSimTick(1);
+    expect(overlayMeshes(scene).length).toBeGreaterThan(0);
+    scene.render();
+    overlay.noteSimTick(2);
     expect(overlayMeshes(scene)).toHaveLength(0);
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("keeps a duration-0 line that presented before the matching sim tick", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const overlay = createPlayDebugDraw(scene);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    scene.render();
+    overlay.noteSimTick(1);
+    expect(overlayMeshes(scene).length).toBeGreaterThan(0);
+    overlay.noteSimTick(2);
+    expect(overlayMeshes(scene)).toHaveLength(0);
+    overlay.dispose();
+    engine.dispose();
+  });
+
+  it("replaces duration-0 draws on the next debugDraw without a blank present", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const overlay = createPlayDebugDraw(scene);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    overlay.noteSimTick(1);
+    scene.render();
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 1, z: 0 },
+        end: { x: 1, y: 1, z: 0 },
+      }),
+    );
+    expect(overlayMeshes(scene)).toHaveLength(1);
     overlay.dispose();
     engine.dispose();
   });

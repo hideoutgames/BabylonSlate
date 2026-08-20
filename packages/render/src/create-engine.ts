@@ -8,7 +8,11 @@ import {
 import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
-import type { CommandMessage } from "@babylonslate/bridge";
+import {
+  isPublishedSnapshot,
+  readSnapshotHeader,
+  type CommandMessage,
+} from "@babylonslate/bridge";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
@@ -123,6 +127,7 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
+import { configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
   prewarmSceneMaterials as warmSceneMaterials,
@@ -491,6 +496,7 @@ export function createEngine(
     // Intermediate disables color clear (assumes a full-bleed skybox). Play
     // scenes often have none, so restore autoClear to avoid additive trails.
     scene.autoClear = true;
+    configureEditorRenderingGroups(scene);
   } else {
     scene.performancePriority = ScenePerformancePriority.BackwardCompatible;
   }
@@ -989,12 +995,19 @@ export function createEngine(
     loadScene(createDefaultScene());
   }
 
+  const presentSharedPlayView = Boolean(
+    options.sharedEngine && !presentRtt && options.playMode,
+  );
+
   const resize = () => {
-    if (!presentRtt) {
+    if (presentRtt) {
+      rttPresent?.clear();
+    } else if (presentSharedPlayView) {
+      const size = snapCanvasDrawingBuffer(canvas);
+      engine.setSize(size.width, size.height);
+    } else {
       snapCanvasDrawingBuffer(canvas);
       engine.resize();
-    } else {
-      rttPresent?.clear();
     }
     const size = presentRtt
       ? rttPresent?.canvasSize() ?? { width: 1, height: 1 }
@@ -1139,7 +1152,13 @@ export function createEngine(
     },
     resize,
     setSize: (width: number, height: number) => {
-      engine.setSize(Math.max(1, Math.floor(width)), Math.max(1, Math.floor(height)));
+      const nextWidth = Math.max(1, Math.floor(width));
+      const nextHeight = Math.max(1, Math.floor(height));
+      if (presentSharedPlayView) {
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+      }
+      engine.setSize(nextWidth, nextHeight);
       refreshAuthoredCameraLenses(scene);
     },
     loadScene,
@@ -1148,6 +1167,9 @@ export function createEngine(
       interpAlpha = 1;
       const sampled = interpolator.sample(interpAlpha);
       if (sampled) positionsFromSample(sampled, lastPositions);
+      if (isPublishedSnapshot(buffer)) {
+        playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
+      }
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {

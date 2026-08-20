@@ -11,11 +11,13 @@ import {
 import type { CommandMessage, DebugColliderPrimitive } from "@babylonslate/bridge";
 import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
+import { RENDERING_GROUP } from "./sorting";
 
 const DEBUG_OVERLAY_PREFIX = "playConsoleViz:";
 
 function markDebugOverlay(mesh: Mesh | LinesMesh): void {
   mesh.isPickable = false;
+  mesh.renderingGroupId = RENDERING_GROUP.world;
   mesh.metadata = { ...(mesh.metadata ?? {}), playDebugOverlay: true };
 }
 

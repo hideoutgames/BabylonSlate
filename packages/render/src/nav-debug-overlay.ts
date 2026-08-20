@@ -17,6 +17,7 @@ import {
   createNavDebugBlockerMesh,
   type EditorVolumeKind,
 } from "./editor-volume";
+import { RENDERING_GROUP } from "./sorting";
 
 export const NAVMESH_DEBUG_Y_OFFSET = 0.04;
 export const NAVMESH_DEBUG_FILL = new Color3(0.18, 0.78, 0.32);
@@ -115,6 +116,7 @@ export class NavMeshDebugOverlay {
       material.wireframe = false;
       material.transparencyMode = StandardMaterial.MATERIAL_ALPHABLEND;
       mesh.material = material;
+      mesh.renderingGroupId = RENDERING_GROUP.world;
       mesh.enableEdgesRendering();
       mesh.edgesWidth = 2;
       mesh.edgesColor = NAVMESH_DEBUG_EDGE.clone();

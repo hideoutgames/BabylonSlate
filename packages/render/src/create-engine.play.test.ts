@@ -1081,6 +1081,82 @@ describe("Play createEngine view", () => {
     expect(down).toHaveBeenCalled();
   });
 
+  it("sizes the shared Play framebuffer from the overlay canvas instead of engine.resize", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, {
+      clientWidth: 800,
+      clientHeight: 450,
+      width: 300,
+      height: 150,
+    });
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    const resize = vi.spyOn(engine, "resize");
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(resize).not.toHaveBeenCalled();
+    expect(setSize).toHaveBeenCalledWith(800, 450);
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(450);
+  });
+
+  it("matches the overlay drawing buffer to a locked Play setSize", () => {
+    const { handle, canvas } = playHandle(sharedEngine());
+    Object.assign(canvas, { width: 300, height: 150 });
+    handle.setSize(1920, 1080);
+    expect(canvas.width).toBe(1920);
+    expect(canvas.height).toBe(1080);
+  });
+
+  it("shares depth across Play rendering groups so debug is not an underlay", () => {
+    const { handle } = playHandle(sharedEngine());
+    const worldClear = handle.scene.getAutoClearDepthStencilSetup(1);
+    expect(worldClear.autoClear).toBe(false);
+  });
+
+  it("expires Play duration-0 debug draw when the next snapshot tick arrives", () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({
+      type: "debugDraw",
+      kind: "line",
+      duration: 0,
+      color: { x: 1, y: 1, z: 1, w: 1 },
+      frameId: 1,
+      start: { x: 0, y: 0, z: 0 },
+      end: { x: 1, y: 0, z: 0 },
+    });
+    const snapshot = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(snapshot, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    handle.pushSnapshot(snapshot);
+    handle.scene.render();
+    handle.scene.render();
+    handle.scene.render();
+    expect(
+      handle.scene.meshes.some((mesh) => mesh.name.startsWith("playDebugDraw:")),
+    ).toBe(true);
+    writeSnapshotHeader(snapshot, {
+      frameId: 2,
+      tickIndex: 2,
+      actorCount: 0,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    handle.pushSnapshot(snapshot);
+    expect(
+      handle.scene.meshes.some((mesh) => mesh.name.startsWith("playDebugDraw:")),
+    ).toBe(false);
+  });
+
   it("keeps the Default Camera active after a perspective-to-ortho switch and refreshes ortho on setSize", () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);

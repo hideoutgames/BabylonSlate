@@ -45,6 +45,7 @@ describe("NavMeshDebugOverlay", () => {
     expect(overlay.mesh).not.toBeNull();
     expect(overlay.mesh!.isPickable).toBe(false);
     expect(overlay.mesh!.receiveShadows).toBe(false);
+    expect(overlay.mesh!.renderingGroupId).toBe(1);
     const positions = overlay.mesh!.getVerticesData(VertexBuffer.PositionKind);
     const primitives = navMeshDebugPrimitives(bytes);
     const rawY = primitives.find((primitive) => primitive.type === "tris")
@@ -71,6 +72,7 @@ describe("NavMeshDebugOverlay", () => {
     ]);
     expect(overlay.mesh).toBeNull();
     expect(overlay.blockerMeshes).toHaveLength(1);
+    expect(overlay.blockerMeshes[0]!.renderingGroupId).toBe(1);
     expect(overlay.blockerMeshes[0]!.position.x).toBe(1);
     expect(overlay.blockerMeshes[0]!.scaling.z).toBe(4);
     overlay.clear();
