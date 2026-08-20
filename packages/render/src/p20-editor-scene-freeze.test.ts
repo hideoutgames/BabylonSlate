@@ -138,6 +138,20 @@ describe("p20-editor-scene-freeze", () => {
     expect(handle.scene._activeMeshesFrozen).toBe(true);
   });
 
+  it("keeps the editor grid in the frozen active list after hide then show", () => {
+    const handle = editorHandle();
+    const grid = handle.editor?.grid;
+    expect(grid).toBeTruthy();
+    grid!.setVisible(false);
+    handle.loadScene(createDefaultScene());
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(grid!.mesh.isVisible).toBe(true);
+    expect(grid!.mesh.visibility).toBe(0);
+    grid!.setVisible(true);
+    expect(grid!.mesh.isVisible).toBe(true);
+    expect(grid!.mesh.visibility).toBe(1);
+  });
+
   it("freezes static actor world matrices and unfreezes them on gizmo drag", () => {
     const handle = editorHandle();
     const editor = handle.editor;

@@ -343,6 +343,7 @@ export interface EditorTools {
     tileSize: number;
     tileSubdivisions: number;
     cameraBounds2D: { width: number; height: number };
+    showGrid?: boolean;
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
@@ -878,6 +879,9 @@ export function createEngine(
         grid.setSpacing(settings.tileSize);
         grid.setSubdivisions(settings.tileSubdivisions);
         grid.setCameraBounds(settings.cameraBounds2D);
+        if (typeof settings.showGrid === "boolean") {
+          grid.setVisible(settings.showGrid);
+        }
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {

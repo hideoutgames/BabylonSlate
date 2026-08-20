@@ -4,6 +4,8 @@ import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
 export const GRID_MESH_NAME = "__editor-grid__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
+/** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
+export const GRID_ALPHA_INDEX = 0;
 
 const GRID_SHADER_NAME = "editorGrid";
 const GRID_PLANE_OFFSET = 0.002;
@@ -223,7 +225,9 @@ export function createEditorGrid(
   mesh.isPickable = false;
   mesh.doNotSyncBoundingInfo = true;
   mesh.alwaysSelectAsActiveMesh = true;
-  mesh.isVisible = visible;
+  mesh.isVisible = true;
+  mesh.visibility = visible ? 1 : 0;
+  mesh.alphaIndex = GRID_ALPHA_INDEX;
   mesh.renderingGroupId = RENDERING_GROUP.world;
   configureEditorRenderingGroups(scene);
 
@@ -346,7 +350,9 @@ export function createEditorGrid(
     },
     setVisible: (next: boolean) => {
       visible = next;
-      mesh.isVisible = next;
+      mesh.isVisible = true;
+      mesh.alwaysSelectAsActiveMesh = true;
+      mesh.visibility = next ? 1 : 0;
     },
     setCameraBounds: (bounds) => {
       requestedBounds = bounds;

@@ -1446,11 +1446,32 @@ describe("editor grid", () => {
     expect(scene.getMeshByName("__editor-camera-bounds__")).not.toBeNull();
 
     grid.setVisible(false);
-    expect(grid.mesh.isVisible).toBe(false);
+    expect(grid.mesh.isVisible).toBe(true);
+    expect(grid.mesh.visibility).toBe(0);
     expect(grid.boundsMesh?.isVisible).toBe(true);
 
     grid.setCameraBounds(null);
     expect(scene.getMeshByName("__editor-camera-bounds__")).toBeNull();
+    grid.dispose();
+  });
+
+  it("puts the grid back in the frozen active list after hide then apply then show", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "3d" });
+    const sync = new EditorSceneSync(scene);
+    grid.setVisible(false);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
+      ]),
+    );
+    expect(scene._activeMeshesFrozen).toBe(true);
+    expect(grid.mesh.isVisible).toBe(true);
+    expect(grid.mesh.visibility).toBe(0);
+    grid.setVisible(true);
+    expect(grid.mesh.isVisible).toBe(true);
+    expect(grid.mesh.visibility).toBe(1);
+    expect(grid.mesh.alwaysSelectAsActiveMesh).toBe(true);
     grid.dispose();
   });
 
@@ -1481,6 +1502,34 @@ describe("editor grid", () => {
     expect(grid.mesh.material?.disableDepthWrite).toBe(true);
     const worldClear = scene.getAutoClearDepthStencilSetup(RENDERING_GROUP.world);
     expect(worldClear.autoClear).toBe(false);
+    grid.dispose();
+  });
+
+  it("draws camera helper billboards in front of the grid", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "3d" });
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("cam", "Camera", {
+          components: [
+            { id: "camera", classId: "CameraComponent", properties: {} },
+          ],
+        }),
+      ]),
+    );
+    const origin = sync.meshForActor("cam");
+    const billboard = origin
+      ?.getChildMeshes()
+      .find(
+        (mesh) =>
+          (mesh.metadata as { editorBillboard?: string } | null)
+            ?.editorBillboard === "camera",
+      );
+    expect(billboard).toBeTruthy();
+    expect(grid.mesh.renderingGroupId).toBe(RENDERING_GROUP.world);
+    expect(billboard!.renderingGroupId).toBe(RENDERING_GROUP.foreground);
+    expect(grid.mesh.alphaIndex).toBeLessThan(billboard!.alphaIndex);
     grid.dispose();
   });
 });

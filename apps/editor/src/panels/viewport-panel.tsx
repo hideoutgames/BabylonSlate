@@ -527,8 +527,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       tileSize: settings.grid.tileSize,
       tileSubdivisions: settings.grid.tileSubdivisions,
       cameraBounds2D: settings.cameraBounds2D,
+      showGrid: gridVisible,
     });
-  }, [scene?.settings, viewportMode]);
+  }, [scene?.settings, viewportMode, gridVisible]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);
