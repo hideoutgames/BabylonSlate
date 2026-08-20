@@ -206,6 +206,7 @@ export interface RuntimeDriver {
     classId: string;
     variables?: Record<string, unknown>;
     implementedInterfaces?: string[];
+    transform?: Transform;
   }): Actor | null;
   /**
    * Instantiate `playScene` (if any) with compiled script hooks.
@@ -506,6 +507,7 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => this.markPhase(phase),
       onPhysics: (ctx) => {
         this.physicsSync.step(ctx.dt, this.world);
+        this.dispatchCollisionEvents();
       },
     });
     const resolved = () => this.resolvedInput;
@@ -2274,7 +2276,76 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+
+  private applyActorDefaults(actor: Actor): void {
+    const script = this.scriptHost.scriptsFor(actor.classId)[0];
+    const defaults = script?.actorDefaults;
+    if (!defaults) return;
+    if (typeof defaults.generateHitEvents === "boolean") {
+      actor.generateHitEvents = defaults.generateHitEvents;
+    }
+    if (typeof defaults.generateOverlapEvents === "boolean") {
+      actor.generateOverlapEvents = defaults.generateOverlapEvents;
+    }
+  }
+
+  private dispatchCollisionEvents(): void {
+    const events = this.physicsSync.getBackend().pollContacts();
+    for (const event of events) {
+      const actorA = this.world.findActor(event.actorAId);
+      const actorB = this.world.findActor(event.actorBId);
+      if (!actorA || !actorB || actorA.destroyed || actorB.destroyed) continue;
+      if (event.kind === "hit") {
+        this.dispatchHit(actorA, actorB, event.location, event.normal);
+        this.dispatchHit(actorB, actorA, event.location, {
+          x: -event.normal.x,
+          y: -event.normal.y,
+          z: -event.normal.z,
+        });
+      } else if (event.kind === "overlapBegin") {
+        this.dispatchOverlap(actorA, actorB, "onBeginOverlap");
+        this.dispatchOverlap(actorB, actorA, "onBeginOverlap");
+      } else if (event.kind === "overlapEnd") {
+        this.dispatchOverlap(actorA, actorB, "onEndOverlap");
+        this.dispatchOverlap(actorB, actorA, "onEndOverlap");
+      }
+    }
+  }
+
+  private dispatchHit(
+    self: Actor,
+    other: Actor,
+    location: { x: number; y: number; z: number },
+    normal: { x: number; y: number; z: number },
+  ): void {
+    if (!self.generateHitEvents) return;
+    this.scriptHost.invokeEvent(self.classId, "onHit", self, {
+      hitResult: {
+        Hit: true,
+        Location: location,
+        Normal: normal,
+        Actor: other,
+        Distance: 0,
+      },
+      otherActor: other,
+      location: location,
+      normal: normal,
+    });
+  }
+
+  private dispatchOverlap(
+    self: Actor,
+    other: Actor,
+    event: "onBeginOverlap" | "onEndOverlap",
+  ): void {
+    if (!self.generateOverlapEvents) return;
+    this.scriptHost.invokeEvent(self.classId, event, self, {
+      instigator: other,
+    });
+  }
+
   private realizeActor(actor: Actor): void {
+    this.applyActorDefaults(actor);
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
     this.emitAudioComponents(actor);

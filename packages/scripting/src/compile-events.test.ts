@@ -38,6 +38,19 @@ describe("editor utility events", () => {
     expect(eventNameForEntry(entry("flow.event.destroyed"))).toBe("onDestroyed");
   });
 
+  it("maps Actor collision event nodes to ScriptHost events", () => {
+    expect(EVENT_BY_TYPE_ID["flow.event.hit"]).toBe("onHit");
+    expect(EVENT_BY_TYPE_ID["flow.event.beginOverlap"]).toBe("onBeginOverlap");
+    expect(EVENT_BY_TYPE_ID["flow.event.endOverlap"]).toBe("onEndOverlap");
+    expect(eventNameForEntry(entry("flow.event.hit"))).toBe("onHit");
+    expect(eventNameForEntry(entry("flow.event.beginOverlap"))).toBe(
+      "onBeginOverlap",
+    );
+    expect(eventNameForEntry(entry("flow.event.endOverlap"))).toBe(
+      "onEndOverlap",
+    );
+  });
+
   it("maps Animation Object lifecycle nodes to ScriptHost events", () => {
     expect(EVENT_BY_TYPE_ID["anim.event.initialize"]).toBe(
       "onInitializeAnimation",

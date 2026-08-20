@@ -75,6 +75,14 @@ export type CharacterControllerDesc = {
   offset: number;
 };
 
+export type PhysicsContactEvent = {
+  kind: "hit" | "overlapBegin" | "overlapEnd";
+  actorAId: string;
+  actorBId: string;
+  location: Vec3;
+  normal: Vec3;
+};
+
 export type PhysicsBackendOptions = {
   kind: PhysicsWorldKind;
   gravity: Vec3;

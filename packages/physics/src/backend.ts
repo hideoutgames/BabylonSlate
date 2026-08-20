@@ -4,6 +4,7 @@ import type {
   HitResult,
   OverlapResult,
   PhysicsBackendOptions,
+  PhysicsContactEvent,
   PhysicsTransform,
   PhysicsWorldKind,
   RigidBodyDesc,
@@ -40,6 +41,13 @@ export interface PhysicsBackend {
 
   /** Fixed-step simulation. */
   step(dt: number): void;
+
+  /**
+   * Contacts detected since the previous poll (software: current overlap
+   * vs the previous poll). Blocking pairs emit `hit` every poll while
+   * overlapping; a trigger on either collider emits begin/end overlap only.
+   */
+  pollContacts(): PhysicsContactEvent[];
 
   /** Snapshot all dynamic/kinematic body transforms after step. */
   readTransforms(): ReadonlyMap<string, PhysicsTransform>;

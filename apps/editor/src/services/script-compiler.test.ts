@@ -435,6 +435,20 @@ describe("script compiler service", () => {
     expect(script?.source).toContain("hud-clicked");
   });
 
+  it("copies actorDefaults from the serialized graph onto the bundle", () => {
+    const script = compileGraphDocument(
+      {
+        ...tickToLog,
+        actorDefaults: { generateHitEvents: false, generateOverlapEvents: true },
+      },
+      { path: "assets/Hero.class.babasset" },
+    );
+    expect(script?.actorDefaults).toEqual({
+      generateHitEvents: false,
+      generateOverlapEvents: true,
+    });
+  });
+
   it("binds a UserInterface script to an explicit guid class id", () => {
     const classId = userInterfaceClassId("hud-guid");
     const script = compileGraphDocument(tickToLog, {

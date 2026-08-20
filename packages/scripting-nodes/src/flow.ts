@@ -7,13 +7,17 @@ import {
   FLOAT,
   INT,
   STRING,
+  VEC3,
   objectRef,
+  actorRef,
+  structRef,
   flowSwitchCasePinId,
   intSwitchCasesOf,
   stringSwitchCasesOf,
   arrayOf,
   mapOf,
   RESOLVING_WILDCARD,
+  ENGINE_HIT_RESULT_STRUCT_ID,
 } from "@babylonslate/scripting";
 import {
   dataMemberPins,
@@ -30,6 +34,9 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
+  "flow.event.hit": "onHit",
+  "flow.event.beginOverlap": "onBeginOverlap",
+  "flow.event.endOverlap": "onEndOverlap",
   "flow.event.commandRun": "onCommandRun",
   "flow.event.editorBeginPlay": "onEditorBeginPlay",
   "flow.event.mouseEnter": "onMouseEnter",
@@ -104,6 +111,47 @@ export const flowNodes: NodeDefinition[] = [
     codegen: () => {
       /* entry point emitted by the compiler */
     },
+  },
+  {
+    id: "flow.event.hit",
+    title: "Event On Hit",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("hitResult", "Hit Result", "out", structRef(ENGINE_HIT_RESULT_STRUCT_ID)),
+      pin("otherActor", "Other Actor", "out", actorRef("Actor")),
+      pin("location", "Location", "out", VEC3),
+      pin("normal", "Normal", "out", VEC3),
+    ],
+    codegen: () => ({
+      hitResult: "(ctx.args.hitResult)",
+      otherActor: "(ctx.args.otherActor)",
+      location: "(ctx.args.location)",
+      normal: "(ctx.args.normal)",
+    }),
+  },
+  {
+    id: "flow.event.beginOverlap",
+    title: "Event On Begin Overlap",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("instigator", "Instigator", "out", actorRef("Actor")),
+    ],
+    codegen: () => ({ instigator: "(ctx.args.instigator)" }),
+  },
+  {
+    id: "flow.event.endOverlap",
+    title: "Event On End Overlap",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("instigator", "Instigator", "out", actorRef("Actor")),
+    ],
+    codegen: () => ({ instigator: "(ctx.args.instigator)" }),
   },
   {
     id: "flow.event.commandRun",

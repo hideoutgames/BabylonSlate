@@ -11,6 +11,7 @@ import type {
   HitResult,
   MotionType,
   OverlapResult,
+  PhysicsContactEvent,
   PhysicsTransform,
   PhysicsWorldKind,
   RigidBodyDesc,
@@ -247,6 +248,7 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
   private readonly bodies = new Map<string, BodyState>();
   private readonly colliders = new Map<string, ColliderState>();
   private readonly characters = new Map<string, CharacterState>();
+  private previousOverlapKeys = new Set<string>();
   private disposed = false;
 
   constructor(kind: PhysicsWorldKind, gravity: Vec3) {
@@ -335,6 +337,101 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         ? cloneTransform(this.bodies.get(bodyId)!.transform)
         : null,
     );
+  }
+
+  pollContacts(): PhysicsContactEvent[] {
+    this.assertLive();
+    const events: PhysicsContactEvent[] = [];
+    const currentOverlap = new Set<string>();
+    const hitKeys = new Set<string>();
+    const list = [...this.colliders.values()];
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const colliderA = list[i]!;
+        const colliderB = list[j]!;
+        const bodyA = this.bodies.get(colliderA.desc.bodyId);
+        const bodyB = this.bodies.get(colliderB.desc.bodyId);
+        if (!bodyA || !bodyB || bodyA === bodyB) continue;
+        if (bodyA.desc.actorId === bodyB.desc.actorId) continue;
+        const boxA = aabbForCollider(
+          colliderA.desc,
+          bodyA.transform.position,
+        );
+        const boxB = aabbForCollider(
+          colliderB.desc,
+          bodyB.transform.position,
+        );
+        if (!aabbOverlap(boxA, boxB)) continue;
+        const centerA = aabbCenter(boxA);
+        const centerB = aabbCenter(boxB);
+        let actorAId = bodyA.desc.actorId;
+        let actorBId = bodyB.desc.actorId;
+        const location = {
+          x: (centerA.x + centerB.x) * 0.5,
+          y: (centerA.y + centerB.y) * 0.5,
+          z: (centerA.z + centerB.z) * 0.5,
+        };
+        let normal = {
+          x: centerB.x - centerA.x,
+          y: centerB.y - centerA.y,
+          z: centerB.z - centerA.z,
+        };
+        const length = Math.hypot(normal.x, normal.y, normal.z);
+        if (length < 1e-8) {
+          normal = { x: 0, y: 1, z: 0 };
+        } else {
+          normal = {
+            x: normal.x / length,
+            y: normal.y / length,
+            z: normal.z / length,
+          };
+        }
+        if (actorAId > actorBId) {
+          const swapId = actorAId;
+          actorAId = actorBId;
+          actorBId = swapId;
+          normal = { x: -normal.x, y: -normal.y, z: -normal.z };
+        }
+        const key = `${actorAId}|${actorBId}`;
+        const isTrigger =
+          colliderA.desc.isTrigger || colliderB.desc.isTrigger;
+        if (isTrigger) {
+          currentOverlap.add(key);
+          if (!this.previousOverlapKeys.has(key)) {
+            events.push({
+              kind: "overlapBegin",
+              actorAId,
+              actorBId,
+              location,
+              normal,
+            });
+          }
+        } else if (!hitKeys.has(key)) {
+          hitKeys.add(key);
+          events.push({
+            kind: "hit",
+            actorAId,
+            actorBId,
+            location,
+            normal,
+          });
+        }
+      }
+    }
+    for (const key of this.previousOverlapKeys) {
+      if (currentOverlap.has(key)) continue;
+      const [actorAId, actorBId] = key.split("|");
+      if (!actorAId || !actorBId) continue;
+      events.push({
+        kind: "overlapEnd",
+        actorAId,
+        actorBId,
+        location: { x: 0, y: 0, z: 0 },
+        normal: { x: 0, y: 1, z: 0 },
+      });
+    }
+    this.previousOverlapKeys = currentOverlap;
+    return events;
   }
 
   step(dt: number): void {
@@ -532,6 +629,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
   private assertLive(): void {
     if (this.disposed) throw new Error("SoftwarePhysicsBackend is disposed");
   }
+}
+
+function aabbCenter(box: { min: Vec3; max: Vec3 }): Vec3 {
+  return {
+    x: (box.min.x + box.max.x) * 0.5,
+    y: (box.min.y + box.max.y) * 0.5,
+    z: (box.min.z + box.max.z) * 0.5,
+  };
 }
 
 function aabbOverlap(

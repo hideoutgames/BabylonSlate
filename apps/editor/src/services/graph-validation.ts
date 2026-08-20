@@ -56,6 +56,7 @@ import {
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
   SEEDED_NATIVE_EVENT_TYPES,
+  COLLISION_EVENT_TYPE_IDS,
   type ClassEventOptions,
 } from "../lib/class-members";
 import type {
@@ -622,9 +623,12 @@ export function createDefaultLogicGraphSerialized(
   options?: ClassEventOptions,
 ): SerializedGraph {
   const seedNatives = new Set<string>(SEEDED_NATIVE_EVENT_TYPES);
-  const actorUiNatives = new Set<string>(NATIVE_CLASS_EVENT_TYPES);
+  const skipSeedNatives = new Set<string>([
+    ...NATIVE_CLASS_EVENT_TYPES,
+    ...COLLISION_EVENT_TYPE_IDS,
+  ]);
   const stubs = nativeEventStubs(options).filter((stub) => {
-    if (!actorUiNatives.has(stub.eventType)) return true;
+    if (!skipSeedNatives.has(stub.eventType)) return true;
     return seedNatives.has(stub.eventType);
   });
   const parentClassId = options?.parentClass?.trim() || null;

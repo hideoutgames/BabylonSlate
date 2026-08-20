@@ -16,6 +16,7 @@ export type {
   HitResult,
   OverlapResult,
   CharacterControllerDesc,
+  PhysicsContactEvent,
   PhysicsBackendOptions,
 } from "./types";
 export type {

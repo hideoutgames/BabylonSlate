@@ -338,6 +338,11 @@ export interface SerializedGraph {
       edges: SerializedGraph["edges"];
     }
   >;
+  /** Prefab Root collision flags copied onto spawned / scene-realized actors. */
+  actorDefaults?: {
+    generateHitEvents?: boolean;
+    generateOverlapEvents?: boolean;
+  };
 }
 
 

@@ -411,6 +411,9 @@ describe("createDefaultLogicGraphSerialized", () => {
     expect(types).toContain("flow.event.beginPlay");
     expect(types).toContain("flow.event.tick");
     expect(types).not.toContain("flow.event.destroyed");
+    expect(types).not.toContain("flow.event.hit");
+    expect(types).not.toContain("flow.event.beginOverlap");
+    expect(types).not.toContain("flow.event.endOverlap");
     expect(graph.nodes.map((node) => node.id)).toEqual([
       "event-begin-play",
       "event-tick",

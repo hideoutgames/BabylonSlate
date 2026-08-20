@@ -8,6 +8,7 @@ import type {
   PhysicsTransform,
   RigidBodyDesc,
   Vec3,
+  PhysicsContactEvent,
 } from "./types";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
@@ -302,6 +303,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
       this.getBodyTransform(bodyId),
     );
+  }
+
+  pollContacts(): PhysicsContactEvent[] {
+    return [];
   }
 
   step(dt: number): void {

@@ -13,7 +13,7 @@ Shared surface for simulation in the game worker (engineplan §2.1, §2.3, §13.
 
 | Export | Role |
 | --- | --- |
-| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, sync queries, impulses |
+| `PhysicsBackend` | Port: world lifecycle, bodies/colliders, `step(dt)`, `pollContacts()`, sync queries, impulses |
 | `PhysicsWorldKind` | `"3d"` \| `"2d"` — one kind per scene |
 | `NullPhysicsBackend` | In-memory no-op for tests without wasm |
 | `createPhysicsBackend` | Lazy factory; dynamic-imports only the needed engine |
@@ -47,7 +47,7 @@ Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per bod
 Order (from P3): `gameInstance` → `actors` → `components` → **`physics`** → `postPhysics`.
 
 1. Script phases may call sync queries on the live backend.
-2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors.
+2. `physics` phase: `backend.step(dt)`, then write body transforms back to Actors, then `pollContacts()` (see Contact events).
 3. `RuntimeDriver` times script phases and the physics phase separately into snapshot/`stats` `scriptMs` and `physicsMs`.
 
 Play (in-process and the game worker) constructs a `SoftwarePhysicsBackend`, then `RuntimeDriver.loadPhysics()` swaps in Havok or Rapier and re-syncs already-spawned bodies. `preferSoftwarePhysics` skips the swap (unit tests / wasm-free CI).
@@ -73,6 +73,10 @@ Simulation needs **both** a rigid body and at least one collider on the same act
 | Tilemap or Blocking Volume with or without RigidBody | none | OK |
 
 `physicsActorDiagnostics` in `@babylonslate/physics` is the pure check (no React). Scene **Compiler Results** (Output Log tab) lists them; tap selects the actor. Prefab / Class Compiler Results merge the same warnings for `SerializedGraph.components` (`actorId` = Prefab Root). Diagnostics may carry `actorId` / `componentId`.
+
+### Contact events
+
+`pollContacts()` returns `{ kind: "hit" | "overlapBegin" | "overlapEnd", actorAId, actorBId, location, normal }` since the previous poll. **v1:** a blocking pair emits `hit` every poll while overlapping; if either collider `isTrigger`, the pair emits begin/end overlap only (no hit). Software AABB implements that rule; Havok maps blocking `COLLISION_STARTED` / `COLLISION_CONTINUED` to hit and trigger enter/exit to overlap; Rapier 2D returns `[]` until wired. `RuntimeDriver` dispatches after `step` (see [scripting.md](scripting.md) Entry points). Actor flags `generateHitEvents` / `generateOverlapEvents` skip script dispatch only.
 
 Spawn/attach creates bodies; destroy removes them (`PhysicsWorldSync` drops backend bodies when the actor leaves the live set). Bodies use the same composed world-space actor hierarchy as render snapshots. After `step`, body poses are converted through the inverse parent transform back into Actor-local TRS before `postPhysics`; a parented body therefore does not jump between local simulation and world rendering. Static and kinematic bodies copy the composed actor transform on resync; dynamic bodies keep the simulation transform. `addImpulse` is a no-op when the actor has no body. Tilemap chain colliders skip `collision: false` layers and missing guid/tileset payloads. Unit coverage lives in `packages/runtime/src/physics-sync.test.ts` and `packages/physics/src/pairing.test.ts`.
 
