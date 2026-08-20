@@ -1448,6 +1448,9 @@ describe("editor grid", () => {
     grid.setVisible(false);
     expect(grid.mesh.isVisible).toBe(true);
     expect(grid.mesh.visibility).toBe(0);
+    expect(
+      (grid.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(0);
     expect(grid.boundsMesh?.isVisible).toBe(true);
 
     grid.setCameraBounds(null);
@@ -1468,9 +1471,15 @@ describe("editor grid", () => {
     expect(scene._activeMeshesFrozen).toBe(true);
     expect(grid.mesh.isVisible).toBe(true);
     expect(grid.mesh.visibility).toBe(0);
+    expect(
+      (grid.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(0);
     grid.setVisible(true);
     expect(grid.mesh.isVisible).toBe(true);
     expect(grid.mesh.visibility).toBe(1);
+    expect(
+      (grid.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(1);
     expect(grid.mesh.alwaysSelectAsActiveMesh).toBe(true);
     grid.dispose();
   });

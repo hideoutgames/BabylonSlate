@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, ScenePerformancePriority } from "@babylonjs/core";
+import {
+  NullEngine,
+  PBRMaterial,
+  ScenePerformancePriority,
+  ShaderMaterial,
+} from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -147,9 +152,15 @@ describe("p20-editor-scene-freeze", () => {
     expect(handle.scene._activeMeshesFrozen).toBe(true);
     expect(grid!.mesh.isVisible).toBe(true);
     expect(grid!.mesh.visibility).toBe(0);
+    expect(
+      (grid!.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(0);
     grid!.setVisible(true);
     expect(grid!.mesh.isVisible).toBe(true);
     expect(grid!.mesh.visibility).toBe(1);
+    expect(
+      (grid!.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(1);
   });
 
   it("freezes static actor world matrices and unfreezes them on gizmo drag", () => {

@@ -156,6 +156,7 @@ uniform float fadeStart;
 uniform float fadeEnd;
 uniform vec3 fadeOrigin;
 uniform float viewFade;
+uniform float gridVisible;
 uniform float mode2d;
 uniform float lineWidth;
 
@@ -178,8 +179,8 @@ void main() {
   float dist = length(coord - origin);
   float fade = 1.0 - smoothstep(fadeStart, fadeEnd, dist);
   vec3 color = mix(minorColor, majorColor, clamp(major, 0.0, 1.0));
-  float alpha = max(major, minor * 0.45) * fade * viewFade;
-  if (alpha < 0.02) discard;
+  float alpha = max(major, minor * 0.45) * fade * viewFade * gridVisible;
+  if (gridVisible < 0.5 || alpha < 0.02) discard;
   gl_FragColor = vec4(color, alpha);
 }
 `;
@@ -248,6 +249,7 @@ export function createEditorGrid(
         "fadeEnd",
         "fadeOrigin",
         "viewFade",
+        "gridVisible",
         "mode2d",
         "lineWidth",
       ],
@@ -265,6 +267,7 @@ export function createEditorGrid(
     material.setColor3("minorColor", minorColor);
     material.setFloat("mode2d", mode === "2d" ? 1 : 0);
     material.setFloat("lineWidth", GRID_LINE_WIDTH);
+    material.setFloat("gridVisible", visible ? 1 : 0);
   };
 
   const applyPlane = () => {
@@ -353,6 +356,7 @@ export function createEditorGrid(
       mesh.isVisible = true;
       mesh.alwaysSelectAsActiveMesh = true;
       mesh.visibility = next ? 1 : 0;
+      material.setFloat("gridVisible", next ? 1 : 0);
     },
     setCameraBounds: (bounds) => {
       requestedBounds = bounds;
