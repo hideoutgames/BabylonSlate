@@ -20,6 +20,7 @@ import {
   setTransitionBidirectional,
   flipTransitionDirection,
   decorateTransitionRuleGraph,
+  persistTransitionRuleGraph,
 } from "./index";
 
 describe("anim graph evaluator", () => {
@@ -320,6 +321,20 @@ describe("anim graph evaluator", () => {
     expect(oneWay.nodes.find((node) => node.type === ANIM_RULE_ENTER_TYPE)?.data.__disabled).toBeUndefined();
     const both = decorateTransitionRuleGraph(oneWay, false);
     expect(both.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled).toBeUndefined();
+  });
+
+  it("strips display-only disabled flags when persisting a rule graph", () => {
+    const decorated = decorateTransitionRuleGraph(
+      createDefaultTransitionRuleGraph(),
+      true,
+    );
+    const persisted = persistTransitionRuleGraph(decorated);
+    expect(
+      persisted.nodes.find((node) => node.type === ANIM_RULE_EXIT_TYPE)?.data.__disabled,
+    ).toBeUndefined();
+    expect(
+      persisted.nodes.find((node) => node.type === ANIM_RULE_ENTER_TYPE)?.data.__disabled,
+    ).toBeUndefined();
   });
 
   it("does not take a both-ways reverse from idle when the forward condition is false", () => {

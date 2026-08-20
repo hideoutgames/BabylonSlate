@@ -396,6 +396,14 @@ export function decorateTransitionRuleGraph(
   };
 }
 
+/** Drop canvas-only `__disabled` so rule documents stay undecorated. */
+export function persistTransitionRuleGraph(
+  graph: SerializedGraph,
+): SerializedGraph {
+  const stripped = decorateTransitionRuleGraph(graph, false);
+  return { nodes: stripped.nodes, edges: stripped.edges };
+}
+
 export function validateAnimGraph(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[] = [],
