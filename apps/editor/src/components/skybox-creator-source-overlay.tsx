@@ -143,7 +143,7 @@ export function SkyboxCreatorSourceOverlay({
     >
       <div
         data-testid="skybox-creator-source"
-        className="absolute overflow-hidden border border-dashed border-primary"
+        className="absolute border border-dashed border-primary"
         style={{
           left: `${box.x * 100}%`,
           top: `${box.y * 100}%`,
@@ -153,11 +153,13 @@ export function SkyboxCreatorSourceOverlay({
         onPointerDown={(event) => beginDrag("move", event)}
       >
         {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt=""
-            className="pointer-events-none h-full w-full object-fill"
-          />
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            <img
+              src={imageUrl}
+              alt=""
+              className="h-full w-full object-fill"
+            />
+          </div>
         ) : null}
         {HANDLES.map((handle) => (
           <button
