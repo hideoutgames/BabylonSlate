@@ -2,6 +2,7 @@ import {
   Mesh,
   NodeMaterial,
   NodeMaterialModes,
+  NullEngine,
   type Material,
   type Scene,
   type SceneOptions,
@@ -41,10 +42,28 @@ export function isStructuralEditorChange(
   return false;
 }
 
+type SceneActiveMeshInternals = {
+  _frustumPlanes?: unknown;
+  _evaluateActiveMeshes: () => void;
+};
+
+function evaluateEditorActiveMeshes(scene: Scene): void {
+  if (!scene.activeCamera) return;
+  const internals = scene as unknown as SceneActiveMeshInternals;
+  if (!internals._frustumPlanes) {
+    scene.updateTransformMatrix();
+  }
+  internals._evaluateActiveMeshes();
+}
+
 export function freezeEditorActiveMeshes(scene: Scene): void {
+  scene.unfreezeActiveMeshes();
   scene.freezeActiveMeshes(false, undefined, undefined, false, true);
-  // freezeActiveMeshes waits on executeWhenReady; NullEngine PrePass never
-  // goes ready. Stamp the idle flags now so structural unfreeze still works.
+  // freezeActiveMeshes waits on executeWhenReady. Real Engines must keep
+  // that wait so unready PBR/GLB meshes are not frozen out of the list.
+  // NullEngine PrePass never goes ready, so evaluate and stamp now.
+  if (!(scene.getEngine() instanceof NullEngine)) return;
+  evaluateEditorActiveMeshes(scene);
   scene._activeMeshesFrozen = true;
   scene._activeMeshesFrozenButKeepClipping = true;
 }
