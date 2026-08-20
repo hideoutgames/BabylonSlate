@@ -313,7 +313,7 @@ export interface ScriptContext {
     target: BObject | string | null | undefined,
     functionName: string,
     args?: Record<string, unknown>,
-  ): Record<string, unknown>;
+  ): Record<string, unknown> | Promise<Record<string, unknown>>;
   isActionHeld(action: string): boolean;
   wasActionPressed?(action: string): boolean;
   wasActionReleased?(action: string): boolean;
@@ -981,8 +981,19 @@ export class ScriptHost {
           try {
             const value = (fn as (ctx: ScriptContext) => unknown)(nested);
             if (value instanceof Promise) {
-              void value.catch((error) => this.services.reportError(error));
-              continue;
+              return value.then(
+                (resolved) =>
+                  resolved &&
+                  typeof resolved === "object" &&
+                  !Array.isArray(resolved)
+                    ? (resolved as Record<string, unknown>)
+                    : {},
+                (error) => {
+                  if (isInfiniteLoopError(error)) throw error;
+                  this.services.reportError(error);
+                  return {};
+                },
+              );
             }
             result = value ?? {};
           } catch (error) {

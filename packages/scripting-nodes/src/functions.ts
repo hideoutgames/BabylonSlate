@@ -100,7 +100,11 @@ export const functionCallNodes: NodeDefinition[] = [
         }
         args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.name)}`);
       }
-      const call = `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
+      const latent =
+        ctx.isLatentFunction?.(classId, functionName) === true;
+      if (latent) ctx.requestAsync();
+      const invoked = `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
+      const call = latent ? `await ${invoked}` : invoked;
       const outPins = ctx.node.pins.filter(
         (pinDef) => pinDef.direction === "out" && pinDef.kind === "data",
       );
