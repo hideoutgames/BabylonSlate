@@ -636,6 +636,61 @@ describe("validateSerializedGraph", () => {
     ).toBe(true);
   });
 
+  it("does not report a pure cycle when Line Trace location feeds back through Make Vector3", () => {
+    const beginPins = registry.get("flow.event.beginPlay")!.pins({});
+    const tracePins = registry.get("physics.lineTrace")!.pins({});
+    const addPins = registry.get("vector.add3")!.pins({});
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: { __pins: beginPins },
+          },
+          {
+            id: "trace",
+            type: "physics.lineTrace",
+            position: { x: 200, y: 0 },
+            data: { __pins: tracePins },
+          },
+          {
+            id: "add",
+            type: "vector.add3",
+            position: { x: 200, y: 80 },
+            data: { __pins: addPins },
+          },
+        ],
+        edges: [
+          {
+            id: "exec",
+            source: "begin",
+            target: "trace",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "hitToAdd",
+            source: "trace",
+            target: "add",
+            sourceHandle: "location",
+            targetHandle: "a",
+          },
+          {
+            id: "addToEnd",
+            source: "add",
+            target: "trace",
+            sourceHandle: "out",
+            targetHandle: "end",
+          },
+        ],
+      },
+      { assetGuid: "g1", graphId: "event-graph" },
+    );
+    expect(diags.some((d) => d.code === "pure.cycle")).toBe(false);
+  });
+
   it("flags a stale Call Function when the class symbol table is supplied", () => {
     const diags = validateSerializedGraph(
       {
