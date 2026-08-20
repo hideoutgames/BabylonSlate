@@ -14,7 +14,7 @@ import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
 } from "./anim-apply";
-import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
@@ -160,7 +160,7 @@ function replayPendingAnimState(
 }
 
 async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
-  return LoadAssetContainerAsync(bytes, scene, {
+  return LoadAssetContainerAsync(packedGltfBytes(bytes), scene, {
     pluginExtension: gltfLoaderExtension(bytes),
     name,
   });

@@ -20,7 +20,7 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 | `component` | Actor `components[]` classId, id, short string properties | Open scene + select parent actor |
 | `graph-node` | Graph `nodes[]` type, id, catalog title, short string properties | Open class graph + focus node |
 | `class` | Class asset headers + catalog engine class ids | Class `.class.babasset` → graph tab; catalog-only ids are informational |
-| `variable` | `variables.get` / `variables.set` `variableName` (legacy `name`) | Open containing graph at that node |
+| `variable` | `variables.get` / `variables.set` / `variables.getValidated` `variableName` (legacy `name`) | Open containing graph at that node |
 
 Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 

@@ -177,19 +177,38 @@ describe("writeSkyboxCreatorFaceAssets", () => {
   });
 });
 
-describe("readTextureImageBytes", () => {
-  it("prefers the pixels chunk and falls back to source", async () => {
-    const pixels = await readTextureImageBytes(async (_path, chunkId) => {
-      return chunkId === "pixels" ? Uint8Array.of(1, 2) : null;
-    }, "assets/Sky.babasset");
-    expect([...pixels!]).toEqual([1, 2]);
+const PNG_MAGIC = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+const JPEG_MAGIC = Uint8Array.of(0xff, 0xd8, 0xff, 0xe0);
+const KTX2_PREFIX = Uint8Array.of(
+  0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+);
+const STUB_KTX2 = new TextEncoder().encode("BABS-KTX2-STUB;format=uastc;");
 
-    const source = await readTextureImageBytes(async (_path, chunkId) => {
-      return chunkId === "source" ? Uint8Array.of(9) : new Uint8Array();
+describe("readTextureImageBytes", () => {
+  it("prefers image pixels and reports the sniffed MIME", async () => {
+    const png = await readTextureImageBytes(async (_path, chunkId) => {
+      return chunkId === "pixels" ? PNG_MAGIC : JPEG_MAGIC;
     }, "assets/Sky.babasset");
-    expect([...source!]).toEqual([9]);
+    expect(png).toEqual({ bytes: PNG_MAGIC, mime: "image/png" });
+
+    const jpeg = await readTextureImageBytes(async (_path, chunkId) => {
+      return chunkId === "source" ? JPEG_MAGIC : new Uint8Array();
+    }, "assets/Sky.babasset");
+    expect(jpeg).toEqual({ bytes: JPEG_MAGIC, mime: "image/jpeg" });
 
     const missing = await readTextureImageBytes(async () => null, "assets/Sky.babasset");
     expect(missing).toBeNull();
+  });
+
+  it("skips KTX2 and stub-encode pixels and uses the source image", async () => {
+    const fromKtx2 = await readTextureImageBytes(async (_path, chunkId) => {
+      return chunkId === "pixels" ? KTX2_PREFIX : PNG_MAGIC;
+    }, "assets/Sky.babasset");
+    expect(fromKtx2).toEqual({ bytes: PNG_MAGIC, mime: "image/png" });
+
+    const fromStub = await readTextureImageBytes(async (_path, chunkId) => {
+      return chunkId === "pixels" ? STUB_KTX2 : JPEG_MAGIC;
+    }, "assets/Sky.babasset");
+    expect(fromStub).toEqual({ bytes: JPEG_MAGIC, mime: "image/jpeg" });
   });
 });

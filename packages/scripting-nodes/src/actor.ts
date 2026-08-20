@@ -52,7 +52,7 @@ export const actorNodes: NodeDefinition[] = [
     category: "actor",
     pure: true,
     pins: () => [
-      pin("target", "target", "in", objectRef("BObject")),
+      pin("target", "Object", "in", objectRef("BObject")),
       pin("out", "out", "out", BOOL),
     ],
     codegen: (ctx) => ({ out: `(${ctx.input("target")} != null)` }),

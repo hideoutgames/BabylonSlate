@@ -140,4 +140,28 @@ export const variableNodes: NodeDefinition[] = [
       ctx.emit(`${out} = ${value};`);
     },
   },
+  {
+    id: "variables.getValidated",
+    title: "Validated Get",
+    category: "variables",
+    pins: (properties) => {
+      const name = variableNameOf(properties);
+      return [
+        pin("execIn", "exec", "in", EXEC),
+        pin("isValid", "Is Valid", "out", EXEC),
+        pin("notValid", "Not Valid", "out", EXEC),
+        ...targetPins(properties),
+        pin("value", name, "out", variablePinType(properties)),
+      ];
+    },
+    codegen: (ctx) => {
+      const name = variableNameOf(ctx.node.properties);
+      const value = ctx.output("value");
+      const expr =
+        ctx.node.properties.scope === "local"
+          ? localVariableIdent(name)
+          : memberGetExpr(ctx, name);
+      ctx.emit(`${value} = ${expr};`);
+    },
+  },
 ];

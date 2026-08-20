@@ -167,6 +167,21 @@ describe("Minimal Neutral theme tokens", () => {
     }
   });
 
+  it("matches Structure and Enum pin colors to their asset tokens", () => {
+    expect(tokenValue(root, "--pin-struct")).toBe(
+      tokenValue(root, "--asset-class"),
+    );
+    expect(tokenValue(dark, "--pin-struct")).toBe(
+      tokenValue(dark, "--asset-class"),
+    );
+    expect(tokenValue(root, "--pin-enum")).toBe(
+      tokenValue(root, "--asset-script-type"),
+    );
+    expect(tokenValue(dark, "--pin-enum")).toBe(
+      tokenValue(dark, "--asset-script-type"),
+    );
+  });
+
   it("defines asset type tokens", () => {
     for (const name of ASSET_TOKENS) {
       expect(tokenValue(root, name), name).not.toBe("");

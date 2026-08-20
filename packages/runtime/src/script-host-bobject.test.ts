@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   Actor,
+  ActorComponent,
   ClassRegistry,
   UserInterface,
   Widget,
@@ -192,5 +193,24 @@ describe("ScriptHost BObject receivers", () => {
     expect(uiCtx.getWidget("missing")).toBeNull();
     const actorCtx = host.createContext(new Actor({ classId: "Hero" }), 0, 0);
     expect(actorCtx.getWidget("play-btn")).toBeNull();
+  });
+
+  it("sets Anim Graph variables only on the wired AnimationGraphComponent", () => {
+    const actor = new Actor({ classId: "Hero" });
+    const first = new ActorComponent({ classId: "AnimationGraphComponent" });
+    const second = new ActorComponent({ classId: "AnimationGraphComponent" });
+    actor.attachComponent(first);
+    actor.attachComponent(second);
+    first.setVariable("flag", "a");
+    second.setVariable("flag", "b");
+    const ctx = new ScriptHost(stubServices()).createContext(actor, 0, 0);
+    ctx.setAnimGraphVariable(second, "flag", "wired");
+    expect(first.getVariable("flag")).toBe("a");
+    expect(second.getVariable("flag")).toBe("wired");
+    expect(ctx.getAnimGraphVariable(first, "flag")).toBe("a");
+    expect(ctx.getAnimGraphVariable(second, "flag")).toBe("wired");
+    ctx.setAnimGraphVariable(actor, "flag", "ignored");
+    expect(first.getVariable("flag")).toBe("a");
+    expect(second.getVariable("flag")).toBe("wired");
   });
 });

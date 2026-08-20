@@ -7,18 +7,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
+import type { VariableAccessKind } from "../lib/class-members";
 
 export type MemberAccessChooserProps = {
   open: boolean;
   memberName: string;
+  showValidatedGet?: boolean;
   onOpenChange: (open: boolean) => void;
-  onChoose: (access: "get" | "set") => void;
+  onChoose: (access: VariableAccessKind) => void;
 };
 
 /** Small Get/Set chooser after dropping a variable onto the graph. */
 export function MemberAccessChooser({
   open,
   memberName,
+  showValidatedGet = false,
   onOpenChange,
   onChoose,
 }: MemberAccessChooserProps) {
@@ -28,7 +31,9 @@ export function MemberAccessChooser({
         <DialogHeader>
           <DialogTitle>{memberName}</DialogTitle>
           <DialogDescription>
-            Add a Get or Set node to the graph.
+            {showValidatedGet
+              ? "Add a Get, Validated Get, or Set node to the graph."
+              : "Add a Get or Set node to the graph."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter showCloseButton={false}>
@@ -40,6 +45,16 @@ export function MemberAccessChooser({
           >
             Get
           </Button>
+          {showValidatedGet ? (
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="member-access-validated-get"
+              onClick={() => onChoose("validatedGet")}
+            >
+              Validated Get
+            </Button>
+          ) : null}
           <Button
             type="button"
             variant="outline"

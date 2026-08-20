@@ -90,9 +90,11 @@ export function nodeVisualRole(input: {
     return "debug";
   }
   if (category === "variables" || nodeType.startsWith("variables.")) {
-    return /set/i.test(nodeType) || /set/i.test(title)
-      ? "variable-set"
-      : "variable";
+    const isSet =
+      nodeType === "variables.set" ||
+      nodeType.startsWith("variables.set:") ||
+      /^set\b/i.test(title);
+    return isSet ? "variable-set" : "variable";
   }
   if (category === "flow") {
     return "flow";

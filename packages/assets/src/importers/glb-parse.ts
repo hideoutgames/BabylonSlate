@@ -258,18 +258,23 @@ function browseFromGltfJson(
       const view = bufferViews[image.bufferView] as
         | Record<string, unknown>
         | undefined;
-      if (view && typeof view.byteOffset === "number") {
-        const byteOffset = view.byteOffset as number;
-        const byteLength =
-          typeof view.byteLength === "number" ? (view.byteLength as number) : 0;
-        if (byteOffset + byteLength <= bin.byteLength) {
-          images.push({
-            name,
-            mime,
-            bytes: bin.subarray(byteOffset, byteOffset + byteLength),
-          });
-          continue;
-        }
+      const byteLength =
+        typeof view?.byteLength === "number" ? (view.byteLength as number) : 0;
+      const byteOffset = Number(view?.byteOffset ?? 0);
+      if (
+        view &&
+        byteLength > 0 &&
+        Number.isFinite(byteOffset) &&
+        byteOffset >= 0 &&
+        byteOffset + byteLength <= bin.byteLength
+      ) {
+        images.push({
+          name,
+          mime,
+          // Copy out of the GLB BIN so Texture pixels do not alias Model.source.
+          bytes: bin.slice(byteOffset, byteOffset + byteLength),
+        });
+        continue;
       }
     }
 

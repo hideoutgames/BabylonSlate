@@ -2,6 +2,7 @@ import { emptySkyboxFaces, type SkyboxFaces } from "@babylonslate/core";
 import {
   createSkyboxFaceTextureResult,
   fitSourceIntoSkyboxNet,
+  mimeForGuiTextureBytes,
   normalizeSkyboxCreatorPayload,
   planSkyboxCreatorFaceWrites,
   stripAssetFileSuffix,
@@ -76,12 +77,27 @@ export async function writeSkyboxCreatorFaceAssets(options: {
   return faces;
 }
 
+export type TextureImageBytes = {
+  bytes: Uint8Array;
+  mime: string | null;
+};
+
 export async function readTextureImageBytes(
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
   path: string,
-): Promise<Uint8Array | null> {
+): Promise<TextureImageBytes | null> {
   const pixels = await readAssetChunk(path, "pixels");
-  if (pixels && pixels.byteLength > 0) return pixels;
   const source = await readAssetChunk(path, "source");
-  return source && source.byteLength > 0 ? source : null;
+  const pixelsMime =
+    pixels && pixels.byteLength > 0 ? mimeForGuiTextureBytes(pixels) : null;
+  if (pixels && pixelsMime) {
+    return { bytes: pixels, mime: pixelsMime };
+  }
+  if (source && source.byteLength > 0) {
+    return { bytes: source, mime: mimeForGuiTextureBytes(source) };
+  }
+  if (pixels && pixels.byteLength > 0) {
+    return { bytes: pixels, mime: null };
+  }
+  return null;
 }

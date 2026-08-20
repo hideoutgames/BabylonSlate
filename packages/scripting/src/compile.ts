@@ -720,6 +720,25 @@ export function compileGraph(
         break;
       }
 
+      if (node.typeId === "variables.getValidated") {
+        const ctx = makeCtx(node);
+        const anchor = {
+          column: 1,
+          assetGuid: options.assetGuid,
+          graphId: graph.id,
+          nodeId: node.id,
+        };
+        declareDataOuts(node, ctx);
+        def.codegen(ctx);
+        const value = ctx.output("value");
+        emitBody(`  if (${value} != null) {`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, "Is Valid"), visited);
+        emitBody(`  } else {`, anchor);
+        emitAlong(execSuccessorEdges(graph, node.id, "Not Valid"), visited);
+        emitBody(`  }`, anchor);
+        break;
+      }
+
       if (node.typeId === "enum.switch") {
         const ctx = makeCtx(node);
         const anchor = {

@@ -7,7 +7,11 @@ export const DEFAULT_SEARCH_LIMIT = 80;
 const MAX_INDEXED_STRING = 200;
 const SKIP_PAYLOAD_KEYS = new Set(["body", "code", "source", "__pins"]);
 const DOCUMENT_TYPES = new Set(["Scene", "Graph", "Class"]);
-const VARIABLE_NODE_TYPES = new Set(["variables.get", "variables.set"]);
+const VARIABLE_NODE_TYPES = new Set([
+  "variables.get",
+  "variables.set",
+  "variables.getValidated",
+]);
 
 export type SearchEntryKind =
   | "asset"

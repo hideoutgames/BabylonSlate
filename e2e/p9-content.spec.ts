@@ -1359,6 +1359,13 @@ test.describe("P9 content systems", () => {
               {
                 id: "e2",
                 source: "log",
+                target: "cast",
+                sourceHandle: "execOut",
+                targetHandle: "execIn",
+              },
+              {
+                id: "e2b",
+                source: "cast",
                 target: "remove",
                 sourceHandle: "execOut",
                 targetHandle: "execIn",

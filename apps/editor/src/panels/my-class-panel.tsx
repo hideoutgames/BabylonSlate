@@ -23,12 +23,14 @@ import {
   blueprintSectionsForClass,
   classAllowsMemberKind,
   ensureEventNodeOnGraph,
+  isObjectInstanceVariableType,
   memberNamePromptCopy,
   nativeStubId,
   patchClassMember,
   removeClassMember,
   resolveClassMemberDrop,
   type GraphDropPoint,
+  type VariableAccessKind,
 } from "../lib/class-members";
 import { MemberAccessChooser } from "../components/member-access-chooser";
 import { PlusIcon } from "lucide-react";
@@ -71,6 +73,21 @@ export type MyClassMember = {
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
+
+function variableForAccessDrop(
+  graph: SerializedGraph | undefined,
+  members: MyClassMember[],
+  memberId: string | undefined,
+): { name?: string; typeId?: string; container?: string } | undefined {
+  if (!memberId) return undefined;
+  const declared = (graph?.members ?? []).find(
+    (entry) => entry.id === memberId && entry.kind === "variable",
+  );
+  if (declared) return declared;
+  return members.find(
+    (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === memberId,
+  );
+}
 
 function sectionsForTree(
   activeFunctionId?: string | null,
@@ -412,7 +429,7 @@ export function ClassMembersView({
     [classId, graph, membersOptions],
   );
   const spawnAccess = (
-    access: "get" | "set",
+    access: VariableAccessKind,
     memberId: string | null | undefined = selectedId,
     position?: { x: number; y: number },
   ) => {
@@ -538,6 +555,12 @@ export function ClassMembersView({
     ],
   });
 
+  const accessVariable = variableForAccessDrop(
+    graph,
+    members,
+    accessDrop?.memberId,
+  );
+
   return (
     <>
       <TreeView
@@ -639,13 +662,11 @@ export function ClassMembersView({
       <ContextMenuOverlay menu={menu} onClose={closeMenu} />
       <MemberAccessChooser
         open={accessDrop !== null}
-        memberName={
-          members.find(
-            (entry) =>
-              (entry.detail ?? `${entry.kind}-${entry.name}`) ===
-              accessDrop?.memberId,
-          )?.name ?? "Variable"
-        }
+        memberName={accessVariable?.name ?? "Variable"}
+        showValidatedGet={isObjectInstanceVariableType(
+          accessVariable?.typeId,
+          accessVariable?.container,
+        )}
         onOpenChange={(open) => {
           if (!open) setAccessDrop(null);
         }}

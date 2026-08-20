@@ -10,6 +10,7 @@ import {
   ensureCallParentForEvent,
   ensureEventNodeOnGraph,
   functionLibraryShowsEventGraphEmpty,
+  isObjectInstanceVariableType,
   memberNamePromptCopy,
   patchClassMember,
   pruneEventMembersToNodes,
@@ -287,6 +288,36 @@ describe("addClassMember", () => {
       title: "Set Health",
       variableName: "Health",
       scope: "member",
+    });
+  });
+
+  it("treats single object and actor variables as Validated Get types", () => {
+    expect(isObjectInstanceVariableType("object")).toBe(true);
+    expect(isObjectInstanceVariableType("actor")).toBe(true);
+    expect(isObjectInstanceVariableType("bool")).toBe(false);
+    expect(isObjectInstanceVariableType("class")).toBe(false);
+    expect(isObjectInstanceVariableType("object", "array")).toBe(false);
+    expect(isObjectInstanceVariableType("actor", "map")).toBe(false);
+  });
+
+  it("spawns Validated Get onto the event graph for an object variable", () => {
+    let graph = addClassMember(emptyGraph(), "variable", "Target", () => "var-1", {
+      typeId: "object",
+      typeClassId: "Actor",
+    });
+    graph = addVariableAccessNode(graph, graph.members![0]!, "validatedGet", {
+      classId: "Hero",
+      idFactory: () => "n-validated",
+    });
+    expect(graph.nodes[0]?.type).toBe("variables.getValidated");
+    expect(graph.nodes[0]?.data).toMatchObject({
+      title: "Validated Get Target",
+      variableName: "Target",
+      variableId: "var-1",
+      typeId: "object",
+      typeClassId: "Actor",
+      implicitSelf: true,
+      classId: "Hero",
     });
   });
 

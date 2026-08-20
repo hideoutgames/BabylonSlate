@@ -150,6 +150,8 @@ describe("compiledNodeIds", () => {
 
   it("includes both Cast success and result consumers and skips a leftover Cast", () => {
     const castPins = [
+      pin("execIn", "exec", "in", EXEC),
+      pin("execOut", "then", "out", EXEC),
       pin("object", "object", "in", objectRef("BObject")),
       pin("class", "class", "in", classRef("BObject")),
       pin("success", "success", "out", BOOL),
@@ -176,7 +178,8 @@ describe("compiledNodeIds", () => {
           node("leftoverCast", "casting.cast", castPins),
         ],
         [
-          execEdge("e1", "begin", "branch"),
+          execEdge("e1", "begin", "cast"),
+          execEdge("e1b", "cast", "branch"),
           execEdge("e2", "branch", "thenLog", "true", "execIn"),
           execEdge("e3", "branch", "elseLog", "false", "execIn"),
           dataEdge("d1", "cast", "branch", "success", "condition"),

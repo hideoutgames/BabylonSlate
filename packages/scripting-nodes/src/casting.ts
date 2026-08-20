@@ -1,6 +1,7 @@
 import {
   pin,
   type NodeDefinition,
+  EXEC,
   FLOAT,
   INT,
   BOOL,
@@ -34,6 +35,8 @@ export function castResultPinType(
 
 function castPins(properties: Record<string, unknown>) {
   return [
+    pin("execIn", "exec", "in", EXEC),
+    pin("execOut", "then", "out", EXEC),
     pin("object", "object", "in", objectRef("BObject")),
     pin("class", "class", "in", classRef("BObject")),
     pin("success", "success", "out", BOOL),
@@ -43,14 +46,13 @@ function castPins(properties: Record<string, unknown>) {
 
 function castCodegen(
   ctx: Parameters<NodeDefinition["codegen"]>[0],
-): Record<string, string> {
+): void {
   const input = ctx.input("object");
   const classId = ctx.input("class");
-  const ok = `ctx.isA(${input}, ${classId})`;
-  return {
-    success: ok,
-    result: `(${ok} ? ${input} : null)`,
-  };
+  const success = ctx.output("success");
+  const result = ctx.output("result");
+  ctx.emit(`${success} = ctx.isA(${input}, ${classId});`);
+  ctx.emit(`${result} = (${success} ? ${input} : null);`);
 }
 
 export const castingNodes: NodeDefinition[] = [
@@ -80,7 +82,6 @@ export const castingNodes: NodeDefinition[] = [
     id: "casting.cast",
     title: "Cast to BObject",
     category: "casting",
-    pure: true,
     pins: castPins,
     codegen: castCodegen,
   },
