@@ -194,6 +194,7 @@ export function DebugConsole({
                 {entry.output ? (
                   <div
                     className={cn(
+                      "whitespace-pre-wrap",
                       entry.success ? "text-foreground" : "text-destructive",
                     )}
                     data-testid={`debug-console-output-${index}`}
