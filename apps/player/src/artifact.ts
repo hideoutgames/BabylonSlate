@@ -24,8 +24,10 @@ import {
 } from "@babylonslate/exporter";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
-  decodePackedAudioAsset,
-  mapPackedAudioClipBytes,
+  extractPackedAudioClipBytes,
+  peekPackedAudioPayload,
+  audioClipCacheKey,
+  AUDIO_DEFAULT_SOURCE_CHUNK,
   normalizeAudioPayload,
   type AudioPayload,
 } from "@babylonslate/assets";
@@ -143,17 +145,10 @@ export async function loadGameFromFiles(
       continue;
     }
     if (entry.type === "Audio") {
-      const packed = decodePackedAudioAsset(bytes);
-      if (packed) {
-        for (const [key, clipBytes] of mapPackedAudioClipBytes(
-          entry.guid,
-          packed,
-        )) {
-          audioBytes.set(key, clipBytes);
-        }
-        audioPayloads.set(entry.guid, packed.payload);
+      const payload = peekPackedAudioPayload(bytes);
+      if (payload) {
+        audioPayloads.set(entry.guid, payload);
       } else {
-        audioBytes.set(entry.guid, bytes);
         audioPayloads.set(entry.guid, normalizeAudioPayload({}));
       }
       continue;
@@ -196,6 +191,37 @@ export async function loadGameFromFiles(
     audioReverbBytes,
     userInterfaces,
   };
+}
+
+/** Unpack one Audio clip into `game.audioBytes` on first playback. */
+export function loadGameAudioClipBytes(
+  game: LoadedGame,
+  assetGuid: string,
+  chunkId: string,
+): Uint8Array | null {
+  const cacheKey = audioClipCacheKey(assetGuid, chunkId);
+  const cached =
+    game.audioBytes.get(cacheKey) ??
+    (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK
+      ? game.audioBytes.get(assetGuid)
+      : undefined);
+  if (cached && cached.byteLength > 0) return cached;
+  const packed = game.payloads.get(assetGuid);
+  if (!packed) return null;
+  const bytes = extractPackedAudioClipBytes(packed, chunkId);
+  if (!bytes || bytes.byteLength === 0) return null;
+  game.audioBytes.set(cacheKey, bytes);
+  if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+    game.audioBytes.set(assetGuid, bytes);
+  }
+  return bytes;
+}
+
+export function createGameAudioSourceLoader(
+  game: LoadedGame,
+): (request: { assetGuid: string; chunkId: string }) => Promise<Uint8Array | null> {
+  return async ({ assetGuid, chunkId }) =>
+    loadGameAudioClipBytes(game, assetGuid, chunkId);
 }
 
 export async function loadGameFromHttp(

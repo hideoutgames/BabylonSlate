@@ -8,6 +8,7 @@ import {
   compileGraphDocument,
   compileGraphDocuments,
   compileGraphDocumentsForExport,
+  GraphScriptCompileCache,
   graphCompileSignature,
   graphsNeedCompile,
   spawnListForScripts,
@@ -546,6 +547,66 @@ describe("graphsNeedCompile", () => {
   });
 });
 
+describe("GraphScriptCompileCache", () => {
+  it("Play-prepares many graphs without recompiling an unchanged graph", () => {
+    const cache = new GraphScriptCompileCache();
+    const documents = Array.from({ length: 24 }, (_, index) => ({
+      path: `assets/g${index}.class.babasset`,
+      content: tickToLog,
+    }));
+    const first = compileGraphDocuments(documents, { cache });
+    expect(first).toHaveLength(24);
+    expect(cache.compiles).toBe(24);
+    const second = compileGraphDocuments(documents, { cache });
+    expect(second.map((script) => script.source)).toEqual(
+      first.map((script) => script.source),
+    );
+    expect(cache.compiles).toBe(24);
+    const moved: SerializedGraph = {
+      ...tickToLog,
+      nodes: tickToLog.nodes.map((node) => ({
+        ...node,
+        position: { x: 99, y: 40 },
+      })),
+    };
+    compileGraphDocuments(
+      documents.map((doc, index) =>
+        index === 0 ? { ...doc, content: moved } : doc,
+      ),
+      { cache },
+    );
+    expect(cache.compiles).toBe(24);
+    const edited: SerializedGraph = {
+      ...tickToLog,
+      nodes: tickToLog.nodes.map((node) =>
+        node.id === "log"
+          ? { ...node, data: { message: "changed" } }
+          : node,
+      ),
+    };
+    compileGraphDocuments(
+      documents.map((doc, index) =>
+        index === 0 ? { ...doc, content: edited } : doc,
+      ),
+      { cache },
+    );
+    expect(cache.compiles).toBe(25);
+  });
+
+  it("does not reuse a Play bundle for a Development Only export compile", () => {
+    const cache = new GraphScriptCompileCache();
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache },
+    );
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache, stripDevelopmentOnly: true },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+});
+
 describe("compileAnimGraphScripts", () => {
   it("compiles Animation Object lifecycle and each transition rule", async () => {
     const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
@@ -587,5 +648,25 @@ describe("compileAnimGraphScripts", () => {
     );
     expect(scripts[1]?.source).toContain("export function evaluate(ctx)");
     expect(scripts[1]?.source).toContain("enter: (true)");
+  });
+
+  it("reuses Animation Graph compiles when the document is unchanged", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const doc = createDefaultAnimGraph();
+    const entry = {
+      guid: "graph-1",
+      path: "assets/Loco.anim.babasset",
+      document: doc,
+    };
+    const first = compileAnimGraphScripts([entry], { cache });
+    expect(first.length).toBeGreaterThan(0);
+    expect(cache.compiles).toBe(1);
+    const second = compileAnimGraphScripts([entry], { cache });
+    expect(second).toEqual(first);
+    expect(cache.compiles).toBe(1);
   });
 });

@@ -313,6 +313,83 @@ export function graphsNeedCompile(
   return lastCompiledSignature !== currentSignature;
 }
 
+export type GraphCompileCacheOptions = {
+  stripDevelopmentOnly?: boolean;
+  enums?: HydrateGraphOptions["enums"];
+  structs?: HydrateGraphOptions["structs"];
+};
+
+function graphDocumentCompileCacheKey(
+  doc: {
+    path: string;
+    content: SerializedGraph | LogicGraph;
+    classId?: string;
+    parentClassId?: string | null;
+  },
+  options: GraphCompileCacheOptions,
+): string {
+  const content = isLogicGraphPayload(doc.content)
+    ? { nodes: doc.content.nodes, edges: doc.content.edges }
+    : doc.content;
+  return JSON.stringify({
+    signature: graphCompileSignature([
+      { path: doc.path, content: content as SerializedGraph },
+    ]),
+    classId: doc.classId ?? null,
+    parentClassId: doc.parentClassId ?? null,
+    stripDevelopmentOnly: options.stripDevelopmentOnly === true,
+    enums: options.enums ?? null,
+    structs: options.structs ?? null,
+  });
+}
+
+/** Session-lifetime compiled script cache keyed by graph content hash. */
+export class GraphScriptCompileCache {
+  readonly graphs = new Map<string, ScriptBundleEntry | null>();
+  readonly animGraphs = new Map<string, ScriptBundleEntry[]>();
+  compiles = 0;
+
+  clear(): void {
+    this.graphs.clear();
+    this.animGraphs.clear();
+    this.compiles = 0;
+  }
+}
+
+function compileGraphDocumentCached(
+  doc: {
+    path: string;
+    content: SerializedGraph | LogicGraph;
+    classId?: string;
+    parentClassId?: string | null;
+  },
+  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache },
+): ScriptBundleEntry | null {
+  const cache = options.cache;
+  const key = cache ? graphDocumentCompileCacheKey(doc, options) : null;
+  if (cache && key && cache.graphs.has(key)) {
+    return cache.graphs.get(key) ?? null;
+  }
+  cache && (cache.compiles += 1);
+  try {
+    const script = compileGraphDocument(doc.content, {
+      path: doc.path,
+      classId: doc.classId,
+      parentClassId: doc.parentClassId,
+      stripDevelopmentOnly: options.stripDevelopmentOnly,
+      enums: options.enums,
+      structs: options.structs,
+    });
+    if (cache && key) cache.graphs.set(key, script);
+    return script;
+  } catch (error) {
+    // A graph that fails codegen must not stop Preview; the validator has
+    // already surfaced the error in Compiler Results.
+    console.error(`[play] failed to compile ${doc.path}`, error);
+    return null;
+  }
+}
+
 export function compileGraphDocuments(
   documents: ReadonlyArray<{
     path: string;
@@ -320,29 +397,12 @@ export function compileGraphDocuments(
     classId?: string;
     parentClassId?: string | null;
   }>,
-  options: {
-    stripDevelopmentOnly?: boolean;
-    enums?: HydrateGraphOptions["enums"];
-    structs?: HydrateGraphOptions["structs"];
-  } = {},
+  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache } = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
-    try {
-      const script = compileGraphDocument(doc.content, {
-        path: doc.path,
-        classId: doc.classId,
-        parentClassId: doc.parentClassId,
-        stripDevelopmentOnly: options.stripDevelopmentOnly,
-        enums: options.enums,
-        structs: options.structs,
-      });
-      if (script) scripts.push(script);
-    } catch (error) {
-      // A graph that fails codegen must not stop Preview; the validator has
-      // already surfaced the error in Compiler Results.
-      console.error(`[play] failed to compile ${doc.path}`, error);
-    }
+    const script = compileGraphDocumentCached(doc, options);
+    if (script) scripts.push(script);
   }
   return scripts;
 }
@@ -365,6 +425,73 @@ export type AnimGraphCompileDocument = {
   document: AnimGraphDocument | unknown;
 };
 
+function animGraphCompileCacheKey(
+  entry: AnimGraphCompileDocument,
+  options: { stripDevelopmentOnly?: boolean },
+): string {
+  return JSON.stringify({
+    guid: entry.guid,
+    path: entry.path,
+    stripDevelopmentOnly: options.stripDevelopmentOnly === true,
+    document: entry.document,
+  });
+}
+
+function compileAnimGraphDocument(
+  entry: AnimGraphCompileDocument,
+  options: { stripDevelopmentOnly?: boolean },
+): ScriptBundleEntry[] {
+  const scripts: ScriptBundleEntry[] = [];
+  const doc = parseAnimGraphDocument(entry.document);
+  if (!doc) return scripts;
+  const objectScript = compileGraphDocument(doc.animationObject, {
+    path: entry.path,
+    graphId: "animation-object",
+    parentClassId: "BObject",
+    stripDevelopmentOnly: options.stripDevelopmentOnly,
+  });
+  if (objectScript) {
+    scripts.push({
+      ...objectScript,
+      classId: animGraphScriptClassId(entry.guid),
+      parentClassId: "BObject",
+    });
+  }
+  for (const transition of doc.transitions) {
+    const oneWay = !findReverseTransition(
+      doc.transitions,
+      transition.fromStateId,
+      transition.toStateId,
+    );
+    const ruleGraph = decorateTransitionRuleGraph(
+      transition.ruleGraph ?? {
+        nodes: [],
+        edges: [],
+      },
+      oneWay,
+    );
+    const logic = materializeLogicGraph(ruleGraph, `rule-${transition.id}`);
+    const compiled = compileTransitionRuleGraph(logic, {
+      assetGuid: entry.path,
+      registry: defaultNodeRegistry,
+      stripDevelopmentOnly: options.stripDevelopmentOnly,
+    });
+    scripts.push({
+      assetGuid: entry.path,
+      classId: animRuleScriptClassId(entry.guid, transition.id),
+      source: compiled.source,
+      anchors: compiled.anchors,
+      entryPoints: compiled.entryPoints.map((point) => ({
+        name: point.name,
+        isAsync: point.isAsync,
+        ...(point.event ? { event: point.event } : {}),
+      })),
+      parentClassId: "BObject",
+    });
+  }
+  return scripts;
+}
+
 /**
  * Compile Animation Object lifecycle graphs and each transition-rule evaluate().
  * Class ids are `AnimGraph:{guid}` / `AnimRule:{guid}:{transitionId}` so Play
@@ -372,61 +499,24 @@ export type AnimGraphCompileDocument = {
  */
 export function compileAnimGraphScripts(
   documents: ReadonlyArray<AnimGraphCompileDocument>,
-  options: { stripDevelopmentOnly?: boolean } = {},
+  options: {
+    stripDevelopmentOnly?: boolean;
+    cache?: GraphScriptCompileCache;
+  } = {},
 ): ScriptBundleEntry[] {
   const scripts: ScriptBundleEntry[] = [];
   for (const entry of documents) {
+    const cache = options.cache;
+    const key = cache ? animGraphCompileCacheKey(entry, options) : null;
+    if (cache && key && cache.animGraphs.has(key)) {
+      scripts.push(...(cache.animGraphs.get(key) ?? []));
+      continue;
+    }
     try {
-      const doc = parseAnimGraphDocument(entry.document);
-      if (!doc) continue;
-      const objectScript = compileGraphDocument(doc.animationObject, {
-        path: entry.path,
-        graphId: "animation-object",
-        parentClassId: "BObject",
-        stripDevelopmentOnly: options.stripDevelopmentOnly,
-      });
-      if (objectScript) {
-        scripts.push({
-          ...objectScript,
-          classId: animGraphScriptClassId(entry.guid),
-          parentClassId: "BObject",
-        });
-      }
-      for (const transition of doc.transitions) {
-        const oneWay = !findReverseTransition(
-          doc.transitions,
-          transition.fromStateId,
-          transition.toStateId,
-        );
-        const ruleGraph = decorateTransitionRuleGraph(
-          transition.ruleGraph ?? {
-            nodes: [],
-            edges: [],
-          },
-          oneWay,
-        );
-        const logic = materializeLogicGraph(
-          ruleGraph,
-          `rule-${transition.id}`,
-        );
-        const compiled = compileTransitionRuleGraph(logic, {
-          assetGuid: entry.path,
-          registry: defaultNodeRegistry,
-          stripDevelopmentOnly: options.stripDevelopmentOnly,
-        });
-        scripts.push({
-          assetGuid: entry.path,
-          classId: animRuleScriptClassId(entry.guid, transition.id),
-          source: compiled.source,
-          anchors: compiled.anchors,
-          entryPoints: compiled.entryPoints.map((point) => ({
-            name: point.name,
-            isAsync: point.isAsync,
-            ...(point.event ? { event: point.event } : {}),
-          })),
-          parentClassId: "BObject",
-        });
-      }
+      cache && (cache.compiles += 1);
+      const compiled = compileAnimGraphDocument(entry, options);
+      if (cache && key) cache.animGraphs.set(key, compiled);
+      scripts.push(...compiled);
     } catch (error) {
       console.error(`[play] failed to compile AnimationGraph ${entry.path}`, error);
     }

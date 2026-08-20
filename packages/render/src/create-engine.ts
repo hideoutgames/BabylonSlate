@@ -288,6 +288,8 @@ export interface CreateEngineOptions {
   audioBackend?: AudioPlaybackBackend;
   /** Packed or collected Audio source bytes keyed by asset guid. */
   audioBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Load clip bytes on first `playSound` (overlay Play / player lazy path). */
+  loadAudioSourceBytes?: import("./audio-service").AudioSourceBytesLoader;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;
   /** Particle Emitter / Particle System payloads for Play. */
@@ -523,6 +525,7 @@ export function createEngine(
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
         onDiagnostic: options.onAudioDiagnostic,
+        loadSourceBytes: options.loadAudioSourceBytes,
       })
     : null;
   if (audioService) {

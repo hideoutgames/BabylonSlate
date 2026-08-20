@@ -21,7 +21,11 @@ import {
 } from "@babylonslate/assets";
 import { exportGame, navmeshExportGuid } from "@babylonslate/exporter";
 import { resolveAudioPlayback } from "@babylonslate/assets";
-import { loadGameFromFiles, guiTextureBytesFromGame } from "./artifact";
+import {
+  loadGameAudioClipBytes,
+  loadGameFromFiles,
+  guiTextureBytesFromGame,
+} from "./artifact";
 import {
   packedBootControls,
   packedContentFromGame,
@@ -495,6 +499,10 @@ describe("packedContentFromGame", () => {
     if (!packed.ok) return;
     const game = await loadGameFromFiles(packed.value.files);
     expect(game.manifest.audioMixerGuid).toBe("mixer-1");
+    expect(game.audioBytes.size).toBe(0);
+    expect(await loadGameAudioClipBytes(game, "jump", "source")).toEqual(
+      new Uint8Array([1, 2, 3, 4]),
+    );
     expect(game.audioBytes.get("jump")).toEqual(new Uint8Array([1, 2, 3, 4]));
     const content = packedContentFromGame(game);
     expect(content.audioLibrary.mixerGuid).toBe("mixer-1");
@@ -547,6 +555,13 @@ describe("packedContentFromGame", () => {
     expect(packed.ok).toBe(true);
     if (!packed.ok) return;
     const game = await loadGameFromFiles(packed.value.files);
+    expect(game.audioBytes.size).toBe(0);
+    expect(await loadGameAudioClipBytes(game, "jump", "source")).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+    expect(await loadGameAudioClipBytes(game, "jump", "source:2")).toEqual(
+      new Uint8Array([9, 8]),
+    );
     expect(game.audioBytes.get("jump")).toEqual(new Uint8Array([1, 2, 3]));
     expect(game.audioBytes.get(audioClipCacheKey("jump", "source"))).toEqual(
       new Uint8Array([1, 2, 3]),

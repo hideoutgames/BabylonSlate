@@ -85,6 +85,48 @@ describe("AudioService", () => {
     expect(service.stats().accountedBytes).toBe(0);
   });
 
+  it("loads source bytes on first playSound and skips unused assets", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const reads: string[] = [];
+    const service = new AudioService({
+      backend,
+      loadSourceBytes: async ({ assetGuid, chunkId }) => {
+        reads.push(`${assetGuid}:${chunkId}`);
+        if (assetGuid !== "jump") return null;
+        return new Uint8Array([1, 2, 3, 4]);
+      },
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: createDefaultAudioPayload(),
+          bed: createDefaultAudioPayload(),
+        },
+      }),
+    );
+    await service.unlockAsync();
+    expect(reads).toEqual([]);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    await service.flush();
+    expect(reads).toEqual(["jump:source"]);
+    expect(backend.plays).toHaveLength(1);
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 2,
+    });
+    await service.flush();
+    expect(reads).toEqual(["jump:source"]);
+    expect(backend.plays).toHaveLength(2);
+    service.dispose();
+  });
+
   it("nulls missing Audio Channel and Attenuation refs with diagnostics", () => {
     const diagnostics: Array<{ code: string }> = [];
     const service = new AudioService({

@@ -33,6 +33,8 @@ import {
   resolveAudioPlayback,
   encodePackedAudioAsset,
   decodePackedAudioAsset,
+  peekPackedAudioPayload,
+  extractPackedAudioClipBytes,
   pickWeightedAudioClip,
   resolveAudioPitch,
   audioClipCacheKey,
@@ -886,6 +888,8 @@ describe("audio asset containers", () => {
     const source = new Uint8Array([1, 2, 3, 4, 5]);
     const packed = encodePackedAudioAsset(payload, source);
     expect(decodePackedAudioAsset(source)).toBeNull();
+    expect(peekPackedAudioPayload(packed)).toEqual(payload);
+    expect(extractPackedAudioClipBytes(packed, "source")).toEqual(source);
     expect(decodePackedAudioAsset(packed)).toEqual({
       payload,
       source,
