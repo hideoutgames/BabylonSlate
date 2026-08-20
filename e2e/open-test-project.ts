@@ -123,6 +123,7 @@ export async function createContentBrowserAsset(
   ).toHaveCount(0);
   await openContentBrowser(page);
   await revealAssetTile(page, `[data-asset-path*="${name}."]`, name);
+  await page.getByTestId("content-browser-search").fill("");
 }
 
 /**
