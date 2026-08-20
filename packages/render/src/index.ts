@@ -48,6 +48,7 @@ export * from "./scene-illumination";
 export * from "./skybox";
 export * from "./text3d-mesh";
 export * from "./default-typeface";
+export * from "./default-material";
 export * from "./material-block-registry";
 export * from "./material-compiler";
 export * from "./material-library";
