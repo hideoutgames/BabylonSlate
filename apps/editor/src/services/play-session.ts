@@ -334,6 +334,8 @@ export interface PlaySessionResult {
   /** Which runtime host was used. */
   runtimeMode: "worker" | "in-process";
   liveObjectCounts?: { meshes: number; textures: number };
+  /** Finalized recorder payload, if snapshot start ran this session. */
+  lastTrace: TracePayload | null;
 }
 
 export interface PlaySession {
@@ -1050,6 +1052,7 @@ export function startPlaySession(options: {
         textureLeak,
         runtimeMode,
         liveObjectCounts: liveAfter,
+        lastTrace: recordedTrace ?? runtime?.stopTrace() ?? null,
       };
       return stopResult;
     },
