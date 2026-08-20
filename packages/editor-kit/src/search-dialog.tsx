@@ -10,7 +10,11 @@ import {
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";
-import { WindowedList, WINDOWED_LIST_TOUCH_ROW_HEIGHT } from "./windowed-list";
+import {
+  WindowedList,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+  pickerListHeightPx,
+} from "./windowed-list";
 
 export interface SearchDialogItem {
   id: string;
@@ -108,7 +112,10 @@ export function SearchDialog({
             onChange={setQuery}
             data-testid={testId ? `${testId}-query` : undefined}
           />
-          <ScrollArea className="h-0 min-h-0 max-h-64 flex-1">
+          <ScrollArea
+            className="min-h-0 overflow-hidden"
+            style={{ height: pickerListHeightPx(filtered.length) }}
+          >
             {filtered.length === 0 ? (
               <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
             ) : (

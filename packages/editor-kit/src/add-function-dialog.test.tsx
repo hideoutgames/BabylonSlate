@@ -160,7 +160,8 @@ describe("AddFunctionDialog", () => {
     const list = screen.getByTestId("add-function-list");
     const scroller = list.closest("[data-slot='scroll-area']");
     expect(scroller).toBeTruthy();
-    expect(scroller?.className).toMatch(/max-h-/);
-    expect(scroller?.className).toMatch(/min-h-0/);
+    expect(scroller?.className).not.toMatch(/(?:^|\s)h-0(?:\s|$)/);
+    expect(scroller?.className).not.toMatch(/(?:^|\s)flex-1(?:\s|$)/);
+    expect(Number.parseFloat((scroller as HTMLElement).style.height)).toBe(256);
   });
 });
