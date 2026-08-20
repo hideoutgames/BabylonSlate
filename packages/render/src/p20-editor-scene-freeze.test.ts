@@ -37,15 +37,13 @@ class FakeCanvas {
   }
 }
 
-function sceneMaps(scene: {
-  useMaterialMeshMap: boolean;
-  useClonedMeshMap: boolean;
-  _geometriesByUniqueId?: unknown;
-}) {
+function sceneMaps(scene: { useMaterialMeshMap: boolean; useClonedMeshMap: boolean }) {
+  const geometries = (scene as unknown as { _geometriesByUniqueId: unknown })
+    ._geometriesByUniqueId;
   return {
     materials: scene.useMaterialMeshMap,
     clones: scene.useClonedMeshMap,
-    geometries: scene._geometriesByUniqueId != null,
+    geometries: geometries != null,
   };
 }
 
