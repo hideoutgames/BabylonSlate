@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot, type ContentRoot } from "./content-root";
-import { buildMinimalGlbFixture } from "./importers/glb-parse";
+import {
+  buildMinimalGlbFixture,
+  encodeGlbJsonBin,
+} from "./importers/glb-parse";
+import { EncodeQueue } from "./encode-queue";
 import { AssetRegistry } from "./registry";
 import { ThumbnailDecodeLru } from "./thumbnails";
 
@@ -197,6 +201,61 @@ describe("AssetRegistry", () => {
     await remounted.mountRoot(projectContentRoot());
     expect(remounted.list({ type: "Texture" }).length).toBeGreaterThanOrEqual(1);
     expect(remounted.list({ type: "Model" }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("embeds importFile sidecars onto a Kenney-style GLB and enqueues encode", async () => {
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+      0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+      0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
+      0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: 0 }],
+        images: [{ name: "colormap", uri: "Textures/colormap.png" }],
+        textures: [{ source: 0 }],
+        materials: [
+          {
+            name: "colormap",
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          },
+        ],
+      },
+      new Uint8Array(0),
+    );
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const registry = new AssetRegistry(storage);
+    const completed: string[] = [];
+    const queue = new EncodeQueue({
+      onComplete: async (result) => {
+        completed.push(result.assetGuid);
+        await registry.commitCompressedTexture(result);
+      },
+    });
+    registry.setEncodePipeline(queue);
+    await registry.mountRoot(projectContentRoot());
+
+    const created = await registry.importFile(
+      "project",
+      "",
+      "tree.glb",
+      glb,
+      { sidecars: { "Textures/colormap.png": png, "colormap.png": png } },
+    );
+    const texture = created.find((asset) => asset.header.type === "Texture");
+    expect(texture).toBeDefined();
+    expect(texture!.header.payload.compressionState).toBe("pending");
+    await vi.waitFor(() => {
+      expect(completed).toContain(texture!.header.guid);
+      expect(
+        registry.getByGuid(texture!.header.guid)!.header.payload.compressionState,
+      ).toBe("compressed");
+    });
   });
 
   it("passes the pixel chunk MIME into thumbnail generation", async () => {
