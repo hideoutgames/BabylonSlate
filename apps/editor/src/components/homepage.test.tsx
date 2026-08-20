@@ -382,10 +382,41 @@ describe("Homepage recent project rows", () => {
     expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
   });
 
-  it("confirms Remove from list from the row X without deleting files", async () => {
+  it("confirms Delete for a web OPFS project from the row X", async () => {
     const onRemoveFromList = vi.fn(async () => {});
     renderHomepage({
       projects: [listedProject("Game.babproject", "opfs")],
+      onRemoveFromList,
+    });
+    expect(
+      screen
+        .getByTestId("remove-listed-project-Game.babproject")
+        .getAttribute("aria-label"),
+    ).toBe("Delete");
+    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    const dialog = await screen.findByTestId("homepage-remove-dialog");
+    expect(dialog.textContent).toMatch(/Delete Project/);
+    expect(dialog.textContent).toMatch(/permanently/i);
+    expect(dialog.textContent).toMatch(/Export Project/);
+    expect(dialog.getAttribute("data-variant")).toBe("destructive");
+    expect(screen.getByTestId("homepage-remove-confirm").textContent).toMatch(
+      /^Delete$/,
+    );
+
+    fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
+    expect(onRemoveFromList).not.toHaveBeenCalled();
+    expect(screen.getByTestId("open-listed-project-Game.babproject")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
+    fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
+    expect(onRemoveFromList).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirms Remove from list for a native Documents project without deleting files", async () => {
+    getHostPlatform.mockReturnValue("ios");
+    const onRemoveFromList = vi.fn(async () => {});
+    renderHomepage({
+      projects: [listedProject("Game.babproject", "documents")],
       onRemoveFromList,
     });
     fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
@@ -393,11 +424,12 @@ describe("Homepage recent project rows", () => {
     expect(dialog.textContent).toMatch(/Remove from List/);
     expect(dialog.textContent).toMatch(/files stay|remain on disk|does not delete/i);
     expect(dialog.getAttribute("data-variant")).not.toBe("destructive");
+    expect(screen.getByTestId("homepage-remove-confirm").textContent).toMatch(
+      /^Remove$/,
+    );
 
     fireEvent.click(screen.getByTestId("homepage-remove-cancel"));
     expect(onRemoveFromList).not.toHaveBeenCalled();
-    expect(screen.getByTestId("open-listed-project-Game.babproject")).toBeTruthy();
-
     fireEvent.click(screen.getByTestId("remove-listed-project-Game.babproject"));
     fireEvent.click(await screen.findByTestId("homepage-remove-confirm"));
     expect(onRemoveFromList).toHaveBeenCalledTimes(1);
@@ -413,6 +445,9 @@ describe("Homepage recent project rows", () => {
       screen.getByTestId("open-listed-project-Game.babproject"),
     );
     expect(await screen.findByTestId("homepage-project-menu")).toBeTruthy();
+    expect(screen.getByTestId("homepage-project-remove").textContent).toMatch(
+      /^Delete$/,
+    );
     fireEvent.click(screen.getByTestId("homepage-project-remove"));
     expect(await screen.findByTestId("homepage-remove-dialog")).toBeTruthy();
     expect(onRemoveFromList).not.toHaveBeenCalled();

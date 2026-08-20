@@ -245,7 +245,7 @@ test.describe("Editor density and IA", () => {
     await expect(listed).toContainText("Renamed Game");
   });
 
-  test("homepage project row X confirms Remove from list", async ({ page }) => {
+  test("homepage project row X confirms Delete for OPFS", async ({ page }) => {
     await openTestProject(page);
     await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
@@ -255,6 +255,9 @@ test.describe("Editor density and IA", () => {
     await expect(listed).toBeVisible();
     await page.getByTestId("remove-listed-project-TestProject").click();
     await expect(page.getByTestId("homepage-remove-dialog")).toBeVisible();
+    await expect(page.getByTestId("homepage-remove-dialog")).toContainText(
+      "Delete Project?",
+    );
     await page.getByTestId("homepage-remove-cancel").click();
     await expect(listed).toBeVisible();
 

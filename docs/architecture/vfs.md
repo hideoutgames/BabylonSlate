@@ -9,6 +9,7 @@ Text + binary filesystem over a bound project folder:
 - `pickProjectFolder` / `openDocumentsProject` / `getCurrentFolder` / `releaseFolder`
 - `readText` / `writeText` / `readBinary` / `writeBinary`
 - `exists` / `readdir` / `mkdir` / `remove` / `stat`
+- Optional `deleteProject` — implemented by OPFS and memory adapters; omitted on Documents / Electron / Capacitor so Homepage list-remove cannot trash native folders
 - Folder handles carry `tier`: `documents` | `external` | `opfs`
 
 UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylonslate/vfs`.
@@ -17,11 +18,11 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 
 | Adapter | Host | Notes |
 | --- | --- | --- |
-| OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids |
+| OPFS | Web | Replaces localStorage; binary-capable; projects under stable ids; Homepage remove deletes the OPFS directory |
 | Documents | iPad default | `@capacitor/filesystem` under `BabylonSlate/projects/`; no picker/bookmark; Files-visible via `UIFileSharingEnabled` + `LSSupportsOpeningDocumentsInPlace` |
 | Scoped / external | iPad opt-in | Document picker; security-scoped bookmarks; `openKnownFolder` reopens without picker; Reconnect on staleness |
 | Memory | Tests | In-memory tree |
-| Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` throw |
+| Read-only wrapper | Engine plugins | `createReadOnlyProjectStorage(inner)` — reads pass through; `write*` / `mkdir` / `remove` / `deleteProject` throw |
 | Node | CI / tools | Real filesystem under a root path; `openAbsoluteFolder` for Electron pickers |
 | Electron | Desktop editor | Renderer `ElectronStorageAdapter` over preload IPC; main process `NodeStorageAdapter` |
 
@@ -35,7 +36,7 @@ Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime s
 
 1. **Default (iPad / Capacitor, Electron):** app Documents (Electron: `userData/projects`) — Create Project writes here with no picker until the user taps **Choose Location…**. Cold reopen of Documents projects needs no picker. The Create Project Name field starts **empty** on live (`TestProject` in `/?test=1` / `VITE_TEST_MODE`). Native **Choose Location…** is a required full-width `Button` (not a ToggleGroup) that arms `pickProjectFolder` at Create; **App Documents** / **Projects Folder** returns to the default. Web omits the Location line (internal OPFS). A colliding name warns **Name already exists.** instead of loading that folder. Capacitor and Electron never fall through to the OPFS adapter.
 2. **Opt-in external:** iCloud / Working Copy / any folder via picker; bookmarks persist in app settings.
-3. **Web:** OPFS only; Export Project to get bytes out. Recents never show the `opfs` API name: hide the location when every listed project is the same tier; mixed lists (Documents vs a picked folder) use **On this device** and **Chosen folder**.
+3. **Web:** OPFS only; Export Project to get bytes out. Removing a listed OPFS project deletes its directory (and OPFS meta), not just the recents row. Recents never show the `opfs` API name: hide the location when every listed project is the same tier; mixed lists (Documents vs a picked folder) use **On this device** and **Chosen folder**.
 
 ## App settings port
 

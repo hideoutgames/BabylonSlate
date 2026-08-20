@@ -446,6 +446,10 @@ export class ProjectService {
     return this.storage.listProjects();
   }
 
+  async deleteListedProject(handle: ProjectFolderHandle): Promise<void> {
+    await this.storage.deleteProject?.(handle);
+  }
+
   async openProject(): Promise<ProjectLoadResult> {
     await this.storage.pickProjectFolder();
     return this.loadCurrentProject();

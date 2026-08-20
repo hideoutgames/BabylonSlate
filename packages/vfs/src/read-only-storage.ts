@@ -19,6 +19,13 @@ export function createReadOnlyProjectStorage(
     ...(inner.reconnectFolder
       ? { reconnectFolder: () => inner.reconnectFolder!() }
       : {}),
+    ...(inner.deleteProject
+      ? {
+          deleteProject: async () => {
+            throw new Error(READ_ONLY_ERROR);
+          },
+        }
+      : {}),
     readText: (path) => inner.readText(path),
     readBinary: (path) => inner.readBinary(path),
     exists: (path) => inner.exists(path),
