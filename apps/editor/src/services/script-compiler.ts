@@ -319,6 +319,25 @@ export type GraphCompileCacheOptions = {
   structs?: HydrateGraphOptions["structs"];
 };
 
+function fnv1aHex(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function typeSchemasFingerprint(
+  enums: GraphCompileCacheOptions["enums"],
+  structs: GraphCompileCacheOptions["structs"],
+): string {
+  if (!enums && !structs) return "0";
+  return fnv1aHex(
+    JSON.stringify({ enums: enums ?? null, structs: structs ?? null }),
+  );
+}
+
 function graphDocumentCompileCacheKey(
   doc: {
     path: string;
@@ -326,7 +345,7 @@ function graphDocumentCompileCacheKey(
     classId?: string;
     parentClassId?: string | null;
   },
-  options: GraphCompileCacheOptions,
+  options: GraphCompileCacheOptions & { typesFingerprint?: string },
 ): string {
   const content = isLogicGraphPayload(doc.content)
     ? { nodes: doc.content.nodes, edges: doc.content.edges }
@@ -338,8 +357,9 @@ function graphDocumentCompileCacheKey(
     classId: doc.classId ?? null,
     parentClassId: doc.parentClassId ?? null,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
-    enums: options.enums ?? null,
-    structs: options.structs ?? null,
+    types:
+      options.typesFingerprint ??
+      typeSchemasFingerprint(options.enums, options.structs),
   });
 }
 
@@ -363,7 +383,10 @@ function compileGraphDocumentCached(
     classId?: string;
     parentClassId?: string | null;
   },
-  options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache },
+  options: GraphCompileCacheOptions & {
+    cache?: GraphScriptCompileCache;
+    typesFingerprint?: string;
+  },
 ): ScriptBundleEntry | null {
   const cache = options.cache;
   const key = cache ? graphDocumentCompileCacheKey(doc, options) : null;
@@ -399,9 +422,16 @@ export function compileGraphDocuments(
   }>,
   options: GraphCompileCacheOptions & { cache?: GraphScriptCompileCache } = {},
 ): ScriptBundleEntry[] {
+  const typesFingerprint = typeSchemasFingerprint(
+    options.enums,
+    options.structs,
+  );
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
-    const script = compileGraphDocumentCached(doc, options);
+    const script = compileGraphDocumentCached(doc, {
+      ...options,
+      typesFingerprint,
+    });
     if (script) scripts.push(script);
   }
   return scripts;

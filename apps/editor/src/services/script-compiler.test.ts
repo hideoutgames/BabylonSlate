@@ -605,6 +605,77 @@ describe("GraphScriptCompileCache", () => {
     );
     expect(cache.compiles).toBe(2);
   });
+
+  it("fingerprints type schemas instead of embedding them in every cache key", () => {
+    const cache = new GraphScriptCompileCache();
+    const enums = {
+      "enum-1": {
+        name: "Huge",
+        members: Array.from({ length: 80 }, (_, index) => ({
+          name: `Member${index}`,
+          value: index,
+        })),
+      },
+    };
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache, enums },
+    );
+    const key = [...cache.graphs.keys()][0] ?? "";
+    expect(key).not.toContain("Member79");
+    expect(key.length).toBeLessThan(800);
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache, enums: structuredClone(enums) },
+    );
+    expect(cache.compiles).toBe(1);
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      {
+        cache,
+        enums: {
+          "enum-1": {
+            name: "Huge",
+            members: [{ name: "Changed", value: 0 }],
+          },
+        },
+      },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("retries a graph that threw during codegen instead of caching the failure", () => {
+    const cache = new GraphScriptCompileCache();
+    const broken = {
+      nodes: [{ id: "x", type: "flow.entry", position: { x: 0, y: 0 } }],
+      edges: [],
+    } as unknown as SerializedGraph;
+    compileGraphDocuments(
+      [{ path: "broken.graph.babasset", content: broken }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+    expect(cache.graphs.size).toBe(0);
+    compileGraphDocuments(
+      [{ path: "broken.graph.babasset", content: broken }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("forgets compiled bundles when the project cache is cleared", () => {
+    const cache = new GraphScriptCompileCache();
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache },
+    );
+    cache.clear();
+    compileGraphDocuments(
+      [{ path: "assets/main.class.babasset", content: tickToLog }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+  });
 });
 
 describe("compileAnimGraphScripts", () => {
