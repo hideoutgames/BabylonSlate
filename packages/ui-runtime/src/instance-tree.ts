@@ -153,7 +153,7 @@ export function applyUiTreeReparentWidget(
   if (!widgetId || !parentId || widgetId === doc.rootId) return doc;
   if (!doc.widgets[widgetId] || !doc.widgets[parentId]) return doc;
   const sameParent = widgetParentId(doc, widgetId) === parentId;
-  let next = sameParent
+  const next = sameParent
     ? cloneUserInterfaceDocument(doc)
     : reparentWidget(doc, widgetId, parentId, "into");
   if (!sameParent && next === doc) return doc;
