@@ -61,12 +61,13 @@ describe("engine default material", () => {
     const albedo = material.albedoTexture;
 
     expect(albedo).toBeInstanceOf(Texture);
-    expect(albedo!.getSize()).toEqual({ width: 2, height: 2 });
-    expect(albedo!.wrapU).toBe(Texture.WRAP_ADDRESSMODE);
-    expect(albedo!.wrapV).toBe(Texture.WRAP_ADDRESSMODE);
-    expect(albedo!.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
-    expect(albedo!.uScale).toBe(ENGINE_DEFAULT_CHECKER_TILES);
-    expect(albedo!.vScale).toBe(ENGINE_DEFAULT_CHECKER_TILES);
+    const tiled = albedo as Texture;
+    expect(tiled.getSize()).toEqual({ width: 2, height: 2 });
+    expect(tiled.wrapU).toBe(Texture.WRAP_ADDRESSMODE);
+    expect(tiled.wrapV).toBe(Texture.WRAP_ADDRESSMODE);
+    expect(tiled.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
+    expect(tiled.uScale).toBe(ENGINE_DEFAULT_CHECKER_TILES);
+    expect(tiled.vScale).toBe(ENGINE_DEFAULT_CHECKER_TILES);
     expect(ENGINE_DEFAULT_CHECKER_TILES).toBe(8);
     // Light 0.8 (user default baseColor) and slightly darker 0.65, as 8-bit sRGB.
     // NullEngine does not retain RawTexture pixel buffers; this is the source
