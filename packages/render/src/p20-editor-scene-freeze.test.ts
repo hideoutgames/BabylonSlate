@@ -114,6 +114,9 @@ describe("p20-editor-scene-freeze", () => {
     expect(play.scene.performancePriority).toBe(
       ScenePerformancePriority.Intermediate,
     );
+    expect(editor.scene.performancePriority).toBe(
+      ScenePerformancePriority.BackwardCompatible,
+    );
     expect(play.scene.autoClear).toBe(true);
     expect(editor.scheduler.shouldRender(0)).toBe(true);
   });
