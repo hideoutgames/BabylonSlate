@@ -21,7 +21,7 @@ import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
-import { emptyPlayAudioLibrary, type PlayAudioLibrary } from "../lib/play-audio";
+import { emptyPlayAudioLibrary, type PlayAudioLibrary, type PlayAudioSourceLoader } from "../lib/play-audio";
 import {
   emptyPlayParticleLibrary,
   particleMaterialGuidsFromLibrary,
@@ -291,9 +291,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playRetargetAnimationLoads, setPlayRetargetAnimationLoads] = useState<
     Map<string, RetargetAnimationLoad[]>
   >(() => new Map());
-  const [playAudioBytes, setPlayAudioBytes] = useState<Map<string, Uint8Array>>(
-    () => new Map(),
-  );
+  const [playAudioSourceLoader, setPlayAudioSourceLoader] =
+    useState<PlayAudioSourceLoader | undefined>(undefined);
   const [playAudioLibrary, setPlayAudioLibrary] = useState<PlayAudioLibrary>(
     () => emptyPlayAudioLibrary(),
   );
@@ -947,13 +946,13 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
         try {
           const audio = await collectPlayAudio();
-          setPlayAudioBytes(audio.bytes);
+          setPlayAudioSourceLoader(() => audio.loadSourceBytes);
           setPlayAudioLibrary(audio.library);
         } catch (error) {
           appendLog(
             `Audio load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
-          setPlayAudioBytes(new Map());
+          setPlayAudioSourceLoader(undefined);
           setPlayAudioLibrary(emptyPlayAudioLibrary());
         }
         try {
@@ -1238,7 +1237,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             modelPayloads={playModelPayloads}
             modelClipAnimationGuids={playModelClipAnimationGuids}
             retargetAnimationLoads={playRetargetAnimationLoads}
-            audioBytes={playAudioBytes}
+            loadAudioSourceBytes={playAudioSourceLoader}
             audioLibrary={playAudioLibrary}
             animClipCatalog={animClipCatalogFromAssets(assetRegistry?.list() ?? [])}
             particleLibrary={playParticleLibrary}

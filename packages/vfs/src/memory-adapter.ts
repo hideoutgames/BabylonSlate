@@ -71,6 +71,13 @@ export class MemoryStorageAdapter implements ProjectStorage {
     this.folder = null;
   }
 
+  async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    this.roots.delete(handle.id);
+    if (this.folder?.id === handle.id) {
+      this.folder = null;
+    }
+  }
+
   private bindProject(name: string, tier: StorageTier): ProjectFolderHandle {
     const id = `${tier}:${name}`;
     if (!this.roots.has(id)) {

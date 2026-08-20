@@ -16,7 +16,7 @@ function isMsdfFile(fileName: string): boolean {
   return /msdf/i.test(fileName);
 }
 
-/** Glyph JSON chunk attached to a Font for extruded 3D Text (`CreateText`). */
+/** Glyph JSON chunk attached to a Font for flat 3D Text (`CreateTextShapePaths`). */
 export const FONT_FACETYPE_CHUNK_ID = "facetype-glyphs";
 
 /**

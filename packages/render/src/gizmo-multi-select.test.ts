@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core";
+import { Matrix, Mesh, Quaternion, Vector3 } from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -10,6 +10,7 @@ import {
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
+import { unfreezeActorWorldMatrix } from "./scene-loader";
 import {
   applyGizmoMultiSelectDrag,
   applyWorldDeltaToMesh,
@@ -33,6 +34,10 @@ function createHandle() {
 
 function pose(position: [number, number, number]): SerializedTransform {
   return { ...identitySerializedTransform(), position };
+}
+
+function thaw(...meshes: Mesh[]) {
+  for (const mesh of meshes) unfreezeActorWorldMatrix(mesh);
 }
 
 function sceneWith(actors: SerializedScene["actors"]): SerializedScene {
@@ -112,6 +117,7 @@ describe("world-delta follow", () => {
     );
     const a = sync.meshForActor("a")!;
     const b = sync.meshForActor("b")!;
+    thaw(a, b);
     a.computeWorldMatrix(true);
     b.computeWorldMatrix(true);
     const startA = a.getWorldMatrix().clone();
@@ -143,6 +149,7 @@ describe("world-delta follow", () => {
     );
     const a = sync.meshForActor("a")!;
     const b = sync.meshForActor("b")!;
+    thaw(a, b);
     a.computeWorldMatrix(true);
     b.computeWorldMatrix(true);
     const startA = a.getWorldMatrix().clone();
@@ -181,6 +188,7 @@ describe("world-delta follow", () => {
     );
     const parent = sync.meshForActor("parent")!;
     const child = sync.meshForActor("child")!;
+    thaw(parent, child);
     const parentIdOf = (id: string) => (id === "child" ? "parent" : null);
     expect(selectionGizmoRoots(["parent", "child"], parentIdOf)).toEqual([
       "parent",
@@ -212,6 +220,7 @@ describe("world-delta follow", () => {
     );
     const parent = sync.meshForActor("parent")!;
     const child = sync.meshForActor("child")!;
+    thaw(parent, child);
     child.computeWorldMatrix(true);
     const startChild = child.getWorldMatrix().clone();
     const parentX = parent.position.x;
@@ -242,6 +251,7 @@ describe("world-delta follow", () => {
     );
     const a = sync.meshForActor("a")!;
     const b = sync.meshForActor("b")!;
+    thaw(a, b);
     a.computeWorldMatrix(true);
     b.computeWorldMatrix(true);
     const drag = beginGizmoMultiSelectDrag(a, [b]);

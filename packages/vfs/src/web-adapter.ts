@@ -132,6 +132,31 @@ export class OpfsStorageAdapter implements ProjectStorage {
     await this.memory.releaseFolder();
   }
 
+  async deleteProject(handle: ProjectFolderHandle): Promise<void> {
+    if (handle.tier !== "opfs") {
+      throw new Error(`OPFS adapter cannot delete tier ${handle.tier}`);
+    }
+    const dirName = handle.id.replace(/[^a-zA-Z0-9._:-]/g, "_");
+    const opfs = await this.getOpfsRoot();
+    if (opfs) {
+      try {
+        await opfs.removeEntry(dirName, { recursive: true });
+      } catch {
+        /* missing directory is already gone */
+      }
+    }
+    await this.memory.deleteProject(handle);
+    const meta = loadMeta();
+    meta.projects = meta.projects.filter((project) => project.id !== handle.id);
+    if (meta.currentId === handle.id) {
+      meta.currentId = null;
+    }
+    saveMeta(meta);
+    if (this.folder?.id === handle.id) {
+      this.folder = null;
+    }
+  }
+
   private assertFolder(): ProjectFolderHandle {
     const folder = this.getCurrentFolder();
     if (!folder) {

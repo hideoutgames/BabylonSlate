@@ -7,6 +7,7 @@ import {
   type WheelEvent,
 } from "react";
 import type { Engine } from "@babylonjs/core";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   applyFontRegistryToHost,
   applyUiControlsIfUnfrozen,
@@ -66,6 +67,7 @@ import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/s
 
 const defaultResolveImageUrl = (): string | null => null;
 const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
+const defaultResolveTexture = (): Texture | null => null;
 const DEFAULT_ADT_IDEAL = {
   designResolution: { width: 1920, height: 1080 },
   scaleRule: "shortestSide" as const,
@@ -83,6 +85,7 @@ export function UiDesignCanvas({
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
   resolveInterfaceMaterial = defaultResolveInterfaceMaterial,
+  resolveTexture = defaultResolveTexture,
   materialFunctions,
   imageIssues = [],
   bitmapScale,
@@ -114,6 +117,7 @@ export function UiDesignCanvas({
   fontEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
   resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  resolveTexture?: (guid: string) => Texture | null;
   materialFunctions?: () => Record<string, MaterialFunctionDocument>;
   imageIssues?: readonly UiImageIssue[];
   onSelect: (id: string) => void;
@@ -241,6 +245,12 @@ export function UiDesignCanvas({
     (guid: string) => resolveInterfaceMaterialRef.current(guid),
     [],
   );
+  const resolveTextureRef = useRef(resolveTexture);
+  resolveTextureRef.current = resolveTexture;
+  const boundResolveTexture = useCallback(
+    (guid: string) => resolveTextureRef.current(guid),
+    [],
+  );
   const materialFunctionsRef = useRef(materialFunctions);
   materialFunctionsRef.current = materialFunctions;
   const boundMaterialFunctions = useCallback(
@@ -277,6 +287,7 @@ export function UiDesignCanvas({
         safeArea: ui.viewportLayer ? viewport.safeArea : undefined,
         resolveImageUrl: boundResolveImageUrl,
         resolveInterfaceMaterial: boundResolveInterfaceMaterial,
+        resolveTexture: boundResolveTexture,
         materialFunctions: boundMaterialFunctions,
       });
     } catch (error) {

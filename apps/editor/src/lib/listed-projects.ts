@@ -12,6 +12,14 @@ function storageTierLabel(tier: StorageTier): string {
   return tier === "external" ? "Chosen folder" : "On this device";
 }
 
+/** Web OPFS has no user-visible folder; removing from the list deletes the project. */
+export function shouldDeleteOpfsOnRemove(
+  platform: string,
+  tier: StorageTier,
+): boolean {
+  return platform === "web" && tier === "opfs";
+}
+
 /** Human location for a recents row, or null when every row would read the same. */
 export function listedProjectLocationLabel(
   projects: Array<{ tier: StorageTier }>,

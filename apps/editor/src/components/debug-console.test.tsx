@@ -123,4 +123,30 @@ describe("DebugConsole", () => {
     fireEvent.click(screen.getByTestId("debug-console-clear"));
     expect(screen.getByTestId("debug-console-transcript").textContent).toBe("");
   });
+
+  it("preserves newlines in command output", async () => {
+    const onExecute = vi.fn().mockResolvedValue({
+      success: true,
+      output: "engine:\n  help — List commands or show usage for one name",
+    });
+    render(
+      <DebugConsole
+        open
+        onOpenChange={() => {}}
+        commands={createCommandRegistry({ includeDebug: true }).list()}
+        onExecute={onExecute}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("debug-console-input"), {
+      target: { value: "help" },
+    });
+    fireEvent.click(screen.getByTestId("debug-console-submit"));
+    const output = await screen.findByTestId("debug-console-output-0");
+    expect(output.className).toContain("whitespace-pre-wrap");
+    expect(output.textContent).toContain("engine:");
+    expect(output.textContent).toContain(
+      "help — List commands or show usage for one name",
+    );
+  });
 });

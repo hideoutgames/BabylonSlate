@@ -43,6 +43,14 @@ import {
   type ViewportMode,
 } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
+import {
+  animGraphMembersFromVariables,
+  decorateTransitionRuleGraph,
+  persistTransitionRuleGraph,
+  findReverseTransition,
+  parseAnimGraphDocument,
+  patchTransition,
+} from "@babylonslate/anim-graph";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useValidation } from "../context/validation-context";
@@ -51,6 +59,7 @@ import {
   resolveInspectorNodeId,
   useGraphEditing,
 } from "../context/graph-editing-context";
+import { useOptionalAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -623,6 +632,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const { focusedNodeId } = usePlay();
   const { selectedNodeIds, selectedMemberId, activeFunctionId } =
     useGraphEditing();
+  const animEditing = useOptionalAnimGraphEditing();
   const {
     selectedId: prefabSelectedId,
     selectedIds: prefabSelectedIds,
@@ -653,12 +663,39 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     parentOf,
     assetType: indexed?.header.type,
   });
-  const graph = serializedGraphFromDocument(
-    doc?.ref.kind ?? "",
-    doc?.content,
-  );
+  const parsedAnim =
+    doc?.ref.kind === "anim-graph"
+      ? parseAnimGraphDocument(doc.content)
+      : null;
+  const openRuleId = animEditing?.openTransitionId ?? null;
+  const ruleTransition =
+    openRuleId && parsedAnim
+      ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
+      : null;
+  const graph = ruleTransition && parsedAnim
+    ? {
+        ...decorateTransitionRuleGraph(
+          ruleTransition.ruleGraph,
+          !findReverseTransition(
+            parsedAnim.transitions,
+            ruleTransition.fromStateId,
+            ruleTransition.toStateId,
+          ),
+        ),
+        members: animGraphMembersFromVariables(parsedAnim.variables),
+      }
+    : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content);
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
+    if (ruleTransition && parsedAnim) {
+      void applyAssetDocumentChange(
+        documentId,
+        patchTransition(parsedAnim, ruleTransition.id, {
+          ruleGraph: persistTransitionRuleGraph(next),
+        }) as unknown as Record<string, unknown>,
+      );
+      return;
+    }
     const commit = commitLogicGraph(doc.ref.kind, doc.content, next);
     if (commit.kind !== "graph") {
       void applyAssetDocumentChange(documentId, commit.payload);
@@ -786,7 +823,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (graph && selectedMember && selectedMember.kind !== "event") {
+  if (graph && selectedMember && !openRuleId && selectedMember.kind !== "event") {
     return (
       <PanelFrame data-testid="inspector-panel">
         <ClassMemberDetails
@@ -858,9 +895,13 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   if (!graph || !selectedNode) {
     return (
       <PanelFrame data-testid="inspector-panel">
-        <p className="p-4 text-sm text-muted-foreground">
-          Select a graph node, class member, or prefab component to edit
-          properties.
+        <p
+          className="p-4 text-sm text-muted-foreground"
+          data-testid={openRuleId ? "anim-rule-details-empty" : undefined}
+        >
+          {openRuleId
+            ? "Select a Node"
+            : "Select a graph node, class member, or prefab component to edit properties."}
         </p>
       </PanelFrame>
     );

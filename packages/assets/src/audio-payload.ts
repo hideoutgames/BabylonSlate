@@ -930,10 +930,8 @@ function decodePackedClipTable(rest: Uint8Array): Uint8Array[] | null {
   return clips;
 }
 
-/** Unwrap a packed Audio envelope; raw WAV/MP3/OGG returns null. */
-export function decodePackedAudioAsset(
-  bytes: Uint8Array,
-): { payload: AudioPayload; source: Uint8Array; sources: Uint8Array[] } | null {
+/** JSON payload from a BSAU envelope without copying clip blobs. */
+export function peekPackedAudioPayload(bytes: Uint8Array): AudioPayload | null {
   if (bytes.byteLength < 8) return null;
   for (let i = 0; i < PACKED_AUDIO_MAGIC.length; i++) {
     if (bytes[i] !== PACKED_AUDIO_MAGIC[i]) return null;
@@ -943,17 +941,46 @@ export function decodePackedAudioAsset(
   const jsonEnd = jsonStart + jsonLen;
   if (jsonLen < 0 || jsonEnd > bytes.byteLength) return null;
   try {
-    const parsed = JSON.parse(decoder.decode(bytes.subarray(jsonStart, jsonEnd)));
-    const rest = bytes.subarray(jsonEnd);
-    const table = decodePackedClipTable(rest);
-    const sources = table ?? [rest];
-    const source = sources[0] ?? new Uint8Array();
-    return {
-      payload: normalizeAudioPayload(parsed),
-      source,
-      sources,
-    };
+    return normalizeAudioPayload(
+      JSON.parse(decoder.decode(bytes.subarray(jsonStart, jsonEnd))),
+    );
   } catch {
     return null;
   }
+}
+
+/** Unwrap a packed Audio envelope; raw WAV/MP3/OGG returns null. */
+export function decodePackedAudioAsset(
+  bytes: Uint8Array,
+): { payload: AudioPayload; source: Uint8Array; sources: Uint8Array[] } | null {
+  const payload = peekPackedAudioPayload(bytes);
+  if (!payload) return null;
+  const jsonLen = readU32LE(bytes, 4);
+  const rest = bytes.subarray(8 + jsonLen);
+  const table = decodePackedClipTable(rest);
+  const sources = table ?? [rest];
+  const source = sources[0] ?? new Uint8Array();
+  return { payload, source, sources };
+}
+
+/** Clip bytes from a BSAU envelope or a raw source blob. */
+export function extractPackedAudioClipBytes(
+  bytes: Uint8Array,
+  chunkId: string,
+): Uint8Array | null {
+  const packed = decodePackedAudioAsset(bytes);
+  if (!packed) {
+    return chunkId === AUDIO_DEFAULT_SOURCE_CHUNK || chunkId === ""
+      ? bytes
+      : null;
+  }
+  const index = packed.payload.clips.findIndex((clip) => clip.chunkId === chunkId);
+  if (index >= 0) {
+    const clipBytes = packed.sources[index];
+    return clipBytes && clipBytes.byteLength > 0 ? clipBytes : null;
+  }
+  if (chunkId === AUDIO_DEFAULT_SOURCE_CHUNK) {
+    return packed.source.byteLength > 0 ? packed.source : null;
+  }
+  return null;
 }

@@ -71,6 +71,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     readAssetChunk,
+    assetRegistry,
   } = useDocuments();
   const {
     selectedActorIds,
@@ -417,6 +418,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
               if (cancelled || engineRef.current !== handle) return;
               await handle.whenEditorModelsReady();
             },
+            warmShaders: async () => {
+              if (cancelled || engineRef.current !== handle) return;
+              await handle.prewarmSceneMaterials();
+            },
             onProgress: (progress, phase) => {
               if (cancelled) return;
               setSceneLoad({ open: true, progress, phase });
@@ -433,7 +438,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           setSceneLoad({
             open: false,
             progress: 100,
-            phase: "Loading Models",
+            phase: "Warming Shaders",
           });
           setSceneReady(true);
         }
@@ -453,6 +458,24 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
   ]);
+
+  useEffect(() => {
+    const handle = engineRef.current;
+    if (!handle) return;
+    const byPath = new Map(
+      (assetRegistry?.list({ type: "Material" }) ?? []).map((asset) => [
+        asset.path,
+        asset.header.guid,
+      ]),
+    );
+    const guids = new Set<string>();
+    for (const doc of openDocuments) {
+      if (doc.ref.kind !== "material") continue;
+      const guid = byPath.get(doc.ref.path);
+      if (guid) guids.add(guid);
+    }
+    handle.setEditingMaterialGuids(guids);
+  }, [openDocuments, assetRegistry]);
 
   useEffect(() => {
     engineRef.current?.editor?.setSelectedActors(selectedActorIds);
@@ -626,7 +649,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   return (
     <div
       ref={panelRef}
-      className="relative flex h-full w-full flex-col bg-background"
+      className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="viewport-panel"
       data-scene-ready={sceneReady ? "true" : "false"}
       {...bind}
@@ -641,7 +664,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="h-full w-full flex-1 touch-none"
+        className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="viewport-canvas"
       />
       {marqueeRect ? (

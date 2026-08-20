@@ -330,6 +330,34 @@ describe("PlayHudOverlay images", () => {
     expect(options.resolveImageUrl?.("missing")).toBeNull();
   });
 
+  it("passes resolveTexture into the fullscreen GUI host", () => {
+    attachFullscreenGuiMock.mockReturnValue({
+      adt: { markAsDirty: vi.fn() },
+      host: { clear: vi.fn(), addControl: vi.fn(), markAsDirty: vi.fn() },
+      setAllowGuiHits: vi.fn(),
+      dispose: vi.fn(),
+    });
+    const texture = { name: "tex-1" };
+    const resolveTexture = (guid: string) =>
+      guid === "tex-1" ? (texture as never) : null;
+    render(
+      <PlayHudOverlay
+        scene={{} as never}
+        width={400}
+        height={300}
+        instances={[{ instanceId: "hud", document: hudWith("TouchButton") }]}
+        onTouchAxis={() => {}}
+        resolveTexture={resolveTexture}
+      />,
+    );
+    expect(attachFullscreenGuiMock).toHaveBeenCalled();
+    const options = attachFullscreenGuiMock.mock.calls[0]?.[1] as {
+      resolveTexture?: (guid: string) => unknown;
+    };
+    expect(options.resolveTexture?.("tex-1")).toBe(texture);
+    expect(options.resolveTexture?.("missing")).toBeNull();
+  });
+
   it("passes resolveInterfaceMaterial into the fullscreen GUI host", () => {
     attachFullscreenGuiMock.mockReturnValue({
       adt: { markAsDirty: vi.fn() },

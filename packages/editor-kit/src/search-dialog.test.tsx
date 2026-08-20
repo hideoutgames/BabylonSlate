@@ -105,6 +105,24 @@ describe("SearchDialog", () => {
     expect(screen.getByTestId("lead")).toBeTruthy();
   });
 
+  it("gives the list a height budget so overflowing rows can scroll", () => {
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick Animation"
+        items={items}
+        onSelect={() => {}}
+        data-testid="picker"
+      />,
+    );
+    const list = screen.getByTestId("search-item-a");
+    const scroller = list.closest("[data-slot='scroll-area']");
+    expect(scroller).toBeTruthy();
+    expect(scroller?.className).toMatch(/max-h-/);
+    expect(scroller?.className).toMatch(/min-h-0/);
+  });
+
   it("shows the empty label when nothing matches", () => {
     render(
       <SearchDialog

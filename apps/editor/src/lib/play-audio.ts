@@ -17,6 +17,11 @@ export type PlayAudioLibrary = {
   attenuations: Map<string, SoundAttenuationPayload>;
 };
 
+export type PlayAudioSourceLoader = (request: {
+  assetGuid: string;
+  chunkId: string;
+}) => Promise<Uint8Array | null | undefined>;
+
 export function emptyPlayAudioLibrary(
   mixerGuid: string | null = null,
 ): PlayAudioLibrary {
@@ -60,4 +65,29 @@ export function audioAssetGuidsFromLibrary(
   library: PlayAudioLibrary,
 ): string[] {
   return [...library.audio.keys()];
+}
+
+/** Read Audio clip bytes on first playSound — unused assets stay on disk. */
+export function createPlayAudioSourceLoader(options: {
+  assets: ReadonlyArray<{
+    guid: string;
+    path: string;
+    type: string;
+    payload: unknown;
+  }>;
+  readChunk: (
+    path: string,
+    chunkId: string,
+  ) => Promise<Uint8Array | null | undefined>;
+}): PlayAudioSourceLoader {
+  const byGuid = new Map(
+    options.assets
+      .filter((asset) => asset.type === "Audio")
+      .map((asset) => [asset.guid, asset] as const),
+  );
+  return async ({ assetGuid, chunkId }) => {
+    const asset = byGuid.get(assetGuid);
+    if (!asset) return null;
+    return options.readChunk(asset.path, chunkId);
+  };
 }

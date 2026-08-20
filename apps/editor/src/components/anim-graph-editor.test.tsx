@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, type AnimGraphDocument } from "@babylonslate/anim-graph";
+import { createDefaultAnimGraph, createDefaultTransitionRuleGraph, setTransitionBidirectional, type AnimGraphDocument } from "@babylonslate/anim-graph";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
+import { GraphEditingProvider } from "../context/graph-editing-context";
+import { PrefabEditingProvider } from "../context/prefab-editing-context";
 import { ValidationProvider } from "../context/validation-context";
 import {
   AnimGraphDetailsPanel,
@@ -63,6 +65,8 @@ vi.mock("../context/document-context", async () => {
         },
       ],
       applyAssetDocumentChange: store.applyAssetDocumentChange,
+      applyGraphChange: vi.fn(),
+      projectDocument: { settings: { input: { actions: [], axes: [] } } },
       activeDocumentId: DOC_ID,
       animEditorMode: "stateMachine",
       assetRegistry: {
@@ -159,6 +163,10 @@ vi.mock("../context/document-context", async () => {
   };
 });
 
+vi.mock("../context/play-context", () => ({
+  usePlay: () => ({ focusedNodeId: null }),
+}));
+
 afterEach(() => {
   cleanup();
 });
@@ -176,9 +184,13 @@ function renderAnimGraph(payload: AnimGraphDocument = createDefaultAnimGraph()) 
     <ValidationProvider>
       <DocumentWorkspaceProvider documentId={DOC_ID}>
         <AnimGraphEditingProvider>
-          <AnimGraphParametersPanel {...panelProps} />
-          <AnimGraphGraphPanel {...panelProps} />
-          <AnimGraphDetailsPanel {...panelProps} />
+          <PrefabEditingProvider>
+            <GraphEditingProvider>
+              <AnimGraphParametersPanel {...panelProps} />
+              <AnimGraphGraphPanel {...panelProps} />
+              <AnimGraphDetailsPanel {...panelProps} />
+            </GraphEditingProvider>
+          </PrefabEditingProvider>
         </AnimGraphEditingProvider>
       </DocumentWorkspaceProvider>
     </ValidationProvider>,
@@ -352,6 +364,117 @@ describe("AnimGraphEditor", () => {
     fireEvent.click(screen.getByTestId("anim-rule-breadcrumb-state-machine"));
     expect(screen.queryByTestId("anim-rule-graph")).toBeNull();
     expect(screen.getByTestId("anim-graph-editor")).toBeTruthy();
+    expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
+  });
+
+  it("shows node details in the Details panel while a To State rule is open", async () => {
+    const { container } = renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("anim-graph-open-rule-idle-to-run"));
+    expect(screen.getByTestId("anim-rule-details-empty").textContent).toMatch(
+      /Select a Node/,
+    );
+    await waitFor(() => {
+      expect(container.querySelector('[data-id="enter-state"]')).not.toBeNull();
+    });
+    fireEvent.click(container.querySelector('[data-id="enter-state"]')!);
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-panel").textContent).toContain(
+        "Enter State",
+      );
+    });
+    expect(screen.queryByTestId("property-name")).toBeNull();
+    fireEvent.click(screen.getByTestId("anim-rule-breadcrumb-state-machine"));
+    expect(screen.getByTestId("property-idle-to-run-direction")).toBeTruthy();
+  });
+
+  it("disables Exit State in a one-way To State rule", async () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    fireEvent.click(screen.getByTestId("anim-graph-open-rule-idle-to-run"));
+    await waitFor(() => {
+      expect(screen.getByTestId("anim-rule-graph")).toBeTruthy();
+    });
+    expect(
+      screen.getByTestId("anim-rule-graph").querySelector('[data-disabled="true"]'),
+    ).not.toBeNull();
+  });
+
+  it("flips a one-way transition from Details and disables Flip Direction for Both Ways", () => {
+    renderAnimGraph(locoGraph());
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    const flip = screen.getByTestId("anim-graph-flip-direction-idle-to-run");
+    expect(flip).toHaveProperty("disabled", false);
+    fireEvent.click(flip);
+    expect(lastCommit().transitions[0]).toMatchObject({
+      id: "idle-to-run",
+      fromStateId: "run",
+      toStateId: "idle",
+    });
+    expect(screen.queryByTestId("anim-rule-graph")).toBeNull();
+    expect(screen.getByTestId("anim-graph-flip-direction-idle-to-run")).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
+  });
+
+  it("disables Flip Direction when the transition is Both Ways", () => {
+    const both = setTransitionBidirectional(locoGraph(), "idle-to-run", true);
+    renderAnimGraph(both);
+    fireEvent.click(screen.getByTestId("anim-graph-state-idle"));
+    expect(
+      screen.getByTestId("anim-graph-flip-direction-idle-to-run"),
+    ).toHaveProperty("disabled", true);
+    expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
+  });
+
+  it("renames an Animation Graph variable on Get nodes in both graphs", () => {
+    const doc = locoGraph();
+    doc.variables = [
+      { id: "var-speed", name: "Speed", typeId: "float", defaultValue: 0 },
+    ];
+    doc.animationObject = {
+      ...doc.animationObject,
+      nodes: [
+        ...doc.animationObject.nodes,
+        {
+          id: "get-speed",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            variableId: "var-speed",
+            variableName: "Speed",
+            typeId: "float",
+            title: "Get Speed",
+          },
+        },
+      ],
+    };
+    doc.transitions[0]!.ruleGraph.nodes.push({
+      id: "get-speed-rule",
+      type: "variables.get",
+      position: { x: 0, y: 0 },
+      data: {
+        variableId: "var-speed",
+        variableName: "Speed",
+        typeId: "float",
+        title: "Get Speed",
+      },
+    });
+    renderAnimGraph(doc);
+    fireEvent.change(screen.getByTestId("anim-graph-variable-name-var-speed"), {
+      target: { value: "MoveSpeed" },
+    });
+    const next = lastCommit();
+    expect(
+      next.animationObject.nodes.find((node) => node.id === "get-speed")?.data
+        .variableName,
+    ).toBe("MoveSpeed");
+    expect(
+      next.transitions[0]?.ruleGraph.nodes.find((node) => node.id === "get-speed-rule")
+        ?.data.variableName,
+    ).toBe("MoveSpeed");
   });
 
   it("picks an Animation clip for the selected state and hides Clip Name", async () => {

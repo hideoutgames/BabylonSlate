@@ -53,6 +53,19 @@ describe("project round-trip", () => {
     expect(reopened.document.metadata.name).toBe("Pretty Name");
     expect(storage.getCurrentFolder()?.name).toBe("RenameMe.babproject");
   });
+
+  it("deleteListedProject removes OPFS files so the same name is empty", async () => {
+    localStorage.clear();
+    const storage = new MemoryStorageAdapter("opfs");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Gone");
+    const handle = storage.getCurrentFolder()!;
+    expect(await storage.exists("project.json")).toBe(true);
+    await service.deleteListedProject(handle);
+    expect(await storage.listProjects()).toEqual([]);
+    await storage.openKnownFolder(handle);
+    expect(await storage.exists("project.json")).toBe(false);
+  });
 });
 
 describe("texture encode diagnostics", () => {

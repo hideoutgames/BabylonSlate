@@ -20,6 +20,7 @@ import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
 import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
 import { applyMaterialToVisualMeshes, visualHierarchyBoundingVectors } from "./visual-meshes";
+import { installEngineDefaultMaterial } from "./default-material";
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 
@@ -114,6 +115,7 @@ export function createMaterialPreviewScene(
   // The camera renders into `outputRenderTarget`, so this clears the preview
   // RTT rather than the shared Engine's default framebuffer.
   scene.autoClear = true;
+  installEngineDefaultMaterial(scene);
 
   const camera = new ArcRotateCamera(
     "materialPreviewCamera",

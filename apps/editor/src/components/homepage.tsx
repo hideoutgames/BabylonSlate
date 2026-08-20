@@ -6,6 +6,7 @@ import {
   Grid2x2Icon,
   LayoutTemplateIcon,
   ListFilterIcon,
+  OctagonAlertIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle,
 } from "@babylonslate/ui/components/alert-dialog";
 import { Button } from "@babylonslate/ui/components/button";
@@ -74,6 +76,7 @@ import {
   HOMEPAGE_PROJECT_SORT_OPTIONS,
   listedProjectLocationLabel,
   listedProjectMetaParts,
+  shouldDeleteOpfsOnRemove,
   sortListedProjects,
   type HomepageProjectLocationFilter,
   type HomepageProjectSortMode,
@@ -117,6 +120,7 @@ function HomepageProjectRow({
   project,
   projects,
   busy,
+  deleteOnRemove,
   onOpen,
   onRename,
   onRequestRemove,
@@ -124,11 +128,13 @@ function HomepageProjectRow({
   project: ListedProject;
   projects: ListedProject[];
   busy: boolean;
+  deleteOnRemove: boolean;
   onOpen: (project: ListedProject) => void;
   onRename: (project: ListedProject) => void;
   onRequestRemove: (project: ListedProject) => void;
 }) {
   const skipOpenRef = useRef(false);
+  const removeLabel = deleteOnRemove ? "Delete" : "Remove from list";
   const { menu, closeMenu, bind } = useContextMenu({
     enabled: !busy,
     items: [
@@ -146,7 +152,7 @@ function HomepageProjectRow({
       },
       {
         id: "remove",
-        label: "Remove from list",
+        label: removeLabel,
         testId: "homepage-project-remove",
         onSelect: () => onRequestRemove(project),
       },
@@ -216,7 +222,7 @@ function HomepageProjectRow({
           type="button"
           variant="ghost"
           size="touch-icon"
-          label="Remove from list"
+          label={removeLabel}
           disabled={busy}
           data-testid={`remove-listed-project-${project.name}`}
           onPointerDown={(event) => event.stopPropagation()}
@@ -295,6 +301,9 @@ export function Homepage({
   const [sortMode, setSortMode] =
     useState<HomepageProjectSortMode>("last-opened-desc");
   const hostPlatform = getHostPlatform();
+  const deleteRemoveTarget =
+    removeTarget !== null &&
+    shouldDeleteOpfsOnRemove(hostPlatform, removeTarget.tier);
   const nameIssue = createProjectNameIssue(
     createName,
     projects.map((project) => project.name),
@@ -621,6 +630,10 @@ export function Homepage({
                   project={project}
                   projects={projects}
                   busy={busy}
+                  deleteOnRemove={shouldDeleteOpfsOnRemove(
+                    hostPlatform,
+                    project.tier,
+                  )}
                   onOpen={(next) => void run(() => onOpenProject(next))}
                   onRename={(next) => {
                     setRenameTarget(next);
@@ -742,19 +755,36 @@ export function Homepage({
           if (!open) setRemoveTarget(null);
         }}
       >
-        <AlertDialogContent data-testid="homepage-remove-dialog">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove from List?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The project files stay on disk. This only drops the recent from
-              the Homepage list.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+        <AlertDialogContent
+          variant={deleteRemoveTarget ? "destructive" : "default"}
+          data-testid="homepage-remove-dialog"
+        >
+          {deleteRemoveTarget ? (
+            <AlertDialogHeader>
+              <AlertDialogMedia>
+                <OctagonAlertIcon />
+              </AlertDialogMedia>
+              <AlertDialogTitle>Delete Project?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This project lives in the browser and will be removed
+                permanently. Export Project first if you need a copy.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          ) : (
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove from List?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The project files stay on disk. This only drops the recent from
+                the Homepage list.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="homepage-remove-cancel">
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
+              variant={deleteRemoveTarget ? "destructive" : undefined}
               data-testid="homepage-remove-confirm"
               onClick={() => {
                 const target = removeTarget;
@@ -763,7 +793,7 @@ export function Homepage({
                 setRemoveTarget(null);
               }}
             >
-              Remove
+              {deleteRemoveTarget ? "Delete" : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -186,6 +186,47 @@ export function setTransitionBidirectional(
   };
 }
 
+export function flipTransitionDirection(
+  doc: AnimGraphDocument,
+  transitionId: string,
+): AnimGraphDocument {
+  const transition = doc.transitions.find((row) => row.id === transitionId);
+  if (!transition) return doc;
+  const reverse = findReverseTransition(
+    doc.transitions,
+    transition.fromStateId,
+    transition.toStateId,
+  );
+  if (reverse) return doc;
+  return {
+    ...doc,
+    transitions: doc.transitions.map((row) =>
+      row.id === transitionId
+        ? {
+            ...row,
+            fromStateId: row.toStateId,
+            toStateId: row.fromStateId,
+            sourceHandle: migrateAnimHandle(row.targetHandle, "out"),
+            targetHandle: migrateAnimHandle(row.sourceHandle, "in"),
+          }
+        : row,
+    ),
+  };
+}
+
+export function patchTransition(
+  doc: AnimGraphDocument,
+  transitionId: string,
+  patch: Partial<AnimTransition>,
+): AnimGraphDocument {
+  return {
+    ...doc,
+    transitions: doc.transitions.map((row) =>
+      row.id === transitionId ? { ...row, ...patch } : row,
+    ),
+  };
+}
+
 function mergeTransitions(
   edges: SerializedGraph["edges"],
   previous: readonly AnimTransition[],

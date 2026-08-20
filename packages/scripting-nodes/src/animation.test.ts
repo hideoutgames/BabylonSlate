@@ -106,6 +106,44 @@ describe("animation nodes", () => {
     expect(evaluate({})).toEqual({ enter: true, exit: true });
   });
 
+  it("compiles a disabled Exit State as true even when wired", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "rule",
+      kind: "event",
+      nodes: [
+        node(registry, "enter-state", "anim.rule.enterState"),
+        node(registry, "exit-state", "anim.rule.exitState", {
+          __disabled: true,
+        }),
+        node(registry, "get-moving", "variables.get", {
+          variableName: "moving",
+          typeId: "bool",
+          implicitSelf: true,
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "get-moving",
+          sourcePinId: "value",
+          targetNodeId: "exit-state",
+          targetPinId: "value",
+        },
+      ],
+    };
+    const compiled = compileTransitionRuleGraph(graph, {
+      assetGuid: "anim-1",
+      registry,
+    });
+    const evaluate = loadEvaluate(compiled.source);
+    expect(
+      evaluate({
+        getVariable: () => false,
+      }),
+    ).toEqual({ enter: true, exit: true });
+  });
+
   it("compiles a Get Variable wired to Exit State", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

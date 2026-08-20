@@ -46,7 +46,9 @@ import {
   sceneClearColor,
   type EditorColorScheme,
 } from "./editor-clear-color";
-import { applySceneToBabylonScene } from "./scene-loader";
+import { applySceneToBabylonScene, unfreezeActorWorldMatrix, freezeStaticActorWorldMatrix } from "./scene-loader";
+import { isEditorModelPlaceholder } from "./glb-anim";
+import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { isSkyboxMesh } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
@@ -54,7 +56,12 @@ import {
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import {
+  getMaterialTexture,
+  releaseResourceCacheForEngine,
+  resourceCacheForEngine,
+  type ResourceCache,
+} from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
@@ -114,6 +121,11 @@ import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
+import {
+  applyEditorMaterialFreeze,
+  prewarmSceneMaterials as warmSceneMaterials,
+  SCENE_LOOKUP_MAPS,
+} from "./scene-perf";
 
 export interface EngineHandle {
   engine: Engine;
@@ -170,6 +182,10 @@ export interface EngineHandle {
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => void;
+  /** Material asset guids whose editor tab is open — those stay unfrozen. */
+  setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
+  /** Compile shaders before the first editor draw (scene-load warm). */
+  prewarmSceneMaterials: () => Promise<void>;
   /** Unlock AudioV2 after a user gesture and drain the pre-unlock queue. */
   unlockAudio: () => Promise<void>;
   /** Clear session mixer volumes and stop voices (scene change / Play stop). */
@@ -272,6 +288,8 @@ export interface CreateEngineOptions {
   audioBackend?: AudioPlaybackBackend;
   /** Packed or collected Audio source bytes keyed by asset guid. */
   audioBytes?: ReadonlyMap<string, Uint8Array>;
+  /** Load clip bytes on first `playSound` (overlay Play / player lazy path). */
+  loadAudioSourceBytes?: import("./audio-service").AudioSourceBytesLoader;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;
   /** Particle Emitter / Particle System payloads for Play. */
@@ -427,7 +445,9 @@ function createPlayAudioBackend(
 
 /**
  * Creates an editor or Play view. Prefer one Engine for the app lifetime and
- * pass it via `sharedEngine` + registerView for Play overlays.
+ * pass it via `sharedEngine` + registerView for Play overlays. ResourceCache
+ * is keyed on that Engine (`resourceCacheForEngine`); shared handles must not
+ * dispose it.
  */
 export function createEngine(
   canvas: HTMLCanvasElement,
@@ -452,7 +472,7 @@ export function createEngine(
     engine.registerView(canvas, undefined, true);
   }
 
-  const scene = new Scene(engine);
+  const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
   scene.skipPointerMovePicking = true;
   scene.clearColor = options.environmentColor
     ? sceneClearColor(options.environmentColor)
@@ -500,11 +520,12 @@ export function createEngine(
   const releasePlayLoop = options.playMode
     ? scheduler.acquireContinuous("play")
     : null;
-  const resourceCache = new ResourceCache();
+  const resourceCache = resourceCacheForEngine(engine);
   const audioService = options.playMode
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
         onDiagnostic: options.onAudioDiagnostic,
+        loadSourceBytes: options.loadAudioSourceBytes,
       })
     : null;
   if (audioService) {
@@ -575,6 +596,7 @@ export function createEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  const editingMaterialGuids = new Set<string>();
   const materialLibrary = new MaterialLibrary({
     functions: () => Object.fromEntries(materialFunctions),
     resolveTexture: (guid) => {
@@ -666,6 +688,7 @@ export function createEngine(
     );
     if (editorSync) {
       editorSync.apply(sceneData);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
       rebuildPostProcessStack();
       return;
     }
@@ -730,6 +753,11 @@ export function createEngine(
             (mesh): mesh is NonNullable<typeof mesh> =>
               mesh !== null && mesh !== attached,
           );
+        for (const root of roots) {
+          const mesh = editorSync.meshForActor(root);
+          if (mesh) unfreezeActorWorldMatrix(mesh);
+        }
+        if (attached instanceof Mesh) unfreezeActorWorldMatrix(attached);
         multiSelectDrag = beginGizmoMultiSelectDrag(attached, followers);
         options.onGizmoDragStart?.();
       },
@@ -746,6 +774,12 @@ export function createEngine(
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
         multiSelectDrag = null;
+        const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
+        for (const root of roots) {
+          const mesh = editorSync.meshForActor(root);
+          if (mesh) freezeStaticActorWorldMatrix(mesh);
+        }
+        if (attached instanceof Mesh) freezeStaticActorWorldMatrix(attached);
         options.onGizmoDragEnd?.();
       },
     });
@@ -850,7 +884,12 @@ export function createEngine(
           parentIdOf,
           (id) => {
             const mesh = editorSync.meshForActor(id);
-            return mesh !== null && mesh.isPickable;
+            if (!mesh) return false;
+            const locked = editorSync
+              .serializedScene()
+              ?.actors.find((actor) => actor.id === id)?.locked;
+            if (locked) return false;
+            return mesh.isPickable || isEditorModelPlaceholder(mesh);
           },
         );
         gizmos.attachTo(
@@ -915,6 +954,7 @@ export function createEngine(
 
   const resize = () => {
     if (!presentRtt) {
+      snapCanvasDrawingBuffer(canvas);
       engine.resize();
     } else {
       rttPresent?.clear();
@@ -1054,8 +1094,8 @@ export function createEngine(
       if (options.sharedEngine && !presentRtt) {
         engine.unRegisterView(canvas);
       }
-      resourceCache.dispose();
       if (ownsEngine) {
+        releaseResourceCacheForEngine(engine);
         engine.dispose();
       }
     },
@@ -1272,7 +1312,18 @@ export function createEngine(
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
       scheduler.invalidate("asset");
+    },
+    setEditingMaterialGuids: (guids) => {
+      editingMaterialGuids.clear();
+      for (const guid of guids) editingMaterialGuids.add(guid);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
+      scheduler.invalidate("asset");
+    },
+    prewarmSceneMaterials: async () => {
+      await warmSceneMaterials(scene);
+      applyEditorMaterialFreeze(scene, editingMaterialGuids);
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {

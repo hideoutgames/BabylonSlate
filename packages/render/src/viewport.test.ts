@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { Color3 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
+import { isEngineDefaultMaterial } from "./default-material";
 import {
   DEFAULT_LIGHT_INTENSITY,
   setHighlightColor,
@@ -35,6 +36,7 @@ describe("viewport", () => {
     expect(scene.activeCamera).not.toBeNull();
     expect(scene.getCameraByName("camera")).not.toBeNull();
     expect(scene.getLightByName("light")).not.toBeNull();
+    expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 
   it("frames the origin from the default radius", () => {

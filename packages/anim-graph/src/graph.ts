@@ -369,6 +369,41 @@ function migrateConditionToRuleGraph(
   return graph;
 }
 
+export function decorateTransitionRuleGraph(
+  graph: SerializedGraph,
+  oneWay: boolean,
+): SerializedGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      if (node.type !== ANIM_RULE_EXIT_TYPE) {
+        if (node.data.__disabled !== true) return node;
+        const data = { ...node.data };
+        delete data.__disabled;
+        return { ...node, data };
+      }
+      if (oneWay) {
+        return {
+          ...node,
+          data: { ...node.data, __disabled: true },
+        };
+      }
+      if (node.data.__disabled !== true) return node;
+      const data = { ...node.data };
+      delete data.__disabled;
+      return { ...node, data };
+    }),
+  };
+}
+
+/** Drop canvas-only `__disabled` so rule documents stay undecorated. */
+export function persistTransitionRuleGraph(
+  graph: SerializedGraph,
+): SerializedGraph {
+  const stripped = decorateTransitionRuleGraph(graph, false);
+  return { nodes: stripped.nodes, edges: stripped.edges };
+}
+
 export function validateAnimGraph(
   doc: AnimGraphDocument,
   catalog: readonly AnimClipCatalogEntry[] = [],

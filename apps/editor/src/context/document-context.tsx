@@ -30,7 +30,6 @@ import {
   writeThumbnail,
   ThumbnailDecodeLru,
   truncateJournal,
-  collectAudioClipSourceBytes,
   clearDeletedAssetRefs,
   clearDeletedRefsFromProjectSettings,
   type AssetRegistry,
@@ -96,6 +95,7 @@ import {
   compileAnimGraphScripts,
   compileGraphDocuments,
   classIdForGraphPath,
+  GraphScriptCompileCache,
   graphCompileSignature,
   graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
@@ -176,6 +176,7 @@ import {
 } from "@babylonslate/assets";
 import {
   listedProjectsFromRecents,
+  shouldDeleteOpfsOnRemove,
   type ListedProject,
 } from "../lib/listed-projects";
 import {
@@ -219,7 +220,10 @@ import {
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
 } from "../lib/play-content";
-import { playAudioLibraryFromAssets } from "../lib/play-audio";
+import {
+  createPlayAudioSourceLoader,
+  playAudioLibraryFromAssets,
+} from "../lib/play-audio";
 import {
   playParticleLibraryFromAssets,
 } from "../lib/play-particles";
@@ -467,10 +471,10 @@ interface DocumentContextValue {
   collectPlayModelPayloads: (
     scene?: SerializedScene | null,
   ) => Promise<Map<string, import("@babylonslate/assets").ModelPayload>>;
-  /** Audio source bytes and mixer/channel/attenuation library for Play. */
+  /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
   collectPlayAudio: () => Promise<{
-    bytes: Map<string, Uint8Array>;
     library: import("../lib/play-audio").PlayAudioLibrary;
+    loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
   }>;
   /** Surface, post-process, and HUD Interface materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
@@ -648,6 +652,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
+  const graphCompileCacheRef = useRef(new GraphScriptCompileCache());
   const markScriptsCurrent = useCallback(() => {
     setLastCompiledSignature(
       graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current)),
@@ -659,6 +664,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setDockWindowTick((v) => v + 1);
   }, []);
   const documentService = documentServiceRef.current;
+  const collectGraphTypeSchemas = useCallback(() => {
+    return typeSchemasFromGraphAssets(
+      collectGraphTypeAssets({
+        assets: projectService.registry?.list() ?? [],
+        openDocuments: [...documentService.getState().openDocuments.values()],
+      }),
+    );
+  }, [documentService, projectService]);
   const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
 
   const captureMtimeSnapshot = useCallback(async () => {
@@ -1101,6 +1114,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
+      graphCompileCacheRef.current.clear();
       setRoute("editor");
       setUiEditorModes({});
       setAnimEditorModes({});
@@ -1217,6 +1231,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const removeListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
+      if (shouldDeleteOpfsOnRemove(getHostPlatform(), handle.tier)) {
+        await projectService.deleteListedProject(handle);
+      }
       const settings = await settingsStore.load();
       settings.recents = settings.recents.filter(
         (recent) => recent.id !== handle.id,
@@ -1224,7 +1241,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await settingsStore.save(settings);
       await refreshProjectList();
     },
-    [refreshProjectList, settingsStore],
+    [projectService, refreshProjectList, settingsStore],
   );
 
   const reconnectProject = useCallback(async () => {
@@ -1278,14 +1295,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         }
       }
       if (document.settings.compileOnSave) {
+        const assets = projectService.registry?.list() ?? [];
         const graphs = documentService
           .getOpenDocumentsOrdered()
           .filter((doc) => doc.ref.kind === "graph" && doc.content)
-          .map((doc) => ({
-            path: doc.ref.path,
-            content: doc.content as SerializedGraph,
-          }));
-        compileGraphDocuments(graphs);
+          .map((doc) => {
+            const asset = assets.find((entry) => entry.path === doc.ref.path);
+            return {
+              path: doc.ref.path,
+              content: doc.content as SerializedGraph,
+              parentClassId: asset?.header.parentClass ?? null,
+            };
+          });
+        const typeSchemas = collectGraphTypeSchemas();
+        compileGraphDocuments(graphs, {
+          cache: graphCompileCacheRef.current,
+          enums: typeSchemas.enums,
+          structs: typeSchemas.structs,
+        });
         setLastCompiledSignature(graphCompileSignature(graphs));
       }
       const layouts = documentService.buildLayouts();
@@ -1339,6 +1366,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     captureAllLayouts,
     captureMtimeSnapshot,
+    collectGraphTypeSchemas,
     documentService,
     ensureDerived,
     projectService,
@@ -1428,6 +1456,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
     setMigrationPending([]);
     setLastCompiledSignature(null);
+    graphCompileCacheRef.current.clear();
     setRoute("home");
     setUiEditorModes({});
     setAnimEditorModes({});
@@ -2153,8 +2182,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       parentOf,
       registeredClassIds: registered,
     });
-    return compileGraphDocuments(selected);
-  }, [loadClassGraphDocuments, projectService]);
+    const typeSchemas = collectGraphTypeSchemas();
+    return compileGraphDocuments(selected, {
+      cache: graphCompileCacheRef.current,
+      enums: typeSchemas.enums,
+      structs: typeSchemas.structs,
+    });
+  }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService]);
 
   const loadAssetDocument = useCallback(
     async (
@@ -2180,27 +2214,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   > => {
     const documents = await loadProjectGraphDocuments();
     const animDocuments = await loadProjectAnimGraphDocuments();
-    const typeSchemas = typeSchemasFromGraphAssets(
-      collectGraphTypeAssets({
-        assets: projectService.registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    );
+    const typeSchemas = collectGraphTypeSchemas();
     const bundles = [
       ...compileGraphDocuments(documents, {
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+        cache: graphCompileCacheRef.current,
       }),
-      ...compileAnimGraphScripts(animDocuments),
+      ...compileAnimGraphScripts(animDocuments, {
+        cache: graphCompileCacheRef.current,
+      }),
     ];
     markScriptsCurrent();
     return bundles;
   }, [
-    documentService,
+    collectGraphTypeSchemas,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
     markScriptsCurrent,
-    projectService,
   ]);
 
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
@@ -2218,12 +2249,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const doc of documents) {
       classGraphs[classIdForGraphPath(doc.path)] = doc.content;
     }
-    const typeSchemas = typeSchemasFromGraphAssets(
-      collectGraphTypeAssets({
-        assets: projectService.registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    );
+    const typeSchemas = collectGraphTypeSchemas();
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
@@ -2240,12 +2266,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ...compileGraphDocuments(documents, {
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+        cache: graphCompileCacheRef.current,
       }),
-      ...compileAnimGraphScripts(animDocuments),
+      ...compileAnimGraphScripts(animDocuments, {
+        cache: graphCompileCacheRef.current,
+      }),
     ];
     markScriptsCurrent();
     return { bundles, diagnostics };
   }, [
+    collectGraphTypeSchemas,
     documentService,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
@@ -2648,7 +2678,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ),
     );
     const payloads: Array<{ guid: string; type: string; payload: unknown }> = [];
-    const bytes = new Map<string, Uint8Array>();
     for (const asset of audioAssets) {
       const kind =
         asset.header.type === "AudioMixer"
@@ -2665,23 +2694,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         type: asset.header.type,
         payload: content,
       });
-      if (asset.header.type === "Audio") {
-        const mapped = await collectAudioClipSourceBytes({
-          assetGuid: asset.header.guid,
-          payload: content,
-          readChunk: (chunkId) =>
-            projectService.readAssetChunk(asset.path, chunkId),
-        });
-        for (const [key, clipBytes] of mapped) {
-          bytes.set(key, clipBytes);
-        }
-      }
     }
     return {
-      bytes,
       library: playAudioLibraryFromAssets({
         mixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         assets: payloads,
+      }),
+      loadSourceBytes: createPlayAudioSourceLoader({
+        assets: audioAssets.map((asset, index) => ({
+          guid: asset.header.guid,
+          path: asset.path,
+          type: asset.header.type,
+          payload: payloads[index]?.payload,
+        })),
+        readChunk: (path, chunkId) =>
+          projectService.readAssetChunk(path, chunkId),
       }),
     };
   }, [loadPlayAssetContent, projectDocument, projectService]);

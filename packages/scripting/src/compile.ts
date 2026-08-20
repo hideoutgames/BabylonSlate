@@ -1085,7 +1085,7 @@ export function compileTransitionRuleGraph(
   const results: Record<string, string> = {};
   for (const sink of ANIM_RULE_SINKS) {
     const node = graph.nodes.find((entry) => entry.typeId === sink.typeId);
-    if (!node) {
+    if (!node || node.properties.__disabled === true) {
       results[sink.key] = "true";
       continue;
     }

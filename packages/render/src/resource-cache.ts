@@ -67,6 +67,31 @@ function samplingKey(options: TextureSamplingOptions = {}): string {
   ].join(":");
 }
 
+const caches = new WeakMap<AbstractEngine, ResourceCache>();
+
+/**
+ * One {@link ResourceCache} per Engine lifetime so Play / Prefab / Material /
+ * UI reuse the same blob URLs and InternalTexture keys.
+ */
+export function resourceCacheForEngine(
+  engine: AbstractEngine,
+  options?: ResourceCacheOptions,
+): ResourceCache {
+  const existing = caches.get(engine);
+  if (existing) return existing;
+  const cache = new ResourceCache(options);
+  caches.set(engine, cache);
+  return cache;
+}
+
+/** Dispose and forget the cache when this caller owns the Engine. */
+export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
+  const cache = caches.get(engine);
+  if (!cache) return;
+  caches.delete(engine);
+  cache.dispose();
+}
+
 /**
  * LRU resource cache with byte ceiling and stable blob URLs per asset guid.
  * Texture construction must go through this cache (lint-enforced).

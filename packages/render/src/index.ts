@@ -1,5 +1,6 @@
 export * from "./editor-clear-color";
 export * from "./create-engine";
+export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export * from "./create-null-engine";
 export * from "./ktx2-transcoder";
@@ -48,6 +49,7 @@ export * from "./scene-illumination";
 export * from "./skybox";
 export * from "./text3d-mesh";
 export * from "./default-typeface";
+export * from "./default-material";
 export * from "./material-block-registry";
 export * from "./material-compiler";
 export * from "./material-library";

@@ -56,6 +56,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument,
+    openDocuments,
+    assetRegistry,
   } = useDocuments();
   const {
     gizmoTool,
@@ -225,6 +227,24 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   ]);
 
   useEffect(() => {
+    const handle = engineRef.current;
+    if (!handle) return;
+    const byPath = new Map(
+      (assetRegistry?.list({ type: "Material" }) ?? []).map((asset) => [
+        asset.path,
+        asset.header.guid,
+      ]),
+    );
+    const guids = new Set<string>();
+    for (const doc of openDocuments) {
+      if (doc.ref.kind !== "material") continue;
+      const guid = byPath.get(doc.ref.path);
+      if (guid) guids.add(guid);
+    }
+    handle.setEditingMaterialGuids(guids);
+  }, [openDocuments, assetRegistry, sharedEngine]);
+
+  useEffect(() => {
     engineRef.current?.editor?.setViewportMode(viewportMode);
   }, [viewportMode]);
 
@@ -309,7 +329,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   return (
     <div
-      className="relative flex h-full min-h-0 w-full flex-col bg-background"
+      className="relative flex h-full min-h-0 min-w-0 w-full flex-col bg-background"
       data-testid="prefab-viewport-panel"
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
@@ -319,7 +339,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="h-full min-h-0 w-full flex-1 touch-none"
+        className="h-full min-h-0 min-w-0 w-full flex-1 touch-none"
         data-testid="prefab-preview-canvas"
       />
       <canvas

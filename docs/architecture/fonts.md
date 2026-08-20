@@ -16,9 +16,9 @@ Importer (`packages/assets/src/importers/font.ts`) already accepts woff2 / woff 
 
 Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Chunk id `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`), kind `font-facetype`.
 
-## Extruded 3D text
+## 3D Text
 
-`Text3DComponent` (catalog **3D Text**) uses `MeshBuilder.CreateText` + injected `earcut` in `@babylonslate/render` (`createText3DMesh`). This is a scene mesh, not UserInterface `TextBlock` and not a DynamicTexture plane.
+`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not UserInterface `TextBlock` and not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Serialized `depth` is ignored.
 
 | Font data | When |
 | --- | --- |

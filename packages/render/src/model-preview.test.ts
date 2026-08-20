@@ -5,6 +5,7 @@ import { MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { embedGlbExternalImages } from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
+import { isEngineDefaultMaterial } from "./default-material";
 import { encodeTriangleGlb, encodeUvHierarchyGlb, isGltfModelBytes } from "./model-mesh";
 import { attachSkeletonPreview, createLinkedSkeletonFromNodeRig } from "./node-rig";
 import { MATERIAL_PREVIEW_MESH_NAME } from "./material-preview";
@@ -84,6 +85,8 @@ describe("applyModelMaterialSlots", () => {
 
     expect(root.material).toBe(constructionA);
     expect(child.material).toBe(constructionB);
+    expect(isEngineDefaultMaterial(root.material)).toBe(false);
+    expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 
   it("assigns a resolved material to a filled slot and restores on clear", () => {

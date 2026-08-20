@@ -215,10 +215,14 @@ describe("ContentBrowserAssetTile", () => {
     expect(thumb.style.borderTopRightRadius).toBe("calc(var(--radius-xl) - 2px)");
     expect(thumb.style.boxShadow).toBe("");
     expect(thumb.className).toContain("bg-card");
+    expect(thumb.className).toContain("absolute");
+    expect(thumb.className).toContain("inset-0.5");
+    expect(thumb.className).toContain("overflow-hidden");
     const well = thumb.parentElement as HTMLElement;
-    expect(well.className).toContain("rounded-t-xl");
-    expect(well.className).toContain("overflow-hidden");
-    expect(well.className).toContain("p-0.5");
+    expect(well.className).toContain("relative");
+    expect(well.className).toContain("aspect-square");
+    expect(well.className).not.toContain("overflow-hidden");
+    expect(well.className).not.toContain("p-0.5");
   });
 
   it("keeps the lock slot hidden when source control is off", () => {
