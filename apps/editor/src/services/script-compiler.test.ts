@@ -669,4 +669,66 @@ describe("compileAnimGraphScripts", () => {
     expect(second).toEqual(first);
     expect(cache.compiles).toBe(1);
   });
+
+  it("compiles a one-way Exit State as true even when a variable is wired to it", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts } = await import("./script-compiler");
+    const doc = createDefaultAnimGraph();
+    doc.states.push({
+      id: "run",
+      name: "Run",
+      clipId: null,
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    doc.transitions.push({
+      id: "idle-to-run",
+      fromStateId: "idle",
+      toStateId: "run",
+      blendSeconds: 0,
+      priority: 0,
+      ruleGraph: {
+        nodes: [
+          {
+            id: "enter-state",
+            type: "anim.rule.enterState",
+            position: { x: 0, y: 0 },
+            data: { __protected: true },
+          },
+          {
+            id: "exit-state",
+            type: "anim.rule.exitState",
+            position: { x: 0, y: 80 },
+            data: { __protected: true },
+          },
+          {
+            id: "get-moving",
+            type: "variables.get",
+            position: { x: 0, y: 160 },
+            data: {
+              variableName: "moving",
+              typeId: "bool",
+              implicitSelf: true,
+            },
+          },
+        ],
+        edges: [
+          {
+            id: "e-exit",
+            source: "get-moving",
+            target: "exit-state",
+            sourceHandle: "value",
+            targetHandle: "value",
+          },
+        ],
+      },
+    });
+    const scripts = compileAnimGraphScripts([
+      { guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc },
+    ]);
+    const rule = scripts.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-run");
+    expect(rule?.source).toContain("exit: (true)");
+    expect(rule?.source).not.toContain("exit-state");
+  });
 });

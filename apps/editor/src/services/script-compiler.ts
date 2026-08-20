@@ -513,7 +513,7 @@ export function compileAnimGraphScripts(
       continue;
     }
     try {
-      cache && (cache.compiles += 1);
+      if (cache) cache.compiles += 1;
       const compiled = compileAnimGraphDocument(entry, options);
       if (cache && key) cache.animGraphs.set(key, compiled);
       scripts.push(...compiled);

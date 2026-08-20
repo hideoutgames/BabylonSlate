@@ -18,6 +18,7 @@ import {
   setTransitionBidirectional,
   flipTransitionDirection,
   decorateTransitionRuleGraph,
+  persistTransitionRuleGraph,
   validateAnimGraph,
   type AnimClipKind,
   type AnimClipRef,
@@ -542,7 +543,11 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
               const nextRule = { nodes: next.nodes, edges: next.edges };
               const transitionId = openTransition.id;
               queueMicrotask(() => {
-                commit(patchTransition(doc, transitionId, { ruleGraph: nextRule }));
+                commit(
+                  patchTransition(doc, transitionId, {
+                    ruleGraph: persistTransitionRuleGraph(nextRule),
+                  }),
+                );
               });
             }}
           />
@@ -659,6 +664,7 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
     selectedTransitionId,
     openTransitionId,
     openTransitionRule,
+    setSelectedId,
   } = useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
   const [clipNameOpen, setClipNameOpen] = useState(false);
@@ -875,9 +881,14 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                   size="sm"
                   data-testid={`anim-graph-flip-direction-${block.openRuleId}`}
                   disabled={Boolean(block.reverseRuleId)}
-                  onClick={() =>
-                    commit(flipTransitionDirection(doc, block.openRuleId))
-                  }
+                  onClick={() => {
+                    const next = flipTransitionDirection(doc, block.openRuleId);
+                    const flipped = next.transitions.find(
+                      (row) => row.id === block.openRuleId,
+                    );
+                    commit(next);
+                    if (flipped) setSelectedId(flipped.fromStateId);
+                  }}
                 >
                   Flip Direction
                 </Button>

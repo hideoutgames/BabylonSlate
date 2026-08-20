@@ -13,6 +13,7 @@ export {
   createDefaultAnimationObjectGraph,
   createDefaultTransitionRuleGraph,
   decorateTransitionRuleGraph,
+  persistTransitionRuleGraph,
   defaultAnimStatePosition,
   defaultAnimVariableValue,
   animGraphMembersFromVariables,

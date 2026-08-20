@@ -412,6 +412,11 @@ describe("AnimGraphEditor", () => {
       toStateId: "idle",
     });
     expect(screen.queryByTestId("anim-rule-graph")).toBeNull();
+    expect(screen.getByTestId("anim-graph-flip-direction-idle-to-run")).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(screen.getByTestId("anim-graph-open-rule-idle-to-run")).toBeTruthy();
   });
 
   it("disables Flip Direction when the transition is Both Ways", () => {

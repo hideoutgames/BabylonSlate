@@ -46,6 +46,7 @@ import { normalizeInputMappings } from "@babylonslate/input";
 import {
   animGraphMembersFromVariables,
   decorateTransitionRuleGraph,
+  persistTransitionRuleGraph,
   findReverseTransition,
   parseAnimGraphDocument,
   patchTransition,
@@ -690,7 +691,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       void applyAssetDocumentChange(
         documentId,
         patchTransition(parsedAnim, ruleTransition.id, {
-          ruleGraph: { nodes: next.nodes, edges: next.edges },
+          ruleGraph: persistTransitionRuleGraph(next),
         }) as unknown as Record<string, unknown>,
       );
       return;
