@@ -90,6 +90,10 @@ export function startPlayer(options: {
   const content = packedContentFromGame(game);
   const diagnostics: PlayerDiagnostic[] = [];
 
+  let worker: PlayerWorkerHost | null = null;
+  let runtime: RuntimeDriver | null = null;
+  let input: ReturnType<typeof attachInputCapture> | null = null;
+
   const handle: EngineHandle = createEngine(canvas, {
     playMode: true,
     maxActors: 256,
@@ -102,6 +106,7 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     fontFacetypeBytes: game.fontFacetypeBytes,
+    uiDocuments: game.userInterfaces,
     modelBytes: game.modelBytes,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
@@ -151,6 +156,11 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onWidgetEvent: (event) => {
+      const payload = { type: "uiWidgetEvent" as const, ...event };
+      if (worker) worker.postControl(payload);
+      else if (runtime) applyUiRuntimeControl(runtime, payload);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -170,9 +180,6 @@ export function startPlayer(options: {
     handle.resize();
   }
 
-  let worker: PlayerWorkerHost | null = null;
-  let runtime: RuntimeDriver | null = null;
-  let input: ReturnType<typeof attachInputCapture> | null = null;
   const uiHost = createPlayerUiHost({
     scene: handle.scene,
     library: content.userInterfaces,

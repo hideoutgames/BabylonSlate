@@ -46,8 +46,8 @@ import { createText3DMesh } from "./text3d-mesh";
 import {
   attachMeshGui,
   createWidgetPlane,
+  createWidgetVisualMesh,
   resolveWidgetBitmapSize,
-  widgetPlaneWorldSize,
 } from "./widget-gui";
 import {
   applyWorldVisualGroup,
@@ -393,13 +393,7 @@ function createWidgetComponentMesh(
   const bitmap = document
     ? resolveWidgetBitmapSize(document)
     : { width: 400, height: 300 };
-  const world = widgetPlaneWorldSize(parsed, bitmap);
-  const mesh = createWidgetPlane(scene, name, {
-    width: world.width,
-    height: world.height,
-    twoSided: parsed.twoSided,
-  });
-  mesh.metadata = { ...(mesh.metadata ?? {}), widget: true };
+  const mesh = createWidgetVisualMesh(scene, name, parsed, bitmap);
   if (document) {
     const attached = attachMeshGui(mesh, {
       name: `${name}:gui`,
@@ -415,7 +409,6 @@ function createWidgetComponentMesh(
       }),
     );
     mesh.onDisposeObservable.addOnce(() => attached.dispose());
-    mesh.metadata = { ...(mesh.metadata ?? {}), widget: true };
     mesh.sideOrientation = parsed.twoSided ? Mesh.DOUBLESIDE : Mesh.FRONTSIDE;
     if (mesh.material) {
       mesh.material.backFaceCulling = !parsed.twoSided;

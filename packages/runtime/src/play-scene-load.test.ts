@@ -12,6 +12,8 @@ import {
   createMeshComponent,
   createSkyboxComponent,
   createText3DComponent,
+  createWidgetComponent,
+  userInterfaceClassId,
   type SerializedScene,
 } from "@babylonslate/core";
 import {
@@ -24,6 +26,7 @@ import { createDefaultNodeRegistry } from "@babylonslate/scripting-nodes";
 import { createInProcessRuntime } from "./driver";
 import { createRuntimeFromLoad } from "./play-load";
 import type { CompiledScript } from "./script-host";
+import { applyUiRuntimeControl } from "./worker-control";
 
 function fallingBoxScene(): SerializedScene {
   return {
@@ -1408,6 +1411,96 @@ describe("p7-play-scene-load", () => {
           color: [1, 1, 1],
           fontAssetGuid: "font-1",
         },
+      },
+    ]);
+    runtime.stop();
+  });
+
+  it("emits assignMesh meshKind widget with authored plane properties", () => {
+    const commands: CommandMessage[] = [];
+    const widget = createWidgetComponent("widget-comp");
+    widget.properties.uiAssetGuid = "panel-ui";
+    widget.properties.twoSided = true;
+    widget.properties.width = 2;
+    widget.properties.height = 1;
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/widget.scene.babasset",
+        scene: {
+          name: "Widget",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("sign", "Sign", {
+              components: [widget],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
+      {
+        type: "assignMesh",
+        slotId: 0,
+        meshAssetGuid: "panel-ui",
+        meshKind: "widget",
+        widget: {
+          uiAssetGuid: "panel-ui",
+          twoSided: true,
+          width: 2,
+          height: 1,
+        },
+      },
+    ]);
+    runtime.stop();
+  });
+
+  it("auto-mounts the assigned UserInterface with a world uiApply target", () => {
+    const commands: CommandMessage[] = [];
+    const widget = createWidgetComponent("widget-comp");
+    widget.properties.uiAssetGuid = "panel-ui";
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/widget.scene.babasset",
+        scene: {
+          name: "Widget",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("sign", "Sign", {
+              components: [widget],
+            }),
+          ],
+        },
+      },
+      (command) => commands.push(command),
+    );
+    applyUiRuntimeControl(runtime, {
+      type: "loadUserInterfaces",
+      documents: [
+        {
+          guid: "panel-ui",
+          widgets: [
+            { id: "root", kind: "Canvas", name: "Canvas" },
+            { id: "title", kind: "Text", name: "Title" },
+          ],
+        },
+      ],
+    });
+    runtime.realizePlayWorld();
+    expect(commands.filter((command) => command.type === "uiApply")).toEqual([
+      {
+        type: "uiApply",
+        instanceId: "ui-1",
+        classId: userInterfaceClassId("panel-ui"),
+        assetGuid: "panel-ui",
+        target: { kind: "world", slotId: 0, componentId: "widget-comp" },
       },
     ]);
     runtime.stop();

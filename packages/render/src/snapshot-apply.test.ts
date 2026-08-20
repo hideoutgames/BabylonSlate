@@ -1343,6 +1343,32 @@ describe("createPlayMesh", () => {
     expect(isPlayHelperMeshKind("text3d")).toBe(false);
   });
 
+  it("creates a WidgetComponent plane for meshKind widget", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "widget",
+      widget: {
+        uiAssetGuid: "panel-ui",
+        twoSided: true,
+        width: 2,
+        height: 1,
+      },
+    });
+    const mesh = scene.getMeshByName("actor-5") as Mesh | null;
+    expect(mesh).not.toBeNull();
+    expect((mesh!.metadata as { widget?: boolean }).widget).toBe(true);
+    expect((mesh!.metadata as { widgetTwoSided?: boolean }).widgetTwoSided).toBe(
+      true,
+    );
+    expect(isPlayHelperMeshKind("widget")).toBe(false);
+  });
+
   it("hides a RigidBody Play helper instead of drawing a white cube", () => {
     const handle = createTestEngine();
     handles.push(handle);

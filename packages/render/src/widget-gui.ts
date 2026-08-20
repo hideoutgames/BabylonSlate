@@ -151,3 +151,28 @@ export function attachMeshGui(
     },
   };
 }
+
+export function createWidgetVisualMesh(
+  scene: Scene,
+  name: string,
+  properties: {
+    uiAssetGuid: string | null;
+    twoSided: boolean;
+    width: number;
+    height: number;
+  },
+  bitmap: WidgetBitmapSize = { width: 400, height: 300 },
+): Mesh {
+  const world = widgetPlaneWorldSize(properties, bitmap);
+  const mesh = createWidgetPlane(scene, name, {
+    width: world.width,
+    height: world.height,
+    twoSided: properties.twoSided,
+  });
+  mesh.metadata = {
+    ...(mesh.metadata ?? {}),
+    widget: true,
+    widgetTwoSided: properties.twoSided,
+  };
+  return mesh;
+}

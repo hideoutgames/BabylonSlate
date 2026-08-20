@@ -38,6 +38,7 @@ export * from "./ui-apply";
 export * from "./babylon-ui-host";
 export * from "./ui-surface";
 export * from "./widget-gui";
+export * from "./widget-gui-service";
 export * from "./sprite-quad";
 export * from "./tilemap-mesh";
 export * from "./mesh-assets";

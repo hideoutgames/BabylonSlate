@@ -289,6 +289,20 @@ describe("applyPlayerUiCommand", () => {
     expect(host.instances()).toEqual([]);
   });
 
+  it("does not apply world WidgetComponent uiApply onto the fullscreen HUD", () => {
+    const host = createTestHost();
+    expect(
+      applyPlayerUiCommand(host, {
+        type: "uiApply",
+        instanceId: "ui-1",
+        classId: "UserInterface:panel-ui",
+        assetGuid: "panel-ui",
+        target: { kind: "world", slotId: 0, componentId: "widget-comp" },
+      } satisfies CommandMessage),
+    ).toBe(true);
+    expect(host.instances()).toEqual([]);
+  });
+
   it("routes setInputMode onto the HUD host", () => {
     const host = createTestHost();
     expect(

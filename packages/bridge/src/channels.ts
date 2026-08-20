@@ -290,6 +290,12 @@ export type CommandMessage =
           color: [number, number, number];
           fontAssetGuid: string | null;
         };
+        widget?: {
+          uiAssetGuid: string | null;
+          twoSided: boolean;
+          width: number;
+          height: number;
+        };
       }>;
       skybox?: {
         size: number;
@@ -308,6 +314,12 @@ export type CommandMessage =
         depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
+      };
+      widget?: {
+        uiAssetGuid: string | null;
+        twoSided: boolean;
+        width: number;
+        height: number;
       };
     }
   | { type: "possessCamera"; slotId: number }
@@ -404,6 +416,11 @@ export type CommandMessage =
       instanceId: string;
       classId: string;
       assetGuid: string;
+      target?: {
+        kind: "world";
+        slotId: number;
+        componentId: string;
+      };
     }
     | {
       type: "uiRemove";
