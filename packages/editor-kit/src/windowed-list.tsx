@@ -9,6 +9,18 @@ import { WINDOWED_SLICE_OVERSCAN, windowedSlice } from "./windowed-slice";
 /** Matches `--touch-target` for catalog and Compiler Results rows. */
 export const WINDOWED_LIST_TOUCH_ROW_HEIGHT = 44;
 
+/** 16rem — Tailwind `h-64`. Content-sized dialogs cannot grow `h-0 flex-1`. */
+export const PICKER_LIST_MAX_HEIGHT_PX = 256;
+
+/** Definite ScrollArea height for SearchDialog / AddFunctionDialog lists. */
+export function pickerListHeightPx(itemCount: number): number {
+  if (itemCount <= 0) return WINDOWED_LIST_TOUCH_ROW_HEIGHT;
+  return Math.min(
+    PICKER_LIST_MAX_HEIGHT_PX,
+    itemCount * WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+  );
+}
+
 const VIEWPORT_SLOT = '[data-slot="scroll-area-viewport"]';
 
 export type WindowedListProps = {

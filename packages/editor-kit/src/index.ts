@@ -135,6 +135,8 @@ export {
 export {
   WindowedList,
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+  PICKER_LIST_MAX_HEIGHT_PX,
+  pickerListHeightPx,
   type WindowedListProps,
 } from "./windowed-list";
 export {

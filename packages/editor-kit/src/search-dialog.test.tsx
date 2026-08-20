@@ -128,7 +128,7 @@ describe("SearchDialog", () => {
     expect(screen.getByTestId("lead")).toBeTruthy();
   });
 
-  it("gives the list a height budget so overflowing rows can scroll", () => {
+  it("gives the list a definite height so rows are visible in a content-sized dialog", () => {
     render(
       <SearchDialog
         open
@@ -142,8 +142,51 @@ describe("SearchDialog", () => {
     const list = screen.getByTestId("search-item-a");
     const scroller = list.closest("[data-slot='scroll-area']");
     expect(scroller).toBeTruthy();
-    expect(scroller?.className).toMatch(/max-h-/);
-    expect(scroller?.className).toMatch(/min-h-0/);
+    expect(scroller?.className).not.toMatch(/(?:^|\s)h-0(?:\s|$)/);
+    expect(scroller?.className).not.toMatch(/(?:^|\s)flex-1(?:\s|$)/);
+    expect(Number.parseFloat((scroller as HTMLElement).style.height)).toBe(
+      items.length * 44,
+    );
+  });
+
+  it("caps a long picker list at 16rem and keeps a non-zero empty height", () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({
+      id: `n${i}`,
+      label: `Item ${i}`,
+    }));
+    const { rerender } = render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={many}
+        emptyLabel="No matches"
+        onSelect={() => {}}
+        data-testid="picker"
+      />,
+    );
+    const longList = screen.getByTestId("search-item-n0");
+    const longScroller = longList.closest("[data-slot='scroll-area']");
+    expect(Number.parseFloat((longScroller as HTMLElement).style.height)).toBe(
+      256,
+    );
+
+    rerender(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={[]}
+        emptyLabel="No matches"
+        onSelect={() => {}}
+        data-testid="picker"
+      />,
+    );
+    const empty = screen.getByText("No matches");
+    const emptyScroller = empty.closest("[data-slot='scroll-area']");
+    expect(Number.parseFloat((emptyScroller as HTMLElement).style.height)).toBeGreaterThan(
+      0,
+    );
   });
 
   it("shows the empty label when nothing matches", () => {
