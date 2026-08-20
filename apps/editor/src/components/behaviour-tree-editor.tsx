@@ -46,6 +46,8 @@ import {
   PropertyGrid,
   SelectableText,
   TypeColorMark,
+  WindowedList,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   humanizePropertyLabel,
   pinPickerColorVar,
@@ -612,14 +614,19 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
           </EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="h-full">
-          <ul className="flex flex-col gap-1 p-2">
-            {diagnostics.map((row, index) => (
-              <li key={`${row.code}-${index}`}>
+        <ScrollArea className="h-full p-2">
+          <WindowedList
+            itemCount={diagnostics.length}
+            rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+          >
+            {(index) => {
+              const row = diagnostics[index]!;
+              return (
                 <Button
                   type="button"
                   variant="ghost"
-                  className="min-h-[var(--touch-target,44px)] w-full justify-start text-left"
+                  size="touch"
+                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
                   onClick={() => {
                     if (row.nodeId) focusNode(row.nodeId);
                   }}
@@ -629,11 +636,11 @@ export function BehaviourTreeCompilerResultsPanel(_props: IDockviewPanelProps) {
                   <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
                     {humanizePropertyLabel(row.severity)}
                   </Badge>
-                  <SelectableText>{row.message}</SelectableText>
+                  <SelectableText className="truncate">{row.message}</SelectableText>
                 </Button>
-              </li>
-            ))}
-          </ul>
+              );
+            }}
+          </WindowedList>
         </ScrollArea>
       )}
     </PanelFrame>

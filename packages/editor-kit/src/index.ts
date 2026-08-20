@@ -133,6 +133,11 @@ export {
   type WindowedSliceInput,
 } from "./windowed-slice";
 export {
+  WindowedList,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+  type WindowedListProps,
+} from "./windowed-list";
+export {
   PickerIdentity,
   displayPickerTitle,
   assetRowIdentity,

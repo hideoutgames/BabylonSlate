@@ -3,6 +3,29 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { filterSearchItems, groupSearchItems, SearchDialog } from "./search-dialog";
 import { AssetPicker } from "./asset-picker";
 
+const VIEWPORT = '[data-slot="scroll-area-viewport"]';
+
+function stubScrollViewportHeight(height: number): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      if ((this as HTMLElement).matches?.(VIEWPORT)) {
+        return height;
+      }
+      return descriptor?.get?.call(this) ?? 0;
+    },
+  });
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+    }
+  };
+}
+
 const items = [
   { id: "a", label: "Alpha", description: "first" },
   { id: "b", label: "Beta", description: "second" },
@@ -139,6 +162,57 @@ describe("SearchDialog", () => {
       target: { value: "zzz" },
     });
     expect(screen.getByText("No matches")).toBeTruthy();
+  });
+
+  it("mounts every picker row when the list viewport height is 0", () => {
+    const many = Array.from({ length: 80 }, (_, i) => ({
+      id: `n${i}`,
+      label: `Item ${i}`,
+    }));
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick"
+        items={many}
+        onSelect={() => {}}
+        data-testid="picker"
+      />,
+    );
+    expect(screen.getAllByTestId(/^search-item-/)).toHaveLength(80);
+  });
+
+  it("windows a large picker list and search still finds the last item", () => {
+    const many = Array.from({ length: 1000 }, (_, i) => ({
+      id: `n${i}`,
+      label: `Item ${i}`,
+    }));
+    const restore = stubScrollViewportHeight(440);
+    try {
+      const { getByTestId, queryByTestId, getByPlaceholderText } = render(
+        <SearchDialog
+          open
+          onOpenChange={() => {}}
+          title="Pick"
+          items={many}
+          onSelect={() => {}}
+          data-testid="picker"
+        />,
+      );
+      const mounted = document.querySelectorAll('[data-testid^="search-item-"]');
+      expect(mounted.length).toBeGreaterThan(0);
+      expect(mounted.length).toBeLessThan(40);
+      expect(queryByTestId("search-item-n0")).toBeTruthy();
+      expect(queryByTestId("search-item-n999")).toBeNull();
+
+      fireEvent.change(getByPlaceholderText("Search"), {
+        target: { value: "Item 999" },
+      });
+      expect(getByTestId("search-item-n999")).toBeTruthy();
+      expect(queryByTestId("search-item-n0")).toBeNull();
+    } finally {
+      restore();
+    }
   });
 });
 
