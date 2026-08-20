@@ -91,9 +91,9 @@ export function ContentBrowserAssetTile({
         }}
         {...bind}
       >
-        <div className="aspect-square w-full overflow-hidden rounded-t-xl p-0.5">
+        <div className="relative aspect-square w-full">
           <div
-            className="flex size-full items-center justify-center bg-card"
+            className="absolute inset-0.5 flex items-center justify-center overflow-hidden bg-card"
             style={thumbAccent}
           >
           {thumbnailUrl ? (
