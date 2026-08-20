@@ -37,7 +37,7 @@ Target lifecycle:
 - Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (empty/spinner while pending). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
 - Drop continuous upsert / rebuild-on-import as the source of truth.
 - **Clear** on Close Project.
-- Result cap ~80 stays; the result body is **not** virtualised (`p20-log-virtualize` may window `SearchDialog` pick lists, not this hit list).
+- Result cap ~80 stays; the result body is **not** virtualised (`p20-log-virtualize` windows `SearchDialog` pick lists, not this hit list).
 - Still no on-disk search cache, no ExecuteJavaScript body, no binary payloads.
 
 In-memory only, keyed by the open project. Query is case-insensitive substring; empty needle returns no rows.

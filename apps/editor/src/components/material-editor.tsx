@@ -6,6 +6,8 @@ import {
   PinListEditor,
   PropertyGrid,
   SelectableText,
+  WindowedList,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   assetRowIdentity,
   selectedPickerIdentity,
   type PinListRow,
@@ -996,14 +998,19 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
           <EmptyDescription>This material compiles cleanly.</EmptyDescription>
         </Empty>
       ) : (
-        <ScrollArea className="h-full">
-          <ul className="flex flex-col gap-1 p-2">
-            {rows.map((row, index) => (
-              <li key={`${row.code}-${index}`}>
+        <ScrollArea className="h-full p-2">
+          <WindowedList
+            itemCount={rows.length}
+            rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+          >
+            {(index) => {
+              const row = rows[index]!;
+              return (
                 <Button
                   type="button"
                   variant="ghost"
-                  className="min-h-[var(--touch-target,44px)] w-full justify-start text-left"
+                  size="touch"
+                  className="h-full w-full min-h-0 justify-start gap-2 overflow-hidden text-left"
                   onClick={() => {
                     if (row.nodeId) editing.focusNode(row.nodeId);
                   }}
@@ -1013,11 +1020,11 @@ export function MaterialCompilerResultsPanel(_props: IDockviewPanelProps) {
                   <Badge variant={row.severity === "error" ? "destructive" : "secondary"}>
                     {row.severity}
                   </Badge>
-                  <SelectableText>{row.message}</SelectableText>
+                  <SelectableText className="truncate">{row.message}</SelectableText>
                 </Button>
-              </li>
-            ))}
-          </ul>
+              );
+            }}
+          </WindowedList>
         </ScrollArea>
       )}
     </PanelFrame>
