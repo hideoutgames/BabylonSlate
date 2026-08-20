@@ -6,6 +6,7 @@ import {
   MAX_WARM_DOCUMENT_WORKSPACES,
   advanceTestIdleClock,
   createIdleClock,
+  overlayPlayScenePinIds,
   selectMountedDocumentIds,
   useDocumentWorkingSet,
 } from "./document-working-set";
@@ -80,6 +81,39 @@ describe("document working set", () => {
     expect([...mounted].filter((id) => id !== CB)).toHaveLength(3);
   });
 
+  it("keeps a pinned inactive Scene after the 2-minute grace", () => {
+    const mounted = selectMountedDocumentIds({
+      tabIds: ids(CB, "scene:S", "graph:A"),
+      activeId: CB,
+      lastActiveAt: new Map([
+        ["scene:S", 0],
+        ["graph:A", 0],
+      ]),
+      now: DOCUMENT_IDLE_UNMOUNT_MS,
+      pinIds: ["scene:S"],
+    });
+    expect(mounted).toEqual(new Set([CB, "scene:S"]));
+  });
+
+  it("keeps a pinned Scene even when the warm cap would evict it", () => {
+    const lastActiveAt = new Map<string, number>([
+      ["scene:S", 1],
+      ["graph:2", 2],
+      ["graph:3", 3],
+      ["graph:4", 4],
+      ["graph:5", 5],
+    ]);
+    const mounted = selectMountedDocumentIds({
+      tabIds: ids(CB, "scene:S", "graph:2", "graph:3", "graph:4", "graph:5"),
+      activeId: "graph:5",
+      lastActiveAt,
+      now: 5,
+      pinIds: ["scene:S"],
+    });
+    expect(mounted.has("scene:S")).toBe(true);
+    expect(mounted.has("graph:5")).toBe(true);
+  });
+
   it("keeps the three most recently active Class tabs when Content Browser is focused", () => {
     const mounted = selectMountedDocumentIds({
       tabIds: ids(CB, "graph:1", "graph:2", "graph:3", "graph:4", "graph:5"),
@@ -94,6 +128,30 @@ describe("document working set", () => {
       now: 5,
     });
     expect(mounted).toEqual(new Set([CB, "graph:5", "graph:4", "graph:3"]));
+  });
+});
+
+describe("overlayPlayScenePinIds", () => {
+  it("pins open Scene tabs only while overlay Play is running", () => {
+    const documents = [
+      { id: "scene:S", kind: "scene" },
+      { id: "graph:A", kind: "graph" },
+      { id: "scene:closed", kind: "scene" },
+    ];
+    expect(
+      overlayPlayScenePinIds({
+        overlayPlaying: true,
+        tabIds: ["scene:S", "graph:A"],
+        documents,
+      }),
+    ).toEqual(["scene:S"]);
+    expect(
+      overlayPlayScenePinIds({
+        overlayPlaying: false,
+        tabIds: ["scene:S", "graph:A"],
+        documents,
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -128,11 +186,13 @@ describe("createIdleClock", () => {
 function MountedProbe({
   tabIds,
   activeId,
+  pinIds,
 }: {
   tabIds: string[];
   activeId: string;
+  pinIds?: readonly string[];
 }) {
-  const mounted = useDocumentWorkingSet(tabIds, activeId);
+  const mounted = useDocumentWorkingSet(tabIds, activeId, pinIds);
   return <div data-testid="mounted">{[...mounted].sort().join(",")}</div>;
 }
 
@@ -223,6 +283,23 @@ describe("useDocumentWorkingSet", () => {
     act(() => {
       vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);
     });
+    expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
+  });
+
+  it("does not idle-unmount a pinned Scene after two minutes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const tabIds = [CB, "scene:S", "graph:A"];
+    const { rerender } = render(
+      <MountedProbe tabIds={tabIds} activeId="scene:S" pinIds={["scene:S"]} />,
+    );
+    rerender(
+      <MountedProbe tabIds={tabIds} activeId={CB} pinIds={["scene:S"]} />,
+    );
+    act(() => {
+      vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);
+    });
+    expect(screen.getByTestId("mounted").textContent).toContain("scene:S");
     expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
   });
 

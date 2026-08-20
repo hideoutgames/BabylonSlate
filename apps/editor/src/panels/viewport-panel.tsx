@@ -231,6 +231,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     };
     void applySceneChange(documentId, next);
   }, [applySceneChange, documentId]);
+  const commitGizmoTransformRef = useRef(commitGizmoTransform);
+  commitGizmoTransformRef.current = commitGizmoTransform;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -255,7 +257,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       onGizmoDragStart: () => {
         dragStartSceneRef.current = sceneRef.current;
       },
-      onGizmoDragEnd: () => commitGizmoTransform(),
+      onGizmoDragEnd: () => commitGizmoTransformRef.current(),
       editorFlyEnabled: () => !playingRef.current,
       editorFlySpeed: () => flySpeedRef.current,
     });
@@ -331,7 +333,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     // The engine is created once per panel; mode, selection and tool changes
     // are pushed to it by the effects below rather than recreating it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commitGizmoTransform, registerSharedEngine, registerScheduler]);
+  }, [registerSharedEngine, registerScheduler]);
 
   useEffect(() => {
     setFrameActorHandler((actorId) => {
