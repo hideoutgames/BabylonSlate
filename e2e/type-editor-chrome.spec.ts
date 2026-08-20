@@ -173,10 +173,15 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     expect(baseline).toBeGreaterThan(0);
     await dragClassMemberOntoGraph(page, "Target");
     await expect(page.getByTestId("member-access-chooser")).toBeVisible();
+    await expect(page.getByTestId("member-access-validated-get")).toBeVisible();
     await page.getByTestId("member-access-get").click();
     await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
     await expect(nodes).toHaveCount(baseline + 1);
     await expect(graph.getByText("Get Target")).toBeVisible();
+    await dragClassMemberOntoGraph(page, "Target");
+    await page.getByTestId("member-access-validated-get").click();
+    await expect(nodes).toHaveCount(baseline + 2);
+    await expect(graph.getByText("Validated Get Target")).toBeVisible();
   });
 
   test("Class variables show Class Type and omit a Default", async ({

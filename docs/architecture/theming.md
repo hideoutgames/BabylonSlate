@@ -82,7 +82,7 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-function` | default impure calls |
 | `--node-pure` | `pure` (math, getters) |
 | `--node-flow` | flow control (Branch, Sequence) |
-| `--node-variable` | Get Variable |
+| `--node-variable` | Get Variable / Validated Get |
 | `--node-variable-set` | Set Variable |
 | `--node-latent` | timers / `latent` |
 | `--node-debug` | debug category |

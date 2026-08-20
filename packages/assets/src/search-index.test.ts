@@ -171,6 +171,11 @@ describe("ProjectSearchIndex", () => {
             data: { variableName: "health" },
           },
           {
+            id: "var-2",
+            type: "variables.getValidated",
+            data: { variableName: "targetActor" },
+          },
+          {
             id: "js-1",
             type: "debug.executeJavaScript",
             data: { body: "uniqueBodyTokenShouldNotMatch" },
@@ -186,6 +191,7 @@ describe("ProjectSearchIndex", () => {
       nodeTitles: {
         logMessage: "Log",
         "variables.get": "Get Variable",
+        "variables.getValidated": "Validated Get",
         "debug.executeJavaScript": "Execute JavaScript",
       },
     });
@@ -207,6 +213,11 @@ describe("ProjectSearchIndex", () => {
     expect(variables.some((hit) => hit.kind === "variable" && hit.label === "health")).toBe(
       true,
     );
+    expect(
+      index
+        .query("targetActor")
+        .some((hit) => hit.kind === "variable" && hit.label === "targetActor"),
+    ).toBe(true);
 
     expect(index.query("uniqueBodyTokenShouldNotMatch")).toEqual([]);
   });
