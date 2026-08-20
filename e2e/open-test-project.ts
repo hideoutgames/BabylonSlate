@@ -127,8 +127,9 @@ export async function createContentBrowserAsset(
 
 /**
  * Grid search is the current folder only, and the windowed grid omits
- * off-screen tiles. Re-select the assets root and fill search until the tile
- * is actually mounted (registry refresh / virtualization races).
+ * off-screen tiles. Fill search until the tile is actually mounted (registry
+ * refresh / virtualization races). Do not change the selected folder — nested
+ * paths already navigated there.
  */
 async function revealAssetTile(
   page: Page,
@@ -137,7 +138,6 @@ async function revealAssetTile(
 ): Promise<void> {
   const tile = page.locator(selector).first();
   await expect(async () => {
-    await selectContentBrowserAssetsFolder(page);
     if (!(await tile.isVisible())) {
       await page.getByTestId("content-browser-search").fill(searchNeedle);
     }
