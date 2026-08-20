@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  Camera,
   Effect,
   Mesh,
   ShaderMaterial,
@@ -25,6 +26,7 @@ import {
   TWO_D_ALPHA,
   TWO_D_BETA,
 } from "./editor-camera";
+import { worldPositionFromCanvas } from "./editor-place";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { glbContainerLoadCount } from "./glb-anim";
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
@@ -273,6 +275,89 @@ describe("editor camera controller", () => {
     const controller = createEditorCamera(scene, { mode: "3d" });
     controller.zoom(0.0001);
     expect(controller.camera.radius).toBeLessThanOrEqual(MAX_CAMERA_RADIUS);
+  });
+
+  it("keeps a known 2D world point under the cursor while zooming", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, {
+      mode: "2d",
+      orthoHalfHeight: 6,
+    });
+    controller.updateOrthoBounds(800 / 600);
+    const canvas = { width: 800, height: 600 };
+    const pivot = { x: 200, y: 150, ...canvas };
+    const before = worldPositionFromCanvas(
+      controller.camera,
+      pivot.x,
+      pivot.y,
+      canvas,
+      "2d",
+    );
+
+    controller.zoom(2, pivot);
+
+    expect(controller.camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    const after = worldPositionFromCanvas(
+      controller.camera,
+      pivot.x,
+      pivot.y,
+      canvas,
+      "2d",
+    );
+    expect(after[0]).toBeCloseTo(before[0], 4);
+    expect(after[1]).toBeCloseTo(before[1], 4);
+    expect(controller.orthoHalfHeight()).toBeCloseTo(3, 5);
+  });
+
+  it("dollies 3D toward the cursor without snapping alpha or beta", () => {
+    const { scene, engine } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.look(0.35, 0.15);
+    controller.camera.getViewMatrix();
+    const alpha = controller.camera.alpha;
+    const beta = controller.camera.beta;
+    const radiusBefore = controller.camera.radius;
+    const canvas = {
+      width: engine.getRenderWidth(),
+      height: engine.getRenderHeight(),
+    };
+    const pivot = { x: canvas.width * 0.25, y: canvas.height * 0.3, ...canvas };
+    const before = worldPositionFromCanvas(
+      controller.camera,
+      pivot.x,
+      pivot.y,
+      canvas,
+      "3d",
+    );
+
+    controller.zoom(2, pivot);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.alpha).toBeCloseTo(alpha, 5);
+    expect(controller.camera.beta).toBeCloseTo(beta, 5);
+    expect(controller.camera.radius).toBeLessThan(radiusBefore);
+    const after = worldPositionFromCanvas(
+      controller.camera,
+      pivot.x,
+      pivot.y,
+      canvas,
+      "3d",
+    );
+    expect(after[0]).toBeCloseTo(before[0], 3);
+    expect(after[1]).toBeCloseTo(before[1], 3);
+    expect(after[2]).toBeCloseTo(before[2], 3);
+  });
+
+  it("clears ArcRotate inertia so look-in-place does not keep drifting", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.camera.inertialAlphaOffset = 0.4;
+    controller.camera.inertialBetaOffset = -0.2;
+    controller.camera.inertialRadiusOffset = 3;
+    controller.look(0.1, 0);
+    expect(controller.camera.inertialAlphaOffset).toBe(0);
+    expect(controller.camera.inertialBetaOffset).toBe(0);
+    expect(controller.camera.inertialRadiusOffset).toBe(0);
   });
 
   it("invalidates the scheduler when the camera moves", () => {

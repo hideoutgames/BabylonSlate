@@ -720,6 +720,7 @@ export function createEngine(
     // The editor camera replaces the default viewport camera set up above.
     scene.activeCamera?.dispose();
     const cameraController = createEditorCamera(scene, { mode, scheduler });
+    let previewGameCamera = false;
     const grid = createEditorGrid(scene, { mode, camera: cameraController.camera });
     const selection = new SelectionOutline(scene);
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
@@ -797,6 +798,7 @@ export function createEngine(
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
+      editorCameraActive: () => !previewGameCamera,
       blockLook: (x, y) =>
         gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
@@ -837,7 +839,8 @@ export function createEngine(
         ? null
         : attachViewportFlyKeys(window, cameraController, canvas, {
             scheduler,
-            isEnabled: options.editorFlyEnabled,
+            isEnabled: () =>
+              !previewGameCamera && options.editorFlyEnabled?.() !== false,
           });
     disposeGestures = () => {
       gestures.dispose();
@@ -931,6 +934,7 @@ export function createEngine(
         );
       },
       setPreviewGameCamera: (enabled: boolean) => {
+        previewGameCamera = enabled;
         editorSync.setGameCameraPreview(enabled, cameraController.camera);
         scheduler.invalidate("camera");
       },

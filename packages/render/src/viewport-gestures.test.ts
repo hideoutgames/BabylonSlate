@@ -1,6 +1,7 @@
 import { NullEngine, Scene, Vector3 } from "@babylonjs/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEditorCamera } from "./editor-camera";
+import { worldPositionFromCanvas } from "./editor-place";
 import { RenderScheduler } from "./render-scheduler";
 import { attachViewportGestures } from "./viewport-gestures";
 
@@ -365,6 +366,69 @@ describe("attachViewportGestures", () => {
     expect(controller.orthoHalfHeight()).toBeLessThan(halfHeightBefore);
   });
 
+  it("pinch-zooms 2D about the finger midpoint", () => {
+    const { controller } = attach("2d");
+    controller.updateOrthoBounds(800 / 600);
+    const size = { width: 800, height: 600 };
+    const midX = 150;
+    const midY = 100;
+    const before = worldPositionFromCanvas(
+      controller.camera,
+      midX,
+      midY,
+      size,
+      "2d",
+    );
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 200, 100));
+    canvas.emit("pointermove", pointer(1, 40, 100));
+
+    const after = worldPositionFromCanvas(
+      controller.camera,
+      midX,
+      midY,
+      size,
+      "2d",
+    );
+    expect(controller.orthoHalfHeight()).toBeLessThan(6);
+    expect(after[0]).toBeCloseTo(before[0], 4);
+    expect(after[1]).toBeCloseTo(before[1], 4);
+  });
+
+  it("does not look when a pinch ends with one finger still down", () => {
+    const { controller } = attach("3d");
+    controller.camera.getViewMatrix();
+
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 200, 100));
+    canvas.emit("pointermove", pointer(1, 50, 100));
+    canvas.emit("pointermove", pointer(2, 250, 100));
+    canvas.emit("pointerup", pointer(2, 250, 100));
+    const alphaAfterPinch = controller.camera.alpha;
+    const betaAfterPinch = controller.camera.beta;
+
+    canvas.emit("pointermove", pointer(1, 180, 100));
+
+    expect(controller.camera.alpha).toBeCloseTo(alphaAfterPinch, 6);
+    expect(controller.camera.beta).toBeCloseTo(betaAfterPinch, 6);
+  });
+
+  it("does not apply editor zoom while Game Camera preview is on", () => {
+    let preview = true;
+    const { controller } = attach("3d", {
+      editorCameraActive: () => !preview,
+    });
+    const radiusBefore = controller.camera.radius;
+
+    canvas.emit("wheel", { deltaY: -100, clientX: 400, clientY: 300 });
+    expect(controller.camera.radius).toBeCloseTo(radiusBefore, 6);
+
+    preview = false;
+    canvas.emit("wheel", { deltaY: -100, clientX: 400, clientY: 300 });
+    expect(controller.camera.radius).toBeLessThan(radiusBefore);
+  });
+
   it("pinch-zooms a pixel-perfect 2D camera smoothly", () => {
     const { controller } = attach("2d");
     controller.setCanvasHeight(600);
@@ -399,6 +463,32 @@ describe("attachViewportGestures", () => {
 
     handle.dispose();
     expect(canvas.listenerCount()).toBe(0);
+  });
+
+  it("2D wheel zoom keeps the world point under the cursor", () => {
+    const { controller } = attach("2d");
+    controller.updateOrthoBounds(800 / 600);
+    const size = { width: 800, height: 600 };
+    const before = worldPositionFromCanvas(
+      controller.camera,
+      200,
+      150,
+      size,
+      "2d",
+    );
+
+    canvas.emit("wheel", { deltaY: -100, clientX: 200, clientY: 150 });
+
+    const after = worldPositionFromCanvas(
+      controller.camera,
+      200,
+      150,
+      size,
+      "2d",
+    );
+    expect(controller.camera.mode).toBe(1);
+    expect(after[0]).toBeCloseTo(before[0], 4);
+    expect(after[1]).toBeCloseTo(before[1], 4);
   });
 
   it("ignores a cancelled pointer that was never captured", () => {
