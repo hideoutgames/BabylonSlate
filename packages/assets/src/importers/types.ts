@@ -27,6 +27,11 @@ export interface ImportOptions {
   fontGuidsByName?: Map<string, string>;
   /** Uniform Model import multiplier. Defaults to DEFAULT_MODEL_IMPORT_SCALE. */
   modelImportScale?: number;
+  /**
+   * Sidecar image / BIN bytes for pack GLBs that use relative URIs
+   * (`Textures/colormap.png`). Keys may be the glTF URI or a basename.
+   */
+  sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
 }
 
 export type Importer = (

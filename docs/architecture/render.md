@@ -120,7 +120,7 @@ Print HUD is DOM (`print-hud` in `@babylonslate/core`), not this overlay.
 
 ## Models, skeletons, and clips
 
-Canonical Model bytes are always GLB/glTF. Play and preview register the glTF 2.0 loader plus `KHR_materials_unlit` / `KHR_texture_transform` (`gltf-loader.ts`) — not OBJ/STL/FBX. Editor OBJ import converts first (`convertObjToGlb` on a throwaway Scene, preferably the shared editor Engine so texture export works; unit tests may use `NullEngine` for geometry-only OBJ). Sidecar image URIs (a pack GLB pointing at a missing `Textures/….png`) go through `embedGlbExternalImages` into the stored Model BIN so Play/preview do not fetch them. **These paths are for every Model** — skinned, hierarchy, or static — not a single character pack. 3D Empty happens to scaffold Kenney Mannequin as the default actor.
+Canonical Model bytes are always GLB/glTF. Play and preview register the glTF 2.0 loader plus `KHR_materials_unlit` / `KHR_texture_transform` (`gltf-loader.ts`) — not OBJ/STL/FBX. Editor OBJ import converts first (`convertObjToGlb` on a throwaway Scene, preferably the shared editor Engine so texture export works; unit tests may use `NullEngine` for geometry-only OBJ). Sidecar image URIs (a pack GLB pointing at `Textures/….png`) go through Content Browser `embedGltfImportBatch` and `ingestGltfForImport` (`embedGlbExternalImages` plus strip unmatched URIs) into the stored Model BIN so Play/preview do not fetch them. **These paths are for every Model** — skinned, hierarchy, or static — not a single character pack. 3D Empty happens to scaffold Kenney Mannequin as the default actor.
 
 glTF character content is two rigs:
 

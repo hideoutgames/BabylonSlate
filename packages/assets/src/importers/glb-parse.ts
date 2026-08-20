@@ -116,7 +116,20 @@ export function encodeGlbJsonBin(
   return out;
 }
 
-function sidecarBytesForUri(
+function toSidecarMap(
+  sidecars: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>,
+): Map<string, Uint8Array> {
+  return sidecars instanceof Map
+    ? sidecars
+    : new Map(Object.entries(sidecars));
+}
+
+function isRelativeResourceUri(uri: string): boolean {
+  return uri.length > 0 && !uri.startsWith("data:") && !/^[a-z][a-z0-9+.-]*:/i.test(uri);
+}
+
+/** Look up sidecar bytes by glTF URI, decoded URI, or basename. */
+export function sidecarBytesForUri(
   uri: string,
   sidecars: ReadonlyMap<string, Uint8Array>,
 ): Uint8Array | null {
@@ -152,16 +165,13 @@ function mimeFromImageUri(uri: string): string {
 
 /**
  * Rewrite external image `uri`s into BIN bufferViews so the stored Model is a
- * self-contained GLB. Unmatched URIs are left as-is.
+ * self-contained GLB. Unmatched URIs are left for `stripUnmatchedGltfImageUris`.
  */
 export function embedGlbExternalImages(
   bytes: Uint8Array,
   sidecars: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>,
 ): Uint8Array {
-  const map =
-    sidecars instanceof Map
-      ? sidecars
-      : new Map(Object.entries(sidecars));
+  const map = toSidecarMap(sidecars);
   const split = splitGlbJsonBin(bytes);
   if (!split) return bytes;
   const images = Array.isArray(split.json.images)
@@ -205,6 +215,151 @@ export function embedGlbExternalImages(
   buffers[0] = { ...buffers[0], byteLength: bin.byteLength };
   split.json.buffers = buffers;
   return encodeGlbJsonBin(split.json, bin);
+}
+
+function collectJsonExternalUris(json: Record<string, unknown>): string[] {
+  const uris: string[] = [];
+  const images = Array.isArray(json.images) ? json.images : [];
+  for (const entry of images) {
+    const uri = (entry as Record<string, unknown>).uri;
+    if (typeof uri === "string" && isRelativeResourceUri(uri)) uris.push(uri);
+  }
+  const buffers = Array.isArray(json.buffers) ? json.buffers : [];
+  for (const entry of buffers) {
+    const uri = (entry as Record<string, unknown>).uri;
+    if (typeof uri === "string" && isRelativeResourceUri(uri)) uris.push(uri);
+  }
+  return uris;
+}
+
+/** External image / BIN URIs in a GLB or glTF JSON document. */
+export function collectGltfExternalUris(
+  fileName: string,
+  bytes: Uint8Array,
+): string[] {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".glb")) {
+    const split = splitGlbJsonBin(bytes);
+    return split ? collectJsonExternalUris(split.json) : [];
+  }
+  if (lower.endsWith(".gltf")) {
+    try {
+      return collectJsonExternalUris(
+        JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>,
+      );
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/**
+ * Drop relative image URIs that were not embedded so Play/preview never fetch
+ * pack-relative paths like `Textures/colormap.png`.
+ */
+export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return bytes;
+  const images = Array.isArray(split.json.images)
+    ? [...(split.json.images as Record<string, unknown>[])]
+    : [];
+  if (images.length === 0) return bytes;
+
+  const kept: Record<string, unknown>[] = [];
+  const indexMap = new Map<number, number>();
+  let changed = false;
+  for (let i = 0; i < images.length; i++) {
+    const image = { ...images[i] };
+    const uri = typeof image.uri === "string" ? image.uri : "";
+    if (uri && isRelativeResourceUri(uri)) {
+      delete image.uri;
+      changed = true;
+    }
+    const hasView = typeof image.bufferView === "number";
+    const remainingUri = typeof image.uri === "string" ? image.uri : "";
+    const hasData = remainingUri.startsWith("data:");
+    if (!hasView && !hasData) {
+      changed = true;
+      continue;
+    }
+    indexMap.set(i, kept.length);
+    kept.push(image);
+  }
+  if (!changed) return bytes;
+
+  split.json.images = kept;
+  if (Array.isArray(split.json.textures)) {
+    split.json.textures = (split.json.textures as Record<string, unknown>[]).map(
+      (texture) => {
+        if (typeof texture.source !== "number") return texture;
+        const next = indexMap.get(texture.source);
+        if (next === undefined) {
+          const { source: _source, ...rest } = texture;
+          return rest;
+        }
+        return { ...texture, source: next };
+      },
+    );
+  }
+  return encodeGlbJsonBin(split.json, split.bin);
+}
+
+function gltfJsonToGlb(
+  jsonText: string,
+  sidecars: ReadonlyMap<string, Uint8Array>,
+): Uint8Array | null {
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(jsonText) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  let bin = new Uint8Array(0);
+  const buffers = Array.isArray(json.buffers)
+    ? [...(json.buffers as Record<string, unknown>[])]
+    : [];
+  const buffer0 = buffers[0];
+  const bufferUri = typeof buffer0?.uri === "string" ? buffer0.uri : "";
+  if (bufferUri && isRelativeResourceUri(bufferUri)) {
+    const sidecar = sidecarBytesForUri(bufferUri, sidecars);
+    if (sidecar) {
+      bin = sidecar;
+      const { uri: _uri, ...rest } = buffer0;
+      buffers[0] = { ...rest, byteLength: bin.byteLength };
+      json.buffers = buffers;
+    }
+  } else if (typeof buffer0?.byteLength === "number" && buffer0.byteLength === 0) {
+    json.buffers = buffers.length > 0 ? buffers : [{ byteLength: 0 }];
+  }
+  return encodeGlbJsonBin(json, bin);
+}
+
+/**
+ * Embed sidecars and strip leftover relative image URIs. `.gltf` becomes a GLB
+ * when a BIN sidecar or external image URIs are present.
+ */
+export function ingestGltfForImport(
+  fileName: string,
+  bytes: Uint8Array,
+  sidecars: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array> = {},
+): { bytes: Uint8Array; mime: string } {
+  const map = toSidecarMap(sidecars);
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".gltf")) {
+    const glb = gltfJsonToGlb(new TextDecoder().decode(bytes), map);
+    if (!glb) {
+      return { bytes, mime: "model/gltf+json" };
+    }
+    const embedded = stripUnmatchedGltfImageUris(
+      embedGlbExternalImages(glb, map),
+    );
+    return { bytes: embedded, mime: "model/gltf-binary" };
+  }
+  const embedded = stripUnmatchedGltfImageUris(
+    embedGlbExternalImages(bytes, map),
+  );
+  return { bytes: embedded, mime: "model/gltf-binary" };
 }
 
 /** Parse a `.glb` container into browse metadata + embedded image bytes. */

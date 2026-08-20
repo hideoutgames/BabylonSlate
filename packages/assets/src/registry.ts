@@ -665,7 +665,10 @@ export class AssetRegistry {
     folderRelative: string,
     fileName: string,
     bytes: Uint8Array,
-    extras?: { modelImportScale?: number },
+    extras?: {
+      modelImportScale?: number;
+      sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
+    },
   ): Promise<IndexedAsset[]> {
     this.assertWritable(this.getRootOrThrow(rootId));
     const options: ImportOptions = {
@@ -673,6 +676,7 @@ export class AssetRegistry {
       existingGuids: new Set(this.byGuid.keys()),
       fontGuidsByName: this.fontGuidsByName(),
       modelImportScale: extras?.modelImportScale,
+      sidecars: extras?.sidecars,
     };
     const rawResults = await importByExtension(fileName, bytes, options);
     const results = remapImportResultGuids(rawResults, options.existingGuids);

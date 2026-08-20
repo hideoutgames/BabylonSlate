@@ -61,6 +61,7 @@ export * from "./glb-parse";
 export * from "./guid-remap";
 export * from "./image";
 export * from "./model";
+export * from "./gltf-import-batch";
 export * from "./obj-import-batch";
 export * from "./types";
 export * from "./util";

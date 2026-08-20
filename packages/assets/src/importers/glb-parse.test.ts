@@ -6,8 +6,36 @@ import {
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
   splitGlbJsonBin,
+  stripUnmatchedGltfImageUris,
 } from "./glb-parse";
 import { importModel } from "./model";
+
+const ONE_BY_ONE_PNG = Uint8Array.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+  0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+  0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
+  0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+
+function kenneyStyleSidecarGlb(uri = "Textures/colormap.png"): Uint8Array {
+  return encodeGlbJsonBin(
+    {
+      asset: { version: "2.0" },
+      buffers: [{ byteLength: 0 }],
+      images: [{ name: "colormap", uri }],
+      textures: [{ source: 0 }],
+      materials: [
+        {
+          name: "colormap",
+          pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+        },
+      ],
+    },
+    new Uint8Array(0),
+  );
+}
 
 describe("parseGlbForBrowse", () => {
   it("extracts materials, embedded images, and animations from a fixture GLB", () => {
@@ -511,5 +539,59 @@ describe("embedGlbExternalImages", () => {
     expect(image?.bufferView).toBe(0);
     const browse = parseGlbForBrowse(embedded);
     expect(browse?.images[0]?.bytes).toEqual(png);
+  });
+
+  it("stripUnmatchedGltfImageUris removes relative image URIs so the GLB does not fetch", () => {
+    const glb = kenneyStyleSidecarGlb();
+    const stripped = stripUnmatchedGltfImageUris(glb);
+    const split = splitGlbJsonBin(stripped);
+    expect(split).not.toBeNull();
+    const images = (split!.json.images as Array<{ uri?: string }>) ?? [];
+    expect(images.some((image) => typeof image.uri === "string" && !image.uri.startsWith("data:"))).toBe(
+      false,
+    );
+  });
+});
+
+describe("importModel sidecar GLB", () => {
+  it("embeds ImportOptions.sidecars before browse so the Texture has pixels and pending encode", async () => {
+    const glb = kenneyStyleSidecarGlb();
+    const results = await importModel(glb, {
+      fileName: "tree.glb",
+      existingGuids: new Set(),
+      sidecars: { "Textures/colormap.png": ONE_BY_ONE_PNG },
+    });
+    const model = results.find((result) => result.type === "Model")!;
+    const source = model.chunks.find((chunk) => chunk.id === "source")!;
+    const split = splitGlbJsonBin(source.data);
+    const image = (split!.json.images as Array<{ uri?: string; bufferView?: number }>)[0];
+    expect(image?.uri).toBeUndefined();
+    expect(image?.bufferView).toBeDefined();
+    const texture = results.find((result) => result.type === "Texture")!;
+    const pixels = texture.chunks.find((chunk) => chunk.kind === "pixels");
+    expect(pixels?.data).toEqual(ONE_BY_ONE_PNG);
+    expect(texture.payload.compressionState).toBe("pending");
+  });
+
+  it("does not leave Compress pending when a Kenney-style URI has no sidecar", async () => {
+    const results = await importModel(kenneyStyleSidecarGlb(), {
+      fileName: "tree.glb",
+      existingGuids: new Set(),
+    });
+    const model = results.find((result) => result.type === "Model")!;
+    const source = model.chunks.find((chunk) => chunk.id === "source")!;
+    const split = splitGlbJsonBin(source.data);
+    const images = (split!.json.images as Array<{ uri?: string }>) ?? [];
+    expect(
+      images.some(
+        (image) => typeof image.uri === "string" && !image.uri.startsWith("data:"),
+      ),
+    ).toBe(false);
+    for (const texture of results.filter((result) => result.type === "Texture")) {
+      const pixels = texture.chunks.find((chunk) => chunk.kind === "pixels");
+      if (!pixels?.data.byteLength) {
+        expect(texture.payload.compressionState).not.toBe("pending");
+      }
+    }
   });
 });

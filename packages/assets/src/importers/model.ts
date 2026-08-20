@@ -8,6 +8,7 @@ import { nextCopyName } from "../unique-names";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
 import {
+  ingestGltfForImport,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
   type GlbBrowseParse,
@@ -53,18 +54,26 @@ export async function importModel(
   if (!MODEL_EXTENSIONS.has(extension)) {
     throw new Error(UNSUPPORTED_MODEL_FORMAT);
   }
-  const mime = MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
   const name = baseName(options.fileName);
+  const ingested = ingestGltfForImport(options.fileName, bytes, options.sidecars);
+  const mime =
+    ingested.mime || MIME_BY_EXTENSION[extension] || "application/octet-stream";
 
   const browse =
-    extension === "glb"
-      ? parseGlbForBrowse(bytes)
-      : parseGltfJsonForBrowse(new TextDecoder().decode(bytes));
+    mime === "model/gltf+json"
+      ? parseGltfJsonForBrowse(new TextDecoder().decode(ingested.bytes))
+      : parseGlbForBrowse(ingested.bytes);
 
   if (!browse) {
     throw new Error(UNSUPPORTED_MODEL_FORMAT);
   }
-  return importFromBrowse(name, mime, bytes, browse, options.modelImportScale);
+  return importFromBrowse(
+    name,
+    mime,
+    ingested.bytes,
+    browse,
+    options.modelImportScale,
+  );
 }
 
 function uniqueImportName(base: string, used: string[]): string {
@@ -106,8 +115,8 @@ function importFromBrowse(
       dependencies: [],
       parentClass: null,
       payload: {
-        compressionState: chunks.length > 0 ? "pending" : "pending",
         usage: "albedo",
+        ...(chunks.length > 0 ? { compressionState: "pending" } : {}),
       },
       chunks,
     });
@@ -124,7 +133,7 @@ function importFromBrowse(
         version: 1,
         dependencies: [],
         parentClass: null,
-        payload: { compressionState: "pending", usage: "albedo" },
+        payload: { usage: "albedo" },
         chunks: [],
       });
       imageGuids.push(textureGuid);

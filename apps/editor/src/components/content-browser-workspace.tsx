@@ -22,6 +22,7 @@ import {
   normalizeSkeletonPayload,
   pickerImportAccept,
   resolvePluginEnabled,
+  embedGltfImportBatch,
 } from "@babylonslate/assets";
 import { convertObjImportBatch, animationRetargetHasMatches } from "@babylonslate/render";
 import {
@@ -1118,11 +1119,12 @@ export function ContentBrowserWorkspace({
       const incoming = filterBabpluginFiles(files);
       if (incoming.length === 0) return;
       setBusy(true);
-      const { files: prepared, errors: convertErrors } =
+      const { files: converted, errors: convertErrors } =
         await convertObjImportBatch(incoming, {
           engine: play?.ensureSharedEngine() ?? undefined,
         });
       errors.push(...convertErrors);
+      const prepared = embedGltfImportBatch(converted);
       if (prepared.length === 0) {
         setBusy(false);
         if (errors.length) setImportErrors(errors);
