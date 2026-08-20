@@ -173,6 +173,7 @@ describe("createPlayMesh", () => {
         {
             clipNames: [],
             skeletonGuid: null,
+            importScale: 1,
             materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
         },
       ],
@@ -200,6 +201,7 @@ describe("createPlayMesh", () => {
         {
             clipNames: [],
             skeletonGuid: null,
+            importScale: 1,
             materialSlots: [{ index: 0, name: "Hero Mat", materialGuid: "mat-1" }],
         },
       ],
@@ -248,6 +250,7 @@ describe("createPlayMesh", () => {
         {
           clipNames: [],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [{ index: 0, name: "MatA", materialGuid: "mat-1" }],
         },
       ],
@@ -281,6 +284,7 @@ describe("createPlayMesh", () => {
         {
           clipNames: [],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [
             { index: 0, name: "MatA", materialGuid: "mat-a" },
             { index: 1, name: "MatB", materialGuid: "mat-b" },
@@ -397,6 +401,7 @@ describe("createPlayMesh", () => {
         {
           clipNames: ["idle"],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [{ index: 0, name: "texture-d", materialGuid: "mat-1" }],
         },
       ],

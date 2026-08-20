@@ -20,6 +20,7 @@ describe("normalizeModelPayload", () => {
         { index: 1, name: "Slot 2", materialGuid: "mat-2" },
       ],
       skeletonGuid: null,
+      importScale: 1,
     });
     expect("materialCount" in payload).toBe(false);
     expect("textureCount" in payload).toBe(false);
@@ -77,5 +78,22 @@ describe("normalizeModelPayload", () => {
 
   it("coerces missing skeletonGuid to null", () => {
     expect(normalizeModelPayload({ clipNames: [] }).skeletonGuid).toBeNull();
+  });
+
+  it("treats missing importScale as 1 so legacy models keep authored size", () => {
+    expect(normalizeModelPayload({ clipNames: [] }).importScale).toBe(1);
+  });
+
+  it("keeps a positive finite importScale", () => {
+    expect(normalizeModelPayload({ importScale: 10 }).importScale).toBe(10);
+    expect(normalizeModelPayload({ importScale: 2.5 }).importScale).toBe(2.5);
+  });
+
+  it("falls back to 1 for non-positive or non-finite importScale", () => {
+    expect(normalizeModelPayload({ importScale: 0 }).importScale).toBe(1);
+    expect(normalizeModelPayload({ importScale: -3 }).importScale).toBe(1);
+    expect(normalizeModelPayload({ importScale: Number.NaN }).importScale).toBe(
+      1,
+    );
   });
 });

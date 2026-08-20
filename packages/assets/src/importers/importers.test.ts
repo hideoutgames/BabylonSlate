@@ -48,6 +48,17 @@ describe("importers", () => {
     const model = results.find((result) => result.type === "Model")!;
     expect(model.dependencies.length).toBeGreaterThan(0);
     expect(model.payload.clipNames).toEqual(["Walk"]);
+    expect(model.payload.importScale).toBe(10);
+  });
+
+  it("stamps ImportOptions.modelImportScale onto the Model payload", async () => {
+    const results = await importModel(buildMinimalGlbFixture(), {
+      fileName: "hero.glb",
+      existingGuids: new Set(),
+      modelImportScale: 4,
+    });
+    const model = results.find((result) => result.type === "Model")!;
+    expect(model.payload.importScale).toBe(4);
   });
 
   it("uniquifies duplicate glTF image names so Kenney Mannequin can import", async () => {

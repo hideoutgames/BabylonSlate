@@ -41,6 +41,7 @@ export {
   TraceRecorder,
   type TraceBtState,
   type TraceFrame,
+  type TraceInputEvent,
   type TracePayload,
   type TraceRecorderOptions,
 } from "./trace-recorder";

@@ -175,7 +175,7 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
-  it("opens a settings menu with Viewport Mode, Snap, Show Grid, Show Navmesh, Joystick, Pivot Around Center, and Game Camera", () => {
+  it("opens a settings menu with Viewport Mode, Snap, Show Grid, Show Navmesh, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     expect(screen.getByTestId("viewport-shading-mode")).toBeTruthy();
@@ -185,6 +185,57 @@ describe("ViewportToolbar", () => {
     expect(screen.getByTestId("gizmo-joystick-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-pivot-around-center-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-game-camera-toggle")).toBeTruthy();
+    expect(screen.getByTestId("viewport-settings-submenu")).toBeTruthy();
+  });
+
+  it("opens Grid Size from Settings with the saved scene tile size", () => {
+    harness.scene = {
+      ...createDefaultScene(),
+      settings: {
+        ...createDefaultScene().settings,
+        grid: { ...createDefaultScene().settings.grid, tileSize: 2 },
+      },
+    };
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
+    fireEvent.click(screen.getByTestId("viewport-grid-size"));
+    expect(screen.getByTestId("viewport-grid-size-dialog")).toBeTruthy();
+    expect(screen.getByTestId("number-prompt-input")).toHaveProperty(
+      "value",
+      "2",
+    );
+  });
+
+  it("writes Grid Size to tileSize and snapTranslate", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-settings-submenu"));
+    fireEvent.click(screen.getByTestId("viewport-grid-size"));
+    fireEvent.change(screen.getByTestId("number-prompt-input"), {
+      target: { value: "4" },
+    });
+    fireEvent.click(screen.getByTestId("number-prompt-confirm"));
+    expect(harness.applySceneChange).toHaveBeenCalledWith(
+      "scene:assets/Main.scene.babasset",
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          grid: expect.objectContaining({
+            tileSize: 4,
+            snapTranslate: 4,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("sizes the island menu wider than the gear trigger", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    const classes = screen.getByTestId("viewport-settings-menu").className;
+    expect(classes).toContain("w-max");
+    expect(classes).toContain("min-w-56");
+    expect(classes).not.toContain("w-(--anchor-width)");
   });
 
   it("persists Show Navmesh onto the scene document", () => {

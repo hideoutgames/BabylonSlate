@@ -665,12 +665,14 @@ export class AssetRegistry {
     folderRelative: string,
     fileName: string,
     bytes: Uint8Array,
+    extras?: { modelImportScale?: number },
   ): Promise<IndexedAsset[]> {
     this.assertWritable(this.getRootOrThrow(rootId));
     const options: ImportOptions = {
       fileName,
       existingGuids: new Set(this.byGuid.keys()),
       fontGuidsByName: this.fontGuidsByName(),
+      modelImportScale: extras?.modelImportScale,
     };
     const rawResults = await importByExtension(fileName, bytes, options);
     const results = remapImportResultGuids(rawResults, options.existingGuids);

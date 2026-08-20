@@ -4,6 +4,7 @@ import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   snapshotFloatCount,
   writeSnapshotHeader,
+  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   applyPlayFpsSample,
@@ -274,6 +275,20 @@ describe("applyPlayUiCommand", () => {
       ),
     ).toBe(true);
     expect(onUiRemove).toHaveBeenCalledWith("ui-1");
+  });
+
+  it("forwards hierarchy commands onto onUiTreeCommand", () => {
+    const onUiTreeCommand = vi.fn();
+    const command = {
+      type: "uiAddWidget",
+      instanceId: "ui-1",
+      widgetId: "score",
+      kind: "TextBlock",
+      name: "Score",
+      parentId: "canvas",
+    } satisfies CommandMessage;
+    expect(applyPlayUiCommand(command, { onUiTreeCommand })).toBe(true);
+    expect(onUiTreeCommand).toHaveBeenCalledWith(command);
   });
 
   it("forwards setInputMode members onto the Play HUD callback", () => {

@@ -23,6 +23,7 @@ import {
 import {
   animationGraphGuidsFromScene,
   applyPlayHudInstance,
+  applyPlayHudUiCommand,
   applyPlayHudVisibility,
   asUiDocument,
   resolveNestedUiDocument,
@@ -181,6 +182,34 @@ describe("Play HUD instances", () => {
     expect(hidden.has(playHudVisibilityKey("ui-1", "play-btn"))).toBe(false);
     expect(hidden.has(playHudVisibilityKey("ui-2", "play-btn"))).toBe(true);
   });
+
+  it("clones the library tree onto an instance and applies hierarchy commands", () => {
+    const hud = createDefaultUserInterface("HUD");
+    const button = createWidget("play-btn", "Button", "Play");
+    hud.widgets.canvas!.children = ["play-btn"];
+    hud.widgets["play-btn"] = button;
+    let instances = applyPlayHudInstance([], "ui-1", "hud-guid");
+    instances = applyPlayHudUiCommand(instances, { "hud-guid": hud }, {
+      type: "uiApply",
+      instanceId: "ui-1",
+      classId: "UserInterface:hud-guid",
+      assetGuid: "hud-guid",
+    });
+    expect(instances[0]?.document?.widgets["play-btn"]).toBeDefined();
+    expect(instances[0]?.document).not.toBe(hud);
+    instances = applyPlayHudUiCommand(instances, { "hud-guid": hud }, {
+      type: "uiAddWidget",
+      instanceId: "ui-1",
+      widgetId: "score",
+      kind: "TextBlock",
+      name: "Score",
+      parentId: "canvas",
+    });
+    expect(instances[0]?.document?.widgets.score?.kind).toBe("TextBlock");
+    expect(hud.widgets.score).toBeUndefined();
+    const resolved = resolvePlayHudDocuments(instances, { "hud-guid": hud });
+    expect(resolved[0]?.document.widgets.score).toBeDefined();
+  });
 });
 
 describe("playUserInterfaceRuntimeDocuments", () => {
@@ -199,6 +228,7 @@ describe("playUserInterfaceRuntimeDocuments", () => {
           { id: "play-btn", kind: "Button", name: "Play" },
           { id: "logo", kind: "Image", name: "Logo" },
         ]),
+        document: hud,
       },
     ]);
   });
@@ -862,6 +892,7 @@ describe("scene-referenced Play content", () => {
         {
           clipNames: [],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
             { index: 1, name: "Eyes", materialGuid: null },
@@ -873,6 +904,7 @@ describe("scene-referenced Play content", () => {
         {
           clipNames: [],
           skeletonGuid: null,
+          importScale: 1,
           materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }],
         },
       ],

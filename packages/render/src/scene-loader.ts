@@ -19,6 +19,7 @@ import { isGltfModelBytes } from "./model-mesh";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import {
   applyEditorBillboardFromActor,
+  applyEditorBillboardPass,
   createEditorBillboard,
   editorBillboardKind,
   isEditorBillboardMesh,
@@ -776,6 +777,9 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
     mesh.visibility = 0;
   }
   applyWorldVisualGroup(mesh, actor);
+  if (isEditorBillboardMesh(mesh)) {
+    applyEditorBillboardPass(mesh);
+  }
   if (isSkyboxMesh(mesh)) {
     mesh.renderingGroupId = RENDERING_GROUP.background;
   }
@@ -788,6 +792,7 @@ export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
   if (!origin) return;
   for (const child of childMeshesOf(mesh)) {
     if (isEditorBillboardMesh(child)) {
+      applyEditorBillboardPass(child);
       syncEditorBillboardParentScale(child);
     }
     if (isEditorModelPlaceholder(child)) {

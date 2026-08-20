@@ -57,6 +57,40 @@ describe("UserInterface command and control contracts", () => {
     });
   });
 
+  it("hierarchy commands carry instanceId plus widget payload", () => {
+    const add = {
+      type: "uiAddWidget",
+      instanceId: "ui-1",
+      widgetId: "score",
+      kind: "TextBlock",
+      name: "Score",
+      parentId: "root",
+    } satisfies CommandMessage;
+    const remove = {
+      type: "uiRemoveWidget",
+      instanceId: "ui-1",
+      widgetId: "score",
+    } satisfies CommandMessage;
+    const reparent = {
+      type: "uiReparentWidget",
+      instanceId: "ui-1",
+      widgetId: "score",
+      parentId: "box",
+      siblingIndex: 0,
+    } satisfies CommandMessage;
+    const layout = {
+      type: "uiPatchLayout",
+      instanceId: "ui-1",
+      widgetId: "score",
+      layout: { left: 12, top: 8, width: 80, height: 32, rotation: 0 },
+    } satisfies CommandMessage;
+    expect(commandType(add)).toBe("uiAddWidget");
+    expect(commandType(remove)).toBe("uiRemoveWidget");
+    expect(commandType(reparent)).toBe("uiReparentWidget");
+    expect(commandType(layout)).toBe("uiPatchLayout");
+  });
+
+
   it("loadUserInterfaces supplies slim widget metadata to the worker", () => {
     const control = {
       type: "loadUserInterfaces",
@@ -67,6 +101,7 @@ describe("UserInterface command and control contracts", () => {
             { id: "root", kind: "Canvas", name: "Canvas" },
             { id: "play-btn", kind: "Button", name: "Play" },
           ],
+          document: { name: "HUD", rootId: "root" },
         },
       ],
     } satisfies ControlMessage;

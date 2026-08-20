@@ -5,6 +5,7 @@ import {
   pixelPerfectOrthoHalfHeight,
   type PixelPerfectSettings,
 } from "./pixel-perfect";
+import { worldPositionFromCanvas } from "./editor-place";
 
 export const DEFAULT_CAMERA_RADIUS = 12;
 export const MIN_CAMERA_RADIUS = 0.5;
@@ -50,6 +51,22 @@ function plainVec(v: Vector3): { x: number; y: number; z: number } {
   return { x: v.x, y: v.y, z: v.z };
 }
 
+/** Canvas-space pivot so zoom keeps the world point under the cursor. */
+export type EditorZoomPivot = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/** Framing captured at two-finger-down so pinch zoom is absolute, not incremental. */
+export type EditorFramingSnapshot = {
+  target: { x: number; y: number; z: number };
+  radius: number;
+  orthoHalfHeight: number;
+  pixelZoom: number;
+};
+
 export interface EditorCameraController {
   readonly camera: ArcRotateCamera;
   readonly mode: ViewportMode;
@@ -88,7 +105,9 @@ export interface EditorCameraController {
    */
   fly: (forward: number, right: number) => void;
   pan: (deltaX: number, deltaY: number) => void;
-  zoom: (factor: number) => void;
+  zoom: (factor: number, pivot?: EditorZoomPivot) => void;
+  captureFraming: () => EditorFramingSnapshot;
+  restoreFraming: (snapshot: EditorFramingSnapshot) => void;
   frame: (target: Vector3, radius?: number) => void;
   dispose: () => void;
 }
@@ -111,6 +130,12 @@ export function createEditorCamera(
   );
   camera.lowerRadiusLimit = MIN_CAMERA_RADIUS;
   camera.upperRadiusLimit = MAX_CAMERA_RADIUS;
+  camera.inertia = 0;
+  camera.panningInertia = 0;
+  camera.inertialAlphaOffset = 0;
+  camera.inertialBetaOffset = 0;
+  camera.inertialRadiusOffset = 0;
+  camera.inputs.clear();
   scene.activeCamera = camera;
 
   let mode: ViewportMode = options.mode ?? "3d";
@@ -210,6 +235,9 @@ export function createEditorCamera(
 
   const look = (deltaYaw: number, deltaPitch: number) => {
     if (mode === "2d") return;
+    camera.inertialAlphaOffset = 0;
+    camera.inertialBetaOffset = 0;
+    camera.inertialRadiusOffset = 0;
     camera.getViewMatrix();
     const position = camera.position.clone();
     camera.alpha += deltaYaw;
@@ -291,6 +319,22 @@ export function createEditorCamera(
       }
     },
     pixelZoom: () => pixelZoom,
+    captureFraming: () => ({
+      target: plainVec(camera.target),
+      radius: camera.radius,
+      orthoHalfHeight,
+      pixelZoom,
+    }),
+    restoreFraming: (snapshot) => {
+      camera.target.set(snapshot.target.x, snapshot.target.y, snapshot.target.z);
+      camera.radius = Math.min(
+        MAX_CAMERA_RADIUS,
+        Math.max(MIN_CAMERA_RADIUS, snapshot.radius),
+      );
+      orthoHalfHeight = Math.max(0.01, snapshot.orthoHalfHeight);
+      pixelZoom = Math.max(0.01, snapshot.pixelZoom);
+      if (mode === "2d") applyOrthoBounds();
+    },
     pan: (deltaX: number, deltaY: number) => {
       const right = camera.getDirection(Vector3.Right());
       const up = camera.getDirection(Vector3.Up());
@@ -298,8 +342,18 @@ export function createEditorCamera(
       camera.target.addInPlace(up.scaleInPlace(deltaY));
       invalidate();
     },
-    zoom: (factor: number) => {
+    zoom: (factor: number, pivot?: EditorZoomPivot) => {
       if (factor <= 0) return;
+      const before =
+        pivot && pivot.width > 0 && pivot.height > 0
+          ? worldPositionFromCanvas(
+              camera,
+              pivot.x,
+              pivot.y,
+              { width: pivot.width, height: pivot.height },
+              mode,
+            )
+          : null;
       if (mode === "2d") {
         if (pixelPerfect) {
           pixelZoom = Math.max(0.01, pixelZoom * factor);
@@ -312,6 +366,19 @@ export function createEditorCamera(
           MAX_CAMERA_RADIUS,
           Math.max(MIN_CAMERA_RADIUS, camera.radius / factor),
         );
+      }
+      if (before && pivot) {
+        camera.getViewMatrix();
+        const after = worldPositionFromCanvas(
+          camera,
+          pivot.x,
+          pivot.y,
+          { width: pivot.width, height: pivot.height },
+          mode,
+        );
+        camera.target.x += before[0] - after[0];
+        camera.target.y += before[1] - after[1];
+        camera.target.z += before[2] - after[2];
       }
       invalidate();
     },

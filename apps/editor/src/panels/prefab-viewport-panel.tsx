@@ -17,6 +17,7 @@ import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
+import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import {
   previewSceneFor,
   PREFAB_ROOT_ID,
@@ -73,6 +74,9 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     viewportShadingMode,
     setFrameActorHandler,
   } = useSceneEditing();
+  const { flySpeed, gridSize } = useEditorViewportPrefs();
+  const flySpeedRef = useRef(flySpeed);
+  flySpeedRef.current = flySpeed;
   const { registerScheduler, playing, ensureSharedEngine, sharedEngineGeneration } =
     usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
@@ -120,6 +124,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         }
         updateComponentTransformRef.current(selected, transform);
       },
+      editorFlySpeed: () => flySpeedRef.current,
     });
     engineRef.current = handle;
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
@@ -283,11 +288,17 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.gizmos.setSnap({
       enabled: snapEnabled,
-      translate: 1,
+      translate: gridSize,
       rotateDeg: 15,
       scale: 0.25,
     });
-  }, [snapEnabled]);
+    engineRef.current?.editor?.setGridSettings({
+      tileSize: gridSize,
+      tileSubdivisions: 4,
+      cameraBounds2D: { width: 16, height: 9 },
+      showGrid: gridVisible,
+    });
+  }, [snapEnabled, gridSize, gridVisible]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);
@@ -365,6 +376,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-start p-4">
           <div className="pointer-events-auto">
             <ViewportJoystick
+              speed={flySpeed}
               onFly={(forward, right) => {
                 const camera = engineRef.current?.editor?.camera;
                 if (camera) applyViewportJoystickSteer(camera, forward, right);

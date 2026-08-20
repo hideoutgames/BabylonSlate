@@ -46,7 +46,7 @@ const FLY_CODES = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
 
 export interface ViewportFlyKeyOptions {
   scheduler?: Pick<RenderScheduler, "acquireContinuous">;
-  speed?: number;
+  speed?: number | (() => number);
   /** When false, keys are ignored (Play overlay, inactive document). */
   isEnabled?: () => boolean;
   requestFrame?: (callback: FrameRequestCallback) => number;
@@ -94,7 +94,13 @@ export function attachViewportFlyKeys(
   canvas: Pick<HTMLCanvasElement, "clientWidth">,
   options: ViewportFlyKeyOptions = {},
 ): ViewportFlyKeyHandle {
-  const speed = options.speed ?? DEFAULT_FLY_SPEED;
+  const resolveSpeed = () => {
+    const raw =
+      typeof options.speed === "function" ? options.speed() : options.speed;
+    return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+      ? raw
+      : DEFAULT_FLY_SPEED;
+  };
   const requestFrame =
     options.requestFrame ??
     ((callback: FrameRequestCallback) => requestAnimationFrame(callback));
@@ -149,6 +155,7 @@ export function attachViewportFlyKeys(
     const { forward, right } = flyAxis(keys);
     if (forward !== 0 || right !== 0) {
       acquireLease();
+      const speed = resolveSpeed();
       controller.fly(forward * speed * dt, right * speed * dt);
     }
     frameId = requestFrame(tick);

@@ -8,6 +8,7 @@ import {
   createMaterialPreviewScene,
   type MaterialPreviewScene,
 } from "./material-preview";
+import { applyModelImportScale } from "./glb-anim";
 import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
 import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
 
@@ -119,6 +120,7 @@ export function previewRigRoot(host: MaterialPreviewScene): TransformNode {
 export async function loadModelPreviewSource(
   host: MaterialPreviewScene,
   bytes: Uint8Array,
+  importScale = 1,
 ): Promise<{ dispose: () => void; animationGroups: AnimationGroup[] } | null> {
   if (!isGltfModelBytes(bytes)) return null;
   const packed = packedGltfBytes(bytes);
@@ -127,6 +129,7 @@ export async function loadModelPreviewSource(
     name: "model-preview.glb",
   });
   container.addAllToScene();
+  const wrapper = applyModelImportScale(host.mesh, importScale);
   const candidates = [
     ...(container.rootNodes ?? []),
     ...container.transformNodes,
@@ -134,9 +137,9 @@ export async function loadModelPreviewSource(
   ];
   const seen = new Set<(typeof candidates)[number]>();
   for (const node of candidates) {
-    if (seen.has(node) || node === host.mesh) continue;
+    if (seen.has(node) || node === host.mesh || node === wrapper) continue;
     seen.add(node);
-    if (!node.parent) node.parent = host.mesh;
+    if (!node.parent) node.parent = wrapper;
   }
   host.mesh.visibility = 0;
   host.mesh.computeWorldMatrix(true);

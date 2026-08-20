@@ -14,13 +14,18 @@ import {
   useContextMenu,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
-import type { GraphClassMemberKind, SerializedGraph } from "@babylonslate/core";
+import {
+  widgetClassIdForKind,
+  type GraphClassMemberKind,
+  type SerializedGraph,
+} from "@babylonslate/core";
 import { isLockedEngineClassId } from "@babylonslate/object-model";
 import { Badge } from "@babylonslate/ui/components/badge";
 import {
   addClassMember,
   addVariableAccessNode,
   blueprintSectionsForClass,
+  boundWidgetsFromContent,
   classAllowsMemberKind,
   ensureEventNodeOnGraph,
   isObjectInstanceVariableType,
@@ -57,7 +62,7 @@ import {
 import { collectNestedUiLogicSources } from "../lib/nested-ui-logic";
 
 export type MyClassMember = {
-  kind: "variable" | "function" | "event" | "interface";
+  kind: "variable" | "function" | "event" | "interface" | "widget";
   name: string;
   detail?: string;
   inherited?: boolean;
@@ -70,6 +75,8 @@ export type MyClassMember = {
   assetGuid?: string;
   pins?: import("@babylonslate/core").GraphClassMemberPin[];
   hasError?: boolean;
+  widgetId?: string;
+  widgetKind?: string;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -97,6 +104,7 @@ function sectionsForTree(
     parentClass: options?.parentClass,
     parentOf: options?.parentOf,
     activeFunctionId,
+    assetType: options?.assetType,
   });
 }
 
@@ -105,6 +113,7 @@ export type MembersForGraphOptions = {
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
+  widgets?: readonly import("@babylonslate/scripting-nodes").BoundWidgetRef[];
   nestedUis?: readonly NestedUiLogicGraph[];
   scriptInterfaces?: Array<{
     guid: string;
@@ -161,7 +170,7 @@ function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
 }
 
 function memberIcon(member: MyClassMember) {
-  if (member.kind === "variable") {
+  if (member.kind === "variable" || member.kind === "widget") {
     return (
       <TypeColorMark
         colorVar={pinPickerColorVar(member.typeId ?? "float")}
@@ -272,7 +281,16 @@ export function membersForGraph(
   const inherited = inheritedMembers(options).filter(
     (row) => !declaredKeys.has(`${row.kind}:${row.name}`),
   );
-  return [...declared, ...events, ...inherited];
+  const widgets: MyClassMember[] = (options?.widgets ?? []).map((widget) => ({
+    kind: "widget",
+    name: widget.name,
+    detail: `widget:${widget.id}`,
+    typeId: "object",
+    typeClassId: widgetClassIdForKind(widget.kind),
+    widgetId: widget.id,
+    widgetKind: widget.kind,
+  }));
+  return [...declared, ...events, ...inherited, ...widgets];
 }
 
 export function membersForSection(
@@ -476,6 +494,8 @@ export function ClassMembersView({
         inherited: member.inherited,
         inheritedFrom: member.inheritedFrom,
         pins: member.pins,
+        widgetId: member.widgetId,
+        widgetKind: member.widgetKind,
       })),
       clientX,
       clientY,
@@ -497,15 +517,18 @@ export function ClassMembersView({
         activeFunctionId,
         parentClass: membersOptions?.parentClass,
         parentOf: membersOptions?.parentOf,
+        assetType: membersOptions?.assetType,
       }).map((row) => {
         if (!row.id.startsWith("section-")) return row;
         const sectionId = row.id.replace(/^section-/, "");
         const section = treeSections.find((entry) => entry.id === sectionId);
-        if (!section) return row;
+        if (!section || section.kind === "widget") return row;
+        const kind = section.kind;
         if (
-          !classAllowsMemberKind(section.kind, {
+          !classAllowsMemberKind(kind, {
             parentClass: membersOptions?.parentClass,
             parentOf: membersOptions?.parentOf,
+            assetType: membersOptions?.assetType,
             local: section.local === true,
           })
         ) {
@@ -519,7 +542,7 @@ export function ClassMembersView({
               data-testid={`class-add-${section.id}`}
               onClick={(event) => {
                 event.stopPropagation();
-                addKind(section.kind, section.local === true);
+                addKind(kind, section.local === true);
               }}
             >
               <PlusIcon />
@@ -540,7 +563,7 @@ export function ClassMembersView({
           const member = members.find(
             (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === selectedId,
           );
-          if (!member || member.kind === "event" || member.inherited) return;
+          if (!member || member.kind === "event" || member.kind === "widget" || member.inherited) return;
           setRenameMemberId(selectedId);
         },
       },
@@ -549,6 +572,10 @@ export function ClassMembersView({
         label: "Delete",
         onSelect: () => {
           if (!graph || !selectedId) return;
+          const member = members.find(
+            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === selectedId,
+          );
+          if (member?.kind === "widget") return;
           onGraphChange(removeClassMember(graph, selectedId));
         },
       },
@@ -707,6 +734,11 @@ export function ClassMembersView({
             name,
             undefined,
             extras,
+            {
+              reservedNames: (membersOptions?.widgets ?? []).map(
+                (widget) => widget.name,
+              ),
+            },
           );
           onGraphChange(next);
           if (memberPromptKind === "event") {
@@ -814,6 +846,10 @@ export function ClassMembersView({
         confirmLabel="Rename"
         onSubmit={(name) => {
           if (!graph || !renameMemberId) return;
+          const reserved = new Set(
+            (membersOptions?.widgets ?? []).map((widget) => widget.name),
+          );
+          if (reserved.has(name.trim())) return;
           onGraphChange(patchClassMember(graph, renameMemberId, { name }));
         }}
       />
@@ -933,6 +969,8 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     parentOf,
     parentGraphs,
     assetType: indexed?.header.type,
+    widgets:
+      doc?.ref.kind === "ui" ? boundWidgetsFromContent(doc.content) : [],
     nestedUis,
     scriptInterfaces: collectScriptInterfacesForPalette({
       assets: assetRegistry?.list() ?? [],

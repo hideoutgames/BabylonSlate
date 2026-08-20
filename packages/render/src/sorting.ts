@@ -93,15 +93,26 @@ export function usesSpriteOrTilemapSorting(actor: {
 export function applyWorldVisualGroup(
   mesh: {
     renderingGroupId: number;
-    getChildMeshes: () => Array<{ renderingGroupId: number }>;
+    metadata?: unknown;
+    getChildMeshes: () => Array<{ renderingGroupId: number; metadata?: unknown }>;
   },
   actor: { components: ReadonlyArray<{ classId: string }> },
 ): void {
   if (usesSpriteOrTilemapSorting(actor)) return;
-  mesh.renderingGroupId = RENDERING_GROUP.world;
+  if (!isEditorHelperBillboard(mesh)) {
+    mesh.renderingGroupId = RENDERING_GROUP.world;
+  }
   for (const child of mesh.getChildMeshes()) {
+    if (isEditorHelperBillboard(child)) continue;
     child.renderingGroupId = RENDERING_GROUP.world;
   }
+}
+
+function isEditorHelperBillboard(mesh: { metadata?: unknown }): boolean {
+  return (
+    typeof (mesh.metadata as { editorBillboard?: unknown } | null)
+      ?.editorBillboard === "string"
+  );
 }
 
 /**

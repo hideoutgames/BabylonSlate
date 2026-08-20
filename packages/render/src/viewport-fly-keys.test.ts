@@ -114,6 +114,20 @@ describe("attachViewportFlyKeys", () => {
     expect(moved.normalize().dot(forward)).toBeCloseTo(1, 4);
   });
 
+  it("reads fly speed each tick so Engine Settings apply live", () => {
+    let speed = 8;
+    const { controller } = attach("3d", { speed: () => speed });
+    controller.camera.getViewMatrix();
+    const positionBefore = controller.camera.position.clone();
+    target.emit("keydown", key("KeyW"));
+    pump(0);
+    speed = 20;
+    pump(16);
+    controller.camera.getViewMatrix();
+    const moved = controller.camera.position.subtract(positionBefore);
+    expect(moved.length()).toBeCloseTo(20 * 0.016, 3);
+  });
+
   it("strafes right when D is held", () => {
     const { controller } = attach();
     controller.camera.getViewMatrix();

@@ -2,7 +2,7 @@ import type { ProjectStorage } from "@babylonslate/core";
 
 /**
  * Derived data lives outside the project folder, keyed by project guid
- * (compiled scripts, thumbnails, import cache, recovery journal).
+ * (compiled scripts, thumbnails, import cache, recovery journal, Play traces).
  */
 export function derivedDataRoot(projectGuid: string): string {
   return `derived/${projectGuid}`;

@@ -345,6 +345,27 @@ describe("EditorDebugOverlay", () => {
     overlay.dispose();
   });
 
+  it("copies the live origin pose onto the PIP camera while the mesh moves", () => {
+    const { scene } = createHandle();
+    const origin = MeshBuilder.CreateBox(editorMeshName("cam"), { size: 0.01 }, scene);
+    origin.position.set(4, 1, -2);
+    origin.computeWorldMatrix(true);
+    const overlay = new EditorDebugOverlay(scene, { now: () => 0 });
+    overlay.sync({
+      sceneData: sceneWith([cameraActor()]),
+      selectedActorIds: ["cam"],
+    });
+    origin.position.set(9, 3, -5);
+    origin.rotationQuaternion = Quaternion.Identity();
+    origin.computeWorldMatrix(true);
+    overlay.followLivePose();
+    const preview = previewCamera(scene);
+    expect(preview.position.x).toBeCloseTo(9);
+    expect(preview.position.y).toBeCloseTo(3);
+    expect(preview.position.z).toBeCloseTo(-5);
+    overlay.dispose();
+  });
+
   it("aims the preview camera with the composed quaternion and zeros Euler", () => {
     const { scene } = createHandle();
     const overlay = new EditorDebugOverlay(scene);

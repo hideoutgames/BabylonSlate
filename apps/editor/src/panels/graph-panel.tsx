@@ -23,7 +23,10 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { classParentLookup } from "../lib/content-browser-helpers";
-import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
+import {
+  boundWidgetsFromContent,
+  functionLibraryShowsEventGraphEmpty,
+} from "../lib/class-members";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -118,30 +121,11 @@ export function GraphPanel(_props: IDockviewPanelProps) {
       : doc?.ref.path
         ? classIdForGraphPath(doc.ref.path)
         : undefined;
-  const widgets = useMemo((): BoundWidgetRef[] => {
-    if (doc?.ref.kind !== "ui" || !doc.content || typeof doc.content !== "object") {
-      return [];
-    }
-    const record = doc.content as {
-      widgets?: Record<string, { id?: unknown; name?: unknown; kind?: unknown }>;
-    };
-    if (!record.widgets) return [];
-    return Object.values(record.widgets).flatMap((widget) => {
-      if (!widget || typeof widget.id !== "string" || !widget.id.trim()) {
-        return [];
-      }
-      return [
-        {
-          id: widget.id,
-          name:
-            typeof widget.name === "string" && widget.name.trim()
-              ? widget.name
-              : widget.id,
-          kind: typeof widget.kind === "string" ? widget.kind : "Border",
-        },
-      ];
-    });
-  }, [doc?.content, doc?.ref.kind]);
+  const widgets = useMemo(
+    (): BoundWidgetRef[] =>
+      doc?.ref.kind === "ui" ? boundWidgetsFromContent(doc.content) : [],
+    [doc?.content, doc?.ref.kind],
+  );
   const graphContent = serializedGraphFromDocument(
     doc?.ref.kind ?? "",
     doc?.content,

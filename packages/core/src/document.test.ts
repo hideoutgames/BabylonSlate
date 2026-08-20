@@ -287,6 +287,21 @@ describe("Class and settings documents", () => {
     ).toBe("Day Skybox Creator");
   });
 
+  it("opens Trace as a derived-data document kind", () => {
+    expect(documentKindForAssetType("Trace")).toBe("trace");
+    expect(assetTypeForDocumentKind("trace")).toBe("Trace");
+    expect(documentKindLabel("trace")).toBe("Trace");
+    expect(isAssetDocumentKind("trace")).toBe(true);
+    expect(labelFromPath("derived/proj/traces/session-1.babtrace")).toBe(
+      "Session 1",
+    );
+    expect(
+      createDocumentRef("trace", "derived/proj/traces/session-1.babtrace", {
+        name: "session-1",
+      }).label,
+    ).toBe("session-1 Trace");
+  });
+
   it("opens PluginSettings as its own document kind", () => {
     expect(documentKindForAssetType("PluginSettings")).toBe("plugin-settings");
     expect(assetTypeForDocumentKind("plugin-settings")).toBe("PluginSettings");

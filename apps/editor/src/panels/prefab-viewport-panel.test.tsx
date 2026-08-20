@@ -35,6 +35,7 @@ const {
       syncSelectionDebug: vi.fn(),
       gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
       grid: { setVisible: vi.fn() },
+      setGridSettings: vi.fn(),
     },
     scheduler: {
       setAlwaysRender: vi.fn(),
@@ -168,6 +169,7 @@ vi.mock("../components/viewport-joystick", () => ({
 
 vi.mock("../lib/viewport-render-gate", () => ({
   attachViewportRenderGate: () => () => {},
+  ENGINE_SETTINGS_CHANGED_EVENT: "babylonslate:engine-settings",
 }));
 
 describe("PrefabViewportPanel engine", () => {

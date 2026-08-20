@@ -41,8 +41,20 @@ import {
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
   widgetClassIdForKind,
+  widgetKindFromClassId,
   type SerializedScene,
 } from "@babylonslate/core";
+import {
+  applyUiTreeAddWidget,
+  applyUiTreePatchLayout,
+  applyUiTreeRemoveWidget,
+  applyUiTreeReparentWidget,
+  cloneUserInterfaceDocument,
+  normalizeUserInterfaceDocument,
+  userInterfaceDocumentFromMeta,
+  type UserInterfaceDocument,
+  type WidgetLayoutPatch,
+} from "@babylonslate/ui-runtime";
 import {
   InputRingBuffer,
   InputResolver,
@@ -228,6 +240,7 @@ export interface RuntimeDriver {
   registerUserInterfaceDocument(
     guid: string,
     widgets: readonly UserInterfaceWidgetMeta[],
+    document?: unknown,
   ): void;
   getUserInterface(instanceId: string): UserInterface | undefined;
   listUserInterfaces(): readonly UserInterface[];
@@ -348,11 +361,17 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly userInterfaces = new Map<string, UserInterface>();
   private readonly nestedUserInterfaces = new Map<string, UserInterface>();
   private readonly uiChildren = new Map<string, string[]>();
+  private uiWidgetSeq = 0;
   private readonly userInterfaceDocuments = new Map<
     string,
     UserInterfaceWidgetMeta[]
   >();
   private readonly widgetUiByComponent = new Map<string, string>();
+  private readonly userInterfaceTrees = new Map<string, UserInterfaceDocument>();
+  private readonly userInterfaceInstanceTrees = new Map<
+    string,
+    UserInterfaceDocument
+  >();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private sprites = new Map<string, SpritePayload>();
@@ -708,6 +727,18 @@ class InProcessRuntime implements RuntimeDriver {
       removeUserInterface: (instance) => {
         this.removeUserInterface(instance);
       },
+      addWidgetOn: (target, kind, name, parent) =>
+        this.addWidgetOn(target, kind, name, parent),
+      setWidgetParent: (widget, parent, index) => {
+        this.setWidgetParent(widget, parent, index);
+      },
+      removeWidget: (widget) => {
+        this.removeMountedWidget(widget);
+      },
+      setWidgetLayout: (widget, patch) => {
+        this.setWidgetLayout(widget, patch);
+      },
+      getWidgetLayout: (widget) => this.getWidgetLayout(widget),
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
@@ -1021,13 +1052,25 @@ class InProcessRuntime implements RuntimeDriver {
   registerUserInterfaceDocument(
     guid: string,
     widgets: readonly UserInterfaceWidgetMeta[],
+    document?: unknown,
   ): void {
     const id = String(guid ?? "").trim();
     if (!id) return;
-    this.userInterfaceDocuments.set(
-      id,
-      widgets.map((widget) => ({ ...widget })),
-    );
+    const rows = widgets.map((widget) => ({ ...widget }));
+    this.userInterfaceDocuments.set(id, rows);
+    if (document && typeof document === "object") {
+      this.userInterfaceTrees.set(
+        id,
+        cloneUserInterfaceDocument(
+          normalizeUserInterfaceDocument(document as UserInterfaceDocument),
+        ),
+      );
+    } else {
+      this.userInterfaceTrees.set(
+        id,
+        userInterfaceDocumentFromMeta(id, rows),
+      );
+    }
   }
 
   getUserInterface(instanceId: string): UserInterface | undefined {
@@ -1097,6 +1140,17 @@ class InProcessRuntime implements RuntimeDriver {
 
   stopTrace(): TracePayload | null {
     return this.lastTrace;
+  }
+
+  private finalizeTrace(): void {
+    if (!this.trace.isRecording) return;
+    this.lastTrace = this.trace.stop();
+    if (this.lastTrace) {
+      this.emit({
+        type: "trace",
+        payload: this.lastTrace as unknown as Record<string, unknown>,
+      });
+    }
   }
 
   restoreBtFromTrace(states: readonly TraceBtState[]): void {
@@ -2106,13 +2160,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.trace.start({ seed: this.seed, dt: this.dt });
       },
       stopSnapshot: () => {
-        this.lastTrace = this.trace.stop();
-        if (this.lastTrace) {
-          this.emit({
-            type: "trace",
-            payload: this.lastTrace as unknown as Record<string, unknown>,
-          });
-        }
+        this.finalizeTrace();
       },
     };
   }
@@ -2632,6 +2680,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     this.running = false;
+    this.finalizeTrace();
     this.teardownAllUserInterfaces();
     this.world.end();
     this.physicsSync.dispose();
@@ -2986,6 +3035,9 @@ class InProcessRuntime implements RuntimeDriver {
       });
       ui.widgets.push(widget);
       widget.callOnCreation();
+      const bindingName =
+        typeof meta.name === "string" ? meta.name.trim() : "";
+      if (bindingName) ui.setVariable(bindingName, widget);
       const nestedGuid = meta.nestedUiGuid?.trim();
       if (
         meta.kind === "UserInterface" &&
@@ -3007,6 +3059,16 @@ class InProcessRuntime implements RuntimeDriver {
         this.uiChildren.set(instanceId, kids);
       }
     }
+    const seed =
+      this.userInterfaceTrees.get(assetGuid) ??
+      userInterfaceDocumentFromMeta(
+        classId,
+        this.userInterfaceDocuments.get(assetGuid) ?? [],
+      );
+    this.userInterfaceInstanceTrees.set(
+      instanceId,
+      cloneUserInterfaceDocument(seed),
+    );
     this.scriptHost.bindInterfaceHandlers(ui);
     if (emitCommands) {
       this.userInterfaces.set(instanceId, ui);
@@ -3022,6 +3084,196 @@ class InProcessRuntime implements RuntimeDriver {
       });
     }
     return ui;
+  }
+
+  private uiFromTarget(target: unknown): UserInterface | null {
+    if (target instanceof UserInterface && !target.destroyed) return target;
+    return null;
+  }
+
+  private resolveWidgetKind(kind: unknown): string {
+    if (typeof kind !== "string" || !kind.trim()) return "Rectangle";
+    const trimmed = kind.trim();
+    const fromClass = widgetKindFromClassId(trimmed);
+    return fromClass ?? trimmed;
+  }
+
+  private parentIdFor(
+    ui: UserInterface,
+    parent: unknown,
+  ): string | null {
+    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
+    if (!tree) return null;
+    if (parent instanceof UserInterface) {
+      return parent === ui ? tree.rootId : null;
+    }
+    if (parent instanceof Widget) {
+      if (parent.owner !== ui || parent.destroyed) return null;
+      return parent.widgetId;
+    }
+    if (parent == null) return tree.rootId;
+    return null;
+  }
+
+  private bindWidgetVariable(ui: UserInterface, name: string, widget: Widget): void {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    if (ui.getVariable(trimmed) !== undefined) return;
+    ui.setVariable(trimmed, widget);
+  }
+
+  addWidgetOn(
+    target: unknown,
+    kind: unknown,
+    name: unknown,
+    parent: unknown,
+  ): Widget | null {
+    const ui = this.uiFromTarget(target);
+    if (!ui) return null;
+    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
+    if (!tree) return null;
+    const widgetKind = this.resolveWidgetKind(kind);
+    const widgetName =
+      typeof name === "string" && name.trim() ? name.trim() : widgetKind;
+    const parentId = this.parentIdFor(ui, parent) ?? tree.rootId;
+    let widgetId = `dyn-${++this.uiWidgetSeq}`;
+    while (tree.widgets[widgetId] || ui.widgets.some((row) => row.widgetId === widgetId)) {
+      widgetId = `dyn-${++this.uiWidgetSeq}`;
+    }
+    const next = applyUiTreeAddWidget(tree, {
+      widgetId,
+      kind: widgetKind,
+      name: widgetName,
+      parentId,
+    });
+    if (next === tree) return null;
+    this.userInterfaceInstanceTrees.set(ui.guid, next);
+    const widget = createWidgetForKind(widgetKind, {
+      classId: widgetClassIdForKind(widgetKind),
+      widgetId,
+      guid: `${ui.guid}:${widgetId}`,
+      owner: ui,
+    });
+    ui.widgets.push(widget);
+    widget.callOnCreation();
+    this.bindWidgetVariable(ui, widgetName, widget);
+    this.emit({
+      type: "uiAddWidget",
+      instanceId: ui.guid,
+      widgetId,
+      kind: widgetKind,
+      name: widgetName,
+      parentId,
+    });
+    return widget;
+  }
+
+  setWidgetParent(
+    widget: unknown,
+    parent: unknown,
+    index: unknown,
+  ): void {
+    if (!(widget instanceof Widget) || widget.destroyed) return;
+    const ui = widget.owner;
+    if (!ui || ui.destroyed) return;
+    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
+    if (!tree) return;
+    const parentId = this.parentIdFor(ui, parent);
+    if (!parentId) return;
+    const siblingIndex =
+      typeof index === "number" && Number.isFinite(index)
+        ? Math.floor(index)
+        : undefined;
+    const next = applyUiTreeReparentWidget(tree, {
+      widgetId: widget.widgetId,
+      parentId,
+      siblingIndex,
+    });
+    if (next === tree) return;
+    this.userInterfaceInstanceTrees.set(ui.guid, next);
+    this.emit({
+      type: "uiReparentWidget",
+      instanceId: ui.guid,
+      widgetId: widget.widgetId,
+      parentId,
+      ...(siblingIndex !== undefined ? { siblingIndex } : {}),
+    });
+  }
+
+  removeMountedWidget(widget: unknown): void {
+    if (!(widget instanceof Widget) || widget.destroyed) return;
+    const ui = widget.owner;
+    if (!ui || ui.destroyed) return;
+    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
+    if (!tree || widget.widgetId === tree.rootId) return;
+    const next = applyUiTreeRemoveWidget(tree, widget.widgetId);
+    if (next === tree) return;
+    this.userInterfaceInstanceTrees.set(ui.guid, next);
+    const doomed = new Set(
+      Object.keys(tree.widgets).filter((id) => !next.widgets[id]),
+    );
+    for (const id of doomed) {
+      const row = ui.widgets.find((entry) => entry.widgetId === id);
+      if (!row) continue;
+      row.destroyed = true;
+      row.callOnDestroyed();
+      row.owner = null;
+    }
+    for (let index = ui.widgets.length - 1; index >= 0; index -= 1) {
+      if (doomed.has(ui.widgets[index]!.widgetId)) {
+        ui.widgets.splice(index, 1);
+      }
+    }
+    this.emit({
+      type: "uiRemoveWidget",
+      instanceId: ui.guid,
+      widgetId: widget.widgetId,
+    });
+  }
+
+  setWidgetLayout(widget: unknown, patch: unknown): void {
+    if (!(widget instanceof Widget) || widget.destroyed) return;
+    const ui = widget.owner;
+    if (!ui || ui.destroyed) return;
+    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
+    if (!tree || !patch || typeof patch !== "object") return;
+    const next = applyUiTreePatchLayout(
+      tree,
+      widget.widgetId,
+      patch as WidgetLayoutPatch,
+    );
+    if (next === tree) return;
+    this.userInterfaceInstanceTrees.set(ui.guid, next);
+    this.emit({
+      type: "uiPatchLayout",
+      instanceId: ui.guid,
+      widgetId: widget.widgetId,
+      layout: { ...(patch as WidgetLayoutPatch) },
+    });
+  }
+
+  getWidgetLayout(widget: unknown): WidgetLayoutPatch | null {
+    if (!(widget instanceof Widget) || widget.destroyed) return null;
+    const ui = widget.owner;
+    if (!ui) return null;
+    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
+    const layout = tree?.widgets[widget.widgetId]?.layout;
+    if (!layout) return null;
+    return {
+      left: layout.left,
+      top: layout.top,
+      leftUnit: layout.leftUnit,
+      topUnit: layout.topUnit,
+      width: layout.width,
+      height: layout.height,
+      widthUnit: layout.widthUnit,
+      heightUnit: layout.heightUnit,
+      rotation: layout.rotation,
+      scaleX: layout.scaleX,
+      scaleY: layout.scaleY,
+      horizontalAlignment: layout.horizontalAlignment,
+      verticalAlignment: layout.verticalAlignment,
+    };
   }
 
   private dispatchUiWidgetEventOn(
@@ -3061,6 +3313,7 @@ class InProcessRuntime implements RuntimeDriver {
     }
     this.userInterfaces.delete(ui.guid);
     this.nestedUserInterfaces.delete(ui.guid);
+    this.userInterfaceInstanceTrees.delete(ui.guid);
     for (const widget of [...ui.widgets].reverse()) {
       widget.destroyed = true;
       widget.callOnDestroyed();

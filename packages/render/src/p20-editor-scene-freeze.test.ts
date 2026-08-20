@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NullEngine, PBRMaterial, ScenePerformancePriority, Mesh } from "@babylonjs/core";
+import {
+  Mesh,
+  NullEngine,
+  PBRMaterial,
+  ScenePerformancePriority,
+  ShaderMaterial,
+} from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -179,9 +185,33 @@ describe("p20-editor-scene-freeze", () => {
     expect(activeMeshesOf(handle.scene)).toContain(grid);
 
     handle.editor?.grid.setVisible(false);
-    expect(grid?.isVisible).toBe(false);
+    expect(grid?.isVisible).toBe(true);
+    expect(grid?.visibility).toBe(0);
+    expect(
+      (grid?.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(0);
     expect(handle.scene._activeMeshesFrozen).toBe(true);
     expect(activeMeshesOf(handle.scene)).toContain(grid);
+  });
+
+  it("keeps the editor grid in the frozen active list after hide then show", () => {
+    const handle = editorHandle();
+    const grid = handle.editor?.grid;
+    expect(grid).toBeTruthy();
+    grid!.setVisible(false);
+    handle.loadScene(createDefaultScene());
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(grid!.mesh.isVisible).toBe(true);
+    expect(grid!.mesh.visibility).toBe(0);
+    expect(
+      (grid!.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(0);
+    grid!.setVisible(true);
+    expect(grid!.mesh.isVisible).toBe(true);
+    expect(grid!.mesh.visibility).toBe(1);
+    expect(
+      (grid!.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(1);
   });
 
   it("includes instantiated GLB parts in the frozen active-mesh list", async () => {

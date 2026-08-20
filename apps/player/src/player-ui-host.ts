@@ -13,12 +13,18 @@ import {
   type UiWidgetEvent,
 } from "@babylonslate/render";
 import {
+  applyUiTreeAddWidget,
+  applyUiTreePatchLayout,
+  applyUiTreeRemoveWidget,
+  applyUiTreeReparentWidget,
+  cloneUserInterfaceDocument,
   describeUiControls,
   devicePresetForViewport,
   resolveUiAdtIdeal,
   scopeUiControlIds,
   type DevicePreset,
   type UserInterfaceDocument,
+  type WidgetLayoutPatch,
 } from "@babylonslate/ui-runtime";
 import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import {
@@ -38,6 +44,10 @@ export type PlayerUiHost = {
   instances(): readonly PlayerUiInstance[];
   resize(width: number, height: number): void;
   dispose(): void;
+  applyDocumentMutation(
+    instanceId: string,
+    mutate: (document: UserInterfaceDocument) => UserInterfaceDocument,
+  ): void;
 };
 
 export type PlayerUiHostOptions = {
@@ -85,6 +95,7 @@ function scopeControlId(instanceId: string, id: string | null | undefined): stri
 
 export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
   const rows: PlayerUiInstance[] = [];
+  const documents = new Map<string, UserInterfaceDocument>();
   const hidden = new Set<string>();
   const imageUrls = new Map<string, string>();
   let viewport = {
@@ -203,7 +214,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       );
     }
     const controls = rows.flatMap((row) => {
-      const document = documentFromLibrary(options.library, row.assetGuid);
+      const document = documents.get(row.instanceId);
       if (!document) return [];
       return scopeUiControlIds(
         describeUiControls(document, {
@@ -224,7 +235,9 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       const guid = assetGuid.trim();
       if (!id || !guid) return;
       if (rows.some((row) => row.instanceId === id)) return;
-      if (!documentFromLibrary(options.library, guid)) return;
+      const seed = documentFromLibrary(options.library, guid);
+      if (!seed) return;
+      documents.set(id, cloneUserInterfaceDocument(seed));
       rows.push({ instanceId: id, assetGuid: guid });
       rebuild();
     },
@@ -234,6 +247,7 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       if (next.length === rows.length) return;
       rows.length = 0;
       rows.push(...next);
+      documents.delete(id);
       for (const key of [...hidden]) {
         if (key.startsWith(`${id}:`)) hidden.delete(key);
       }
@@ -257,9 +271,20 @@ export function createPlayerUiHost(options: PlayerUiHostOptions): PlayerUiHost {
       viewport = { width: Math.max(1, width), height: Math.max(1, height) };
       if (rows.length > 0) rebuild();
     },
+    applyDocumentMutation(instanceId, mutate) {
+      if (disposed) return;
+      const id = instanceId.trim();
+      const current = documents.get(id);
+      if (!current) return;
+      const next = mutate(current);
+      if (next === current) return;
+      documents.set(id, next);
+      rebuild();
+    },
     dispose() {
       disposed = true;
       rows.length = 0;
+      documents.clear();
       hidden.clear();
       fallbackHost?.clear();
       attached?.dispose();
@@ -295,6 +320,46 @@ export function applyPlayerUiCommand(
       String(command.instanceId ?? ""),
       String(command.widgetId ?? ""),
       command.visible === true,
+    );
+    return true;
+  }
+  if (command.type === "uiAddWidget") {
+    host.applyDocumentMutation(String(command.instanceId ?? ""), (document) =>
+      applyUiTreeAddWidget(document, {
+        widgetId: String(command.widgetId ?? ""),
+        kind: String(command.kind ?? ""),
+        name: String(command.name ?? ""),
+        parentId: String(command.parentId ?? ""),
+      }),
+    );
+    return true;
+  }
+  if (command.type === "uiRemoveWidget") {
+    host.applyDocumentMutation(String(command.instanceId ?? ""), (document) =>
+      applyUiTreeRemoveWidget(document, String(command.widgetId ?? "")),
+    );
+    return true;
+  }
+  if (command.type === "uiReparentWidget") {
+    host.applyDocumentMutation(String(command.instanceId ?? ""), (document) =>
+      applyUiTreeReparentWidget(document, {
+        widgetId: String(command.widgetId ?? ""),
+        parentId: String(command.parentId ?? ""),
+        siblingIndex:
+          typeof command.siblingIndex === "number"
+            ? command.siblingIndex
+            : undefined,
+      }),
+    );
+    return true;
+  }
+  if (command.type === "uiPatchLayout") {
+    const layout =
+      command.layout && typeof command.layout === "object"
+        ? (command.layout as WidgetLayoutPatch)
+        : {};
+    host.applyDocumentMutation(String(command.instanceId ?? ""), (document) =>
+      applyUiTreePatchLayout(document, String(command.widgetId ?? ""), layout),
     );
     return true;
   }

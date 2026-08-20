@@ -56,7 +56,7 @@ Leaving a project (export / share) always produces a self-contained file (inline
 
 ## .babtrace
 
-Recorded Play sessions reuse the `.babasset` container with `type: "Trace"`. The JSON body is a `TracePayload` (seed, dt, frames with stats/logs/prints/snapshots/input). Files use the `.babtrace` extension; `encodeTraceDocument` / `decodeTraceDocument` wrap `encodeAssetDocument`. Debugger stays free of `@babylonslate/assets`.
+Recorded Play sessions reuse the `.babasset` container with `type: "Trace"`. The JSON body is a `TracePayload` (seed, dt, frames with stats/logs/prints/snapshots/input). Files use the `.babtrace` extension; `encodeTraceDocument` / `decodeTraceDocument` wrap `encodeAssetDocument`. The editor writes them only under derived data (`derived/{projectGuid}/traces/`), never `assets/`. Debugger stays free of `@babylonslate/assets`. Trace documents are read-only: `ProjectService.saveDocument` throws.
 
 ## Project folder / .babplugin
 
@@ -86,7 +86,7 @@ Packed export concatenates reached asset bytes into `boot.babpack` plus one `sce
 
 ### Derived data (outside the project)
 
-App-private storage keyed by project guid: compiled scripts, thumbnails, import cache, recovery journal. Export Project ignores derived data by construction.
+App-private storage keyed by project guid: compiled scripts, thumbnails, import cache, recovery journal, **Play traces** (`traces/*.babtrace`). Export Project ignores derived data by construction.
 
 ## Schema migration
 

@@ -183,6 +183,16 @@ describe("AssetRegistry", () => {
     );
     expect(models.some((asset) => asset.header.type === "Model")).toBe(true);
 
+    const scaled = await registry.importFile(
+      "project",
+      "models",
+      "statue.glb",
+      buildMinimalGlbFixture(),
+      { modelImportScale: 7 },
+    );
+    const statue = scaled.find((asset) => asset.header.type === "Model");
+    expect(statue?.header.payload.importScale).toBe(7);
+
     const remounted = new AssetRegistry(storage);
     await remounted.mountRoot(projectContentRoot());
     expect(remounted.list({ type: "Texture" }).length).toBeGreaterThanOrEqual(1);

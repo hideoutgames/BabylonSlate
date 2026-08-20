@@ -83,8 +83,8 @@ See [physics.md](physics.md) for RigidBody / Collider property schemas, pairing 
 - Rejects cycles.
 - Rejects engine locked ids (`isLockedEngineClassId`: bases, engine components, Widget subclasses, BT builtins).
 - Returns an invalidation list of inherited members that break under the new parent.
-- Editor UX for re-parenting stays in P5; P3 owns the registry API only.
-- `ensure(def)` registers a user class or merges variables / interface guids onto an existing user class. `RuntimeDriver.loadScripts` uses this so Play spawn can apply class metadata.
+- Prefab Root Details exposes **Parent Class** (Actor ancestry only). Commit is `ClassRegistry.reparent` then `saveDocument(..., { parentClass })` — header only; graph members, overrides, and components are not rewritten. Cycles, self, depth, locked engine classes, and leaving Actor ancestry reject without a write. Class panel change-parent UI is still later polish.
+- `ensure(def)` registers a user class or merges variables / interface guids onto an existing user class. `RuntimeDriver.loadScripts` uses this so Play spawn can apply class metadata. `ensure` does not rewrite `parentClassId` on an already-registered def.
 
 ## Deterministic harness (`@babylonslate/test-kit`)
 

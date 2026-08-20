@@ -38,7 +38,7 @@ import {
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
-import { isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
+import { createAppSettingsStore, isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   DropdownMenu,
@@ -1148,11 +1148,13 @@ export function ContentBrowserWorkspace({
             currentName: file.name,
           });
           try {
+            const engineSettings = await createAppSettingsStore().load();
             const created = await assetRegistry.importFile(
               selectedRoot.rootId,
               folder,
               file.name,
               file.bytes,
+              { modelImportScale: engineSettings.modelImportDefaultScale },
             );
             for (const asset of created) {
               if (asset.header.type !== "Model") continue;

@@ -25,6 +25,8 @@ export interface ImportOptions {
   existingGuids: Set<string>;
   /** For font attach: map of font name to guid. */
   fontGuidsByName?: Map<string, string>;
+  /** Uniform Model import multiplier. Defaults to DEFAULT_MODEL_IMPORT_SCALE. */
+  modelImportScale?: number;
 }
 
 export type Importer = (

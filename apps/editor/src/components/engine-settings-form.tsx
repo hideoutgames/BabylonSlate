@@ -126,12 +126,14 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
     keepKey: "skybox-creator",
     label: "Skybox Creator",
   },
+  { kind: "trace", keepKey: "trace", label: "Trace" },
 ];
 
 export type EngineSettingsCategoryId =
   | "appearance"
   | "undo"
   | "viewport"
+  | "assets"
   | "thumbnails"
   | "templates"
   | "focus"
@@ -266,6 +268,23 @@ export function EngineSettingsForm({
             </FieldDescription>
           </Field>
           <Field>
+            <FieldLabel htmlFor="setting-fly-speed">Camera Speed</FieldLabel>
+            <NumberField
+              id="setting-fly-speed"
+              min={0.0001}
+              step={0.5}
+              className="min-h-[var(--touch-target,44px)]"
+              data-testid="setting-fly-speed"
+              value={settings.viewportFlySpeed}
+              onChange={(viewportFlySpeed) =>
+                void onChange({ viewportFlySpeed })
+              }
+            />
+            <FieldDescription>
+              Editor WASD and joystick fly speed in world units per second.
+            </FieldDescription>
+          </Field>
+          <Field>
             <FieldLabel htmlFor="setting-hardware-scale">
               Hardware scaling level
             </FieldLabel>
@@ -304,6 +323,31 @@ export function EngineSettingsForm({
                 void onChange({ postProcessingEnabled: checked === true })
               }
             />
+          </Field>
+        </FieldSet>
+      ) : null}
+
+      {categoryId === "assets" ? (
+        <FieldSet>
+          <FieldLegend>Assets</FieldLegend>
+          <Field>
+            <FieldLabel htmlFor="setting-model-import-scale">
+              Model Import Default Scale
+            </FieldLabel>
+            <NumberField
+              id="setting-model-import-scale"
+              min={0.0001}
+              className="min-h-[var(--touch-target,44px)]"
+              data-testid="setting-model-import-scale"
+              value={settings.modelImportDefaultScale}
+              onChange={(modelImportDefaultScale) =>
+                void onChange({ modelImportDefaultScale })
+              }
+            />
+            <FieldDescription>
+              Multiplier stamped onto newly imported Models. Does not change
+              models already in the project or scene scale.
+            </FieldDescription>
           </Field>
         </FieldSet>
       ) : null}

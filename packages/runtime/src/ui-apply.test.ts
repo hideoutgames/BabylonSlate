@@ -8,6 +8,7 @@ import {
 import {
   ButtonWidget,
   ImageWidget,
+  TextBlockWidget,
   UserInterface,
 } from "@babylonslate/object-model";
 import {
@@ -307,6 +308,11 @@ describe("mounted UserInterface lifecycle", () => {
     expect(play).toBeInstanceOf(ButtonWidget);
     expect(logo).toBeInstanceOf(ImageWidget);
     expect(play?.owner).toBe(ui);
+    expect(ui?.getVariable("Play")).toBe(play);
+    expect(ui?.getVariable("Logo")).toBe(logo);
+    expect(ui?.getVariable("Canvas")).toBe(
+      ui?.widgets.find((widget) => widget.widgetId === "root"),
+    );
     expect(
       commands.filter((command) => command.type === "uiSetVisible"),
     ).toEqual([
@@ -321,6 +327,125 @@ describe("mounted UserInterface lifecycle", () => {
     expect(play?.destroyed).toBe(true);
     expect(logo?.destroyed).toBe(true);
     expect(play?.owner).toBeNull();
+    runtime.stop();
+  });
+
+  it("binds widget names as object variables, winning over Class variable defaults", async () => {
+    const registry = createDefaultNodeRegistry();
+    const uiScript: CompiledScript = {
+      assetGuid: HUD_GUID,
+      classId: HUD_CLASS_ID,
+      parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
+      source: [
+        "//# sourceURL=babylonslate:///hud-guid-widget-vars.js",
+        "export function onBeginPlay(ctx) {",
+        "  ctx.setVariable('seen', ctx.getVariable('Play'));",
+        "}",
+        "",
+      ].join("\n"),
+      anchors: [],
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+      variables: [
+        { name: "Play", type: "string", defaultValue: "stale" },
+        { name: "seen", type: "object", defaultValue: null },
+      ],
+    };
+    const hostGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "apply", "ui.applyToViewport", { asset: HUD_GUID }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "apply", "execIn")],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+    });
+    runtime.registerUserInterfaceDocument(HUD_GUID, hudWidgets());
+    await runtime.loadScripts([
+      uiScript,
+      toScript(hostGraph, registry, "HudHost", "hud-host-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "HudHost" });
+    const ui = runtime.getUserInterface("ui-1");
+    const play = ui?.widgets.find((widget) => widget.widgetId === "play-btn");
+    expect(ui?.getVariable("Play")).toBe(play);
+    expect(ui?.getVariable("seen")).toBe(play);
+    runtime.stop();
+  });
+
+  it("adds, reparents, and patches widget layout on the instance tree", async () => {
+    const registry = createDefaultNodeRegistry();
+    const uiScript: CompiledScript = {
+      assetGuid: HUD_GUID,
+      classId: HUD_CLASS_ID,
+      parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
+      source: [
+        "//# sourceURL=babylonslate:///hud-guid-mutate.js",
+        "export function onBeginPlay(ctx) {",
+        "  const score = ctx.addWidget('TextBlock', 'Score', ctx.getWidget('play-btn'));",
+        "  ctx.setWidgetLayout(score, { left: 12, top: 8, width: 80, height: 32 });",
+        "  ctx.setWidgetParent(score, ctx.self, 0);",
+        "}",
+        "",
+      ].join("\n"),
+      anchors: [],
+      entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
+    };
+    const hostGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "apply", "ui.applyToViewport", { asset: HUD_GUID }),
+      ],
+      edges: [edge("e1", "begin", "execOut", "apply", "execIn")],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.registerUserInterfaceDocument(HUD_GUID, hudWidgets());
+    await runtime.loadScripts([
+      uiScript,
+      toScript(hostGraph, registry, "HudHost", "hud-host-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "HudHost" });
+    const ui = runtime.getUserInterface("ui-1");
+    const score = ui?.getVariable("Score");
+    expect(score).toBeInstanceOf(TextBlockWidget);
+    expect(ui?.widgets).toContain(score);
+    expect(
+      commands.filter((command) => command.type === "uiAddWidget"),
+    ).toEqual([
+      expect.objectContaining({
+        type: "uiAddWidget",
+        instanceId: "ui-1",
+        kind: "TextBlock",
+        name: "Score",
+        parentId: "play-btn",
+      }),
+    ]);
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "uiPatchLayout" &&
+          command.instanceId === "ui-1" &&
+          command.layout.left === 12,
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "uiReparentWidget" &&
+          command.parentId === "root" &&
+          command.siblingIndex === 0,
+      ),
+    ).toBe(true);
     runtime.stop();
   });
 

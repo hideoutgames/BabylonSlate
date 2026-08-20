@@ -11,6 +11,7 @@ import {
   syncEditorBillboardParentScale,
 } from "./editor-billboard";
 import { engineBillboardUrl } from "./default-billboard/urls";
+import { RENDERING_GROUP } from "./sorting";
 
 describe("editor billboard", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -75,6 +76,7 @@ describe("editor billboard", () => {
     expect(material.backFaceCulling).toBe(false);
     const texture = material.emissiveTexture as Texture;
     expect(texture.url).toContain(engineBillboardUrl("point_light").slice(1));
+    expect(mesh.renderingGroupId).toBe(RENDERING_GROUP.foreground);
   });
 
   it("tints a light billboard from LightComponent color", () => {
