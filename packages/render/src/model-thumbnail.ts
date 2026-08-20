@@ -24,8 +24,11 @@ function rgbaBytesFromReadback(
 }
 
 /**
- * One-shot offscreen capture of a Model GLB with slots applied.
+ * One-shot offscreen capture of a Model GLB.
  * Transparent clear so Content Browser `--card` tiles show through.
+ * Callers should pass `resolveMaterial: () => null` so construction materials
+ * stay — compiling slot NodeMaterials on this throwaway Scene can lose the
+ * shared Engine context.
  */
 export async function captureModelThumbnailPng(
   engine: Engine,

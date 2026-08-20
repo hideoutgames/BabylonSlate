@@ -1,12 +1,18 @@
 import { MeshBuilder, TransformNode } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createTestEngine } from "./create-null-engine";
-import { adoptLoadedHierarchy, animationRetargetHasMatches } from "./glb-anim";
+import {
+  adoptLoadedHierarchy,
+  animationRetargetHasMatches,
+  beginSlotModelAnimLoad,
+  createModelActorRoot,
+} from "./glb-anim";
 import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
 import {
   applySnapshotToScene,
   createSnapshotSceneBinding,
 } from "./snapshot-apply";
+import { visualMeshes } from "./visual-meshes";
 
 describe("adoptLoadedHierarchy", () => {
   const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
@@ -98,5 +104,34 @@ describe("animationRetargetHasMatches", () => {
         "Idle",
       ),
     ).toBe(false);
+  });
+});
+
+describe("beginSlotModelAnimLoad", () => {
+  const handles: Array<{ engine: { dispose: () => void }; scene: { dispose: () => void } }> =
+    [];
+
+  afterEach(() => {
+    while (handles.length > 0) {
+      const handle = handles.pop();
+      handle?.scene.dispose();
+      handle?.engine.dispose();
+    }
+  });
+
+  it("loads a static GLB nested in a larger ArrayBuffer", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const glb = encodeTriangleGlb();
+    const padded = new Uint8Array(glb.byteLength + 32);
+    padded.fill(0xab);
+    padded.set(glb, 16);
+    const view = padded.subarray(16, 16 + glb.byteLength);
+    expect(view.byteOffset).toBe(16);
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(scene, "actor-2");
+    await beginSlotModelAnimLoad(scene, binding, 2, "model-1", view, root);
+    expect(visualMeshes(root).length).toBeGreaterThan(0);
   });
 });
