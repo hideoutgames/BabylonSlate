@@ -127,6 +127,38 @@ describe("AudioService", () => {
     service.dispose();
   });
 
+  it("resumes the backend on unlock before loading queued source bytes", async () => {
+    const order: string[] = [];
+    const backend = new FakeAudioPlaybackBackend();
+    const resume = backend.unlockAsync.bind(backend);
+    backend.unlockAsync = async () => {
+      order.push("unlock");
+      await resume();
+    };
+    const service = new AudioService({
+      backend,
+      loadSourceBytes: async ({ assetGuid, chunkId }) => {
+        order.push(`load:${assetGuid}:${chunkId}`);
+        return new Uint8Array([1, 2, 3, 4]);
+      },
+    });
+    service.setLibrary(
+      library({ audio: { jump: createDefaultAudioPayload() } }),
+    );
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+    });
+    const unlocking = service.unlockAsync();
+    expect(order).toEqual(["unlock"]);
+    await unlocking;
+    expect(order).toEqual(["unlock", "load:jump:source"]);
+    expect(backend.plays).toHaveLength(1);
+    service.dispose();
+  });
+
   it("nulls missing Audio Channel and Attenuation refs with diagnostics", () => {
     const diagnostics: Array<{ code: string }> = [];
     const service = new AudioService({
