@@ -1883,7 +1883,9 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "casting.castActor")).toBe(false);
     const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
     expect(actorCast?.title).toBe("Cast to Actor");
-    expect(actorCast?.nodeType).toBe("casting.cast");
+    expect(actorCast?.pure).not.toBe(true);
+    expect(actorCast?.pins?.some((pin) => pin.id === "execIn")).toBe(true);
+    expect(actorCast?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
     expect(actorCast?.defaultData).toMatchObject({
       defaultClassId: "Actor",
       "default:class": "Actor",

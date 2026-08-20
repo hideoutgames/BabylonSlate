@@ -160,6 +160,13 @@ describe("ScriptContext.isA", () => {
           id: "e1",
           sourceNodeId: "begin",
           sourcePinId: "execOut",
+          targetNodeId: "cast",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e1b",
+          sourceNodeId: "cast",
+          sourcePinId: "execOut",
           targetNodeId: "log",
           targetPinId: "execIn",
         },
