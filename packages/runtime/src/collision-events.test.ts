@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
+import {
+  createActor,
+  createDefaultSceneSettings,
+} from "@babylonslate/core";
 import type { Actor } from "@babylonslate/object-model";
 import {
   compileGraph,
@@ -251,6 +255,81 @@ describe("runtime collision events", () => {
     expect(
       commands.filter((command) => command.type === "log" && command.category === "Hit"),
     ).toHaveLength(0);
+    runtime.stop();
+  });
+
+  it("skips overlap dispatch when generateOverlapEvents is false", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 6,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      dt: 1 / 60,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(overlapLogGraph(registry), registry, "Deaf", "deaf-asset", {
+        actorDefaults: { generateOverlapEvents: false },
+      }),
+    ]);
+    const a = runtime.spawnScriptedActor({
+      classId: "Deaf",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    const b = runtime.spawnScriptedActor({
+      classId: "Deaf",
+      transform: {
+        position: { x: 0.4, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    expect(a?.generateOverlapEvents).toBe(false);
+    expect(b?.generateOverlapEvents).toBe(false);
+    attachKinematicBox(runtime, a!);
+    attachKinematicBox(runtime, b!, true);
+    runtime.start();
+    runtime.tick();
+    expect(
+      commands.filter(
+        (command) => command.type === "log" && command.category === "OverlapBegin",
+      ),
+    ).toHaveLength(0);
+    runtime.stop();
+  });
+
+  it("copies actorDefaults onto scene-realized actors", async () => {
+    const registry = createDefaultNodeRegistry();
+    const runtime = createInProcessRuntime({
+      seed: 7,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      dt: 1 / 60,
+      playScene: {
+        name: "Placed",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [createActor("placed", "Placed", { classId: "PlacedHero" })],
+      },
+    });
+    await runtime.loadScripts([
+      toScript(hitLogGraph(registry), registry, "PlacedHero", "placed-asset", {
+        actorDefaults: { generateHitEvents: false, generateOverlapEvents: false },
+      }),
+    ]);
+    runtime.realizePlayWorld();
+    const placed = runtime.getWorld().findActor("placed");
+    expect(placed?.classId).toBe("PlacedHero");
+    expect(placed?.generateHitEvents).toBe(false);
+    expect(placed?.generateOverlapEvents).toBe(false);
     runtime.stop();
   });
 });
