@@ -455,15 +455,47 @@ export type AnimGraphCompileDocument = {
   document: AnimGraphDocument | unknown;
 };
 
+function serializedGraphCompileSlice(
+  path: string,
+  content: SerializedGraph | undefined,
+): string {
+  if (
+    !content ||
+    !Array.isArray(content.nodes) ||
+    !Array.isArray(content.edges)
+  ) {
+    return "";
+  }
+  return graphCompileSignature([{ path, content }]);
+}
+
 function animGraphCompileCacheKey(
   entry: AnimGraphCompileDocument,
   options: { stripDevelopmentOnly?: boolean },
 ): string {
+  const parsed = parseAnimGraphDocument(entry.document);
+  const document = parsed
+    ? {
+        animationObject: serializedGraphCompileSlice(
+          `${entry.path}#animation-object`,
+          parsed.animationObject,
+        ),
+        transitions: parsed.transitions.map((transition) => ({
+          id: transition.id,
+          fromStateId: transition.fromStateId,
+          toStateId: transition.toStateId,
+          rule: serializedGraphCompileSlice(
+            `${entry.path}#rule-${transition.id}`,
+            transition.ruleGraph,
+          ),
+        })),
+      }
+    : entry.document;
   return JSON.stringify({
     guid: entry.guid,
     path: entry.path,
     stripDevelopmentOnly: options.stripDevelopmentOnly === true,
-    document: entry.document,
+    document,
   });
 }
 

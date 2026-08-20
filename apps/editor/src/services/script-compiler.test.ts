@@ -676,6 +676,39 @@ describe("GraphScriptCompileCache", () => {
     );
     expect(cache.compiles).toBe(1);
   });
+
+  it("treats classId and parentClassId as part of the cache key", () => {
+    const cache = new GraphScriptCompileCache();
+    const doc = { path: "assets/main.class.babasset", content: tickToLog };
+    compileGraphDocuments([{ ...doc, classId: "Hero" }], { cache });
+    compileGraphDocuments([{ ...doc, classId: "Hero" }], { cache });
+    expect(cache.compiles).toBe(1);
+    compileGraphDocuments([{ ...doc, classId: "Villain" }], { cache });
+    expect(cache.compiles).toBe(2);
+    compileGraphDocuments(
+      [{ ...doc, classId: "Hero", parentClassId: "Pawn" }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(3);
+  });
+
+  it("caches an empty graph null bundle instead of retrying codegen", () => {
+    const cache = new GraphScriptCompileCache();
+    const empty: SerializedGraph = { nodes: [], edges: [] };
+    expect(
+      compileGraphDocuments(
+        [{ path: "assets/empty.class.babasset", content: empty }],
+        { cache },
+      ),
+    ).toEqual([]);
+    expect(cache.compiles).toBe(1);
+    expect([...cache.graphs.values()]).toEqual([null]);
+    compileGraphDocuments(
+      [{ path: "assets/empty.class.babasset", content: empty }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+  });
 });
 
 describe("compileAnimGraphScripts", () => {
@@ -739,6 +772,83 @@ describe("compileAnimGraphScripts", () => {
     const second = compileAnimGraphScripts([entry], { cache });
     expect(second).toEqual(first);
     expect(cache.compiles).toBe(1);
+  });
+
+  it("does not recompile an Animation Graph after a position-only canvas nudge", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const doc = createDefaultAnimGraph();
+    const entry = {
+      guid: "graph-1",
+      path: "assets/Loco.anim.babasset",
+      document: doc,
+    };
+    compileAnimGraphScripts([entry], { cache });
+    expect(cache.compiles).toBe(1);
+    const nudged = createDefaultAnimGraph();
+    nudged.animationObject = {
+      ...nudged.animationObject,
+      nodes: nudged.animationObject.nodes.map((node) => ({
+        ...node,
+        position: { x: 99, y: 40 },
+      })),
+    };
+    nudged.states = nudged.states.map((state) => ({
+      ...state,
+      position: { x: 50, y: 80 },
+    }));
+    compileAnimGraphScripts(
+      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: nudged }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+  });
+
+  it("recompiles an Animation Graph when animation object data changes", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const doc = createDefaultAnimGraph();
+    compileAnimGraphScripts(
+      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: doc }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(1);
+    const edited = createDefaultAnimGraph();
+    edited.animationObject = {
+      ...edited.animationObject,
+      nodes: edited.animationObject.nodes.map((node) =>
+        node.id === "event-update"
+          ? { ...node, data: { ...node.data, title: "changed" } }
+          : node,
+      ),
+    };
+    compileAnimGraphScripts(
+      [{ guid: "graph-1", path: "assets/Loco.anim.babasset", document: edited }],
+      { cache },
+    );
+    expect(cache.compiles).toBe(2);
+  });
+
+  it("does not reuse a Play Animation Graph compile for a Development Only export", async () => {
+    const { createDefaultAnimGraph } = await import("@babylonslate/anim-graph");
+    const { compileAnimGraphScripts, GraphScriptCompileCache } = await import(
+      "./script-compiler"
+    );
+    const cache = new GraphScriptCompileCache();
+    const entry = {
+      guid: "graph-1",
+      path: "assets/Loco.anim.babasset",
+      document: createDefaultAnimGraph(),
+    };
+    compileAnimGraphScripts([entry], { cache });
+    compileAnimGraphScripts([entry], { cache, stripDevelopmentOnly: true });
+    expect(cache.compiles).toBe(2);
   });
 
   it("compiles a one-way Exit State as true even when a variable is wired to it", async () => {

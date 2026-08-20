@@ -664,6 +664,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setDockWindowTick((v) => v + 1);
   }, []);
   const documentService = documentServiceRef.current;
+  const collectGraphTypeSchemas = useCallback(() => {
+    return typeSchemasFromGraphAssets(
+      collectGraphTypeAssets({
+        assets: projectService.registry?.list() ?? [],
+        openDocuments: [...documentService.getState().openDocuments.values()],
+      }),
+    );
+  }, [documentService, projectService]);
   const runForegroundRescanRef = useRef<() => Promise<void>>(async () => {});
 
   const captureMtimeSnapshot = useCallback(async () => {
@@ -1287,14 +1295,24 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         }
       }
       if (document.settings.compileOnSave) {
+        const assets = projectService.registry?.list() ?? [];
         const graphs = documentService
           .getOpenDocumentsOrdered()
           .filter((doc) => doc.ref.kind === "graph" && doc.content)
-          .map((doc) => ({
-            path: doc.ref.path,
-            content: doc.content as SerializedGraph,
-          }));
-        compileGraphDocuments(graphs, { cache: graphCompileCacheRef.current });
+          .map((doc) => {
+            const asset = assets.find((entry) => entry.path === doc.ref.path);
+            return {
+              path: doc.ref.path,
+              content: doc.content as SerializedGraph,
+              parentClassId: asset?.header.parentClass ?? null,
+            };
+          });
+        const typeSchemas = collectGraphTypeSchemas();
+        compileGraphDocuments(graphs, {
+          cache: graphCompileCacheRef.current,
+          enums: typeSchemas.enums,
+          structs: typeSchemas.structs,
+        });
         setLastCompiledSignature(graphCompileSignature(graphs));
       }
       const layouts = documentService.buildLayouts();
@@ -1348,6 +1366,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     bump,
     captureAllLayouts,
     captureMtimeSnapshot,
+    collectGraphTypeSchemas,
     documentService,
     ensureDerived,
     projectService,
@@ -2163,10 +2182,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       parentOf,
       registeredClassIds: registered,
     });
+    const typeSchemas = collectGraphTypeSchemas();
     return compileGraphDocuments(selected, {
       cache: graphCompileCacheRef.current,
+      enums: typeSchemas.enums,
+      structs: typeSchemas.structs,
     });
-  }, [loadClassGraphDocuments, projectService]);
+  }, [collectGraphTypeSchemas, loadClassGraphDocuments, projectService]);
 
   const loadAssetDocument = useCallback(
     async (
@@ -2192,12 +2214,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   > => {
     const documents = await loadProjectGraphDocuments();
     const animDocuments = await loadProjectAnimGraphDocuments();
-    const typeSchemas = typeSchemasFromGraphAssets(
-      collectGraphTypeAssets({
-        assets: projectService.registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    );
+    const typeSchemas = collectGraphTypeSchemas();
     const bundles = [
       ...compileGraphDocuments(documents, {
         enums: typeSchemas.enums,
@@ -2211,11 +2228,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     markScriptsCurrent();
     return bundles;
   }, [
-    documentService,
+    collectGraphTypeSchemas,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
     markScriptsCurrent,
-    projectService,
   ]);
 
   const collectPlayPreviewScripts = useCallback(async (): Promise<{
@@ -2233,12 +2249,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     for (const doc of documents) {
       classGraphs[classIdForGraphPath(doc.path)] = doc.content;
     }
-    const typeSchemas = typeSchemasFromGraphAssets(
-      collectGraphTypeAssets({
-        assets: projectService.registry?.list() ?? [],
-        openDocuments: [...documentService.getState().openDocuments.values()],
-      }),
-    );
+    const typeSchemas = collectGraphTypeSchemas();
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
@@ -2264,6 +2275,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     markScriptsCurrent();
     return { bundles, diagnostics };
   }, [
+    collectGraphTypeSchemas,
     documentService,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
