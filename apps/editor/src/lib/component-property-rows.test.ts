@@ -106,7 +106,7 @@ describe("componentPropertyRows", () => {
     });
   });
 
-  it("exposes 3D Text text, size, depth, color, and Font picker", () => {
+  it("exposes 3D Text text, size, color, and Font picker", () => {
     const text3d = rowsFor(
       {
         id: "label",
@@ -133,11 +133,7 @@ describe("componentPropertyRows", () => {
       label: "Size",
       value: 2,
     });
-    expect(text3d.rows.find((row) => row.id.endsWith("-depth"))).toMatchObject({
-      kind: "slider",
-      label: "Depth",
-      value: 0.25,
-    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-depth"))).toBeUndefined();
     expect(text3d.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({
       kind: "color",
       label: "Color",

@@ -176,6 +176,7 @@ import {
 } from "@babylonslate/assets";
 import {
   listedProjectsFromRecents,
+  shouldDeleteOpfsOnRemove,
   type ListedProject,
 } from "../lib/listed-projects";
 import {
@@ -1217,6 +1218,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
 
   const removeListedProject = useCallback(
     async (handle: ProjectFolderHandle) => {
+      if (shouldDeleteOpfsOnRemove(getHostPlatform(), handle.tier)) {
+        await projectService.deleteListedProject(handle);
+      }
       const settings = await settingsStore.load();
       settings.recents = settings.recents.filter(
         (recent) => recent.id !== handle.id,
@@ -1224,7 +1228,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       await settingsStore.save(settings);
       await refreshProjectList();
     },
-    [refreshProjectList, settingsStore],
+    [projectService, refreshProjectList, settingsStore],
   );
 
   const reconnectProject = useCallback(async () => {

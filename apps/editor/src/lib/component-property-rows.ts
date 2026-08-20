@@ -1046,18 +1046,6 @@ export function componentPropertyRows(
           0.01,
           1,
         ),
-        sliderRow(
-          actorId,
-          component.id,
-          "depth",
-          "Depth",
-          parsed.depth,
-          0.01,
-          10,
-          update,
-          0.01,
-          0.1,
-        ),
         {
           kind: "color",
           id: rowId(actorId, component.id, "color"),
