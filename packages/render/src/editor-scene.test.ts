@@ -18,6 +18,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
+import { isEngineDefaultMaterial } from "./default-material";
 import {
   createEditorCamera,
   MAX_CAMERA_RADIUS,
@@ -952,7 +953,10 @@ describe("EditorSceneSync", () => {
     sync.apply(
       sceneWith([createActor("a", "A", { components: [mesh] })]),
     );
-    expect(sync.meshForActor("a")?.material).not.toBe(assigned);
+    const cleared = sync.meshForActor("a");
+    expect(cleared?.material).not.toBe(assigned);
+    expect(cleared?.material).toBeNull();
+    expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
 
     const pivot = createMeshComponent("marker", "pivot");
     pivot.properties.materialGuid = "mat-rock";

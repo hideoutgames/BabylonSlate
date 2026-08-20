@@ -74,6 +74,10 @@ Self-computed bytes: RGBA8 = 4 B/texel, ASTC 4×4 = 1, plus ~⅓ for mipmaps. Co
 
 Invariant: Play open-and-close must not grow `engine.getLoadedTexturesCache().length` (asserted in Play stop + unit cache cycle). Playwright repeats three real Play sessions and checks texture counts stay equal while asynchronous mesh counts remain bounded.
 
+## Engine default material
+
+Meshes with no authored surface Material (`MeshComponent.materialGuid` empty, no glTF construction material) render the engine default, not Babylon’s white `StandardMaterial`. `installEngineDefaultMaterial` (`packages/render/src/default-material.ts`) sets `scene.defaultMaterial` to a lit `PBRMaterial` matching a new user Material (opaque, not two-sided, `metallic` 0, `roughness` 0.5) with a UV-tiled 2×2 grey checker albedo (0.8 / ~0.65, wrap, nearest, 8 tiles). Installed from `setupDefaultViewport` (editor, Play, Prefab, player), `createTestEngine`, and Material Preview. Primitives keep `mesh.material === null` so Details still shows **None**. Model slot Default/None still restores the glTF construction material. Sprites, tilemaps, skybox, 3D text, colliders, billboards, and pivot markers keep their own materials. Particle / Interface / post-process **None** is unchanged.
+
 ## Skybox mesh
 
 `createSkyboxMesh` (editor `createMeshForComponent` and Play `createPlayMesh`) matches Babylon’s documented skybox, but does **not** call `scene.createDefaultSkybox` (that helper can write IBL and is not incremental):

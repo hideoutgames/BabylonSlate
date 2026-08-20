@@ -7,6 +7,7 @@ import {
 } from "@babylonjs/core";
 
 import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
+import { installEngineDefaultMaterial } from "./default-material";
 
 export const DEFAULT_LIGHT_INTENSITY = 0.9;
 
@@ -15,6 +16,7 @@ export const DEFAULT_LIGHT_INTENSITY = 0.9;
  * testable under NullEngine (engineplan section 2.3).
  */
 export function setupDefaultViewport(scene: Scene): void {
+  installEngineDefaultMaterial(scene);
   const camera = new ArcRotateCamera(
     "camera",
     -Math.PI / 2,
