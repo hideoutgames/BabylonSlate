@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   userInterfaceClassId,
+  type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
 import {
@@ -261,7 +262,7 @@ describe("script compiler service", () => {
     ).toBe(false);
   });
 
-  const waitPins = [
+  const waitPins: GraphClassMemberPin[] = [
     { name: "exec", typeId: "exec", direction: "in" },
     { name: "then", typeId: "exec", direction: "out" },
     { name: "result", typeId: "float", direction: "out" },
