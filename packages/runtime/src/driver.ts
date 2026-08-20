@@ -2930,6 +2930,9 @@ class InProcessRuntime implements RuntimeDriver {
       });
       ui.widgets.push(widget);
       widget.callOnCreation();
+      const bindingName =
+        typeof meta.name === "string" ? meta.name.trim() : "";
+      if (bindingName) ui.setVariable(bindingName, widget);
       const nestedGuid = meta.nestedUiGuid?.trim();
       if (
         meta.kind === "UserInterface" &&

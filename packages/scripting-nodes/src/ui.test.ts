@@ -13,6 +13,7 @@ import { widgetClassIdForKind } from "@babylonslate/core";
 import { createDefaultNodeRegistry } from "./index";
 import {
   boundGetWidgetEntries,
+  boundWidgetVariableEntries,
   uiGetWidgetNodeId,
   uiNodes,
 } from "./ui";
@@ -121,6 +122,54 @@ describe("ui nodes", () => {
 });
 
 describe("bound Get Widget catalog", () => {
+  it("injects Get Variable rows (no Set) typed as the concrete widget class", () => {
+    const entries = boundWidgetVariableEntries([
+      { id: "play-btn", name: "Play Button", kind: "Button" },
+      { id: "logo", name: "Logo", kind: "Image" },
+    ]);
+    expect(entries).toEqual([
+      {
+        id: "variables.get:widget:play-btn",
+        nodeType: "variables.get",
+        title: "Get Play Button",
+        widgetId: "play-btn",
+        widgetName: "Play Button",
+        widgetKind: "Button",
+        classId: widgetClassIdForKind("Button"),
+        pinType: objectRef("ButtonWidget"),
+        defaultData: {
+          variableName: "Play Button",
+          typeId: "object",
+          typeClassId: "ButtonWidget",
+          implicitSelf: true,
+          scope: "member",
+          title: "Get Play Button",
+        },
+      },
+      {
+        id: "variables.get:widget:logo",
+        nodeType: "variables.get",
+        title: "Get Logo",
+        widgetId: "logo",
+        widgetName: "Logo",
+        widgetKind: "Image",
+        classId: widgetClassIdForKind("Image"),
+        pinType: objectRef("ImageWidget"),
+        defaultData: {
+          variableName: "Logo",
+          typeId: "object",
+          typeClassId: "ImageWidget",
+          implicitSelf: true,
+          scope: "member",
+          title: "Get Logo",
+        },
+      },
+    ]);
+    expect(entries.every((entry) => entry.nodeType === "variables.get")).toBe(
+      true,
+    );
+  });
+
   it("injects one Get Widget entry per stable widget id and name", () => {
     const entries = boundGetWidgetEntries([
       { id: "play-btn", name: "Play Button", kind: "Button" },

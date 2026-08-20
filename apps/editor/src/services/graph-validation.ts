@@ -38,6 +38,7 @@ import {
 } from "@babylonslate/object-model";
 import {
   boundGetWidgetEntries,
+  boundWidgetVariableEntries,
   createDefaultNodeRegistry,
   castDefaultClassId,
   callInterfaceTitle,
@@ -1100,7 +1101,9 @@ function variableAccessPaletteNodes(
   const setDef = nodeRegistry.get("variables.set");
   if (!getDef || !setDef) return [];
   const localClassId = options?.classId ?? "BObject";
-  const classVars = classVariableRows(options?.graph);
+  const classVars = classVariableRows(options?.graph).filter(
+    (variable) => !widgetBindingNames(options).has(variable.name),
+  );
   const classNames = new Set(classVars.map((entry) => entry.name));
   const rows: Array<{
     classId: string;
@@ -1170,6 +1173,35 @@ function variableAccessPaletteNodes(
     }
   }
   return injected;
+}
+
+function widgetBindingNames(options?: ScriptPaletteOptions): Set<string> {
+  return new Set((options?.widgets ?? []).map((widget) => widget.name));
+}
+
+function widgetVariablePaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get("variables.get");
+  if (!def || !options?.widgets?.length) return [];
+  const classId = options.classId ?? "UserInterface";
+  return boundWidgetVariableEntries(options.widgets).map((entry) => {
+    const defaultData: Record<string, unknown> = {
+      ...entry.defaultData,
+      classId,
+    };
+    return {
+      id: entry.id,
+      nodeType: entry.nodeType,
+      title: entry.title,
+      category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData,
+    };
+  });
 }
 
 function castPaletteNodes(
@@ -1477,6 +1509,7 @@ function scriptPaletteInjectorNodes(
     ...callFunctionPaletteNodes(nodeRegistry, options),
     ...callInterfacePaletteNodes(nodeRegistry, options),
     ...variableAccessPaletteNodes(nodeRegistry, options),
+    ...widgetVariablePaletteNodes(nodeRegistry, options),
     ...castPaletteNodes(nodeRegistry, options),
     ...structPaletteNodes(nodeRegistry, options),
     ...enumPaletteNodes(nodeRegistry, options),

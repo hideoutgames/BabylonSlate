@@ -1026,6 +1026,60 @@ describe("scriptPaletteNodes", () => {
     });
   });
 
+  it("injects Get Variable rows for widgets and hides Set plus colliding Class variables", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      assetType: "UserInterface",
+      classId: "UserInterface:hud",
+      widgets: [
+        { id: "play-btn", name: "Play Button", kind: "Button" },
+        { id: "logo", name: "Logo", kind: "Image" },
+      ],
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Play Button",
+            typeId: "float",
+          },
+          { id: "var-2", kind: "variable", name: "Score", typeId: "int" },
+        ],
+      },
+    });
+    const play = nodes.find(
+      (node) => node.id === "variables.get:widget:play-btn",
+    );
+    expect(play?.title).toBe("Get Play Button");
+    expect(play?.nodeType).toBe("variables.get");
+    expect(play?.category).toBe("variables");
+    expect(play?.defaultData).toMatchObject({
+      variableName: "Play Button",
+      typeId: "object",
+      typeClassId: "ButtonWidget",
+      implicitSelf: true,
+      scope: "member",
+    });
+    expect(play?.pins?.find((pin) => pin.id === "value")?.type).toEqual({
+      kind: "objectRef",
+      classId: "ButtonWidget",
+    });
+    expect(
+      nodes.some((node) => node.id === "variables.set:widget:play-btn"),
+    ).toBe(false);
+    expect(
+      nodes.some((node) => node.id === "variables.set:UserInterface:hud:Play Button"),
+    ).toBe(false);
+    expect(
+      nodes.some((node) => node.id === "variables.get:UserInterface:hud:Play Button"),
+    ).toBe(false);
+    expect(
+      nodes.some((node) => node.id === "variables.get:UserInterface:hud:Score"),
+    ).toBe(true);
+    expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(true);
+  });
+
   it("stamps editorOnly on palette rows for editor-only catalog defs", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "EditorUtilityObject",
@@ -2165,6 +2219,9 @@ describe("ScriptPaletteCache", () => {
       false,
     );
     expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "variables.get:widget:play-btn")).toBe(
       false,
     );
   });

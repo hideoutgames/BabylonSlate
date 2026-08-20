@@ -79,6 +79,53 @@ export function boundGetWidgetEntries(
   });
 }
 
+export type BoundWidgetVariableEntry = {
+  id: string;
+  nodeType: "variables.get";
+  title: string;
+  widgetId: string;
+  widgetName: string;
+  widgetKind: string;
+  classId: string;
+  pinType: PinType;
+  defaultData: {
+    variableName: string;
+    typeId: "object";
+    typeClassId: string;
+    implicitSelf: true;
+    scope: "member";
+    title: string;
+  };
+};
+
+/** Get Variable rows for hierarchy widgets. Bindings are not assignable — no Set. */
+export function boundWidgetVariableEntries(
+  widgets: readonly BoundWidgetRef[],
+): BoundWidgetVariableEntry[] {
+  return widgets.map((widget) => {
+    const classId = widgetClassIdForKind(widget.kind);
+    const title = `Get ${widget.name}`;
+    return {
+      id: `variables.get:widget:${widget.id}`,
+      nodeType: "variables.get",
+      title,
+      widgetId: widget.id,
+      widgetName: widget.name,
+      widgetKind: widget.kind,
+      classId,
+      pinType: objectRef(classId),
+      defaultData: {
+        variableName: widget.name,
+        typeId: "object",
+        typeClassId: classId,
+        implicitSelf: true,
+        scope: "member",
+        title,
+      },
+    };
+  });
+}
+
 export const uiNodes: NodeDefinition[] = [
   {
     id: "ui.applyToViewport",
