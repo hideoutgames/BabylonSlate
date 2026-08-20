@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   userInterfaceClassId,
+  type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
 import {
@@ -259,6 +260,267 @@ describe("script compiler service", () => {
     expect(
       script?.source.slice(beginIndex, jumpIndex).includes("let __lv_Temp"),
     ).toBe(false);
+  });
+
+  const waitPins: GraphClassMemberPin[] = [
+    { name: "exec", typeId: "exec", direction: "in" },
+    { name: "then", typeId: "exec", direction: "out" },
+    { name: "result", typeId: "float", direction: "out" },
+  ];
+
+  function delayFunctionSlice(): NonNullable<SerializedGraph["functionGraphs"]>[string] {
+    return {
+      nodes: [
+        {
+          id: "in",
+          type: "flow.function.input",
+          position: { x: 0, y: 0 },
+          data: { __protected: true, pins: waitPins },
+        },
+        {
+          id: "delay",
+          type: "timers.delay",
+          position: { x: 160, y: 0 },
+          data: { duration: 0.25 },
+        },
+        {
+          id: "out",
+          type: "flow.function.output",
+          position: { x: 320, y: 0 },
+          data: { __protected: true, pins: waitPins, "default:result": 7 },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "in",
+          target: "delay",
+          sourceHandle: "exec",
+          targetHandle: "execIn",
+        },
+        {
+          id: "e2",
+          source: "delay",
+          target: "out",
+          sourceHandle: "execOut",
+          targetHandle: "then",
+        },
+      ],
+    };
+  }
+
+  function heroCallsWaitGraph(options?: {
+    nestedCaller?: boolean;
+  }): SerializedGraph {
+    const members: SerializedGraph["members"] = [
+      { id: "fn-wait", kind: "function", name: "Wait", pins: waitPins },
+    ];
+    const functionGraphs: NonNullable<SerializedGraph["functionGraphs"]> = {
+      "fn-wait": delayFunctionSlice(),
+    };
+    if (options?.nestedCaller) {
+      members.push({
+        id: "fn-wrap",
+        kind: "function",
+        name: "WaitThenJump",
+        pins: waitPins,
+      });
+      functionGraphs["fn-wrap"] = {
+        nodes: [
+          {
+            id: "in",
+            type: "flow.function.input",
+            position: { x: 0, y: 0 },
+            data: { __protected: true, pins: waitPins },
+          },
+          {
+            id: "call",
+            type: "functions.call",
+            position: { x: 160, y: 0 },
+            data: {
+              functionName: "Wait",
+              classId: "Hero",
+              implicitSelf: true,
+              pins: waitPins,
+            },
+          },
+          {
+            id: "out",
+            type: "flow.function.output",
+            position: { x: 320, y: 0 },
+            data: { __protected: true, pins: waitPins },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "in",
+            target: "call",
+            sourceHandle: "exec",
+            targetHandle: "exec",
+          },
+          {
+            id: "e2",
+            source: "call",
+            target: "out",
+            sourceHandle: "then",
+            targetHandle: "then",
+          },
+          {
+            id: "e3",
+            source: "call",
+            target: "out",
+            sourceHandle: "result",
+            targetHandle: "result",
+          },
+        ],
+      };
+    }
+    const callName = options?.nestedCaller ? "WaitThenJump" : "Wait";
+    return {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: "call",
+          type: "functions.call",
+          position: { x: 200, y: 0 },
+          data: {
+            functionName: callName,
+            classId: "Hero",
+            implicitSelf: true,
+            pins: waitPins,
+          },
+        },
+        {
+          id: "log",
+          type: "debug.log",
+          position: { x: 400, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "begin",
+          target: "call",
+          sourceHandle: "execOut",
+          targetHandle: "exec",
+        },
+        {
+          id: "e2",
+          source: "call",
+          target: "log",
+          sourceHandle: "then",
+          targetHandle: "execIn",
+        },
+        {
+          id: "e3",
+          source: "call",
+          target: "log",
+          sourceHandle: "result",
+          targetHandle: "message",
+        },
+      ],
+      members,
+      functionGraphs,
+    };
+  }
+
+  it("awaits Call Function when the local Function contains Delay", () => {
+    const script = compileGraphDocument(heroCallsWaitGraph(), {
+      path: "assets/Hero.class.babasset",
+      classId: "Hero",
+    });
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toContain("export async function onBeginPlay");
+    expect(script?.source).toContain("export async function Wait");
+    expect(
+      script?.entryPoints.find((entry) => entry.event === "onBeginPlay")?.isAsync,
+    ).toBe(true);
+  });
+
+  it("awaits a nested Call when the callee Function contains Delay", () => {
+    const script = compileGraphDocument(heroCallsWaitGraph({ nestedCaller: true }), {
+      path: "assets/Hero.class.babasset",
+      classId: "Hero",
+    });
+    expect(script?.source).toMatch(
+      /await\s+ctx\.invokeFunction\(ctx\.self,\s*"WaitThenJump"/,
+    );
+    expect(script?.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(script?.source).toContain("export async function WaitThenJump");
+  });
+
+  it("does not await Call Function when the Function is synchronous", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+          {
+            id: "call",
+            type: "functions.call",
+            position: { x: 200, y: 0 },
+            data: {
+              functionName: "Jump",
+              classId: "Hero",
+              implicitSelf: true,
+              pins: waitPins,
+            },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "begin",
+            target: "call",
+            sourceHandle: "execOut",
+            targetHandle: "exec",
+          },
+        ],
+        members: [{ id: "fn-1", kind: "function", name: "Jump", pins: waitPins }],
+        functionGraphs: {
+          "fn-1": {
+            nodes: [
+              {
+                id: "in",
+                type: "flow.function.input",
+                position: { x: 0, y: 0 },
+                data: { __protected: true, pins: waitPins },
+              },
+              {
+                id: "out",
+                type: "flow.function.output",
+                position: { x: 200, y: 0 },
+                data: { __protected: true, pins: waitPins },
+              },
+            ],
+            edges: [
+              {
+                id: "e1",
+                source: "in",
+                target: "out",
+                sourceHandle: "exec",
+                targetHandle: "then",
+              },
+            ],
+          },
+        },
+      },
+      { path: "assets/Hero.class.babasset", classId: "Hero" },
+    );
+    expect(script?.source).not.toMatch(/await\s+ctx\.invokeFunction/);
+    expect(script?.source).toContain("export function onBeginPlay");
+    expect(script?.source).toContain("export function Jump");
   });
 
   it("returns null for an empty graph", () => {
@@ -699,6 +961,288 @@ describe("GraphScriptCompileCache", () => {
       { cache, stripDevelopmentOnly: true },
     );
     expect(cache.compiles).toBe(2);
+  });
+
+  it("awaits a Call Function whose target on another class contains Delay", () => {
+    const guard: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [
+        {
+          id: "fn-wait",
+          kind: "function",
+          name: "Wait",
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+          ],
+        },
+      ],
+      functionGraphs: {
+        "fn-wait": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: {
+                __protected: true,
+                pins: [
+                  { name: "exec", typeId: "exec", direction: "in" },
+                  { name: "then", typeId: "exec", direction: "out" },
+                ],
+              },
+            },
+            {
+              id: "delay",
+              type: "timers.delay",
+              position: { x: 160, y: 0 },
+              data: { duration: 0.25 },
+            },
+            {
+              id: "out",
+              type: "flow.function.output",
+              position: { x: 320, y: 0 },
+              data: {
+                __protected: true,
+                pins: [
+                  { name: "exec", typeId: "exec", direction: "in" },
+                  { name: "then", typeId: "exec", direction: "out" },
+                ],
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "e1",
+              source: "in",
+              target: "delay",
+              sourceHandle: "exec",
+              targetHandle: "execIn",
+            },
+            {
+              id: "e2",
+              source: "delay",
+              target: "out",
+              sourceHandle: "execOut",
+              targetHandle: "then",
+            },
+          ],
+        },
+      },
+    };
+    const caller: SerializedGraph = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: "call",
+          type: "functions.call",
+          position: { x: 200, y: 0 },
+          data: {
+            functionName: "Wait",
+            classId: "Guard",
+            implicitSelf: false,
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              { name: "then", typeId: "exec", direction: "out" },
+            ],
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "begin",
+          target: "call",
+          sourceHandle: "execOut",
+          targetHandle: "exec",
+        },
+      ],
+    };
+    const scripts = compileGraphDocuments([
+      {
+        path: "assets/Guard.class.babasset",
+        content: guard,
+        classId: "Guard",
+      },
+      {
+        path: "assets/Caller.class.babasset",
+        content: caller,
+        classId: "Caller",
+      },
+    ]);
+    const callerScript = scripts.find((script) => script.classId === "Caller");
+    expect(callerScript?.source).toMatch(
+      /await\s+ctx\.invokeFunction\([^,]+,\s*"Wait"/,
+    );
+    expect(callerScript?.source).toContain("export async function onBeginPlay");
+  });
+
+  it("recompiles a caller when Delay is added to another class Function", () => {
+    const cache = new GraphScriptCompileCache();
+    const syncGuard: SerializedGraph = {
+      nodes: [],
+      edges: [],
+      members: [
+        {
+          id: "fn-wait",
+          kind: "function",
+          name: "Wait",
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+          ],
+        },
+      ],
+      functionGraphs: {
+        "fn-wait": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: {
+                __protected: true,
+                pins: [
+                  { name: "exec", typeId: "exec", direction: "in" },
+                  { name: "then", typeId: "exec", direction: "out" },
+                ],
+              },
+            },
+            {
+              id: "out",
+              type: "flow.function.output",
+              position: { x: 200, y: 0 },
+              data: {
+                __protected: true,
+                pins: [
+                  { name: "exec", typeId: "exec", direction: "in" },
+                  { name: "then", typeId: "exec", direction: "out" },
+                ],
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "e1",
+              source: "in",
+              target: "out",
+              sourceHandle: "exec",
+              targetHandle: "then",
+            },
+          ],
+        },
+      },
+    };
+    const delayedGuard: SerializedGraph = {
+      ...syncGuard,
+      functionGraphs: {
+        "fn-wait": {
+          nodes: [
+            ...syncGuard.functionGraphs!["fn-wait"]!.nodes.slice(0, 1),
+            {
+              id: "delay",
+              type: "timers.delay",
+              position: { x: 160, y: 0 },
+              data: { duration: 0.25 },
+            },
+            ...syncGuard.functionGraphs!["fn-wait"]!.nodes.slice(1),
+          ],
+          edges: [
+            {
+              id: "e1",
+              source: "in",
+              target: "delay",
+              sourceHandle: "exec",
+              targetHandle: "execIn",
+            },
+            {
+              id: "e2",
+              source: "delay",
+              target: "out",
+              sourceHandle: "execOut",
+              targetHandle: "then",
+            },
+          ],
+        },
+      },
+    };
+    const caller: SerializedGraph = {
+      nodes: [
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+        {
+          id: "call",
+          type: "functions.call",
+          position: { x: 200, y: 0 },
+          data: {
+            functionName: "Wait",
+            classId: "Guard",
+            implicitSelf: false,
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              { name: "then", typeId: "exec", direction: "out" },
+            ],
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "begin",
+          target: "call",
+          sourceHandle: "execOut",
+          targetHandle: "exec",
+        },
+      ],
+    };
+    const first = compileGraphDocuments(
+      [
+        {
+          path: "assets/Guard.class.babasset",
+          content: syncGuard,
+          classId: "Guard",
+        },
+        {
+          path: "assets/Caller.class.babasset",
+          content: caller,
+          classId: "Caller",
+        },
+      ],
+      { cache },
+    );
+    expect(
+      first.find((script) => script.classId === "Caller")?.source,
+    ).not.toMatch(/await\s+ctx\.invokeFunction/);
+    expect(cache.compiles).toBe(2);
+    const second = compileGraphDocuments(
+      [
+        {
+          path: "assets/Guard.class.babasset",
+          content: delayedGuard,
+          classId: "Guard",
+        },
+        {
+          path: "assets/Caller.class.babasset",
+          content: caller,
+          classId: "Caller",
+        },
+      ],
+      { cache },
+    );
+    expect(
+      second.find((script) => script.classId === "Caller")?.source,
+    ).toMatch(/await\s+ctx\.invokeFunction/);
+    expect(cache.compiles).toBeGreaterThan(2);
   });
 
   it("fingerprints type schemas instead of embedding them in every cache key", () => {

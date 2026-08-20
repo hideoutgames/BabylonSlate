@@ -1305,6 +1305,74 @@ describe("scriptPaletteNodes", () => {
     expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
   });
 
+  it("marks Call Function palette rows latent when the Function contains Delay", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [{ id: "fn-1", kind: "function", name: "Wait" }],
+        functionGraphs: {
+          "fn-1": {
+            nodes: [
+              {
+                id: "delay",
+                type: "timers.delay",
+                position: { x: 0, y: 0 },
+                data: { duration: 0.25 },
+              },
+            ],
+            edges: [],
+          },
+        },
+      },
+    });
+    const wait = nodes.find((node) => node.id === "functions.call:Hero:Wait");
+    expect(wait?.latent).toBe(true);
+  });
+
+  it("recomputes Call Function __latent from live Function bodies, ignoring a stored false", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "call",
+          type: "functions.call",
+          position: { x: 0, y: 0 },
+          data: {
+            functionName: "Wait",
+            classId: "Hero",
+            implicitSelf: true,
+            __latent: false,
+            __pins: [
+              { id: "exec", name: "exec", direction: "in", kind: "exec", type: { kind: "exec" } },
+              { id: "then", name: "then", direction: "out", kind: "exec", type: { kind: "exec" } },
+            ],
+          },
+        },
+      ],
+      edges: [],
+      members: [{ id: "fn-1", kind: "function", name: "Wait" }],
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "delay",
+              type: "timers.delay",
+              position: { x: 0, y: 0 },
+              data: { duration: 0.25 },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      classId: "Hero",
+    });
+    expect(hydrated.nodes[0]?.data.__latent).toBe(true);
+  });
+
   it("marks inherited parent-class functions as implicit-self Calls", () => {
     const nodes = scriptPaletteNodes(registry, {
       parentClass: "Actor",

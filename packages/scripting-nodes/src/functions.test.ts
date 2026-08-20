@@ -261,4 +261,80 @@ describe("functions.call", () => {
     );
     expect(compiled.source).not.toContain("ctx.self");
   });
+
+  it("awaits invokeFunction when the target Function is latent", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Wait",
+          classId: "Hero",
+          implicitSelf: true,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+          ],
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "call",
+          targetPinId: "exec",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      isLatentFunction: (classId, functionName) =>
+        classId === "Hero" && functionName === "Wait",
+    });
+    expect(compiled.source).toMatch(/await\s+ctx\.invokeFunction\(ctx\.self,\s*"Wait"/);
+    expect(compiled.entryPoints[0]?.isAsync).toBe(true);
+    expect(compiled.source).toContain("export async function onBeginPlay");
+  });
+
+  it("does not await invokeFunction for a sync Function", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Jump",
+          classId: "Hero",
+          implicitSelf: true,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+            { name: "result", typeId: "float", direction: "out" },
+          ],
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "call",
+          targetPinId: "exec",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, {
+      assetGuid: "a",
+      registry,
+      isLatentFunction: () => false,
+    });
+    expect(compiled.source).not.toMatch(/await\s+ctx\.invokeFunction/);
+    expect(compiled.entryPoints[0]?.isAsync).toBe(false);
+    expect(compiled.source).toContain("export function onBeginPlay");
+  });
 });

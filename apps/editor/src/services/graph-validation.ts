@@ -29,6 +29,9 @@ import {
   isDevelopmentOnlyByDefaultTypeId,
   normalizeIntSwitchCases,
   normalizeStringSwitchCases,
+  collectLatentFunctions,
+  isLatentFunctionKey,
+  latentSourcesFromSerializedGraph,
 } from "@babylonslate/scripting";
 import {
   ENGINE_BASE_CLASS_IDS,
@@ -420,6 +423,9 @@ export type HydrateGraphOptions = {
   parentOf?: (id: string) => string | null | undefined;
   structs?: TypeSchemas["structs"];
   enums?: TypeSchemas["enums"];
+  classId?: string;
+  otherClassGraphs?: Record<string, SerializedGraph>;
+  functionGraphs?: SerializedGraph["functionGraphs"];
 };
 
 /**
@@ -432,6 +438,25 @@ export function hydrateSerializedGraphForEditor(
   options?: HydrateGraphOptions,
 ): SerializedGraph {
   const parentOf = parentLookup(options?.parentOf);
+  const latentFunctions = editorLatentFunctions(nodeRegistry, {
+    classId: options?.classId,
+    graph: {
+      members: graph.members,
+      functionGraphs: options?.functionGraphs ?? graph.functionGraphs,
+    },
+    otherClassGraphs: options?.otherClassGraphs,
+    parentOf,
+  });
+  const callIsLatent = (data: Record<string, unknown>, typeId: string) => {
+    if (typeId !== "functions.call") return false;
+    const classId =
+      typeof data.classId === "string" && data.classId.trim()
+        ? data.classId.trim()
+        : (options?.classId ?? "BObject");
+    const functionName =
+      typeof data.functionName === "string" ? data.functionName : "fn";
+    return isLatentFunctionKey(classId, functionName, latentFunctions, parentOf);
+  };
   const nodes = graph.nodes.map((node) => {
       const rawData = { ...(node.data as Record<string, unknown>) };
       const typeIdHint = catalogTypeId({ type: node.type, data: rawData });
@@ -442,6 +467,7 @@ export function hydrateSerializedGraphForEditor(
             rawData,
             nodeRegistry.get(typeIdHint),
             typeIdHint,
+            callIsLatent(rawData, typeIdHint),
           ),
         };
       }
@@ -496,6 +522,7 @@ export function hydrateSerializedGraphForEditor(
             },
             def,
             typeId,
+            callIsLatent(properties, typeId),
           ),
         };
       }
@@ -569,6 +596,7 @@ export function hydrateSerializedGraphForEditor(
           },
           def,
           typeId,
+          callIsLatent(properties, typeId),
         ),
       };
     });
@@ -582,13 +610,39 @@ export function hydrateSerializedGraphForEditor(
   };
 }
 
+function editorLatentFunctions(
+  nodeRegistry: NodeRegistry,
+  options?: {
+    classId?: string;
+    graph?: Pick<SerializedGraph, "members" | "functionGraphs">;
+    otherClassGraphs?: Record<string, SerializedGraph>;
+    parentOf?: (id: string) => string | null | undefined;
+  },
+): Set<string> {
+  const sources = [
+    ...latentSourcesFromSerializedGraph(
+      options?.classId ?? "BObject",
+      options?.graph ?? {},
+    ),
+    ...Object.entries(options?.otherClassGraphs ?? {}).flatMap(
+      ([classId, graph]) => latentSourcesFromSerializedGraph(classId, graph),
+    ),
+  ];
+  const parentOf =
+    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  return collectLatentFunctions(sources, nodeRegistry, parentOf);
+}
+
 function withVisualMeta(
   data: Record<string, unknown>,
   def:
     | { category: string; pure?: boolean; latent?: boolean; editorOnly?: boolean }
     | undefined,
   typeId: string,
+  callLatent = false,
 ): Record<string, unknown> {
+  const latent =
+    def?.latent === true || (typeId === "functions.call" && callLatent);
   const next: Record<string, unknown> = {
     ...data,
     __nodeType:
@@ -596,7 +650,10 @@ function withVisualMeta(
     __category:
       typeof data.__category === "string" ? data.__category : def?.category,
     __pure: data.__pure ?? def?.pure ?? false,
-    __latent: data.__latent ?? def?.latent ?? false,
+    __latent:
+      typeId === "functions.call"
+        ? latent
+        : (data.__latent ?? def?.latent ?? false),
   };
   if (def?.editorOnly === true) {
     next.__editorOnly = true;
@@ -921,6 +978,13 @@ function callFunctionPaletteNodes(
   const def = nodeRegistry.get("functions.call");
   if (!def) return [];
   const localClassId = options?.classId ?? "BObject";
+  const parentOf = paletteParentOf(options);
+  const latentFunctions = editorLatentFunctions(nodeRegistry, {
+    classId: localClassId,
+    graph: options?.graph,
+    otherClassGraphs: options?.otherClassGraphs,
+    parentOf,
+  });
   const localFunctions = functionRows(options?.graph);
   const localNames = new Set(localFunctions.map((entry) => entry.name));
   const rows: Array<{
@@ -992,7 +1056,9 @@ function callFunctionPaletteNodes(
       category: def.category,
       pins: def.pins(defaultData),
       pure: def.pure,
-      latent: def.latent,
+      latent:
+        def.latent === true ||
+        isLatentFunctionKey(classId, fn.name, latentFunctions, parentOf),
       defaultData,
     };
   });
@@ -1436,6 +1502,20 @@ function graphPaletteMemberFingerprint(graph?: SerializedGraph): unknown {
     members: graph?.members ?? [],
     events: customEventRows(graph),
     functions: functionRows(graph),
+    functionGraphs: Object.fromEntries(
+      Object.entries(graph?.functionGraphs ?? {}).map(([id, slice]) => [
+        id,
+        slice.nodes.map((node) => ({
+          type:
+            typeof node.data.__nodeType === "string"
+              ? node.data.__nodeType
+              : node.type,
+          async: node.data.async === true,
+          functionName: node.data.functionName,
+          classId: node.data.classId,
+        })),
+      ]),
+    ),
   };
 }
 

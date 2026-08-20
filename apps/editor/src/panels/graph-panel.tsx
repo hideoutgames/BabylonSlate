@@ -207,12 +207,21 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           assetType: indexed?.header.type,
         }),
       registry,
-      { parentOf, structs: typeSchemas.structs, enums: typeSchemas.enums },
+      {
+        parentOf,
+        structs: typeSchemas.structs,
+        enums: typeSchemas.enums,
+        classId,
+        otherClassGraphs,
+        functionGraphs: graphContent?.functionGraphs,
+      },
     );
   }, [
     activeFunctionId,
+    classId,
     graphContent,
     indexed?.header.type,
+    otherClassGraphs,
     parentClass,
     parentOf,
     typeSchemas,

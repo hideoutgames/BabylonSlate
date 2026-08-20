@@ -105,6 +105,11 @@ export type CompileOptions = {
   instrumentInfiniteLoops?: boolean;
   /** Function-local `let` lines inserted at the start of each export. */
   localPreamble?: string[];
+  /**
+   * Call Function awaits `invokeFunction` when this returns true for the
+   * target class + export name.
+   */
+  isLatentFunction?: (classId: string, functionName: string) => boolean;
 };
 
 function jsIdent(name: string): string {
@@ -358,6 +363,7 @@ export function compileGraph(
       requestAsync() {
         isAsync = true;
       },
+      isLatentFunction: options.isLatentFunction,
     };
   }
 
@@ -1071,6 +1077,7 @@ export function compileTransitionRuleGraph(
       requestAsync() {
         /* unused */
       },
+      isLatentFunction: options.isLatentFunction,
     };
   }
 

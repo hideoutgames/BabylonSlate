@@ -31,6 +31,11 @@ export type CodegenContext = {
    * definitions are marked automatically.
    */
   requestAsync(): void;
+  /**
+   * True when Call Function should `await` the target (Delay or other latent
+   * work inside that Function).
+   */
+  isLatentFunction?(classId: string, functionName: string): boolean;
   indent: string;
 };
 
