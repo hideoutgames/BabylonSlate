@@ -655,14 +655,14 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A 
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| One `ResourceCache` per Engine lifetime | `p20-shared-resource-cache` | `render`, Play/Prefab/Material/UI hosts | P18 Done (`p18-shared-prefab-engine` for Prefab) |
+| One `ResourceCache` per Engine lifetime | Done (`p20-shared-resource-cache`) | `render`, Play/Prefab/Material/UI hosts | P18 Done (`p18-shared-prefab-engine` for Prefab) |
 | Editor idle freezes + scene-load shader warm | `p20-editor-scene-freeze` | `render`, editor viewport | P18 Done (moved from P4 follow-up) |
 | Play compile hash cache + lazy Audio source bytes | `p20-play-compile-audio` | `apps/editor` (Play prepare), `apps/player`, audio service | P18 Done; P16 Audio |
 | Defer/memoize `scriptPaletteNodes` injectors | `p20-palette-generate` | `apps/editor` (`graph-panel`, `graph-validation`) | P18 Done; distinct from `p18-add-node-virtualize` |
 | Windowed Output Log + Compiler Results | `p20-log-virtualize` | `apps/editor` panels; optional `editor-kit` `SearchDialog` | P18 Done (TreeView arithmetic) |
 | Global Search rebuild on dialog initiate | `p20-search-on-demand` | `packages/assets` (`ProjectSearchIndex`), `apps/editor` | P18 Done; `p6-global-search` |
 
-Out of scope: expanding P18; pin flash; BT collapse-inactive-subtree; Place Actors / Add Component / Add Widget / Settings catalogs; dirty-skip of a **visible** editor viewport; sprite thin-instance / alpha-test fill-rate; `p1-device-spikes`; SAB live path; on-disk search cache. Do not implement `p20-*` until this phase is assigned.
+Out of scope: expanding P18; pin flash; BT collapse-inactive-subtree; Place Actors / Add Component / Add Widget / Settings catalogs; dirty-skip of a **visible** editor viewport; sprite thin-instance / alpha-test fill-rate; `p1-device-spikes`; SAB live path; on-disk search cache. Remaining `p20-*` items stay one slice per PR.
 
 
 

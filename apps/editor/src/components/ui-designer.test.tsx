@@ -121,6 +121,7 @@ vi.mock("../context/document-context", () => {
       openDocuments: docs.openDocuments,
       collectPlayUiLibrary,
       collectPlayMaterialLibrary,
+      collectPlayTextureBytes: async () => new Map(),
       projectName: "Demo",
       readAssetChunk,
       projectDocument: {

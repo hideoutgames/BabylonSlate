@@ -66,6 +66,8 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import {
   audioDebugOverlayText,
   audioStats,
+  getMaterialTexture,
+  resourceCacheForEngine,
 } from "@babylonslate/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
@@ -709,6 +711,16 @@ export function PlayOverlay({
         resolveInterfaceMaterial={(guid) =>
           lookupInterfaceMaterialDocument(guid, materialDocuments)
         }
+        resolveTexture={(guid) => {
+          const bytes = textureBytes?.get(guid);
+          if (!bytes) return null;
+          return getMaterialTexture(
+            resourceCacheForEngine(sharedEngine),
+            guid,
+            sharedEngine,
+            bytes,
+          );
+        }}
         materialFunctions={() =>
           Object.fromEntries(materialFunctions ?? [])
         }

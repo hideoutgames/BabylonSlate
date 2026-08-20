@@ -12,12 +12,12 @@ import {
 import type { Engine } from "@babylonjs/core";
 import {
   MaterialLibrary,
-  ResourceCache,
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
   getMaterialTexture,
   materialUnavailable,
+  resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
 } from "@babylonslate/render";
@@ -110,7 +110,6 @@ export function MaterialEditingProvider({
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const libraryRef = useRef<MaterialLibrary | null>(null);
-  const resourceCacheRef = useRef<ResourceCache | null>(null);
   const functionsRef = useRef<Record<string, MaterialFunctionDocument>>({});
   const textureBytesRef = useRef(new Map<string, Uint8Array>());
   const engineRef = useRef<Engine | null>(null);
@@ -168,15 +167,18 @@ export function MaterialEditingProvider({
 
   useEffect(() => {
     if (libraryRef.current) return;
-    resourceCacheRef.current = new ResourceCache();
     libraryRef.current = new MaterialLibrary({
       functions: () => functionsRef.current,
       resolveTexture: (guid) => {
         const bytes = textureBytesRef.current.get(guid);
         const engine = engineRef.current;
-        const cache = resourceCacheRef.current;
-        if (!bytes || !engine || !cache) return null;
-        return getMaterialTexture(cache, guid, engine, bytes);
+        if (!bytes || !engine) return null;
+        return getMaterialTexture(
+          resourceCacheForEngine(engine),
+          guid,
+          engine,
+          bytes,
+        );
       },
     });
   }, []);
@@ -331,7 +333,6 @@ export function MaterialEditingProvider({
     if (!restored?.add) return;
     const observer = restored.add(() => {
       libraryRef.current?.invalidate();
-      resourceCacheRef.current?.releaseGpuTextures();
       if (!compileKey) return;
       dispatch({ type: "edit", cost: costClassRef.current });
       presenterRef.current?.present({ force: true });
@@ -417,8 +418,6 @@ export function MaterialEditingProvider({
       }
       libraryRef.current?.dispose();
       libraryRef.current = null;
-      resourceCacheRef.current?.dispose();
-      resourceCacheRef.current = null;
     };
   }, []);
 

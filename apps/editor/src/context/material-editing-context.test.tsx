@@ -92,6 +92,7 @@ const harness = vi.hoisted(() => ({
   acquireCalls: 0,
   invalidateCalls: 0,
   releaseGpuCalls: 0,
+  cacheDisposeCalls: 0,
   content: null as ReturnType<typeof createDefaultMaterialDocument> | null,
   readAssetChunk: vi.fn(
     async (_path: string, chunkId: string) =>
@@ -139,21 +140,29 @@ vi.mock("./document-context", () => ({
 
 vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
+  const cache = {
+    getTexture(guid: string, _engine: unknown, bytes: Uint8Array) {
+      harness.cachedTextures.push({ guid, bytes });
+      return {
+        name: guid,
+        isDisposed: () => false,
+      };
+    },
+    releaseGpuTextures() {
+      harness.releaseGpuCalls += 1;
+    },
+    dispose() {
+      harness.cacheDisposeCalls += 1;
+    },
+  };
   return {
     ...actual,
     ResourceCache: class {
-      getTexture(guid: string, _engine: unknown, bytes: Uint8Array) {
-        harness.cachedTextures.push({ guid, bytes });
-        return {
-          name: guid,
-          isDisposed: () => false,
-        };
-      }
-      releaseGpuTextures() {
-        harness.releaseGpuCalls += 1;
-      }
-      dispose() {}
+      getTexture = cache.getTexture;
+      releaseGpuTextures = cache.releaseGpuTextures;
+      dispose = cache.dispose;
     },
+    resourceCacheForEngine: () => cache,
     MaterialLibrary: class {
       constructor(options: {
         resolveTexture?: (guid: string) => unknown;
@@ -242,6 +251,7 @@ describe("MaterialEditingProvider preview isolation", () => {
     harness.acquireCalls = 0;
     harness.invalidateCalls = 0;
     harness.releaseGpuCalls = 0;
+    harness.cacheDisposeCalls = 0;
     harness.contextRestored = null;
     harness.cachedTextures = [];
     harness.content = createDefaultMaterialDocument("Rock");
@@ -475,11 +485,20 @@ describe("MaterialEditingProvider preview isolation", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(harness.invalidateCalls).toBeGreaterThan(0);
-      expect(harness.releaseGpuCalls).toBeGreaterThan(0);
+      expect(harness.releaseGpuCalls).toBe(0);
       expect(harness.acquireCalls).toBeGreaterThan(acquiresBefore);
       expect(harness.presenter.present).toHaveBeenCalledWith({ force: true });
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not dispose the shared ResourceCache when the Material tab unmounts", async () => {
+    const view = mount();
+    await waitFor(() => {
+      expect(harness.createScene).toHaveBeenCalled();
+    });
+    view.unmount();
+    expect(harness.cacheDisposeCalls).toBe(0);
   });
 });

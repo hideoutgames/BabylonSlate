@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { NullEngine, Texture } from "@babylonjs/core";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import {
+  getMaterialTexture,
+  ResourceCache,
+  resourceCacheForEngine,
+  releaseResourceCacheForEngine,
+} from "./resource-cache";
 import { accountedTextureBytes } from "./texture-bytes";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
@@ -216,6 +221,32 @@ describe("explicit tap picking", () => {
     });
 
     scene.dispose();
+    engine.dispose();
+  });
+});
+
+describe("resourceCacheForEngine", () => {
+  it("returns the same ResourceCache for one Engine and a distinct cache per Engine", () => {
+    const engineA = new NullEngine();
+    const engineB = new NullEngine();
+    const first = resourceCacheForEngine(engineA);
+    const second = resourceCacheForEngine(engineA);
+    const other = resourceCacheForEngine(engineB);
+    expect(first).toBe(second);
+    expect(other).not.toBe(first);
+    releaseResourceCacheForEngine(engineA);
+    releaseResourceCacheForEngine(engineB);
+    engineA.dispose();
+    engineB.dispose();
+  });
+
+  it("returns a new ResourceCache after releaseResourceCacheForEngine", () => {
+    const engine = new NullEngine();
+    const first = resourceCacheForEngine(engine);
+    releaseResourceCacheForEngine(engine);
+    const second = resourceCacheForEngine(engine);
+    expect(second).not.toBe(first);
+    releaseResourceCacheForEngine(engine);
     engine.dispose();
   });
 });

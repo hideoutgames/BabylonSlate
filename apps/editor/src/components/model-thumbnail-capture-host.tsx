@@ -5,10 +5,10 @@ import {
 } from "@babylonslate/assets";
 import {
   MaterialLibrary,
-  ResourceCache,
   captureModelThumbnailPng,
   getMaterialTexture,
   materialUnavailable,
+  resourceCacheForEngine,
 } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
@@ -57,7 +57,7 @@ export function ModelThumbnailCaptureHost() {
           new Map(),
           materials.textureGuids,
         );
-        const cache = new ResourceCache();
+        const cache = resourceCacheForEngine(engine);
         const library = new MaterialLibrary({
           functions: () => Object.fromEntries(materials.functions),
           resolveTexture: (guid) => {
@@ -80,7 +80,7 @@ export function ModelThumbnailCaptureHost() {
           );
           if (png) await writeAssetThumbnail(job.guid, png);
         } finally {
-          cache.dispose();
+          library.dispose();
         }
       }
     }

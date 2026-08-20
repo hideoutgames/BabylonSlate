@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Scene } from "@babylonjs/core/scene";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   applyAdtIdeal,
   applyFontRegistryToHost,
@@ -32,6 +33,7 @@ export { parsePlayHudControlId };
 
 const defaultResolveImageUrl = (): string | null => null;
 const defaultResolveInterfaceMaterial = (): MaterialDocument | null => null;
+const defaultResolveTexture = (): Texture | null => null;
 
 export interface PlayHudOverlayProps {
   instances?: ReadonlyArray<{
@@ -56,6 +58,7 @@ export interface PlayHudOverlayProps {
   fontEntries?: readonly FontAssetEntry[];
   resolveImageUrl?: (guid: string) => string | null;
   resolveInterfaceMaterial?: (guid: string) => MaterialDocument | null;
+  resolveTexture?: (guid: string) => Texture | null;
   materialFunctions?: () => Record<string, MaterialFunctionDocument>;
   /** Project Settings User Interface design space (Play ADT ideal). */
   uiSettings?: {
@@ -120,6 +123,7 @@ export function PlayHudOverlay({
   fontEntries = [],
   resolveImageUrl = defaultResolveImageUrl,
   resolveInterfaceMaterial = defaultResolveInterfaceMaterial,
+  resolveTexture = defaultResolveTexture,
   materialFunctions,
   uiSettings,
 }: PlayHudOverlayProps) {
@@ -138,6 +142,12 @@ export function PlayHudOverlay({
   resolveInterfaceMaterialRef.current = resolveInterfaceMaterial;
   const boundResolveInterfaceMaterial = useCallback(
     (guid: string) => resolveInterfaceMaterialRef.current(guid),
+    [],
+  );
+  const resolveTextureRef = useRef(resolveTexture);
+  resolveTextureRef.current = resolveTexture;
+  const boundResolveTexture = useCallback(
+    (guid: string) => resolveTextureRef.current(guid),
     [],
   );
   const materialFunctionsRef = useRef(materialFunctions);
@@ -216,6 +226,7 @@ export function PlayHudOverlay({
         safeArea: safeAreaRef.current,
         resolveImageUrl: boundResolveImageUrl,
         resolveInterfaceMaterial: boundResolveInterfaceMaterial,
+        resolveTexture: boundResolveTexture,
         materialFunctions: boundMaterialFunctions,
         onTouchAxis: (controlId, value) => onTouchAxisRef.current(controlId, value),
         onWidgetEvent: (event) => {
@@ -240,7 +251,7 @@ export function PlayHudOverlay({
       attachedRef.current = null;
       setGuiReady(false);
     }
-  }, [scene, boundResolveImageUrl, boundResolveInterfaceMaterial, boundMaterialFunctions]);
+  }, [scene, boundResolveImageUrl, boundResolveInterfaceMaterial, boundResolveTexture, boundMaterialFunctions]);
 
   useEffect(() => {
     attachedRef.current?.setAllowGuiHits?.(inputModeAllowsGuiHits(inputMode));

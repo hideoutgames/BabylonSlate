@@ -192,6 +192,40 @@ describe("UiDesignCanvas preview fallback", () => {
     });
   });
 
+  it("passes resolveTexture into the designer GUI surface", async () => {
+    createUiSurfaceMock.mockReturnValue({
+      present: vi.fn(),
+      setFrozen: vi.fn(),
+      dispose: vi.fn(),
+      host: {
+        measureControls: () => ({}),
+        clear: vi.fn(),
+        addControl: vi.fn(),
+        markAsDirty: vi.fn(),
+      },
+      resizeDesign: vi.fn(),
+      resizeGizmos: vi.fn(),
+      presentGizmos: vi.fn(),
+      designAdt: { markAsDirty: vi.fn() },
+      gizmoAdt: null,
+    });
+    const texture = { name: "tex-1" };
+    const resolveTexture = (guid: string) =>
+      guid === "tex-1" ? (texture as never) : null;
+    render(
+      <UiDesignCanvas
+        {...hudCanvasProps()}
+        resolveTexture={resolveTexture}
+      />,
+    );
+    await flushPaint();
+    const options = createUiSurfaceMock.mock.calls[0]?.[2] as {
+      resolveTexture?: (guid: string) => unknown;
+    };
+    expect(options.resolveTexture?.("tex-1")).toBe(texture);
+    expect(options.resolveTexture?.("missing")).toBeNull();
+  });
+
   it("skips present when the Design dock tab is hidden", () => {
     const present = vi.fn();
     const setFrozen = vi.fn();

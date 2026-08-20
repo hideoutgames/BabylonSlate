@@ -12,7 +12,9 @@ import {
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { encodeTriangleGlb } from "./model-mesh";
+import { ResourceCache } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 
 /**
@@ -984,6 +986,30 @@ describe("Play createEngine view", () => {
     expect(prefab.scene).not.toBe(editor.scene);
     expect(prefab.scene).not.toBe(play.scene);
     expect(editor.scene).not.toBe(play.scene);
+    expect(editor.resourceCache).toBe(prefab.resourceCache);
+    expect(play.resourceCache).toBe(editor.resourceCache);
+  });
+
+  it("Play overlay dispose leaves the shared ResourceCache live for the editor", () => {
+    const engine = sharedEngine();
+    const editor = createEngine(
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { sharedEngine: engine, editor: true },
+    );
+    handles.push(editor);
+    const play = createEngine(
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { sharedEngine: engine, playMode: true },
+    );
+    expect(play.resourceCache).toBe(editor.resourceCache);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const first = editor.resourceCache.getTexture("tex-shared", engine, bytes);
+    const disposeCache = vi.spyOn(ResourceCache.prototype, "dispose");
+    play.dispose();
+    expect(disposeCache).not.toHaveBeenCalled();
+    const second = editor.resourceCache.getTexture("tex-shared", engine, bytes);
+    expect(second).toBe(first);
+    expect(isDisposedGpuTexture(first)).toBe(false);
   });
 
   it("does not dispose the shared Engine when Prefab rtt handle disposes", () => {

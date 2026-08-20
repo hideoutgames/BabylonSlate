@@ -122,6 +122,28 @@ export async function createContentBrowserAsset(
     page.getByTestId("content-browser-new-asset-dialog"),
   ).toHaveCount(0);
   await openContentBrowser(page);
+  await revealAssetTile(page, `[data-asset-path*="${name}."]`, name);
+  await page.getByTestId("content-browser-search").fill("");
+}
+
+/**
+ * Grid search is the current folder only, and the windowed grid omits
+ * off-screen tiles. Fill search until the tile is actually mounted (registry
+ * refresh / virtualization races). Do not change the selected folder — nested
+ * paths already navigated there.
+ */
+async function revealAssetTile(
+  page: Page,
+  selector: string,
+  searchNeedle: string,
+): Promise<void> {
+  const tile = page.locator(selector).first();
+  await expect(async () => {
+    if (!(await tile.isVisible())) {
+      await page.getByTestId("content-browser-search").fill(searchNeedle);
+    }
+    await expect(tile).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 15_000 });
 }
 
 /** Open an asset from Content Browser, activating the browser tab if it is hidden. */
@@ -139,13 +161,10 @@ export async function openAssetFromBrowser(
       await folderTile.dblclick();
     }
   }
+  const fileName = assetPath.split("/").pop() ?? assetPath;
+  const searchNeedle = fileName.replace(/\.babasset$/, "").split(".")[0];
   const tile = page.locator(`[data-asset-path="${assetPath}"]`);
-  if (!(await tile.isVisible())) {
-    const fileName = assetPath.split("/").pop() ?? assetPath;
-    const searchNeedle = fileName.replace(/\.babasset$/, "").split(".")[0];
-    await page.getByTestId("content-browser-search").fill(searchNeedle);
-  }
-  await expect(tile).toBeVisible({ timeout: 15_000 });
+  await revealAssetTile(page, `[data-asset-path="${assetPath}"]`, searchNeedle);
   await tile.dblclick();
 }
 

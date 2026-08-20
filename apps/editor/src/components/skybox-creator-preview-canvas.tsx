@@ -7,10 +7,10 @@ import {
   type SkyboxFaceKey,
 } from "@babylonslate/core";
 import {
-  ResourceCache,
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
   createSkyboxMeshForFaces,
+  resourceCacheForEngine,
 } from "@babylonslate/render";
 import { useOptionalPlay } from "../context/play-context";
 
@@ -49,7 +49,6 @@ export function SkyboxCreatorPreviewCanvas({
     let host: ReturnType<typeof createMaterialPreviewScene> | null = null;
     let presenter: ReturnType<typeof createMaterialPreviewPresenter> | null =
       null;
-    let cache: ResourceCache | null = null;
     let frame = 0;
     try {
       host = createMaterialPreviewScene(engine);
@@ -58,11 +57,10 @@ export function SkyboxCreatorPreviewCanvas({
         return;
       }
       hideDefaultPreviewMesh(host);
-      cache = new ResourceCache();
+      const cache = resourceCacheForEngine(engine);
       presenter = createMaterialPreviewPresenter(host, canvas);
       if (!presenter) {
         host.dispose();
-        cache.dispose();
         return;
       }
       const faces = emptySkyboxFaces();
@@ -82,7 +80,6 @@ export function SkyboxCreatorPreviewCanvas({
     } catch {
       presenter?.dispose();
       host?.dispose();
-      cache?.dispose();
       return;
     }
     const tick = () => {
@@ -95,7 +92,6 @@ export function SkyboxCreatorPreviewCanvas({
       window.cancelAnimationFrame(frame);
       presenter?.dispose();
       host?.dispose();
-      cache?.dispose();
     };
   }, [engine, faceKey, facePngs]);
 

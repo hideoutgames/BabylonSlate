@@ -56,7 +56,12 @@ import {
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
-import { getMaterialTexture, ResourceCache } from "./resource-cache";
+import {
+  getMaterialTexture,
+  releaseResourceCacheForEngine,
+  resourceCacheForEngine,
+  type ResourceCache,
+} from "./resource-cache";
 import { HardwareScalingController } from "./hardware-scaling";
 import { applyPlayConsoleRenderCommand } from "./play-console-apply";
 import {
@@ -429,7 +434,9 @@ function createPlayAudioBackend(
 
 /**
  * Creates an editor or Play view. Prefer one Engine for the app lifetime and
- * pass it via `sharedEngine` + registerView for Play overlays.
+ * pass it via `sharedEngine` + registerView for Play overlays. ResourceCache
+ * is keyed on that Engine (`resourceCacheForEngine`); shared handles must not
+ * dispose it.
  */
 export function createEngine(
   canvas: HTMLCanvasElement,
@@ -502,7 +509,7 @@ export function createEngine(
   const releasePlayLoop = options.playMode
     ? scheduler.acquireContinuous("play")
     : null;
-  const resourceCache = new ResourceCache();
+  const resourceCache = resourceCacheForEngine(engine);
   const audioService = options.playMode
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
@@ -1062,8 +1069,8 @@ export function createEngine(
       if (options.sharedEngine && !presentRtt) {
         engine.unRegisterView(canvas);
       }
-      resourceCache.dispose();
       if (ownsEngine) {
+        releaseResourceCacheForEngine(engine);
         engine.dispose();
       }
     },
