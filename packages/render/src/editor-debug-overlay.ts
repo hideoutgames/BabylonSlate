@@ -186,8 +186,30 @@ export class EditorDebugOverlay {
     this.ensureTimer();
   }
 
+  /**
+   * Copy the live frustum (origin-parented) world pose onto the PIP camera so
+   * the preview tracks a gizmo drag before the document commit.
+   */
+  followLivePose(): void {
+    const root = this.frustumMesh;
+    const camera = this.previewCamera;
+    if (!root || !camera) return;
+    root.computeWorldMatrix(true);
+    const position = Vector3.Zero();
+    const rotation = Quaternion.Identity();
+    const scaling = Vector3.Zero();
+    root.getWorldMatrix().decompose(scaling, rotation, position);
+    camera.position.copyFrom(position);
+    if (!camera.rotationQuaternion) {
+      camera.rotationQuaternion = Quaternion.Identity();
+    }
+    camera.rotationQuaternion.copyFrom(rotation);
+    camera.rotation.set(0, 0, 0);
+  }
+
   tick(nowMs?: number): void {
     if (!this.previewTexture || !this.previewCamera) return;
+    this.followLivePose();
     const now = nowMs ?? this.now();
     if (now - this.lastPreviewMs < CAMERA_PREVIEW_INTERVAL_MS) return;
     this.lastPreviewMs = now;

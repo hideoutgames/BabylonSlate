@@ -338,6 +338,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     activeDocumentId,
     setActiveDocument,
     openDocument,
+    openRecordedTrace,
     projectDocument,
     dirtyDocuments,
     scriptsStale,
@@ -1071,8 +1072,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           `Texture leak detected: ${result.textureCountBefore} → ${result.textureCountAfter}`,
         );
       }
+      if (result.lastTrace) {
+        void openRecordedTrace(result.lastTrace);
+      }
     },
-    [appendLog],
+    [appendLog, openRecordedTrace],
   );
 
   const value = useMemo<PlayContextValue>(

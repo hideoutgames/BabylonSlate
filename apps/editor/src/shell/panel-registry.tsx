@@ -93,6 +93,11 @@ import {
   BehaviourTreeDetailsPanel,
   BehaviourTreeGraphPanel,
 } from "../components/behaviour-tree-editor";
+import {
+  TraceLogPanel,
+  TraceSnapshotPanel,
+  TraceTimelinePanel,
+} from "../components/trace-editor";
 
 export const panelComponents = {
   viewport: (props: IDockviewPanelProps) => <ViewportPanel {...props} />,
@@ -275,5 +280,12 @@ export const panelComponents = {
   "behaviour-tree-compiler-results": (props: IDockviewPanelProps) => (
     <BehaviourTreeCompilerResultsPanel {...props} />
   ),
+  "trace-timeline": (props: IDockviewPanelProps) => (
+    <TraceTimelinePanel {...props} />
+  ),
+  "trace-snapshot": (props: IDockviewPanelProps) => (
+    <TraceSnapshotPanel {...props} />
+  ),
+  "trace-log": (props: IDockviewPanelProps) => <TraceLogPanel {...props} />,
   locks: (props: IDockviewPanelProps) => <LocksPanel {...props} />,
 };

@@ -125,6 +125,24 @@ describe("NestedMenu dropdown", () => {
     fireEvent.click(getByTestId("context-menu-item-more"));
     expect(queryByTestId("context-menu-sub-more")).toBeNull();
   });
+
+  it("lets contentClassName override trigger-width sizing", () => {
+    const { getByTestId } = render(
+      <NestedMenu
+        items={[leaf()]}
+        contentClassName="w-max min-w-56 whitespace-nowrap"
+        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        contentTestId="menu-content"
+      />,
+    );
+
+    fireEvent.click(getByTestId("menu-trigger"));
+    const classes = getByTestId("menu-content").className;
+    expect(classes).toContain("w-max");
+    expect(classes).toContain("min-w-56");
+    expect(classes).toContain("whitespace-nowrap");
+    expect(classes).not.toContain("w-(--anchor-width)");
+  });
 });
 
 describe("NestedMenu context overlay", () => {

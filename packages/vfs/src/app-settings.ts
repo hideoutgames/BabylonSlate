@@ -33,6 +33,7 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   skeleton: ["skeleton-preview"],
   animation: ["animation-preview"],
   "skybox-creator": ["skybox-creator-preview"],
+  trace: ["trace-timeline"],
 } as const;
 
 function mutableFocusKeepPanels(): {
@@ -73,6 +74,18 @@ export const engineSettingsSchema = z.object({
   undoHistoryLength: z.number().int().positive().default(50),
   viewportFrameCap: z.number().positive().default(30),
   hardwareScalingLevel: z.number().positive().default(1),
+  modelImportDefaultScale: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.max(0.0001, value);
+  }, z.number().positive().default(10)),
+  viewportFlySpeed: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.max(0.0001, value);
+  }, z.number().positive().default(8)),
+  viewportGridSize: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.max(0.0001, value);
+  }, z.number().positive().default(1)),
   postProcessingEnabled: z.boolean().default(true),
   thumbnailsEnabled: z.boolean().default(true),
   graphDefaultZoom: z.preprocess((value) => {
@@ -151,6 +164,7 @@ export const engineSettingsSchema = z.object({
       "skybox-creator": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["skybox-creator"],
       ),
+      trace: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.trace),
     })
     .default(mutableFocusKeepPanels),
   uiDesignerPresets: z

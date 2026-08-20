@@ -8,6 +8,7 @@ export type UiRuntimeControlTarget = {
   registerUserInterfaceDocument(
     guid: string,
     widgets: readonly UserInterfaceWidgetMeta[],
+    document?: unknown,
   ): void;
   dispatchUiWidgetEvent(event: UiWidgetEventControl): void;
 };
@@ -22,7 +23,11 @@ export function applyUiRuntimeControl(
 ): boolean {
   if (msg.type === "loadUserInterfaces") {
     for (const document of msg.documents) {
-      runtime.registerUserInterfaceDocument(document.guid, document.widgets);
+      runtime.registerUserInterfaceDocument(
+        document.guid,
+        document.widgets,
+        document.document,
+      );
     }
     return true;
   }

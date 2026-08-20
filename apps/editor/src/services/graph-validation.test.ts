@@ -1069,6 +1069,17 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.mouseRelease")).toBe(true);
     expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
     expect(nodes.some((node) => node.id === "ui.getWidget")).toBe(false);
+    const addWidget = nodes.find((node) => node.id === "ui.addWidget");
+    expect(addWidget?.title).toBe("Add Widget");
+    expect(addWidget?.defaultData).toMatchObject({ implicitSelf: true });
+    expect(addWidget?.pins.some((pin) => pin.id === "target")).toBe(false);
+  });
+
+  it("keeps Add Widget Target on Actor hosts", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    const addWidget = nodes.find((node) => node.id === "ui.addWidget");
+    expect(addWidget?.defaultData).toMatchObject({ implicitSelf: false });
+    expect(addWidget?.pins.some((pin) => pin.id === "target")).toBe(true);
   });
 
   it("injects bound Get Widget rows for the document widget ids", () => {
@@ -1092,6 +1103,60 @@ describe("scriptPaletteNodes", () => {
       kind: "objectRef",
       classId: "ImageWidget",
     });
+  });
+
+  it("injects Get Variable rows for widgets and hides Set plus colliding Class variables", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      assetType: "UserInterface",
+      classId: "UserInterface:hud",
+      widgets: [
+        { id: "play-btn", name: "Play Button", kind: "Button" },
+        { id: "logo", name: "Logo", kind: "Image" },
+      ],
+      graph: {
+        nodes: [],
+        edges: [],
+        members: [
+          {
+            id: "var-1",
+            kind: "variable",
+            name: "Play Button",
+            typeId: "float",
+          },
+          { id: "var-2", kind: "variable", name: "Score", typeId: "int" },
+        ],
+      },
+    });
+    const play = nodes.find(
+      (node) => node.id === "variables.get:widget:play-btn",
+    );
+    expect(play?.title).toBe("Get Play Button");
+    expect(play?.nodeType).toBe("variables.get");
+    expect(play?.category).toBe("variables");
+    expect(play?.defaultData).toMatchObject({
+      variableName: "Play Button",
+      typeId: "object",
+      typeClassId: "ButtonWidget",
+      implicitSelf: true,
+      scope: "member",
+    });
+    expect(play?.pins?.find((pin) => pin.id === "value")?.type).toEqual({
+      kind: "objectRef",
+      classId: "ButtonWidget",
+    });
+    expect(
+      nodes.some((node) => node.id === "variables.set:widget:play-btn"),
+    ).toBe(false);
+    expect(
+      nodes.some((node) => node.id === "variables.set:UserInterface:hud:Play Button"),
+    ).toBe(false);
+    expect(
+      nodes.some((node) => node.id === "variables.get:UserInterface:hud:Play Button"),
+    ).toBe(false);
+    expect(
+      nodes.some((node) => node.id === "variables.get:UserInterface:hud:Score"),
+    ).toBe(true);
+    expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(true);
   });
 
   it("stamps editorOnly on palette rows for editor-only catalog defs", () => {
@@ -2320,6 +2385,9 @@ describe("ScriptPaletteCache", () => {
       false,
     );
     expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "variables.get:widget:play-btn")).toBe(
       false,
     );
   });

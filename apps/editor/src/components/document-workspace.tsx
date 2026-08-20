@@ -20,6 +20,7 @@ import { TilemapEditingProvider } from "../context/tilemap-editing-context";
 import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context";
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
+import { TracePlaybackProvider } from "./trace-editor";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import { useDocumentWorkingSet } from "../lib/document-working-set";
 import { ContentBrowserWorkspace } from "./content-browser-workspace";
@@ -500,6 +501,29 @@ export function DocumentWorkspace() {
                     />
                   </DocumentShell>
                 </TilemapEditingProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
+        if (doc.ref.kind === "trace") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <TracePlaybackProvider documentId={id}>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-trace"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="trace"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </TracePlaybackProvider>
               </DocumentWorkspaceProvider>
             </WorkspaceErrorBoundary>
           );

@@ -45,6 +45,7 @@ import {
   normalizeModelPayload,
   type ModelPayload,
   resolvePluginEnabled,
+  newAssetGuid,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -70,6 +71,7 @@ import {
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
+import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
   type OpenDocument,
@@ -89,6 +91,10 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
+import {
+  recordedTraceFileName,
+  spillRecordedTraceDocument,
+} from "../lib/play-trace-spill";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
 import {
@@ -161,6 +167,7 @@ import {
   classDocumentShowsPrefab,
   classParentLookup,
 } from "../lib/content-browser-helpers";
+import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   classAssetPaths,
   createProjectPluginAndRevealContent,
@@ -323,6 +330,8 @@ interface DocumentContextValue {
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
+  /** Spill a finished Play recorder payload and open the read-only Trace tab. */
+  openRecordedTrace: (payload: TracePayload) => Promise<void>;
   pendingExclusiveScene: DocumentRef | null;
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
@@ -339,6 +348,14 @@ interface DocumentContextValue {
   updateGraph: (id: string, graph: SerializedGraph) => void;
   /** Apply a graph edit through the command layer (marks dirty + undoable). */
   applyGraphChange: (id: string, next: SerializedGraph) => Promise<boolean>;
+  /**
+   * Change Class `header.parentClass` without rewriting the graph payload.
+   * Returns an error string when the reparent is rejected.
+   */
+  reparentClassDocument: (
+    id: string,
+    newParentId: string,
+  ) => Promise<string | null>;
   /** Apply a scene edit through the command layer (marks dirty + undoable). */
   applySceneChange: (id: string, next: SerializedScene) => Promise<boolean>;
   applyAssetDocumentChange: (
@@ -1286,7 +1303,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
       for (const doc of dirtyDocs) {
-        if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+        if (
+          isAssetDocumentKind(doc.ref.kind) &&
+          doc.ref.kind !== "trace" &&
+          doc.content
+        ) {
           await projectService.saveDocument(
             doc.ref.kind,
             doc.ref.path,
@@ -1407,7 +1428,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
-      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+      if (
+        isAssetDocumentKind(doc.ref.kind) &&
+        doc.ref.kind !== "trace" &&
+        doc.content
+      ) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
@@ -1718,6 +1743,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, finishOpenDocument],
   );
 
+  const openRecordedTrace = useCallback(
+    async (payload: TracePayload) => {
+      const guid = projectService.guid;
+      if (!guid) return;
+      const derived = await ensureDerived();
+      projectService.setDerivedStorage(derived);
+      const fileName = recordedTraceFileName(Date.now());
+      const spilled = await spillRecordedTraceDocument({
+        derivedStorage: derived,
+        projectGuid: guid,
+        payload,
+        fileName,
+        documentGuid: newAssetGuid(),
+      });
+      await finishOpenDocument(spilled.ref);
+    },
+    [ensureDerived, finishOpenDocument, projectService],
+  );
+
   const confirmExclusiveSceneOpen = useCallback(
     async (mode: "save" | "discard") => {
       const ref = pendingExclusiveScene;
@@ -1900,6 +1944,41 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
   );
 
+  const reparentClassDocument = useCallback(
+    async (id: string, newParentId: string): Promise<string | null> => {
+      const doc = documentService.getState().openDocuments.get(id);
+      if (!doc || doc.ref.kind !== "graph" || !doc.content) {
+        return "Class document is not open.";
+      }
+      if (
+        isMutatingApplyBlocked(
+          sourceControlRef.current,
+          doc.ref.path,
+          isPluginDocumentReadOnly(projectService.plugins, doc.ref.path),
+        )
+      ) {
+        return "This Class is locked.";
+      }
+      const classId = classIdForGraphPath(doc.ref.path);
+      const assets = projectService.registry?.list() ?? [];
+      const preview = tryReparentUserClass({
+        classId,
+        newParentId,
+        assets,
+      });
+      if (preview.ok === false) return preview.error;
+      await projectService.saveDocument(
+        "graph",
+        doc.ref.path,
+        doc.content as SerializedGraph,
+        { parentClass: newParentId },
+      );
+      bump();
+      return null;
+    },
+    [bump, documentService, projectService],
+  );
+
   const applySceneChange = useCallback(
     async (id: string, next: SerializedScene): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
@@ -1962,6 +2041,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         !isAssetDocumentKind(doc.ref.kind) ||
         doc.ref.kind === "scene" ||
         doc.ref.kind === "graph" ||
+        doc.ref.kind === "trace" ||
         !doc.content
       ) {
         return false;
@@ -3234,8 +3314,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         .__babylonslateTestTouchAxes;
     };
   }, [
-    applyGraphChange,
-    applySceneChange,
+      applyGraphChange,
+      reparentClassDocument,
+      applySceneChange,
     applyAssetDocumentChange,
     bump,
     documentService,
@@ -3683,6 +3764,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      openRecordedTrace,
       pendingExclusiveScene,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
@@ -3695,6 +3777,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateScene,
       updateGraph,
       applyGraphChange,
+      reparentClassDocument,
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
@@ -3878,6 +3961,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      openRecordedTrace,
       pendingExclusiveScene,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
@@ -3890,6 +3974,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       updateScene,
       updateGraph,
       applyGraphChange,
+      reparentClassDocument,
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,

@@ -53,7 +53,7 @@ export function ModelPreviewCanvas({
     void (async () => {
       try {
         host = createModelPreviewScene(engine);
-        loaded = await loadModelPreviewSource(host, sourceBytes);
+        loaded = await loadModelPreviewSource(host, sourceBytes, model.importScale);
         if (cancelled || !host || !loaded) {
           host?.dispose();
           loaded?.dispose();
@@ -101,7 +101,7 @@ export function ModelPreviewCanvas({
       hostRef.current = null;
       presenterRef.current = null;
     };
-  }, [engine, sourceBytes]);
+  }, [engine, sourceBytes, model.importScale]);
 
   useEffect(() => {
     const host = hostRef.current;

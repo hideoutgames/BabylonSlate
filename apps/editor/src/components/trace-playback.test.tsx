@@ -12,7 +12,7 @@ const payload: TracePayload = {
       scriptMs: 1,
       physicsMs: 0.5,
       logs: [{ severity: "log", category: "game", message: "first" }],
-      prints: [],
+      prints: [{ message: "print-a", key: "a" }],
       snapshotText: "tick=1",
     },
     {
@@ -35,8 +35,23 @@ describe("TracePlayback", () => {
     render(<TracePlayback payload={payload} />);
     expect(screen.getByTestId("trace-playback-seed").textContent).toContain("7");
     expect(screen.getByTestId("trace-playback-scrubber")).toBeTruthy();
+    expect(screen.getByTestId("trace-playback-graph-bar-0")).toBeTruthy();
+    expect(screen.getByTestId("trace-playback-graph-bar-1")).toBeTruthy();
     expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(
       "tick=2",
+    );
+    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
+      "first",
+    );
+    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
+      "print-a",
+    );
+    expect(screen.getByTestId("trace-playback-log").textContent).toContain(
+      "second",
+    );
+    fireEvent.click(screen.getByTestId("trace-playback-graph-bar-0"));
+    expect(screen.getByTestId("trace-playback-snapshot").textContent).toContain(
+      "tick=1",
     );
     fireEvent.change(screen.getByTestId("trace-playback-frame"), {
       target: { value: "0" },

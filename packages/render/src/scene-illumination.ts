@@ -352,6 +352,39 @@ export function updateAuthoredCameraTransform(
   gameCamera.rotation.set(0, 0, 0);
 }
 
+export function syncAuthoredCamerasFromMeshes(
+  scene: Scene,
+  sceneData: SerializedScene,
+  meshForActor: (actorId: string) => AbstractMesh | null,
+): void {
+  for (const actor of sceneData.actors) {
+    const component = actor.components.find(
+      (entry) => entry.classId === "CameraComponent",
+    );
+    if (!component) continue;
+    const mesh = meshForActor(actor.id);
+    if (!mesh) continue;
+    const camera = scene.getCameraByName(`${AUTHORED_CAMERA_PREFIX}${actor.id}`);
+    if (!camera) continue;
+    mesh.computeWorldMatrix(true);
+    const rotation = mesh.rotationQuaternion
+      ? mesh.rotationQuaternion
+      : Quaternion.FromEulerVector(mesh.rotation);
+    const composed = composeActorComponentTransform(
+      {
+        ...actor,
+        transform: {
+          position: [mesh.position.x, mesh.position.y, mesh.position.z],
+          rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+          scale: [mesh.scaling.x, mesh.scaling.y, mesh.scaling.z],
+        },
+      },
+      component,
+    );
+    updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
+  }
+}
+
 function shadowSkipMetadata(mesh: AbstractMesh): boolean {
   const meta = mesh.metadata as {
     editorActorOrigin?: boolean;

@@ -119,6 +119,16 @@ export interface ScriptHostServices {
   removeUserInterface?(
     instance: UserInterface | string | null | undefined,
   ): void;
+  addWidgetOn?(
+    target: unknown,
+    kind: unknown,
+    name: unknown,
+    parent: unknown,
+  ): Widget | null;
+  setWidgetParent?(widget: unknown, parent: unknown, index: unknown): void;
+  removeWidget?(widget: unknown): void;
+  setWidgetLayout?(widget: unknown, patch: unknown): void;
+  getWidgetLayout?(widget: unknown): Record<string, unknown> | null;
   changeScene?(scene: string): void;
   playSound?(
     asset: string,
@@ -375,6 +385,17 @@ export interface ScriptContext {
   setWidgetVisible(widget: Widget | string, visible: boolean): void;
   applyUserInterface(classIdOrGuid: string): UserInterface | null;
   removeUserInterface(instance: UserInterface | string | null | undefined): void;
+  addWidget(kind: unknown, name: unknown, parent?: unknown): Widget | null;
+  addWidgetOn(
+    target: unknown,
+    kind: unknown,
+    name: unknown,
+    parent?: unknown,
+  ): Widget | null;
+  setWidgetParent(widget: unknown, parent: unknown, index?: unknown): void;
+  removeWidget(widget: unknown): void;
+  setWidgetLayout(widget: unknown, patch: unknown): void;
+  getWidgetLayout(widget: unknown): Record<string, unknown> | null;
   changeScene(scene: string): void;
   setRenderResolution(width: number, height: number): void;
   setInputMode(mode: string): void;
@@ -1114,6 +1135,20 @@ export class ScriptHost {
       removeUserInterface: (instance) => {
         services.removeUserInterface?.(instance);
       },
+      addWidget: (kind, name, parent) =>
+        services.addWidgetOn?.(self, kind, name, parent) ?? null,
+      addWidgetOn: (target, kind, name, parent) =>
+        services.addWidgetOn?.(target, kind, name, parent) ?? null,
+      setWidgetParent: (widget, parent, index) => {
+        services.setWidgetParent?.(widget, parent, index);
+      },
+      removeWidget: (widget) => {
+        services.removeWidget?.(widget);
+      },
+      setWidgetLayout: (widget, patch) => {
+        services.setWidgetLayout?.(widget, patch);
+      },
+      getWidgetLayout: (widget) => services.getWidgetLayout?.(widget) ?? null,
       changeScene: (scene) => {
         services.changeScene?.(scene);
       },

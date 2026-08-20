@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Scene } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
-import { createGizmoHost } from "./gizmo-host";
+import {
+  clampGizmoScreenScale,
+  createGizmoHost,
+  GIZMO_MIN_CAMERA_DISTANCE,
+} from "./gizmo-host";
 
 const handles: Array<{
   engine: { dispose: () => void };
@@ -20,6 +24,25 @@ afterEach(() => {
     handle?.scene.dispose();
     handle?.engine.dispose();
   }
+});
+
+describe("gizmo screen-scale clamp", () => {
+  it("keeps a usable scale when camera distance collapses to zero", () => {
+    const ratio = 1.8;
+    expect(clampGizmoScreenScale(0, ratio)).toBeCloseTo(
+      ratio * GIZMO_MIN_CAMERA_DISTANCE,
+    );
+    expect(clampGizmoScreenScale(0.01, ratio)).toBeCloseTo(
+      ratio * GIZMO_MIN_CAMERA_DISTANCE,
+    );
+  });
+
+  it("preserves a healthy perspective scale and handedness", () => {
+    expect(clampGizmoScreenScale(12, 1.8)).toBe(12);
+    expect(clampGizmoScreenScale(-0.02, 1.8)).toBeCloseTo(
+      -(1.8 * GIZMO_MIN_CAMERA_DISTANCE),
+    );
+  });
 });
 
 describe("gizmo Prefab RTT pointer mapping", () => {

@@ -94,7 +94,7 @@ import {
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
   commitLogicGraph,
@@ -625,6 +625,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     openDocuments,
     applyGraphChange,
     applyAssetDocumentChange,
+    reparentClassDocument,
     projectDocument,
     assetRegistry,
   } = useDocuments();
@@ -641,6 +642,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     updateComponentTransform,
   } = usePrefabEditing();
   const viewportMode = useOptionalSceneEditing()?.viewportMode ?? "3d";
+  const [parentClassPickOpen, setParentClassPickOpen] = useState(false);
+  const [parentClassError, setParentClassError] = useState<string | null>(null);
   const [classPinPick, setClassPinPick] = useState<{
     pinId: string;
     name: string;
@@ -849,8 +852,71 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
 
   if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "graph" && graph) {
     const defaults = graph.actorDefaults ?? {};
+    const selfClassId = classIdFromClassAsset({
+      path: doc.ref.path,
+      header: {
+        type: indexed?.header.type ?? "Class",
+        name: indexed?.header.name ?? doc.ref.label,
+        parentClass,
+      },
+    });
+    const parentOptions: ClassPickerEntry[] = [
+      { id: "Actor", name: "Actor", group: "Engine" },
+      ...(assetRegistry?.list() ?? [])
+        .filter((asset) => asset.header.type === "Class")
+        .map((asset) => ({
+          id: classIdFromClassAsset(asset),
+          name: asset.header.name,
+          group: "Project",
+          parentClass: asset.header.parentClass,
+        }))
+        .filter(
+          (entry) =>
+            entry.id !== selfClassId &&
+            classDocumentShowsPrefab(entry.parentClass, parentOf, {
+              assetType: "Class",
+            }),
+        )
+        .map(({ id, name, group }) => ({ id, name, group })),
+    ];
     return (
       <PanelFrame data-testid="inspector-panel">
+        <FieldGroup className="p-4">
+          <Field>
+            <FieldLabel>Parent Class</FieldLabel>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[var(--touch-target,44px)] w-full justify-start"
+              data-testid="inspector-parent-class"
+              onClick={() => {
+                setParentClassError(null);
+                setParentClassPickOpen(true);
+              }}
+            >
+              {parentClass ?? "Actor"}
+            </Button>
+            {parentClassError ? (
+              <FieldError data-testid="inspector-parent-class-error">
+                {parentClassError}
+              </FieldError>
+            ) : null}
+          </Field>
+        </FieldGroup>
+        <ClassPicker
+          open={parentClassPickOpen}
+          onOpenChange={setParentClassPickOpen}
+          title="Parent Class"
+          allowNone={false}
+          classes={parentOptions}
+          data-testid="inspector-parent-class-picker"
+          onPick={(classId) => {
+            if (!classId || classId === (parentClass ?? "Actor")) return;
+            void reparentClassDocument(doc.id, classId).then((error) => {
+              setParentClassError(error);
+            });
+          }}
+        />
         <PropertyGrid
           title="Actor Defaults"
           data-testid="inspector-actor-defaults"

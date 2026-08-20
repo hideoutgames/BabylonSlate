@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
+  ActivityIcon,
   AppWindowIcon,
   CloudIcon,
   FilmIcon,
@@ -119,6 +120,13 @@ describe("resolveTypeVisual", () => {
     expect(helper.colorVar).toBe(material.colorVar);
     expect(helper.iconKey).toBe("SkyboxCreator");
     expect(helper.icon).toBe(CloudIcon);
+  });
+
+  it("uses ActivityIcon for Trace documents", () => {
+    const visual = resolveTypeVisual({ assetType: "Trace" });
+    expect(visual.icon).toBe(ActivityIcon);
+    expect(visual.iconKey).toBe("Trace");
+    expect(visual.family).toBe("class");
   });
 
   it("treats Mesh assets as the model family", () => {

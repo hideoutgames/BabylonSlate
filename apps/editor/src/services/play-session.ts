@@ -111,6 +111,7 @@ export type PlayUiCommandHandlers = {
   onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
   onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
   onUiRemove?: (instanceId: string) => void;
+  onUiTreeCommand?: (command: CommandMessage) => void;
 };
 
 /** Apply worker sessionPaused onto Play overlay chrome. */
@@ -199,6 +200,15 @@ export function applyPlayUiCommand(
   }
   if (command.type === "uiRemove") {
     handlers.onUiRemove?.(command.instanceId);
+    return true;
+  }
+  if (
+    command.type === "uiAddWidget" ||
+    command.type === "uiRemoveWidget" ||
+    command.type === "uiReparentWidget" ||
+    command.type === "uiPatchLayout"
+  ) {
+    handlers.onUiTreeCommand?.(command);
     return true;
   }
   return false;
@@ -334,6 +344,8 @@ export interface PlaySessionResult {
   /** Which runtime host was used. */
   runtimeMode: "worker" | "in-process";
   liveObjectCounts?: { meshes: number; textures: number };
+  /** Finalized recorder payload, if snapshot start ran this session. */
+  lastTrace: TracePayload | null;
 }
 
 export interface PlaySession {
@@ -484,6 +496,7 @@ export function startPlaySession(options: {
   onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
   onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
   onUiRemove?: (instanceId: string) => void;
+  onUiTreeCommand?: (command: CommandMessage) => void;
   onSetInputMode?: (mode: InputMode) => void;
   /** Slim UserInterface metadata; posted before `loadScripts`. */
   userInterfaces?: readonly UserInterfaceRuntimeDocument[];
@@ -706,6 +719,7 @@ export function startPlaySession(options: {
       onUiSetVisible: options.onUiSetVisible,
       onUiApply: options.onUiApply,
       onUiRemove: options.onUiRemove,
+      onUiTreeCommand: options.onUiTreeCommand,
     });
     applyPlaySessionPausedCommand(command, options.onSessionPaused);
     applyPlayHudConsoleCommand(command, {
@@ -1050,6 +1064,7 @@ export function startPlaySession(options: {
         textureLeak,
         runtimeMode,
         liveObjectCounts: liveAfter,
+        lastTrace: recordedTrace ?? runtime?.stopTrace() ?? null,
       };
       return stopResult;
     },

@@ -41,6 +41,7 @@ import {
 } from "@babylonslate/object-model";
 import {
   boundGetWidgetEntries,
+  boundWidgetVariableEntries,
   createDefaultNodeRegistry,
   castDefaultClassId,
   callInterfaceTitle,
@@ -57,6 +58,7 @@ import {
   inheritedCustomEventSeeds,
   isObjectInstanceVariableType,
   isScriptCatalogNodeAllowed,
+  isUserInterfaceLogicHost,
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
   SEEDED_NATIVE_EVENT_TYPES,
@@ -1173,7 +1175,9 @@ function variableAccessPaletteNodes(
   const validatedDef = nodeRegistry.get("variables.getValidated");
   if (!getDef || !setDef) return [];
   const localClassId = options?.classId ?? "BObject";
-  const classVars = classVariableRows(options?.graph);
+  const classVars = classVariableRows(options?.graph).filter(
+    (variable) => !widgetBindingNames(options).has(variable.name),
+  );
   const classNames = new Set(classVars.map((entry) => entry.name));
   const rows: Array<{
     classId: string;
@@ -1266,6 +1270,35 @@ function variableAccessPaletteNodes(
     }
   }
   return injected;
+}
+
+function widgetBindingNames(options?: ScriptPaletteOptions): Set<string> {
+  return new Set((options?.widgets ?? []).map((widget) => widget.name));
+}
+
+function widgetVariablePaletteNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  const def = nodeRegistry.get("variables.get");
+  if (!def || !options?.widgets?.length) return [];
+  const classId = options.classId ?? "UserInterface";
+  return boundWidgetVariableEntries(options.widgets).map((entry) => {
+    const defaultData: Record<string, unknown> = {
+      ...entry.defaultData,
+      classId,
+    };
+    return {
+      id: entry.id,
+      nodeType: entry.nodeType,
+      title: entry.title,
+      category: def.category,
+      pins: def.pins(defaultData),
+      pure: def.pure,
+      latent: def.latent,
+      defaultData,
+    };
+  });
 }
 
 function castPaletteNodes(
@@ -1559,6 +1592,15 @@ function scriptPaletteCatalogNodes(
       if (def.id === "input.setInputMode") {
         defaultData.mode = "All";
       }
+      if (
+        def.id === "ui.addWidget" ||
+        def.id === "ui.setWidgetParent" ||
+        def.id === "ui.removeWidget" ||
+        def.id === "ui.setWidgetLayout" ||
+        def.id === "ui.getWidgetLayout"
+      ) {
+        defaultData.implicitSelf = isUserInterfaceLogicHost(options);
+      }
       const pins = def.pins(defaultData);
       if (def.editorOnly) defaultData.__editorOnly = true;
       return {
@@ -1587,6 +1629,7 @@ function scriptPaletteInjectorNodes(
     ...callFunctionPaletteNodes(nodeRegistry, options),
     ...callInterfacePaletteNodes(nodeRegistry, options),
     ...variableAccessPaletteNodes(nodeRegistry, options),
+    ...widgetVariablePaletteNodes(nodeRegistry, options),
     ...castPaletteNodes(nodeRegistry, options),
     ...structPaletteNodes(nodeRegistry, options),
     ...enumPaletteNodes(nodeRegistry, options),

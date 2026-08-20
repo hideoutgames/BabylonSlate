@@ -463,4 +463,54 @@ describe("My Class members", () => {
     );
     expect(functionRows[localIndex]?.label).toBe("Local Variables");
   });
+
+  it("lists hierarchy widgets as Object bindings without persisting members", () => {
+    const graph: SerializedGraph = { nodes: [], edges: [] };
+    const members = membersForGraph(graph, {
+      assetType: "UserInterface",
+      widgets: [
+        { id: "play-btn", name: "Play Button", kind: "Button" },
+        { id: "logo", name: "Logo", kind: "Image" },
+      ],
+    });
+    expect(membersForSection(members, "widget")).toEqual([
+      {
+        kind: "widget",
+        name: "Play Button",
+        detail: "widget:play-btn",
+        typeId: "object",
+        typeClassId: "ButtonWidget",
+        widgetId: "play-btn",
+        widgetKind: "Button",
+      },
+      {
+        kind: "widget",
+        name: "Logo",
+        detail: "widget:logo",
+        typeId: "object",
+        typeClassId: "ImageWidget",
+        widgetId: "logo",
+        widgetKind: "Image",
+      },
+    ]);
+    expect(graph.members).toBeUndefined();
+    const rows = blueprintTreeNodes(members, new Set(), {
+      assetType: "UserInterface",
+    });
+    expect(rows.map((row) => row.id)).toEqual([
+      "section-functions",
+      "section-variables",
+      "section-widgets",
+      "widget:play-btn",
+      "widget:logo",
+      "section-events",
+      "section-interfaces",
+    ]);
+    expect(rows.find((row) => row.id === "section-widgets")?.label).toBe(
+      "Widgets",
+    );
+    expect(rows.find((row) => row.id === "widget:play-btn")?.label).toBe(
+      "Play Button",
+    );
+  });
 });

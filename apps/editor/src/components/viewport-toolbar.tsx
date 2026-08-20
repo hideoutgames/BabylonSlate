@@ -1,4 +1,4 @@
-import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
+import { NestedMenu, NumberPromptDialog, type NestedMenuItem } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
@@ -19,9 +19,14 @@ import {
   Settings2Icon,
   SquareDashedMousePointerIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import {
+  patchEngineViewportPrefs,
+  useEditorViewportPrefs,
+} from "../lib/viewport-engine-prefs";
 
 const TOOLS: Array<{
   id: GizmoTool;
@@ -42,6 +47,10 @@ export function ViewportToolbar({
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
+  const { flySpeed, gridSize } = useEditorViewportPrefs();
+  const [numberPrompt, setNumberPrompt] = useState<
+    null | "grid" | "camera"
+  >(null);
   const {
     gizmoTool,
     setGizmoTool,
@@ -219,6 +228,26 @@ export function ViewportToolbar({
       testId: `${testIdPrefix}viewport-game-camera-toggle`,
       onCheckedChange: setPreviewGameCamera,
     },
+    {
+      type: "submenu",
+      id: "settings",
+      label: "Settings",
+      testId: `${testIdPrefix}viewport-settings-submenu`,
+      items: [
+        {
+          id: "grid-size",
+          label: "Grid Size",
+          testId: `${testIdPrefix}viewport-grid-size`,
+          onSelect: () => setNumberPrompt("grid"),
+        },
+        {
+          id: "camera-speed",
+          label: "Camera Speed",
+          testId: `${testIdPrefix}viewport-camera-speed`,
+          onSelect: () => setNumberPrompt("camera"),
+        },
+      ],
+    },
   ];
 
   return (
@@ -286,6 +315,7 @@ export function ViewportToolbar({
         size="chrome"
         align="end"
         contentTestId={`${testIdPrefix}viewport-settings-menu`}
+        contentClassName="w-max min-w-56 whitespace-nowrap"
         trigger={
           <Button
             type="button"
@@ -325,6 +355,48 @@ export function ViewportToolbar({
           2D
         </ToggleGroupItem>
       </ToggleGroup>
+      <NumberPromptDialog
+        open={numberPrompt === "grid"}
+        onOpenChange={(open) => {
+          if (!open) setNumberPrompt(null);
+        }}
+        title="Grid Size"
+        label="Grid Size"
+        description="Visible size of one grid cell and the translate snap step."
+        initialValue={scene?.settings.grid.tileSize ?? gridSize}
+        data-testid={`${testIdPrefix}viewport-grid-size-dialog`}
+        onSubmit={(value) => {
+          if (scene) {
+            void applySceneChange(documentId, {
+              ...scene,
+              settings: {
+                ...scene.settings,
+                grid: {
+                  ...scene.settings.grid,
+                  tileSize: value,
+                  snapTranslate: value,
+                },
+              },
+            });
+            return;
+          }
+          void patchEngineViewportPrefs({ viewportGridSize: value });
+        }}
+      />
+      <NumberPromptDialog
+        open={numberPrompt === "camera"}
+        onOpenChange={(open) => {
+          if (!open) setNumberPrompt(null);
+        }}
+        title="Camera Speed"
+        label="Camera Speed"
+        description="How fast the editor camera flies in world units per second."
+        initialValue={flySpeed}
+        data-testid={`${testIdPrefix}viewport-camera-speed-dialog`}
+        onSubmit={(value) => {
+          void patchEngineViewportPrefs({ viewportFlySpeed: value });
+        }}
+      />
     </div>
   );
 }
