@@ -4,6 +4,7 @@ import {
   EXEC,
   INT,
   compileGraph,
+  actorRef,
   objectRef,
   type GraphNode,
   type LogicGraph,
@@ -34,11 +35,13 @@ describe("variables.get / variables.set", () => {
     expect(variableNodes.map((entry) => entry.id)).toEqual([
       "variables.get",
       "variables.set",
+      "variables.getValidated",
     ]);
     const registry = createDefaultNodeRegistry();
     expect(registry.get("variables.get")?.category).toBe("variables");
     expect(registry.get("variables.set")?.category).toBe("variables");
     expect(registry.get("variables.get")?.pure).toBe(true);
+    expect(registry.get("variables.getValidated")?.pure).not.toBe(true);
   });
 
   it("types Get from typeId and names the data out after the variable", () => {
@@ -320,5 +323,119 @@ describe("variables.get / variables.set", () => {
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("_n_set_out = 8");
     expect(compiled.source).toContain("ctx.setVariable(\"Health\", 8)");
+  });
+
+  it("Validated Get uses exec, Is Valid, Not Valid, and a typed value out", () => {
+    const def = createDefaultNodeRegistry().get("variables.getValidated")!;
+    const pins = def.pins({
+      variableName: "Target",
+      typeId: "object",
+      typeClassId: "Actor",
+      implicitSelf: true,
+    });
+    expect(
+      pins.map((pin) => ({
+        id: pin.id,
+        name: pin.name,
+        direction: pin.direction,
+        kind: pin.kind,
+        type: pin.type,
+      })),
+    ).toEqual([
+      { id: "execIn", name: "exec", direction: "in", kind: "exec", type: EXEC },
+      {
+        id: "isValid",
+        name: "Is Valid",
+        direction: "out",
+        kind: "exec",
+        type: EXEC,
+      },
+      {
+        id: "notValid",
+        name: "Not Valid",
+        direction: "out",
+        kind: "exec",
+        type: EXEC,
+      },
+      {
+        id: "value",
+        name: "Target",
+        direction: "out",
+        kind: "data",
+        type: actorRef("Actor"),
+      },
+    ]);
+  });
+
+  it("compiles Validated Get into Is Valid and Not Valid exec branches", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "get", "variables.getValidated", {
+          variableName: "Target",
+          typeId: "object",
+          typeClassId: "Actor",
+          implicitSelf: true,
+        }),
+        node(registry, "ok", "debug.log", { "default:message": "ok" }),
+        node(registry, "missing", "debug.log", { "default:message": "missing" }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "get",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "get",
+          sourcePinId: "isValid",
+          targetNodeId: "ok",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "get",
+          sourcePinId: "notValid",
+          targetNodeId: "missing",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain('ctx.getVariable("Target")');
+    expect(compiled.source).toMatch(/if \(.+ != null\) \{/);
+    expect(compiled.source).toContain("} else {");
+
+    const body = compiled.source.replace(
+      /export\s+(async\s+)?function\s+/g,
+      "$1function ",
+    );
+    const onBeginPlay = new Function(`${body}\nreturn { onBeginPlay };`)()
+      .onBeginPlay as (ctx: unknown) => void;
+    const messages: string[] = [];
+    const ctx = {
+      getVariable: (name: string): unknown =>
+        name === "Target" ? { classId: "Actor" } : undefined,
+      formatValue: String,
+      log: (_severity: string, _category: string, message: string) => {
+        messages.push(message);
+      },
+    };
+    onBeginPlay(ctx);
+    expect(messages).toEqual(["ok"]);
+    messages.length = 0;
+    ctx.getVariable = () => null;
+    onBeginPlay(ctx);
+    expect(messages).toEqual(["missing"]);
+    messages.length = 0;
+    ctx.getVariable = () => undefined;
+    onBeginPlay(ctx);
+    expect(messages).toEqual(["missing"]);
   });
 });

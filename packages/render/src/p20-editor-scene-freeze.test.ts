@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Mesh,
   NullEngine,
   PBRMaterial,
   ScenePerformancePriority,
@@ -9,11 +10,17 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  DEFAULT_SCENE_SKYBOX_ACTOR_ID,
+  DEFAULT_SCENE_SUN_ACTOR_ID,
+  DEFAULT_SCENE_SUN_COMPONENT_ID,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine } from "./create-engine";
 import { isEngineDefaultMaterial } from "./default-material";
-import { editorMeshName } from "./scene-loader";
+import { GRID_MESH_NAME } from "./editor-grid";
+import { encodeTriangleGlb } from "./model-mesh";
+import { editorComponentMeshName, editorMeshName } from "./scene-loader";
+import { visualMeshes } from "./visual-meshes";
 
 class FakeCanvas {
   width = 256;
@@ -40,6 +47,13 @@ class FakeCanvas {
       height: this.clientHeight,
     };
   }
+}
+
+function activeMeshesOf(scene: {
+  getActiveMeshes: () => { data: unknown[]; length: number };
+}): unknown[] {
+  const active = scene.getActiveMeshes();
+  return active.data.slice(0, active.length);
 }
 
 function sceneMaps(scene: { useMaterialMeshMap: boolean; useClonedMeshMap: boolean }) {
@@ -109,6 +123,9 @@ describe("p20-editor-scene-freeze", () => {
     expect(play.scene.performancePriority).toBe(
       ScenePerformancePriority.Intermediate,
     );
+    expect(editor.scene.performancePriority).toBe(
+      ScenePerformancePriority.BackwardCompatible,
+    );
     expect(play.scene.autoClear).toBe(true);
     expect(editor.scheduler.shouldRender(0)).toBe(true);
   });
@@ -129,7 +146,7 @@ describe("p20-editor-scene-freeze", () => {
     unfreeze.mockClear();
     freeze.mockClear();
     handle.loadScene(base);
-    expect(unfreeze).not.toHaveBeenCalled();
+    expect(freeze).toHaveBeenCalled();
     expect(handle.scene._activeMeshesFrozen).toBe(true);
 
     unfreeze.mockClear();
@@ -141,6 +158,40 @@ describe("p20-editor-scene-freeze", () => {
     expect(unfreeze).toHaveBeenCalled();
     expect(freeze).toHaveBeenCalled();
     expect(handle.scene._activeMeshesFrozen).toBe(true);
+  });
+
+  it("includes a box actor in the frozen active-mesh list", () => {
+    const handle = editorHandle();
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ],
+    });
+    const mesh = handle.editor?.sync.meshForActor("hero");
+    expect(mesh).not.toBeNull();
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(activeMeshesOf(handle.scene)).toContain(mesh);
+  });
+
+  it("keeps the editor grid in the frozen active-mesh list after hide", () => {
+    const handle = editorHandle();
+    const grid = handle.editor?.grid.mesh;
+    expect(grid?.name).toBe(GRID_MESH_NAME);
+    expect(grid?.alwaysSelectAsActiveMesh).toBe(true);
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(activeMeshesOf(handle.scene)).toContain(grid);
+
+    handle.editor?.grid.setVisible(false);
+    expect(grid?.isVisible).toBe(true);
+    expect(grid?.visibility).toBe(0);
+    expect(
+      (grid?.material as ShaderMaterial).serialize().floats.gridVisible,
+    ).toBe(0);
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(activeMeshesOf(handle.scene)).toContain(grid);
   });
 
   it("keeps the editor grid in the frozen active list after hide then show", () => {
@@ -161,6 +212,27 @@ describe("p20-editor-scene-freeze", () => {
     expect(
       (grid!.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
     ).toBe(1);
+  });
+
+  it("includes instantiated GLB parts in the frozen active-mesh list", async () => {
+    const handle = editorHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", { components: [mesh] })],
+    });
+    handle.setMeshAssets({
+      modelBytes: new Map([["model-1", encodeTriangleGlb()]]),
+    });
+    await handle.whenEditorModelsReady();
+    const root = handle.editor?.sync.meshForActor("hero");
+    expect(root).not.toBeNull();
+    const parts = visualMeshes(root!).filter((part) => part.getTotalVertices() > 0);
+    expect(parts.length).toBeGreaterThan(0);
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    const active = activeMeshesOf(handle.scene);
+    expect(parts.some((part) => active.includes(part))).toBe(true);
   });
 
   it("freezes static actor world matrices and unfreezes them on gizmo drag", () => {
@@ -190,6 +262,28 @@ describe("p20-editor-scene-freeze", () => {
       {} as never,
     );
     expect(mesh!.isWorldMatrixFrozen).toBe(true);
+  });
+
+  it("does not freeze skybox, billboard, or grid world matrices", () => {
+    const handle = editorHandle();
+    handle.loadScene(createDefaultScene());
+    const skybox = handle.editor?.sync.meshForActor(DEFAULT_SCENE_SKYBOX_ACTOR_ID);
+    expect(skybox).not.toBeNull();
+    expect(skybox!.isWorldMatrixFrozen).toBe(false);
+
+    const grid = handle.editor?.grid.mesh;
+    expect(grid?.name).toBe(GRID_MESH_NAME);
+    expect(grid!.isWorldMatrixFrozen).toBe(false);
+
+    const icon = handle.scene.getMeshByName(
+      editorComponentMeshName(
+        DEFAULT_SCENE_SUN_ACTOR_ID,
+        DEFAULT_SCENE_SUN_COMPONENT_ID,
+      ),
+    );
+    expect(icon).not.toBeNull();
+    expect(icon!.billboardMode).toBe(Mesh.BILLBOARDMODE_ALL);
+    expect(icon!.isWorldMatrixFrozen).toBe(false);
   });
 
   it("freezes scene materials except those open for editing", () => {

@@ -31,7 +31,37 @@ function pinById(node: GraphNode, pinId: string) {
   return findPin(node, pinId);
 }
 
-function buildAdjacency(graph: LogicGraph): {
+function canonicalizeEdges(graph: LogicGraph): LogicGraph {
+  const edges = graph.edges.map((edge) => {
+    const source = findNode(graph, edge.sourceNodeId);
+    const target = findNode(graph, edge.targetNodeId);
+    if (!source || !target) return edge;
+    const sp = pinById(source, edge.sourcePinId);
+    const tp = pinById(target, edge.targetPinId);
+    if (!sp || !tp) return edge;
+    if (sp.direction !== "in" || tp.direction !== "out") return edge;
+    return {
+      ...edge,
+      sourceNodeId: edge.targetNodeId,
+      sourcePinId: edge.targetPinId,
+      targetNodeId: edge.sourceNodeId,
+      targetPinId: edge.sourcePinId,
+    };
+  });
+  return { ...graph, edges };
+}
+
+function isPureEvalSource(
+  node: GraphNode,
+  registry: ValidateOptions["registry"],
+): boolean {
+  return registry?.get(node.typeId)?.pure === true;
+}
+
+function buildAdjacency(
+  graph: LogicGraph,
+  registry: ValidateOptions["registry"],
+): {
   execOut: Map<string, string[]>;
   dataDeps: Map<string, string[]>;
 } {
@@ -50,7 +80,11 @@ function buildAdjacency(graph: LogicGraph): {
     if (!sp || !tp) continue;
     if (sp.kind === "exec" && tp.kind === "exec") {
       execOut.get(source.id)!.push(target.id);
-    } else if (sp.kind === "data" && tp.kind === "data") {
+    } else if (
+      sp.kind === "data" &&
+      tp.kind === "data" &&
+      isPureEvalSource(source, registry)
+    ) {
       dataDeps.get(target.id)!.push(source.id);
     }
   }
@@ -165,9 +199,10 @@ function validateStructural(
   graph: LogicGraph,
   ctx: TypeContext,
   compiled: ReadonlySet<string>,
+  registry: ValidateOptions["registry"],
 ): Diagnostic[] {
   const out: Diagnostic[] = [];
-  const { execOut, dataDeps } = buildAdjacency(graph);
+  const { execOut, dataDeps } = buildAdjacency(graph, registry);
 
   const execCycle = hasCycle(execOut, compiled);
   if (execCycle) {
@@ -902,11 +937,14 @@ export function validateGraphs(
   options: ValidateOptions = {},
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  for (const graph of graphs) {
+  const canonicalGraphs = graphs.map(canonicalizeEdges);
+  for (const graph of canonicalGraphs) {
     const compiled = compiledNodeIds(graph);
     const keep = (diags: readonly Diagnostic[]) =>
       keepCompiledNodeDiagnostics(diags, compiled);
-    diagnostics.push(...keep(validateStructural(graph, ctx, compiled)));
+    diagnostics.push(
+      ...keep(validateStructural(graph, ctx, compiled, options.registry)),
+    );
     diagnostics.push(...keep(validateBreakContext(graph, ctx, compiled, options)));
     diagnostics.push(...keep(validatePinTyping(graph, ctx)));
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
@@ -914,12 +952,12 @@ export function validateGraphs(
     diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
     diagnostics.push(...keep(validateFlowSwitchCases(graph, ctx)));
   }
-  diagnostics.push(...validateInterfaceAndOverrides(graphs, ctx));
+  diagnostics.push(...validateInterfaceAndOverrides(canonicalGraphs, ctx));
   for (const rule of listValidationRules()) {
-    diagnostics.push(...rule.run(graphs, ctx));
+    diagnostics.push(...rule.run(canonicalGraphs, ctx));
   }
   for (const rule of options.extraRules ?? []) {
-    diagnostics.push(...rule.run(graphs, ctx));
+    diagnostics.push(...rule.run(canonicalGraphs, ctx));
   }
   return diagnostics;
 }

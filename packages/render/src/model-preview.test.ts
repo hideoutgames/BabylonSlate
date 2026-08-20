@@ -3,7 +3,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MeshBuilder, StandardMaterial, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { embedGlbExternalImages } from "@babylonslate/assets";
+import {
+  decodeBabasset,
+  embedGlbExternalImages,
+  encodeBabasset,
+} from "@babylonslate/assets";
 import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import { encodeTriangleGlb, encodeUvHierarchyGlb, isGltfModelBytes } from "./model-mesh";
@@ -365,6 +369,42 @@ describe("loadModelPreviewSource", () => {
     for (const part of visuals) {
       expect(part.material).toBe(override);
     }
+    loaded?.dispose();
+  });
+
+  it("loads a Model.source view after a babasset round-trip", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const glb = encodeTriangleGlb();
+    const encoded = await encodeBabasset({
+      header: {
+        guid: "model-1",
+        type: "Model",
+        name: "Hero",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        payload: {},
+      },
+      chunks: [
+        {
+          id: "source",
+          kind: "geometry",
+          mime: "model/gltf-binary",
+          data: glb,
+        },
+      ],
+      blobThreshold: 1024 * 1024,
+    });
+    const source = (await decodeBabasset(encoded)).chunks.get("source")!;
+    expect(
+      source.byteOffset > 0 || source.buffer.byteLength > source.byteLength,
+    ).toBe(true);
+    const host = createModelPreviewScene(handle.engine);
+    const loaded = await loadModelPreviewSource(host, source);
+    expect(loaded).not.toBeNull();
+    expect(host.mesh.getChildMeshes().length).toBeGreaterThan(0);
     loaded?.dispose();
   });
 

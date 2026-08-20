@@ -408,6 +408,79 @@ describe("parseGlbForBrowse", () => {
       }),
     ).rejects.toThrow(/GLB or glTF/i);
   });
+
+  it("extracts a bufferView image when glTF omits byteOffset (default 0)", () => {
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+      0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+      0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
+      0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: png.byteLength }],
+        bufferViews: [{ buffer: 0, byteLength: png.byteLength }],
+        images: [{ mimeType: "image/png", bufferView: 0, name: "Albedo" }],
+        textures: [{ source: 0 }],
+        materials: [
+          {
+            name: "Rock",
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          },
+        ],
+      },
+      png,
+    );
+    const split = splitGlbJsonBin(glb);
+    const browse = parseGlbForBrowse(glb);
+    expect(browse).not.toBeNull();
+    expect(browse!.images).toHaveLength(1);
+    expect(browse!.images[0]!.bytes.byteLength).toBe(png.byteLength);
+    expect(browse!.images[0]!.bytes).toEqual(png);
+    expect(browse!.images[0]!.bytes.buffer).not.toBe(split!.bin.buffer);
+    expect(browse!.rigKind).toBe("none");
+  });
+
+  it("importModel copies omitted-offset GLB pixels onto a Texture with no Skeleton", async () => {
+    const png = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+      0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+      0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+      0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+      0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe, 0xd4, 0xef, 0x00, 0x00,
+      0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+    ]);
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: png.byteLength }],
+        bufferViews: [{ buffer: 0, byteLength: png.byteLength }],
+        images: [{ mimeType: "image/png", bufferView: 0, name: "Albedo" }],
+        textures: [{ source: 0 }],
+        materials: [
+          {
+            name: "Rock",
+            pbrMetallicRoughness: { baseColorTexture: { index: 0 } },
+          },
+        ],
+      },
+      png,
+    );
+    const results = await importModel(glb, {
+      fileName: "statue.glb",
+      existingGuids: new Set(),
+    });
+    expect(results.some((r) => r.type === "Skeleton")).toBe(false);
+    const model = results.find((r) => r.type === "Model")!;
+    expect(model.payload.skeletonGuid).toBeNull();
+    const texture = results.find((r) => r.type === "Texture")!;
+    const pixels = texture.chunks.find((c) => c.kind === "pixels");
+    expect(pixels?.data.byteLength).toBe(png.byteLength);
+    expect(pixels?.data).toEqual(png);
+  });
 });
 
 describe("embedGlbExternalImages", () => {

@@ -414,18 +414,6 @@ export class ProjectService {
     return this.projectSearchIndex;
   }
 
-  indexOpenDocument(
-    path: string,
-    content: SerializedScene | SerializedGraph | Record<string, unknown>,
-  ): void {
-    const indexed = this.assetRegistry?.list().find((asset) => asset.path === path);
-    if (!indexed || !this.projectSearchIndex) return;
-    this.projectSearchIndex.upsertDocument(
-      indexed,
-      content as unknown as Record<string, unknown>,
-    );
-  }
-
   get guid(): string | null {
     return this.projectGuid;
   }
@@ -754,7 +742,6 @@ export class ProjectService {
       catalogClassIds: SEARCH_CATALOG_CLASS_IDS,
       nodeTitles: SEARCH_NODE_TITLES,
     });
-    await this.projectSearchIndex.rebuild(registry);
     this.bindThumbnailWriter();
     const auto = this.loadedTextureSettings?.autoRequeueUncompressed ?? true;
     if (auto) {
@@ -814,9 +801,6 @@ export class ProjectService {
   ): Promise<void> {
     this.pluginOverrides = overrides;
     await this.syncPlugins();
-    if (this.projectSearchIndex && this.assetRegistry) {
-      await this.projectSearchIndex.rebuild(this.assetRegistry);
-    }
     this.emitRegistryChange();
   }
 
@@ -837,9 +821,6 @@ export class ProjectService {
       settings,
     );
     await this.syncPlugins();
-    if (this.projectSearchIndex && this.assetRegistry) {
-      await this.projectSearchIndex.rebuild(this.assetRegistry);
-    }
     this.emitRegistryChange();
     return descriptor;
   }
@@ -858,9 +839,6 @@ export class ProjectService {
     delete next[guid];
     this.pluginOverrides = next;
     await this.syncPlugins();
-    if (this.projectSearchIndex && this.assetRegistry) {
-      await this.projectSearchIndex.rebuild(this.assetRegistry);
-    }
     this.emitRegistryChange();
   }
 
@@ -911,9 +889,6 @@ export class ProjectService {
       await applyPluginImport(this.storage, incoming, plan);
     }
     await this.syncPlugins();
-    if (this.projectSearchIndex && this.assetRegistry) {
-      await this.projectSearchIndex.rebuild(this.assetRegistry);
-    }
     this.emitRegistryChange();
     const guid =
       plan.kind === "remap-plugin" ? plan.nextGuid : incoming.settings.pluginGuid;
@@ -1138,9 +1113,6 @@ export class ProjectService {
     const classPath = `assets/${MANNEQUIN_CLASS_FILE}`;
     document.graphs = [classPath];
     await this.saveProject(document, createEmptyLayouts());
-    if (this.projectSearchIndex) {
-      await this.projectSearchIndex.rebuild(registry);
-    }
   }
 
   async loadDocument(
@@ -1306,17 +1278,6 @@ export class ProjectService {
       );
     }
     this.migrationPending = this.migrationPending.filter((p) => p.path !== path);
-    if (this.projectSearchIndex && this.assetRegistry) {
-      const indexed = this.assetRegistry.list().find((asset) => asset.path === path);
-      if (indexed) {
-        this.projectSearchIndex.upsertDocument(
-          indexed,
-          content as unknown as Record<string, unknown>,
-        );
-      } else {
-        await this.projectSearchIndex.upsertAsset(this.assetRegistry, path);
-      }
-    }
   }
 
   /** Binary chunk (font source, pixels, …) without decoding the document JSON. */

@@ -11,7 +11,6 @@ import {
   createRuntimeFromLoad,
   type RuntimeDriver,
 } from "@babylonslate/runtime";
-import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import {
   audioStats,
   createEngine,
@@ -41,6 +40,7 @@ import {
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
 import { packedFontEntries } from "./fonts";
 import { applyPlayerUiCommand, createPlayerUiHost } from "./player-ui-host";
+import { resolvePlayerInterfaceTexture } from "./interface-texture";
 import { playerSpawnListForScripts } from "./spawn-list";
 
 function havokWasmUrl(): string {
@@ -195,8 +195,12 @@ export function startPlayer(options: {
     resolveTexture: (guid) => {
       const bytes = game.textureBytes.get(guid);
       if (!bytes) return null;
-      const texture = handle.resourceCache.getTexture(guid, handle.engine, bytes);
-      return texture instanceof Texture ? texture : null;
+      return resolvePlayerInterfaceTexture(
+        handle.resourceCache,
+        handle.engine,
+        guid,
+        bytes,
+      );
     },
     onWidgetEvent: (event) => {
       if (worker) worker.postControl(event);

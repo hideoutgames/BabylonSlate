@@ -11,7 +11,7 @@ import {
   type GraphNode,
   type LogicGraph,
 } from "./ir";
-import { pin } from "./node-registry";
+import { pin, NodeRegistry, type NodeDefinition } from "./node-registry";
 import {
   EXEC,
   FLOAT,
@@ -29,6 +29,24 @@ import {
   structRef,
 } from "./types";
 import { diagnostic } from "./diagnostics";
+
+function stubRegistry(
+  entries: ReadonlyArray<{ typeId: string; pure?: boolean }>,
+): NodeRegistry {
+  const registry = new NodeRegistry();
+  for (const entry of entries) {
+    const def: NodeDefinition = {
+      id: entry.typeId,
+      title: entry.typeId,
+      category: "test",
+      pins: () => [],
+      codegen: () => {},
+    };
+    if (entry.pure === true) def.pure = true;
+    registry.register(def);
+  }
+  return registry;
+}
 
 function flowEntry(id = "entry"): GraphNode {
   return {
@@ -1700,9 +1718,173 @@ describe("validateGraphs", () => {
       ],
     };
     expect(
-      validateGraphs([graph], { assetGuid: "a" }).some(
+      validateGraphs([graph], { assetGuid: "a" }, {
+        registry: stubRegistry([{ typeId: "math.add", pure: true }]),
+      }).some(
         (d) => d.code === "pure.cycle",
       ),
     ).toBe(true);
+  });
+
+  it("does not report pin.direction for a reverse-stored output-to-input data wire", () => {
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        flowEntry(),
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
+        },
+        {
+          id: "get",
+          typeId: "variables.get",
+          position: { x: 0, y: 80 },
+          pins: [pin("value", "value", "out", STRING)],
+          properties: {},
+        },
+      ],
+      edges: [
+        execThen("entry", "log"),
+        {
+          id: "reversed",
+          sourceNodeId: "log",
+          sourcePinId: "message",
+          targetNodeId: "get",
+          targetPinId: "value",
+        },
+      ],
+    };
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }).some(
+        (d) => d.code === "pin.direction",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not report a pure cycle for forward plus reverse of the same data pair", () => {
+    const addPins = (id: string, x: number): GraphNode => ({
+      id,
+      typeId: "math.add",
+      position: { x, y: 80 },
+      pins: [
+        pin("a", "a", "in", INT),
+        pin("out", "out", "out", INT),
+      ],
+      properties: {},
+    });
+    const registry = stubRegistry([{ typeId: "math.add", pure: true }]);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        flowEntry(),
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
+        },
+        addPins("addA", 0),
+      ],
+      edges: [
+        execThen("entry", "log"),
+        {
+          id: "forward",
+          sourceNodeId: "addA",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+        {
+          id: "reverse",
+          sourceNodeId: "log",
+          sourcePinId: "message",
+          targetNodeId: "addA",
+          targetPinId: "out",
+        },
+      ],
+    };
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }, { registry }).some(
+        (d) => d.code === "pure.cycle",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not report a pure cycle when impure data outputs feed back through a pure", () => {
+    const registry = stubRegistry([
+      { typeId: "physics.lineTrace" },
+      { typeId: "math.add", pure: true },
+    ]);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        {
+          id: "begin",
+          typeId: "flow.event.beginPlay",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {},
+        },
+        {
+          id: "trace",
+          typeId: "physics.lineTrace",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("end", "end", "in", INT),
+            pin("hit", "hit", "out", INT),
+          ],
+          properties: {},
+        },
+        {
+          id: "add",
+          typeId: "math.add",
+          position: { x: 200, y: 80 },
+          pins: [
+            pin("a", "a", "in", INT),
+            pin("out", "out", "out", INT),
+          ],
+          properties: {},
+        },
+      ],
+      edges: [
+        execThen("begin", "trace"),
+        {
+          id: "hitToAdd",
+          sourceNodeId: "trace",
+          sourcePinId: "hit",
+          targetNodeId: "add",
+          targetPinId: "a",
+        },
+        {
+          id: "addToEnd",
+          sourceNodeId: "add",
+          sourcePinId: "out",
+          targetNodeId: "trace",
+          targetPinId: "end",
+        },
+      ],
+    };
+    expect(
+      validateGraphs([graph], { assetGuid: "a" }, { registry }).some(
+        (d) => d.code === "pure.cycle",
+      ),
+    ).toBe(false);
   });
 });

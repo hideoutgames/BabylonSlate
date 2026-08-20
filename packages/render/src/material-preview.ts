@@ -18,7 +18,7 @@ import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import type { MaterialPreviewMesh } from "@babylonslate/shader-graph";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 import { adoptLoadedHierarchy } from "./glb-anim";
-import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
 import { applyMaterialToVisualMeshes, visualHierarchyBoundingVectors } from "./visual-meshes";
 import { installEngineDefaultMaterial } from "./default-material";
 
@@ -182,14 +182,11 @@ export function createMaterialPreviewScene(
       ) {
         mesh.visibility = 0;
         try {
-          const container = await LoadAssetContainerAsync(
-            customMeshBytes,
-            scene,
-            {
-              pluginExtension: gltfLoaderExtension(customMeshBytes),
-              name: "material-preview-custom.glb",
-            },
-          );
+          const packed = packedGltfBytes(customMeshBytes);
+          const container = await LoadAssetContainerAsync(packed, scene, {
+            pluginExtension: gltfLoaderExtension(customMeshBytes),
+            name: "material-preview-custom.glb",
+          });
           if (generation !== meshGeneration) {
             container.dispose();
             return mesh;

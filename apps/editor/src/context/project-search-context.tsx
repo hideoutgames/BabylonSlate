@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -21,8 +22,13 @@ import {
   sceneFocusActorId,
 } from "../lib/search-navigation";
 
+export type ProjectSearchStatus = "idle" | "pending" | "ready";
+
 interface ProjectSearchContextValue {
   query: (needle: string) => SearchEntry[];
+  searchStatus: ProjectSearchStatus;
+  beginSearchRebuild: () => void;
+  cancelSearchRebuild: () => void;
   pendingTarget: SearchOpenTarget | null;
   clearPendingTarget: () => void;
   openSearchResult: (entry: SearchEntry) => Promise<void>;
@@ -35,6 +41,7 @@ const ProjectSearchContext = createContext<ProjectSearchContextValue | null>(
 export function ProjectSearchProvider({ children }: { children: ReactNode }) {
   const {
     searchIndex,
+    assetRegistry,
     openDocument,
     setActiveDocument,
     openDocuments,
@@ -43,10 +50,63 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
   const [pendingTarget, setPendingTarget] = useState<SearchOpenTarget | null>(
     null,
   );
+  const [searchStatus, setSearchStatus] = useState<ProjectSearchStatus>("idle");
+  const abortRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
+  const searchIndexRef = useRef(searchIndex);
+  const assetRegistryRef = useRef(assetRegistry);
+  const openDocumentsRef = useRef(openDocuments);
+  searchIndexRef.current = searchIndex;
+  assetRegistryRef.current = assetRegistry;
+  openDocumentsRef.current = openDocuments;
+
+  const cancelSearchRebuild = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    generationRef.current += 1;
+    setSearchStatus("idle");
+  }, []);
+
+  const beginSearchRebuild = useCallback(() => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const generation = ++generationRef.current;
+    const index = searchIndexRef.current;
+    const registry = assetRegistryRef.current;
+    if (!index || !registry) {
+      setSearchStatus("idle");
+      return;
+    }
+    setSearchStatus("pending");
+    const overlays = openDocumentsRef.current
+      .filter((doc) => doc.content && doc.ref.path)
+      .map((doc) => ({
+        path: doc.ref.path,
+        payload: doc.content as Record<string, unknown>,
+      }));
+    void index
+      .rebuild(registry, {
+        signal: controller.signal,
+        openDocuments: overlays,
+      })
+      .then(() => {
+        if (generation !== generationRef.current) return;
+        setSearchStatus("ready");
+      })
+      .catch(() => {
+        if (generation !== generationRef.current) return;
+        if (controller.signal.aborted) return;
+        setSearchStatus("idle");
+      });
+  }, []);
 
   const query = useCallback(
-    (needle: string) => searchIndex?.query(needle) ?? [],
-    [searchIndex],
+    (needle: string) => {
+      if (searchStatus !== "ready") return [];
+      return searchIndex?.query(needle) ?? [];
+    },
+    [searchIndex, searchStatus],
   );
 
   const clearPendingTarget = useCallback(() => {
@@ -96,11 +156,22 @@ export function ProjectSearchProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ProjectSearchContextValue>(
     () => ({
       query,
+      searchStatus,
+      beginSearchRebuild,
+      cancelSearchRebuild,
       pendingTarget,
       clearPendingTarget,
       openSearchResult,
     }),
-    [clearPendingTarget, openSearchResult, pendingTarget, query],
+    [
+      beginSearchRebuild,
+      cancelSearchRebuild,
+      clearPendingTarget,
+      openSearchResult,
+      pendingTarget,
+      query,
+      searchStatus,
+    ],
   );
 
   return (

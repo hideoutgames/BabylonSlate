@@ -328,6 +328,7 @@ export class EditorSceneSync {
         this.restoreMeshComponentConstruction(current, root);
         this.applyModelSlots(current, root);
         this.bindActorMeshMaterials(current, root);
+        freezeEditorActiveMeshes(this.scene);
         this.scheduler?.invalidate("asset");
         this.onAfterApply?.();
       },

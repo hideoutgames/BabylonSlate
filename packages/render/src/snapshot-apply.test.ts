@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createDefaultSpritePayload, embedGlbExternalImages } from "@babylonslate/assets";
+import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
@@ -121,6 +121,43 @@ describe("createPlayMesh", () => {
     await binding.slotAnimLoads?.get(2);
     expect(model.visibility).toBe(0);
     expect(model.getChildMeshes().length).toBeGreaterThan(0);
+  });
+
+  it("loads a static Model.source view after a babasset round-trip", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const glb = encodeTriangleGlb();
+    const encoded = await encodeBabasset({
+      header: {
+        guid: "model-1",
+        type: "Model",
+        name: "Hero",
+        engineVersion: "0.0.0",
+        version: 1,
+        mode: "thin",
+        dependencies: [],
+        payload: {},
+      },
+      chunks: [
+        {
+          id: "source",
+          kind: "geometry",
+          mime: "model/gltf-binary",
+          data: glb,
+        },
+      ],
+      blobThreshold: 1024 * 1024,
+    });
+    const source = (await decodeBabasset(encoded)).chunks.get("source")!;
+    expect(
+      source.byteOffset > 0 || source.buffer.byteLength > source.byteLength,
+    ).toBe(true);
+    const binding = createSnapshotSceneBinding();
+    binding.modelBytes = new Map([["model-1", source]]);
+    const model = createPlayMesh(scene, 2, "box", "model-1", binding);
+    await binding.slotAnimLoads?.get(2);
+    expect(visualMeshes(model).length).toBeGreaterThan(0);
   });
 
   it("applies Model material slots after the container loads", async () => {
@@ -1083,6 +1120,8 @@ describe("createPlayMesh", () => {
     expect(firstWorld).not.toBe(secondWorld);
     expect(firstWorld.getTranslation().asArray()).toEqual([-3, 1, 0]);
     expect(secondWorld.getTranslation().asArray()).toEqual([4, -1, 0]);
+    expect(binding.meshes.get(0)!.isWorldMatrixFrozen).toBe(true);
+    expect(binding.meshes.get(1)!.isWorldMatrixFrozen).toBe(true);
   });
 
   it("rebuilds a slot visual when assignMesh arrives after the first snapshot", () => {
@@ -1276,6 +1315,8 @@ describe("createPlayMesh", () => {
       ],
     });
     expect(mesh!.isVisible).toBe(true);
+    expect(mesh!.isWorldMatrixFrozen).toBe(false);
+    expect(mesh!.infiniteDistance).toBe(true);
   });
 
   it("creates a 3D Text mesh for meshKind text3d", () => {

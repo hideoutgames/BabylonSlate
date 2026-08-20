@@ -879,6 +879,157 @@ describe("GraphEditor", () => {
     ]);
   });
 
+  it("stores an input-first pin drag as output-to-input", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const stringOutPins = [
+        {
+          id: "value",
+          name: "value",
+          kind: "data" as const,
+          direction: "out" as const,
+          type: { kind: "string" },
+        },
+      ];
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "get-a",
+                type: "variables.get",
+                position: { x: 0, y: 0 },
+                data: { __pins: stringOutPins },
+              },
+              {
+                id: "log-b",
+                type: "debug.log",
+                position: { x: 280, y: 0 },
+                data: { message: "B", __pins: debugLogPins },
+              },
+            ],
+            edges: [],
+          }}
+          connectEndMode="zone-add-node"
+          onChange={onChange}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      expect(flow).not.toBeNull();
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      const input = container.querySelector(
+        '[data-id="log-b"] [data-handleid="message"][data-handlepos="left"]',
+      );
+      const output = container.querySelector(
+        '[data-id="get-a"] [data-handleid="value"][data-handlepos="right"]',
+      );
+      expect(input).not.toBeNull();
+      expect(output).not.toBeNull();
+      mockHandleRect(input!, { left: 280, top: 40, width: 44, height: 44 });
+      mockHandleRect(output!, { left: 0, top: 0, width: 44, height: 44 });
+      act(() => {
+        dragHandle(input!, { x: 302, y: 62 }, { x: 22, y: 22 });
+      });
+      expect(onChange).toHaveBeenCalled();
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+      expect(lastGraph.edges).toEqual([
+        expect.objectContaining({
+          source: "get-a",
+          target: "log-b",
+          sourceHandle: "value",
+          targetHandle: "message",
+        }),
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
+  it("does not keep a reverse duplicate when reconnecting an existing data wire from its input", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const onChange = vi.fn();
+      const stringOutPins = [
+        {
+          id: "value",
+          name: "value",
+          kind: "data" as const,
+          direction: "out" as const,
+          type: { kind: "string" },
+        },
+      ];
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "get-a",
+                type: "variables.get",
+                position: { x: 0, y: 0 },
+                data: { __pins: stringOutPins },
+              },
+              {
+                id: "log-b",
+                type: "debug.log",
+                position: { x: 280, y: 0 },
+                data: { message: "B", __pins: debugLogPins },
+              },
+            ],
+            edges: [
+              {
+                id: "e:get-a:value:log-b:message",
+                source: "get-a",
+                target: "log-b",
+                sourceHandle: "value",
+                targetHandle: "message",
+              },
+            ],
+          }}
+          connectEndMode="zone-add-node"
+          onChange={onChange}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      expect(flow).not.toBeNull();
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      const input = container.querySelector(
+        '[data-id="log-b"] [data-handleid="message"][data-handlepos="left"]',
+      );
+      const output = container.querySelector(
+        '[data-id="get-a"] [data-handleid="value"][data-handlepos="right"]',
+      );
+      expect(input).not.toBeNull();
+      expect(output).not.toBeNull();
+      mockHandleRect(input!, { left: 280, top: 40, width: 44, height: 44 });
+      mockHandleRect(output!, { left: 0, top: 0, width: 44, height: 44 });
+      onChange.mockClear();
+      act(() => {
+        dragHandle(input!, { x: 302, y: 62 }, { x: 22, y: 22 });
+      });
+      const lastGraph = onChange.mock.calls.at(-1)?.[0] as
+        | GraphDocument
+        | undefined;
+      const edges = lastGraph?.edges ?? [
+        {
+          source: "get-a",
+          target: "log-b",
+          sourceHandle: "value",
+          targetHandle: "message",
+        },
+      ];
+      expect(edges).toHaveLength(1);
+      expect(edges[0]).toMatchObject({
+        source: "get-a",
+        target: "log-b",
+        sourceHandle: "value",
+        targetHandle: "message",
+      });
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("breaks all wires on a pin when a drag is released without connecting", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {

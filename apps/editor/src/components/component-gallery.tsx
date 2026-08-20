@@ -25,6 +25,8 @@ import {
   SelectableText,
   ToolbarStrip,
   TreeView,
+  WindowedList,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   TypeColorMark,
   TYPE_VISUAL_ICON_TILE_SIZE,
   TypeVisualIcon,
@@ -461,6 +463,22 @@ function GalleryComposites() {
             onSelect={setSelectedId}
             data-testid="gallery-tree"
           />
+        </PanelFrame>
+      </div>
+      <div className="h-40 overflow-hidden rounded-lg border border-border">
+        <PanelFrame title="Windowed list" data-testid="gallery-windowed-list">
+          <ScrollArea className="h-full p-2">
+            <WindowedList
+              itemCount={80}
+              rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+            >
+              {(index) => (
+                <div className="flex h-full items-center text-sm">
+                  Row {index + 1}
+                </div>
+              )}
+            </WindowedList>
+          </ScrollArea>
         </PanelFrame>
       </div>
       <div className="flex flex-wrap items-end gap-3">

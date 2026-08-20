@@ -8,7 +8,7 @@ import {
   createMaterialPreviewScene,
   type MaterialPreviewScene,
 } from "./material-preview";
-import { gltfLoaderExtension, isGltfModelBytes } from "./model-mesh";
+import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
 import { constructionMaterialOf, visualHierarchyBoundingVectors, visualMeshes } from "./visual-meshes";
 
 export { applyMaterialToVisualMeshes, visualMeshes } from "./visual-meshes";
@@ -121,7 +121,8 @@ export async function loadModelPreviewSource(
   bytes: Uint8Array,
 ): Promise<{ dispose: () => void; animationGroups: AnimationGroup[] } | null> {
   if (!isGltfModelBytes(bytes)) return null;
-  const container = await LoadAssetContainerAsync(bytes, host.scene, {
+  const packed = packedGltfBytes(bytes);
+  const container = await LoadAssetContainerAsync(packed, host.scene, {
     pluginExtension: gltfLoaderExtension(bytes),
     name: "model-preview.glb",
   });

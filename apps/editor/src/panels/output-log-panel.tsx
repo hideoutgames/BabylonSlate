@@ -1,6 +1,11 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
-import { PanelFrame, SelectableText } from "@babylonslate/editor-kit";
+import {
+  PanelFrame,
+  SelectableText,
+  TREE_ROW_HEIGHT,
+  WindowedList,
+} from "@babylonslate/editor-kit";
 import { useOutputLog } from "../context/play-context";
 
 export function OutputLogPanel(_props: IDockviewPanelProps) {
@@ -12,13 +17,16 @@ export function OutputLogPanel(_props: IDockviewPanelProps) {
         {lines.length === 0 ? (
           <p className="text-sm text-muted-foreground">No log output yet.</p>
         ) : (
-          <ul className="flex flex-col gap-1 font-mono text-xs">
-            {lines.map((line, i) => (
-              <li key={`${i}-${line}`}>
-                <SelectableText>{line}</SelectableText>
+          <WindowedList itemCount={lines.length} rowHeight={TREE_ROW_HEIGHT}>
+            {(index) => (
+              <li
+                data-testid="output-log-line"
+                className="flex h-full items-center font-mono text-xs"
+              >
+                <SelectableText className="truncate">{lines[index]}</SelectableText>
               </li>
-            ))}
-          </ul>
+            )}
+          </WindowedList>
         )}
       </ScrollArea>
     </PanelFrame>

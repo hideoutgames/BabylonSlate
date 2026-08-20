@@ -10,6 +10,7 @@ import {
 import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";
+import { WindowedList, WINDOWED_LIST_TOUCH_ROW_HEIGHT } from "./windowed-list";
 
 export interface SearchDialogItem {
   id: string;
@@ -108,32 +109,39 @@ export function SearchDialog({
             data-testid={testId ? `${testId}-query` : undefined}
           />
           <ScrollArea className="h-0 min-h-0 max-h-64 flex-1">
-            <div className="flex flex-col gap-1">
-              {filtered.map((item) => (
-                <Button
-                  key={item.id}
-                  variant="ghost"
-                  size="touch"
-                  className="w-full justify-between gap-2 text-left"
-                  onClick={() => {
-                    onSelect(item.id);
-                    setQuery("");
-                    onOpenChange(false);
-                  }}
-                  data-testid={`search-item-${item.id}`}
-                >
-                  <PickerIdentity
-                    label={item.label}
-                    description={item.description}
-                    leading={item.leading}
-                  />
-                  {item.trailing}
-                </Button>
-              ))}
-              {filtered.length === 0 ? (
-                <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
-              ) : null}
-            </div>
+            {filtered.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
+            ) : (
+              <WindowedList
+                itemCount={filtered.length}
+                rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+              >
+                {(index) => {
+                  const item = filtered[index]!;
+                  return (
+                    <Button
+                      key={item.id}
+                      variant="ghost"
+                      size="touch"
+                      className="h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left"
+                      onClick={() => {
+                        onSelect(item.id);
+                        setQuery("");
+                        onOpenChange(false);
+                      }}
+                      data-testid={`search-item-${item.id}`}
+                    >
+                      <PickerIdentity
+                        label={item.label}
+                        description={item.description}
+                        leading={item.leading}
+                      />
+                      {item.trailing}
+                    </Button>
+                  );
+                }}
+              </WindowedList>
+            )}
           </ScrollArea>
         </div>
       </DialogContent>

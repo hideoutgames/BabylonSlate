@@ -7,10 +7,18 @@ import {
   SkyboxCreatorPreview,
 } from "./skybox-creator-editor";
 
+const PNG_MAGIC = Uint8Array.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+
 const createAsset = vi.fn();
 const deleteAsset = vi.fn();
 const refreshAssetRegistry = vi.fn();
-const readAssetChunk = vi.fn(async () => Uint8Array.of(1, 2, 3));
+const readAssetChunk = vi.fn(async () => PNG_MAGIC);
+const decodeSourceToRgba = vi.hoisted(() =>
+  vi.fn(async () => {
+    const rgba = new Uint8Array(4 * 3 * 4);
+    return { rgba, width: 4, height: 3, clamped: false };
+  }),
+);
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
@@ -41,10 +49,7 @@ vi.mock("@babylonslate/assets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/assets")>();
   return {
     ...actual,
-    decodeSourceToRgba: async () => {
-      const rgba = new Uint8Array(4 * 3 * 4);
-      return { rgba, width: 4, height: 3, clamped: false };
-    },
+    decodeSourceToRgba,
   };
 });
 
@@ -61,6 +66,9 @@ afterEach(() => {
   createAsset.mockReset();
   deleteAsset.mockReset();
   refreshAssetRegistry.mockReset();
+  readAssetChunk.mockReset();
+  readAssetChunk.mockImplementation(async () => PNG_MAGIC);
+  decodeSourceToRgba.mockClear();
 });
 
 describe("SkyboxCreatorEditor", () => {
@@ -136,6 +144,36 @@ describe("SkyboxCreatorEditor", () => {
           px: expect.any(String),
         }),
       }),
+    );
+    expect(onChange.mock.invocationCallOrder[0]!).toBeLessThan(
+      refreshAssetRegistry.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("shows the createAsset failure instead of a decode error", async () => {
+    createAsset.mockRejectedValueOnce(
+      new Error("Asset already exists: assets/Day_px.babasset"),
+    );
+    render(
+      <SkyboxCreatorEditor
+        payload={
+          {
+            ...createDefaultSkyboxCreatorPayload(),
+            sourceTextureGuid: "tex-1",
+          } as unknown as Record<string, unknown>
+        }
+        helperPath="assets/Day.skyboxcreator.babasset"
+        onChange={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("skybox-creator-create"));
+    await waitFor(() => {
+      expect(screen.getByTestId("skybox-creator-alert").textContent).toContain(
+        "Asset already exists: assets/Day_px.babasset",
+      );
+    });
+    expect(screen.getByTestId("skybox-creator-alert").textContent).not.toContain(
+      "could not be decoded",
     );
   });
 });
@@ -243,8 +281,9 @@ describe("SkyboxCreatorPreview", () => {
     const net = screen.getByTestId("skybox-creator-net");
     expect(net.style.width).toBe("400px");
     expect(net.style.height).toBe("300px");
-    const front = screen.getByText("FRONT").parentElement;
-    expect(front?.style.width || getComputedStyle(front!).width).toBeTruthy();
+    const front = screen.getByTestId("skybox-creator-cell-front");
+    expect(front.style.width).toBe("");
+    expect(front.style.height).toBe("");
   });
 
   it("letterboxes the net to 4 by 3 with square cells in a tall host", () => {
@@ -264,6 +303,38 @@ describe("SkyboxCreatorPreview", () => {
     const net = screen.getByTestId("skybox-creator-net");
     expect(net.style.width).toBe("400px");
     expect(net.style.height).toBe("300px");
+    const front = screen.getByTestId("skybox-creator-cell-front");
+    expect(front.style.width).toBe("");
+    expect(front.style.height).toBe("");
+  });
+
+  it("does not re-decode when assetRegistry.list returns a new row identity", async () => {
+    const payload = {
+      ...createDefaultSkyboxCreatorPayload(),
+      sourceTextureGuid: "tex-1",
+      sourcePlacement: { x: 0, y: 0, width: 1, height: 1 },
+    };
+    const { rerender } = render(
+      <SkyboxCreatorPreview
+        payload={payload as unknown as Record<string, unknown>}
+        onCreate={() => {}}
+        onChange={() => {}}
+      />,
+    );
+    await screen.findByTestId("skybox-creator-source");
+    await waitFor(() => {
+      expect(decodeSourceToRgba.mock.calls.length).toBeGreaterThan(0);
+    });
+    const callsAfterLoad = decodeSourceToRgba.mock.calls.length;
+    rerender(
+      <SkyboxCreatorPreview
+        payload={payload as unknown as Record<string, unknown>}
+        onCreate={() => {}}
+        onChange={() => {}}
+      />,
+    );
+    await screen.findByTestId("skybox-creator-source");
+    expect(decodeSourceToRgba).toHaveBeenCalledTimes(callsAfterLoad);
   });
 
   it("shows a source overlay and commits net-space placement on drag", async () => {
@@ -310,11 +381,60 @@ describe("SkyboxCreatorPreview", () => {
           height: 1,
         }),
       }),
+      "skybox-creator-source",
+    );
+    expect(source.className.split(" ")).not.toContain("overflow-hidden");
+    const image = source.querySelector("img");
+    expect(image).toBeTruthy();
+    expect(image!.parentElement).not.toBe(source);
+    expect(image!.parentElement?.className.split(" ")).toContain("overflow-hidden");
+    await waitFor(() => {
+      expect(URL.createObjectURL).toHaveBeenCalled();
+    });
+    const blob = (URL.createObjectURL as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as Blob;
+    expect(blob.type).toBe("image/png");
+    expect(decodeSourceToRgba).toHaveBeenCalledWith(
+      PNG_MAGIC,
+      16384,
+      "image/png",
     );
   });
 });
 
 describe("SkyboxCreatorCubemap", () => {
+  it("does not re-decode when only sourcePlacement changes", async () => {
+    const { rerender } = render(
+      <SkyboxCreatorCubemap
+        payload={
+          {
+            ...createDefaultSkyboxCreatorPayload(),
+            sourceTextureGuid: "tex-1",
+            sourcePlacement: { x: 0, y: 0, width: 1, height: 1 },
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    await screen.findByTestId("skybox-creator-preview-canvas");
+    await waitFor(() => {
+      expect(decodeSourceToRgba.mock.calls.length).toBeGreaterThan(0);
+    });
+    const callsAfterLoad = decodeSourceToRgba.mock.calls.length;
+    rerender(
+      <SkyboxCreatorCubemap
+        payload={
+          {
+            ...createDefaultSkyboxCreatorPayload(),
+            sourceTextureGuid: "tex-1",
+            sourcePlacement: { x: 0.1, y: 0.1, width: 0.8, height: 0.8 },
+          } as unknown as Record<string, unknown>
+        }
+      />,
+    );
+    await screen.findByTestId("skybox-creator-preview-canvas");
+    expect(decodeSourceToRgba).toHaveBeenCalledTimes(callsAfterLoad);
+  });
+
   it("renders the cubemap canvas in an overflow-hidden host without a min-height", async () => {
     render(
       <SkyboxCreatorCubemap

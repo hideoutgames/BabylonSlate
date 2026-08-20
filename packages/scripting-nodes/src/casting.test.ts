@@ -44,11 +44,29 @@ describe("casting nodes", () => {
     expect(castingNodes.map((entry) => entry.id)).toContain("casting.castActor");
   });
 
-  it("declares object, Class, Success, and Result pins", () => {
+  it("declares exec, then, object, Class, Success, and Result pins", () => {
     const def = castingNodes.find((entry) => entry.id === "casting.cast");
     const pins = def?.pins({}) ?? [];
+    expect(pins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "execOut",
+      "object",
+      "class",
+      "success",
+      "result",
+    ]);
     expect(pins).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          id: "execIn",
+          direction: "in",
+          type: { kind: "exec" },
+        }),
+        expect.objectContaining({
+          id: "execOut",
+          direction: "out",
+          type: { kind: "exec" },
+        }),
         expect.objectContaining({
           id: "object",
           direction: "in",
@@ -71,6 +89,7 @@ describe("casting nodes", () => {
         }),
       ]),
     );
+    expect(def?.pure).not.toBe(true);
   });
 
   it("types Result as an actor ref when the default class is Actor", () => {
@@ -114,6 +133,13 @@ describe("casting nodes", () => {
         {
           id: "e1",
           sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "cast",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e1b",
+          sourceNodeId: "cast",
           sourcePinId: "execOut",
           targetNodeId: "log",
           targetPinId: "execIn",

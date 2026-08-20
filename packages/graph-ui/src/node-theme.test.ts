@@ -152,6 +152,13 @@ describe("nodeVisualRole", () => {
     expect(
       nodeVisualRole({ category: "variables", nodeType: "variables.set" }),
     ).toBe("variable-set");
+    expect(
+      nodeVisualRole({
+        category: "variables",
+        nodeType: "variables.getValidated",
+        title: "Validated Get Target",
+      }),
+    ).toBe("variable");
   });
 
   it("maps pure nodes to the pure role and defaults to function", () => {

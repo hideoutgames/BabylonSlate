@@ -301,8 +301,8 @@ export interface ScriptContext {
   ): unknown;
   spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
-  getAnimGraphVariable(name: string): unknown;
-  setAnimGraphVariable(name: string, value: unknown): void;
+  getAnimGraphVariable(target: unknown, name: string): unknown;
+  setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(): { id: string; name: string } | null;
   jumpAnimGraphState(state: string): void;
   invokeCustomEvent(
@@ -928,10 +928,13 @@ export class ScriptHost {
         if (!target) return false;
         return services.classRegistry?.isA(id, target) ?? id === target;
       },
-      getAnimGraphVariable: (name) =>
-        services.animGraphControl?.(self)?.getVariable(String(name ?? "")),
-      setAnimGraphVariable: (name, value) => {
-        services.animGraphControl?.(self)?.setVariable(String(name ?? ""), value);
+      getAnimGraphVariable: (target, name) =>
+        animationGraphComponentOf(target)?.getVariable(String(name ?? "")),
+      setAnimGraphVariable: (target, name, value) => {
+        animationGraphComponentOf(target)?.setVariable(
+          String(name ?? ""),
+          value,
+        );
       },
       getAnimGraphCurrentState: () =>
         services.animGraphControl?.(self)?.getCurrentState() ?? null,
@@ -1264,6 +1267,17 @@ function resolveLiveActors(
 function actorOf(target: unknown): Actor | null {
   if (target instanceof Actor) return target;
   if (target instanceof ActorComponent) return target.owner;
+  return null;
+}
+
+function animationGraphComponentOf(target: unknown): ActorComponent | null {
+  if (
+    target instanceof ActorComponent &&
+    target.classId === "AnimationGraphComponent" &&
+    !target.destroyed
+  ) {
+    return target;
+  }
   return null;
 }
 

@@ -20,7 +20,7 @@ The asset registry is **header-only** ([asset-registry.md](asset-registry.md)): 
 | `component` | Actor `components[]` classId, id, short string properties | Open scene + select parent actor |
 | `graph-node` | Graph `nodes[]` type, id, catalog title, short string properties | Open class graph + focus node |
 | `class` | Class asset headers + catalog engine class ids | Class `.class.babasset` → graph tab; catalog-only ids are informational |
-| `variable` | `variables.get` / `variables.set` `variableName` (legacy `name`) | Open containing graph at that node |
+| `variable` | `variables.get` / `variables.set` / `variables.getValidated` `variableName` (legacy `name`) | Open containing graph at that node |
 
 Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
@@ -28,16 +28,14 @@ Out of v1: ExecuteJavaScript `body` text, binary payloads, on-disk search cache.
 
 ## Lifecycle
 
-**P20** (`p20-search-on-demand`) drops the warm index. Until that slice lands, today's code still rebuilds on project open / `remountRegistry` and upserts after save/edit.
-
-Target lifecycle:
+**P20** (`p20-search-on-demand`, **Done**) dropped the warm index.
 
 - Do **not** rebuild on project open or keep a warm index across edits.
 - **Rebuild when Global Search is initiated** (toolbar / `Ctrl/Cmd+K` opens the dialog). Include **open document** JSON so unsaved edits are in that snapshot.
-- Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (empty/spinner while pending). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
+- Rebuild is **async / chunked** (yield between assets) so open does not freeze WKWebView. Query waits until that rebuild finishes (`data-testid="global-search-pending"` Empty spinner). Cancel an in-flight rebuild if the dialog closes or a newer open starts.
 - Drop continuous upsert / rebuild-on-import as the source of truth.
 - **Clear** on Close Project.
-- Result cap ~80 stays; the result body is **not** virtualised (`p20-log-virtualize` may window `SearchDialog` pick lists, not this hit list).
+- Result cap ~80 stays; the result body is **not** virtualised (`p20-log-virtualize` windows `SearchDialog` pick lists, not this hit list).
 - Still no on-disk search cache, no ExecuteJavaScript body, no binary payloads.
 
 In-memory only, keyed by the open project. Query is case-insensitive substring; empty needle returns no rows.

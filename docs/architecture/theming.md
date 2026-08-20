@@ -64,8 +64,8 @@ Unreal-like mapping. **oklch values** live in `:root` / `.dark` in `globals.css`
 | `--pin-object` | objectRef (blue) |
 | `--pin-class` | classRef (purple) — a class value, not a live instance |
 | `--pin-actor` | actorRef (slightly cooler blue) |
-| `--pin-struct` | structRef (teal) |
-| `--pin-enum` | enumRef (olive) |
+| `--pin-struct` | structRef (indigo, same oklch as Structure tiles `--asset-class`) |
+| `--pin-enum` | enumRef (teal, same oklch as Enum tiles `--asset-script-type`) |
 | `--pin-wildcard` | unbound resolvingWildcard / boxedWildcard / unknown (gray) |
 | `--pin-delegate` | delegate (red) |
 
@@ -82,7 +82,7 @@ Title-bar fills for Blueprint-like nodes:
 | `--node-function` | default impure calls |
 | `--node-pure` | `pure` (math, getters) |
 | `--node-flow` | flow control (Branch, Sequence) |
-| `--node-variable` | Get Variable |
+| `--node-variable` | Get Variable / Validated Get |
 | `--node-variable-set` | Set Variable |
 | `--node-latent` | timers / `latent` |
 | `--node-debug` | debug category |

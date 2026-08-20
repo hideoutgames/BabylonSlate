@@ -19,7 +19,7 @@ import {
   createMaterialPreviewPresenter,
   createMaterialPreviewScene,
 } from "./material-preview";
-import { encodeUvHierarchyGlb } from "./model-mesh";
+import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 
 type Listener = (event: Event) => void;
@@ -174,6 +174,20 @@ describe("material preview scene", () => {
     for (const part of visuals) {
       expect(part.material).toBe(preview);
     }
+  });
+
+  it("loads a custom Model nested in a larger ArrayBuffer", async () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const glb = encodeTriangleGlb();
+    const padded = new Uint8Array(glb.byteLength + 32);
+    padded.fill(0xab);
+    padded.set(glb, 16);
+    const view = padded.subarray(16, 16 + glb.byteLength);
+    expect(view.byteOffset).toBe(16);
+    await host.setMesh("custom", view);
+    expect(visualMeshes(host.mesh).length).toBeGreaterThan(0);
+    expect(host.mesh.visibility).toBe(0);
   });
 
   it("creates a scene with a camera, lights and a mesh", () => {

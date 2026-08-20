@@ -548,6 +548,87 @@ describe("graphCompileSignature", () => {
       ]),
     ).not.toBe(base);
   });
+
+  it("ignores function-graph node positions the same way as the event graph", () => {
+    const functionGraph: SerializedGraph = {
+      ...tickToLog,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const nudged: SerializedGraph = {
+      ...functionGraph,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 80, y: 40 },
+              data: { __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const edited: SerializedGraph = {
+      ...functionGraph,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true, note: "changed" },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const path = "assets/hero.class.babasset";
+    expect(graphCompileSignature([{ path, content: functionGraph }])).toBe(
+      graphCompileSignature([{ path, content: nudged }]),
+    );
+    expect(graphCompileSignature([{ path, content: functionGraph }])).not.toBe(
+      graphCompileSignature([{ path, content: edited }]),
+    );
+  });
+
+  it("changes when Class member defaults change", () => {
+    const withHealth: SerializedGraph = {
+      ...tickToLog,
+      members: [
+        {
+          id: "health",
+          kind: "variable",
+          name: "Health",
+          typeId: "float",
+          defaultValue: 100,
+        },
+      ],
+    };
+    const lowered: SerializedGraph = {
+      ...withHealth,
+      members: [{ ...withHealth.members![0]!, defaultValue: 50 }],
+    };
+    const path = "assets/hero.class.babasset";
+    const base = graphCompileSignature([{ path, content: withHealth }]);
+    expect(graphCompileSignature([{ path, content: tickToLog }])).not.toBe(base);
+    expect(graphCompileSignature([{ path, content: lowered }])).not.toBe(base);
+  });
 });
 
 describe("graphsNeedCompile", () => {
@@ -704,6 +785,70 @@ describe("GraphScriptCompileCache", () => {
       { cache },
     );
     expect(cache.compiles).toBe(3);
+  });
+
+  it("does not recompile after a function-graph canvas nudge", () => {
+    const cache = new GraphScriptCompileCache();
+    const withFn: SerializedGraph = {
+      ...tickToLog,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 0, y: 0 },
+              data: { __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const nudged: SerializedGraph = {
+      ...withFn,
+      functionGraphs: {
+        "fn-1": {
+          nodes: [
+            {
+              id: "in",
+              type: "flow.function.input",
+              position: { x: 120, y: 16 },
+              data: { __protected: true },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    const doc = { path: "assets/hero.class.babasset", content: withFn };
+    compileGraphDocuments([doc], { cache });
+    compileGraphDocuments([{ ...doc, content: nudged }], { cache });
+    expect(cache.compiles).toBe(1);
+  });
+
+  it("recompiles when a Class variable default changes", () => {
+    const cache = new GraphScriptCompileCache();
+    const withHealth: SerializedGraph = {
+      ...tickToLog,
+      members: [
+        {
+          id: "health",
+          kind: "variable",
+          name: "Health",
+          typeId: "float",
+          defaultValue: 100,
+        },
+      ],
+    };
+    const lowered: SerializedGraph = {
+      ...withHealth,
+      members: [{ ...withHealth.members![0]!, defaultValue: 1 }],
+    };
+    const path = "assets/hero.class.babasset";
+    compileGraphDocuments([{ path, content: withHealth }], { cache });
+    compileGraphDocuments([{ path, content: lowered }], { cache });
+    expect(cache.compiles).toBe(2);
   });
 
   it("caches an empty graph null bundle instead of retrying codegen", () => {

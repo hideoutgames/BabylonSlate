@@ -7,7 +7,11 @@ export const DEFAULT_SEARCH_LIMIT = 80;
 const MAX_INDEXED_STRING = 200;
 const SKIP_PAYLOAD_KEYS = new Set(["body", "code", "source", "__pins"]);
 const DOCUMENT_TYPES = new Set(["Scene", "Graph", "Class"]);
-const VARIABLE_NODE_TYPES = new Set(["variables.get", "variables.set"]);
+const VARIABLE_NODE_TYPES = new Set([
+  "variables.get",
+  "variables.set",
+  "variables.getValidated",
+]);
 
 export type SearchEntryKind =
   | "asset"
@@ -48,6 +52,16 @@ export interface ProjectSearchIndexOptions {
   limit?: number;
 }
 
+export interface ProjectSearchOpenDocument {
+  path: string;
+  payload: Record<string, unknown>;
+}
+
+export interface ProjectSearchRebuildOptions {
+  signal?: AbortSignal;
+  openDocuments?: readonly ProjectSearchOpenDocument[];
+}
+
 /**
  * Project-wide text index layered on the header-only asset registry.
  * May decode Scene/Graph document JSON; never loads binary payloads.
@@ -76,12 +90,39 @@ export class ProjectSearchIndex {
     this.entries = [];
   }
 
-  async rebuild(registry: AssetRegistry): Promise<void> {
+  async rebuild(
+    registry: AssetRegistry,
+    options: ProjectSearchRebuildOptions = {},
+  ): Promise<void> {
+    throwIfAborted(options.signal);
+    const previous = this.entries;
     this.entries = [];
-    for (const asset of registry.list()) {
-      await this.indexAsset(asset, registry);
+    const overlays = new Map(
+      (options.openDocuments ?? []).map((document) => [
+        document.path,
+        document.payload,
+      ]),
+    );
+    try {
+      await yieldSearchSlice();
+      throwIfAborted(options.signal);
+      for (const asset of registry.list()) {
+        throwIfAborted(options.signal);
+        const overlay = overlays.get(asset.path);
+        if (overlay) {
+          this.upsertDocument(asset, overlay);
+        } else {
+          await this.indexAsset(asset, registry);
+        }
+        await yieldSearchSlice();
+        throwIfAborted(options.signal);
+      }
+      this.addCatalogClasses();
+      throwIfAborted(options.signal);
+    } catch (error) {
+      this.entries = previous;
+      throw error;
     }
-    this.addCatalogClasses();
   }
 
   async upsertAsset(registry: AssetRegistry, path: string): Promise<void> {
@@ -332,6 +373,24 @@ export class ProjectSearchIndex {
       (entry) => entry.sourceGuid !== guid && entry.sourcePath !== path,
     );
   }
+}
+
+function yieldSearchSlice(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 0);
+    }
+  });
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  throw error;
 }
 
 function stringField(value: unknown): string {

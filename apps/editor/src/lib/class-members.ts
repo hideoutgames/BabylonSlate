@@ -342,7 +342,11 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "interface.call") {
     return false;
   }
-  if (nodeId === "variables.get" || nodeId === "variables.set") {
+  if (
+    nodeId === "variables.get" ||
+    nodeId === "variables.set" ||
+    nodeId === "variables.getValidated"
+  ) {
     return false;
   }
   if (nodeId === "component.getNamed") {
@@ -958,7 +962,11 @@ function isVariableAccessNode(
   member: GraphClassMember,
   previous?: GraphClassMember,
 ): boolean {
-  if (node.type !== "variables.get" && node.type !== "variables.set") {
+  if (
+    node.type !== "variables.get" &&
+    node.type !== "variables.set" &&
+    node.type !== "variables.getValidated"
+  ) {
     return false;
   }
   const variableId = node.data.variableId;
@@ -1001,7 +1009,12 @@ function patchVariableAccessNode(
   node: SerializedGraph["nodes"][number],
   member: GraphClassMember,
 ): SerializedGraph["nodes"][number] {
-  const access = node.type === "variables.set" ? "Set" : "Get";
+  const access =
+    node.type === "variables.set"
+      ? "Set"
+      : node.type === "variables.getValidated"
+        ? "Validated Get"
+        : "Get";
   const nextData: Record<string, unknown> = {
     ...node.data,
     variableId: member.id,
@@ -1046,6 +1059,16 @@ export function syncVariableAccessNodes(
       ? patchVariableAccessNode(node, member)
       : node,
   );
+}
+
+export type VariableAccessKind = "get" | "set" | "validatedGet";
+
+export function isObjectInstanceVariableType(
+  typeId: string | undefined,
+  container?: string | null,
+): boolean {
+  if (container === "array" || container === "map") return false;
+  return typeId === "object" || typeId === "actor";
 }
 
 export type GraphSpawnOptions = {
@@ -1096,15 +1119,25 @@ function appendGraphNode(
   return { ...graph, nodes: [...graph.nodes, node] };
 }
 
-/** Spawn a bound Get/Set node onto the event graph or a function slice. */
+/** Spawn a bound Get/Set/Validated Get node onto the event graph or a function slice. */
 export function addVariableAccessNode(
   graph: SerializedGraph,
   member: GraphClassMember,
-  access: "get" | "set",
+  access: VariableAccessKind,
   options?: GraphSpawnOptions,
 ): SerializedGraph {
-  const type = access === "set" ? "variables.set" : "variables.get";
-  const title = `${access === "set" ? "Set" : "Get"} ${member.name}`;
+  const type =
+    access === "set"
+      ? "variables.set"
+      : access === "validatedGet"
+        ? "variables.getValidated"
+        : "variables.get";
+  const title =
+    access === "set"
+      ? `Set ${member.name}`
+      : access === "validatedGet"
+        ? `Validated Get ${member.name}`
+        : `Get ${member.name}`;
   const data: Record<string, unknown> = {
     title,
     variableName: member.name,

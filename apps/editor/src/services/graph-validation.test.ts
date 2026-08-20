@@ -636,6 +636,61 @@ describe("validateSerializedGraph", () => {
     ).toBe(true);
   });
 
+  it("does not report a pure cycle when Line Trace location feeds back through Make Vector3", () => {
+    const beginPins = registry.get("flow.event.beginPlay")!.pins({});
+    const tracePins = registry.get("physics.lineTrace")!.pins({});
+    const addPins = registry.get("vector.add3")!.pins({});
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "begin",
+            type: "flow.event.beginPlay",
+            position: { x: 0, y: 0 },
+            data: { __pins: beginPins },
+          },
+          {
+            id: "trace",
+            type: "physics.lineTrace",
+            position: { x: 200, y: 0 },
+            data: { __pins: tracePins },
+          },
+          {
+            id: "add",
+            type: "vector.add3",
+            position: { x: 200, y: 80 },
+            data: { __pins: addPins },
+          },
+        ],
+        edges: [
+          {
+            id: "exec",
+            source: "begin",
+            target: "trace",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+          {
+            id: "hitToAdd",
+            source: "trace",
+            target: "add",
+            sourceHandle: "location",
+            targetHandle: "a",
+          },
+          {
+            id: "addToEnd",
+            source: "add",
+            target: "trace",
+            sourceHandle: "out",
+            targetHandle: "end",
+          },
+        ],
+      },
+      { assetGuid: "g1", graphId: "event-graph" },
+    );
+    expect(diags.some((d) => d.code === "pure.cycle")).toBe(false);
+  });
+
   it("flags a stale Call Function when the class symbol table is supplied", () => {
     const diags = validateSerializedGraph(
       {
@@ -722,6 +777,9 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.title === "Call Interface")).toBe(false);
     expect(nodes.some((node) => node.id === "variables.get")).toBe(false);
     expect(nodes.some((node) => node.id === "variables.set")).toBe(false);
+    expect(nodes.some((node) => node.id === "variables.getValidated")).toBe(
+      false,
+    );
     expect(nodes.some((node) => node.id === "navigation.moveTo")).toBe(true);
     const print = nodes.find((node) => node.id === "debug.print");
     expect(print?.defaultData).toMatchObject({ developmentOnly: true });
@@ -731,6 +789,16 @@ describe("scriptPaletteNodes", () => {
     const drawLine = nodes.find((node) => node.id === "debug.drawLine");
     expect(drawLine?.title).toBe("Draw Debug Line");
     expect(drawLine?.defaultData).toMatchObject({ developmentOnly: true });
+  });
+
+  it("keeps Is Valid on BObject and Actor palettes", () => {
+    for (const parentClass of ["BObject", "Actor"] as const) {
+      expect(
+        scriptPaletteNodes(registry, { parentClass }).some(
+          (node) => node.id === "actor.isValid",
+        ),
+      ).toBe(true);
+    }
   });
 
   it("lists Play Sound and mixer volume nodes on Actor and Class with volume 1", () => {
@@ -1272,6 +1340,13 @@ describe("scriptPaletteNodes", () => {
         members: [
           { id: "var-1", kind: "variable", name: "Health", typeId: "bool" },
           {
+            id: "var-2",
+            kind: "variable",
+            name: "Target",
+            typeId: "object",
+            typeClassId: "Actor",
+          },
+          {
             id: "loc-1",
             kind: "variable",
             name: "Temp",
@@ -1308,6 +1383,16 @@ describe("scriptPaletteNodes", () => {
     );
     expect(localSet?.title).toBe("Set Health");
     expect(localSet?.nodeType).toBe("variables.set");
+    expect(nodes.some((node) => node.id === "variables.getValidated:Hero:Health")).toBe(
+      false,
+    );
+    const validated = nodes.find(
+      (node) => node.id === "variables.getValidated:Hero:Target",
+    );
+    expect(validated?.title).toBe("Validated Get Target");
+    expect(validated?.nodeType).toBe("variables.getValidated");
+    expect(validated?.pins?.some((pin) => pin.id === "isValid")).toBe(true);
+    expect(validated?.pins?.some((pin) => pin.id === "notValid")).toBe(true);
     const other = nodes.find(
       (node) => node.id === "variables.get:Guard:Alert",
     );
@@ -1948,7 +2033,9 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "casting.castActor")).toBe(false);
     const actorCast = nodes.find((node) => node.id === "casting.cast:Actor");
     expect(actorCast?.title).toBe("Cast to Actor");
-    expect(actorCast?.nodeType).toBe("casting.cast");
+    expect(actorCast?.pure).not.toBe(true);
+    expect(actorCast?.pins?.some((pin) => pin.id === "execIn")).toBe(true);
+    expect(actorCast?.pins?.some((pin) => pin.id === "execOut")).toBe(true);
     expect(actorCast?.defaultData).toMatchObject({
       defaultClassId: "Actor",
       "default:class": "Actor",

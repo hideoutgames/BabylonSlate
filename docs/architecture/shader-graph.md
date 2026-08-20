@@ -240,8 +240,9 @@ still wins. Babylon `TextureBlock.autoConfigure` is not used: it looks for a
 block named `"uv"`, while surface plumbing names the attribute `${name}_uv`.
 
 Material preview resolves Texture chunks the same way Play does: preload
-`pixels` then `source` via `readAssetChunk` into a tab-owned `ResourceCache`,
-and pass `resolveTexture` into `MaterialLibrary`. A guid that cannot load
+`pixels` then `source` via `readAssetChunk` into the Engine
+`resourceCacheForEngine` cache, and pass `resolveTexture` into
+`MaterialLibrary`. A guid that cannot load
 surfaces as `material.missingTexture` instead of a sampler-less black
 preview. Editor validation also receives `textureExists` from the asset
 registry so Compiler Results can flag a missing Texture before GPU compile.

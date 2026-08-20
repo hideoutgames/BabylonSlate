@@ -202,6 +202,12 @@ test.describe("Skybox Creator helper", () => {
     expect(netBox).toBeTruthy();
     expect(netBox!.width / netBox!.height).toBeCloseTo(4 / 3, 1);
     expect(netBox!.y).toBeGreaterThanOrEqual(0);
+    const frontBox = await page
+      .getByTestId("skybox-creator-cell-front")
+      .boundingBox();
+    expect(frontBox).toBeTruthy();
+    expect(frontBox!.width / netBox!.width).toBeCloseTo(0.25, 1);
+    expect(frontBox!.height / netBox!.height).toBeCloseTo(1 / 3, 1);
     const cubemap = page.getByTestId("skybox-creator-cubemap-panel");
     const canvas = cubemap.getByTestId("skybox-creator-preview-canvas");
     await expect(canvas).toBeVisible();

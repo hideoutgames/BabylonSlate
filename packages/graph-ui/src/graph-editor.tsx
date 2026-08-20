@@ -83,6 +83,7 @@ import {
   isClientPointOverHandle,
   nearestSnapConnectPin,
   nodePinLists,
+  finalizeOrientedConnection,
   pinsAreCompatible,
   screenPinsForSafeRefs,
   screenCentersForSafePins,
@@ -231,6 +232,52 @@ function asConnection(connection: Connection | Edge): Connection {
     target: connection.target,
     sourceHandle: connection.sourceHandle ?? null,
     targetHandle: connection.targetHandle ?? null,
+  };
+}
+
+function orientThenNormalize(
+  connection: Connection,
+  nodes: CanvasNode[],
+  normalizeConnection?: (connection: Connection) => Connection | null,
+): Connection | null {
+  const pinFor = (nodeId: string, pinId: string) =>
+    pinOnNode(nodes, nodeId, pinId);
+  const finalized = finalizeOrientedConnection(
+    connection,
+    pinFor,
+    normalizeConnection
+      ? (oriented) => {
+          const next = normalizeConnection({
+            ...connection,
+            source: oriented.source,
+            target: oriented.target,
+            sourceHandle: oriented.sourceHandle,
+            targetHandle: oriented.targetHandle,
+          });
+          if (
+            !next?.source ||
+            !next.target ||
+            !next.sourceHandle ||
+            !next.targetHandle
+          ) {
+            return null;
+          }
+          return {
+            source: next.source,
+            target: next.target,
+            sourceHandle: next.sourceHandle,
+            targetHandle: next.targetHandle,
+          };
+        }
+      : undefined,
+  );
+  if (!finalized) return null;
+  return {
+    ...connection,
+    source: finalized.source,
+    target: finalized.target,
+    sourceHandle: finalized.sourceHandle,
+    targetHandle: finalized.targetHandle,
   };
 }
 
@@ -484,6 +531,7 @@ function GraphEditorCanvas({
     nodeId: string;
     pinId: string;
     connectEndHandled: boolean;
+    connectCommitted: boolean;
   } | null>(null);
   const [marqueeScreen, setMarqueeScreen] = useState<{
     x: number;
@@ -775,9 +823,11 @@ function GraphEditorCanvas({
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (readOnly) return;
-      const next = normalizeConnection
-        ? normalizeConnection(connection)
-        : connection;
+      const next = orientThenNormalize(
+        connection,
+        graphStateRef.current.nodes,
+        normalizeConnection,
+      );
       if (
         !next?.source ||
         !next.target ||
@@ -792,6 +842,9 @@ function GraphEditorCanvas({
         next.target,
         next.targetHandle,
       );
+      if (connectDragRef.current) {
+        connectDragRef.current.connectCommitted = true;
+      }
       setPendingPin(null);
       pendingPinRef.current = null;
     },
@@ -801,9 +854,11 @@ function GraphEditorCanvas({
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       const incoming = asConnection(connection);
-      const next = normalizeConnection
-        ? normalizeConnection(incoming)
-        : incoming;
+      const next = orientThenNormalize(
+        incoming,
+        graphStateRef.current.nodes,
+        normalizeConnection,
+      );
       if (
         !next?.source ||
         !next.target ||
@@ -860,6 +915,7 @@ function GraphEditorCanvas({
         nodeId: params.nodeId,
         pinId: params.handleId,
         connectEndHandled: false,
+        connectCommitted: false,
       };
     },
     [readOnly],
@@ -869,6 +925,8 @@ function GraphEditorCanvas({
     (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
       const connectEndHandled =
         connectDragRef.current?.connectEndHandled === true;
+      const connectCommitted =
+        connectDragRef.current?.connectCommitted === true;
       connectDragRef.current = null;
       const finishGesture = () => {
         storeApi.getState().cancelConnection();
@@ -898,9 +956,11 @@ function GraphEditorCanvas({
           sourceHandle,
           targetHandle,
         };
-        const next = normalizeConnection
-          ? normalizeConnection(incoming)
-          : incoming;
+        const next = orientThenNormalize(
+          incoming,
+          graphStateRef.current.nodes,
+          normalizeConnection,
+        );
         if (
           !next?.source ||
           !next.target ||
@@ -919,7 +979,7 @@ function GraphEditorCanvas({
         return true;
       };
       const toNodeId = state.toNode?.id ?? state.toHandle?.nodeId;
-      if (state.toHandle?.id && toNodeId) {
+      if (state.toHandle?.id && toNodeId && !connectCommitted) {
         commitConnection(
           fromNode.id,
           pinId,

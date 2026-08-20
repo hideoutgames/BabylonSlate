@@ -53,6 +53,7 @@ import type { PaletteNode, PinCompatibilityRule } from "@babylonslate/graph-ui";
 import {
   ensureCallParentForEvent,
   inheritedCustomEventSeeds,
+  isObjectInstanceVariableType,
   isScriptCatalogNodeAllowed,
   isUserInterfaceLogicHost,
   nativeEventStubs,
@@ -127,7 +128,11 @@ function pinTypeFromHydratedPins(
 }
 
 function isVariableAccessTypeId(typeId: string): boolean {
-  return typeId === "variables.get" || typeId === "variables.set";
+  return (
+    typeId === "variables.get" ||
+    typeId === "variables.set" ||
+    typeId === "variables.getValidated"
+  );
 }
 
 function pruneIncompatibleEdges(
@@ -172,6 +177,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "flow.function.output" ||
     typeId === "variables.get" ||
     typeId === "variables.set" ||
+    typeId === "variables.getValidated" ||
     typeId === "component.getNamed" ||
     typeId === "casting.cast" ||
     typeId === "struct.make" ||
@@ -1100,6 +1106,7 @@ function variableAccessPaletteNodes(
 ): PaletteNode[] {
   const getDef = nodeRegistry.get("variables.get");
   const setDef = nodeRegistry.get("variables.set");
+  const validatedDef = nodeRegistry.get("variables.getValidated");
   if (!getDef || !setDef) return [];
   const localClassId = options?.classId ?? "BObject";
   const classVars = classVariableRows(options?.graph).filter(
@@ -1135,12 +1142,35 @@ function variableAccessPaletteNodes(
     });
   }
   const injected: PaletteNode[] = [];
-  const accessKinds =
+  const accessKinds: Array<["get" | "set" | "validatedGet", typeof getDef]> =
     options?.animationGraphHost === "rule"
-      ? ([["get", getDef]] as const)
-      : ([["get", getDef], ["set", setDef]] as const);
+      ? [["get", getDef]]
+      : [
+          ["get", getDef],
+          ["set", setDef],
+        ];
   for (const { classId, variable, implicitSelf } of rows) {
-    for (const [access, def] of accessKinds) {
+    const kinds = [...accessKinds];
+    if (
+      validatedDef &&
+      options?.animationGraphHost !== "rule" &&
+      isObjectInstanceVariableType(variable.typeId, variable.container)
+    ) {
+      kinds.push(["validatedGet", validatedDef]);
+    }
+    for (const [access, def] of kinds) {
+      const title =
+        access === "set"
+          ? `Set ${variable.name}`
+          : access === "validatedGet"
+            ? `Validated Get ${variable.name}`
+            : `Get ${variable.name}`;
+      const nodeType =
+        access === "set"
+          ? "variables.set"
+          : access === "validatedGet"
+            ? "variables.getValidated"
+            : "variables.get";
       const defaultData: Record<string, unknown> = {
         variableName: variable.name,
         variableId: variable.id,
@@ -1148,7 +1178,7 @@ function variableAccessPaletteNodes(
         classId,
         implicitSelf,
         scope: variable.scope,
-        title: `${access === "get" ? "Get" : "Set"} ${variable.name}`,
+        title,
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
@@ -1162,9 +1192,9 @@ function variableAccessPaletteNodes(
         }
       }
       injected.push({
-        id: `variables.${access}:${classId}:${variable.name}`,
-        nodeType: `variables.${access}`,
-        title: `${access === "get" ? "Get" : "Set"} ${variable.name}`,
+        id: `${nodeType}:${classId}:${variable.name}`,
+        nodeType,
+        title,
         category: def.category,
         pins: def.pins(defaultData),
         pure: def.pure,
@@ -1773,7 +1803,7 @@ export function validateSerializedGraph(
   };
   if (isLogicGraphPayload(content)) {
     return [
-      ...validateGraphs([content], ctx),
+      ...validateGraphs([content], ctx, { registry }),
       ...warnDebugTierConsoleCommands([content], { assetGuid: options.assetGuid }),
       ...warnReservedConsoleCommandNames([content], { assetGuid: options.assetGuid }),
     ];
@@ -1800,7 +1830,7 @@ export function validateSerializedGraph(
     );
   }
   return [
-    ...validateGraphs(graphs, ctx),
+    ...validateGraphs(graphs, ctx, { registry }),
     ...warnDebugTierConsoleCommands(graphs, { assetGuid: options.assetGuid }),
     ...warnReservedConsoleCommandNames(graphs, { assetGuid: options.assetGuid }),
   ];

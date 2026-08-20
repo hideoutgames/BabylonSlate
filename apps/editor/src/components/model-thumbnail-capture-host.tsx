@@ -1,15 +1,5 @@
 import { useEffect } from "react";
-import {
-  modelMaterialGuids,
-  normalizeModelPayload,
-} from "@babylonslate/assets";
-import {
-  MaterialLibrary,
-  captureModelThumbnailPng,
-  getMaterialTexture,
-  materialUnavailable,
-  resourceCacheForEngine,
-} from "@babylonslate/render";
+import { captureModelThumbnailPng } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import {
@@ -19,17 +9,14 @@ import {
 
 /**
  * Capture Model Content Browser thumbs on the shared Engine after import/save.
+ * Construction GLB only — no slot MaterialLibrary or extra ResourceCache
+ * (those upload a second 512MiB texture set and can lose the WebGL context).
  * Must sit under PlayProvider. Never holds the Importing overlay.
  */
 export function ModelThumbnailCaptureHost() {
   const play = useOptionalPlay();
-  const {
-    thumbnailsEnabled,
-    readAssetChunk,
-    collectPlayMaterialLibrary,
-    collectPlayTextureBytes,
-    writeAssetThumbnail,
-  } = useDocuments();
+  const { thumbnailsEnabled, readAssetChunk, writeAssetThumbnail } =
+    useDocuments();
 
   useEffect(() => {
     return subscribeModelThumbnailJobs((jobs) => {
@@ -45,53 +32,16 @@ export function ModelThumbnailCaptureHost() {
       for (const job of jobs) {
         const bytes = await readAssetChunk(job.path, "source");
         if (!bytes || bytes.byteLength === 0) continue;
-        const payload = normalizeModelPayload(job.payload);
-        const extraGuids = modelMaterialGuids(payload);
-        const materials = await collectPlayMaterialLibrary(
-          undefined,
+        const png = await captureModelThumbnailPng(
+          engine,
+          bytes,
           [],
-          extraGuids,
+          () => null,
         );
-        const textureBytes = await collectPlayTextureBytes(
-          new Map(),
-          new Map(),
-          materials.textureGuids,
-        );
-        const cache = resourceCacheForEngine(engine);
-        const library = new MaterialLibrary({
-          functions: () => Object.fromEntries(materials.functions),
-          resolveTexture: (guid) => {
-            const data = textureBytes.get(guid);
-            if (!data) return null;
-            return getMaterialTexture(cache, guid, engine, data);
-          },
-        });
-        try {
-          const png = await captureModelThumbnailPng(
-            engine,
-            bytes,
-            payload.materialSlots,
-            (guid, scene) => {
-              const document = materials.documents.get(guid);
-              if (!document) return null;
-              const acquired = library.acquire(scene, guid, document);
-              return materialUnavailable(acquired) ? null : acquired.material;
-            },
-          );
-          if (png) await writeAssetThumbnail(job.guid, png);
-        } finally {
-          library.dispose();
-        }
+        if (png) await writeAssetThumbnail(job.guid, png);
       }
     }
-  }, [
-    collectPlayMaterialLibrary,
-    collectPlayTextureBytes,
-    play,
-    readAssetChunk,
-    thumbnailsEnabled,
-    writeAssetThumbnail,
-  ]);
+  }, [play, readAssetChunk, thumbnailsEnabled, writeAssetThumbnail]);
 
   return null;
 }
