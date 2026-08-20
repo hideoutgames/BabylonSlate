@@ -31,6 +31,7 @@ import { createTilemapMeshes, worldTileSize } from "./tilemap-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createSkyboxMeshForFaces, isSkyboxMesh } from "./skybox";
 import { createColliderVisualMesh, isColliderVisualMesh } from "./collider-visual";
+import { GRID_MESH_NAME } from "./editor-grid";
 import {
   BLOCKING_VOLUME_COLOR,
   createEditorVolumeMesh,
@@ -697,6 +698,7 @@ function applyModelPlaceholderVisibility(mesh: Mesh, actor: SerializedActor): vo
 }
 
 export function applyActorTransform(mesh: Mesh, actor: SerializedActor): void {
+  if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   applySerializedTransform(mesh, actor.transform);
   const origin = isEditorActorOrigin(mesh);
   if (origin) {
@@ -766,6 +768,28 @@ export function visualMeshesOfActorRoot(mesh: Mesh): Mesh[] {
   return parts.length > 0 ? parts : [mesh];
 }
 
+export function shouldFreezeStaticWorldMatrix(mesh: Mesh): boolean {
+  if (mesh.infiniteDistance) return false;
+  if (isSkyboxMesh(mesh)) return false;
+  if (mesh.billboardMode !== Mesh.BILLBOARDMODE_NONE) return false;
+  if (mesh.name === GRID_MESH_NAME) return false;
+  if (mesh.alwaysSelectAsActiveMesh) return false;
+  return true;
+}
+
+export function freezeStaticActorWorldMatrix(root: Mesh): void {
+  for (const mesh of [root, ...visualMeshesOfActorRoot(root)]) {
+    if (!shouldFreezeStaticWorldMatrix(mesh)) continue;
+    mesh.freezeWorldMatrix();
+  }
+}
+
+export function unfreezeActorWorldMatrix(root: Mesh): void {
+  for (const mesh of [root, ...visualMeshesOfActorRoot(root)]) {
+    if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
+  }
+}
+
 /** GLB instantiate target: MeshComponent child under an origin, else the actor root. */
 export function editorModelLoadTarget(
   root: Mesh,
@@ -830,6 +854,10 @@ export function applySceneToBabylonScene(
     if (mesh && parent) {
       mesh.parent = parent;
     }
+  }
+
+  for (const mesh of meshes.values()) {
+    freezeStaticActorWorldMatrix(mesh);
   }
 
   syncAuthoredIllumination(scene, sceneData, {
