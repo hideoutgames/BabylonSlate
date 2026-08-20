@@ -6,6 +6,7 @@ import {
   classRef,
   objectRef,
   BOOL,
+  TRANSFORM,
 } from "@babylonslate/scripting";
 
 export const componentNodes: NodeDefinition[] = [
@@ -92,12 +93,13 @@ export const componentNodes: NodeDefinition[] = [
       pin("execOut", "then", "out", EXEC),
       pin("actor", "actor", "in", actorRef("Actor")),
       pin("classId", "classId", "in", classRef("ActorComponent")),
+      pin("transform", "Transform", "in", TRANSFORM, "data", true),
       pin("out", "out", "out", objectRef("ActorComponent")),
     ],
     codegen: (ctx) => {
       const out = ctx.output("out");
       ctx.emit(
-        `${out} = ctx.addComponent(${ctx.input("actor")}, ${ctx.input("classId")});`,
+        `${out} = ctx.addComponent(${ctx.input("actor")}, ${ctx.input("classId")}, ${ctx.input("transform")});`,
       );
     },
   },

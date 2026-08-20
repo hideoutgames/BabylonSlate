@@ -73,9 +73,10 @@ export interface ScriptHostServices {
   addComponent?(
     actor: Actor | null | undefined,
     classId: string,
+    transform?: unknown,
   ): unknown;
   animGraphControl?(self: BObject | null | undefined): AnimGraphControl | null;
-  spawnActor?(classId: string): Actor | null;
+  spawnActor?(classId: string, transform?: unknown): Actor | null;
   print(
     message: string,
     key: string,
@@ -272,8 +273,12 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): unknown;
   getComponent(actor: BObject | null | undefined, classId: string): unknown;
-  addComponent(actor: BObject | null | undefined, classId: string): unknown;
-  spawnActor(classId: string): Actor | null;
+  addComponent(
+    actor: BObject | null | undefined,
+    classId: string,
+    transform?: unknown,
+  ): unknown;
+  spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getAnimGraphVariable(name: string): unknown;
   setAnimGraphVariable(name: string, value: unknown): void;
@@ -865,12 +870,13 @@ export class ScriptHost {
       getComponent: (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
         null,
-      addComponent: (actor, classId) => {
+      addComponent: (actor, classId, transform) => {
         const target = asActor(actor ?? self);
         if (!target) return null;
-        return services.addComponent?.(target, classId) ?? null;
+        return services.addComponent?.(target, classId, transform) ?? null;
       },
-      spawnActor: (classId) => services.spawnActor?.(String(classId)) ?? null,
+      spawnActor: (classId, transform) =>
+        services.spawnActor?.(String(classId), transform) ?? null,
       isA: (instance, classId) => {
         if (instance == null || typeof instance !== "object") return false;
         const id = (instance as { classId?: unknown }).classId;

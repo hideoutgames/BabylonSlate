@@ -8,6 +8,7 @@ import {
   BOOL,
   STRING,
   arrayOf,
+  TRANSFORM,
 } from "@babylonslate/scripting";
 
 export const actorNodes: NodeDefinition[] = [
@@ -64,11 +65,14 @@ export const actorNodes: NodeDefinition[] = [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
       pin("classId", "classId", "in", classRef("Actor")),
+      pin("transform", "Transform", "in", TRANSFORM, "data", true),
       pin("out", "out", "out", actorRef("Actor")),
     ],
     codegen: (ctx) => {
       const out = ctx.output("out");
-      ctx.emit(`${out} = ctx.spawnActor(${ctx.input("classId")});`);
+      ctx.emit(
+        `${out} = ctx.spawnActor(${ctx.input("classId")}, ${ctx.input("transform")});`,
+      );
     },
   },
   {

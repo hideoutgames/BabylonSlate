@@ -1170,6 +1170,40 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("Add Component applies the Transform pin before attach", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "make", "struct.makeTransform", {
+          "default:location": { x: 4, y: 5, z: 6 },
+        }),
+        node(registry, "add", "component.add", { classId: "MeshComponent" }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "add", "execIn"),
+        edge("e2", "self", "out", "add", "actor"),
+        edge("e3", "make", "out", "add", "transform"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "Holder", "holder-pose-asset"),
+    ]);
+    const actor = runtime.spawnScriptedActor({ classId: "Holder" });
+    runtime.start();
+    runtime.tick();
+    const mesh = actor!.components.find((c) => c.classId === "MeshComponent");
+    expect(mesh?.transform.position).toEqual({ x: 4, y: 5, z: 6 });
+    runtime.stop();
+  });
+
   it("Spawn Actor from a compiled graph creates the class with its Begin Play", async () => {
     const registry = createDefaultNodeRegistry();
     const childGraph: LogicGraph = {
@@ -1213,6 +1247,48 @@ describe("script host runs compiled graphs", () => {
     expect(commands.filter((c) => c.type === "print")).toEqual(
       expect.arrayContaining([expect.objectContaining({ key: "child" })]),
     );
+    runtime.stop();
+  });
+
+  it("Spawn Actor applies the Transform pin before Begin Play", async () => {
+    const registry = createDefaultNodeRegistry();
+    const childGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [node(registry, "begin", "flow.event.beginPlay")],
+      edges: [],
+    };
+    const spawnerGraph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "make", "struct.makeTransform", {
+          "default:location": { x: 10, y: 20, z: 30 },
+        }),
+        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "spawn", "execIn"),
+        edge("e2", "make", "out", "spawn", "transform"),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+    });
+    await runtime.loadScripts([
+      toScript(childGraph, registry, "Child", "child-pose-asset"),
+      toScript(spawnerGraph, registry, "Spawner", "spawner-pose-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Spawner" });
+    runtime.start();
+    runtime.tick();
+    const child = runtime
+      .getWorld()
+      .getActors()
+      .find((actor) => actor.classId === "Child");
+    expect(child?.transform.position).toEqual({ x: 10, y: 20, z: 30 });
     runtime.stop();
   });
 

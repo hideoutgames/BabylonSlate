@@ -4,6 +4,7 @@ import {
   arrayOf,
   actorRef,
   classRef,
+  TRANSFORM,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -77,6 +78,57 @@ describe("actor nodes", () => {
       },
     });
     expect(spawned).toEqual(["Child"]);
+  });
+
+  it("exposes an optional Transform pin on Spawn Actor", () => {
+    const spawn = actorNodes.find((node) => node.id === "actor.spawn");
+    const transformPin = spawn?.pins({}).find((entry) => entry.id === "transform");
+    expect(transformPin).toMatchObject({
+      name: "Transform",
+      direction: "in",
+      type: TRANSFORM,
+      optional: true,
+    });
+  });
+
+  it("compiled Spawn Actor passes transform as the second spawnActor argument", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "spawn",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toMatch(
+      /ctx\.spawnActor\(\s*[^,]+,\s*[^)]+\)/,
+    );
+    const mod = loadModule(compiled.source);
+    const calls: Array<{ classId: string; transform: unknown }> = [];
+    (mod.onBeginPlay as (ctx: unknown) => void)({
+      spawnActor: (classId: string, transform: unknown) => {
+        calls.push({ classId, transform });
+        return { classId };
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.classId).toBe("Child");
+    expect(calls[0]?.transform).toEqual({
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+    });
   });
 
   it("registers Get All Actors Of Class and Get Actor Of Class", () => {
