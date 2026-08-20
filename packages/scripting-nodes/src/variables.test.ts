@@ -420,7 +420,7 @@ describe("variables.get / variables.set", () => {
       .onBeginPlay as (ctx: unknown) => void;
     const messages: string[] = [];
     const ctx = {
-      getVariable: (name: string) =>
+      getVariable: (name: string): unknown =>
         name === "Target" ? { classId: "Actor" } : undefined,
       formatValue: String,
       log: (_severity: string, _category: string, message: string) => {
