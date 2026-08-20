@@ -155,12 +155,16 @@ export class DocumentService {
       const parsed = parseDocumentId(restoredId);
       if (!parsed || !isAssetDocumentKind(parsed.kind)) continue;
       if (parsed.kind === "scene" && restoredId !== lastSceneId) continue;
-      await this.openDocument(
-        projectService,
-        { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
-        layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
-        false,
-      );
+      try {
+        await this.openDocument(
+          projectService,
+          { kind: parsed.kind, path: parsed.path, label: labelFromPath(parsed.path) },
+          layouts.documents[restoredId] ?? layouts.documents[id] ?? null,
+          false,
+        );
+      } catch (error) {
+        if (parsed.kind !== "trace") throw error;
+      }
     }
 
     this.pinStickyTabs();

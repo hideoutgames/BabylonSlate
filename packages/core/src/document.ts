@@ -29,6 +29,7 @@ export const ASSET_DOCUMENT_KINDS = [
   "skeleton",
   "animation",
   "skybox-creator",
+  "trace",
   "asset-settings",
 ] as const;
 
@@ -114,6 +115,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Animation";
     case "skybox-creator":
       return "SkyboxCreator";
+    case "trace":
+      return "Trace";
     case "asset-settings":
       return "Texture";
   }
@@ -193,6 +196,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
       return "particle-system";
     case "SkyboxCreator":
       return "skybox-creator";
+    case "Trace":
+      return "trace";
     case "Model":
       return "model";
     case "Skeleton":
@@ -266,6 +271,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Animation";
     case "skybox-creator":
       return "Skybox Creator";
+    case "trace":
+      return "Trace";
     case "asset-settings":
       return "Settings";
   }
@@ -364,7 +371,8 @@ export function labelFromPath(path: string): string {
         /\.(scene|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
-      .replace(/\.babasset$/i, "") ?? path;
+      .replace(/\.babasset$/i, "")
+      .replace(/\.babtrace$/i, "") ?? path;
   return base
     .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

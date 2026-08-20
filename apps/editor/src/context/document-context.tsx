@@ -1286,7 +1286,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
       for (const doc of dirtyDocs) {
-        if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+        if (
+          isAssetDocumentKind(doc.ref.kind) &&
+          doc.ref.kind !== "trace" &&
+          doc.content
+        ) {
           await projectService.saveDocument(
             doc.ref.kind,
             doc.ref.path,
@@ -1407,7 +1411,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
-      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+      if (
+        isAssetDocumentKind(doc.ref.kind) &&
+        doc.ref.kind !== "trace" &&
+        doc.content
+      ) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
@@ -1962,6 +1970,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         !isAssetDocumentKind(doc.ref.kind) ||
         doc.ref.kind === "scene" ||
         doc.ref.kind === "graph" ||
+        doc.ref.kind === "trace" ||
         !doc.content
       ) {
         return false;

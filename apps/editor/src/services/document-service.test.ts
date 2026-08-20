@@ -687,6 +687,32 @@ describe("DocumentService", () => {
         .nodes[0]?.data,
     ).toEqual({ "default:asset": null });
   });
+
+  it("skips a missing derived Trace tab when restoring layout", async () => {
+    const service = new DocumentService();
+    const project = createEmptyProject("Test");
+    const loadDocument = vi.fn(async (kind: string) => {
+      if (kind === "scene") return createDefaultScene();
+      if (kind === "trace") {
+        throw new Error("Trace file is missing");
+      }
+      return { nodes: [], edges: [] };
+    });
+    const projectService = {
+      loadDocument,
+    } as unknown as ProjectService;
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const traceId = documentId({
+      kind: "trace",
+      path: "derived/proj/traces/gone.babtrace",
+    });
+    await service.initializeFromProject(projectService, project, {
+      ...createEmptyLayouts(),
+      tabOrder: [sceneId, traceId],
+    });
+    expect(service.getState().tabOrder).toContain(sceneId);
+    expect(service.getState().tabOrder).not.toContain(traceId);
+  });
 });
 
 describe("layout migration", () => {
