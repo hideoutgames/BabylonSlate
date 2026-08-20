@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compileGraph,
   compileTransitionRuleGraph,
+  objectRef,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -247,6 +248,31 @@ describe("animation nodes", () => {
     ]);
   });
 
+  it("takes an AnimationGraphComponent target on Get and Set Anim Graph Variable", () => {
+    const getPins = animationNodes.find(
+      (entry) => entry.id === "anim.actor.getVariable",
+    )!.pins({});
+    const setPins = animationNodes.find(
+      (entry) => entry.id === "anim.actor.setVariable",
+    )!.pins({});
+    const target = {
+      id: "target",
+      direction: "in" as const,
+      type: objectRef("AnimationGraphComponent"),
+    };
+    expect(getPins).toEqual(expect.arrayContaining([expect.objectContaining(target)]));
+    expect(setPins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "execOut",
+      "target",
+      "name",
+      "value",
+    ]);
+    expect(setPins.find((pin) => pin.id === "target")).toEqual(
+      expect.objectContaining(target),
+    );
+  });
+
   it("compiles Actor Anim Graph control nodes against ctx helpers", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
@@ -256,6 +282,10 @@ describe("animation nodes", () => {
         node(registry, "tick", "flow.event.tick"),
         node(registry, "jump", "anim.actor.jumpToState", { state: "Run" }),
         node(registry, "get", "anim.actor.getCurrentState"),
+        node(registry, "graph", "component.getNamed", {
+          componentClassId: "AnimationGraphComponent",
+          implicitSelf: true,
+        }),
         node(registry, "read", "anim.actor.getVariable", { name: "moving" }),
         node(registry, "set", "anim.actor.setVariable", {
           name: "moving",
@@ -291,15 +321,31 @@ describe("animation nodes", () => {
           targetNodeId: "jump",
           targetPinId: "state",
         },
+        {
+          id: "e5",
+          sourceNodeId: "graph",
+          sourcePinId: "out",
+          targetNodeId: "set",
+          targetPinId: "target",
+        },
+        {
+          id: "e6",
+          sourceNodeId: "graph",
+          sourcePinId: "out",
+          targetNodeId: "read",
+          targetPinId: "target",
+        },
       ],
     };
     const compiled = compileGraph(graph, {
       assetGuid: "hero-1",
       registry,
     });
-    expect(compiled.source).toContain("ctx.setAnimGraphVariable");
+    expect(compiled.source).toMatch(
+      /ctx\.setAnimGraphVariable\([^,]+,\s*[^,]+,\s*[^)]+\)/,
+    );
+    expect(compiled.source).toMatch(/ctx\.getAnimGraphVariable\([^,]+,\s*[^)]+\)/);
     expect(compiled.source).toContain("ctx.jumpAnimGraphState");
     expect(compiled.source).toContain("ctx.getAnimGraphCurrentState");
-    expect(compiled.source).toContain("ctx.getAnimGraphVariable");
   });
 });
