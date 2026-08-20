@@ -8,7 +8,11 @@ import {
 import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
 import { createDefaultScene } from "@babylonslate/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
-import { readSnapshotHeader, type CommandMessage } from "@babylonslate/bridge";
+import {
+  isPublishedSnapshot,
+  readSnapshotHeader,
+  type CommandMessage,
+} from "@babylonslate/bridge";
 import type {
   MaterialDocument,
   MaterialFunctionDocument,
@@ -1146,7 +1150,9 @@ export function createEngine(
       interpAlpha = 1;
       const sampled = interpolator.sample(interpAlpha);
       if (sampled) positionsFromSample(sampled, lastPositions);
-      playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
+      if (isPublishedSnapshot(buffer)) {
+        playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
+      }
       scheduler.invalidate("snapshot");
     },
     applyCommand: (command: CommandMessage) => {

@@ -103,6 +103,33 @@ describe("play debug draw", () => {
     engine.dispose();
   });
 
+  it("replaces duration-0 draws on the next debugDraw without a blank present", () => {
+    const { engine, scene } = createTestEngine();
+    setupDefaultViewport(scene);
+    const overlay = createPlayDebugDraw(scene);
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 0, z: 0 },
+        end: { x: 1, y: 0, z: 0 },
+      }),
+    );
+    overlay.noteSimTick(1);
+    scene.render();
+    overlay.applyCommand(
+      draw({
+        kind: "line",
+        duration: 0,
+        start: { x: 0, y: 1, z: 0 },
+        end: { x: 1, y: 1, z: 0 },
+      }),
+    );
+    expect(overlayMeshes(scene)).toHaveLength(1);
+    overlay.dispose();
+    engine.dispose();
+  });
+
   it("keeps a timed line across a short frame and expires after duration", () => {
     const { engine, scene } = createTestEngine();
     setupDefaultViewport(scene);

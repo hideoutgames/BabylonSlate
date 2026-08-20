@@ -570,6 +570,14 @@ export function createPlayDebugDraw(scene: Scene): PlayDebugDrawController {
       const duration = asNumber(command.duration, 0);
       const meshes = build(command);
       if (meshes.length === 0) return true;
+      if (duration <= 0) {
+        for (let i = entries.length - 1; i >= 0; i--) {
+          const entry = entries[i]!;
+          if (entry.remainingMs != null) continue;
+          drop(entry);
+          entries.splice(i, 1);
+        }
+      }
       entries.push({
         meshes,
         birthTick: null,

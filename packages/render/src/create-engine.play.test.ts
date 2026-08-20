@@ -1139,6 +1139,8 @@ describe("Play createEngine view", () => {
     });
     handle.pushSnapshot(snapshot);
     handle.scene.render();
+    handle.scene.render();
+    handle.scene.render();
     expect(
       handle.scene.meshes.some((mesh) => mesh.name.startsWith("playDebugDraw:")),
     ).toBe(true);

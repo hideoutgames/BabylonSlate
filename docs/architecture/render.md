@@ -112,7 +112,7 @@ See [fonts.md](fonts.md).
 - `CreateLines`; **GreasedLine** when Line thickness > 1
 - `renderingGroupId` is `RENDERING_GROUP.world` (same as Play models). Play `createEngine` calls `configureEditorRenderingGroups` so group 1 does not clear depth and paint debug as an underlay. Console `showcollision` / `shownav` overlays use the same world group
 - Tag `playDebugOverlay` so illumination/shadows skip them (same idea as other Play helpers)
-- Duration `0` = one **sim tick** (keep across extra engine presents; `noteSimTick` from `pushSnapshot` expires the previous tick after it has presented). `> 0` = seconds. Preview Build can present faster than the worker; expiring on the first `onAfterRender` flickers
+- Duration `0` = one **sim tick** (keep across extra engine presents on overlay Play and Preview Build; `noteSimTick` from a published `pushSnapshot` expires the previous tick after it has presented). A new Tick `debugDraw` replaces the previous duration-0 meshes so the line does not blank between worker messages. `> 0` = seconds.
 - Coordinate System draws RGB axes and ignores Color
 - Player `applyPlayerEngineCommand` accepts `debugDraw` **without** `bundleDebugger`
 
