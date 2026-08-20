@@ -14,7 +14,6 @@ import {
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
 import type { AnimClipCatalogEntry } from "@babylonslate/anim-graph";
-import type { TracePayload } from "@babylonslate/debugger";
 import { applyInspectSelectionToConsoleLine } from "@babylonslate/runtime";
 import type { Engine } from "@babylonjs/core";
 import {
@@ -22,6 +21,7 @@ import {
   type PlaySession,
   type PlaySessionResult,
 } from "../services/play-session";
+import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
 import type { StatsHudHighlight } from "./stats-hud";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
 import {
@@ -36,7 +36,6 @@ import { DebugInspectDialog } from "./debug-inspect-dialog";
 import { PlayOverlayChrome } from "./play-overlay-chrome";
 import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
-import { TracePlayback } from "./trace-playback";
 import { playConsoleCommands, playConsoleCompletionContext } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
@@ -151,6 +150,7 @@ function emptyPlayResult(): PlaySessionResult {
     textureCountAfter: 0,
     textureLeak: false,
     runtimeMode: "in-process",
+    lastTrace: null,
   };
 }
 
@@ -232,7 +232,6 @@ export function PlayOverlay({
   );
   const inspectSelectionRef = useRef<string | null>(null);
   const userPausedRef = useRef(pauseOnPlay);
-  const [trace, setTrace] = useState<TracePayload | null>(null);
   const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
   const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
     () => new Set(),
@@ -254,10 +253,15 @@ export function PlayOverlay({
   finishSessionRef.current = () => {
     if (closedRef.current) return;
     closedRef.current = true;
-    const result = sessionRef.current?.stop() ?? emptyPlayResult();
+    const session = sessionRef.current;
     sessionRef.current = null;
     setHudScene(null);
-    onCloseRef.current(result);
+    void (async () => {
+      const result = session
+        ? await finishPlaySessionWithTrace(session)
+        : emptyPlayResult();
+      onCloseRef.current(result);
+    })();
   };
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
@@ -564,8 +568,6 @@ export function PlayOverlay({
         setPostProcessPasses(current.handle.postProcessPassCount());
         setAssignedMaterials(current.handle.assignedMaterialGuids().join(","));
         setFreeCamEnabled(current.handle.isFreeCamEnabled());
-        const recorded = current.lastTrace();
-        if (recorded) setTrace(recorded);
       }
     }, 200);
     const onSettings = (event: Event) => {
@@ -796,14 +798,6 @@ export function PlayOverlay({
           inspectSelectionRef.current = id;
         }}
       />
-      {trace ? (
-        <div
-          className="absolute bottom-3 right-3 z-10 max-h-64 w-80 overflow-auto rounded-md border border-border bg-background/95"
-          data-testid="play-trace-playback"
-        >
-          <TracePlayback payload={trace} />
-        </div>
-      ) : null}
     </div>
   );
 }

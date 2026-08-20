@@ -290,7 +290,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
 | BDebugCommand + parameter list | P8 | Landed (`p8-bdebugcommand`) |
 | Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
-| Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`) |
+| Trace recorder / `.babtrace` | P8 | Landed (`p8-trace-recorder`); playback tab Done (`p8-trace-playback`) |
 | Keyed Print HUD polish | P8 / export | Print works; HUD polish deferred |
 | Development Only node flag | Done | Inspector checkbox; Print defaults on; `compileGraphDocumentsForExport` skips the node and continues exec (`then` / Sequence `then_*`). P14 release export must call that helper |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
@@ -349,7 +349,7 @@ Design notes: [physics.md](../architecture/physics.md).
 
 ## P8 slice ownership
 
-`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, and `p8-trace-recorder` have landed. P8 does not depend on further physics work.
+`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`, and `p8-trace-playback` have landed. P8 does not depend on further physics work.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
@@ -357,13 +357,13 @@ Design notes: [physics.md](../architecture/physics.md).
 | Command registry | `p8-command-system` (done) | `debugger`, `runtime`, `apps/editor` (graph validation) | Design notes |
 | BDebugCommand + parameter list | `p8-bdebugcommand` (done) | `object-model`, `editor-kit`, `debugger`, `apps/editor` | Command registry |
 | Console + stats HUD | `p8-console-hud` (done) | `debugger`, `apps/editor`, `render` | Command registry |
-| Trace recorder | `p8-trace-recorder` (done) | `debugger`, `assets` (container), `runtime` | Command registry |
+| Trace recorder | `p8-trace-recorder` (done), `p8-trace-playback` (done) | `debugger`, `assets` (container + derived I/O), `runtime`, `apps/editor` | Command registry |
 
 Design notes: [debugger.md](../architecture/debugger.md).
 
 ### P8 follow-ups
 
-P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`). Do **not** rebuild P8; residual HUD/trace/settings polish is later work.
+P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebugcommand`, `p8-console-hud`, `p8-trace-recorder`, `p8-trace-playback`). Do **not** rebuild P8; residual HUD polish (`p8-hud-polish`) is later work.
 
 | Gap vs engineplan §9 | Reality | Owner |
 | --- | --- | --- |
@@ -373,7 +373,7 @@ P8 phase acceptance is met at the blocking level (`p8-command-system`, `p8-bdebu
 | `showcollision` / `showbounds` / `wireframe` / `slomo` | `slomo` scales tick `dt`; viz overlays + Stats HUD + `dumpactors` / `inspect` | `p8-console-slomo`, `p8-console-viz` (done) |
 | User `BDebugCommand` can overwrite engine names | `register` refuses builtins; edit-time `console.reserved_name` | `p8-console-session` (done) |
 | §9.4 HUD (render ms, invalidations/s, HW scale, texture/geometry/compressed bytes, LRU evictions, actors, per-channel bytes) | `StatsHud` shows fps, script/physics ms, tick-budget flag, one accounted-byte total, mesh/texture counts, draws, aggregate bridge msgs/s | `p8-hud-polish` |
-| Trace as document tab + graphs + derived-data `.babtrace` spill | In-memory + overlay `TracePlayback`; `encodeTraceDocument` exists, editor does not write it | `p8-trace-playback` (P11 needs real input replay) |
+| Trace as document tab + graphs + derived-data `.babtrace` spill | Derived `traces/*.babtrace`; DockView Timeline / Snapshot / Log; Play Stop auto-finalizes; headless input-stream replay | `p8-trace-playback` (done) |
 | `PinListEditor` on Class / ScriptInterface | Done (Class Inspector function pins + ScriptInterface method Details; ExecuteJavaScript / OnCommandRun keep the `ParameterListEditor` wrapper) | — |
 
 Command catalog and slice order: [console-commands.md](../architecture/console-commands.md).
@@ -413,7 +413,7 @@ Chrome polish (pin flash) stays parked. Multi-select gizmo group transforms are 
 | Play startup scene with no scene tab open | Superseded — Play is **disabled** until a scene tab is open; `startupSceneGuid` is packaged/export only |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
 | HUD TouchButton / TouchDPad → input | Done (foundation wave) |
-| `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer / trace tab parked. ADT HUD done |
+| `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer Done; `.babtrace` tab Done (`p8-trace-playback`). §9.4 HUD parked. ADT HUD done |
 
 ### Authoring-surface wave (before P11)
 

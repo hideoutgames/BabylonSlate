@@ -45,6 +45,7 @@ import {
   normalizeModelPayload,
   type ModelPayload,
   resolvePluginEnabled,
+  newAssetGuid,
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -70,6 +71,7 @@ import {
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
+import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
   type OpenDocument,
@@ -89,6 +91,10 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
+import {
+  recordedTraceFileName,
+  spillRecordedTraceDocument,
+} from "../lib/play-trace-spill";
 import { ensureEnginePluginStorage, lastEnginePluginLoad } from "../lib/engine-plugins";
 import { loadTemplateCards } from "../services/template-service";
 import {
@@ -324,6 +330,8 @@ interface DocumentContextValue {
   dismissRecovery: () => Promise<void>;
   keepRecovery: () => void;
   openDocument: (ref: DocumentRef) => Promise<void>;
+  /** Spill a finished Play recorder payload and open the read-only Trace tab. */
+  openRecordedTrace: (payload: TracePayload) => Promise<void>;
   pendingExclusiveScene: DocumentRef | null;
   confirmExclusiveSceneOpen: (mode: "save" | "discard") => Promise<void>;
   cancelExclusiveSceneOpen: () => void;
@@ -1295,7 +1303,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const savedScene = dirtyDocs.some((doc) => doc.ref.kind === "scene");
       const savedModels = dirtyDocs.filter((doc) => doc.ref.kind === "model");
       for (const doc of dirtyDocs) {
-        if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+        if (
+          isAssetDocumentKind(doc.ref.kind) &&
+          doc.ref.kind !== "trace" &&
+          doc.content
+        ) {
           await projectService.saveDocument(
             doc.ref.kind,
             doc.ref.path,
@@ -1416,7 +1428,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     captureAllLayouts();
     const dirtyDocs = documentService.getDirtyDocuments();
     for (const doc of dirtyDocs) {
-      if (isAssetDocumentKind(doc.ref.kind) && doc.content) {
+      if (
+        isAssetDocumentKind(doc.ref.kind) &&
+        doc.ref.kind !== "trace" &&
+        doc.content
+      ) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
@@ -1727,6 +1743,25 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [bump, documentService, finishOpenDocument],
   );
 
+  const openRecordedTrace = useCallback(
+    async (payload: TracePayload) => {
+      const guid = projectService.guid;
+      if (!guid) return;
+      const derived = await ensureDerived();
+      projectService.setDerivedStorage(derived);
+      const fileName = recordedTraceFileName(Date.now());
+      const spilled = await spillRecordedTraceDocument({
+        derivedStorage: derived,
+        projectGuid: guid,
+        payload,
+        fileName,
+        documentGuid: newAssetGuid(),
+      });
+      await finishOpenDocument(spilled.ref);
+    },
+    [ensureDerived, finishOpenDocument, projectService],
+  );
+
   const confirmExclusiveSceneOpen = useCallback(
     async (mode: "save" | "discard") => {
       const ref = pendingExclusiveScene;
@@ -2006,6 +2041,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         !isAssetDocumentKind(doc.ref.kind) ||
         doc.ref.kind === "scene" ||
         doc.ref.kind === "graph" ||
+        doc.ref.kind === "trace" ||
         !doc.content
       ) {
         return false;
@@ -3728,6 +3764,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      openRecordedTrace,
       pendingExclusiveScene,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,
@@ -3924,6 +3961,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       dismissRecovery,
       keepRecovery,
       openDocument,
+      openRecordedTrace,
       pendingExclusiveScene,
       confirmExclusiveSceneOpen,
       cancelExclusiveSceneOpen,

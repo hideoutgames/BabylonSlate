@@ -84,6 +84,7 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   skeleton: primaryDockPanel("skeleton"),
   animation: primaryDockPanel("animation"),
   "skybox-creator": primaryDockPanel("skybox-creator"),
+  trace: primaryDockPanel("trace"),
 };
 
 /**

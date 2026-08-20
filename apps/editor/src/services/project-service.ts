@@ -52,10 +52,12 @@ import {
   fallbackParentClass,
   clearDeletedAssetRefs,
   isAssetDocumentPath,
+  isTracePath,
   loadPayloadWithMigration,
   defaultRegistry,
   projectContentRoot,
   readAssetDocumentHeader,
+  readTraceDocument,
   readProjectTree,
   writeThumbnail,
   ProjectSearchIndex,
@@ -902,6 +904,12 @@ export class ProjectService {
   }
 
   private storageForPath(path: string): ProjectStorage {
+    if (isTracePath(path)) {
+      if (!this.derivedStorage) {
+        throw new Error("Derived storage is not available for traces");
+      }
+      return this.derivedStorage;
+    }
     const indexed = this.assetRegistry
       ?.list()
       .find((asset) => asset.path === path);
@@ -1121,6 +1129,16 @@ export class ProjectService {
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
   ): Promise<SerializedScene | SerializedGraph | Record<string, unknown>> {
+    if (kind === "trace" || isTracePath(path)) {
+      if (!this.derivedStorage) {
+        throw new Error("Derived storage is not available for traces");
+      }
+      const decoded = await readTraceDocument(this.derivedStorage, path);
+      if (!decoded) {
+        throw new Error(`Trace file is missing: ${path}`);
+      }
+      return decoded.payload;
+    }
     const fallbackType = isAssetDocumentKind(kind)
       ? assetTypeForDocumentKind(kind)
       : "Class";
@@ -1205,6 +1223,9 @@ export class ProjectService {
     content: SerializedScene | SerializedGraph | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<void> {
+    if (kind === "trace" || isTracePath(path)) {
+      throw new Error("Trace documents are read-only");
+    }
     if (this.migrationPending.some((p) => p.path === path) && !this.migrateOnSaveApproved) {
       throw new Error(
         "Asset schema migration requires user approval before save",

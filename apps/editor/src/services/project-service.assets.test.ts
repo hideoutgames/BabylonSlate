@@ -16,6 +16,7 @@ import {
   normalizeSkeletonPayload,
   readAssetDocumentHeader,
   clearDeletedAssetRefs,
+  writeTraceDocument,
 } from "@babylonslate/assets";
 import { AUDIO_REVERB_CHUNK_ID } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -836,5 +837,28 @@ describe("project documents as .babasset", () => {
     expect(open?.dirty).toBe(true);
     expect((open?.content as { textureGuid: string | null }).textureGuid).toBeNull();
     expect((open?.content as { pixelsPerUnit: number }).pixelsPerUnit).toBe(50);
+  });
+
+  it("loads a Trace document from derived storage and refuses to save it", async () => {
+    const { service } = await scaffolded();
+    const derived = new MemoryStorageAdapter("documents");
+    await derived.openDocumentsProject("derived-traces");
+    service.setDerivedStorage(derived);
+    const guid = service.guid;
+    expect(guid).toBeTruthy();
+    const path = await writeTraceDocument(derived, guid!, "session-1", {
+      name: "session-1",
+      guid: "trace-guid",
+      payload: { seed: 8, dt: 1 / 60, frames: [] },
+    });
+    const loaded = (await service.loadDocument("trace", path)) as {
+      seed: number;
+      frames: unknown[];
+    };
+    expect(loaded.seed).toBe(8);
+    expect(loaded.frames).toEqual([]);
+    await expect(
+      service.saveDocument("trace", path, loaded),
+    ).rejects.toThrow(/read-only/i);
   });
 });

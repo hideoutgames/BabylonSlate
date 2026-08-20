@@ -1138,6 +1138,17 @@ class InProcessRuntime implements RuntimeDriver {
     return this.lastTrace;
   }
 
+  private finalizeTrace(): void {
+    if (!this.trace.isRecording) return;
+    this.lastTrace = this.trace.stop();
+    if (this.lastTrace) {
+      this.emit({
+        type: "trace",
+        payload: this.lastTrace as unknown as Record<string, unknown>,
+      });
+    }
+  }
+
   restoreBtFromTrace(states: readonly TraceBtState[]): void {
     this.btEvalBySlot.clear();
     this.lastBtStateJson.clear();
@@ -2145,13 +2156,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.trace.start({ seed: this.seed, dt: this.dt });
       },
       stopSnapshot: () => {
-        this.lastTrace = this.trace.stop();
-        if (this.lastTrace) {
-          this.emit({
-            type: "trace",
-            payload: this.lastTrace as unknown as Record<string, unknown>,
-          });
-        }
+        this.finalizeTrace();
       },
     };
   }
@@ -2620,6 +2625,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     this.running = false;
+    this.finalizeTrace();
     this.teardownAllUserInterfaces();
     this.world.end();
     this.physicsSync.dispose();
