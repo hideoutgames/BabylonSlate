@@ -134,6 +134,7 @@ export function UiDesignPanel(props: IDockviewPanelProps) {
             fontEntries={editing.fontEntries}
             resolveImageUrl={editing.resolveImageUrl}
             resolveInterfaceMaterial={editing.resolveInterfaceMaterial}
+            resolveTexture={editing.resolveTexture}
             resolveNested={editing.resolveNested}
             materialFunctions={editing.materialFunctions}
             imageIssues={editing.imageIssues}

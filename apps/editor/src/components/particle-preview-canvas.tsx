@@ -6,14 +6,15 @@ import type {
 } from "@babylonslate/assets";
 import {
   ParticleService,
-  ResourceCache,
   createMaterialPreviewPresenter,
   createParticleMaterialResolver,
   createParticlePreviewScene,
   getMaterialTexture,
+  resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ParticleServiceDiagnostic,
+  type ResourceCache,
 } from "@babylonslate/render";
 import {
   Empty,
@@ -136,7 +137,7 @@ export function ParticlePreviewCanvas({
       try {
         host = createParticlePreviewScene(engine, { skybox: showSkybox });
         presenter = createMaterialPreviewPresenter(host, canvas);
-        cache = new ResourceCache();
+        cache = resourceCacheForEngine(engine);
         const resolveTexture = (guid: string) => {
           const data = bytes.get(guid);
           if (!data || !cache) return null;
@@ -176,7 +177,6 @@ export function ParticlePreviewCanvas({
         host?.dispose();
         service?.dispose();
         materials?.dispose();
-        cache?.dispose();
         if (!cancelled) {
           setSkipped({
             code: "particle.apply_failed",
@@ -191,7 +191,6 @@ export function ParticlePreviewCanvas({
         host?.dispose();
         service?.dispose();
         materials?.dispose();
-        cache?.dispose();
         return;
       }
       if ((service?.stats().systems ?? 0) === 0) {
@@ -199,7 +198,6 @@ export function ParticlePreviewCanvas({
         host.dispose();
         service.dispose();
         materials.dispose();
-        cache.dispose();
         setSkipped(
           diagnostics[0] ?? {
             code: "particle.missing_texture",
@@ -224,7 +222,6 @@ export function ParticlePreviewCanvas({
       materials?.dispose();
       presenter?.dispose();
       host?.dispose();
-      cache?.dispose();
     };
   }, [
     assetRegistry,

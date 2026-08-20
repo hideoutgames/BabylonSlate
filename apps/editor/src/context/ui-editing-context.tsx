@@ -47,7 +47,11 @@ import {
   uiImageUrlsEqual,
   type UiImageIssue,
 } from "../lib/play-ui-images";
-import type { FontAssetEntry } from "@babylonslate/render";
+import {
+  getMaterialTexture,
+  resourceCacheForEngine,
+  type FontAssetEntry,
+} from "@babylonslate/render";
 import type { MaterialDocument, MaterialFunctionDocument } from "@babylonslate/shader-graph";
 import {
   projectUiAssetCacheKey,
@@ -106,6 +110,7 @@ export interface UiEditingContextValue {
   fontEntries: FontAssetEntry[];
   resolveImageUrl: (guid: string) => string | null;
   resolveInterfaceMaterial: (guid: string) => MaterialDocument | null;
+  resolveTexture: (guid: string) => import("@babylonjs/core/Materials/Textures/texture").Texture | null;
   resolveNested: (guid: string) => UserInterfaceDocument | null;
   materialFunctions: () => Record<string, MaterialFunctionDocument>;
   imageIssues: readonly UiImageIssue[];
@@ -159,6 +164,7 @@ export function UiEditingProvider({
     assetRegistry,
     collectPlayUiLibrary,
     collectPlayMaterialLibrary,
+    collectPlayTextureBytes,
     projectDocument,
     projectName,
     readAssetChunk,
@@ -199,6 +205,9 @@ export function UiEditingProvider({
     documents: Map<string, MaterialDocument>;
     functions: Map<string, MaterialFunctionDocument>;
   }>(() => ({ documents: new Map(), functions: new Map() }));
+  const [interfaceTextureBytes, setInterfaceTextureBytes] = useState<
+    Map<string, Uint8Array>
+  >(() => new Map());
   const imageUrlsRef = useRef(imageUrls);
   imageUrlsRef.current = imageUrls;
   const [view, setView] = useState<DesignView>({ zoom: 1, panX: 0, panY: 0 });
@@ -346,15 +355,23 @@ export function UiEditingProvider({
           ? prev
           : { documents: new Map(), functions: new Map() },
       );
+      setInterfaceTextureBytes((prev) => (prev.size === 0 ? prev : new Map()));
       return;
     }
     void collectPlayMaterialLibrary(null, [], guids)
-      .then((loaded) => {
+      .then(async (loaded) => {
         if (cancelled) return;
         setInterfaceMaterials({
           documents: loaded.documents,
           functions: loaded.functions,
         });
+        const bytes = await collectPlayTextureBytes(
+          new Map(),
+          new Map(),
+          loaded.textureGuids,
+        );
+        if (cancelled) return;
+        setInterfaceTextureBytes(bytes);
       })
       .catch(() => {
         if (!cancelled) {
@@ -363,12 +380,13 @@ export function UiEditingProvider({
               ? prev
               : { documents: new Map(), functions: new Map() },
           );
+          setInterfaceTextureBytes(new Map());
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [collectPlayMaterialLibrary, resolveNested, ui]);
+  }, [collectPlayMaterialLibrary, collectPlayTextureBytes, resolveNested, ui]);
 
   const resolveInterfaceMaterial = useCallback(
     (guid: string) =>
@@ -378,6 +396,19 @@ export function UiEditingProvider({
   const materialFunctions = useCallback(
     () => Object.fromEntries(interfaceMaterials.functions),
     [interfaceMaterials.functions],
+  );
+  const resolveTexture = useCallback(
+    (guid: string) => {
+      const bytes = interfaceTextureBytes.get(guid);
+      if (!bytes || !sharedEngine) return null;
+      return getMaterialTexture(
+        resourceCacheForEngine(sharedEngine),
+        guid,
+        sharedEngine,
+        bytes,
+      );
+    },
+    [interfaceTextureBytes, sharedEngine],
   );
 
   const viewport = useMemo(
@@ -649,6 +680,7 @@ export function UiEditingProvider({
       fontEntries,
       resolveImageUrl,
       resolveInterfaceMaterial,
+      resolveTexture,
       resolveNested,
       materialFunctions,
       imageIssues,
@@ -687,6 +719,7 @@ export function UiEditingProvider({
       fontEntries,
       resolveImageUrl,
       resolveInterfaceMaterial,
+      resolveTexture,
       resolveNested,
       materialFunctions,
       imageIssues,

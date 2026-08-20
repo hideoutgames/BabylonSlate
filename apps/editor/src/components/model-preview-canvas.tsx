@@ -6,7 +6,6 @@ import {
 } from "@babylonslate/assets";
 import {
   MaterialLibrary,
-  ResourceCache,
   applyModelMaterialSlots,
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
@@ -14,6 +13,7 @@ import {
   getMaterialTexture,
   loadModelPreviewSource,
   materialUnavailable,
+  resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
 } from "@babylonslate/render";
@@ -34,7 +34,6 @@ export function ModelPreviewCanvas({
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
-  const cacheRef = useRef<ResourceCache | null>(null);
   const model = normalizeModelPayload(payload);
   const slotKey = JSON.stringify(model.materialSlots);
 
@@ -101,8 +100,6 @@ export function ModelPreviewCanvas({
       host?.dispose();
       hostRef.current = null;
       presenterRef.current = null;
-      cacheRef.current?.dispose();
-      cacheRef.current = null;
     };
   }, [engine, sourceBytes]);
 
@@ -129,9 +126,7 @@ export function ModelPreviewCanvas({
         materials.textureGuids,
       );
       if (cancelled || hostRef.current !== host) return;
-      cacheRef.current?.dispose();
-      const cache = new ResourceCache();
-      cacheRef.current = cache;
+      const cache = resourceCacheForEngine(engine);
       const library = new MaterialLibrary({
         functions: () => Object.fromEntries(materials.functions),
         resolveTexture: (guid) => {
