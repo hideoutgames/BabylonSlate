@@ -1,6 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { IPAD_TEST_TAG } from "./ipad-tag";
 import { openTestProject } from "./open-test-project";
+
+async function openGlobalSearch(page: Page): Promise<void> {
+  await page.getByTestId("global-search").click();
+  await expect(page.getByTestId("global-search-dialog")).toBeVisible();
+  await expect(page.getByTestId("global-search-pending")).toHaveCount(0);
+}
 
 test.describe("Global project search", () => {
   test("toolbar search opens a dialog and focuses a scene actor", {
@@ -17,8 +23,7 @@ test.describe("Global project search", () => {
     expect(box!.height).toBeGreaterThanOrEqual(28);
     expect(box!.width).toBeGreaterThanOrEqual(28);
 
-    await searchButton.click();
-    await expect(page.getByTestId("global-search-dialog")).toBeVisible();
+    await openGlobalSearch(page);
     await expect(page.getByTestId("global-search-empty")).toBeVisible();
 
     await page.getByTestId("global-search-query").fill("Mannequin");
@@ -37,7 +42,7 @@ test.describe("Global project search", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page.getByTestId("global-search").click();
+    await openGlobalSearch(page);
     await page.getByTestId("global-search-query").fill("Event Begin Play");
     await expect(page.getByTestId("global-search-group-graph-node")).toBeVisible();
     await page
@@ -56,7 +61,7 @@ test.describe("Global project search", () => {
     page,
   }) => {
     await openTestProject(page);
-    await page.getByTestId("global-search").click();
+    await openGlobalSearch(page);
 
     const dialog = page.getByTestId("global-search-dialog");
     await expect(dialog).toBeVisible();

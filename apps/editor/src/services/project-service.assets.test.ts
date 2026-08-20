@@ -144,17 +144,25 @@ describe("project documents as .babasset", () => {
     ).toBe(3);
   });
 
-  it("rebuilds a search index that finds the default Mannequin actor", async () => {
+  it("does not rebuild a search index on project open", async () => {
     const { service } = await scaffolded();
     expect(service.searchIndex).toBeTruthy();
+    expect(service.searchIndex!.size).toBe(0);
+    expect(service.searchIndex!.query("mannequin")).toEqual([]);
+  });
+
+  it("finds the default Mannequin actor after an explicit search rebuild", async () => {
+    const { service } = await scaffolded();
+    await service.searchIndex!.rebuild(service.registry!);
     const hits = service.searchIndex!.query("mannequin");
     expect(
       hits.some((hit) => hit.kind === "actor" && hit.label === "Mannequin"),
     ).toBe(true);
   });
 
-  it("updates search hits after saving a renamed actor", async () => {
+  it("does not update search hits on save until the next rebuild", async () => {
     const { service } = await scaffolded();
+    await service.searchIndex!.rebuild(service.registry!);
     const scene = (await service.loadDocument(
       "scene",
       MAIN_SCENE_FILE,
@@ -165,6 +173,16 @@ describe("project documents as .babasset", () => {
         actor.id === "actor-1" ? { ...actor, name: "RenamedHero" } : actor,
       ),
     });
+    expect(
+      service
+        .searchIndex!.query("mannequin")
+        .some((hit) => hit.kind === "actor" && hit.label === "Mannequin"),
+    ).toBe(true);
+    expect(
+      service.searchIndex!.query("renamedhero").some((hit) => hit.kind === "actor"),
+    ).toBe(false);
+
+    await service.searchIndex!.rebuild(service.registry!);
     expect(
       service
         .searchIndex!.query("mannequin")

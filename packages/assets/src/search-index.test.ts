@@ -1,10 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
 import { encodeAssetDocument } from "./asset-document";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot } from "./content-root";
 import { AssetRegistry } from "./registry";
 import { ProjectSearchIndex } from "./search-index";
+
+const decodeAssetDocument = vi.hoisted(() => vi.fn());
+
+vi.mock("./asset-document", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./asset-document")>();
+  decodeAssetDocument.mockImplementation((...args: unknown[]) =>
+    (
+      actual.decodeAssetDocument as (
+        ...inner: unknown[]
+      ) => ReturnType<typeof actual.decodeAssetDocument>
+    )(...args),
+  );
+  return { ...actual, decodeAssetDocument };
+});
 
 async function createStorage(): Promise<MemoryStorageAdapter> {
   const storage = new MemoryStorageAdapter("documents");
@@ -365,5 +379,163 @@ describe("ProjectSearchIndex", () => {
     const hits = index.query("StarterActor");
     expect(hits.some((hit) => hit.label === "StarterActor")).toBe(true);
   });
+
+  it("does not decode Scene or Class chunks until rebuild", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    for (let i = 0; i < 200; i++) {
+      const kind = i % 2 === 0 ? "Scene" : "Class";
+      await writeDocument(storage, `assets/doc-${i}.babasset`, {
+        guid: `doc-${i}`,
+        type: kind,
+        name: `Doc${i}`,
+        payload:
+          kind === "Scene"
+            ? {
+                actors: [
+                  {
+                    id: `actor-${i}`,
+                    name: `Hero${i}`,
+                    classId: "Actor",
+                    components: [],
+                  },
+                ],
+              }
+            : {
+                nodes: [
+                  {
+                    id: `node-${i}`,
+                    type: "logMessage",
+                    data: { message: `Node${i}` },
+                  },
+                ],
+                edges: [],
+              },
+      });
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    expect(decodeAssetDocument).not.toHaveBeenCalled();
+
+    const index = new ProjectSearchIndex(storage);
+    expect(index.size).toBe(0);
+    expect(index.query("hero198")).toEqual([]);
+    expect(decodeAssetDocument).not.toHaveBeenCalled();
+
+    await index.rebuild(registry);
+    expect(decodeAssetDocument.mock.calls.length).toBe(200);
+    expect(
+      index.query("hero198").some((hit) => hit.kind === "actor"),
+    ).toBe(true);
+    expect(
+      index.query("node199").some((hit) => hit.kind === "graph-node"),
+    ).toBe(true);
+  });
+
+  it("overlays open-document JSON so unsaved names win, then a second rebuild sees the new snapshot", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+      payload: {
+        actors: [{ id: "actor-1", name: "Cube", classId: "Actor", components: [] }],
+      },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage);
+
+    await index.rebuild(registry, {
+      openDocuments: [
+        {
+          path: "assets/main.scene.babasset",
+          payload: {
+            actors: [
+              {
+                id: "actor-1",
+                name: "UnsavedHero",
+                classId: "Actor",
+                components: [],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(index.query("cube")).toEqual([]);
+    expect(
+      index.query("unsavedhero").some((hit) => hit.kind === "actor"),
+    ).toBe(true);
+
+    await index.rebuild(registry, {
+      openDocuments: [
+        {
+          path: "assets/main.scene.babasset",
+          payload: {
+            actors: [
+              {
+                id: "actor-1",
+                name: "SecondName",
+                classId: "Actor",
+                components: [],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(index.query("unsavedhero")).toEqual([]);
+    expect(
+      index.query("secondname").some((hit) => hit.kind === "actor"),
+    ).toBe(true);
+  });
+
+  it("keeps the previous snapshot when an in-flight rebuild is aborted", async () => {
+    const storage = await createStorage();
+    await writeDocument(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+      payload: {
+        actors: [{ id: "actor-1", name: "Cube", classId: "Actor", components: [] }],
+      },
+    });
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const index = new ProjectSearchIndex(storage);
+    await index.rebuild(registry);
+    expect(index.query("cube").some((hit) => hit.kind === "actor")).toBe(true);
+
+    await writeDocument(storage, "assets/main.scene.babasset", {
+      guid: "scene-1",
+      type: "Scene",
+      name: "Main",
+      payload: {
+        actors: [
+          { id: "actor-1", name: "SphereHero", classId: "Actor", components: [] },
+        ],
+      },
+    });
+    await registry.reindexPath("assets/main.scene.babasset");
+
+    const controller = new AbortController();
+    const pending = index.rebuild(registry, { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(index.query("cube").some((hit) => hit.kind === "actor")).toBe(true);
+    expect(index.query("spherehero")).toEqual([]);
+
+    await index.rebuild(registry);
+    expect(index.query("cube")).toEqual([]);
+    expect(
+      index.query("spherehero").some((hit) => hit.kind === "actor"),
+    ).toBe(true);
+  });
 });
+
+afterEach(() => {
+  decodeAssetDocument.mockClear();
+});
+
 
