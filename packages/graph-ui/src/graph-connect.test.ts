@@ -29,6 +29,7 @@ import {
   firstCompatiblePin,
   oppositeSideHandleId,
   orientConnectionByPins,
+  finalizeOrientedConnection,
   type PinCompatibilityRule,
 } from "./graph-connect";
 
@@ -1234,6 +1235,157 @@ describe("orientConnectionByPins", () => {
         pinFor,
       ),
     ).toBeNull();
+  });
+});
+
+describe("finalizeOrientedConnection", () => {
+  const animPins = new Map<string, SerializedPin>([
+    [
+      "idle:right-out",
+      {
+        id: "right-out",
+        name: "out",
+        kind: "exec",
+        direction: "out",
+        type: { kind: "exec" },
+      },
+    ],
+    [
+      "idle:left-in",
+      {
+        id: "left-in",
+        name: "in",
+        kind: "exec",
+        direction: "in",
+        type: { kind: "exec" },
+      },
+    ],
+    [
+      "run:left-in",
+      {
+        id: "left-in",
+        name: "in",
+        kind: "exec",
+        direction: "in",
+        type: { kind: "exec" },
+      },
+    ],
+    [
+      "run:left-out",
+      {
+        id: "left-out",
+        name: "out",
+        kind: "exec",
+        direction: "out",
+        type: { kind: "exec" },
+      },
+    ],
+    ["get:value", stringOut],
+    ["log:message", stringIn],
+  ]);
+
+  function pinFor(nodeId: string, pinId: string): SerializedPin | undefined {
+    return animPins.get(`${nodeId}:${pinId}`);
+  }
+
+  function migrateAnimHandles(connection: {
+    source: string;
+    target: string;
+    sourceHandle: string;
+    targetHandle: string;
+  }): { source: string; target: string; sourceHandle: string; targetHandle: string } | null {
+    const side = (handle: string, direction: "in" | "out") => {
+      const token = handle.split("-")[0];
+      if (
+        token === "top" ||
+        token === "right" ||
+        token === "bottom" ||
+        token === "left"
+      ) {
+        return `${token}-${direction}`;
+      }
+      return handle;
+    };
+    if (connection.source === connection.target) return null;
+    return {
+      source: connection.source,
+      target: connection.target,
+      sourceHandle: side(connection.sourceHandle, "out"),
+      targetHandle: side(connection.targetHandle, "in"),
+    };
+  }
+
+  it("keeps an output-to-input connection", () => {
+    expect(
+      finalizeOrientedConnection(
+        {
+          source: "idle",
+          target: "run",
+          sourceHandle: "right-out",
+          targetHandle: "left-in",
+        },
+        pinFor,
+      ),
+    ).toEqual({
+      source: "idle",
+      target: "run",
+      sourceHandle: "right-out",
+      targetHandle: "left-in",
+    });
+  });
+
+  it("still rejects same-direction pins when there is no host normalizer", () => {
+    expect(
+      finalizeOrientedConnection(
+        {
+          source: "idle",
+          target: "run",
+          sourceHandle: "right-out",
+          targetHandle: "left-out",
+        },
+        pinFor,
+      ),
+    ).toBeNull();
+  });
+
+  it("lets host handle migration rewrite a stacked same-side drop to out→in", () => {
+    expect(
+      finalizeOrientedConnection(
+        {
+          source: "idle",
+          target: "run",
+          sourceHandle: "right-out",
+          targetHandle: "left-out",
+        },
+        pinFor,
+        migrateAnimHandles,
+      ),
+    ).toEqual({
+      source: "idle",
+      target: "run",
+      sourceHandle: "right-out",
+      targetHandle: "left-in",
+    });
+  });
+
+  it("orients an input-first drag before host handle migration", () => {
+    expect(
+      finalizeOrientedConnection(
+        {
+          source: "log",
+          target: "get",
+          sourceHandle: "message",
+          targetHandle: "value",
+        },
+        pinFor,
+        migrateAnimHandles,
+      ),
+    ).toEqual({
+      source: "get",
+      target: "log",
+      sourceHandle: "value",
+      targetHandle: "message",
+    });
   });
 });
 

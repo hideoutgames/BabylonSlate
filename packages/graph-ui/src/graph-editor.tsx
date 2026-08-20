@@ -83,7 +83,7 @@ import {
   isClientPointOverHandle,
   nearestSnapConnectPin,
   nodePinLists,
-  orientConnectionByPins,
+  finalizeOrientedConnection,
   pinsAreCompatible,
   screenPinsForSafeRefs,
   screenCentersForSafePins,
@@ -240,18 +240,45 @@ function orientThenNormalize(
   nodes: CanvasNode[],
   normalizeConnection?: (connection: Connection) => Connection | null,
 ): Connection | null {
-  const oriented = orientConnectionByPins(connection, (nodeId, pinId) =>
-    pinOnNode(nodes, nodeId, pinId),
+  const pinFor = (nodeId: string, pinId: string) =>
+    pinOnNode(nodes, nodeId, pinId);
+  const finalized = finalizeOrientedConnection(
+    connection,
+    pinFor,
+    normalizeConnection
+      ? (oriented) => {
+          const next = normalizeConnection({
+            ...connection,
+            source: oriented.source,
+            target: oriented.target,
+            sourceHandle: oriented.sourceHandle,
+            targetHandle: oriented.targetHandle,
+          });
+          if (
+            !next?.source ||
+            !next.target ||
+            !next.sourceHandle ||
+            !next.targetHandle
+          ) {
+            return null;
+          }
+          return {
+            source: next.source,
+            target: next.target,
+            sourceHandle: next.sourceHandle,
+            targetHandle: next.targetHandle,
+          };
+        }
+      : undefined,
   );
-  if (!oriented) return null;
-  const next: Connection = {
+  if (!finalized) return null;
+  return {
     ...connection,
-    source: oriented.source,
-    target: oriented.target,
-    sourceHandle: oriented.sourceHandle,
-    targetHandle: oriented.targetHandle,
+    source: finalized.source,
+    target: finalized.target,
+    sourceHandle: finalized.sourceHandle,
+    targetHandle: finalized.targetHandle,
   };
-  return normalizeConnection ? normalizeConnection(next) : next;
 }
 
 function toFlowEdges(edges: GraphDocument["edges"]): Edge[] {

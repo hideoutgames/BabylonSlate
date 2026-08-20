@@ -102,6 +102,58 @@ export function orientConnectionByPins(
   };
 }
 
+export type ConnectionNormalizer = (
+  connection: OrientedConnection,
+) => OrientedConnection | null;
+
+/**
+ * Orient to output→input, then run an optional host rewrite (Animation Graph
+ * handle migration). Host rewrite still runs when stacked same-side plates
+ * look same-direction so `left-out` can become `left-in`.
+ */
+export function finalizeOrientedConnection(
+  connection: {
+    source?: string | null;
+    target?: string | null;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  },
+  pinFor: ConnectPinLookup,
+  normalize?: ConnectionNormalizer,
+): OrientedConnection | null {
+  const oriented = orientConnectionByPins(connection, pinFor);
+  const fallback =
+    connection.source &&
+    connection.target &&
+    connection.sourceHandle &&
+    connection.targetHandle
+      ? {
+          source: connection.source,
+          target: connection.target,
+          sourceHandle: connection.sourceHandle,
+          targetHandle: connection.targetHandle,
+        }
+      : null;
+  const base = oriented ?? fallback;
+  if (!base) return null;
+  if (!normalize) return oriented;
+  const normalized = normalize(base);
+  if (
+    !normalized?.source ||
+    !normalized.target ||
+    !normalized.sourceHandle ||
+    !normalized.targetHandle
+  ) {
+    return null;
+  }
+  const again = orientConnectionByPins(normalized, pinFor);
+  if (again) return again;
+  const sourcePin = pinFor(normalized.source, normalized.sourceHandle);
+  const targetPin = pinFor(normalized.target, normalized.targetHandle);
+  if (sourcePin && targetPin) return null;
+  return normalized;
+}
+
 function directedEdgeId(edge: OrientedConnection): string {
   return `e:${edge.source}:${edge.sourceHandle}:${edge.target}:${edge.targetHandle}`;
 }
