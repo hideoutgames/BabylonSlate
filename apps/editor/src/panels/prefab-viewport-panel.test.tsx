@@ -45,6 +45,7 @@ const {
     setPostProcessingEnabled: vi.fn(),
     loadScene: vi.fn(),
     setMaterialDocuments: vi.fn(),
+    setEditingMaterialGuids: vi.fn(),
     setMeshAssets: vi.fn(),
     resize: vi.fn(),
     dispose: disposeFn,
@@ -134,6 +135,8 @@ vi.mock("../context/document-context", () => ({
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument: null,
+    openDocuments: [],
+    assetRegistry: null,
   }),
 }));
 

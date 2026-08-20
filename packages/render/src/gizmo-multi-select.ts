@@ -63,6 +63,7 @@ export function applyWorldDeltaToMesh(
   startWorld: DeepImmutable<Matrix>,
   delta: DeepImmutable<Matrix>,
 ): void {
+  if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   const newWorld = startWorld.multiply(delta);
   let local: DeepImmutable<Matrix> = newWorld;
   const parent = mesh.parent;
