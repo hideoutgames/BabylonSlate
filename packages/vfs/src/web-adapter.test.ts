@@ -180,4 +180,18 @@ describe("OPFS / web storage adapter", () => {
       }),
     ).rejects.toThrow(/cannot open tier/);
   });
+
+  it("deleteProject drops the OPFS folder and meta so a rebind is empty", async () => {
+    const storage = await openedAdapter();
+    await storage.writeText("project.json", '{"old":true}');
+    const handle = storage.getCurrentFolder()!;
+    await storage.deleteProject(handle);
+    expect(await storage.listProjects()).toEqual([]);
+    expect(storage.getCurrentFolder()).toBeNull();
+
+    const again = new OpfsStorageAdapter();
+    expect(await again.listProjects()).toEqual([]);
+    await again.openKnownFolder(handle);
+    expect(await again.exists("project.json")).toBe(false);
+  });
 });

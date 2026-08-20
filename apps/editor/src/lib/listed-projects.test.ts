@@ -5,9 +5,19 @@ import {
   listedProjectLocationLabel,
   listedProjectMetaParts,
   listedProjectsFromRecents,
+  shouldDeleteOpfsOnRemove,
   sortListedProjects,
   type ListedProject,
 } from "./listed-projects";
+
+describe("shouldDeleteOpfsOnRemove", () => {
+  it("deletes only web OPFS projects", () => {
+    expect(shouldDeleteOpfsOnRemove("web", "opfs")).toBe(true);
+    expect(shouldDeleteOpfsOnRemove("web", "documents")).toBe(false);
+    expect(shouldDeleteOpfsOnRemove("ios", "opfs")).toBe(false);
+    expect(shouldDeleteOpfsOnRemove("electron", "documents")).toBe(false);
+  });
+});
 
 describe("listedProjectsFromRecents", () => {
   it("uses recents order and labels while keeping stored folder names", () => {

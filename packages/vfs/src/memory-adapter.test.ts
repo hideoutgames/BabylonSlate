@@ -39,4 +39,15 @@ describe("memory storage adapter", () => {
     await storage.releaseFolder();
     expect(storage.getCurrentFolder()).toBeNull();
   });
+
+  it("deleteProject drops the root so a rebind does not keep old files", async () => {
+    const storage = new MemoryStorageAdapter("opfs");
+    const handle = await storage.pickProjectFolder("Game");
+    await storage.writeText("project.json", '{"old":true}');
+    await storage.deleteProject(handle);
+    expect(await storage.listProjects()).toEqual([]);
+    expect(storage.getCurrentFolder()).toBeNull();
+    await storage.openKnownFolder(handle);
+    expect(await storage.exists("project.json")).toBe(false);
+  });
 });

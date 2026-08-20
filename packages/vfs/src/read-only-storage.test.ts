@@ -23,6 +23,9 @@ describe("createReadOnlyProjectStorage", () => {
     await expect(storage.remove("starter/note.txt")).rejects.toThrow(
       /read-only/i,
     );
+    await expect(storage.deleteProject!(inner.getCurrentFolder()!)).rejects.toThrow(
+      /read-only/i,
+    );
     expect(await storage.readText("starter/note.txt")).toBe("ok");
   });
 });

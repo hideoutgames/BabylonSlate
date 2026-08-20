@@ -42,6 +42,11 @@ export interface ProjectStorage {
   needsReconnect?(): Promise<boolean>;
   /** Re-pick and re-bind a stale external folder. */
   reconnectFolder?(): Promise<ProjectFolderHandle>;
+  /**
+   * Permanently remove a project folder (web OPFS). Native Documents /
+   * chosen-folder adapters omit this — Homepage only drops recents there.
+   */
+  deleteProject?(handle: ProjectFolderHandle): Promise<void>;
 
   readText(path: string): Promise<string>;
   writeText(path: string, data: string): Promise<void>;
