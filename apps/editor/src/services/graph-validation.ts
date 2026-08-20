@@ -1341,79 +1341,166 @@ function enumPaletteNodes(
   return rows;
 }
 
-/** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
-export function scriptPaletteNodes(
-  nodeRegistry: NodeRegistry = registry,
+export type ScriptPaletteBuildOptions = {
+  /** Default true. False returns host-legal catalog rows only (no injectors). */
+  injectors?: boolean;
+  cache?: ScriptPaletteCache;
+};
+
+/** Session-lifetime injector cache keyed by class-set / FL / member identity. */
+export class ScriptPaletteCache {
+  injectors = 0;
+  private key: string | null = null;
+  private rows: PaletteNode[] | null = null;
+
+  getOrBuild(key: string, build: () => PaletteNode[]): PaletteNode[] {
+    if (this.key === key && this.rows) return this.rows;
+    this.injectors += 1;
+    this.rows = build();
+    this.key = key;
+    return this.rows;
+  }
+
+  clear(): void {
+    this.key = null;
+    this.rows = null;
+    this.injectors = 0;
+  }
+}
+
+function graphPaletteMemberFingerprint(graph?: SerializedGraph): unknown {
+  return {
+    members: graph?.members ?? [],
+    events: customEventRows(graph),
+    functions: functionRows(graph),
+  };
+}
+
+/** Identity for Cast/FL/Get Widget injectors — not graph pin or position data. */
+export function scriptPaletteInjectorKey(
+  options?: ScriptPaletteOptions,
+): string {
+  const parentOf =
+    options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  const seed = [
+    options?.classId,
+    typeof options?.parentClass === "string" ? options.parentClass : null,
+    ...Object.keys(options?.otherClassGraphs ?? {}),
+    ...(options?.functionLibraries ?? []).map((lib) => lib.classId),
+  ].filter((id): id is string => Boolean(id));
+  const classIds = [...knownClassIdSet(parentOf, seed)].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const other = Object.entries(options?.otherClassGraphs ?? {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, graph]) => [id, graphPaletteMemberFingerprint(graph)]);
+  return JSON.stringify({
+    parentClass: options?.parentClass ?? null,
+    classId: options?.classId ?? null,
+    assetType: options?.assetType ?? null,
+    animationGraphHost: options?.animationGraphHost ?? null,
+    activeFunctionId: options?.activeFunctionId ?? null,
+    classes: classIds.map((id) => [id, parentOf(id) ?? null]),
+    graph: graphPaletteMemberFingerprint(options?.graph),
+    other,
+    functionLibraries: options?.functionLibraries ?? [],
+    widgets: options?.widgets ?? [],
+    scriptInterfaces: options?.scriptInterfaces ?? [],
+    structures: options?.structures ?? [],
+    enums: options?.enums ?? [],
+  });
+}
+
+function scriptPaletteCatalogNodes(
+  nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
 ): PaletteNode[] {
-  const catalog = nodeRegistry
+  return nodeRegistry
     .list()
     .filter((def) => {
-      if (
-        def.editorOnly &&
-        !isEditorGraphHost(options ?? {})
-      ) {
+      if (def.editorOnly && !isEditorGraphHost(options ?? {})) {
         return false;
       }
-      if (
-        options?.animationGraphHost === "rule" &&
-        def.pure !== true
-      ) {
+      if (options?.animationGraphHost === "rule" && def.pure !== true) {
         return false;
       }
       return isScriptCatalogNodeAllowed(def.id, options);
     })
     .map((def) => {
-    const defaultData: Record<string, unknown> = {};
-    if (def.id === "debug.log") {
-      defaultData.message = "";
-      defaultData.severity = "log";
-      defaultData.category = "Script";
-    }
-    if (def.developmentOnlyByDefault) {
-      defaultData.developmentOnly = true;
-    }
-    if (def.id === "string.format") {
-      defaultData["default:format"] = "{input}";
-    }
-    if (
-      def.id === "audio.play" ||
-      def.id === "audio.setChannelVolume" ||
-      def.id === "audio.setGlobalVolume"
-    ) {
-      defaultData["default:volume"] = 1;
-    }
-    if (def.id === "input.setInputMode") {
-      defaultData.mode = "All";
-    }
-    const pins = def.pins(defaultData);
-    if (def.editorOnly) defaultData.__editorOnly = true;
-    return {
-      id: def.id,
-      title: def.title,
-      category: def.category,
-      pins,
-      pure: def.pure,
-      latent: def.latent,
-      editorOnly: def.editorOnly,
-      defaultData:
-        Object.keys(defaultData).length > 0 ? defaultData : undefined,
-    };
-  });
-  const injected =
-    options?.animationGraphHost === "rule"
-      ? variableAccessPaletteNodes(nodeRegistry, options)
-      : [
-          ...callCustomEventPaletteNodes(nodeRegistry, options),
-          ...callFunctionPaletteNodes(nodeRegistry, options),
-          ...callInterfacePaletteNodes(nodeRegistry, options),
-          ...variableAccessPaletteNodes(nodeRegistry, options),
-          ...castPaletteNodes(nodeRegistry, options),
-          ...structPaletteNodes(nodeRegistry, options),
-          ...enumPaletteNodes(nodeRegistry, options),
-          ...getWidgetPaletteNodes(nodeRegistry, options),
-        ];
-  return [...catalog, ...injected];
+      const defaultData: Record<string, unknown> = {};
+      if (def.id === "debug.log") {
+        defaultData.message = "";
+        defaultData.severity = "log";
+        defaultData.category = "Script";
+      }
+      if (def.developmentOnlyByDefault) {
+        defaultData.developmentOnly = true;
+      }
+      if (def.id === "string.format") {
+        defaultData["default:format"] = "{input}";
+      }
+      if (
+        def.id === "audio.play" ||
+        def.id === "audio.setChannelVolume" ||
+        def.id === "audio.setGlobalVolume"
+      ) {
+        defaultData["default:volume"] = 1;
+      }
+      if (def.id === "input.setInputMode") {
+        defaultData.mode = "All";
+      }
+      const pins = def.pins(defaultData);
+      if (def.editorOnly) defaultData.__editorOnly = true;
+      return {
+        id: def.id,
+        title: def.title,
+        category: def.category,
+        pins,
+        pure: def.pure,
+        latent: def.latent,
+        editorOnly: def.editorOnly,
+        defaultData:
+          Object.keys(defaultData).length > 0 ? defaultData : undefined,
+      };
+    });
+}
+
+function scriptPaletteInjectorNodes(
+  nodeRegistry: NodeRegistry,
+  options?: ScriptPaletteOptions,
+): PaletteNode[] {
+  if (options?.animationGraphHost === "rule") {
+    return variableAccessPaletteNodes(nodeRegistry, options);
+  }
+  return [
+    ...callCustomEventPaletteNodes(nodeRegistry, options),
+    ...callFunctionPaletteNodes(nodeRegistry, options),
+    ...callInterfacePaletteNodes(nodeRegistry, options),
+    ...variableAccessPaletteNodes(nodeRegistry, options),
+    ...castPaletteNodes(nodeRegistry, options),
+    ...structPaletteNodes(nodeRegistry, options),
+    ...enumPaletteNodes(nodeRegistry, options),
+    ...getWidgetPaletteNodes(nodeRegistry, options),
+  ];
+}
+
+/** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
+export function scriptPaletteNodes(
+  nodeRegistry: NodeRegistry = registry,
+  options?: ScriptPaletteOptions,
+  build: ScriptPaletteBuildOptions = {},
+): PaletteNode[] {
+  if (build.injectors === false) {
+    return scriptPaletteCatalogNodes(nodeRegistry, options);
+  }
+  const assemble = () => [
+    ...scriptPaletteCatalogNodes(nodeRegistry, options),
+    ...scriptPaletteInjectorNodes(nodeRegistry, options),
+  ];
+  if (build.cache) {
+    return build.cache.getOrBuild(scriptPaletteInjectorKey(options), assemble);
+  }
+  return assemble();
 }
 
 function getWidgetPaletteNodes(

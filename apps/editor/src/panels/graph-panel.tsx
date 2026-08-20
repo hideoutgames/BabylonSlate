@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   GraphEditor,
@@ -30,6 +30,8 @@ import {
   createDefaultLogicGraphSerialized,
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
+  ScriptPaletteCache,
+  scriptPaletteInjectorKey,
   scriptPaletteNodes,
   scriptPinCompatibility,
   validateSerializedGraph,
@@ -78,6 +80,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     setFocusDiagnostic,
   } = useValidation();
   const [defaultZoom, setDefaultZoom] = useState(GRAPH_DEFAULT_ZOOM);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteCacheRef = useRef(new ScriptPaletteCache());
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
     activeFunctionId ?? "event",
@@ -312,38 +316,32 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     animEditorMode,
   ]);
 
+  const paletteInput = {
+    parentClass,
+    parentOf,
+    classId,
+    graph: graphContent ?? undefined,
+    widgets,
+    otherClassGraphs,
+    activeFunctionId,
+    assetType: indexed?.header.type,
+    functionLibraries,
+    scriptInterfaces,
+    structures: typeAssets.structures,
+    enums: typeAssets.enums,
+    animationGraphHost:
+      doc?.ref.kind === "anim-graph" ? "object" : undefined,
+  };
+  const paletteInputRef = useRef(paletteInput);
+  paletteInputRef.current = paletteInput;
+  const paletteKey = scriptPaletteInjectorKey(paletteInput);
   const paletteNodes = useMemo(
     (): PaletteNode[] =>
-      scriptPaletteNodes(registry, {
-        parentClass,
-        parentOf,
-        classId,
-        graph: graphContent ?? undefined,
-        widgets,
-        otherClassGraphs,
-        activeFunctionId,
-        assetType: indexed?.header.type,
-        functionLibraries,
-        scriptInterfaces,
-        structures: typeAssets.structures,
-        enums: typeAssets.enums,
-        animationGraphHost:
-          doc?.ref.kind === "anim-graph" ? "object" : undefined,
+      scriptPaletteNodes(registry, paletteInputRef.current, {
+        injectors: paletteOpen,
+        cache: paletteCacheRef.current,
       }),
-    [
-      activeFunctionId,
-      classId,
-      widgets,
-      functionLibraries,
-      scriptInterfaces,
-      graphContent,
-      indexed?.header.type,
-      otherClassGraphs,
-      parentClass,
-      parentOf,
-      typeAssets,
-      doc?.ref.kind,
-    ],
+    [paletteKey, paletteOpen],
   );
 
   const focusId = focusDiagnostic?.nodeId ?? focusedNodeId ?? undefined;
@@ -386,6 +384,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           focusedNodeId={focusId}
           diagnostics={graphDiagnostics}
           paletteNodes={paletteNodes}
+          onPaletteOpenChange={setPaletteOpen}
           pinCompatibility={pinCompatibility}
           onCanvasApi={setCanvasDropApi}
           onNavigateRequest={() => setFocusDiagnostic(null)}

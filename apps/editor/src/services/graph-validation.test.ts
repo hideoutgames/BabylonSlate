@@ -8,6 +8,7 @@ import {
   hydrateSerializedGraphForEditor,
   knownClassIdSet,
   materializeLogicGraph,
+  ScriptPaletteCache,
   scriptPaletteNodes,
   scriptPinCompatibility,
   validateSerializedGraph,
@@ -2091,6 +2092,131 @@ describe("scriptPaletteNodes", () => {
           pin.id === "value" && (pin.type as { kind?: string }).kind === "array",
       ),
     ).toBe(true);
+  });
+});
+
+describe("ScriptPaletteCache", () => {
+  const libraryParentOf = (id: string) => {
+    if (id.startsWith("Class")) return "Actor";
+    if (id === "MathLib") return "FunctionLibrary";
+    if (id === "FunctionLibrary") return "BObject";
+    if (id === "Hero") return "Actor";
+    if (id === "Actor") return "BObject";
+    return null;
+  };
+
+  const addPins = [
+    { name: "exec", typeId: "exec", direction: "in" as const },
+    { name: "a", typeId: "float", direction: "in" as const },
+    { name: "b", typeId: "float", direction: "in" as const },
+    { name: "then", typeId: "exec", direction: "out" as const },
+    { name: "result", typeId: "float", direction: "out" as const },
+  ];
+
+  const thousandClasses = Object.fromEntries(
+    Array.from({ length: 1000 }, (_, index) => [
+      `Class${index}`,
+      { nodes: [], edges: [] },
+    ]),
+  ) as Record<string, SerializedGraph>;
+
+  const members = [
+    {
+      id: "fn-foo",
+      kind: "function" as const,
+      name: "Foo",
+    },
+  ];
+
+  function paletteOptions(graph: SerializedGraph) {
+    return {
+      parentClass: "Actor",
+      classId: "Hero",
+      parentOf: libraryParentOf,
+      graph,
+      otherClassGraphs: thousandClasses,
+      functionLibraries: [
+        {
+          classId: "MathLib",
+          parentClass: "FunctionLibrary",
+          functions: [{ name: "Add", pins: addPins }],
+        },
+      ],
+      widgets: [{ id: "play-btn", name: "Play Button", kind: "Button" }],
+      assetType: "UserInterface" as const,
+    };
+  }
+
+  it("omits Cast-to-Class, FL Call, and Get Widget rows when injectors are deferred", () => {
+    const nodes = scriptPaletteNodes(
+      registry,
+      paletteOptions({
+        nodes: [],
+        edges: [],
+        members,
+      }),
+      { injectors: false },
+    );
+    expect(nodes.some((node) => node.id === "debug.log")).toBe(true);
+    expect(nodes.some((node) => node.id.startsWith("casting.cast:"))).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "functions.call:MathLib:Add")).toBe(
+      false,
+    );
+    expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(
+      false,
+    );
+  });
+
+  it("does not rebuild a ~1000-class injector set on an unrelated graph data edit", () => {
+    const cache = new ScriptPaletteCache();
+    const first = scriptPaletteNodes(
+      registry,
+      paletteOptions({
+        nodes: [
+          {
+            id: "log-1",
+            type: "debug.log",
+            position: { x: 0, y: 0 },
+            data: { message: "hello" },
+          },
+        ],
+        edges: [],
+        members,
+      }),
+      { injectors: true, cache },
+    );
+    expect(cache.injectors).toBe(1);
+    expect(first.some((node) => node.id === "casting.cast:Actor")).toBe(true);
+    expect(first.some((node) => node.id === "casting.cast:Class999")).toBe(
+      true,
+    );
+    expect(first.some((node) => node.id === "functions.call:MathLib:Add")).toBe(
+      true,
+    );
+    expect(first.some((node) => node.id === "ui.getWidget:play-btn")).toBe(
+      true,
+    );
+
+    const second = scriptPaletteNodes(
+      registry,
+      paletteOptions({
+        nodes: [
+          {
+            id: "log-1",
+            type: "debug.log",
+            position: { x: 40, y: 80 },
+            data: { message: "changed" },
+          },
+        ],
+        edges: [],
+        members,
+      }),
+      { injectors: true, cache },
+    );
+    expect(cache.injectors).toBe(1);
+    expect(second).toBe(first);
   });
 });
 
