@@ -3,9 +3,11 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
 import { ModelThumbnailCaptureHost } from "./model-thumbnail-capture-host";
 
-const captureModelThumbnailPng = vi.fn(async () => new Uint8Array([137, 80, 78, 71]));
+const captureModelThumbnailPng = vi.fn(
+  async (..._args: unknown[]) => new Uint8Array([137, 80, 78, 71]),
+);
 const MaterialLibrary = vi.fn();
-const resourceCacheForEngine = vi.fn(() => ({}));
+const resourceCacheForEngine = vi.fn((..._args: unknown[]) => ({}));
 const collectPlayMaterialLibrary = vi.fn(async () => ({
   documents: new Map(),
   functions: new Map(),
@@ -84,7 +86,7 @@ describe("ModelThumbnailCaptureHost", () => {
     expect(MaterialLibrary).not.toHaveBeenCalled();
     const resolveMaterial = captureModelThumbnailPng.mock.calls[0]![3] as (
       guid: string,
-    ) => unknown;
+    ) => unknown | null;
     expect(resolveMaterial("mat-1")).toBeNull();
     expect(writeAssetThumbnail).toHaveBeenCalledWith(
       "model-1",
