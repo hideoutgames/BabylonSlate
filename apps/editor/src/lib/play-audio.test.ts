@@ -69,4 +69,26 @@ describe("createPlayAudioSourceLoader", () => {
       "assets/bed.audio.babasset:source",
     ]);
   });
+
+  it("returns null for an unknown Audio guid without touching VFS", async () => {
+    const reads: string[] = [];
+    const loader = createPlayAudioSourceLoader({
+      assets: [
+        {
+          guid: "jump",
+          path: "assets/jump.audio.babasset",
+          type: "Audio",
+          payload: {},
+        },
+      ],
+      readChunk: async (path, chunkId) => {
+        reads.push(`${path}:${chunkId}`);
+        return new Uint8Array([1]);
+      },
+    });
+    await expect(
+      loader({ assetGuid: "missing", chunkId: "source" }),
+    ).resolves.toBeNull();
+    expect(reads).toEqual([]);
+  });
 });

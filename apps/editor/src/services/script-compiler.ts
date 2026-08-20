@@ -281,9 +281,47 @@ export type GraphCompileDocument = {
   content: SerializedGraph;
 };
 
+function compileNodeFingerprint(
+  nodes: SerializedGraph["nodes"],
+): Array<{ id: string; type: string; data: Record<string, unknown> }> {
+  return nodes
+    .map((node) => ({
+      id: node.id,
+      type: node.type,
+      data: node.data,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function compileEdgeFingerprint(
+  edges: SerializedGraph["edges"],
+): SerializedGraph["edges"] {
+  return [...edges].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function compileFunctionGraphFingerprint(
+  functionGraphs: SerializedGraph["functionGraphs"],
+): Record<
+  string,
+  {
+    nodes: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+    edges: SerializedGraph["edges"];
+  }
+> {
+  const entries = Object.entries(functionGraphs ?? {}).map(([id, slice]) => [
+    id,
+    {
+      nodes: compileNodeFingerprint(slice.nodes),
+      edges: compileEdgeFingerprint(slice.edges),
+    },
+  ]);
+  entries.sort(([a], [b]) => String(a).localeCompare(String(b)));
+  return Object.fromEntries(entries);
+}
+
 /**
  * Stable fingerprint of graph *compile* inputs. Node positions are omitted so
- * Format / canvas nudges do not re-enable Compile.
+ * Format / canvas nudges do not re-enable Compile (event graph and function graphs).
  */
 export function graphCompileSignature(
   documents: ReadonlyArray<GraphCompileDocument>,
@@ -291,16 +329,10 @@ export function graphCompileSignature(
   const payload = [...documents]
     .map((doc) => ({
       path: doc.path,
-      nodes: doc.content.nodes
-        .map((node) => ({
-          id: node.id,
-          type: node.type,
-          data: node.data,
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
-      edges: [...doc.content.edges].sort((a, b) => a.id.localeCompare(b.id)),
+      nodes: compileNodeFingerprint(doc.content.nodes),
+      edges: compileEdgeFingerprint(doc.content.edges),
       members: doc.content.members ?? [],
-      functionGraphs: doc.content.functionGraphs ?? {},
+      functionGraphs: compileFunctionGraphFingerprint(doc.content.functionGraphs),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
   return JSON.stringify(payload);
