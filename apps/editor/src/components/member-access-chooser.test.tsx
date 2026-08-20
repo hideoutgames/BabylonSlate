@@ -24,4 +24,31 @@ describe("MemberAccessChooser", () => {
     screen.getByTestId("member-access-set").click();
     expect(onChoose).toHaveBeenCalledWith("set");
   });
+
+  it("offers Validated Get for instance variables", () => {
+    const onChoose = vi.fn();
+    render(
+      <MemberAccessChooser
+        open
+        memberName="Target"
+        showValidatedGet
+        onOpenChange={() => {}}
+        onChoose={onChoose}
+      />,
+    );
+    screen.getByTestId("member-access-validated-get").click();
+    expect(onChoose).toHaveBeenCalledWith("validatedGet");
+  });
+
+  it("hides Validated Get for non-instance variables", () => {
+    render(
+      <MemberAccessChooser
+        open
+        memberName="Health"
+        onOpenChange={() => {}}
+        onChoose={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("member-access-validated-get")).toBeNull();
+  });
 });

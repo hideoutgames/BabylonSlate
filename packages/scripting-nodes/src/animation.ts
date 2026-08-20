@@ -7,6 +7,7 @@ import {
   INT,
   STRING,
   BOXED_WILDCARD,
+  objectRef,
 } from "@babylonslate/scripting";
 
 function factExpr(field: string, fallback: string): string {
@@ -109,11 +110,12 @@ export const animationNodes: NodeDefinition[] = [
     category: "animation",
     pure: true,
     pins: () => [
+      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
       pin("name", "name", "in", STRING),
       pin("value", "value", "out", BOXED_WILDCARD),
     ],
     codegen: (ctx) => ({
-      value: `ctx.getAnimGraphVariable(${ctx.input("name")})`,
+      value: `ctx.getAnimGraphVariable(${ctx.input("target")}, ${ctx.input("name")})`,
     }),
   },
   {
@@ -123,12 +125,13 @@ export const animationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
+      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
       pin("name", "name", "in", STRING),
       pin("value", "value", "in", BOXED_WILDCARD),
     ],
     codegen: (ctx) => {
       ctx.emit(
-        `ctx.setAnimGraphVariable(${ctx.input("name")}, ${ctx.input("value")});`,
+        `ctx.setAnimGraphVariable(${ctx.input("target")}, ${ctx.input("name")}, ${ctx.input("value")});`,
       );
     },
   },

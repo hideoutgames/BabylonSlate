@@ -4,6 +4,7 @@ import {
   arrayOf,
   actorRef,
   classRef,
+  objectRef,
   TRANSFORM,
   type GraphNode,
   type LogicGraph,
@@ -39,6 +40,84 @@ function loadModule(source: string): Record<string, unknown> {
 describe("actor nodes", () => {
   it("registers Spawn Actor", () => {
     expect(actorNodes.map((n) => n.id)).toContain("actor.spawn");
+  });
+
+  it("Is Valid takes an Object pin and reports non-null instances", () => {
+    const def = actorNodes.find((entry) => entry.id === "actor.isValid");
+    const pins = def?.pins({}) ?? [];
+    expect(pins).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "target",
+          name: "Object",
+          direction: "in",
+          type: objectRef("BObject"),
+        }),
+      ]),
+    );
+    expect(pins.find((pin) => pin.id === "target")?.name).toBe("Object");
+    expect(def?.pure).toBe(true);
+
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "self", "actor.getSelf"),
+        node(registry, "valid", "actor.isValid"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "self",
+          sourcePinId: "out",
+          targetNodeId: "valid",
+          targetPinId: "target",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "valid",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("!= null");
+    const body = compiled.source.replace(
+      /export\s+(async\s+)?function\s+/g,
+      "$1function ",
+    );
+    const onBeginPlay = new Function(`${body}\nreturn { onBeginPlay };`)()
+      .onBeginPlay as (ctx: { self: unknown; formatValue: (value: unknown) => string; log: (...args: unknown[]) => void }) => void;
+    const messages: unknown[] = [];
+    onBeginPlay({
+      self: { classId: "Hero" },
+      formatValue: String,
+      log: (_severity, _category, message) => {
+        messages.push(message);
+      },
+    });
+    expect(messages).toEqual(["true"]);
+    messages.length = 0;
+    onBeginPlay({
+      self: null,
+      formatValue: String,
+      log: (_severity, _category, message) => {
+        messages.push(message);
+      },
+    });
+    expect(messages).toEqual(["false"]);
   });
 
   it("uses a classRef pin for Spawn Actor classId", () => {
