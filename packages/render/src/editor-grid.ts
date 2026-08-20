@@ -4,6 +4,8 @@ import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
 export const GRID_MESH_NAME = "__editor-grid__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
+/** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
+export const GRID_ALPHA_INDEX = 0;
 
 const GRID_SHADER_NAME = "editorGrid";
 const GRID_PLANE_OFFSET = 0.002;
@@ -154,6 +156,7 @@ uniform float fadeStart;
 uniform float fadeEnd;
 uniform vec3 fadeOrigin;
 uniform float viewFade;
+uniform float gridVisible;
 uniform float mode2d;
 uniform float lineWidth;
 
@@ -176,8 +179,8 @@ void main() {
   float dist = length(coord - origin);
   float fade = 1.0 - smoothstep(fadeStart, fadeEnd, dist);
   vec3 color = mix(minorColor, majorColor, clamp(major, 0.0, 1.0));
-  float alpha = max(major, minor * 0.45) * fade * viewFade;
-  if (alpha < 0.02) discard;
+  float alpha = max(major, minor * 0.45) * fade * viewFade * gridVisible;
+  if (gridVisible < 0.5 || alpha < 0.02) discard;
   gl_FragColor = vec4(color, alpha);
 }
 `;
@@ -223,7 +226,9 @@ export function createEditorGrid(
   mesh.isPickable = false;
   mesh.doNotSyncBoundingInfo = true;
   mesh.alwaysSelectAsActiveMesh = true;
-  mesh.isVisible = visible;
+  mesh.isVisible = true;
+  mesh.visibility = visible ? 1 : 0;
+  mesh.alphaIndex = GRID_ALPHA_INDEX;
   mesh.renderingGroupId = RENDERING_GROUP.world;
   configureEditorRenderingGroups(scene);
 
@@ -244,6 +249,7 @@ export function createEditorGrid(
         "fadeEnd",
         "fadeOrigin",
         "viewFade",
+        "gridVisible",
         "mode2d",
         "lineWidth",
       ],
@@ -261,6 +267,7 @@ export function createEditorGrid(
     material.setColor3("minorColor", minorColor);
     material.setFloat("mode2d", mode === "2d" ? 1 : 0);
     material.setFloat("lineWidth", GRID_LINE_WIDTH);
+    material.setFloat("gridVisible", visible ? 1 : 0);
   };
 
   const applyPlane = () => {
@@ -346,7 +353,10 @@ export function createEditorGrid(
     },
     setVisible: (next: boolean) => {
       visible = next;
-      mesh.isVisible = next;
+      mesh.isVisible = true;
+      mesh.alwaysSelectAsActiveMesh = true;
+      mesh.visibility = next ? 1 : 0;
+      material.setFloat("gridVisible", next ? 1 : 0);
     },
     setCameraBounds: (bounds) => {
       requestedBounds = bounds;

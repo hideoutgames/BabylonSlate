@@ -12,6 +12,10 @@ import {
   formatEventTitle,
   walkAncestry,
 } from "@babylonslate/editor-kit";
+import {
+  uiGetWidgetNodeId,
+  type BoundWidgetRef,
+} from "@babylonslate/scripting-nodes";
 
 export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 
@@ -124,10 +128,12 @@ export type ClassEventOptions = {
   animationGraphHost?: "object" | "rule";
 };
 
+export type ClassBlueprintMemberKind = GraphClassMemberKind | "widget";
+
 export type BlueprintSection = {
   id: string;
   label: string;
-  kind: GraphClassMemberKind;
+  kind: ClassBlueprintMemberKind;
   local?: boolean;
 };
 
@@ -149,13 +155,19 @@ const LOCAL_VARIABLES_SECTION: BlueprintSection = {
   local: true,
 };
 
+const WIDGETS_SECTION: BlueprintSection = {
+  id: "widgets",
+  label: "Widgets",
+  kind: "widget",
+};
+
 function parentLookup(
   options?: ClassEventOptions,
 ): (id: string) => string | null | undefined {
   return options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
 }
 
-function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
+export function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
   return (
     options?.assetType === "UserInterface" ||
     ancestryChain(options).includes("UserInterface")
@@ -180,23 +192,62 @@ export function blueprintSectionsForClass(
   const sections = isFunctionLibraryHost(options)
     ? [...FUNCTION_LIBRARY_SECTIONS]
     : [...CLASS_BLUEPRINT_SECTIONS];
-  if (!options?.activeFunctionId) return sections;
-  if (isFunctionLibraryHost(options)) {
-    return [...sections, LOCAL_VARIABLES_SECTION];
+  if (options?.activeFunctionId) {
+    if (isFunctionLibraryHost(options)) {
+      sections.push(LOCAL_VARIABLES_SECTION);
+    } else {
+      const variableIndex = sections.findIndex(
+        (section) => section.id === "variables",
+      );
+      sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
+    }
   }
-  const variableIndex = sections.findIndex((section) => section.id === "variables");
-  sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
+  if (isUserInterfaceLogicHost(options)) {
+    const afterId = sections.some((section) => section.id === "local-variables")
+      ? "local-variables"
+      : "variables";
+    const afterIndex = sections.findIndex((section) => section.id === afterId);
+    sections.splice(
+      afterIndex >= 0 ? afterIndex + 1 : sections.length,
+      0,
+      WIDGETS_SECTION,
+    );
+  }
   return sections;
 }
 
 export function classAllowsMemberKind(
-  kind: GraphClassMemberKind,
+  kind: ClassBlueprintMemberKind,
   options?: ClassEventOptions & { local?: boolean },
 ): boolean {
+  if (kind === "widget") return false;
   if (!isFunctionLibraryHost(options)) return true;
   if (kind === "function") return true;
   if (kind === "variable" && options?.local) return true;
   return false;
+}
+
+export function boundWidgetsFromContent(content: unknown): BoundWidgetRef[] {
+  if (!content || typeof content !== "object") return [];
+  const record = content as {
+    widgets?: Record<string, { id?: unknown; name?: unknown; kind?: unknown }>;
+  };
+  if (!record.widgets) return [];
+  return Object.values(record.widgets).flatMap((widget) => {
+    if (!widget || typeof widget.id !== "string" || !widget.id.trim()) {
+      return [];
+    }
+    return [
+      {
+        id: widget.id,
+        name:
+          typeof widget.name === "string" && widget.name.trim()
+            ? widget.name
+            : widget.id,
+        kind: typeof widget.kind === "string" ? widget.kind : "Border",
+      },
+    ];
+  });
 }
 
 function ancestryChain(options?: ClassEventOptions): string[] {
@@ -1110,6 +1161,32 @@ export function addVariableAccessNode(
   );
 }
 
+/** Spawn a bound Get Widget node from a Class Widgets row. */
+export function addGetWidgetNode(
+  graph: SerializedGraph,
+  widget: { id: string; name: string; kind: string },
+  options?: GraphSpawnOptions,
+): SerializedGraph {
+  const type = uiGetWidgetNodeId;
+  const title = `Get ${widget.name}`;
+  return appendGraphNode(
+    graph,
+    {
+      id: nextId(options?.idFactory),
+      type,
+      position: spawnPosition(graph, options),
+      data: {
+        title,
+        widgetId: widget.id,
+        widgetName: widget.name,
+        widgetKind: widget.kind,
+        __nodeType: type,
+      },
+    },
+    options?.functionId,
+  );
+}
+
 /** Spawn a Call Custom Event node bound to a class event. */
 export function addCallEventNode(
   graph: SerializedGraph,
@@ -1165,7 +1242,7 @@ export function addCallFunctionNode(
   );
 }
 
-export type ClassMemberDropKind = "variable" | "function" | "event" | "interface";
+export type ClassMemberDropKind = ClassBlueprintMemberKind;
 
 export type ClassMemberDropRow = {
   id: string;
@@ -1175,6 +1252,8 @@ export type ClassMemberDropRow = {
   inherited?: boolean;
   inheritedFrom?: string;
   pins?: GraphClassMemberPin[];
+  widgetId?: string;
+  widgetKind?: string;
 };
 
 export type GraphDropPoint = {
@@ -1229,6 +1308,20 @@ export function resolveClassMemberDrop(options: {
   if (row.kind === "variable") {
     return { kind: "choose-access", memberId: options.memberId, position };
   }
+  if (row.kind === "widget") {
+    return {
+      kind: "spawn",
+      graph: addGetWidgetNode(
+        options.graph,
+        {
+          id: row.widgetId ?? options.memberId.replace(/^widget:/, ""),
+          name: row.name,
+          kind: row.widgetKind ?? "Border",
+        },
+        spawn,
+      ),
+    };
+  }
   if (row.kind === "function") {
     return {
       kind: "spawn",
@@ -1251,12 +1344,19 @@ export function addClassMember(
   name: string,
   idFactory?: () => string,
   extras?: Partial<GraphClassMember>,
+  options?: { reservedNames?: readonly string[] },
 ): SerializedGraph {
   const trimmed = name.trim();
   if (!trimmed) return graph;
   const displayName =
     kind === "event" ? formatEventMemberName(trimmed) : trimmed;
   if (!displayName) return graph;
+  if (
+    kind === "variable" &&
+    options?.reservedNames?.some((reserved) => reserved === displayName)
+  ) {
+    return graph;
+  }
   const member: GraphClassMember = {
     id: nextId(idFactory),
     kind,

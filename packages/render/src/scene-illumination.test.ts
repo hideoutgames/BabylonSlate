@@ -27,6 +27,7 @@ import {
   cameraRenderAspect,
   refreshAuthoredCameraLenses,
   shadowMapSizeFromQuality,
+  syncAuthoredCamerasFromMeshes,
   syncAuthoredIllumination,
 } from "./scene-illumination";
 
@@ -224,6 +225,26 @@ describe("syncAuthoredIllumination", () => {
     expect(camera.minZ).toBeCloseTo(0.2);
     expect(camera.maxZ).toBeCloseTo(500);
     expect(camera.inputs.attachedToElement).toBeFalsy();
+  });
+
+  it("updates authored cameras from live actor meshes before a document apply", () => {
+    const { scene } = createHandle();
+    const actor = cameraActor("rig", { projectionMode: "perspective" });
+    const data = sceneWith([actor]);
+    syncAuthoredIllumination(scene, data, { stealActiveCamera: false });
+    const mesh = MeshBuilder.CreateBox("origin", { size: 0.1 }, scene);
+    mesh.position.set(5, 1, -4);
+    mesh.rotationQuaternion = Quaternion.Identity();
+    mesh.computeWorldMatrix(true);
+    syncAuthoredCamerasFromMeshes(scene, data, (id) =>
+      id === "rig" ? mesh : null,
+    );
+    const camera = scene.getCameraByName(
+      `${AUTHORED_CAMERA_PREFIX}rig`,
+    ) as UniversalCamera;
+    expect(camera.position.x).toBeCloseTo(5);
+    expect(camera.position.y).toBeCloseTo(1);
+    expect(camera.position.z).toBeCloseTo(-4);
   });
 
   it("uses the live render aspect for orthographic extents, not 16:9", () => {

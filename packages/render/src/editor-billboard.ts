@@ -11,6 +11,7 @@ import {
 import type { SerializedActor } from "@babylonslate/core";
 import { engineBillboardUrl } from "./default-billboard/urls";
 import { createEngineTextureFromUrl } from "./resource-cache";
+import { RENDERING_GROUP } from "./sorting";
 
 export const EDITOR_BILLBOARD_ICONS = [
   "default",
@@ -26,6 +27,8 @@ export type EditorBillboardIcon = (typeof EDITOR_BILLBOARD_ICONS)[number];
 
 const BILLBOARD_KIND_PREFIX = "billboard:";
 const BILLBOARD_SIZE = 0.5;
+/** Later than the editor grid so helper icons are not sorted behind the plane. */
+export const EDITOR_BILLBOARD_ALPHA_INDEX = 1000;
 const DEFAULT_FILL = new Color3(1, 1, 1);
 const LIGHT_ICONS = new Set<EditorBillboardIcon>([
   "point_light",
@@ -83,6 +86,14 @@ export function isEditorBillboardMesh(mesh: Mesh): boolean {
     ?.editorBillboard === "string";
 }
 
+export function applyEditorBillboardPass(mesh: {
+  renderingGroupId: number;
+  alphaIndex: number;
+}): void {
+  mesh.renderingGroupId = RENDERING_GROUP.foreground;
+  mesh.alphaIndex = EDITOR_BILLBOARD_ALPHA_INDEX;
+}
+
 /**
  * Invert the origin's local scale so a PNG child stays square. Babylon 9 has
  * no `ignoreParentScaling`; volume / actor scale still hits the sibling mesh.
@@ -119,6 +130,7 @@ export function createEditorBillboard(
   mesh.billboardMode = Mesh.BILLBOARDMODE_ALL;
   mesh.isPickable = true;
   mesh.metadata = { ...(mesh.metadata ?? {}), editorBillboard: resolved };
+  applyEditorBillboardPass(mesh);
   mesh.onBeforeRenderObservable.add(() => {
     syncEditorBillboardParentScale(mesh);
   });

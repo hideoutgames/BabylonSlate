@@ -289,6 +289,32 @@ describe("applyPlayerUiCommand", () => {
     expect(host.instances()).toEqual([]);
   });
 
+  it("reconciles an added widget without dropping the existing HUD", () => {
+    const host = createTestHost();
+    applyPlayerUiCommand(host, {
+      type: "uiApply",
+      instanceId: "ui-1",
+      classId: "UserInterface:hud-1",
+      assetGuid: "hud-1",
+    });
+    expect(
+      applyPlayerUiCommand(host, {
+        type: "uiAddWidget",
+        instanceId: "ui-1",
+        widgetId: "score",
+        kind: "TextBlock",
+        name: "Score",
+        parentId: "canvas",
+      }),
+    ).toBe(true);
+    expect(
+      host.recording.controls.some((control) => control.id === "ui-1:play-btn"),
+    ).toBe(true);
+    expect(
+      host.recording.controls.some((control) => control.id === "ui-1:score"),
+    ).toBe(true);
+  });
+
   it("routes setInputMode onto the HUD host", () => {
     const host = createTestHost();
     expect(

@@ -53,6 +53,7 @@ import { isSkyboxMesh } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
+  syncAuthoredCamerasFromMeshes,
 } from "./scene-illumination";
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
@@ -342,6 +343,7 @@ export interface EditorTools {
     tileSize: number;
     tileSubdivisions: number;
     cameraBounds2D: { width: number; height: number };
+    showGrid?: boolean;
   }) => void;
   /** Select actors by id; passing an empty list clears the selection. */
   setSelectedActors: (actorIds: string[]) => void;
@@ -721,6 +723,7 @@ export function createEngine(
     // The editor camera replaces the default viewport camera set up above.
     scene.activeCamera?.dispose();
     const cameraController = createEditorCamera(scene, { mode, scheduler });
+    let previewGameCamera = false;
     const grid = createEditorGrid(scene, { mode, camera: cameraController.camera });
     const selection = new SelectionOutline(scene);
     let multiSelectDrag: GizmoMultiSelectDrag | null = null;
@@ -743,6 +746,8 @@ export function createEngine(
       return live;
     };
     const gizmosRef: { host: GizmoHost | null } = { host: null };
+    const debugOverlayInstance = new EditorDebugOverlay(scene);
+    debugOverlay = debugOverlayInstance;
     const gizmos = createGizmoHost(scene, {
       mode,
       scheduler,
@@ -768,6 +773,13 @@ export function createEngine(
         if (multiSelectDrag && attached) {
           applyGizmoMultiSelectDrag(multiSelectDrag, attached);
         }
+        const sceneData = editorSync.serializedScene();
+        if (sceneData) {
+          syncAuthoredCamerasFromMeshes(scene, sceneData, (id) =>
+            editorSync.meshForActor(id),
+          );
+        }
+        debugOverlayInstance.followLivePose();
         options.onGizmoDrag?.();
       },
       onDragEnd: () => {
@@ -786,11 +798,10 @@ export function createEngine(
       },
     });
     gizmosRef.host = gizmos;
-    const debugOverlayInstance = new EditorDebugOverlay(scene);
-    debugOverlay = debugOverlayInstance;
 
     const gestures = attachViewportGestures(canvas, cameraController, {
       scheduler,
+      editorCameraActive: () => !previewGameCamera,
       blockLook: (x, y) =>
         gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
@@ -831,7 +842,8 @@ export function createEngine(
         ? null
         : attachViewportFlyKeys(window, cameraController, canvas, {
             scheduler,
-            isEnabled: options.editorFlyEnabled,
+            isEnabled: () =>
+              !previewGameCamera && options.editorFlyEnabled?.() !== false,
           });
     disposeGestures = () => {
       gestures.dispose();
@@ -869,6 +881,9 @@ export function createEngine(
         grid.setSpacing(settings.tileSize);
         grid.setSubdivisions(settings.tileSubdivisions);
         grid.setCameraBounds(settings.cameraBounds2D);
+        if (typeof settings.showGrid === "boolean") {
+          grid.setVisible(settings.showGrid);
+        }
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {
@@ -925,6 +940,7 @@ export function createEngine(
         );
       },
       setPreviewGameCamera: (enabled: boolean) => {
+        previewGameCamera = enabled;
         editorSync.setGameCameraPreview(enabled, cameraController.camera);
         scheduler.invalidate("camera");
       },

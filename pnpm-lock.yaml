@@ -612,6 +612,9 @@ importers:
       '@babylonslate/physics':
         specifier: workspace:*
         version: link:../physics
+      '@babylonslate/ui-runtime':
+        specifier: workspace:*
+        version: link:../ui-runtime
     devDependencies:
       '@babylonslate/scripting':
         specifier: workspace:*

@@ -24,6 +24,7 @@ import {
   tilemapTilesetGuids,
 } from "@babylonslate/assets";
 import type {
+  CommandMessage,
   UiWidgetEventControl,
   UserInterfaceRuntimeDocument,
 } from "@babylonslate/bridge";
@@ -41,7 +42,18 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { normalizeUserInterfaceDocument, widgetRuntimeMeta, type UserInterfaceDocument, collectMaterialGuidsFromUiDocuments } from "@babylonslate/ui-runtime";
+import {
+  applyUiTreeAddWidget,
+  applyUiTreePatchLayout,
+  applyUiTreeRemoveWidget,
+  applyUiTreeReparentWidget,
+  cloneUserInterfaceDocument,
+  normalizeUserInterfaceDocument,
+  widgetRuntimeMeta,
+  type UserInterfaceDocument,
+  type WidgetLayoutPatch,
+  collectMaterialGuidsFromUiDocuments,
+} from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 export interface PlayContentDocument {
@@ -193,6 +205,7 @@ export type PlayHudInstance = {
   instanceId: string;
   assetGuid: string;
   classId: string;
+  document?: UserInterfaceDocument;
 };
 
 /** Open in-memory UserInterface payloads win over disk bytes. */
@@ -225,6 +238,7 @@ export function playUserInterfaceRuntimeDocuments(
   return Object.entries(library).map(([guid, document]) => ({
     guid,
     widgets: Object.values(document.widgets).map(widgetRuntimeMeta),
+    document,
   }));
 }
 
@@ -303,10 +317,100 @@ export function resolvePlayHudDocuments(
   const resolved: Array<{ instanceId: string; document: UserInterfaceDocument }> =
     [];
   for (const entry of instances) {
-    const document = library[entry.assetGuid];
+    const document = entry.document ?? library[entry.assetGuid];
     if (document) resolved.push({ instanceId: entry.instanceId, document });
   }
   return resolved;
+}
+
+function seedHudDocument(
+  instance: PlayHudInstance,
+  library: PlayUiLibrary,
+): UserInterfaceDocument | undefined {
+  if (instance.document) return instance.document;
+  const seed = library[instance.assetGuid];
+  return seed ? cloneUserInterfaceDocument(seed) : undefined;
+}
+
+function replaceHudInstance(
+  instances: readonly PlayHudInstance[],
+  instanceId: string,
+  next: PlayHudInstance,
+): PlayHudInstance[] {
+  return instances.map((entry) =>
+    entry.instanceId === instanceId ? next : entry,
+  );
+}
+
+/** Clone the library tree onto a Play HUD instance and apply hierarchy commands. */
+export function applyPlayHudUiCommand(
+  instances: readonly PlayHudInstance[],
+  library: PlayUiLibrary,
+  command: CommandMessage,
+): PlayHudInstance[] {
+  if (command.type === "uiApply") {
+    const next = applyPlayHudInstance(
+      instances,
+      command.instanceId,
+      command.assetGuid,
+      command.classId,
+    );
+    return next.map((entry) => {
+      if (entry.instanceId !== command.instanceId || entry.document) return entry;
+      const document = seedHudDocument(entry, library);
+      return document ? { ...entry, document } : entry;
+    });
+  }
+  if (
+    command.type !== "uiAddWidget" &&
+    command.type !== "uiRemoveWidget" &&
+    command.type !== "uiReparentWidget" &&
+    command.type !== "uiPatchLayout"
+  ) {
+    return [...instances];
+  }
+  const current = instances.find((entry) => entry.instanceId === command.instanceId);
+  if (!current) return [...instances];
+  const seed = seedHudDocument(current, library);
+  if (!seed) return [...instances];
+  if (command.type === "uiAddWidget") {
+    return replaceHudInstance(instances, current.instanceId, {
+      ...current,
+      document: applyUiTreeAddWidget(seed, {
+        widgetId: command.widgetId,
+        kind: command.kind,
+        name: command.name,
+        parentId: command.parentId,
+      }),
+    });
+  }
+  if (command.type === "uiRemoveWidget") {
+    return replaceHudInstance(instances, current.instanceId, {
+      ...current,
+      document: applyUiTreeRemoveWidget(seed, command.widgetId),
+    });
+  }
+  if (command.type === "uiReparentWidget") {
+    return replaceHudInstance(instances, current.instanceId, {
+      ...current,
+      document: applyUiTreeReparentWidget(seed, {
+        widgetId: command.widgetId,
+        parentId: command.parentId,
+        siblingIndex: command.siblingIndex,
+      }),
+    });
+  }
+  if (command.type === "uiPatchLayout") {
+    return replaceHudInstance(instances, current.instanceId, {
+      ...current,
+      document: applyUiTreePatchLayout(
+        seed,
+        command.widgetId,
+        command.layout as WidgetLayoutPatch,
+      ),
+    });
+  }
+  return [...instances];
 }
 
 export type PlayAnimGraphEntry = { guid: string; document: unknown };

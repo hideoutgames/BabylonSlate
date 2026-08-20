@@ -34,6 +34,11 @@ export interface ViewportGestureOptions {
    */
   blockLook?: (canvasX: number, canvasY: number) => boolean;
   /**
+   * When false, editor look / zoom / pan are ignored (Game Camera preview
+   * has stolen `activeCamera`). Tap and marquee still run.
+   */
+  editorCameraActive?: () => boolean;
+  /**
    * Prefab RTT blit canvas is not the Engine input element. Forward
    * one-finger pointers so UtilityLayer gizmos can drag.
    */
@@ -98,6 +103,11 @@ export function attachViewportGestures(
   const pointers = new Map<number, PointerSample>();
   let lastMid: PointerSample | null = null;
   let lastSpread = 0;
+  let pinchOrigin: {
+    mid: PointerSample;
+    spread: number;
+    framing: ReturnType<EditorCameraController["captureFraming"]>;
+  } | null = null;
   let lastPoint: PointerSample | null = null;
   let downPoint: PointerSample | null = null;
   let moved = false;
@@ -137,7 +147,21 @@ export function attachViewportGestures(
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
+  const editorActive = () => options.editorCameraActive?.() !== false;
+
+  const zoomAt = (factor: number, point: PointerSample) => {
+    if (!editorActive()) return;
+    const rect = canvas.getBoundingClientRect();
+    controller.zoom(factor, {
+      x: point.x,
+      y: point.y,
+      width: rect.width,
+      height: rect.height,
+    });
+  };
+
   const panFromPointerDelta = (dx: number, dy: number) => {
+    if (!editorActive()) return;
     if (controller.mode === "2d") {
       const rect = canvas.getBoundingClientRect();
       const { deltaX, deltaY } = orthoPanFromCanvasDelta(
@@ -150,6 +174,19 @@ export function attachViewportGestures(
       return;
     }
     controller.pan(-dx * panScale, dy * panScale);
+  };
+
+  const recapturePinch = (samples: PointerSample[]) => {
+    lastMid = midpoint(samples);
+    lastSpread = spread(samples);
+    pinchOrigin =
+      samples.length === 2 && lastSpread > 0
+        ? {
+            mid: lastMid,
+            spread: lastSpread,
+            framing: controller.captureFraming(),
+          }
+        : null;
   };
 
   const onPointerDown = (event: PointerEvent) => {
@@ -178,8 +215,7 @@ export function attachViewportGestures(
       }
     } else {
       const samples = [...pointers.values()];
-      lastMid = midpoint(samples);
-      lastSpread = spread(samples);
+      recapturePinch(samples);
       lastPoint = null;
       if (dragSelectGesture) {
         clearMarqueeOverlay();
@@ -220,7 +256,9 @@ export function attachViewportGestures(
         const dy = point.y - lastPoint.y;
         if (dx !== 0 || dy !== 0) {
           acquireLease();
-          controller.look(-dx * orbitScale, -dy * orbitScale);
+          if (editorActive()) {
+            controller.look(-dx * orbitScale, -dy * orbitScale);
+          }
         }
       } else if (
         controller.mode === "2d" &&
@@ -248,10 +286,11 @@ export function attachViewportGestures(
       const dy = mid.y - lastMid.y;
       panFromPointerDelta(dx, dy);
     }
-    if (samples.length === 2 && lastSpread > 0 && currentSpread > 0) {
-      const factor = currentSpread / lastSpread;
+    if (samples.length === 2 && pinchOrigin && pinchOrigin.spread > 0) {
+      const factor = currentSpread / pinchOrigin.spread;
+      controller.restoreFraming(pinchOrigin.framing);
       if (Math.abs(factor - 1) > 0.001) {
-        controller.zoom(factor);
+        zoomAt(factor, pinchOrigin.mid);
       }
     }
     lastMid = mid;
@@ -262,19 +301,25 @@ export function attachViewportGestures(
     const point = pointers.get(event.pointerId);
     pointers.delete(event.pointerId);
     if (pointers.size === 1) {
-      lastPoint = [...pointers.values()][0]!;
+      const remaining = [...pointers.values()][0]!;
+      lastPoint = remaining;
+      downPoint = remaining;
+      moved = false;
+      skipLook = true;
+      skipTap = true;
+      pinchOrigin = null;
       lastMid = null;
       lastSpread = 0;
       dropLease();
     } else if (pointers.size === 0) {
       lastMid = null;
       lastSpread = 0;
+      pinchOrigin = null;
       lastPoint = null;
       dropLease();
     } else {
       const samples = [...pointers.values()];
-      lastMid = midpoint(samples);
-      lastSpread = spread(samples);
+      recapturePinch(samples);
     }
     if (pointers.size > 0 || !point || !downPoint) {
       if (pointers.size === 0) {
@@ -321,7 +366,21 @@ export function attachViewportGestures(
 
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
-    controller.zoom(event.deltaY < 0 ? 1.1 : 1 / 1.1);
+    if (!editorActive()) return;
+    const rect = canvas.getBoundingClientRect();
+    const hasPoint =
+      Number.isFinite(event.clientX) && Number.isFinite(event.clientY);
+    controller.zoom(
+      event.deltaY < 0 ? 1.1 : 1 / 1.1,
+      hasPoint
+        ? {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top,
+            width: rect.width,
+            height: rect.height,
+          }
+        : undefined,
+    );
   };
 
   const onTouch = (event: TouchEvent) => {
