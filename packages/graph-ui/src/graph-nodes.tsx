@@ -181,12 +181,14 @@ function PinHandle({
   pending,
   hasError,
   connected,
+  disabled,
 }: {
   nodeId: string;
   pin: SerializedPin;
   pending: boolean;
   hasError: boolean;
   connected: boolean;
+  disabled?: boolean;
 }) {
   const { onPinTap, pinDisplayType } = useGraphEditorContext();
   const isSource = pin.direction === "out";
@@ -217,8 +219,10 @@ function PinHandle({
         background: "transparent",
         border: "none",
       }}
+      isConnectable={!disabled}
       onClick={(event) => {
         event.stopPropagation();
+        if (disabled) return;
         onPinTap(nodeId, pin.id, pin.direction);
       }}
     >
@@ -254,6 +258,8 @@ function PinRow({
       pin && pendingPin?.nodeId === nodeId && pendingPin.pinId === pin.id,
     );
 
+  const disabled = data.__disabled === true;
+
   return (
     <div className="flex min-h-[var(--touch-target,44px)] items-center justify-between gap-2">
       <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -265,6 +271,7 @@ function PinRow({
               pending={isPending(incoming)}
               hasError={pinHasError(nodeId, incoming.id)}
               connected={incomingConnected}
+              disabled={disabled}
             />
             {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
             <span
@@ -293,6 +300,7 @@ function PinRow({
               pending={isPending(outgoing)}
               hasError={pinHasError(nodeId, outgoing.id)}
               connected={outgoingConnected}
+              disabled={disabled}
             />
           </>
         ) : (
@@ -370,16 +378,19 @@ export function BlueprintNodeShell({
   const { nodeErrorCount } = useGraphEditorContext();
   const developmentOnly = shellIsDevelopmentOnly(nodeId, data);
   const editorOnly = data?.__editorOnly === true;
+  const disabled = data?.__disabled === true;
 
   return (
     <div className="relative">
       <NodeErrorBadge nodeId={nodeId} count={nodeErrorCount(nodeId)} />
       <div
         data-node-role={role}
+        data-disabled={disabled ? "true" : undefined}
         className={cn(
           "overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
           compact ? "min-w-56" : "min-w-80",
           selected && "ring-2 ring-primary",
+          disabled && "opacity-50",
         )}
       >
         <div

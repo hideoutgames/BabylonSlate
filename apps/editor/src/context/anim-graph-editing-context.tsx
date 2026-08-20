@@ -90,4 +90,8 @@ export function useAnimGraphEditing(): AnimGraphEditingContextValue {
   }
   return context;
 }
+
+export function useOptionalAnimGraphEditing(): AnimGraphEditingContextValue | null {
+  return useContext(AnimGraphEditingContext);
+}
 /* eslint-enable react-refresh/only-export-components */

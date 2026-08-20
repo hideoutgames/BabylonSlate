@@ -5,6 +5,7 @@ import {
   createEdgeId,
   DEFAULT_NODE_TYPE,
   deletableNodeIds,
+  isDisabledNode,
   graphChangeKindFromNodeChanges,
   lockNodeDragAxis,
   nodeChangesMutateGraph,
@@ -210,6 +211,27 @@ describe("canonicalGraphSignature", () => {
       canonicalGraphSignature(twoNodeGraph),
     );
   });
+
+  it("differs when only an edge type changes", () => {
+    const bothWays: GraphDocument = {
+      ...twoNodeGraph,
+      edges: twoNodeGraph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransitionBoth",
+      })),
+    };
+    expect(canonicalGraphSignature(bothWays)).not.toBe(
+      canonicalGraphSignature(twoNodeGraph),
+    );
+  });
+});
+
+describe("isDisabledNode", () => {
+  it("is true only when data.__disabled is set", () => {
+    expect(isDisabledNode({ data: { __disabled: true } })).toBe(true);
+    expect(isDisabledNode({ data: { __protected: true } })).toBe(false);
+    expect(isDisabledNode({ data: {} })).toBe(false);
+  });
 });
 
 describe("reconcileCanvasGraph", () => {
@@ -230,6 +252,23 @@ describe("reconcileCanvasGraph", () => {
         incoming: twoNodeGraph,
       }),
     ).toBeNull();
+  });
+
+  it("applies an incoming edge type change", () => {
+    const incoming: GraphDocument = {
+      ...twoNodeGraph,
+      edges: twoNodeGraph.edges.map((edge) => ({
+        ...edge,
+        type: "animTransitionBoth",
+      })),
+    };
+    const next = reconcileCanvasGraph({
+      localNodes,
+      localEdges,
+      incoming,
+      lastEmitted: twoNodeGraph,
+    });
+    expect(next?.edges[0]?.type).toBe("animTransitionBoth");
   });
 
   it("returns null when incoming matches lastEmitted so a parent echo is ignored", () => {

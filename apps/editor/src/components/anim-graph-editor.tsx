@@ -12,14 +12,16 @@ import {
   hydrateAnimGraphForEditor,
   normalizeAnimConnection,
   parseAnimGraphDocument,
+  patchTransition,
   resolveAnimGraphClips,
   serializedToAnimGraph,
   setTransitionBidirectional,
+  flipTransitionDirection,
+  decorateTransitionRuleGraph,
   validateAnimGraph,
   type AnimClipKind,
   type AnimClipRef,
   type AnimGraphDocument,
-  type AnimGraphVariable,
   type AnimState,
   type AnimTransition,
   type AnimVariableTypeId,
@@ -57,6 +59,9 @@ import type { Diagnostic } from "@babylonslate/scripting";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
+import { useGraphEditing } from "../context/graph-editing-context";
+import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
+import { InspectorPanel } from "../panels/inspector-panel";
 import { useValidation } from "../context/validation-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
@@ -143,19 +148,6 @@ function addAnimState(doc: AnimGraphDocument): AnimGraphDocument {
   };
 }
 
-function withVariables(
-  doc: AnimGraphDocument,
-  variables: AnimGraphVariable[],
-): AnimGraphDocument {
-  return {
-    ...doc,
-    variables,
-    parameters: variables
-      .filter((variable) => variable.typeId === "bool")
-      .map((variable) => variable.name),
-  };
-}
-
 function patchState(
   doc: AnimGraphDocument,
   stateId: string,
@@ -165,19 +157,6 @@ function patchState(
     ...doc,
     states: doc.states.map((state) =>
       state.id === stateId ? { ...state, ...patch } : state,
-    ),
-  };
-}
-
-function patchTransition(
-  doc: AnimGraphDocument,
-  transitionId: string,
-  patch: Partial<AnimTransition>,
-): AnimGraphDocument {
-  return {
-    ...doc,
-    transitions: doc.transitions.map((transition) =>
-      transition.id === transitionId ? { ...transition, ...patch } : transition,
     ),
   };
 }
@@ -276,7 +255,7 @@ function AnimGraphVariablesList({
               onClick={() => {
                 const typeId: AnimVariableTypeId = "bool";
                 commit(
-                  withVariables(doc, [
+                  commitAnimGraphVariables(doc, [
                     ...doc.variables,
                     {
                       id: uniqueVariableId(doc),
@@ -304,7 +283,7 @@ function AnimGraphVariablesList({
                 data-testid={`anim-graph-variable-name-${variable.id}`}
                 onChange={(event) =>
                   commit(
-                    withVariables(
+                    commitAnimGraphVariables(
                       doc,
                       doc.variables.map((row) =>
                         row.id === variable.id
@@ -320,7 +299,7 @@ function AnimGraphVariablesList({
                 onValueChange={(value) => {
                   const typeId = value as AnimVariableTypeId;
                   commit(
-                    withVariables(
+                    commitAnimGraphVariables(
                       doc,
                       doc.variables.map((row) =>
                         row.id === variable.id
@@ -357,7 +336,7 @@ function AnimGraphVariablesList({
                 data-testid={`anim-graph-variable-remove-${variable.id}`}
                 onClick={() =>
                   commit(
-                    withVariables(
+                    commitAnimGraphVariables(
                       doc,
                       doc.variables.filter((row) => row.id !== variable.id),
                     ),
@@ -433,9 +412,9 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     setSelectedTransitionId,
     focusedNodeId,
     openTransitionId,
-    openTransitionRule,
     closeTransitionRule,
   } = useAnimGraphEditing();
+  const { setSelectedNodeIds } = useGraphEditing();
   const { activeDocumentId, animEditorMode } = useDocuments();
   const ruleSurface = openTransitionId
     ? `rule:${openTransitionId}`
@@ -469,11 +448,19 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
   );
   const ruleGraph = useMemo(() => {
     if (!openTransition) return null;
+    const oneWay = !findReverseTransition(
+      doc.transitions,
+      openTransition.fromStateId,
+      openTransition.toStateId,
+    );
     return hydrateSerializedGraphForEditor(
-      { ...openTransition.ruleGraph, members: ruleMembers },
+      {
+        ...decorateTransitionRuleGraph(openTransition.ruleGraph, oneWay),
+        members: ruleMembers,
+      },
       defaultNodeRegistry,
     );
-  }, [openTransition, ruleMembers]);
+  }, [doc.transitions, openTransition, ruleMembers]);
   const rulePalette = useMemo(
     () =>
       scriptPaletteNodes(defaultNodeRegistry, {
@@ -532,7 +519,10 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
               variant="outline"
               size="sm"
               data-testid="anim-rule-breadcrumb-state-machine"
-              onClick={closeTransitionRule}
+              onClick={() => {
+                setSelectedNodeIds([]);
+                closeTransitionRule();
+              }}
             >
               State Machine
             </Button>
@@ -547,6 +537,7 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
             diagnostics={graphDiagnostics}
             sessionViewport={sessionViewport}
             onSessionViewportChange={onSessionViewportChange}
+            onSelectionChange={setSelectedNodeIds}
             onChange={(next) => {
               const nextRule = { nodes: next.nodes, edges: next.edges };
               const transitionId = openTransition.id;
@@ -590,7 +581,6 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
           onEdgeSelectionChange={(edgeIds) => {
             queueMicrotask(() => setSelectedTransitionId(edgeIds[0] ?? null));
           }}
-          onEdgeDoubleClick={(edgeId) => openTransitionRule(edgeId)}
           onChange={(next) => {
             const updated = serializedToAnimGraph(next, doc);
             const keepSelection = selectedId;
@@ -663,12 +653,18 @@ function transitionPropertyRows(
 }
 
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
-  void _props;
   const { doc, commit, assetRegistry, catalog } = useAnimGraphDocument();
-  const { selectedId, selectedTransitionId, openTransitionRule } =
-    useAnimGraphEditing();
+  const {
+    selectedId,
+    selectedTransitionId,
+    openTransitionId,
+    openTransitionRule,
+  } = useAnimGraphEditing();
   const [clipPick, setClipPick] = useState(false);
   const [clipNameOpen, setClipNameOpen] = useState(false);
+  if (openTransitionId) {
+    return <InspectorPanel {..._props} />;
+  }
   const selected = doc.states.find((state) => state.id === selectedId) ?? null;
   const selectedTransition =
     doc.transitions.find((row) => row.id === selectedTransitionId) ?? null;
@@ -872,6 +868,18 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
                   onClick={() => openTransitionRule(block.openRuleId)}
                 >
                   Open Rule
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid={`anim-graph-flip-direction-${block.openRuleId}`}
+                  disabled={Boolean(block.reverseRuleId)}
+                  onClick={() =>
+                    commit(flipTransitionDirection(doc, block.openRuleId))
+                  }
+                >
+                  Flip Direction
                 </Button>
                 {block.reverseRuleId ? (
                   <Button

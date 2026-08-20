@@ -49,6 +49,14 @@ export function isProtectedNode(node: {
   return typeof type === "string" && PROTECTED_NODE_TYPES.has(type);
 }
 
+export function isDisabledNode(node: {
+  type?: string;
+  data?: unknown;
+}): boolean {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  return data.__disabled === true;
+}
+
 export function deletableNodeIds(
   nodes: ReadonlyArray<{ id: string; selected?: boolean; data?: unknown; type?: string }>,
 ): string[] {
@@ -148,6 +156,7 @@ export function canonicalGraphSignature(graph: GraphDocument): string {
       target: edge.target,
       sourceHandle: edge.sourceHandle ?? null,
       targetHandle: edge.targetHandle ?? null,
+      type: edge.type ?? null,
     }))
     .sort((left, right) => left.id.localeCompare(right.id));
   return JSON.stringify({ nodes, edges });

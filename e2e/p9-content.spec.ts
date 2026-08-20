@@ -602,7 +602,9 @@ test.describe("P9 content systems", () => {
     await idleOut.dragTo(nextIn);
     const badge = page.locator('[data-testid^="anim-transition-badge-"]');
     await expect(badge).toBeVisible();
-    await badge.dblclick();
+    await badge.click();
+    await expect(page.getByTestId("anim-rule-graph")).toHaveCount(0);
+    await page.getByRole("button", { name: "Open Rule" }).click();
     await expect(page.getByTestId("anim-rule-graph")).toBeVisible();
     await expect(page.getByTestId("anim-rule-breadcrumb")).toContainText("Idle To State");
     await page.getByTestId("anim-rule-breadcrumb-state-machine").click();
