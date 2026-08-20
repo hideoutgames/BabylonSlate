@@ -49,6 +49,69 @@ import {
 import { SkyboxCreatorSourceOverlay } from "./skybox-creator-source-overlay";
 
 const SOURCE_DECODE_MAX = 16384;
+const SKYBOX_CREATOR_SOURCE_MERGE_KEY = "skybox-creator-source";
+
+type DecodedSkyboxSource = {
+  rgba: Uint8Array;
+  width: number;
+  height: number;
+};
+
+function texturePathForGuid(
+  assets: ReadonlyArray<IndexedAsset>,
+  guid: string | null,
+): string | null {
+  if (!guid) return null;
+  return assets.find((asset) => asset.header.guid === guid)?.path ?? null;
+}
+
+function useSkyboxCreatorDecodedSource(sourceTextureGuid: string | null) {
+  const { assetRegistry, readAssetChunk } = useDocuments();
+  const texturePath = texturePathForGuid(
+    (assetRegistry?.list() ?? []) as IndexedAsset[],
+    sourceTextureGuid,
+  );
+  const [decoded, setDecoded] = useState<DecodedSkyboxSource | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setDecoded(null);
+    setUrl(null);
+    if (!sourceTextureGuid || !texturePath || !readAssetChunk) return;
+    void (async () => {
+      const image = await readTextureImageBytes(readAssetChunk, texturePath);
+      if (!image || cancelled) return;
+      objectUrl = URL.createObjectURL(
+        new Blob([image.bytes], image.mime ? { type: image.mime } : undefined),
+      );
+      if (!cancelled) setUrl(objectUrl);
+      try {
+        const result = await decodeSourceToRgba(
+          image.bytes,
+          SOURCE_DECODE_MAX,
+          image.mime ?? undefined,
+        );
+        if (!cancelled) {
+          setDecoded({
+            rgba: result.rgba,
+            width: result.width,
+            height: result.height,
+          });
+        }
+      } catch {
+        if (!cancelled) setDecoded(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [readAssetChunk, sourceTextureGuid, texturePath]);
+
+  return { decoded, url };
+}
 
 const COMPASS_LABEL: Record<SkyboxCreatorCompassFace, string> = {
   up: "UP",
@@ -172,12 +235,16 @@ function useSkyboxCreatorCreate(
     }
     setBusy(true);
     try {
-      const bytes = await readTextureImageBytes(readAssetChunk, source.path);
-      if (!bytes) {
+      const image = await readTextureImageBytes(readAssetChunk, source.path);
+      if (!image) {
         setError("The source Texture has no image data.");
         return;
       }
-      const decoded = await decodeSourceToRgba(bytes, SOURCE_DECODE_MAX);
+      const decoded = await decodeSourceToRgba(
+        image.bytes,
+        SOURCE_DECODE_MAX,
+        image.mime ?? undefined,
+      );
       const helperAsset = assets.find((asset) => asset.path === helperPath);
       const rootId = helperAsset?.rootId ?? source.rootId ?? "project";
       const root = assetRegistry.getRoot?.(rootId);
@@ -204,8 +271,9 @@ function useSkyboxCreatorCreate(
       });
       await refreshAssetRegistry?.();
       onChange({ ...helper, generatedFaces });
-    } catch {
-      setError("The source Texture could not be decoded.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message.trim() : "";
+      setError(message || "The source Texture could not be decoded.");
     } finally {
       setBusy(false);
     }
@@ -237,8 +305,8 @@ export function SkyboxCreatorPreviewPanel(_props: IDockviewPanelProps) {
         }}
         creating={busy}
         error={error}
-        onChange={(next) => {
-          void applyAssetDocumentChange(documentId, next);
+        onChange={(next, mergeKey) => {
+          void applyAssetDocumentChange(documentId, next, mergeKey);
         }}
       />
     </PanelFrame>
@@ -298,21 +366,13 @@ export function SkyboxCreatorPreview({
   onCreate: () => void;
   creating?: boolean;
   error?: string | null;
-  onChange?: (next: Record<string, unknown>) => void;
+  onChange?: (next: Record<string, unknown>, mergeKey?: string) => void;
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { decoded, url } = useSkyboxCreatorDecodedSource(helper.sourceTextureGuid);
   const hostRef = useRef<HTMLDivElement>(null);
   const netRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ width: 0, height: 0 });
-  const [url, setUrl] = useState<string | null>(null);
-  const [sourceSize, setSourceSize] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
-  const texture = ((assetRegistry?.list() ?? []) as IndexedAsset[]).find(
-    (asset) => asset.header.guid === helper.sourceTextureGuid,
-  );
 
   useLayoutEffect(() => {
     const host = hostRef.current;
@@ -332,32 +392,6 @@ export function SkyboxCreatorPreview({
     return () => observer.disconnect();
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setUrl(null);
-    setSourceSize(null);
-    if (!texture || !readAssetChunk) return;
-    void (async () => {
-      const bytes = await readTextureImageBytes(readAssetChunk, texture.path);
-      if (!bytes || cancelled) return;
-      objectUrl = URL.createObjectURL(new Blob([bytes]));
-      if (!cancelled) setUrl(objectUrl);
-      try {
-        const decoded = await decodeSourceToRgba(bytes, SOURCE_DECODE_MAX);
-        if (!cancelled) {
-          setSourceSize({ width: decoded.width, height: decoded.height });
-        }
-      } catch {
-        if (!cancelled) setSourceSize(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [readAssetChunk, texture]);
-
   const cells = useMemo(() => {
     const rows: Array<{
       col: number;
@@ -374,12 +408,15 @@ export function SkyboxCreatorPreview({
 
   const overlayPlacement: SkyboxCreatorSourcePlacement | null =
     helper.sourcePlacement ??
-    (sourceSize
-      ? defaultSkyboxCreatorSourcePlacement(sourceSize.width, sourceSize.height)
+    (decoded
+      ? defaultSkyboxCreatorSourcePlacement(decoded.width, decoded.height)
       : null);
 
   const commitPlacement = (sourcePlacement: SkyboxCreatorSourcePlacement) => {
-    onChange?.({ ...helper, sourcePlacement });
+    onChange?.(
+      { ...helper, sourcePlacement },
+      SKYBOX_CREATOR_SOURCE_MERGE_KEY,
+    );
   };
 
   return (
@@ -421,10 +458,11 @@ export function SkyboxCreatorPreview({
               {cells.map((cell) => (
                 <div
                   key={`${cell.col}-${cell.row}`}
-                  style={{
-                    width: `${100 / SKYBOX_CREATOR_NET_COLS}%`,
-                    height: `${100 / SKYBOX_CREATOR_NET_ROWS}%`,
-                  }}
+                  data-testid={
+                    cell.compass
+                      ? `skybox-creator-cell-${cell.compass}`
+                      : undefined
+                  }
                   className={
                     cell.compass
                       ? "relative flex items-start justify-center border border-border/80 bg-background/20 p-1"
@@ -466,44 +504,33 @@ export function SkyboxCreatorCubemap({
   payload: Record<string, unknown>;
 }) {
   const helper = normalizeSkyboxCreatorPayload(payload);
-  const { assetRegistry, readAssetChunk } = useDocuments();
+  const { decoded } = useSkyboxCreatorDecodedSource(helper.sourceTextureGuid);
   const [facePngs, setFacePngs] = useState<SkyboxCreatorPreviewFacePngs | null>(
     null,
   );
-  const texture = ((assetRegistry?.list() ?? []) as IndexedAsset[]).find(
-    (asset) => asset.header.guid === helper.sourceTextureGuid,
-  );
+  const placement = helper.sourcePlacement;
+  const placementKey = placement
+    ? `${placement.x},${placement.y},${placement.width},${placement.height}`
+    : "";
 
   useEffect(() => {
-    let cancelled = false;
-    setFacePngs(null);
-    if (!texture || !readAssetChunk) return;
-    void (async () => {
-      const bytes = await readTextureImageBytes(readAssetChunk, texture.path);
-      if (!bytes || cancelled) return;
-      try {
-        const decoded = await decodeSourceToRgba(bytes, SOURCE_DECODE_MAX);
-        if (cancelled) return;
-        const sliced = fitSourceIntoSkyboxNet(
-          decoded.rgba,
-          decoded.width,
-          decoded.height,
-          helper.sourcePlacement,
-        );
-        const pngs = {} as SkyboxCreatorPreviewFacePngs;
-        for (const key of SKYBOX_FACE_KEYS) {
-          const face = sliced.faces[key];
-          pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
-        }
-        if (!cancelled) setFacePngs(pngs);
-      } catch {
-        if (!cancelled) setFacePngs(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [helper.sourcePlacement, readAssetChunk, texture]);
+    if (!decoded) {
+      setFacePngs(null);
+      return;
+    }
+    const sliced = fitSourceIntoSkyboxNet(
+      decoded.rgba,
+      decoded.width,
+      decoded.height,
+      placement,
+    );
+    const pngs = {} as SkyboxCreatorPreviewFacePngs;
+    for (const key of SKYBOX_FACE_KEYS) {
+      const face = sliced.faces[key];
+      pngs[key] = encodePngRgba(face.size, face.size, face.rgba);
+    }
+    setFacePngs(pngs);
+  }, [decoded, placementKey]);
 
   return (
     <div

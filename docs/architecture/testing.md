@@ -104,7 +104,7 @@ Focused UserInterface / encode coverage (unit, not e2e): typed apply/remove/visi
 
 `ScriptPaletteCache` (`apps/editor/src/services/graph-validation.test.ts`) covers P20 palette generation: `injectors: false` omits Cast-to-Class / FL Call / Get Widget; a synthetic ~1000-class set does not rebuild injectors on an unrelated graph pin edit. `GraphEditor` `onPaletteOpenChange` is unit-tested. Existing `e2e/p5-scripting.spec.ts` still finds Cast to Actor; `e2e/p18-editor-opt.spec.ts` still picks `debug.log` from Add Node. No `p1-device-spikes` gate.
 
-`e2e/skybox-creator.spec.ts` imports `albedo.png`, creates a Skybox Creator helper, picks that Texture, Create writes six `*_px`…`*_nz` Textures in the same folder, asserts Windows Preview/Cubemap/Details, a letterboxed 4×3 net of square cells on-screen, the Cubemap canvas inside the Cubemap panel, save/reopen, and a packed-closure fixture that omits the helper while keeping referenced face Textures.
+`e2e/skybox-creator.spec.ts` imports `albedo.png`, creates a Skybox Creator helper, picks that Texture, Create writes six `*_px`…`*_nz` Textures in the same folder, asserts Windows Preview/Cubemap/Details, a letterboxed 4×3 net whose FRONT cell is ~¼ × ⅓ of the net (square cells fill the letterbox), the Cubemap canvas inside the Cubemap panel, save/reopen, and a packed-closure fixture that omits the helper while keeping referenced face Textures.
 
 Static style rules that a running browser cannot prove (a hardcoded radius on an element no test renders) are audited by `findHardcodedRadii` in `@babylonslate/test-kit/style-audit`.
 

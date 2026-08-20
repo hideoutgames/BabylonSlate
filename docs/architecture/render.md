@@ -89,7 +89,7 @@ Meshes with no authored surface Material (`MeshComponent.materialGuid` empty, no
 - Shadows, nav bake, and `frameActor` skip skyboxes (`infiniteDistance` tracks the camera, so framing the mesh origin is a no-op)
 - Dispose the mesh when the actor is removed; rebuild when size or face guids change
 - Six-face cubes are Engine-owned so Play overlay `scene.dispose()` does not race pending face loads
-- Authors produce custom faces with Content Browser **Skybox Creator** (editor-only helper, not a Skybox document). Preview is a letterboxed 4×3 net of **square** cells (same aspect as engine cube faces). The Texture overlay on that net is what Create crops; **Create Skybox Textures** writes six uncompressed `usage: "skybox"` Textures. **Cubemap** is a contained 3D dock tab. Assign those guids on `SkyboxComponent`. Equirect-to-cubemap projection is out of scope.
+- Authors produce custom faces with Content Browser **Skybox Creator** (editor-only helper, not a Skybox document). Preview letterboxes a 4×3 net; CSS grid cells **stretch to fill** it so each compass face is square (¼ × ⅓ of the net). Decode the source Texture once (sniff PNG/JPEG MIME for the overlay blob; skip KTX2/`pixels` stubs and use `source`). Overlay placement undos merge as `skybox-creator-source`. That overlay is what Create crops; **Create Skybox Textures** writes six uncompressed `usage: "skybox"` Textures and surfaces registry errors as-is. **Cubemap** re-slices from the cached RGBA when placement changes. Assign those guids on `SkyboxComponent`. Equirect-to-cubemap projection is out of scope.
 
 ## 3D Text mesh
 
