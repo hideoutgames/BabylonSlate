@@ -64,16 +64,29 @@ export function createWidgetComponent(id: string): SerializedComponent {
   };
 }
 
+export function widgetUiGuidsFromComponents(
+  components: readonly { classId: string; properties: Record<string, unknown> }[],
+): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const component of components) {
+    if (component.classId !== "WidgetComponent") continue;
+    const guid = parseWidgetUiAssetGuid(component.properties.uiAssetGuid);
+    if (!guid || seen.has(guid)) continue;
+    seen.add(guid);
+    found.push(guid);
+  }
+  return found;
+}
+
 export function widgetUiGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
   for (const actor of scene?.actors ?? []) {
-    for (const component of actor.components) {
-      if (component.classId !== "WidgetComponent") continue;
-      const guid = parseWidgetUiAssetGuid(component.properties.uiAssetGuid);
-      if (!guid || seen.has(guid)) continue;
+    for (const guid of widgetUiGuidsFromComponents(actor.components)) {
+      if (seen.has(guid)) continue;
       seen.add(guid);
       found.push(guid);
     }

@@ -8,6 +8,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
+import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import type { ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
@@ -27,6 +28,8 @@ export interface MeshAssetContext {
   pixelsPerUnit?: number;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
+  /** UserInterface documents keyed by asset guid (WidgetComponent). */
+  uiDocuments?: ReadonlyMap<string, UserInterfaceDocument>;
 }
 
 function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
@@ -64,6 +67,7 @@ export function meshAssetFingerprint(
     `tilesets:${sortedMapKeys(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
+    `ui:${sortedMapKeys(assets.uiDocuments)}`,
     `models:${byteMapFingerprint(assets.modelBytes)}`,
   ].join("|");
 }

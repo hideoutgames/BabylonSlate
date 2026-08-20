@@ -1255,6 +1255,7 @@ export function createEngine(
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
+      binding.uiDocuments = assets.uiDocuments;
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
