@@ -28,6 +28,7 @@ import {
   shouldCancelConnectionOnSecondaryPointer,
   firstCompatiblePin,
   oppositeSideHandleId,
+  orientConnectionByPins,
   type PinCompatibilityRule,
 } from "./graph-connect";
 
@@ -1171,6 +1172,71 @@ describe("pinAllowsMultipleIncoming", () => {
   });
 });
 
+describe("orientConnectionByPins", () => {
+  const pins = new Map<string, SerializedPin>([
+    ["get:value", stringOut],
+    ["log:message", stringIn],
+    ["a:execOut", execOut],
+    ["b:execIn", execIn],
+  ]);
+
+  function pinFor(nodeId: string, pinId: string): SerializedPin | undefined {
+    return pins.get(`${nodeId}:${pinId}`);
+  }
+
+  it("leaves an output-to-input connection in place", () => {
+    expect(
+      orientConnectionByPins(
+        {
+          source: "get",
+          target: "log",
+          sourceHandle: "value",
+          targetHandle: "message",
+        },
+        pinFor,
+      ),
+    ).toEqual({
+      source: "get",
+      target: "log",
+      sourceHandle: "value",
+      targetHandle: "message",
+    });
+  });
+
+  it("swaps an input-first drag so the output pin is the source", () => {
+    expect(
+      orientConnectionByPins(
+        {
+          source: "log",
+          target: "get",
+          sourceHandle: "message",
+          targetHandle: "value",
+        },
+        pinFor,
+      ),
+    ).toEqual({
+      source: "get",
+      target: "log",
+      sourceHandle: "value",
+      targetHandle: "message",
+    });
+  });
+
+  it("returns null when both pins face the same direction", () => {
+    expect(
+      orientConnectionByPins(
+        {
+          source: "log",
+          target: "b",
+          sourceHandle: "message",
+          targetHandle: "execIn",
+        },
+        pinFor,
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("edgesAfterConnect", () => {
   const existing = {
     id: "e:root:children:old:parent",
@@ -1413,6 +1479,53 @@ describe("edgesAfterConnect", () => {
         targetHandle: "top-in",
       },
     ]);
+  });
+
+  it("orients an input-first connect and keeps one output-to-input wire", () => {
+    const connected = edgesAfterConnect(
+      [],
+      {
+        id: "e:log:message:src-a:value",
+        source: "log",
+        target: "src-a",
+        sourceHandle: "message",
+        targetHandle: "value",
+      },
+      pinFor,
+    );
+    expect(connected).toEqual([
+      {
+        id: "e:src-a:value:log:message",
+        source: "src-a",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+    ]);
+  });
+
+  it("does not keep a reverse duplicate of an existing output-to-input wire", () => {
+    const existingData = [
+      {
+        id: "e:src-a:value:log:message",
+        source: "src-a",
+        target: "log",
+        sourceHandle: "value",
+        targetHandle: "message",
+      },
+    ];
+    const connected = edgesAfterConnect(
+      existingData,
+      {
+        id: "e:log:message:src-a:value",
+        source: "log",
+        target: "src-a",
+        sourceHandle: "message",
+        targetHandle: "value",
+      },
+      pinFor,
+    );
+    expect(connected).toEqual(existingData);
   });
 
   it("still allows a second source into the same occupied target when pairs differ", () => {

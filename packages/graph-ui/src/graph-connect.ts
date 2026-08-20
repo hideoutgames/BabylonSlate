@@ -63,53 +63,126 @@ function sameTopology(left: PinEdgeRef, right: PinEdgeRef): boolean {
   );
 }
 
+export type OrientedConnection = {
+  source: string;
+  target: string;
+  sourceHandle: string;
+  targetHandle: string;
+};
+
+/** Swap an input-first drag so the output pin is always `source`. */
+export function orientConnectionByPins(
+  connection: {
+    source?: string | null;
+    target?: string | null;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+  },
+  pinFor: ConnectPinLookup,
+): OrientedConnection | null {
+  const source = connection.source;
+  const target = connection.target;
+  const sourceHandle = connection.sourceHandle;
+  const targetHandle = connection.targetHandle;
+  if (!source || !target || !sourceHandle || !targetHandle) return null;
+  const sourcePin = pinFor(source, sourceHandle);
+  const targetPin = pinFor(target, targetHandle);
+  if (!sourcePin || !targetPin) {
+    return { source, target, sourceHandle, targetHandle };
+  }
+  if (sourcePin.direction === targetPin.direction) return null;
+  if (sourcePin.direction === "out") {
+    return { source, target, sourceHandle, targetHandle };
+  }
+  return {
+    source: target,
+    target: source,
+    sourceHandle: targetHandle,
+    targetHandle: sourceHandle,
+  };
+}
+
+function directedEdgeId(edge: OrientedConnection): string {
+  return `e:${edge.source}:${edge.sourceHandle}:${edge.target}:${edge.targetHandle}`;
+}
+
 export function edgesAfterConnect<T extends PinEdgeRef>(
   edges: readonly T[],
   next: T,
   pinFor: ConnectPinLookup,
   options?: { replaceIncoming?: boolean; uniqueDirectedPair?: boolean },
 ): T[] {
-  if (next.id && edges.some((edge) => edge.id === next.id)) {
+  const oriented = orientConnectionByPins(next, pinFor);
+  if (
+    next.source &&
+    next.target &&
+    next.sourceHandle &&
+    next.targetHandle &&
+    pinFor(next.source, next.sourceHandle) &&
+    pinFor(next.target, next.targetHandle) &&
+    oriented === null
+  ) {
     return [...edges];
   }
-  if (edges.some((edge) => sameTopology(edge, next))) {
+  const candidate: T = oriented
+    ? {
+        ...next,
+        source: oriented.source,
+        target: oriented.target,
+        sourceHandle: oriented.sourceHandle,
+        targetHandle: oriented.targetHandle,
+        id:
+          next.source === oriented.source &&
+          next.target === oriented.target &&
+          (next.sourceHandle ?? "") === oriented.sourceHandle &&
+          (next.targetHandle ?? "") === oriented.targetHandle
+            ? (next.id ?? directedEdgeId(oriented))
+            : directedEdgeId(oriented),
+      }
+    : next;
+  if (candidate.id && edges.some((edge) => edge.id === candidate.id)) {
+    return [...edges];
+  }
+  if (edges.some((edge) => sameTopology(edge, candidate))) {
     return [...edges];
   }
   if (options?.uniqueDirectedPair === true) {
-    const pairIndex = edges.findIndex((edge) => sameDirectedPair(edge, next));
+    const pairIndex = edges.findIndex((edge) =>
+      sameDirectedPair(edge, candidate),
+    );
     if (pairIndex >= 0) {
       const current = edges[pairIndex]!;
       const updated = [
         ...edges.slice(0, pairIndex),
         {
           ...current,
-          source: next.source,
-          target: next.target,
-          sourceHandle: next.sourceHandle,
-          targetHandle: next.targetHandle,
-          id: current.id ?? next.id,
+          source: candidate.source,
+          target: candidate.target,
+          sourceHandle: candidate.sourceHandle,
+          targetHandle: candidate.targetHandle,
+          id: current.id ?? candidate.id,
         },
         ...edges.slice(pairIndex + 1),
       ];
       return updated;
     }
   }
-  const targetPin = pinFor(next.target, next.targetHandle ?? "");
+  const targetPin = pinFor(candidate.target, candidate.targetHandle ?? "");
   const exclusive =
     options?.replaceIncoming === true || !pinAllowsMultipleIncoming(targetPin);
   const kept = exclusive
     ? edges.filter(
         (edge) =>
           !(
-            edge.target === next.target &&
-            edge.targetHandle === next.targetHandle
+            edge.target === candidate.target &&
+            edge.targetHandle === candidate.targetHandle
           ),
       )
     : [...edges];
   const id =
-    next.id ??
-    `e:${next.source}:${next.sourceHandle ?? ""}:${next.target}:${next.targetHandle ?? ""}`;
-  return [...kept, { ...next, id }];
+    candidate.id ??
+    `e:${candidate.source}:${candidate.sourceHandle ?? ""}:${candidate.target}:${candidate.targetHandle ?? ""}`;
+  return [...kept, { ...candidate, id }];
 }
 
 export function displayNodeTitle(nodeType: string, title?: string): string {
