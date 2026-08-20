@@ -45,7 +45,6 @@ import { describeUiControls } from "@babylonslate/ui-runtime";
 import { createText3DMesh } from "./text3d-mesh";
 import {
   attachMeshGui,
-  createWidgetPlane,
   createWidgetVisualMesh,
   resolveWidgetBitmapSize,
 } from "./widget-gui";

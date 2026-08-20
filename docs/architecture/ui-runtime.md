@@ -48,7 +48,9 @@ Nested **visuals** stay one tree (layout prefixes inner ids `hostSlot/innerBtn`)
 Placement:
 
 - **Viewport layer** — `ctx.applyUserInterface(classIdOrGuid)` creates a typed `UserInterface` (`classId` `UserInterface:<guid>`, instance ids `ui-1`, `ui-2`, …) plus concrete `*Widget` children. Not auto-hosted on Play.
-- **WidgetComponent** — world-space 2D prefab (`CreateForMesh`). Class id exists; Add Component and Search hide it until a runtime `CreateForMesh` path exists. Viewport-layer HUD is the v1 Play path.
+- **WidgetComponent** — world-space 2D prefab. The component owns a `CreatePlane` (not a `MeshComponent`). `uiAssetGuid` paints that UserInterface via `AdvancedDynamicTexture.CreateForMesh`. Authored **Two Sided** (`twoSided`, default false) sets `Mesh.DOUBLESIDE` and `material.backFaceCulling = false`. **Width** / **Height** are world meters (default `1`; one axis derives the other from the UI bitmap aspect). Prefab apply uses `applySafeArea: false` and `resolveUiAdtIdeal({ viewportLayer: false })` so the ADT matches the bitmap 1:1. Nested UserInterface slots stay worker-only children (no second ADT). Add Component (**Rendering → Widget**), Search, and Place Actors (**UI → Widget**) advertise it. Serialized leftover `viewportLayer` on the component is ignored.
+
+Play/player **auto-mount** `UserInterface:<guid>` when `uiAssetGuid` is set (`uiApply` with `target: { kind: "world", slotId, componentId }`). Fullscreen HUD hosts skip that target. Editor viewport is paint-only (`interactive: false`). Play mesh ADT uses `CreateForMesh(..., supportPointerMove: true)`; Hit Testable + **Set Input Mode** Game still suppress GUI hits (`setAllowGuiHits`), same as HUD. Empty `uiAssetGuid` still spawns a blank plane.
 
 `ctx.getWidget(widgetId)`, `ctx.setWidgetVisible(widget, visible)`, `ctx.applyUserInterface(classIdOrGuid)`, and `ctx.removeUserInterface(instance)` are real worker helpers: they emit UI commands; Play and the player apply them. `getWidget` is scoped to `ctx.self` when self is a `UserInterface`. Scripts never touch Babylon GUI.
 
@@ -100,7 +102,7 @@ Runtime maps that to Babylon `isHitTestVisible` / `isPointerBlocker` only when t
 | --- | --- | --- |
 | All | Authored Hit Testable | On |
 | Interface | Authored Hit Testable | Off (no key/pointer/gamepad into the resolver). HUD TextInput and Touch* still use GUI. Touch axes may still emit because they are interface controls. |
-| Game | Force no GUI hits (`isHitTestVisible` / skip pick) | On. HUD still paints. |
+| Game | Force no GUI hits (`isHitTestVisible` / skip pick) | On. HUD and world WidgetComponent planes still paint. |
 
 ## Touch → P6 input
 
