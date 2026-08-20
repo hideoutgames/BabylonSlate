@@ -13,6 +13,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 
@@ -242,6 +243,70 @@ describe("Play createEngine view", () => {
     expect(live!.isDisposed()).toBe(false);
     expect(editor!.gizmos.attachedMesh()).toBe(live);
     expect(selected!.isDisposed()).toBe(true);
+  });
+
+  it("attaches the gizmo to a Model actor whose placeholder is unpickable", async () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+    });
+    handles.push(handle);
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.assetGuid = "hero";
+    handle.setMeshAssets({
+      modelBytes: new Map([["hero", encodeTriangleGlb()]]),
+    });
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", { components: [mesh] })],
+    });
+    await handle.whenEditorModelsReady();
+    const root = handle.editor!.sync.meshForActor("hero");
+    expect(root?.isPickable).toBe(false);
+    handle.editor!.gizmos.setTool("translate");
+    handle.editor!.setSelectedActors(["hero"]);
+    expect(handle.editor!.gizmos.attachedMesh()).toBe(root);
+  });
+
+  it("does not attach the gizmo to a locked Model actor", async () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+    });
+    handles.push(handle);
+    const mesh = createMeshComponent("mesh", "box");
+    mesh.properties.assetGuid = "hero";
+    handle.setMeshAssets({
+      modelBytes: new Map([["hero", encodeTriangleGlb()]]),
+    });
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", { locked: true, components: [mesh] }),
+      ],
+    });
+    await handle.whenEditorModelsReady();
+    handle.editor!.gizmos.setTool("translate");
+    handle.editor!.setSelectedActors(["hero"]);
+    expect(handle.editor!.gizmos.attachedMesh()).toBeNull();
+  });
+
+  it("snaps a live Scene canvas drawing buffer to CSS pixels on resize", () => {
+    const canvas = new FakeCanvas();
+    canvas.width = 256;
+    canvas.height = 256;
+    canvas.clientWidth = 800;
+    canvas.clientHeight = 360;
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+    });
+    handles.push(handle);
+    handle.resize();
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(360);
   });
 
   it("reports hidden pre-snapshot visuals and their published world positions", () => {

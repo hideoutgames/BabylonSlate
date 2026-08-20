@@ -10,6 +10,7 @@ import {
   VertexBuffer,
 } from "@babylonjs/core";
 import { MATERIAL_PREVIEW_MESHES } from "@babylonslate/shader-graph";
+import { isEngineDefaultMaterial } from "./default-material";
 import {
   MATERIAL_PREVIEW_MESH_NAME,
   aimPreviewCameraAtMesh,
@@ -182,6 +183,7 @@ describe("material preview scene", () => {
     expect(host.scene.lights.length).toBeGreaterThan(0);
     expect(host.mesh.name).toBe(MATERIAL_PREVIEW_MESH_NAME);
     expect(host.mesh.getTotalVertices()).toBe(24);
+    expect(isEngineDefaultMaterial(host.scene.defaultMaterial)).toBe(true);
   });
 
   it("swaps the primitive while keeping the applied material", async () => {

@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from "@babylonslate/ui/components/tooltip";
 import type { SerializedScene } from "@babylonslate/core";
-import type { GizmoTool } from "@babylonslate/render";
+import type { GizmoTool, ViewportShadingMode } from "@babylonslate/render";
 import {
   MoveIcon,
   RotateCwIcon,
@@ -61,6 +61,8 @@ export function ViewportToolbar({
     setPreviewGameCamera,
     pivotAroundCenter,
     setPivotAroundCenter,
+    viewportShadingMode,
+    setViewportShadingMode,
   } = useSceneEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -121,6 +123,48 @@ export function ViewportToolbar({
   };
 
   const settingsItems: NestedMenuItem[] = [
+    {
+      type: "submenu",
+      id: "viewport-mode",
+      label: "Viewport Mode",
+      testId: `${testIdPrefix}viewport-shading-mode`,
+      items: [
+        {
+          type: "radio-group",
+          id: "viewport-shading",
+          value: viewportShadingMode,
+          closeOnClick: false,
+          onValueChange: (value) =>
+            setViewportShadingMode(value as ViewportShadingMode),
+          items: [
+            {
+              id: "pbr",
+              label: "PBR",
+              value: "pbr",
+              testId: `${testIdPrefix}viewport-shading-pbr`,
+            },
+            {
+              id: "unlit",
+              label: "Unlit",
+              value: "unlit",
+              testId: `${testIdPrefix}viewport-shading-unlit`,
+            },
+            {
+              id: "wireframe",
+              label: "Wireframe",
+              value: "wireframe",
+              testId: `${testIdPrefix}viewport-shading-wireframe`,
+            },
+            {
+              id: "points-cloud",
+              label: "Points Cloud",
+              value: "pointsCloud",
+              testId: `${testIdPrefix}viewport-shading-points-cloud`,
+            },
+          ],
+        },
+      ],
+    },
     {
       type: "checkbox",
       id: "snap",
@@ -263,7 +307,7 @@ export function ViewportToolbar({
           const next = value[0];
           if (next === "2d" || next === "3d") setMode(next);
         }}
-        aria-label="Viewport Mode"
+        aria-label="2D / 3D"
         data-testid={`${testIdPrefix}viewport-mode-toggle`}
       >
         <ToggleGroupItem

@@ -14,6 +14,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,
@@ -48,7 +50,7 @@ export type NestedMenuItem =
       testId?: string;
       contentTestId?: string;
     }
-  | {
+    | {
       type: "checkbox";
       id: string;
       label: string;
@@ -57,6 +59,21 @@ export type NestedMenuItem =
       closeOnClick?: boolean;
       disabled?: boolean;
       testId?: string;
+    }
+  | {
+      type: "radio-group";
+      id: string;
+      value: string;
+      onValueChange: (value: string) => void;
+      closeOnClick?: boolean;
+      disabled?: boolean;
+      items: Array<{
+        id: string;
+        label: string;
+        value: string;
+        disabled?: boolean;
+        testId?: string;
+      }>;
     }
   | { type: "separator"; id: string }
   | { type: "label"; id: string; label: string };
@@ -112,6 +129,29 @@ function NestedMenuItems({
             >
               {item.label}
             </DropdownMenuCheckboxItem>
+          );
+        }
+        if (item.type === "radio-group") {
+          return (
+            <DropdownMenuRadioGroup
+              key={item.id}
+              value={item.value}
+              disabled={item.disabled}
+              onValueChange={(value) => item.onValueChange(String(value))}
+            >
+              {item.items.map((option) => (
+                <DropdownMenuRadioItem
+                  key={option.id}
+                  value={option.value}
+                  disabled={option.disabled}
+                  closeOnClick={item.closeOnClick}
+                  className={itemClass}
+                  data-testid={itemTestId(option)}
+                >
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
           );
         }
         if (item.type === "submenu") {
@@ -199,6 +239,30 @@ function OverlayMenuItems({
             >
               {item.label}
             </button>
+          );
+        }
+        if (item.type === "radio-group") {
+          return (
+            <div key={item.id} role="group">
+              {item.items.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={item.value === option.value}
+                  disabled={item.disabled || option.disabled}
+                  className="context-menu-item"
+                  data-testid={itemTestId(option)}
+                  onClick={() => {
+                    if (item.disabled || option.disabled) return;
+                    item.onValueChange(option.value);
+                    if (item.closeOnClick) onClose();
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           );
         }
         if (item.type === "submenu") {

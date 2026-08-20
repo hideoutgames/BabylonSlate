@@ -68,6 +68,42 @@ describe("NestedMenu dropdown", () => {
     expect(getByTestId("menu-content")).toBeTruthy();
   });
 
+  it("selects a radio-group value without closing when closeOnClick is false", () => {
+    const onValueChange = vi.fn();
+    const { getByTestId } = render(
+      <NestedMenu
+        items={[
+          {
+            id: "shading",
+            type: "radio-group",
+            value: "pbr",
+            closeOnClick: false,
+            onValueChange,
+            items: [
+              { id: "pbr", label: "PBR", value: "pbr" },
+              {
+                id: "unlit",
+                label: "Unlit",
+                value: "unlit",
+                testId: "radio-unlit",
+              },
+            ],
+          },
+        ]}
+        trigger={<button type="button" data-testid="menu-trigger">Open</button>}
+        contentTestId="menu-content"
+      />,
+    );
+
+    fireEvent.click(getByTestId("menu-trigger"));
+    expect(getByTestId("context-menu-item-pbr").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    fireEvent.click(getByTestId("radio-unlit"));
+    expect(onValueChange).toHaveBeenCalledWith("unlit");
+    expect(getByTestId("menu-content").getAttribute("data-closed")).toBeNull();
+  });
+
   it("does not open a disabled submenu", () => {
     const { getByTestId, queryByTestId } = render(
       <NestedMenu
@@ -131,5 +167,48 @@ describe("NestedMenu context overlay", () => {
     fireEvent.click(getByTestId("context-menu-item-duplicate"));
     expect(onSelect).toHaveBeenCalledOnce();
     expect(queryByTestId("context-menu-panel")).toBeNull();
+  });
+
+  it("selects a radio-group value on the overlay without closing when closeOnClick is false", () => {
+    const onValueChange = vi.fn();
+    function OverlayHost() {
+      const [open, setOpen] = useState(true);
+      return (
+        <ContextMenuOverlay
+          menu={
+            open
+              ? {
+                  open: true,
+                  x: 40,
+                  y: 80,
+                  items: [
+                    {
+                      id: "shading",
+                      type: "radio-group",
+                      value: "pbr",
+                      closeOnClick: false,
+                      onValueChange,
+                      items: [
+                        { id: "pbr", label: "PBR", value: "pbr" },
+                        {
+                          id: "unlit",
+                          label: "Unlit",
+                          value: "unlit",
+                          testId: "radio-unlit",
+                        },
+                      ],
+                    },
+                  ],
+                }
+              : null
+          }
+          onClose={() => setOpen(false)}
+        />
+      );
+    }
+    const { getByTestId, queryByTestId } = render(<OverlayHost />);
+    fireEvent.click(getByTestId("radio-unlit"));
+    expect(onValueChange).toHaveBeenCalledWith("unlit");
+    expect(queryByTestId("context-menu-panel")).not.toBeNull();
   });
 });

@@ -101,6 +101,17 @@ import {
 const GALLERY_NESTED_ITEMS: NestedMenuItem[] = [
   { id: "rename", label: "Rename", onSelect: () => {} },
   {
+    id: "view",
+    type: "radio-group",
+    value: "pbr",
+    closeOnClick: false,
+    onValueChange: () => {},
+    items: [
+      { id: "pbr", label: "PBR", value: "pbr" },
+      { id: "unlit", label: "Unlit", value: "unlit" },
+    ],
+  },
+  {
     id: "more",
     type: "submenu",
     label: "More",

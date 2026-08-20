@@ -1,4 +1,5 @@
 import { RenderTargetTexture, type Scene } from "@babylonjs/core";
+import { cssCanvasPixelSize, snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { flipReadPixelsRgba } from "./flip-read-pixels";
 
 export type RttCanvasPresent = {
@@ -33,14 +34,7 @@ export function createRttCanvasPresent(
     rtt = null;
   };
 
-  const canvasSize = () => {
-    const width = Math.floor(canvas.clientWidth || 0);
-    const height = Math.floor(canvas.clientHeight || 0);
-    return {
-      width: Math.max(1, width),
-      height: Math.max(1, height),
-    };
-  };
+  const canvasSize = () => cssCanvasPixelSize(canvas);
 
   const bind = () => {
     const camera = scene.activeCamera;
@@ -67,9 +61,7 @@ export function createRttCanvasPresent(
   };
 
   const clear = () => {
-    const { width, height } = canvasSize();
-    canvas.width = width;
-    canvas.height = height;
+    snapCanvasDrawingBuffer(canvas);
   };
 
   const blit = () => {

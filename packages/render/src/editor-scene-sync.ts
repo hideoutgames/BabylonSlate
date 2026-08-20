@@ -12,7 +12,7 @@ import {
   type MeshAssetContext,
 } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
-import { beginSlotModelAnimLoad, type ModelAnimLoadBinding } from "./glb-anim";
+import { beginSlotModelAnimLoad, isEditorModelPlaceholder, type ModelAnimLoadBinding } from "./glb-anim";
 import { isGltfModelBytes } from "./model-mesh";
 import {
   actorIdFromMeshName,
@@ -21,17 +21,22 @@ import {
   applyComponentChildTransforms,
   createActorMesh,
   editorComponentMeshName,
+  editorModelLoadTarget,
   isEditorActorOrigin,
   visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
 import { applySortingToMesh, resolveSortingLayer } from "./sorting";
+import { isColliderVisualMesh } from "./collider-visual";
+import { visualMeshes } from "./visual-meshes";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 export type EditorSceneSyncOptions = {
   resolveMaterial?: (guid: string) => Material | null;
+  /** Fired after meshes/materials are bound so overlays can re-apply. */
+  onAfterApply?: () => void;
 };
 
 function spriteSortingOf(
@@ -64,6 +69,7 @@ export class EditorSceneSync {
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
   private readonly resolveMaterial?: (guid: string) => Material | null;
+  private readonly onAfterApply?: () => void;
   private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
   private assets: MeshAssetContext | undefined;
@@ -88,6 +94,7 @@ export class EditorSceneSync {
     this.scene = scene;
     this.scheduler = scheduler;
     this.resolveMaterial = options?.resolveMaterial;
+    this.onAfterApply = options?.onAfterApply;
   }
 
   /** Ordered sorting layers from project settings, back to front. */
@@ -209,6 +216,7 @@ export class EditorSceneSync {
       shadowQuality: this.shadowQuality,
       assets: this.assets,
     });
+    this.onAfterApply?.();
   }
 
   serializedScene(): SerializedScene | null {
@@ -221,7 +229,23 @@ export class EditorSceneSync {
 
   visualMeshesForActor(actorId: string): Mesh[] {
     const mesh = this.meshes.get(actorId);
-    return mesh ? visualMeshesOfActorRoot(mesh) : [];
+    if (!mesh) return [];
+    const roots = visualMeshesOfActorRoot(mesh);
+    const drawn: Mesh[] = [];
+    for (const root of roots) {
+      if (isColliderVisualMesh(root)) continue;
+      const parts = visualMeshes(root).filter(
+        (part): part is Mesh => part instanceof Mesh,
+      );
+      if (parts.length > 0) {
+        drawn.push(...parts);
+        continue;
+      }
+      if (!isEditorModelPlaceholder(root)) {
+        drawn.push(root);
+      }
+    }
+    return drawn.length > 0 ? drawn : roots;
   }
 
   actorForMesh(meshName: string): string | null {
@@ -256,8 +280,10 @@ export class EditorSceneSync {
     const guid = this.meshComponentAssetGuid(actor);
     const payload = guid ? this.assets?.modelPayloads?.get(guid) : undefined;
     if (!payload) return;
-    applyModelMaterialSlots(root, payload.materialSlots, (materialGuid) =>
-      this.resolveMaterial?.(materialGuid) ?? null,
+    applyModelMaterialSlots(
+      editorModelLoadTarget(root, actor),
+      payload.materialSlots,
+      (materialGuid) => this.resolveMaterial?.(materialGuid) ?? null,
     );
   }
 
@@ -272,15 +298,16 @@ export class EditorSceneSync {
       this.assets?.modelClipAnimationGuids;
     this.modelLoadBinding.retargetAnimationLoads =
       this.assets?.retargetAnimationLoads;
+    const placeholder = editorModelLoadTarget(root, actor);
     void beginSlotModelAnimLoad(
       this.scene,
       this.modelLoadBinding,
       slotId,
       guid,
       bytes,
-      root,
+      placeholder,
       () => {
-        if (root.isDisposed()) return;
+        if (root.isDisposed() || placeholder.isDisposed()) return;
         const current =
           this.lastScene?.actors.find((entry) => entry.id === actor.id) ?? actor;
         applyActorTransform(root, current);
@@ -288,6 +315,7 @@ export class EditorSceneSync {
         this.applyModelSlots(current, root);
         this.bindActorMeshMaterials(current, root);
         this.scheduler?.invalidate("asset");
+        this.onAfterApply?.();
       },
     );
   }
