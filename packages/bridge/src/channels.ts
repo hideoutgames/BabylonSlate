@@ -104,6 +104,11 @@ export type ScriptBundleEntry = {
     method: string;
     exportName: string;
   }>;
+  /** Omitted flags default to true at spawn. */
+  actorDefaults?: {
+    generateHitEvents?: boolean;
+    generateOverlapEvents?: boolean;
+  };
 };
 
 export type ControlMessage =

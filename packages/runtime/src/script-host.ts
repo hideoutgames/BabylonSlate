@@ -73,9 +73,10 @@ export interface ScriptHostServices {
   addComponent?(
     actor: Actor | null | undefined,
     classId: string,
+    transform?: unknown,
   ): unknown;
   animGraphControl?(self: BObject | null | undefined): AnimGraphControl | null;
-  spawnActor?(classId: string): Actor | null;
+  spawnActor?(classId: string, transform?: unknown): Actor | null;
   print(
     message: string,
     key: string,
@@ -259,6 +260,17 @@ export interface ScriptContext {
   randomFloat(): number;
   getAllActorsOfClass(classId: string): Actor[];
   getActorOfClass(classId: string): Actor | null;
+  attachActor(
+    child: BObject | null | undefined,
+    parent: BObject | null | undefined,
+  ): void;
+  detachActor(child: BObject | null | undefined): void;
+  getParent(actor: BObject | null | undefined): Actor | null;
+  setOwner(
+    actor: BObject | null | undefined,
+    owner: BObject | null | undefined,
+  ): void;
+  getOwner(actor: BObject | null | undefined): Actor | null;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
   commandArgs: Record<string, unknown>;
@@ -272,8 +284,12 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): unknown;
   getComponent(actor: BObject | null | undefined, classId: string): unknown;
-  addComponent(actor: BObject | null | undefined, classId: string): unknown;
-  spawnActor(classId: string): Actor | null;
+  addComponent(
+    actor: BObject | null | undefined,
+    classId: string,
+    transform?: unknown,
+  ): unknown;
+  spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
   getAnimGraphVariable(name: string): unknown;
   setAnimGraphVariable(name: string, value: unknown): void;
@@ -847,6 +863,17 @@ export class ScriptHost {
           }) ?? null
         );
       },
+      attachActor: (child, parent) => {
+        setActorLink(child, "parentId", parent);
+      },
+      detachActor: (child) => {
+        setActorLink(child, "parentId", null);
+      },
+      getParent: (actor) => readActorLink(services, actor, "parentId"),
+      setOwner: (actor, owner) => {
+        setActorLink(actor, "ownerId", owner);
+      },
+      getOwner: (actor) => readActorLink(services, actor, "ownerId"),
       executeConsoleCommand: (command) =>
         services.executeConsoleCommand(command),
       delay: (seconds) => services.delay(seconds),
@@ -865,12 +892,13 @@ export class ScriptHost {
       getComponent: (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
         null,
-      addComponent: (actor, classId) => {
+      addComponent: (actor, classId, transform) => {
         const target = asActor(actor ?? self);
         if (!target) return null;
-        return services.addComponent?.(target, classId) ?? null;
+        return services.addComponent?.(target, classId, transform) ?? null;
       },
-      spawnActor: (classId) => services.spawnActor?.(String(classId)) ?? null,
+      spawnActor: (classId, transform) =>
+        services.spawnActor?.(String(classId), transform) ?? null,
       isA: (instance, classId) => {
         if (instance == null || typeof instance !== "object") return false;
         const id = (instance as { classId?: unknown }).classId;
@@ -1145,6 +1173,32 @@ export class ScriptHost {
 
 function asActor(target: unknown): Actor | null {
   return target instanceof Actor ? target : null;
+}
+
+function setActorLink(
+  actor: unknown,
+  key: "parentId" | "ownerId",
+  other: unknown,
+): void {
+  const target = asActor(actor);
+  if (!target || target.destroyed) return;
+  const linked = asActor(other);
+  if (!linked || linked.destroyed || linked.guid === target.guid) {
+    target.setVariable(key, null);
+    return;
+  }
+  target.setVariable(key, linked.guid);
+}
+
+function readActorLink(
+  services: ScriptHostServices,
+  actor: unknown,
+  key: "parentId" | "ownerId",
+): Actor | null {
+  const target = asActor(actor);
+  if (!target || target.destroyed) return null;
+  const id = target.getVariable(key);
+  return typeof id === "string" ? resolveLiveActor(services, id) : null;
 }
 
 function resolveLiveActor(

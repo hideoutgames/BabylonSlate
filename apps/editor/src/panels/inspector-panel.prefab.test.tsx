@@ -153,6 +153,18 @@ describe("Inspector prefab component details", () => {
     expect(screen.getByTestId("inspector-prefab-origin")).toBeTruthy();
   });
 
+  it("shows Actor Defaults on Prefab Root and persists generate flags", () => {
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(screen.getByTestId("inspector-actor-defaults")).toBeTruthy();
+    expect(screen.getByTestId("inspector-prefab-origin")).toBeTruthy();
+    expect(screen.getByText("Actor Defaults")).toBeTruthy();
+    const hit = screen.getByTestId("property-generateHitEvents");
+    fireEvent.click(hit);
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls.at(-1)![1];
+    expect(next.actorDefaults?.generateHitEvents).toBe(false);
+  });
+
   it("titles Inspector with the component count when more than one is selected", () => {
     renderInspector({
       selectedComponentIds: ["prefab-mesh", "prefab-sphere"],

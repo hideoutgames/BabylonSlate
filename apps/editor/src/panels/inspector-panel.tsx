@@ -847,9 +847,40 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "graph") {
+  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "graph" && graph) {
+    const defaults = graph.actorDefaults ?? {};
     return (
       <PanelFrame data-testid="inspector-panel">
+        <PropertyGrid
+          title="Actor Defaults"
+          data-testid="inspector-actor-defaults"
+          rows={[
+            {
+              id: "generateHitEvents",
+              kind: "boolean" as const,
+              label: "Generate Hit Events",
+              value: defaults.generateHitEvents !== false,
+              defaultValue: true,
+              onChange: (generateHitEvents: boolean) =>
+                persistGraph({
+                  ...graph,
+                  actorDefaults: { ...defaults, generateHitEvents },
+                }),
+            },
+            {
+              id: "generateOverlapEvents",
+              kind: "boolean" as const,
+              label: "Generate Overlap Events",
+              value: defaults.generateOverlapEvents !== false,
+              defaultValue: true,
+              onChange: (generateOverlapEvents: boolean) =>
+                persistGraph({
+                  ...graph,
+                  actorDefaults: { ...defaults, generateOverlapEvents },
+                }),
+            },
+          ]}
+        />
         <p
           className="p-4 text-sm text-muted-foreground"
           data-testid="inspector-prefab-origin"

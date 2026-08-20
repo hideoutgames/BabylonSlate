@@ -84,6 +84,82 @@ describe("flow nodes", () => {
     expect(byId["flow.event.widgetClick"]?.title).toBe("Event On Widget Click");
   });
 
+  it("registers Actor collision events with Hit Result and Instigator pins", () => {
+    const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
+    expect(byId["flow.event.hit"]?.title).toBe("Event On Hit");
+    expect(byId["flow.event.beginOverlap"]?.title).toBe(
+      "Event On Begin Overlap",
+    );
+    expect(byId["flow.event.endOverlap"]?.title).toBe("Event On End Overlap");
+    expect(byId["flow.event.hit"]?.editorOnly).toBeFalsy();
+    const hitPins = byId["flow.event.hit"]?.pins({}) ?? [];
+    expect(
+      hitPins.map((pin) => ({ id: pin.id, name: pin.name, direction: pin.direction })),
+    ).toEqual(
+      expect.arrayContaining([
+        { id: "hitResult", name: "Hit Result", direction: "out" },
+        { id: "otherActor", name: "Other Actor", direction: "out" },
+        { id: "location", name: "Location", direction: "out" },
+        { id: "normal", name: "Normal", direction: "out" },
+      ]),
+    );
+    const overlapPins = byId["flow.event.beginOverlap"]?.pins({}) ?? [];
+    expect(
+      overlapPins.map((pin) => ({ id: pin.id, name: pin.name })),
+    ).toEqual(
+      expect.arrayContaining([{ id: "instigator", name: "Instigator" }]),
+    );
+  });
+
+  it("compiles On Hit pins from ctx.args", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "hit", "flow.event.hit"),
+        node(registry, "logHit", "debug.log"),
+        node(registry, "logOther", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "hit",
+          sourcePinId: "execOut",
+          targetNodeId: "logHit",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "hit",
+          sourcePinId: "hitResult",
+          targetNodeId: "logHit",
+          targetPinId: "message",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "logHit",
+          sourcePinId: "execOut",
+          targetNodeId: "logOther",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e4",
+          sourceNodeId: "hit",
+          sourcePinId: "otherActor",
+          targetNodeId: "logOther",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.entryPoints.some((entry) => entry.event === "onHit")).toBe(
+      true,
+    );
+    expect(compiled.source).toContain("ctx.args.hitResult");
+    expect(compiled.source).toContain("ctx.args.otherActor");
+  });
+
   it("maps function Input pins from member inputs as outputs", () => {
     const input = flowNodes.find((node) => node.id === "flow.function.input");
     expect(input?.title).toBe("Input");

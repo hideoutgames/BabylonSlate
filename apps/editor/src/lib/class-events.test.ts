@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
-import { ensureEventNodeOnGraph, nativeEventStubs } from "./class-members";
+import {
+  ensureEventNodeOnGraph,
+  isScriptCatalogNodeAllowed,
+  nativeEventStubs,
+} from "./class-members";
 
 describe("nativeEventStubs", () => {
   it("lists Begin Play, Tick, and On Actor Destroyed", () => {
@@ -9,6 +13,9 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
+      "flow.event.hit",
+      "flow.event.beginOverlap",
+      "flow.event.endOverlap",
     ]);
   });
 
@@ -17,6 +24,9 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
+      "flow.event.hit",
+      "flow.event.beginOverlap",
+      "flow.event.endOverlap",
     ]);
   });
 
@@ -95,6 +105,38 @@ describe("nativeEventStubs", () => {
 
   it("lists no Actor or BT leaf events for BTComposite", () => {
     expect(nativeEventStubs({ parentClass: "BTComposite" })).toEqual([]);
+  });
+
+  it("does not list collision events on UserInterface logic", () => {
+    const types = nativeEventStubs({
+      assetType: "UserInterface",
+      parentClass: "BObject",
+    }).map((stub) => stub.eventType);
+    expect(types).not.toContain("flow.event.hit");
+    expect(types).not.toContain("flow.event.beginOverlap");
+    expect(types).not.toContain("flow.event.endOverlap");
+  });
+
+  it("allows collision events only on Actor graphs", () => {
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.hit", { parentClass: "Actor" }),
+    ).toBe(true);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.beginOverlap", {
+        parentClass: "Actor",
+      }),
+    ).toBe(true);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.hit", {
+        assetType: "UserInterface",
+        parentClass: "BObject",
+      }),
+    ).toBe(false);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.hit", {
+        parentClass: "FunctionLibrary",
+      }),
+    ).toBe(false);
   });
 
   it("lists no native events for FunctionLibrary and EditorFunctionLibrary", () => {

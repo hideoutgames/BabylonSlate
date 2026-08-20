@@ -10,6 +10,7 @@ import { PhysicsAggregate } from "@babylonjs/core/Physics/v2/physicsAggregate";
 import { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
 import { PhysicsCharacterController } from "@babylonjs/core/Physics/v2/characterController";
 import {
+  PhysicsEventType,
   PhysicsMotionType,
   PhysicsPrestepType,
   PhysicsShapeType,
@@ -37,6 +38,7 @@ import type {
   Quat,
   RigidBodyDesc,
   Vec3,
+  PhysicsContactEvent,
 } from "./types";
 import { identityQuat } from "./collider-bake";
 import { listDebugCollidersFromRecords } from "./debug-colliders";
@@ -121,11 +123,13 @@ export class HavokPhysicsBackend implements PhysicsBackend {
   private readonly zeroGravity = Vector3.Zero();
   private readonly down = new Vector3(0, -1, 0);
   private disposed = false;
+  private pendingContacts: PhysicsContactEvent[] = [];
 
   private constructor(engine: NullEngine, scene: Scene, plugin: HavokPlugin) {
     this.engine = engine;
     this.scene = scene;
     this.plugin = plugin;
+    this.bindCollisionObservables();
   }
 
   static async create(
@@ -282,6 +286,7 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       );
       record.aggregate = aggregate;
       this.bodyIdByPhysicsBody.set(aggregate.body, record.desc.id);
+      this.enableCollisionCallbacks(aggregate.body);
       this.applyMotionType(record);
       this.applyBodyTuning(record);
       return;
@@ -304,6 +309,12 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return listDebugCollidersFromRecords(this.colliders.values(), (bodyId) =>
       this.getBodyTransform(bodyId),
     );
+  }
+
+  pollContacts(): PhysicsContactEvent[] {
+    const events = this.pendingContacts;
+    this.pendingContacts = [];
+    return events;
   }
 
   step(dt: number): void {
@@ -447,6 +458,92 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       },
     });
     return this.getBodyTransform(character.desc.bodyId);
+  }
+
+
+  private enableCollisionCallbacks(body: PhysicsBody): void {
+    body.setCollisionCallbackEnabled(true);
+  }
+
+  private bindCollisionObservables(): void {
+    const plugin = this.plugin as HavokPlugin & {
+      onCollisionObservable?: { add: (cb: (event: unknown) => void) => void };
+      onTriggerCollisionObservable?: { add: (cb: (event: unknown) => void) => void };
+    };
+    plugin.onCollisionObservable?.add((event) => {
+      this.recordPluginContact(event, false);
+    });
+    plugin.onTriggerCollisionObservable?.add((event) => {
+      this.recordPluginContact(event, true);
+    });
+  }
+
+  private recordPluginContact(raw: unknown, fromTriggerObservable: boolean): void {
+    const event = raw as {
+      type?: string;
+      collider?: PhysicsBody;
+      collidedAgainst?: PhysicsBody;
+      point?: { x: number; y: number; z: number } | null;
+      normal?: { x: number; y: number; z: number } | null;
+    };
+    const actorAId = this.actorIdForPhysicsBody(event.collider);
+    const actorBId = this.actorIdForPhysicsBody(event.collidedAgainst);
+    if (!actorAId || !actorBId || actorAId === actorBId) return;
+    const type = String(event.type ?? "");
+    let kind: PhysicsContactEvent["kind"] | null = null;
+    const isTriggerEvent =
+      fromTriggerObservable ||
+      type === PhysicsEventType.TRIGGER_ENTERED ||
+      type === PhysicsEventType.TRIGGER_EXITED;
+    if (isTriggerEvent) {
+      kind = type === PhysicsEventType.TRIGGER_EXITED ? "overlapEnd" : "overlapBegin";
+    } else if (
+      type === PhysicsEventType.COLLISION_STARTED ||
+      type === PhysicsEventType.COLLISION_CONTINUED ||
+      type === ""
+    ) {
+      kind = "hit";
+    }
+    if (!kind) return;
+    let a = actorAId;
+    let b = actorBId;
+    let normal = {
+      x: event.normal?.x ?? 0,
+      y: event.normal?.y ?? 1,
+      z: event.normal?.z ?? 0,
+    };
+    if (a > b) {
+      const swap = a;
+      a = b;
+      b = swap;
+      normal = { x: -normal.x, y: -normal.y, z: -normal.z };
+    }
+    const key = `${kind}|${a}|${b}`;
+    if (
+      this.pendingContacts.some(
+        (existing) => `${existing.kind}|${existing.actorAId}|${existing.actorBId}` === key,
+      )
+    ) {
+      return;
+    }
+    this.pendingContacts.push({
+      kind,
+      actorAId: a,
+      actorBId: b,
+      location: {
+        x: event.point?.x ?? 0,
+        y: event.point?.y ?? 0,
+        z: event.point?.z ?? 0,
+      },
+      normal,
+    });
+  }
+
+  private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {
+    if (!body) return null;
+    const bodyId = this.bodyIdByPhysicsBody.get(body);
+    if (!bodyId) return null;
+    return this.bodies.get(bodyId)?.desc.actorId ?? null;
   }
 
   private applyMotionType(record: BodyRecord): void {

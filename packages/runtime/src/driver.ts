@@ -36,6 +36,7 @@ import {
   parseSkyboxSize,
   parseText3DProperties,
   parseInputMode,
+  type Transform,
   userInterfaceAssetGuidFromClassId,
   userInterfaceClassId,
   widgetClassIdForKind,
@@ -205,6 +206,7 @@ export interface RuntimeDriver {
     classId: string;
     variables?: Record<string, unknown>;
     implementedInterfaces?: string[];
+    transform?: Transform;
   }): Actor | null;
   /**
    * Instantiate `playScene` (if any) with compiled script hooks.
@@ -505,6 +507,7 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => this.markPhase(phase),
       onPhysics: (ctx) => {
         this.physicsSync.step(ctx.dt, this.world);
+        this.dispatchCollisionEvents();
       },
     });
     const resolved = () => this.resolvedInput;
@@ -604,12 +607,16 @@ class InProcessRuntime implements RuntimeDriver {
         this.emitParticleStops(actor);
         this.world.destroyActor(actor.guid);
       },
-      addComponent: (actor, classId) => {
+      addComponent: (actor, classId, transform) => {
         const target = actor;
         if (!target || target.destroyed) return null;
         const id = String(classId ?? "").trim();
         if (!id) return null;
-        const component = this.world.createComponent({ classId: id });
+        const pose = coerceTransform(transform);
+        const component = this.world.createComponent({
+          classId: id,
+          ...(pose ? { transform: pose } : {}),
+        });
         target.attachComponent(component);
         return component;
       },
@@ -646,10 +653,13 @@ class InProcessRuntime implements RuntimeDriver {
           },
         };
       },
-      spawnActor: (classId) => {
+      spawnActor: (classId, transform) => {
         const id = String(classId ?? "").trim();
         if (!id) return null;
-        return this.spawnScriptedActor({ classId: id });
+        return this.spawnScriptedActor({
+          classId: id,
+          transform: coerceTransform(transform),
+        });
       },
       getActors: () => this.world.getActors(),
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
@@ -863,6 +873,7 @@ class InProcessRuntime implements RuntimeDriver {
     classId: string;
     variables?: Record<string, unknown>;
     implementedInterfaces?: string[];
+    transform?: Transform;
   }): Actor | null {
     if (!this.canSpawnActorClass(options.classId)) return null;
     const hooks = this.scriptHost.hooksFor(options.classId);
@@ -871,6 +882,7 @@ class InProcessRuntime implements RuntimeDriver {
       classId: options.classId,
       variables: options.variables,
       implementedInterfaces: options.implementedInterfaces,
+      transform: options.transform,
       hooks: {
         onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
         onTick: (self, ctx) =>
@@ -2264,7 +2276,76 @@ class InProcessRuntime implements RuntimeDriver {
     }
   }
 
+
+  private applyActorDefaults(actor: Actor): void {
+    const script = this.scriptHost.scriptsFor(actor.classId)[0];
+    const defaults = script?.actorDefaults;
+    if (!defaults) return;
+    if (typeof defaults.generateHitEvents === "boolean") {
+      actor.generateHitEvents = defaults.generateHitEvents;
+    }
+    if (typeof defaults.generateOverlapEvents === "boolean") {
+      actor.generateOverlapEvents = defaults.generateOverlapEvents;
+    }
+  }
+
+  private dispatchCollisionEvents(): void {
+    const events = this.physicsSync.getBackend().pollContacts();
+    for (const event of events) {
+      const actorA = this.world.findActor(event.actorAId);
+      const actorB = this.world.findActor(event.actorBId);
+      if (!actorA || !actorB || actorA.destroyed || actorB.destroyed) continue;
+      if (event.kind === "hit") {
+        this.dispatchHit(actorA, actorB, event.location, event.normal);
+        this.dispatchHit(actorB, actorA, event.location, {
+          x: -event.normal.x,
+          y: -event.normal.y,
+          z: -event.normal.z,
+        });
+      } else if (event.kind === "overlapBegin") {
+        this.dispatchOverlap(actorA, actorB, "onBeginOverlap");
+        this.dispatchOverlap(actorB, actorA, "onBeginOverlap");
+      } else if (event.kind === "overlapEnd") {
+        this.dispatchOverlap(actorA, actorB, "onEndOverlap");
+        this.dispatchOverlap(actorB, actorA, "onEndOverlap");
+      }
+    }
+  }
+
+  private dispatchHit(
+    self: Actor,
+    other: Actor,
+    location: { x: number; y: number; z: number },
+    normal: { x: number; y: number; z: number },
+  ): void {
+    if (!self.generateHitEvents) return;
+    this.scriptHost.invokeEvent(self.classId, "onHit", self, {
+      hitResult: {
+        Hit: true,
+        Location: location,
+        Normal: normal,
+        Actor: other,
+        Distance: 0,
+      },
+      otherActor: other,
+      location: location,
+      normal: normal,
+    });
+  }
+
+  private dispatchOverlap(
+    self: Actor,
+    other: Actor,
+    event: "onBeginOverlap" | "onEndOverlap",
+  ): void {
+    if (!self.generateOverlapEvents) return;
+    this.scriptHost.invokeEvent(self.classId, event, self, {
+      instigator: other,
+    });
+  }
+
   private realizeActor(actor: Actor): void {
+    this.applyActorDefaults(actor);
     const slotId = this.assignSlot(actor);
     this.emitMeshAssignment(actor, slotId);
     this.emitAudioComponents(actor);
@@ -3084,6 +3165,37 @@ function rgbTuple(value: unknown): [number, number, number] {
     }
   }
   return [1, 1, 1];
+}
+
+function coerceTransform(value: unknown): Transform | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const row = value as {
+    position?: { x?: unknown; y?: unknown; z?: unknown };
+    rotation?: { x?: unknown; y?: unknown; z?: unknown; w?: unknown };
+    scale?: { x?: unknown; y?: unknown; z?: unknown };
+  };
+  if (!row.position && !row.rotation && !row.scale) return undefined;
+  const position = row.position ?? {};
+  const rotation = row.rotation ?? {};
+  const scale = row.scale ?? {};
+  return {
+    position: {
+      x: typeof position.x === "number" && Number.isFinite(position.x) ? position.x : 0,
+      y: typeof position.y === "number" && Number.isFinite(position.y) ? position.y : 0,
+      z: typeof position.z === "number" && Number.isFinite(position.z) ? position.z : 0,
+    },
+    rotation: {
+      x: typeof rotation.x === "number" && Number.isFinite(rotation.x) ? rotation.x : 0,
+      y: typeof rotation.y === "number" && Number.isFinite(rotation.y) ? rotation.y : 0,
+      z: typeof rotation.z === "number" && Number.isFinite(rotation.z) ? rotation.z : 0,
+      w: typeof rotation.w === "number" && Number.isFinite(rotation.w) ? rotation.w : 1,
+    },
+    scale: {
+      x: typeof scale.x === "number" && Number.isFinite(scale.x) ? scale.x : 1,
+      y: typeof scale.y === "number" && Number.isFinite(scale.y) ? scale.y : 1,
+      z: typeof scale.z === "number" && Number.isFinite(scale.z) ? scale.z : 1,
+    },
+  };
 }
 
 function actorFromIlluminationTarget(target: unknown): Actor | null {

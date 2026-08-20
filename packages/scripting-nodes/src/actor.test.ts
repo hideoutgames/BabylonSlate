@@ -4,6 +4,7 @@ import {
   arrayOf,
   actorRef,
   classRef,
+  TRANSFORM,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -77,6 +78,57 @@ describe("actor nodes", () => {
       },
     });
     expect(spawned).toEqual(["Child"]);
+  });
+
+  it("exposes an optional Transform pin on Spawn Actor", () => {
+    const spawn = actorNodes.find((node) => node.id === "actor.spawn");
+    const transformPin = spawn?.pins({}).find((entry) => entry.id === "transform");
+    expect(transformPin).toMatchObject({
+      name: "Transform",
+      direction: "in",
+      type: TRANSFORM,
+      optional: true,
+    });
+  });
+
+  it("compiled Spawn Actor passes transform as the second spawnActor argument", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "spawn", "actor.spawn", { classId: "Child" }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "spawn",
+          targetPinId: "execIn",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toMatch(
+      /ctx\.spawnActor\(\s*[^,]+,\s*[^)]+\)/,
+    );
+    const mod = loadModule(compiled.source);
+    const calls: Array<{ classId: string; transform: unknown }> = [];
+    (mod.onBeginPlay as (ctx: unknown) => void)({
+      spawnActor: (classId: string, transform: unknown) => {
+        calls.push({ classId, transform });
+        return { classId };
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.classId).toBe("Child");
+    expect(calls[0]?.transform).toEqual({
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+    });
   });
 
   it("registers Get All Actors Of Class and Get Actor Of Class", () => {
@@ -248,5 +300,102 @@ describe("actor nodes", () => {
       },
     });
     expect(queried).toEqual(["all:Hero", "one:Hero"]);
+  });
+
+  it("registers Attach, Detach, Get Parent, Set Owner, and Get Owner", () => {
+    expect(actorNodes.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining([
+        "actor.attach",
+        "actor.detach",
+        "actor.getParent",
+        "actor.setOwner",
+        "actor.getOwner",
+      ]),
+    );
+    expect(actorNodes.find((entry) => entry.id === "actor.attach")?.title).toBe(
+      "Attach Actor",
+    );
+    expect(actorNodes.find((entry) => entry.id === "actor.detach")?.title).toBe(
+      "Detach Actor",
+    );
+    expect(actorNodes.find((entry) => entry.id === "actor.getParent")?.title).toBe(
+      "Get Parent",
+    );
+    expect(actorNodes.find((entry) => entry.id === "actor.setOwner")?.title).toBe(
+      "Set Owner",
+    );
+    expect(actorNodes.find((entry) => entry.id === "actor.getOwner")?.title).toBe(
+      "Get Owner",
+    );
+  });
+
+  it("compiles hierarchy and owner nodes through ctx attach/owner helpers", () => {
+    const registry = createDefaultNodeRegistry();
+    const cases = [
+      ["actor.attach", "ctx.attachActor"],
+      ["actor.detach", "ctx.detachActor"],
+      ["actor.getParent", "ctx.getParent"],
+      ["actor.setOwner", "ctx.setOwner"],
+      ["actor.getOwner", "ctx.getOwner"],
+    ] as const;
+    for (const [typeId, needle] of cases) {
+      const graph: LogicGraph = {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node(registry, "begin", "flow.event.beginPlay"),
+          node(registry, "self", "actor.getSelf"),
+          node(registry, "op", typeId),
+        ],
+        edges: [
+          {
+            id: "e1",
+            sourceNodeId: "begin",
+            sourcePinId: "execOut",
+            targetNodeId: typeId.startsWith("actor.get") ? "begin" : "op",
+            targetPinId: "execIn",
+          },
+          {
+            id: "e2",
+            sourceNodeId: "self",
+            sourcePinId: "out",
+            targetNodeId: "op",
+            targetPinId: typeId === "actor.attach" || typeId === "actor.setOwner"
+              ? "target"
+              : typeId.startsWith("actor.get")
+                ? "target"
+                : "target",
+          },
+        ],
+      };
+      if (typeId.startsWith("actor.get")) {
+        graph.edges = [
+          {
+            id: "e2",
+            sourceNodeId: "self",
+            sourcePinId: "out",
+            targetNodeId: "op",
+            targetPinId: "target",
+          },
+        ];
+        graph.nodes.push(node(registry, "log", "debug.log"));
+        graph.edges.push({
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        });
+        graph.edges.push({
+          id: "e3",
+          sourceNodeId: "op",
+          sourcePinId: "out",
+          targetNodeId: "log",
+          targetPinId: "message",
+        });
+      }
+      const compiled = compileGraph(graph, { assetGuid: "a", registry });
+      expect(compiled.source, typeId).toContain(needle);
+    }
   });
 });

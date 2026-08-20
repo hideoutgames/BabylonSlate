@@ -32,10 +32,19 @@ export const SEEDED_NATIVE_EVENT_TYPES = [
   "flow.event.tick",
 ] as const;
 
+export const COLLISION_EVENT_TYPE_IDS = [
+  "flow.event.hit",
+  "flow.event.beginOverlap",
+  "flow.event.endOverlap",
+] as const;
+
 const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.destroyed": "Event On Actor Destroyed",
+  "flow.event.hit": "Event On Hit",
+  "flow.event.beginOverlap": "Event On Begin Overlap",
+  "flow.event.endOverlap": "Event On End Overlap",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.mouseEnter": "Event On Mouse Enter",
@@ -79,6 +88,9 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.tick",
   "flow.event.destroyed",
   "flow.event.commandRun",
+  "flow.event.hit",
+  "flow.event.beginOverlap",
+  "flow.event.endOverlap",
 ] as const;
 
 const BT_LEAF_EVENT_TYPE_IDS = [
@@ -233,6 +245,7 @@ export function nativeEventStubs(
   const types: string[] = [];
   if (chain.includes("Actor")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
+    types.push(...COLLISION_EVENT_TYPE_IDS);
   }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
@@ -403,6 +416,9 @@ export function isScriptCatalogNodeAllowed(
       !isReturn &&
       !isBlackboard
     );
+  }
+  if ((COLLISION_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)) {
+    return chain.includes("Actor") && !isUserInterfaceLogicHost(options);
   }
   if (
     nodeId === "flow.event.beginPlay" ||

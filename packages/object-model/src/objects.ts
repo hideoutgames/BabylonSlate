@@ -93,6 +93,10 @@ export class Actor extends BObject {
   world: WorldLike | null = null;
   /** Stable spawn index assigned by World. */
   spawnIndex = -1;
+  /** When false, skip script `onHit` for this actor. Physics still simulates. */
+  generateHitEvents = true;
+  /** When false, skip script begin/end overlap for this actor. */
+  generateOverlapEvents = true;
 
   constructor(
     options: {

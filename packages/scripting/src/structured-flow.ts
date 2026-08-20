@@ -18,6 +18,7 @@ export type StructuredFlowKind =
   | "forEachWithBreak"
   | "forEachMap"
   | "forEachMapWithBreak"
+  | "whileLoop"
   | "break"
   | "doOnce"
   | "doN"
@@ -58,6 +59,12 @@ export type StructuredFlowMeta =
       keyPin: string;
       valuePin: string;
       indexPin: string;
+    }
+  | {
+      kind: "whileLoop";
+      conditionPin: string;
+      loopBodyPin: string;
+      completedPin: string;
     }
   | { kind: "break" }
   | {

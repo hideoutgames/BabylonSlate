@@ -32,6 +32,9 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
+  "flow.event.hit": "onHit",
+  "flow.event.beginOverlap": "onBeginOverlap",
+  "flow.event.endOverlap": "onEndOverlap",
   "flow.event.commandRun": "onCommandRun",
   "flow.event.editorBeginPlay": "onEditorBeginPlay",
   "flow.event.mouseEnter": "onMouseEnter",
@@ -475,6 +478,16 @@ export function compileGraph(
 
     if (meta.kind === "break") {
       emitBody(`  break;`, anchor);
+      return true;
+    }
+
+    if (meta.kind === "whileLoop") {
+      const conditionExpr = ctx.input(meta.conditionPin);
+      emitBody(`  while (${conditionExpr}) {`, anchor);
+      if (instrumentLoops) emitBody(`    ${loopCheck}`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.loopBodyPin), visited);
+      emitBody(`  }`, anchor);
+      emitAlong(execSuccessorEdges(graph, node.id, meta.completedPin), visited);
       return true;
     }
 

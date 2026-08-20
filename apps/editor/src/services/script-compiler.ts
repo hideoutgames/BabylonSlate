@@ -203,6 +203,7 @@ function classMetadataFromGraph(
   | "implementedInterfaces"
   | "variables"
   | "interfaceImplementations"
+  | "actorDefaults"
 > {
   const members: GraphClassMember[] = isLogicGraphPayload(content)
     ? []
@@ -244,6 +245,10 @@ function classMetadataFromGraph(
     ];
   });
   const parent = parentClassId?.trim();
+  const actorDefaults =
+    !isLogicGraphPayload(content) && content.actorDefaults
+      ? content.actorDefaults
+      : undefined;
   return {
     ...(parent ? { parentClassId: parent } : {}),
     ...(implementedInterfaces.length > 0 ? { implementedInterfaces } : {}),
@@ -251,6 +256,7 @@ function classMetadataFromGraph(
       ? { interfaceImplementations }
       : {}),
     ...(variables.length > 0 ? { variables } : {}),
+    ...(actorDefaults ? { actorDefaults } : {}),
   };
 }
 
