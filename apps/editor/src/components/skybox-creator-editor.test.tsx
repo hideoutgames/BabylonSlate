@@ -145,6 +145,9 @@ describe("SkyboxCreatorEditor", () => {
         }),
       }),
     );
+    expect(onChange.mock.invocationCallOrder[0]!).toBeLessThan(
+      refreshAssetRegistry.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("shows the createAsset failure instead of a decode error", async () => {

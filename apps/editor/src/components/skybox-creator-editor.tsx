@@ -287,8 +287,8 @@ function useSkyboxCreatorCreate(
           assetRegistry.createAsset(id, relativePath, result),
         deleteAsset: (guid) => assetRegistry.deleteAsset(guid),
       });
-      await refreshAssetRegistry?.();
       onChange({ ...helper, generatedFaces });
+      await refreshAssetRegistry?.();
     } catch (error) {
       const message = error instanceof Error ? error.message.trim() : "";
       setError(message || "The source Texture could not be decoded.");
