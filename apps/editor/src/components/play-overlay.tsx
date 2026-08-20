@@ -285,8 +285,6 @@ export function PlayOverlay({
   textureBytesRef.current = textureBytes;
   const fontFacetypeBytesRef = useRef(fontFacetypeBytes);
   fontFacetypeBytesRef.current = fontFacetypeBytes;
-  const uiLibraryRef = useRef(uiLibrary);
-  uiLibraryRef.current = uiLibrary;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
