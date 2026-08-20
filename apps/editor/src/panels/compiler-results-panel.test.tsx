@@ -5,6 +5,7 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   WINDOWED_SLICE_OVERSCAN,
 } from "@babylonslate/editor-kit";
+import type { Diagnostic } from "@babylonslate/scripting";
 import { CompilerResultsPanel } from "./compiler-results-panel";
 
 const selectActor = vi.hoisted(() => vi.fn());
@@ -12,21 +13,19 @@ const setDiagnostics = vi.hoisted(() => vi.fn());
 const setFocusDiagnostic = vi.hoisted(() => vi.fn());
 const setActiveDocument = vi.hoisted(() => vi.fn());
 const clearFocusedNode = vi.hoisted(() => vi.fn());
+const pairingWarning: Diagnostic = {
+  severity: "warning",
+  code: "physics.body_without_collider",
+  message: "RigidBodyComponent needs a ColliderComponent on the same actor.",
+  assetGuid: "assets/Main.scene.babasset",
+  graphId: "scene:assets/Main.scene.babasset",
+  actorId: "hero",
+  componentId: "rb",
+};
 const diagnostics = vi.hoisted(() => ({
-  current: [
-    {
-      severity: "warning" as const,
-      code: "physics.body_without_collider",
-      message: "RigidBodyComponent needs a ColliderComponent on the same actor.",
-      assetGuid: "assets/Main.scene.babasset",
-      graphId: "scene:assets/Main.scene.babasset",
-      actorId: "hero",
-      componentId: "rb",
-    },
-  ],
+  current: [] as Diagnostic[],
 }));
-
-const pairingWarning = diagnostics.current[0]!;
+diagnostics.current = [pairingWarning];
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({
