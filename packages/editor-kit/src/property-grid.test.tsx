@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { PropertyGrid, type PropertyRow } from "./property-grid";
 import {
   formatEventMemberName,
@@ -102,7 +108,13 @@ describe("PropertyGrid", () => {
     render(
       <PropertyGrid
         rows={[
-          { kind: "text", id: "name", label: "Name", value: "A", onChange: () => {} },
+          {
+            kind: "text",
+            id: "name",
+            label: "Name",
+            value: "A",
+            onChange: () => {},
+          },
         ]}
       />,
     );
@@ -138,9 +150,27 @@ describe("PropertyGrid", () => {
     render(
       <PropertyGrid
         rows={[
-          { kind: "boolean", id: "visible", label: "Visible", value: true, onChange: () => {} },
-          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
-          { kind: "color", id: "tint", label: "Tint", value: [1, 0, 0], onChange: () => {} },
+          {
+            kind: "boolean",
+            id: "visible",
+            label: "Visible",
+            value: true,
+            onChange: () => {},
+          },
+          {
+            kind: "text",
+            id: "name",
+            label: "Name",
+            value: "Cube",
+            onChange: () => {},
+          },
+          {
+            kind: "color",
+            id: "tint",
+            label: "Tint",
+            value: [1, 0, 0],
+            onChange: () => {},
+          },
           {
             kind: "asset",
             id: "mesh",
@@ -155,17 +185,73 @@ describe("PropertyGrid", () => {
     );
 
     expect(screen.getByTestId("property-visible")).toBeTruthy();
-    expect((screen.getByTestId("property-name") as HTMLInputElement).value).toBe(
-      "Cube",
-    );
-    expect((screen.getByTestId("property-tint") as HTMLInputElement).value).toBe(
-      "#ff0000",
-    );
-    expect((screen.getByTestId("property-tint-hex") as HTMLInputElement).value).toBe(
-      "#ff0000",
-    );
+    expect(
+      (screen.getByTestId("property-name") as HTMLInputElement).value,
+    ).toBe("Cube");
+    expect(
+      (screen.getByTestId("property-tint") as HTMLInputElement).value,
+    ).toBe("#ff0000");
+    expect(
+      (screen.getByTestId("property-tint-hex") as HTMLInputElement).value,
+    ).toBe("#ff0000");
     screen.getByTestId("property-mesh").click();
     expect(onPick).toHaveBeenCalled();
+  });
+
+  it("opens the selected asset from an asset row without opening the picker", () => {
+    const onPick = vi.fn();
+    const onOpenAsset = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "asset",
+            id: "mesh",
+            label: "Mesh",
+            value: "guid-rock",
+            displayLabel: "Rock",
+            displayType: "Model",
+            visual: { assetType: "Model" },
+            canOpenAsset: true,
+            onOpenAsset,
+            onPick,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+
+    screen.getByTestId("property-mesh-open-asset").click();
+
+    expect(onOpenAsset).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("disables the asset open button when no openable asset is selected", () => {
+    const onOpenAsset = vi.fn();
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            kind: "asset",
+            id: "mesh",
+            label: "Mesh",
+            value: null,
+            canOpenAsset: false,
+            onOpenAsset,
+            onPick: () => {},
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+
+    const button = screen.getByTestId(
+      "property-mesh-open-asset",
+    ) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    button.click();
+    expect(onOpenAsset).not.toHaveBeenCalled();
   });
 
   it("shows an asset display label instead of the raw guid", () => {
@@ -252,7 +338,9 @@ describe("PropertyGrid", () => {
     expect(humanizePropertyLabel("2DCameraWidth")).toBe("2D Camera Width");
     expect(humanizePropertyLabel("cameraBounds2D")).toBe("Camera Bounds 2D");
     expect(humanizePropertyLabel("3D (Havok)")).toBe("3D (Havok)");
-    expect(humanizePropertyLabel("Execute JavaScript")).toBe("Execute JavaScript");
+    expect(humanizePropertyLabel("Execute JavaScript")).toBe(
+      "Execute JavaScript",
+    );
   });
 
   it("formats Event member names and node titles", () => {
@@ -289,7 +377,13 @@ describe("PropertyGrid", () => {
     render(
       <PropertyGrid
         rows={[
-          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
+          {
+            kind: "text",
+            id: "name",
+            label: "Name",
+            value: "Cube",
+            onChange: () => {},
+          },
         ]}
       />,
     );
@@ -302,7 +396,8 @@ describe("PropertyGrid", () => {
     expect(title).not.toBeNull();
     expect(
       Boolean(
-        title!.compareDocumentPosition(control) & Node.DOCUMENT_POSITION_FOLLOWING,
+        title!.compareDocumentPosition(control) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
       ),
     ).toBe(true);
   });
@@ -343,7 +438,9 @@ describe("PropertyGrid", () => {
         ]}
       />,
     );
-    expect(screen.getByTestId("property-row-speed").textContent).toContain("Speed");
+    expect(screen.getByTestId("property-row-speed").textContent).toContain(
+      "Speed",
+    );
     expect(screen.getByTestId("property-speed-scrub").textContent).not.toMatch(
       /Speed/i,
     );
@@ -354,7 +451,13 @@ describe("PropertyGrid", () => {
       <PropertyGrid
         orientation="horizontal"
         rows={[
-          { kind: "text", id: "name", label: "Name", value: "Cube", onChange: () => {} },
+          {
+            kind: "text",
+            id: "name",
+            label: "Name",
+            value: "Cube",
+            onChange: () => {},
+          },
         ]}
       />,
     );
@@ -368,7 +471,8 @@ describe("PropertyGrid", () => {
     expect(content).toContain(screen.getByTestId("property-name"));
     expect(
       Boolean(
-        label!.compareDocumentPosition(content!) & Node.DOCUMENT_POSITION_FOLLOWING,
+        label!.compareDocumentPosition(content!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
       ),
     ).toBe(true);
   });
@@ -478,12 +582,12 @@ describe("PropertyGrid", () => {
         ]}
       />,
     );
-    expect(screen.getByTestId("property-layer-bit-0").getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-    expect(screen.getByTestId("property-layer-bit-1").getAttribute("aria-pressed")).toBe(
-      "false",
-    );
+    expect(
+      screen.getByTestId("property-layer-bit-0").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("property-layer-bit-1").getAttribute("aria-pressed"),
+    ).toBe("false");
     fireEvent.click(screen.getByTestId("property-layer-bit-1"));
     expect(onChange).toHaveBeenCalledWith(3);
   });
