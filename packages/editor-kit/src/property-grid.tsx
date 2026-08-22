@@ -23,8 +23,7 @@ import { FlagsField } from "./flags-field";
 import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
 
-export type Vector3Value =
-  [number, number, number] | [number, number, number, number];
+export type Vector3Value = [number, number, number] | [number, number, number, number];
 
 interface PropertyRowBase {
   id: string;
@@ -115,7 +114,6 @@ export type PropertyRow =
       onOpenAsset?: () => void | Promise<void>;
       /** Whether the selected asset has a document tab that can be opened. */
       canOpenAsset?: boolean;
-      openAssetLabel?: string;
       onChange: (value: string | null) => void;
     });
 
@@ -345,9 +343,7 @@ function RowControl({ row }: { row: PropertyRow }) {
           >
             {selected && (row.visual || row.displayType) ? (
               <PickerIdentity
-                label={
-                  row.displayLabel ?? row.value ?? row.placeholder ?? "None"
-                }
+                label={row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
                 description={row.displayType}
                 visual={row.visual}
               />
@@ -358,18 +354,17 @@ function RowControl({ row }: { row: PropertyRow }) {
           <Button
             type="button"
             variant="outline"
-            size="icon-sm"
-            className="min-h-[var(--chrome-row,28px)] shrink-0 text-muted-foreground"
+            className="h-auto min-h-[var(--chrome-row,28px)] aspect-square shrink-0 p-0 text-muted-foreground"
             disabled={!canOpen}
-            aria-label={row.openAssetLabel ?? "Open selected asset"}
-            title={row.openAssetLabel ?? "Open selected asset"}
+            aria-label="Open selected asset"
+            title="Open selected asset"
             onClick={(event) => {
               event.stopPropagation();
               if (canOpen) void row.onOpenAsset?.();
             }}
             data-testid={`property-${row.id}-open-asset`}
           >
-            <ExternalLinkIcon data-icon="inline-start" />
+            <ExternalLinkIcon />
           </Button>
         </div>
       );

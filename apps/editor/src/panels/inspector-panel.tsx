@@ -34,8 +34,6 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
-  createDocumentRef,
-  documentKindForAssetType,
   identitySerializedTransform,
   isEditorGraphHost,
   type GraphClassMember,
@@ -72,6 +70,7 @@ import {
   subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
+import { assetDocumentOpen } from "../lib/asset-document-open";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
@@ -94,17 +93,9 @@ import {
   pinsFromNodeData,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
-import {
-  defaultValueForMember,
-  keepsTypeClassId,
-  pinDefaultPropertyKey,
-} from "@babylonslate/scripting";
+import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
-import {
-  classDocumentShowsPrefab,
-  classIdFromClassAsset,
-  classParentLookup,
-} from "../lib/content-browser-helpers";
+import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
   commitLogicGraph,
@@ -178,10 +169,7 @@ function defaultValueForVariableType(
   return defaultValueForMember(spec.typeId, spec.typeClassId, schemas);
 }
 
-function constrainedTypeClassId(
-  typeId: string,
-  typeClassId?: string,
-): string | undefined {
+function constrainedTypeClassId(typeId: string, typeClassId?: string): string | undefined {
   const trimmed = typeClassId?.trim();
   if (trimmed) return trimmed;
   if (typeId === "actor") return "Actor";
@@ -327,7 +315,9 @@ function ClassMemberDetails({
           </Field>
         ) : isStruct || isEnum ? (
           <Field>
-            <FieldLabel>{isEnum ? "Enum Type" : "Structure Type"}</FieldLabel>
+            <FieldLabel>
+              {isEnum ? "Enum Type" : "Structure Type"}
+            </FieldLabel>
             <Button
               type="button"
               variant="outline"
@@ -685,26 +675,27 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     assetType: indexed?.header.type,
   });
   const parsedAnim =
-    doc?.ref.kind === "anim-graph" ? parseAnimGraphDocument(doc.content) : null;
+    doc?.ref.kind === "anim-graph"
+      ? parseAnimGraphDocument(doc.content)
+      : null;
   const openRuleId = animEditing?.openTransitionId ?? null;
   const ruleTransition =
     openRuleId && parsedAnim
       ? (parsedAnim.transitions.find((row) => row.id === openRuleId) ?? null)
       : null;
-  const graph =
-    ruleTransition && parsedAnim
-      ? {
-          ...decorateTransitionRuleGraph(
-            ruleTransition.ruleGraph,
-            !findReverseTransition(
-              parsedAnim.transitions,
-              ruleTransition.fromStateId,
-              ruleTransition.toStateId,
-            ),
+  const graph = ruleTransition && parsedAnim
+    ? {
+        ...decorateTransitionRuleGraph(
+          ruleTransition.ruleGraph,
+          !findReverseTransition(
+            parsedAnim.transitions,
+            ruleTransition.fromStateId,
+            ruleTransition.toStateId,
           ),
-          members: animGraphMembersFromVariables(parsedAnim.variables),
-        }
-      : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content);
+        ),
+        members: animGraphMembersFromVariables(parsedAnim.variables),
+      }
+    : serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content);
   const persistGraph = (next: SerializedGraph) => {
     if (!doc) return;
     if (ruleTransition && parsedAnim) {
@@ -776,8 +767,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
   const sortingLayers =
     projectDocument?.settings.twoD?.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
-    projectDocument?.settings.physics?.collisionLayers ??
-    DEFAULT_COLLISION_LAYERS;
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const physicsWorld = physicsWorldFromOpenDocuments(openDocuments);
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
@@ -793,24 +783,11 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
   };
-  const canOpenAsset = (guid: string | null | undefined) => {
-    const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
-    return Boolean(asset?.path && documentKindForAssetType(asset.header.type));
-  };
-  const openAsset = async (guid: string) => {
-    const asset = assetRegistry?.getByGuid(guid);
-    const kind = asset ? documentKindForAssetType(asset.header.type) : null;
-    if (!asset?.path || !kind) return;
-    await openDocument(
-      createDocumentRef(kind, asset.path, { name: asset.header.name }),
-    );
-  };
   const fontHasFacetype = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasFacetype(
-      assetRegistry?.getByGuid?.(guid)?.header.payload,
-    );
+    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
+  const { canOpenAsset, openAsset } = assetDocumentOpen(assetRegistry, openDocument);
 
   const selectedPrefabComponentIds = prefabSelectedIds.filter(
     (id) => id !== PREFAB_ROOT_ID,
@@ -860,12 +837,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (
-    graph &&
-    selectedMember &&
-    !openRuleId &&
-    selectedMember.kind !== "event"
-  ) {
+  if (graph && selectedMember && !openRuleId && selectedMember.kind !== "event") {
     return (
       <PanelFrame data-testid="inspector-panel">
         <ClassMemberDetails
@@ -889,11 +861,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     );
   }
 
-  if (
-    prefabSelectedId === PREFAB_ROOT_ID &&
-    doc?.ref.kind === "graph" &&
-    graph
-  ) {
+  if (prefabSelectedId === PREFAB_ROOT_ID && doc?.ref.kind === "graph" && graph) {
     const defaults = graph.actorDefaults ?? {};
     const selfClassId = classIdFromClassAsset({
       path: doc.ref.path,
@@ -1250,9 +1218,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
                   String(selectedNode.data.commandName ?? ""),
                 ) ? (
                   <FieldError data-testid="command-name-reserved">
-                    Command Name '
-                    {String(selectedNode.data.commandName ?? "").trim()}' is
-                    reserved by the engine
+                    Command Name '{String(selectedNode.data.commandName ?? "").trim()}' is reserved by the engine
                   </FieldError>
                 ) : null}
               </Field>
@@ -1313,9 +1279,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
               }
               // Canvas custom-event without a members[] row: upsert then sync Calls.
               const bodyName = formatEventMemberName(
-                String(
-                  selectedNode.data.name ?? selectedNode.data.title ?? "Custom",
-                ),
+                String(selectedNode.data.name ?? selectedNode.data.title ?? "Custom"),
               );
               const memberId = selectedNode.id;
               const withMember: SerializedGraph = {

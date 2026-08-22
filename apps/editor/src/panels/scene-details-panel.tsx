@@ -17,8 +17,6 @@ import {
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   createDefaultSceneSettings,
-  createDocumentRef,
-  documentKindForAssetType,
   findActor,
   identitySerializedTransform,
   patchComponentProperties,
@@ -28,13 +26,13 @@ import {
 import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { Switch } from "@babylonslate/ui/components/switch";
-import { Field, FieldLabel } from "@babylonslate/ui/components/field";
+import {
+  Field,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
-import {
-  useSceneEditing,
-  selectionAfterLockChange,
-} from "../context/scene-editing-context";
+import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
 import { AddComponentDialog } from "../components/add-component-dialog";
@@ -47,6 +45,7 @@ import {
   gameInstanceClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
+import { assetDocumentOpen } from "../lib/asset-document-open";
 import {
   sceneComponentDisplayLabel,
   sceneComponentEntries,
@@ -58,13 +57,8 @@ import { fontAssetHasFacetype } from "../lib/play-fonts";
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
   const { documentId } = useDocumentWorkspace();
-  const {
-    openDocuments,
-    applySceneChange,
-    projectDocument,
-    assetRegistry,
-    openDocument,
-  } = useDocuments();
+  const { openDocuments, applySceneChange, projectDocument, assetRegistry, openDocument } =
+    useDocuments();
   const { selectedActorIds, setSelectedActorIds } = useSceneEditing();
   const navBake = useOptionalNavBake();
   const [addComponentOpen, setAddComponentOpen] = useState(false);
@@ -92,8 +86,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const sortingLayers =
     projectDocument?.settings.twoD.sortingLayers ?? DEFAULT_SORTING_LAYERS;
   const collisionLayers =
-    projectDocument?.settings.physics?.collisionLayers ??
-    DEFAULT_COLLISION_LAYERS;
+    projectDocument?.settings.physics?.collisionLayers ?? DEFAULT_COLLISION_LAYERS;
   const assetLabel = (guid: string | null | undefined) => {
     if (!guid) return undefined;
     return (
@@ -108,24 +101,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       pickerAssets.find((asset) => asset.guid === guid)?.type
     );
   };
-  const canOpenAsset = (guid: string | null | undefined) => {
-    const asset = guid ? assetRegistry?.getByGuid(guid) : undefined;
-    return Boolean(asset?.path && documentKindForAssetType(asset.header.type));
-  };
-  const openAsset = async (guid: string) => {
-    const asset = assetRegistry?.getByGuid(guid);
-    const kind = asset ? documentKindForAssetType(asset.header.type) : null;
-    if (!asset?.path || !kind) return;
-    await openDocument(
-      createDocumentRef(kind, asset.path, { name: asset.header.name }),
-    );
-  };
   const fontHasFacetype = (guid: string | null | undefined) => {
     if (!guid) return false;
-    return fontAssetHasFacetype(
-      assetRegistry?.getByGuid?.(guid)?.header.payload,
-    );
+    return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
+  const { canOpenAsset, openAsset } = assetDocumentOpen(assetRegistry, openDocument);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const scene =
@@ -182,7 +162,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         onChange: () => {},
         ...classRowIdentity(
           classEntries.find(
-            (entry) => entry.id === projectDocument?.settings.gameInstanceClass,
+            (entry) =>
+              entry.id === projectDocument?.settings.gameInstanceClass,
           ),
           projectDocument?.settings.gameInstanceClass,
         ),

@@ -26,10 +26,7 @@ import {
   ENGINE_COMPONENT_CLASS_IDS,
 } from "@babylonslate/object-model";
 import { parseNavMeshActorSettings } from "@babylonslate/navigation";
-import {
-  classParentLookup,
-  classIdFromClassAsset,
-} from "./content-browser-helpers";
+import { classParentLookup, classIdFromClassAsset } from "./content-browser-helpers";
 
 const MESH_KINDS = ["box", "sphere", "cylinder", "plane", "ground"];
 const MOTION_TYPES = ["static", "kinematic", "dynamic"] as const;
@@ -101,7 +98,8 @@ function assetRow(
   const type = value
     ? (context.assetType?.(value) ?? allowedTypes[0])
     : undefined;
-  const identity = name && type ? assetRowIdentity({ name, type }) : {};
+  const identity =
+    name && type ? assetRowIdentity({ name, type }) : {};
   return {
     kind: "asset",
     id: rowId(actorId, component.id, property),
@@ -179,12 +177,17 @@ function sliderRow(
   };
 }
 
-function collisionLayerNames(layers: readonly string[] | undefined): string[] {
+function collisionLayerNames(
+  layers: readonly string[] | undefined,
+): string[] {
   const names = (layers ?? []).map((name) => name.trim()).filter(Boolean);
   return names.length > 0 ? names : ["Default"];
 }
 
-function layerNameFromBitmask(layer: number, names: readonly string[]): string {
+function layerNameFromBitmask(
+  layer: number,
+  names: readonly string[],
+): string {
   for (let bit = 0; bit < names.length; bit++) {
     if ((layer & (1 << bit)) !== 0) return names[bit]!;
   }
@@ -235,7 +238,11 @@ function collidesWithRow(
 function asRgb(value: unknown): [number, number, number] | null {
   if (!Array.isArray(value) || value.length < 3) return null;
   const [r, g, b] = value;
-  if (typeof r !== "number" || typeof g !== "number" || typeof b !== "number") {
+  if (
+    typeof r !== "number" ||
+    typeof g !== "number" ||
+    typeof b !== "number"
+  ) {
     return null;
   }
   return [r, g, b];
@@ -534,13 +541,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set([
-            "uiAssetGuid",
-            "twoSided",
-            "width",
-            "height",
-            "viewportLayer",
-          ]),
+          new Set(["uiAssetGuid", "twoSided", "width", "height", "viewportLayer"]),
         ),
       ];
     }
@@ -871,7 +872,8 @@ export function componentPropertyRows(
           kind: "enum",
           id: rowId(actorId, component.id, "kind"),
           label: "Kind",
-          value: component.properties.kind === "cylinder" ? "cylinder" : "box",
+          value:
+            component.properties.kind === "cylinder" ? "cylinder" : "box",
           options: [
             { value: "box", label: "Box" },
             { value: "cylinder", label: "Cylinder" },
@@ -961,7 +963,12 @@ export function componentPropertyRows(
       ];
     case "ColliderComponent":
       return [
-        ...colliderShapeRows(actorId, component, update, context.physicsWorld),
+        ...colliderShapeRows(
+          actorId,
+          component,
+          update,
+          context.physicsWorld,
+        ),
         sliderRow(
           actorId,
           component.id,
@@ -1040,7 +1047,12 @@ export function componentPropertyRows(
             "Engine Default",
           ),
         ),
-        ...genericRows(actorId, component, update, new Set(["size", "faces"])),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["size", "faces"]),
+        ),
       ];
     }
     case "Text3DComponent": {
@@ -1229,10 +1241,7 @@ export function componentPropertyRows(
           component.id,
           "fieldOfView",
           "Field Of View",
-          asNumber(
-            component.properties.fieldOfView,
-            DEFAULT_CAMERA_FIELD_OF_VIEW,
-          ),
+          asNumber(component.properties.fieldOfView, DEFAULT_CAMERA_FIELD_OF_VIEW),
           1,
           179,
           update,
