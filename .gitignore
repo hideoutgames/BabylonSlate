@@ -15,3 +15,10 @@ android
 .capacitor
 .vitepress/cache
 .vitepress/dist
+
+# Cursor editor / agent configuration (kept local-only)
+.cursor/
+.cursorrules
+.cursorignore
+AGENTS.md
+skills-lock.json
