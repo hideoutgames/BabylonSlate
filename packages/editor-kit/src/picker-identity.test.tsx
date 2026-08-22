@@ -24,6 +24,21 @@ describe("assetRowIdentity", () => {
     });
     expect(assetRowIdentity(undefined)).toEqual({});
   });
+
+  it("passes the asset path through so rows can open it in a tab", () => {
+    expect(
+      assetRowIdentity({
+        name: "red.material",
+        type: "Material",
+        path: "assets/red.material.babasset",
+      }),
+    ).toEqual({
+      displayLabel: "red",
+      displayType: "Material",
+      visual: { assetType: "Material" },
+      path: "assets/red.material.babasset",
+    });
+  });
 });
 
 describe("classRowIdentity", () => {

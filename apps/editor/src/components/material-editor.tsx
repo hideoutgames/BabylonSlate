@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
+  AssetOpenButton,
   AssetPicker,
   PanelFrame,
   PinListEditor,
@@ -63,6 +64,7 @@ import {
 } from "lucide-react";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import {
   useMaterialEditing,
   type MaterialEditingValue,
@@ -364,6 +366,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
   const customPickCommittedRef = useRef(false);
   const [meshPickOpen, setMeshPickOpen] = useState(false);
   const { assetRegistry } = useDocuments();
+  const openAssetDocument = useOpenAssetDocument();
 
   useEffect(() => {
     editing.attachPreviewCanvas(canvasRef.current);
@@ -745,10 +748,11 @@ function MaterialNodeDetails({
       node.type === "texture.sample" ||
       node.type === "texture.sampleLod" ? (
         <div className="px-3">
+          <div className="flex items-stretch gap-1">
           <Button
             type="button"
             variant="outline"
-            className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+            className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
             onClick={() => setPickOpen(true)}
             data-testid="material-node-texture"
           >
@@ -761,13 +765,43 @@ function MaterialNodeDetails({
                       : "";
                   const asset = assetRegistry?.getByGuid(guid);
                   return asset
-                    ? { name: asset.header.name, type: asset.header.type }
+                    ? {
+                        name: asset.header.name,
+                        type: asset.header.type,
+                        path: asset.path,
+                      }
                     : undefined;
                 })(),
               ),
               "Pick Texture",
             )}
           </Button>
+          <AssetOpenButton
+            entry={(() => {
+              const guid =
+                typeof node.properties.textureGuid === "string"
+                  ? node.properties.textureGuid
+                  : "";
+              const asset = assetRegistry?.getByGuid(guid);
+              return asset
+                ? { type: asset.header.type, path: asset.path }
+                : null;
+            })()}
+            onOpen={() => {
+              const guid =
+                typeof node.properties.textureGuid === "string"
+                  ? node.properties.textureGuid
+                  : "";
+              const asset = assetRegistry?.getByGuid(guid);
+              if (asset)
+                void openAssetDocument({
+                  type: asset.header.type,
+                  path: asset.path,
+                });
+            }}
+            data-testid="material-node-texture-open"
+          />
+          </div>
           <AssetPicker
             open={pickOpen}
             onOpenChange={setPickOpen}
@@ -799,6 +833,7 @@ function MaterialFunctionPicker({
   document: MaterialGraphDocument;
   commit: (next: MaterialGraphDocument) => void;
 }) {
+  const openAssetDocument = useOpenAssetDocument();
   const { assetRegistry } = useDocuments();
   const [open, setOpen] = useState(false);
   const current = document.nodes.find((entry) => entry.id === node);
@@ -816,10 +851,11 @@ function MaterialFunctionPicker({
     }));
   return (
     <div className="px-3">
+      <div className="flex items-stretch gap-1">
       <Button
         type="button"
         variant="outline"
-        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+        className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
         onClick={() => setOpen(true)}
         data-testid="material-node-function"
       >
@@ -828,13 +864,33 @@ function MaterialFunctionPicker({
             (() => {
               const asset = assetRegistry?.getByGuid(guid);
               return asset
-                ? { name: asset.header.name, type: asset.header.type }
+                ? {
+                    name: asset.header.name,
+                    type: asset.header.type,
+                    path: asset.path,
+                  }
                 : undefined;
             })(),
           ),
           "Pick Material Function",
         )}
       </Button>
+      <AssetOpenButton
+        entry={(() => {
+          const asset = assetRegistry?.getByGuid(guid);
+          return asset ? { type: asset.header.type, path: asset.path } : null;
+        })()}
+        onOpen={() => {
+          const asset = assetRegistry?.getByGuid(guid);
+          if (asset)
+            void openAssetDocument({
+              type: asset.header.type,
+              path: asset.path,
+            });
+        }}
+        data-testid="material-node-function-open"
+      />
+      </div>
       <AssetPicker
         open={open}
         onOpenChange={setOpen}

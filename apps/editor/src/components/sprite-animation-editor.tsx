@@ -31,6 +31,7 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 import { objectContainRect } from "../lib/object-contain";
 import { IconActionButton } from "./icon-action-button";
@@ -370,8 +371,7 @@ export function SpriteAnimationDetails({
     path: asset.path,
   }));
   const frame = animation.frames[selectedFrameIndex];
-  const textureName = assets.find((asset) => asset.guid === frame?.textureGuid)
-    ?.name;
+  const openAssetDocument = useOpenAssetDocument();
   const collision = parseSpriteCollision(frame?.collision);
   const pivot = parseSpritePivot(frame?.pivot);
 
@@ -452,8 +452,14 @@ export function SpriteAnimationDetails({
       onPick: () => setPickerOpen(true),
       onChange: (value) => applyTextureGuid(value),
       ...assetRowIdentity(
-        textureName ? { name: textureName, type: "Texture" } : undefined,
+        assets.find((asset) => asset.guid === frame?.textureGuid),
       ),
+      onOpenAsset: () => {
+        const entry = assets.find(
+          (asset) => asset.guid === frame?.textureGuid,
+        );
+        if (entry) void openAssetDocument(entry);
+      },
     },
     {
       id: "frame-duration-override",

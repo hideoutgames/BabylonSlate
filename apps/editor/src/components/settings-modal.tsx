@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AssetOpenButton,
   AssetPicker,
   CatalogDialog,
   ClassPicker,
@@ -55,6 +56,7 @@ import {
 import { isSourceControlHost } from "@babylonslate/source-control";
 import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
@@ -257,6 +259,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const resolvedTestId =
     testId ?? (scope === "engine" ? "engine-settings-modal" : "settings-modal");
+  const openAssetDocument = useOpenAssetDocument();
   const {
     projectDocument,
     exportProject,
@@ -689,10 +692,11 @@ export function SettingsModal({
             <FieldLegend>Fonts</FieldLegend>
             <Field>
               <FieldLabel>Default Font</FieldLabel>
+              <div className="flex items-stretch gap-1">
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
                 onClick={() => setFontPickerOpen(true)}
                 data-testid="settings-default-font"
               >
@@ -710,12 +714,43 @@ export function SettingsModal({
                         ? {
                             name: asset.header.name,
                             type: asset.header.type,
+                            path: asset.path,
                           }
                         : undefined;
                     })(),
                   ),
                 )}
               </Button>
+              <AssetOpenButton
+                entry={(() => {
+                  const asset = assetRegistry
+                    ?.list()
+                    .find(
+                      (entry) =>
+                        entry.header.guid ===
+                        projectDocument.settings.fonts.defaultFontGuid,
+                    );
+                  return asset
+                    ? { type: asset.header.type, path: asset.path }
+                    : null;
+                })()}
+                onOpen={() => {
+                  const asset = assetRegistry
+                    ?.list()
+                    .find(
+                      (entry) =>
+                        entry.header.guid ===
+                        projectDocument.settings.fonts.defaultFontGuid,
+                    );
+                  if (asset)
+                    void openAssetDocument({
+                      type: asset.header.type,
+                      path: asset.path,
+                    });
+                }}
+                data-testid="settings-default-font-open"
+              />
+              </div>
               <FieldDescription>
                 Font asset used when a widget omits a family. Empty means the
                 compiled stack starts from the widget family plus the global
@@ -882,10 +917,11 @@ export function SettingsModal({
             <FieldLegend>Audio</FieldLegend>
             <Field>
               <FieldLabel>Audio Mixer</FieldLabel>
+              <div className="flex items-stretch gap-1">
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
                 onClick={() => setMixerPickerOpen(true)}
                 data-testid="settings-audio-mixer"
               >
@@ -903,12 +939,43 @@ export function SettingsModal({
                         ? {
                             name: asset.header.name,
                             type: asset.header.type,
+                            path: asset.path,
                           }
                         : undefined;
                     })(),
                   ),
                 )}
               </Button>
+              <AssetOpenButton
+                entry={(() => {
+                  const asset = assetRegistry
+                    ?.list()
+                    .find(
+                      (entry) =>
+                        entry.header.guid ===
+                        projectDocument.settings.audio.audioMixerGuid,
+                    );
+                  return asset
+                    ? { type: asset.header.type, path: asset.path }
+                    : null;
+                })()}
+                onOpen={() => {
+                  const asset = assetRegistry
+                    ?.list()
+                    .find(
+                      (entry) =>
+                        entry.header.guid ===
+                        projectDocument.settings.audio.audioMixerGuid,
+                    );
+                  if (asset)
+                    void openAssetDocument({
+                      type: asset.header.type,
+                      path: asset.path,
+                    });
+                }}
+                data-testid="settings-audio-mixer-open"
+              />
+              </div>
               <FieldDescription>
                 Optional mixer for Play and export. None plays Audio without
                 channel or global gain.
@@ -1156,10 +1223,11 @@ export function SettingsModal({
             <FieldLegend>Export</FieldLegend>
             <Field>
               <FieldLabel>Startup Scene</FieldLabel>
+              <div className="flex items-stretch gap-1">
               <Button
                 type="button"
                 variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
                 onClick={() => setScenePickerOpen(true)}
                 data-testid="settings-startup-scene"
               >
@@ -1177,12 +1245,43 @@ export function SettingsModal({
                         ? {
                             name: asset.header.name,
                             type: asset.header.type,
+                            path: asset.path,
                           }
                         : undefined;
                     })(),
                   ),
                 )}
               </Button>
+              <AssetOpenButton
+                entry={(() => {
+                  const asset = assetRegistry
+                    ?.list()
+                    .find(
+                      (entry) =>
+                        entry.header.guid ===
+                        projectDocument.settings.startupSceneGuid,
+                    );
+                  return asset
+                    ? { type: asset.header.type, path: asset.path }
+                    : null;
+                })()}
+                onOpen={() => {
+                  const asset = assetRegistry
+                    ?.list()
+                    .find(
+                      (entry) =>
+                        entry.header.guid ===
+                        projectDocument.settings.startupSceneGuid,
+                    );
+                  if (asset)
+                    void openAssetDocument({
+                      type: asset.header.type,
+                      path: asset.path,
+                    });
+                }}
+                data-testid="settings-startup-scene-open"
+              />
+              </div>
               <FieldDescription>
                 Packaged builds boot this scene. Editor Play uses the open scene
                 tab.

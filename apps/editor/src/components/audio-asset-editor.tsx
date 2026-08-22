@@ -21,6 +21,7 @@ import { Button } from "@babylonslate/ui/components/button";
 import { FieldDescription } from "@babylonslate/ui/components/field";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import {
   AUDIO_MIXER_EMPTY_CHANNELS_COPY,
   applyMixerChannelPick,
@@ -90,6 +91,7 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
     null,
   );
   const channels = assetRegistry?.list() ?? [];
+  const openAssetDocument = useOpenAssetDocument();
   const commit = (next: typeof mixer) => {
     void applyAssetDocumentChange(documentId, next as unknown as Record<string, unknown>);
   };
@@ -111,7 +113,11 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
   mixer.channels.forEach((entry, index) => {
     const asset = channels.find((item) => item.header.guid === entry.channelGuid);
     const identity = asset
-      ? assetRowIdentity({ name: asset.header.name, type: asset.header.type })
+      ? assetRowIdentity({
+          name: asset.header.name,
+          type: asset.header.type,
+          path: asset.path,
+        })
       : {};
     rows.push(
       {
@@ -124,6 +130,13 @@ export function AudioMixerDetailsPanel(_props: IDockviewPanelProps) {
         visual: identity.visual,
         placeholder: "None",
         onPick: () => setPickTarget(index),
+        onOpenAsset: asset
+          ? () =>
+              void openAssetDocument({
+                type: asset.header.type,
+                path: asset.path,
+              })
+          : undefined,
         onChange: (channelGuid) =>
           commit(applyMixerChannelPick(mixer, index, channelGuid)),
       },
@@ -197,11 +210,16 @@ export function AudioChannelDetailsPanel(_props: IDockviewPanelProps) {
   const channel = normalizeAudioChannelPayload(asRecord(doc?.content));
   const [pickParent, setPickParent] = useState(false);
   const channels = assetRegistry?.list() ?? [];
+  const openAssetDocument = useOpenAssetDocument();
   const parent = channels.find(
     (asset) => asset.header.guid === channel.parentChannelGuid,
   );
   const identity = parent
-    ? assetRowIdentity({ name: parent.header.name, type: parent.header.type })
+    ? assetRowIdentity({
+        name: parent.header.name,
+        type: parent.header.type,
+        path: parent.path,
+      })
     : {};
   const reverb = channel.effects.find((effect) => effect.kind === "environmentReverb");
   const muffle = channel.effects.find((effect) => effect.kind === "muffleThroughWalls");
@@ -224,6 +242,13 @@ export function AudioChannelDetailsPanel(_props: IDockviewPanelProps) {
               visual: identity.visual,
               placeholder: "None",
               onPick: () => setPickParent(true),
+              onOpenAsset: parent
+                ? () =>
+                    void openAssetDocument({
+                      type: parent.header.type,
+                      path: parent.path,
+                    })
+                : undefined,
               onChange: (parentChannelGuid) =>
                 commit({ ...channel, parentChannelGuid }),
             },

@@ -1,6 +1,7 @@
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useState } from "react";
 import {
+  AssetOpenButton,
   AssetPicker,
   NamedListEditor,
   PanelFrame,
@@ -52,6 +53,7 @@ import {
 import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { fontAssetHasFacetype } from "../lib/play-fonts";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -73,6 +75,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     type: asset.header.type,
     path: asset.path,
   }));
+  const openAssetDocument = useOpenAssetDocument();
+  const openAssetByGuid = (guid: string | null | undefined) => {
+    const entry = pickerAssets.find((asset) => asset.guid === guid);
+    if (entry) void openAssetDocument(entry);
+  };
   const postProcessPickerAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => isPostProcessMaterialForPicker(asset, openDocuments))
     .map((asset) => ({
@@ -264,6 +271,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         value: scene.settings.environmentTextureGuid,
         placeholder: "None",
         onPick: () => setEnvTexturePickOpen(true),
+        onOpenAsset: () => openAssetByGuid(scene.settings.environmentTextureGuid),
         onChange: (environmentTextureGuid) =>
           mutate({
             ...scene,
@@ -456,21 +464,31 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   <FieldLabel htmlFor={`scene-post-process-${index}-material`}>
                     Material
                   </FieldLabel>
-                  <Button
-                    type="button"
-                    id={`scene-post-process-${index}-material`}
-                    variant="outline"
-                    className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                    data-testid={`scene-post-process-${index}-material`}
-                    onClick={() => setPostProcessPick(index)}
-                  >
-                    {selectedPickerIdentity(
-                      assetRowIdentity(
-                        pickerAssets.find((asset) => asset.guid === value),
-                      ),
-                      "Pick Material",
-                    )}
-                  </Button>
+                  <div className="flex items-stretch gap-1">
+                    <Button
+                      type="button"
+                      id={`scene-post-process-${index}-material`}
+                      variant="outline"
+                      className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
+                      data-testid={`scene-post-process-${index}-material`}
+                      onClick={() => setPostProcessPick(index)}
+                    >
+                      {selectedPickerIdentity(
+                        assetRowIdentity(
+                          pickerAssets.find((asset) => asset.guid === value),
+                        ),
+                        "Pick Material",
+                      )}
+                    </Button>
+                    <AssetOpenButton
+                      entry={
+                        pickerAssets.find((asset) => asset.guid === value) ??
+                        null
+                      }
+                      onOpen={() => openAssetByGuid(value)}
+                      data-testid={`scene-post-process-${index}-material-open`}
+                    />
+                  </div>
                 </Field>
                 <Field orientation="horizontal" className="w-auto">
                   <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
@@ -711,6 +729,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   fontHasFacetype,
                   physicsWorld: scene.settings.physicsWorld,
                   onPickAsset: setAssetPick,
+                  assetPath: (guid) =>
+                    pickerAssets.find((asset) => asset.guid === guid)?.path,
+                  onOpenAsset: openAssetDocument,
                 },
               )}
             />

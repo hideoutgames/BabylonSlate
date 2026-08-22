@@ -24,6 +24,7 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import {
   useOptionalTilesetEditing,
 } from "../context/tileset-editing-context";
@@ -231,8 +232,7 @@ export function TilesetEditor({
     type: asset.header.type,
     path: asset.path,
   }));
-  const textureName = assets.find((asset) => asset.guid === tileset.textureGuid)
-    ?.name;
+  const openAssetDocument = useOpenAssetDocument();
   const selected =
     tileset.tiles.find((tile) => tile.id === selectedId) ?? tileset.tiles[0];
 
@@ -261,8 +261,14 @@ export function TilesetEditor({
       onPick: () => setPickerOpen(true),
       onChange: (value) => commit({ ...tileset, textureGuid: value }),
       ...assetRowIdentity(
-        textureName ? { name: textureName, type: "Texture" } : undefined,
+        assets.find((asset) => asset.guid === tileset.textureGuid),
       ),
+      onOpenAsset: () => {
+        const entry = assets.find(
+          (asset) => asset.guid === tileset.textureGuid,
+        );
+        if (entry) void openAssetDocument(entry);
+      },
     },
     {
       id: "tileWidth",

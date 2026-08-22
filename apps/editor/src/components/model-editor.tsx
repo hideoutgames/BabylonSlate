@@ -17,6 +17,7 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { ModelPreviewCanvas } from "./model-preview-canvas";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -114,7 +115,7 @@ export function ModelEditor({
     type: asset.header.type,
     path: asset.path,
   }));
-
+  const openAssetDocument = useOpenAssetDocument();
   const commit = (next: ModelPayload) => {
     onChange(next as unknown as Record<string, unknown>);
   };
@@ -141,6 +142,10 @@ export function ModelEditor({
       ...assetRowIdentity(
         material ? { name: material.name, type: "Material" } : undefined,
       ),
+      path: material?.path,
+      onOpenAsset: material
+        ? () => void openAssetDocument(material)
+        : undefined,
     };
   });
 

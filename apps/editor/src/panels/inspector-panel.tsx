@@ -70,6 +70,7 @@ import {
   subclassClassEntries,
   type AssetPickRequest,
 } from "../lib/component-property-rows";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
@@ -561,6 +562,7 @@ function PrefabComponentDetails({
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
   const [assetPick, setAssetPick] = useState<AssetPickRequest | null>(null);
+  const openAssetDocument = useOpenAssetDocument();
   return (
     <div
       className="flex flex-col gap-3 p-3"
@@ -595,6 +597,9 @@ function PrefabComponentDetails({
             fontHasFacetype,
             physicsWorld,
             onPickAsset: setAssetPick,
+            assetPath: (guid) =>
+              pickerAssets.find((asset) => asset.guid === guid)?.path,
+            onOpenAsset: openAssetDocument,
           })}
         />
       </div>

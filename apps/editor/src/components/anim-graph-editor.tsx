@@ -59,6 +59,7 @@ import {
 import type { Diagnostic } from "@babylonslate/scripting";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { useAnimGraphEditing } from "../context/anim-graph-editing-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { commitAnimGraphVariables } from "../lib/anim-graph-variables";
@@ -671,6 +672,7 @@ function transitionPropertyRows(
 
 export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
   const { doc, commit, assetRegistry, catalog } = useAnimGraphDocument();
+  const openAssetDocument = useOpenAssetDocument();
   const {
     selectedId,
     selectedTransitionId,
@@ -777,13 +779,27 @@ export function AnimGraphDetailsPanel(_props: IDockviewPanelProps) {
           value: clip?.assetGuid || null,
           placeholder: "None",
           onPick: () => setClipPick(true),
+          onOpenAsset: clip?.assetGuid
+            ? () => {
+                const asset = assetRegistry?.getByGuid(clip.assetGuid);
+                if (asset)
+                  void openAssetDocument({
+                    type: asset.header.type,
+                    path: asset.path,
+                  });
+              }
+            : undefined,
           onChange: (value) => applyClipAsset(value ?? ""),
           ...assetRowIdentity(
             clip?.assetGuid
               ? (() => {
                   const asset = assetRegistry?.getByGuid(clip.assetGuid);
                   return asset
-                    ? { name: asset.header.name, type: asset.header.type }
+                    ? {
+                        name: asset.header.name,
+                        type: asset.header.type,
+                        path: asset.path,
+                      }
                     : {
                         name: clip.assetGuid,
                         type:

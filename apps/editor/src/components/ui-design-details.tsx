@@ -27,6 +27,27 @@ import { AnchorPresetPicker } from "./ui-anchor-preset";
 
 export type UiAssetPickKind = "nestedUi" | "image" | "font" | "visualOverride" | "material";
 
+type UiAssetOpenTarget = { type: string; path: string };
+
+/** Build an `onOpenAsset` row field for a resolvable guid target. */
+function openTargetField(
+  targets:
+    | {
+        nestedUi?: UiAssetOpenTarget;
+        image?: UiAssetOpenTarget;
+        material?: UiAssetOpenTarget;
+      }
+    | undefined,
+  onOpenAsset:
+    | ((entry: { type: string; path: string }) => void)
+    | undefined,
+  kind: "nestedUi" | "image" | "material",
+): (() => void) | undefined {
+  const target = targets?.[kind];
+  if (!target || !onOpenAsset) return undefined;
+  return () => void onOpenAsset(target);
+}
+
 export function UiDesignDetails({
   ui,
   selected,
@@ -34,6 +55,8 @@ export function UiDesignDetails({
   controls = [],
   actionNames,
   assetLabels,
+  assetOpenTargets,
+  onOpenAsset,
   onPatchWidget,
   onPatchLayout,
   onPreviewLayout,
@@ -57,6 +80,13 @@ export function UiDesignDetails({
     visualOverride?: string;
     material?: string;
   };
+  /** Resolvable guid targets for the open-in-tab buttons. */
+  assetOpenTargets?: {
+    nestedUi?: UiAssetOpenTarget;
+    image?: UiAssetOpenTarget;
+    material?: UiAssetOpenTarget;
+  };
+  onOpenAsset?: (entry: { type: string; path: string }) => void;
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void;
   onPatchLayout: (id: string, next: WidgetLayout) => void;
   onPreviewLayout?: (id: string, next: WidgetLayout) => void;
@@ -142,7 +172,7 @@ export function UiDesignDetails({
       onChange: (value) =>
         onPatchWidget(selected.id, { hitTestable: value === "enabled" }),
     },
-    ...kindRows(selected, actionNames, assetLabels, onPatchWidget, onPickAsset, parent),
+    ...kindRows(selected, actionNames, assetLabels, onPatchWidget, onPickAsset, parent, assetOpenTargets, onOpenAsset),
     ...(selected.id === ui.rootId
       ? []
       : [
@@ -513,6 +543,12 @@ function kindRows(
   onPatchWidget: (id: string, patch: Partial<WidgetNode>) => void,
   onPickAsset: (kind: UiAssetPickKind) => void,
   parent: WidgetNode | null,
+  assetOpenTargets?: {
+    nestedUi?: UiAssetOpenTarget;
+    image?: UiAssetOpenTarget;
+    material?: UiAssetOpenTarget;
+  },
+  onOpenAsset?: (entry: { type: string; path: string }) => void,
 ): PropertyRow[] {
   const rows: PropertyRow[] = [];
   if (parent?.kind === "Grid") {
@@ -533,6 +569,7 @@ function kindRows(
       value: selected.nestedUiGuid ?? null,
       placeholder: "None",
       onPick: () => onPickAsset("nestedUi"),
+      onOpenAsset: openTargetField(assetOpenTargets, onOpenAsset, "nestedUi"),
       onChange: (value) => onPatchWidget(selected.id, { nestedUiGuid: value }),
       ...assetRowIdentity(
         assetLabels.nestedUi
@@ -610,6 +647,7 @@ function kindRows(
           : (selected.style.imageGuid ?? null),
       placeholder: "None",
       onPick: () => onPickAsset("image"),
+      onOpenAsset: openTargetField(assetOpenTargets, onOpenAsset, "image"),
       onChange: (value) =>
         onPatchWidget(selected.id, {
           props: { ...selected.props, imageGuid: value },
@@ -648,6 +686,7 @@ function kindRows(
           : null,
       placeholder: "None",
       onPick: () => onPickAsset("material"),
+      onOpenAsset: openTargetField(assetOpenTargets, onOpenAsset, "material"),
       onChange: (value) =>
         onPatchWidget(selected.id, {
           props: { ...selected.props, materialGuid: value },
@@ -671,6 +710,7 @@ function kindRows(
       value: selected.nestedUiGuid ?? null,
       placeholder: "None",
       onPick: () => onPickAsset("nestedUi"),
+      onOpenAsset: openTargetField(assetOpenTargets, onOpenAsset, "nestedUi"),
       onChange: (value) => onPatchWidget(selected.id, { nestedUiGuid: value }),
       ...assetRowIdentity(
         assetLabels.nestedUi

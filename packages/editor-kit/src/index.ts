@@ -165,6 +165,12 @@ export {
   type AssetPickerProps,
 } from "./asset-picker";
 export {
+  AssetOpenButton,
+  canOpenAssetInTab,
+  type AssetOpenButtonProps,
+  type AssetOpenEntry,
+} from "./asset-open-button";
+export {
   ClassPicker,
   type ClassPickerEntry,
   type ClassPickerProps,

@@ -27,6 +27,7 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { isParticleMaterialForPicker } from "../lib/content-browser-helpers";
 import {
   emitterPreviewLibrary,
@@ -76,7 +77,11 @@ function identityFor(
     ? assets.find((entry) => entry.header.guid === guid)
     : undefined;
   return asset
-    ? assetRowIdentity({ name: asset.header.name, type: asset.header.type })
+    ? assetRowIdentity({
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      })
     : {};
 }
 
@@ -416,6 +421,7 @@ export function ParticleEmitterEditor({
   );
   const { assetRegistry, openDocuments } = useDocuments();
   const assets = assetRegistry?.list() ?? [];
+  const openAssetDocument = useOpenAssetDocument();
   const commit = (next: ParticleEmitterPayload) => {
     onChange(
       normalizeParticleEmitterPayload(next) as unknown as Record<string, unknown>,
@@ -443,6 +449,16 @@ export function ParticleEmitterEditor({
       value: emitter.textureGuid,
       placeholder: "None",
       onPick: () => setPickTarget("texture"),
+      onOpenAsset: () => {
+        const entry = assets.find(
+          (asset) => asset.header.guid === emitter.textureGuid,
+        );
+        if (entry)
+          void openAssetDocument({
+            type: entry.header.type,
+            path: entry.path,
+          });
+      },
       onChange: (textureGuid) => commit({ ...emitter, textureGuid }),
       ...textureIdentity,
     },
@@ -453,6 +469,16 @@ export function ParticleEmitterEditor({
       value: emitter.materialGuid,
       placeholder: "None",
       onPick: () => setPickTarget("material"),
+      onOpenAsset: () => {
+        const entry = assets.find(
+          (asset) => asset.header.guid === emitter.materialGuid,
+        );
+        if (entry)
+          void openAssetDocument({
+            type: entry.header.type,
+            path: entry.path,
+          });
+      },
       onChange: (materialGuid) => commit({ ...emitter, materialGuid }),
       ...materialIdentity,
     },
@@ -667,6 +693,7 @@ export function ParticleSystemEditor({
   const [pickIndex, setPickIndex] = useState<number | "new" | null>(null);
   const { assetRegistry } = useDocuments();
   const assets = assetRegistry?.list() ?? [];
+  const openAssetDocument = useOpenAssetDocument();
   const commit = (next: ParticleSystemPayload) => {
     onChange(
       normalizeParticleSystemPayload(next) as unknown as Record<string, unknown>,
@@ -739,6 +766,14 @@ export function ParticleSystemEditor({
       value: guid,
       placeholder: "None",
       onPick: () => setPickIndex(index),
+      onOpenAsset: () => {
+        const entry = assets.find((asset) => asset.header.guid === guid);
+        if (entry)
+          void openAssetDocument({
+            type: entry.header.type,
+            path: entry.path,
+          });
+      },
       onChange: (nextGuid) => setSlot(index, nextGuid),
       ...identity,
     });

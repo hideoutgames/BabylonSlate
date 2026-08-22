@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@babylonslate/assets": "workspace:*",
+    "@babylonslate/core": "workspace:*",
     "@babylonslate/input": "workspace:*",
     "@babylonslate/ui": "workspace:*",
     "lucide-react": "^0.487.0",

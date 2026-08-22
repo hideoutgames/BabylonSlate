@@ -39,17 +39,19 @@ export function displayPickerTitle(name: string): string {
 }
 
 export function assetRowIdentity(
-  asset: { name: string; type: string } | undefined,
+  asset: { name: string; type: string; path?: string } | undefined,
 ): {
   displayLabel?: string;
   displayType?: string;
   visual?: TypeVisualQuery;
+  path?: string;
 } {
   if (!asset) return {};
   return {
     displayLabel: displayPickerTitle(asset.name),
     displayType: asset.type,
     visual: { assetType: asset.type },
+    path: asset.path,
   };
 }
 

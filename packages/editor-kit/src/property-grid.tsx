@@ -20,6 +20,7 @@ import { humanizePropertyLabel } from "./humanize-property-label";
 import { ColorField, type ColorValue } from "./color-field";
 import { FlagsField } from "./flags-field";
 import { PickerIdentity } from "./picker-identity";
+import { AssetOpenButton } from "./asset-open-button";
 import { type TypeVisualQuery } from "./type-visuals";
 
 export type Vector3Value = [number, number, number] | [number, number, number, number];
@@ -108,6 +109,10 @@ export type PropertyRow =
       displayType?: string;
       /** Type glyph on the picker button when a value is selected. */
       visual?: TypeVisualQuery;
+      /** Project path of the referenced asset; enables the open-in-tab button. */
+      path?: string;
+      /** Open the referenced asset in an editor tab (button sits right of the picker). */
+      onOpenAsset?: () => void;
       onPick: () => void;
       onChange: (value: string | null) => void;
     });
@@ -323,11 +328,15 @@ function RowControl({ row }: { row: PropertyRow }) {
       );
     case "asset": {
       const selected = Boolean(row.displayLabel ?? row.value);
-      return (
+      const withOpen =
+        Boolean(row.onOpenAsset) && Boolean(row.path) && selected && !row.disabled;
+      const pickerButton = (
         <Button
           id={`property-${row.id}`}
           variant="outline"
-          className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+          className={`min-h-[var(--chrome-row,28px)] h-auto ${
+            withOpen ? "min-w-0 flex-1" : "w-full"
+          } justify-start`}
           disabled={row.disabled}
           onClick={row.onPick}
           data-testid={`property-${row.id}`}
@@ -342,6 +351,22 @@ function RowControl({ row }: { row: PropertyRow }) {
             (row.displayLabel ?? row.value ?? row.placeholder ?? "None")
           )}
         </Button>
+      );
+      if (!withOpen) return pickerButton;
+      return (
+        <div
+          className="flex min-w-0 items-stretch gap-1"
+          data-testid={`property-${row.id}-control`}
+        >
+          {pickerButton}
+          {row.onOpenAsset ? (
+            <AssetOpenButton
+              entry={{ type: row.displayType, path: row.path }}
+              onOpen={row.onOpenAsset}
+              data-testid={`property-${row.id}-open`}
+            />
+          ) : null}
+        </div>
       );
     }
   }

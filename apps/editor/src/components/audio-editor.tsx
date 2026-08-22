@@ -35,6 +35,7 @@ import { IconActionButton } from "./icon-action-button";
 import { AudioPreviewWaveform } from "./audio-preview-waveform";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { createAudioPreviewSession } from "../lib/audio-preview";
 import { decodeAudioWaveformPeaks } from "../lib/audio-waveform-decode";
 
@@ -273,6 +274,7 @@ export function AudioDetails({
     persistFilledClipName(payload, assetName, onChange);
   }, [assetName, onChange, payload]);
   const assets = assetRegistry?.list() ?? [];
+  const openAssetDocument = useOpenAssetDocument();
   const channel = assets.find(
     (asset) => asset.header.guid === audio.audioChannelGuid,
   );
@@ -283,12 +285,14 @@ export function AudioDetails({
     ? assetRowIdentity({
         name: channel.header.name,
         type: channel.header.type,
+        path: channel.path,
       })
     : {};
   const attenIdentity = atten
     ? assetRowIdentity({
         name: atten.header.name,
         type: atten.header.type,
+        path: atten.path,
       })
     : {};
   const rows: PropertyRow[] = [
@@ -356,7 +360,15 @@ export function AudioDetails({
       displayType: channelIdentity.displayType,
       visual: channelIdentity.visual,
       placeholder: "None",
+      path: channel?.path,
       onPick: () => setPick("channel"),
+      onOpenAsset: channel
+        ? () =>
+            void openAssetDocument({
+              type: channel.header.type,
+              path: channel.path,
+            })
+        : undefined,
       onChange: (audioChannelGuid) => onChange?.({ ...audio, audioChannelGuid }),
     },
     {
@@ -368,7 +380,15 @@ export function AudioDetails({
       displayType: attenIdentity.displayType,
       visual: attenIdentity.visual,
       placeholder: "None",
+      path: atten?.path,
       onPick: () => setPick("atten"),
+      onOpenAsset: atten
+        ? () =>
+            void openAssetDocument({
+              type: atten.header.type,
+              path: atten.path,
+            })
+        : undefined,
       onChange: (soundAttenuationGuid) =>
         onChange?.({ ...audio, soundAttenuationGuid }),
     },

@@ -15,6 +15,7 @@ import {
 } from "@babylonslate/assets";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { SpriteCollisionOverlay } from "./sprite-collision-overlay";
 
 export function SpritePreviewPanel(_props: IDockviewPanelProps) {
@@ -170,8 +171,7 @@ export function SpriteEditor({
     type: asset.header.type,
     path: asset.path,
   }));
-  const textureName = assets.find((asset) => asset.guid === sprite.textureGuid)
-    ?.name;
+  const openAssetDocument = useOpenAssetDocument();
   const frame = sprite.frames[0];
   const rows: PropertyRow[] = [
     {
@@ -183,8 +183,12 @@ export function SpriteEditor({
       onPick: () => setPickerOpen(true),
       onChange: (value) => onChange({ ...sprite, textureGuid: value }),
       ...assetRowIdentity(
-        textureName ? { name: textureName, type: "Texture" } : undefined,
+        assets.find((asset) => asset.guid === sprite.textureGuid),
       ),
+      onOpenAsset: () => {
+        const entry = assets.find((asset) => asset.guid === sprite.textureGuid);
+        if (entry) void openAssetDocument(entry);
+      },
     },
     {
       id: "ppu",

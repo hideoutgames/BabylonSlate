@@ -68,6 +68,7 @@ import { classParentLookup } from "../lib/content-browser-helpers";
 import { pinDefaultPropertyRows } from "../lib/graph-inspector";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { useBehaviourTreeEditing } from "../context/behaviour-tree-editing-context";
 import { usePlay } from "../context/play-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
@@ -508,6 +509,7 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
     blackboardDocument,
   } = useBehaviourTreeDocument();
   const [blackboardPick, setBlackboardPick] = useState(false);
+  const openAssetDocument = useOpenAssetDocument();
   const blackboardWatch = play.liveBtState?.blackboard ?? null;
   const keys = blackboardDocument?.keys ?? [];
 
@@ -523,12 +525,20 @@ export function BehaviourTreeBlackboardPanel(_props: IDockviewPanelProps) {
               value: doc.blackboardGuid,
               placeholder: "None",
               onPick: () => setBlackboardPick(true),
+              onOpenAsset: blackboardAsset
+                ? () =>
+                    void openAssetDocument({
+                      type: blackboardAsset.header.type,
+                      path: blackboardAsset.path,
+                    })
+                : undefined,
               onChange: (value) => commit({ ...doc, blackboardGuid: value }),
               ...assetRowIdentity(
                 blackboardAsset
                   ? {
                       name: blackboardAsset.header.name,
                       type: blackboardAsset.header.type,
+                      path: blackboardAsset.path,
                     }
                   : undefined,
               ),
@@ -659,6 +669,7 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
     blackboardKeyEntries,
     assets,
   } = useBehaviourTreeDocument();
+  const openAssetDocument = useOpenAssetDocument();
   const {
     selectedId,
     attachmentId,
@@ -827,6 +838,10 @@ export function BehaviourTreeDetailsPanel(_props: IDockviewPanelProps) {
               }
               write({ [field.key]: value ?? "" });
             },
+            onOpenAsset: picked
+              ? () => void openAssetDocument(picked)
+              : undefined,
+            path: picked?.path,
             ...assetRowIdentity(
               picked ? { name: picked.name, type: picked.type } : undefined,
             ),

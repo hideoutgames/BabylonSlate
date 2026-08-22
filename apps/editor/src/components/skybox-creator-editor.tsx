@@ -38,6 +38,7 @@ import {
 } from "@babylonslate/ui/components/empty";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import {
   readTextureImageBytes,
   writeSkyboxCreatorFaceAssets,
@@ -148,7 +149,11 @@ function identityFor(assets: ReadonlyArray<IndexedAsset>, guid: string | null) {
     ? assets.find((entry) => entry.header.guid === guid)
     : undefined;
   return asset
-    ? assetRowIdentity({ name: asset.header.name, type: asset.header.type })
+    ? assetRowIdentity({
+        name: asset.header.name,
+        type: asset.header.type,
+        path: asset.path,
+      })
     : {};
 }
 
@@ -571,6 +576,7 @@ export function SkyboxCreatorEditor({
   const helper = normalizeSkyboxCreatorPayload(payload);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { assetRegistry } = useDocuments();
+  const openAssetDocument = useOpenAssetDocument();
   const assets = (assetRegistry?.list() ?? []) as IndexedAsset[];
   const { error, busy, create } = useSkyboxCreatorCreate(
     payload,
@@ -589,6 +595,16 @@ export function SkyboxCreatorEditor({
       value: helper.sourceTextureGuid,
       placeholder: "None",
       onPick: () => setPickerOpen(true),
+      onOpenAsset: () => {
+        const entry = assets.find(
+          (asset) => asset.header.guid === helper.sourceTextureGuid,
+        );
+        if (entry)
+          void openAssetDocument({
+            type: entry.header.type,
+            path: entry.path,
+          });
+      },
       onChange: (sourceTextureGuid) =>
         commit({ ...helper, sourceTextureGuid, sourcePlacement: null }),
       ...identityFor(assets, helper.sourceTextureGuid),

@@ -17,6 +17,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import { useOptionalDocumentWorkspace } from "../context/document-workspace-context";
 import { useUiEditing } from "../context/ui-editing-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { UiDesignCanvas } from "../components/ui-design-canvas";
 import { UiDesignHierarchy } from "../components/ui-design-hierarchy";
 import { UiDesignDetails } from "../components/ui-design-details";
@@ -182,12 +183,14 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
     controls,
     actionNames,
     assetLabels,
+    assetOpenTargets,
     patchWidget,
     patchLayout,
     setAssetPick,
     resolveNested,
     layoutSession,
   } = useUiEditing();
+  const openAssetDocument = useOpenAssetDocument();
   if (!selected) {
     return (
       <PanelFrame data-testid="ui-details-panel">
@@ -204,6 +207,8 @@ export function UiDetailsPanel(_props: IDockviewPanelProps) {
         controls={controls}
         actionNames={actionNames}
         assetLabels={assetLabels}
+        assetOpenTargets={assetOpenTargets}
+        onOpenAsset={openAssetDocument}
         onPatchWidget={patchWidget}
         onPatchLayout={(id, nextLayout) => patchLayout(id, nextLayout)}
         onPreviewLayout={(id, nextLayout) => layoutSession.preview(id, nextLayout)}

@@ -278,7 +278,8 @@ function GalleryComposites() {
       placeholder: "None",
       onPick: () => setPickerOpen(true),
       onChange: () => {},
-      ...assetRowIdentity({ name: "Rock", type: "Mesh" }),
+      ...assetRowIdentity({ name: "Rock", type: "Model", path: "assets/rock.babasset" }),
+      onOpenAsset: () => {},
     },
   ];
 

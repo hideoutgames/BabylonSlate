@@ -49,6 +49,10 @@ export type ComponentPropertyContext = {
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
   physicsWorld: "3d" | "2d";
   onPickAsset: (request: AssetPickRequest) => void;
+  /** Project path for a guid; enables the open-in-tab button on asset rows. */
+  assetPath?: (guid: string | null | undefined) => string | undefined;
+  /** Open a referenced asset in an editor document tab. */
+  onOpenAsset?: (entry: { type: string; path: string }) => void;
 };
 
 function rowId(actorId: string, componentId: string, key: string): string {
@@ -98,6 +102,8 @@ function assetRow(
     : undefined;
   const identity =
     name && type ? assetRowIdentity({ name, type }) : {};
+  const path = value ? context.assetPath?.(value) : undefined;
+  const { onOpenAsset } = context;
   return {
     kind: "asset",
     id: rowId(actorId, component.id, property),
@@ -107,6 +113,9 @@ function assetRow(
     displayType: identity.displayType,
     visual: identity.visual,
     placeholder,
+    path,
+    onOpenAsset:
+      onOpenAsset && path && type ? () => onOpenAsset({ type, path }) : undefined,
     onPick: () =>
       context.onPickAsset({
         componentId: component.id,

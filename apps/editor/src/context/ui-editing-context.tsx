@@ -124,6 +124,12 @@ export interface UiEditingContextValue {
     visualOverride?: string;
     material?: string;
   };
+  /** Resolvable guid targets for the details open-in-tab buttons. */
+  assetOpenTargets: {
+    nestedUi?: { type: string; path: string };
+    image?: { type: string; path: string };
+    material?: { type: string; path: string };
+  };
   commit: (next: Record<string, unknown>, mergeKey?: string) => void;
   patchWidget: (
     id: string,
@@ -655,6 +661,26 @@ export function UiEditingProvider({
           : undefined),
     )?.header.name,
   };
+  const assetEntry = (guid: string | null | undefined) => {
+    if (!guid) return undefined;
+    const asset = (assetRegistry?.list() ?? []).find(
+      (item) => item.header.guid === guid,
+    );
+    return asset ? { type: asset.header.type, path: asset.path } : undefined;
+  };
+  const assetOpenTargets = {
+    nestedUi: assetEntry(selected?.nestedUiGuid),
+    image: assetEntry(
+      typeof selected?.props.imageGuid === "string"
+        ? selected.props.imageGuid
+        : selected?.style.imageGuid,
+    ),
+    material: assetEntry(
+      typeof selected?.props.materialGuid === "string"
+        ? selected.props.materialGuid
+        : undefined,
+    ),
+  };
 
   const value = useMemo<UiEditingContextValue>(
     () => ({
@@ -688,6 +714,7 @@ export function UiEditingProvider({
       setCatalogOpen,
       actionNames,
       assetLabels,
+      assetOpenTargets,
       commit,
       patchWidget,
       patchLayout,
@@ -709,6 +736,7 @@ export function UiEditingProvider({
       nestedUiAssets,
       adtIdeal,
       assetLabels,
+      assetOpenTargets,
       bitmapScale,
       catalogOpen,
       commit,

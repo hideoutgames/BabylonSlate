@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  AssetOpenButton,
   AssetPicker,
   NamedListEditor,
   PanelFrame,
@@ -14,6 +15,7 @@ import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
 import { normalizeFontPayload } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
@@ -82,6 +84,7 @@ function FontEditor({
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const { projectDocument, assetRegistry, readAssetChunk } = useDocuments();
+  const openAssetDocument = useOpenAssetDocument();
   const font = normalizeFontPayload(payload, "Custom Font");
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);
@@ -199,25 +202,48 @@ function FontEditor({
             onAdd={() => setFallbackPick("new")}
             data-testid="font-fallbacks"
             renderItem={({ value, index }) => (
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                data-testid={`font-fallback-${index}`}
-                onClick={() => setFallbackPick(index)}
-              >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    (() => {
-                      const asset = assetRegistry?.getByGuid(value);
-                      return asset
-                        ? { name: asset.header.name, type: asset.header.type }
-                        : undefined;
-                    })(),
-                  ),
-                  value,
-                )}
-              </Button>
+              <div className="flex items-stretch gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[var(--touch-target,44px)] h-auto min-w-0 flex-1 justify-start"
+                  data-testid={`font-fallback-${index}`}
+                  onClick={() => setFallbackPick(index)}
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      (() => {
+                        const asset = assetRegistry?.getByGuid(value);
+                        return asset
+                          ? {
+                              name: asset.header.name,
+                              type: asset.header.type,
+                              path: asset.path,
+                            }
+                          : undefined;
+                      })(),
+                    ),
+                    value,
+                  )}
+                </Button>
+                <AssetOpenButton
+                  entry={(() => {
+                    const asset = assetRegistry?.getByGuid(value);
+                    return asset
+                      ? { type: asset.header.type, path: asset.path }
+                      : null;
+                  })()}
+                  onOpen={() => {
+                    const asset = assetRegistry?.getByGuid(value);
+                    if (asset)
+                      void openAssetDocument({
+                        type: asset.header.type,
+                        path: asset.path,
+                      });
+                  }}
+                  data-testid={`font-fallback-${index}-open`}
+                />
+              </div>
             )}
           />
         </div>

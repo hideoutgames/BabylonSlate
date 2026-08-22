@@ -38,7 +38,7 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
-import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
+import { documentKindForAssetType, CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { createAppSettingsStore, isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -143,6 +143,7 @@ import { writeRetargetedAnimations } from "../lib/animation-retarget";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { useLongPressMenu } from "../lib/use-long-press-menu";
+import { useOpenAssetDocument } from "../lib/use-open-asset-document";
 import { useContentBrowserPaintSelect } from "../lib/use-content-browser-paint-select";
 import { contentBrowserTileStyle } from "../lib/content-browser-grid";
 import { syncContentBrowserThumbnailUrls } from "../lib/content-browser-thumbnails";
@@ -189,12 +190,9 @@ export function ContentBrowserWorkspace({
     registryVersion,
     refreshAssetRegistry,
     repathDocument,
-    openDocument,
     closeDocumentsForPaths,
     repairAfterAssetDelete,
     openDocuments,
-    setActiveDocument,
-    tabOrder,
     loadAssetThumbnail,
     thumbnailEpoch,
     thumbnailsEnabled,
@@ -695,31 +693,16 @@ export function ContentBrowserWorkspace({
 
   const typeChips = useMemo(() => uniqueAssetTypes(allAssets), [allAssets]);
 
-  const openIds = useMemo(() => new Set(tabOrder), [tabOrder]);
+  const openAssetDocument = useOpenAssetDocument({ onError: setOpenError });
 
   const openOrFocusDocument = useCallback(
     async (asset: IndexedAsset) => {
-      const kind = documentKindForAssetType(asset.header.type);
-      if (!kind) return;
-      const path = asset.path;
-      const id = documentId({ kind, path });
-      if (openIds.has(id)) {
-        setActiveDocument(id);
-        return;
-      }
-      try {
-        await openDocument({
-          kind,
-          path,
-          label: labelFromPath(path),
-        });
-      } catch (error) {
-        setOpenError(
-          error instanceof Error ? error.message : String(error),
-        );
-      }
+      await openAssetDocument({
+        type: asset.header.type,
+        path: asset.path,
+      });
     },
-    [openDocument, openIds, setActiveDocument],
+    [openAssetDocument],
   );
 
   const requestDelete = useCallback((guids: string[]) => {
