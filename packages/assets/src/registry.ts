@@ -25,13 +25,19 @@ import {
 } from "./unique-names";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  STANDARD_ENCODE_CAPS,
   effectiveTextureMaxDimension,
   encodeSettingsHash,
+  isBuildDownsampleTier,
+  textureEffectiveLodCap,
   ktx2ChunkId,
   shouldCompressTexture,
+  sniffImageSize,
+  type EditorTextureLod,
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
+import { isKtx2Bytes } from "./texture-loader";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
@@ -89,6 +95,7 @@ export class AssetRegistry {
   };
   private thumbnailWriter: ThumbnailWriter | null = null;
   private readonly textureWriteChain = new Map<string, Promise<void>>();
+  private readonly pendingLodEncodes = new Set<string>();
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -870,6 +877,209 @@ export class AssetRegistry {
         this.encodeSettings.maxDimension,
       ),
     };
+  }
+
+  /**
+   * Best bytes for rendering a Texture asset: prefers an encoded KTX2 variant
+   * matching the requested editor LOD cap (falling back to larger available
+   * variants), then raw `pixels`, then imported `source`. Kicks off a
+   * background encode for a missing LOD variant so later sessions pick it up.
+   */
+  async readBestTextureChunk(
+    guid: string,
+    options?: { lod?: EditorTextureLod },
+  ): Promise<{
+    bytes: Uint8Array;
+    mime?: string;
+    kind: "ktx2" | "pixels" | "source";
+    clampedByLod: boolean;
+  } | null> {
+    const asset = this.byGuid.get(guid);
+    if (!asset || asset.header.type !== "Texture") return null;
+    const lod = options?.lod;
+
+    if (shouldCompressTexture(String(asset.header.payload.usage ?? "albedo"))) {
+      const picked = await this.pickKtx2ForLod(asset, guid, lod);
+      if (picked) {
+        return { bytes: picked.bytes, mime: "image/ktx2", kind: "ktx2", clampedByLod: picked.clampedByLod };
+      }
+    }
+
+    const pixels = await this.loadSourcePixels(asset);
+    if (pixels) return { ...pixels, kind: "pixels", clampedByLod: false };
+    const source = await this.loadSourceChunk(asset);
+    if (source) return { ...source, kind: "source", clampedByLod: false };
+    return null;
+  }
+
+  /** Imported `source` fallback (model textures keep original bytes there). */
+  private async loadSourceChunk(
+    asset: IndexedAsset,
+  ): Promise<{ bytes: Uint8Array; mime?: string } | null> {
+    const entry = asset.header.chunks.find(
+      (chunk) => chunk.kind === "source" || chunk.id === "source",
+    );
+    if (!entry) return null;
+    const fileBytes = await this.storageForAsset(asset).readBinary(asset.path);
+    const bytes = await this.loader.loadChunk(
+      fileBytes,
+      entry,
+      this.blobsForAsset(asset),
+    );
+    if (!bytes) return null;
+    return { bytes, mime: entry.mime };
+  }
+
+  private async loadHeaderChunkBytes(
+    asset: IndexedAsset,
+    chunkId: string,
+  ): Promise<Uint8Array | null> {
+    const entry = asset.header.chunks.find((chunk) => chunk.id === chunkId);
+    if (!entry) return null;
+    const fileBytes = await this.storageForAsset(asset).readBinary(asset.path);
+    const bytes = await this.loader.loadChunk(
+      fileBytes,
+      entry,
+      this.blobsForAsset(asset),
+    );
+    return bytes ?? null;
+  }
+
+  /**
+   * Choose among existing KTX2 variants for an LOD level. Variant names are
+   * settings hashes, so candidates are recomputed per plausible cap and
+   * matched against the header's chunk list — no schema change.
+   */
+  private async pickKtx2ForLod(
+    asset: IndexedAsset,
+    guid: string,
+    lod: EditorTextureLod | undefined,
+  ): Promise<{ bytes: Uint8Array; clampedByLod: boolean } | null> {
+    const ktx2Entries = asset.header.chunks.filter(
+      (chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"),
+    );
+    if (ktx2Entries.length === 0) return null;
+
+    const byId = new Map(ktx2Entries.map((entry) => [entry.id, entry]));
+    const pointerId =
+      typeof asset.header.payload.ktx2ChunkId === "string"
+        ? asset.header.payload.ktx2ChunkId
+        : null;
+
+    let preferredId: string | null = null;
+    let clampedByLod = false;
+
+    // Authored tier beats legacy caps beats editor LOD — one resolver.
+    const wantsDownscale =
+      isBuildDownsampleTier(asset.header.payload.buildDownsample) &&
+      asset.header.payload.buildDownsample !== "source";
+    const hasLegacyCap =
+      typeof asset.header.payload.maxDimension === "number" &&
+      Number.isFinite(asset.header.payload.maxDimension) &&
+      asset.header.payload.maxDimension > 0;
+
+    if (wantsDownscale || hasLegacyCap || (lod && lod !== "off")) {
+      const pixels = await this.loadSourcePixels(asset);
+      const size = pixels ? sniffImageSize(pixels.bytes) : null;
+      if (size) {
+        const longest = Math.max(size.width, size.height);
+        const cap = textureEffectiveLodCap({
+          longestEdge: longest,
+          buildDownsample: asset.header.payload.buildDownsample,
+          legacyMaxDimension: asset.header.payload.maxDimension,
+          lod,
+          projectMaxDimension: this.encodeSettings.maxDimension,
+        });
+        if (cap < longest) {
+          const candidateIds = await this.lodCandidateChunkIds(asset, cap);
+          preferredId = candidateIds.find((id) => byId.has(id)) ?? null;
+          clampedByLod = preferredId !== null;
+          if (!preferredId) {
+            void this.ensureLodVariantEncoded(asset, guid, cap);
+          }
+        }
+      }
+    }
+
+    const id =
+      (preferredId && byId.has(preferredId) ? preferredId : null) ??
+      (pointerId && byId.has(pointerId) ? pointerId : null) ??
+      ktx2Entries[ktx2Entries.length - 1]!.id;
+    const bytes = await this.loadHeaderChunkBytes(asset, id);
+    if (!bytes || !isKtx2Bytes(bytes)) return null;
+    return { bytes, clampedByLod };
+  }
+
+  /**
+   * Chunk ids for caps from the desired one upward (larger = sharper fallback),
+   * replicating the effective-cap clamp used when each variant was queued.
+   */
+  private async lodCandidateChunkIds(
+    asset: IndexedAsset,
+    desiredCap: number,
+  ): Promise<string[]> {
+    const base = this.encodeSettingsFor(asset);
+    const caps = [
+      ...new Set(
+        [desiredCap, ...STANDARD_ENCODE_CAPS].filter(
+          (value) => value >= Math.min(desiredCap, desiredCap),
+        ),
+      ),
+    ]
+      .filter((value) => value >= desiredCap)
+      .sort((a, b) => a - b);
+    const ids: string[] = [];
+    const seenCaps = new Set<number>();
+    for (const cap of caps) {
+      const effective = effectiveTextureMaxDimension(
+        asset.header.payload.maxDimension,
+        Math.min(cap, base.maxDimension === Number.POSITIVE_INFINITY ? cap : base.maxDimension),
+      );
+      if (seenCaps.has(effective)) continue;
+      seenCaps.add(effective);
+      ids.push(
+        ktx2ChunkId(
+          await encodeSettingsHash({ ...base, maxDimension: effective }),
+        ),
+      );
+    }
+    return ids;
+  }
+
+  /** Encode a missing LOD variant in the background (no state churn). */
+  async ensureLodVariantEncoded(
+    asset: IndexedAsset,
+    guid: string,
+    cap: number,
+  ): Promise<void> {
+    if (!this.encodeQueue) return;
+    if (!shouldCompressTexture(String(asset.header.payload.usage ?? "albedo"))) {
+      return;
+    }
+    const key = `${guid}:${cap}`;
+    if (this.pendingLodEncodes.has(key)) return;
+    this.pendingLodEncodes.add(key);
+    try {
+      const source = await this.loadSourcePixels(asset);
+      if (!source) return;
+      this.encodeQueue.enqueue({
+        assetGuid: guid,
+        source: source.bytes,
+        mime: source.mime,
+        settings: {
+          ...this.encodeSettingsFor(asset),
+          maxDimension: Math.min(
+            cap,
+            effectiveTextureMaxDimension(
+              asset.header.payload.maxDimension,
+              this.encodeSettings.maxDimension,
+            ),
+          ),
+        },
+      });
+    } finally {
+      this.pendingLodEncodes.delete(key);
+    }
   }
 
   private async loadSourcePixels(

@@ -208,8 +208,10 @@ function applyLoadedModelMaterials(
 ): void {
   const payload = binding.modelPayloads?.get(assetGuid);
   if (payload) {
-    applyModelMaterialSlots(root, payload.materialSlots, (guid) =>
-      binding.resolveMaterial?.(guid) ?? null,
+    applyModelMaterialSlots(
+      root,
+      payload.materialSlots,
+      (guid) => binding.resolveMaterial?.(guid) ?? null,
     );
   }
   applyMaterialToActorMeshes(binding, slotId, root);

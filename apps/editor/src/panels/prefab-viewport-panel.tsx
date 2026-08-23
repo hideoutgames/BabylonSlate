@@ -99,6 +99,14 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     const canvas = canvasRef.current;
     if (!canvas || !sharedEngine) return;
     const handle = createEngine(canvas, {
+      onContextEvent: (event, elapsedMs) => {
+        console.info(
+          "[Engine]",
+          event === "lost"
+            ? "WebGL context lost"
+            : `WebGL context restored in ${Math.round(elapsedMs ?? 0)}ms`,
+        );
+      },
       editor: true,
       sharedEngine,
       present: "rtt",

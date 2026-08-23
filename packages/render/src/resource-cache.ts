@@ -3,12 +3,17 @@ import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
+import { readKtx2Size } from "./ktx2-info";
 
 export interface ResourceCacheOptions {
   /** Accounted byte ceiling before evicting unreferenced LRU entries. */
   byteCeiling?: number;
-  /** Soft factor over ceiling before eviction (default 1.2). */
-  evictionFactor?: number;
+  /**
+   * Hysteresis target after an LRU sweep, as a factor of the ceiling
+   * (default 0.8). Sweeps trigger at the ceiling itself — no overshoot band,
+   * and trimming well below it avoids evict/reload thrash waves.
+   */
+  evictionTargetFactor?: number;
   onEvict?: (assetGuid: string, reason: string) => void;
 }
 
@@ -98,7 +103,8 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
  */
 export class ResourceCache {
   private readonly ceiling: number;
-  private readonly evictionFactor: number;
+  private readonly evictionTargetFactor: number;
+  private evictions = 0;
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly blobs = new Map<string, Blob>();
@@ -107,7 +113,7 @@ export class ResourceCache {
 
   constructor(options: ResourceCacheOptions = {}) {
     this.ceiling = options.byteCeiling ?? 512 * 1024 * 1024;
-    this.evictionFactor = options.evictionFactor ?? 1.2;
+    this.evictionTargetFactor = options.evictionTargetFactor ?? 0.8;
     this.onEvict = options.onEvict;
   }
 
@@ -187,6 +193,20 @@ export class ResourceCache {
         });
     entry.texture = texture;
     entry.samplingKey = key;
+    // ASTC-sized accounting for compressed chunks; raw PNG paths stay
+    // unaccounted (pre-existing behavior).
+    if (!(bytes instanceof Blob)) {
+      const size = readKtx2Size(bytes);
+      if (size) {
+        this.accountTextureSize(
+          assetGuid,
+          size.width,
+          size.height,
+          "astc4x4",
+          !options.noMipmap,
+        );
+      }
+    }
     return texture;
   }
 
@@ -236,6 +256,39 @@ export class ResourceCache {
       texture,
     });
     return texture;
+  }
+
+  /**
+   * Drop entries entirely (wrappers + blob URLs) so the next `getTexture`
+   * rebuilds from freshly supplied bytes. Used when the editor LOD level
+   * changes: the same asset guid must resolve to newly encoded/downscaled
+   * variant bytes, which a retained blob URL would hide.
+   */
+  forgetTextures(): void {
+    for (const [guid, entry] of [...this.entries]) {
+      // Only blob-backed asset textures are rebuildable from fresh bytes.
+      // Engine-built entries (six-face skybox cubes have no blob URL) must
+      // survive: nothing calls their builders again after startup.
+      if (!entry.blobUrl) continue;
+      if (entry.texture) {
+        entry.texture.dispose();
+        entry.texture = undefined;
+      }
+      if (
+        entry.blobUrl.startsWith("blob:") &&
+        typeof URL !== "undefined" &&
+        URL.revokeObjectURL
+      ) {
+        try {
+          URL.revokeObjectURL(entry.blobUrl);
+        } catch {
+          // fake test URLs
+        }
+      }
+      this.totalBytes -= entry.bytes;
+      this.entries.delete(guid);
+      this.blobs.delete(guid);
+    }
   }
 
   /**
@@ -306,15 +359,38 @@ export class ResourceCache {
   }
 
   evictToCeiling(): void {
-    const limit = this.ceiling * this.evictionFactor;
-    if (this.totalBytes <= limit) return;
+    // Trigger at the ceiling itself; sweep down to the hysteresis target so a
+    // working set near the ceiling does not thrash (evict → re-upload → spike).
+    if (this.totalBytes <= this.ceiling) return;
+    const target = this.ceiling * this.evictionTargetFactor;
+    const before = this.totalBytes;
     const candidates = [...this.entries.values()]
       .filter((e) => e.refCount === 0)
       .sort((a, b) => a.lastUsed - b.lastUsed);
     for (const entry of candidates) {
-      if (this.totalBytes <= this.ceiling) break;
+      if (this.totalBytes <= target) break;
       this.evictEntry(entry.assetGuid, "lru");
+      this.evictions += 1;
     }
+    if (
+      typeof console !== "undefined" &&
+      this.totalBytes !== before &&
+      this.evictions > 0
+    ) {
+      const mib = (n: number) => `${(n / (1024 * 1024)).toFixed(1)}MiB`;
+      console.info(
+        `[ResourceCache] evicted ${this.evictions} entries total: ${mib(before)} -> ${mib(this.totalBytes)} / ceiling ${mib(this.ceiling)}`,
+      );
+    }
+  }
+
+  /** Cache pressure snapshot for diagnostics. */
+  stats(): { accountedBytes: number; ceiling: number; evictions: number } {
+    return {
+      accountedBytes: this.totalBytes,
+      ceiling: this.ceiling,
+      evictions: this.evictions,
+    };
   }
 
   flushUnreferenced(): void {

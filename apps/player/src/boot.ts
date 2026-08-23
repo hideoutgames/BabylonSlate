@@ -95,6 +95,14 @@ export function startPlayer(options: {
   let input: ReturnType<typeof attachInputCapture> | null = null;
 
   const handle: EngineHandle = createEngine(canvas, {
+    onContextEvent: (event, elapsedMs) => {
+      console.info(
+        "[Engine]",
+        event === "lost"
+          ? "WebGL context lost"
+          : `WebGL context restored in ${Math.round(elapsedMs ?? 0)}ms`,
+      );
+    },
     playMode: true,
     maxActors: 256,
     frameCap: manifest.playFrameCap,

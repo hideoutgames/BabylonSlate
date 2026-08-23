@@ -9,6 +9,7 @@ import type {
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
+import { slimGlbEmbeddedImages } from "./model-textures";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeModelImportScale } from "@babylonslate/assets";
 import { applyAnimStateToScene,
@@ -314,7 +315,20 @@ export function beginSlotModelAnimLoad(
   const importScale = normalizeModelImportScale(
     binding.modelPayloads?.get(clipAssetGuid)?.importScale,
   );
-  const key = modelLoadKey(clipAssetGuid, bytes, importScale);
+  // Asset-driven models (every slot assigned to an extracted Material) never
+  // sample the GLB's own textures — load placeholders so the decode spike and
+  // full-res residency disappear. Any unassigned slot falls back to raw bytes
+  // so construction materials stay pixel-correct.
+  const slots = binding.modelPayloads?.get(clipAssetGuid)?.materialSlots;
+  const allSlotsAssigned =
+    !!slots &&
+    slots.length > 0 &&
+    slots.every((slot) => slot.materialGuid != null);
+  let loadBytes = bytes;
+  if (allSlotsAssigned) {
+    loadBytes = slimGlbEmbeddedImages(bytes)?.bytes ?? bytes;
+  }
+  const key = modelLoadKey(clipAssetGuid, loadBytes, importScale);
   const meta = asPlaceholderMeta(placeholder);
   if (meta[MODEL_LOAD_KEY] === key && meta[MODEL_INSTANCE_KEY]) {
     return Promise.resolve();
@@ -322,7 +336,7 @@ export function beginSlotModelAnimLoad(
   const epoch = bumpSlotAnimEpoch(binding, slotId);
   const load = (async () => {
     try {
-      const container = await getCachedGlbContainer(scene, clipAssetGuid, bytes);
+      const container = await getCachedGlbContainer(scene, clipAssetGuid, loadBytes);
       if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
         return;
       }
@@ -352,10 +366,15 @@ export function beginSlotModelAnimLoad(
       for (const row of retargets) {
         const sourceBytes = binding.modelBytes?.get(row.sourceModelGuid);
         if (!sourceBytes || !isGltfModelBytes(sourceBytes)) continue;
+        const sourceSlots = binding.modelPayloads?.get(row.sourceModelGuid)?.materialSlots;
+        const sourceSlim =
+          !!sourceSlots &&
+          sourceSlots.length > 0 &&
+          sourceSlots.every((slot) => slot.materialGuid != null);
         const sourceContainer = await getCachedGlbContainer(
           scene,
           row.sourceModelGuid,
-          sourceBytes,
+          sourceSlim ? (slimGlbEmbeddedImages(sourceBytes)?.bytes ?? sourceBytes) : sourceBytes,
         );
         if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
           return;
@@ -418,16 +437,20 @@ async function animationRetargetHasMatchesOnScene(
   }
   let sourceContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
   let targetContainer: Awaited<ReturnType<typeof loadGlbContainer>> | undefined;
+  // Animation-only containers: embedded images are never sampled, so always
+  // slim them away regardless of slot state.
+  const slimmedSource = slimGlbEmbeddedImages(sourceBytes)?.bytes ?? sourceBytes;
+  const slimmedTarget = slimGlbEmbeddedImages(targetBytes)?.bytes ?? targetBytes;
   try {
     sourceContainer = await getCachedGlbContainer(
       scene,
       "retarget-src",
-      sourceBytes,
+      slimmedSource,
     );
     targetContainer = await getCachedGlbContainer(
       scene,
       "retarget-dst",
-      targetBytes,
+      slimmedTarget,
     );
     const instance = targetContainer.instantiateModelsToScene(
       keepSourceName,

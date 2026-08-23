@@ -46,6 +46,7 @@ import {
   type ModelPayload,
   resolvePluginEnabled,
   newAssetGuid,
+
 } from "@babylonslate/assets";
 import {
   commandToJournalPayload,
@@ -83,6 +84,12 @@ import {
   SourceControlService,
 } from "../services/source-control-service";
 import { attachLifecyclePause } from "../services/lifecycle-pause";
+import {
+  currentEditorTextureLod,
+  loadEditorTextureBytes,
+} from "../lib/editor-texture-bytes";
+
+
 import {
   afterMutatingApply,
   isMutatingApplyBlocked,
@@ -365,6 +372,11 @@ interface DocumentContextValue {
   ) => Promise<boolean>;
   /** Font source / other binary chunks. */
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  /** Tier/LOD-resolved texture bytes. `dom` surfaces never get KTX2. */
+  readEditorTextureBytes: (
+    asset: { path: string; guid: string; payload: Record<string, unknown> },
+    surface?: "engine" | "dom",
+  ) => Promise<Uint8Array | null>;
   writeAudioClipChunk: (
     path: string,
     chunkId: string,
@@ -2091,6 +2103,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
+  /** Tier/LOD-resolved texture bytes for any consumer surface. */
+  const readEditorTextureBytes = useCallback(
+    async (
+      asset: { path: string; guid: string; payload: Record<string, unknown> },
+      surface: "engine" | "dom" = "engine",
+    ) =>
+      loadEditorTextureBytes(projectService, asset, {
+        surface,
+        lod: await currentEditorTextureLod(),
+      }),
+    [projectService],
+  );
+
   const writeSceneNavmeshChunk = useCallback(
     (path: string, bytes: Uint8Array, payload: Record<string, unknown>) =>
       projectService.writeSceneNavmeshChunk(path, bytes, payload),
@@ -2655,18 +2680,20 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ...extraGuids,
       ];
       const seen = new Set<string>();
+      const lod = await currentEditorTextureLod();
       for (const guid of guids) {
         if (!guid || seen.has(guid)) continue;
         seen.add(guid);
         const asset = byGuid.get(guid);
         if (!asset) continue;
-        const pixels = await projectService.readAssetChunk(asset.path, "pixels");
-        if (pixels && pixels.byteLength > 0) {
-          bytes.set(guid, pixels);
-          continue;
-        }
-        const source = await projectService.readAssetChunk(asset.path, "source");
-        if (source && source.byteLength > 0) bytes.set(guid, source);
+        // Engine surface: KTX2 preferred, downscaled raw fallback — tier > LOD
+        // precedence lives in the shared resolver.
+        const resolved = await loadEditorTextureBytes(
+          projectService,
+          { path: asset.path, guid, payload: asset.header.payload },
+          { surface: "engine", lod },
+        );
+        if (resolved && resolved.byteLength > 0) bytes.set(guid, resolved);
       }
       return bytes;
     },
@@ -3781,6 +3808,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      readEditorTextureBytes,
       writeAudioClipChunk,
       removeAudioClipChunk,
       writeSceneNavmeshChunk,
@@ -3978,6 +4006,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       applySceneChange,
       applyAssetDocumentChange,
       readAssetChunk,
+      readEditorTextureBytes,
       writeAudioClipChunk,
       removeAudioClipChunk,
       writeSceneNavmeshChunk,

@@ -20,6 +20,7 @@ Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds
 | --- | --- | --- |
 | Editor + project open | ~512 MB textures accounted | WKWebView kills tab rather than swapping |
 | Texture accounting | Self-computed bytes | No `performance.memory` on Safari |
+| Compressed residency | Encoded KTX2 chunks consumed at runtime | `readBestTextureChunk` prefers ASTC variants (editor LOD: `editorTextureLod`, default balanced) |
 
 Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 

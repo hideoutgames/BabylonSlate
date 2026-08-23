@@ -86,6 +86,7 @@ import {
   spriteAnimationDurationMs,
   type InspectedBabplugin,
   type PluginImportPlan,
+  type EditorTextureLod,
 } from "@babylonslate/assets";
 import { createAppSettingsStore, isTestModeEnabled, TEST_PROJECT_NAME } from "@babylonslate/vfs";
 import { extraChunksWithNavmesh } from "@babylonslate/navigation";
@@ -1316,6 +1317,25 @@ export class ProjectService {
       (hash) => blobs.readBlob(hash),
     );
     return decoded.chunks.get(chunkId) ?? null;
+  }
+
+  /**
+   * Best render bytes for a Texture asset: prefers an encoded KTX2 variant
+   * matching the editor LOD level (registry decides), else pixels/source.
+   */
+  async readBestTextureChunk(
+    guid: string,
+    options?: { lod?: EditorTextureLod },
+  ): Promise<
+    | {
+        bytes: Uint8Array;
+        mime?: string;
+        kind: "ktx2" | "pixels" | "source";
+        clampedByLod: boolean;
+      }
+    | null
+  > {
+    return this.assetRegistry?.readBestTextureChunk(guid, options) ?? null;
   }
 
   /** Persist Recast `exportNavMesh` bytes as the Scene `navmesh` extra chunk. */

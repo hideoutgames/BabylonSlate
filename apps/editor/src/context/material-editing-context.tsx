@@ -86,8 +86,13 @@ export function MaterialEditingProvider({
   active?: boolean;
   children: ReactNode;
 }) {
-  const { openDocuments, assetRegistry, projectDocument, readAssetChunk } =
-    useDocuments();
+  const {
+    openDocuments,
+    assetRegistry,
+    projectDocument,
+    readAssetChunk,
+    readEditorTextureBytes,
+  } = useDocuments();
   const play = usePlay();
   const { register: registerRenderControl } = useMaterialRenderControl();
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -307,14 +312,15 @@ export function MaterialEditingProvider({
       const next = new Map<string, Uint8Array>();
       for (const guid of guids) {
         const asset = assetRegistry?.getByGuid(guid);
-        if (!asset || !readAssetChunk) continue;
-        const pixels = await readAssetChunk(asset.path, "pixels");
-        if (pixels && pixels.byteLength > 0) {
-          next.set(guid, pixels);
-          continue;
-        }
-        const source = await readAssetChunk(asset.path, "source");
-        if (source && source.byteLength > 0) next.set(guid, source);
+        if (!asset || !readEditorTextureBytes) continue;
+        // Engine surface: KTX2 variant preferred; tier > LOD precedence lives
+        // in the shared resolver. Raw fallback keeps samples working when no
+        // compressed variant exists.
+        const bytes = await readEditorTextureBytes(
+          { path: asset.path, guid: asset.header.guid, payload: asset.header.payload },
+          "engine",
+        );
+        if (bytes && bytes.byteLength > 0) next.set(guid, bytes);
       }
       if (cancelled) return;
       textureBytesRef.current = next;
@@ -323,7 +329,7 @@ export function MaterialEditingProvider({
     return () => {
       cancelled = true;
     };
-  }, [assetRegistry, readAssetChunk, textureGuidsKey]);
+  }, [assetRegistry, readEditorTextureBytes, textureGuidsKey]);
 
   const costClassRef = useRef(costClass);
   costClassRef.current = costClass;

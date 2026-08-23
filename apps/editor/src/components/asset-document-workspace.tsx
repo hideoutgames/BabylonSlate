@@ -19,9 +19,9 @@ import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
 import {
   applyTextureMaxDimensionChange,
   patchTextureUsage,
-  textureMaxDimensionSelectValue,
+  textureBuildDownsampleSelectValue,
   TEXTURE_USAGE_OPTIONS,
-  TEXTURE_MAX_DIMENSION_OPTIONS,
+  TEXTURE_BUILD_DOWNSAMPLE_OPTIONS,
 } from "../lib/asset-settings";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -260,7 +260,7 @@ function TexturePreview({
   path: string;
   payload: Record<string, unknown>;
 }) {
-  const { readAssetChunk } = useDocuments();
+  const { assetRegistry, readEditorTextureBytes } = useDocuments();
   const [url, setUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{
     width: number;
@@ -271,18 +271,35 @@ function TexturePreview({
     let cancelled = false;
     let objectUrl: string | null = null;
     void (async () => {
-      const bytes = await readAssetChunk(path, "pixels");
+      // DOM surface: downscaled raw pixels only — KTX2 cannot render in <img>.
+      const indexed = assetRegistry
+        ?.list()
+        .find((asset) => asset.path === path);
+      const guid =
+        indexed?.header.guid ??
+        (typeof payload.guid === "string" ? payload.guid : path);
+      const bytes = await readEditorTextureBytes(
+        { path, guid, payload },
+        "dom",
+      );
       if (!bytes || cancelled || bytes.byteLength === 0) return;
       objectUrl = URL.createObjectURL(
         new Blob([bytes], { type: "image/png" }),
       );
-      if (!cancelled) setUrl(objectUrl);
+      if (!cancelled) {
+        setUrl(objectUrl);
+        // Natural size for the preview caption comes from the sniffed header.
+        void import("@babylonslate/assets").then(({ sniffImageSize }) => {
+          const size = sniffImageSize(bytes);
+          if (size && !cancelled) setNaturalSize(size);
+        });
+      }
     })();
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [path, readAssetChunk]);
+  }, [assetRegistry, path, payload, readEditorTextureBytes]);
 
   const payloadWidth =
     typeof payload.sourceWidth === "number" ? payload.sourceWidth : null;
@@ -337,7 +354,6 @@ function AssetSettingsEditor({
   payload: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
 }) {
-  const { retryTextureEncoding } = useDocuments();
   const rows: PropertyRow[] = [];
   if (assetType === "Texture") {
     const usage = typeof payload.usage === "string" ? payload.usage : "albedo";
@@ -365,26 +381,20 @@ function AssetSettingsEditor({
         onChange: (value) => onChange(patchTextureUsage(payload, value)),
       },
       {
-        id: "maxDimension",
+        id: "buildDownsample",
         kind: "enum",
-        label: "Max Dimension",
-        value: textureMaxDimensionSelectValue(payload),
-        options: TEXTURE_MAX_DIMENSION_OPTIONS.map((value) => ({
+        label: "Resolution",
+        value: textureBuildDownsampleSelectValue(payload),
+        options: TEXTURE_BUILD_DOWNSAMPLE_OPTIONS.map((value) => ({
           value,
           label: value === "source" ? "Source" : value,
         })),
         onChange: (value) => {
-          const { payload: next, shouldRequeue } =
-            applyTextureMaxDimensionChange(payload, value);
+          const { payload: next } = applyTextureBuildDownsampleChange(
+            payload,
+            value,
+          );
           onChange(next);
-          if (!guid || !shouldRequeue) return;
-          void retryTextureEncoding(guid, {
-            force: true,
-            maxDimension:
-              typeof next.maxDimension === "number"
-                ? next.maxDimension
-                : undefined,
-          });
         },
       },
       {

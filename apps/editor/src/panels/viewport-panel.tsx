@@ -37,6 +37,7 @@ import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
+import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
@@ -244,6 +245,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
     const handle = createEngine(canvas, {
       editor: true,
+      onContextEvent: (event, elapsedMs) => {
+        console.info(
+          "[Engine]",
+          event === "lost"
+            ? "WebGL context lost"
+            : `WebGL context restored in ${Math.round(elapsedMs ?? 0)}ms`,
+        );
+      },
+
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
@@ -291,6 +301,16 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         console.info("[Engine]", command.message);
       }
     });
+    // An editorTextureLod change must re-resolve every texture against the new
+    // level: forget cached variants, then re-apply the current scene so
+    // materials rebind through getTexture with fresh bytes.
+    const onLodChanged = () => {
+      const current = sceneRef.current;
+      handle.resourceCache.forgetTextures();
+      if (current) handle.loadScene(current);
+      else handle.scheduler.invalidate("manual");
+    };
+    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onLodChanged);
 
     const resizeObserver = new ResizeObserver(() => {
       resizeIfSized(canvas);
@@ -316,6 +336,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
     return () => {
       unsubscribe();
+      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onLodChanged);
       resizeIfSized.dispose();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();

@@ -1,4 +1,11 @@
 import type { BabassetHeader, ChunkEntry } from "./babasset";
+import {
+  DEFAULT_TEXTURE_ENCODE_SETTINGS,
+  STANDARD_ENCODE_CAPS,
+  encodeSettingsHash,
+  ktx2ChunkId,
+  type TextureEncodeSettings,
+} from "./texture-compression";
 
 export interface TextureChunkSelection {
   chunk: ChunkEntry;
@@ -129,6 +136,51 @@ export function selectGuiImageChunk(
   );
   if (source) {
     return { chunk: source, kind: "source", reason: "gui-source" };
+  }
+  return null;
+}
+
+/** Desired cap first, then standard caps above it (sharper fallbacks). */
+export function orderedCapsFromDesired(desiredCap: number): number[] {
+  return [...new Set([Math.round(desiredCap), ...STANDARD_ENCODE_CAPS])]
+    .filter((cap) => cap >= Math.round(desiredCap))
+    .sort((a, b) => a - b);
+}
+
+/**
+ * First encoded KTX2 variant matching `orderedCaps` (mirrors how the registry
+ * names variants: settings hash over format/quality/mipmaps + effective cap).
+ * Returns a chunk id present on the header, or null.
+ */
+export async function matchKtx2VariantChunk(
+  header: BabassetHeader,
+  orderedCaps: readonly number[],
+  base: Pick<
+    TextureEncodeSettings,
+    "format" | "quality" | "generateMipmaps"
+  > = DEFAULT_TEXTURE_ENCODE_SETTINGS,
+): Promise<string | null> {
+  const present = new Set(
+    header.chunks
+      .filter((chunk) => chunk.kind === "ktx2" || chunk.id.startsWith("ktx2:"))
+      .map((chunk) => chunk.id),
+  );
+  if (present.size === 0) return null;
+  const legacyMax =
+    typeof header.payload.maxDimension === "number" &&
+    header.payload.maxDimension > 0
+      ? header.payload.maxDimension
+      : Number.POSITIVE_INFINITY;
+  const seen = new Set<number>();
+  for (const raw of orderedCaps) {
+    if (!(raw > 0)) continue;
+    const effective = Math.min(Math.round(raw), legacyMax);
+    if (seen.has(effective)) continue;
+    seen.add(effective);
+    const id = ktx2ChunkId(
+      await encodeSettingsHash({ ...base, maxDimension: effective }),
+    );
+    if (present.has(id)) return id;
   }
   return null;
 }

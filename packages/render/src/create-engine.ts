@@ -220,6 +220,8 @@ export interface CreateEngineOptions {
   present?: "registerView" | "rtt";
   /** When true, use Play scene performance settings. */
   playMode?: boolean;
+  /** WebGL context lifecycle diagnostics (loss is normal under iPad memory pressure). */
+  onContextEvent?: (event: "lost" | "restored", elapsedMs?: number) => void;
   maxActors?: number;
   /** Attach the editor camera, gizmos, grid, selection and scene sync. */
   editor?: boolean;
@@ -1083,13 +1085,20 @@ export function createEngine(
     document.addEventListener("visibilitychange", onVisibility);
   }
 
+  let contextLostAt: number | null = null;
   engine.onContextLostObservable.add(() => {
-    // Context loss is treated as memory pressure.
+    contextLostAt = performance.now();
+    options.onContextEvent?.("lost");
   });
   engine.onContextRestoredObservable.add(() => {
-    scaling.dropTier();
+    const elapsedMs =
+      contextLostAt !== null ? performance.now() - contextLostAt : undefined;
+    contextLostAt = null;
+    // Quality stays with the frame-time valve; a permanent tier drop per
+    // restore made repeated iPad context losses progressively blurrier.
     resourceCache.flushUnreferenced();
     scheduler.invalidate("manual");
+    options.onContextEvent?.("restored", elapsedMs);
   });
 
   // Tap-to-pick: continuous hover picking is off for touch.

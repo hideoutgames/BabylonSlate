@@ -42,6 +42,7 @@ export function applyModelMaterialSlots(
   root: AbstractMesh,
   slots: readonly Pick<ModelMaterialSlot, "index" | "name" | "materialGuid">[],
   resolveMaterial: (guid: string) => Material | null,
+  options?: { disposeShadowed?: boolean },
 ): void {
   const meshes = visualMeshes(root);
   const constructionToSlot = new Map<Material, number>();
@@ -91,6 +92,29 @@ export function applyModelMaterialSlots(
     }
     const resolved = resolveMaterial(guid);
     if (resolved) mesh.material = resolved;
+  }
+
+  // Asset-driven models never sample the GLB's construction materials again —
+  // free them (and their full-res decoded textures) so the container cache
+  // stops pinning orphaned VRAM. Only safe when EVERY slot is explicitly
+  // assigned; unassigned slots keep their construction as the live fallback.
+  if (options?.disposeShadowed) {
+    for (const [, slotIndex] of constructionToSlot) {
+      const guid = byIndex.get(slotIndex) ?? null;
+      if (!guid) continue;
+      try {
+        for (const texture of construction.getAllTextures()) {
+          try {
+            texture.dispose();
+          } catch {
+            // already gone
+          }
+        }
+        construction.dispose();
+      } catch {
+        // shared across meshes — keep first-error semantics quiet
+      }
+    }
   }
 }
 

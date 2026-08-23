@@ -276,3 +276,16 @@ describe("app settings", () => {
     expect((await store.load()).undoHistoryLength).toBe(50);
   });
 });
+
+describe("editorTextureLod", () => {
+  it("defaults to balanced when saved JSON omits the field", () => {
+    const parsed = engineSettingsSchema.parse({ undoHistoryLength: 50 });
+    expect(parsed.editorTextureLod).toBe("balanced");
+  });
+
+  it("accepts every level explicitly", () => {
+    for (const lod of ["off", "balanced", "aggressive", "minimal", "tiny"]) {
+      expect(engineSettingsSchema.parse({ editorTextureLod: lod }).editorTextureLod).toBe(lod);
+    }
+  });
+});

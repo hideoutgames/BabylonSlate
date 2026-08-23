@@ -420,3 +420,86 @@ describe("loadModelPreviewSource", () => {
     ).toBeNull();
   });
 });
+
+describe("applyModelMaterialSlots disposal", () => {
+  function setupTwoConstructions(scene: import("@babylonslate/core").Scene) {
+    const root = MeshBuilder.CreateBox("root", { size: 1 }, scene);
+    const child = MeshBuilder.CreateBox("child", { size: 1 }, scene);
+    child.parent = root;
+    const constructionA = new StandardMaterial("slot-0", scene);
+    const constructionB = new StandardMaterial("slot-1", scene);
+    root.material = constructionA;
+    child.material = constructionB;
+    return { root, child, constructionA, constructionB };
+  }
+
+  it("disposes shadowed constructions only when every slot is assigned", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const { root, child, constructionA, constructionB } =
+      setupTwoConstructions(scene);
+    const override = new StandardMaterial("override", scene);
+
+    applyModelMaterialSlots(
+      root,
+      [
+        { index: 0, name: "S0", materialGuid: "mat-1" },
+        { index: 1, name: "S1", materialGuid: "mat-2" },
+      ],
+      (guid) => new StandardMaterial(`resolved-${guid}`, scene),
+      { disposeShadowed: true },
+    );
+
+    expect(root.material?.name).toBe("resolved-mat-1");
+    expect(child.material?.name).toBe("resolved-mat-2");
+    expect(constructionA.isDisposed()).toBe(true);
+    expect(constructionB.isDisposed()).toBe(true);
+  });
+
+  it("keeps constructions alive when any slot is unassigned (fallback contract)", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const { root, child, constructionA, constructionB } =
+      setupTwoConstructions(scene);
+
+    applyModelMaterialSlots(
+      root,
+      [
+        { index: 0, name: "S0", materialGuid: "mat-1" },
+        { index: 1, name: "S1", materialGuid: null },
+      ],
+      (guid) => (guid === "mat-1" ? new StandardMaterial("resolved", scene) : null),
+      { disposeShadowed: true },
+    );
+
+    expect(root.material?.name).toBe("resolved");
+    // Per-construction granularity: the shadowed one goes, the fallback one
+    // (and every mesh that can still fall back to it) stays.
+    expect(child.material).toBe(constructionB);
+    expect(constructionA.isDisposed()).toBe(true);
+    expect(constructionB.isDisposed()).toBe(false);
+  });
+
+  it("defaults to keeping constructions when the option is absent", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const { root, child, constructionA, constructionB } =
+      setupTwoConstructions(scene);
+    const override = new StandardMaterial("override", scene);
+
+    applyModelMaterialSlots(
+      root,
+      [
+        { index: 0, name: "S0", materialGuid: "m" },
+        { index: 1, name: "S1", materialGuid: "m2" },
+      ],
+      () => override,
+    );
+
+    expect(constructionA.isDisposed()).toBe(false);
+    expect(constructionB.isDisposed()).toBe(false);
+  });
+});

@@ -580,6 +580,14 @@ export function startPlaySession(options: {
   let runtime: RuntimeDriver | null = null;
 
   const handle = createEngine(canvas, {
+    onContextEvent: (event, elapsedMs) => {
+      console.info(
+        "[Engine]",
+        event === "lost"
+          ? "WebGL context lost"
+          : `WebGL context restored in ${Math.round(elapsedMs ?? 0)}ms`,
+      );
+    },
     sharedEngine,
     playMode: true,
     maxActors: 256,

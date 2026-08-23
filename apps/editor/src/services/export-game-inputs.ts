@@ -11,6 +11,11 @@ import {
   normalizeAudioPayload,
   selectGuiImageChunk,
   selectTextureChunk,
+  buildDownsampleCap,
+  isBuildDownsampleTier,
+  orderedCapsFromDesired,
+  sniffImageSize,
+  matchKtx2VariantChunk,
   type IndexedAsset,
 } from "@babylonslate/assets";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
@@ -69,6 +74,29 @@ async function bytesForAsset(
   }
   if (asset.header.type === "Texture") {
     try {
+      // Authored tier (non-source) wins over whatever single variant the
+      // pointer names: prefer its cap, then sharper variants.
+      const tier = isBuildDownsampleTier(asset.header.payload.buildDownsample)
+        ? asset.header.payload.buildDownsample
+        : undefined;
+      if (tier && tier !== "source") {
+        const pixels = await readAssetChunk(asset.path, "pixels");
+        const size = pixels ? sniffImageSize(pixels) : null;
+        if (size) {
+          const desired = buildDownsampleCap(
+            Math.max(size.width, size.height),
+            tier,
+          );
+          const variantId = await matchKtx2VariantChunk(
+            asset.header,
+            orderedCapsFromDesired(desired),
+          );
+          if (variantId) {
+            const variant = await readAssetChunk(asset.path, variantId);
+            if (variant && variant.byteLength > 0) return variant;
+          }
+        }
+      }
       const selected = selectTextureChunk(asset.header);
       return await readAssetChunk(asset.path, selected.chunk.id);
     } catch {

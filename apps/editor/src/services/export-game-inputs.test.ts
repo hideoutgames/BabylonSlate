@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultScene } from "@babylonslate/core";
-import type { IndexedAsset } from "@babylonslate/assets";
+import {
+  encodeSettingsHash,
+  ktx2ChunkId,
+  type IndexedAsset,
+} from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
 
 function textureAsset(): IndexedAsset {
@@ -405,5 +409,65 @@ describe("loadExportDocuments", () => {
     });
     expect(loaded.bytesByGuid("font-1")).toEqual(new Uint8Array([1, 2]));
     expect(loaded.fontFacetypeBytesByGuid("font-1")).toEqual(new Uint8Array([9, 8, 7]));
+  });
+});
+
+describe("tier-aware export texture selection", () => {
+  async function tieredTextureAsset(
+    payload: Record<string, unknown>,
+  ): Promise<{ asset: IndexedAsset; halfId: string; tinyId: string }> {
+    const base = textureAsset();
+    const settings = { format: "uastc" as const, quality: 2, generateMipmaps: true };
+    // 2390px source -> 1/2 = ceil(2390/2) = 1195.
+    const halfId = ktx2ChunkId(await encodeSettingsHash({ ...settings, maxDimension: 1195 }));
+    const tinyId = ktx2ChunkId(await encodeSettingsHash({ ...settings, maxDimension: 128 }));
+    const asset: IndexedAsset = {
+      ...base,
+      header: {
+        ...base.header,
+        payload,
+        chunks: [
+          {
+            id: "pixels",
+            kind: "pixels",
+            mime: "image/png",
+            sha256: "aa",
+            locator: { inline: { offset: 0, length: 1 } },
+          },
+          { id: tinyId, kind: "ktx2", mime: "image/ktx2", sha256: "cc", locator: { inline: { offset: 2, length: 1 } } },
+          { id: halfId, kind: "ktx2", mime: "image/ktx2", sha256: "dd", locator: { inline: { offset: 3, length: 1 } } },
+        ],
+      },
+    };
+    return { asset, halfId, tinyId };
+  }
+
+  it("prefers the authored tier's variant over the pointer-less default", async () => {
+    const { asset, halfId, tinyId } = await tieredTextureAsset({ buildDownsample: "1/2" });
+    const loaded = await loadExportDocuments({
+      assets: [asset],
+      loadDocument: async () => null,
+      readAssetChunk: async (_path, chunkId) => {
+        if (chunkId === halfId) return new Uint8Array([1, 1, 9, 5]);
+        if (chunkId === tinyId) return new Uint8Array([1, 2, 8]);
+        if (chunkId === "pixels") return new Uint8Array([7]);
+        return null;
+      },
+    });
+    expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([1, 1, 9, 5]));
+  });
+
+  it("keeps legacy behavior (first KTX2 chunk) without an authored tier", async () => {
+    const { asset, halfId, tinyId } = await tieredTextureAsset({});
+    const loaded = await loadExportDocuments({
+      assets: [asset],
+      loadDocument: async () => null,
+      readAssetChunk: async (_path, chunkId) => {
+        if (chunkId === halfId) return new Uint8Array([1, 1, 9, 5]);
+        if (chunkId === tinyId) return new Uint8Array([1, 2, 8]);
+        return null;
+      },
+    });
+    expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([1, 2, 8]));
   });
 });
