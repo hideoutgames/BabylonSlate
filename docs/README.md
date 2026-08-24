@@ -29,7 +29,6 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/physics.md](architecture/physics.md) | Havok 3D and Rapier 2D |
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
 | [architecture/console-commands.md](architecture/console-commands.md) | Builtin catalog, apply audit, autocomplete |
-| [architecture/ui-runtime.md](architecture/ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [architecture/tilemaps.md](architecture/tilemaps.md) | Tileset / Tilemap assets, chunk VertexData, painting, Rapier chains |

@@ -20,7 +20,6 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Physics](physics.md) | Havok 3D and Rapier 2D |
 | [Debugger](debugger.md) | Command registry, console, stats HUD |
 | [Console commands](console-commands.md) | Builtin catalog, apply audit, autocomplete |
-| [UI runtime](ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [Fonts](fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [Sprites](sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [Animation graph](anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |

@@ -195,7 +195,6 @@ test.describe("P4 Play overlay and session report", () => {
     await openMainScene(page);
 
     await clickPlayAndWaitForOverlay(page);
-    await expect(page.getByTestId("play-hud-stick")).toHaveCount(0);
     await expect(page.getByTestId("play-log-tail")).toHaveCount(0);
     await expect(page.getByTestId("stats-hud")).toBeHidden();
     await expect(page.getByTestId("play-overlay-pause")).toBeVisible();

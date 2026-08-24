@@ -298,8 +298,7 @@ without mutating the scene document. `hardwareScalingLevel` from the same
 settings page is applied to the Engine.
 
 Play and export close over surface materials, stack materials (including
-disabled entries), **Interface** materials referenced from HUD `materialGuid`,
-transitive Material Functions and texture guids. Saving a
+disabled entries), transitive Material Functions and texture guids. Saving a
 Material writes `domain` onto `header.payload` and `materialDependencies().all`
 onto `header.dependencies[]`. The packaged player hydrates those JSON payloads
 into `createEngine` (`materialDocuments`, `materialFunctions`,
@@ -308,13 +307,9 @@ into `createEngine` (`materialDocuments`, `materialFunctions`,
 editor Play and the packaged player call `loadScene` / `applySceneEnvironment`
 so the destination stack and environment replace the previous scene's. Engine Settings
 `postProcessingEnabled` is not applied to exported games — omitted means the
-authored stack runs. HUD Material widgets compile Interface documents through
-the same library and blit to GUI Images ([ui-runtime.md](ui-runtime.md)).
+authored stack runs.
 
 ## Not implemented
 
 - Decal domain is not implemented.
 - Motion vectors and object IDs are deferred.
-- Surface and post-process materials cannot be assigned to HUD Material widgets
-  (Interface domain only). World-space `WidgetComponent` paints UserInterface
-  documents onto an owned plane via `CreateForMesh` ([ui-runtime.md](ui-runtime.md)).

@@ -178,9 +178,8 @@ Read-only deep investigation of the repo from the user's prompt: [`.cursor/skill
 
 ## BabylonJS skill
 
-Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** work. UserInterface is Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
+Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work. UserInterface **authoring** was removed from `apps/editor` (no designer canvas, no Play HUD overlay).
 
-- **UserInterface** — game HUD, viewport-layer apply, designer canvas ([ui-runtime.md](../architecture/ui-runtime.md)).
 - React editor chrome (Dockview, shadcn, editor-kit) still uses the editor-ui-components and shadcn skills.
 - Rule: [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (BabylonJS).
 
@@ -388,7 +387,7 @@ P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Design notes | — | `docs/architecture/ui-runtime.md`, `fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
+| Design notes | — | `docs/architecture/fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
 | Anchoring + layout | `p9-ui-anchoring` (done) | `ui-runtime` | Design notes |
 | Font payload + registry | `p9-fonts` (done) | `assets`, `core`, `render`, `ui-runtime`, `apps/editor` | Design notes |
 | UserInterface + designer | `p9-ui-system` (done) | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
@@ -397,7 +396,7 @@ P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `
 | AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `scripting`, `apps/editor` | Dual-mode State Machine / Animation Object host, typed variables, compiled transition rules |
 | Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
-Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
+Design notes: [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
 
 ### P9 Play-path residuals (do not rebuild P8/P9)
 
@@ -556,10 +555,10 @@ Spec: [engineplan.md](../engineplan.md) §7, §18 P12, Appendix A `p12-editor-ex
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | EditorUtilityObject | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, export strip | P11 done |
-| UserInterface **authoring** editors | Done (`p12-ui-editors` + fundamentals rework) | `apps/editor` (designer Dockview host), `render` (`createUiSurface` hosts ADT canvas), `ui-runtime` schema v3 | `p12-editor-extensions` |
+| UserInterface **authoring** editors | Later removed from `apps/editor` | Content Browser does not create or open UserInterface | `p12-editor-extensions` |
 | Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
-UserInterface authoring (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a hosted ADT canvas. Schema v3 Babylon kinds; nested UserInterface is a slot.
+UserInterface authoring (`p12-ui-editors`) later **removed** from `apps/editor`: Content Browser does not create or open UserInterface; overlay Play does not mount a HUD.
 
 Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
 
