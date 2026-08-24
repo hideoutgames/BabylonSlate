@@ -79,7 +79,7 @@ export interface PlayPreviewProjectSettings {
 }
 
 export interface FontProjectSettings {
-  /** Font asset guid used when a widget omits a family. */
+  /** Font asset guid used when a stack omits a family. */
   defaultFontGuid: string | null;
   /** Generic CSS family appended to every compiled stack. */
   globalFallback: string;
@@ -88,19 +88,6 @@ export interface FontProjectSettings {
 export const DEFAULT_FONT_PROJECT_SETTINGS: FontProjectSettings = {
   defaultFontGuid: null,
   globalFallback: "sans-serif",
-};
-
-export type UiScaleRule = "fitWidth" | "fitHeight" | "shortestSide";
-
-export interface UiProjectSettings {
-  /** Play/player ADT ideal size for viewport-layer HUDs. */
-  designResolution: { width: number; height: number };
-  scaleRule: UiScaleRule;
-}
-
-export const DEFAULT_UI_PROJECT_SETTINGS: UiProjectSettings = {
-  designResolution: { width: 1920, height: 1080 },
-  scaleRule: "shortestSide",
 };
 
 export interface AudioProjectSettings {
@@ -192,8 +179,6 @@ export interface ProjectSettings {
   physics: PhysicsProjectSettings;
   input: ProjectInputSettings;
   fonts: FontProjectSettings;
-  /** Viewport-layer HUD design space shared by Play, the player, and the designer. */
-  ui: UiProjectSettings;
   audio: AudioProjectSettings;
   render: RenderProjectSettings;
   /** Class ids (EditorUtilityObject lineage) that run in the editor ScriptHost. */
@@ -730,7 +715,6 @@ export function normalizeProjectSettings(
           ? settings.fonts.globalFallback.trim()
           : DEFAULT_FONT_PROJECT_SETTINGS.globalFallback,
     },
-    ui: normalizeUiSettings(settings?.ui),
     audio: normalizeAudioSettings(settings?.audio),
     startupSceneGuid: normalizeStartupSceneGuid(settings?.startupSceneGuid),
     gameInstanceClass: normalizeGameInstanceClass(settings?.gameInstanceClass),
@@ -742,24 +726,6 @@ export function normalizeProjectSettings(
     exportPresets: normalizeExportPresets(settings?.exportPresets),
     sourceControl: normalizeSourceControl(settings?.sourceControl),
   };
-}
-
-function normalizeUiSettings(
-  value: Partial<UiProjectSettings> | undefined,
-): UiProjectSettings {
-  const width = normalizePositiveInt(
-    value?.designResolution?.width,
-    DEFAULT_UI_PROJECT_SETTINGS.designResolution.width,
-  );
-  const height = normalizePositiveInt(
-    value?.designResolution?.height,
-    DEFAULT_UI_PROJECT_SETTINGS.designResolution.height,
-  );
-  const scaleRule: UiScaleRule =
-    value?.scaleRule === "fitWidth" || value?.scaleRule === "fitHeight"
-      ? value.scaleRule
-      : "shortestSide";
-  return { designResolution: { width, height }, scaleRule };
 }
 
 function clampAudioScale(value: unknown, fallback = 1): number {

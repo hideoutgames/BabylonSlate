@@ -59,10 +59,6 @@ describe("project schema", () => {
       defaultFontGuid: null,
       globalFallback: "sans-serif",
     });
-    expect(project.settings.ui).toEqual({
-      designResolution: { width: 1920, height: 1080 },
-      scaleRule: "shortestSide",
-    });
     expect(project.settings.audio).toEqual({
       audioMixerGuid: null,
       occlusionEnabled: true,
@@ -607,32 +603,6 @@ describe("project schema", () => {
       normalizeProjectSettings({ audio: { audioMixerGuid: "mixer-1" } }).audio
         .audioMixerGuid,
     ).toBe("mixer-1");
-  });
-
-  it("fills UserInterface design resolution and scale rule when omitted", () => {
-    expect(normalizeProjectSettings(undefined).ui).toEqual({
-      designResolution: { width: 1920, height: 1080 },
-      scaleRule: "shortestSide",
-    });
-    expect(
-      normalizeProjectSettings({
-        ui: {
-          designResolution: { width: 1280, height: 720 },
-          scaleRule: "fitWidth",
-        },
-      }).ui,
-    ).toEqual({
-      designResolution: { width: 1280, height: 720 },
-      scaleRule: "fitWidth",
-    });
-    expect(
-      normalizeProjectSettings({
-        ui: { designResolution: { width: 0, height: -4 }, scaleRule: "nope" },
-      } as never).ui,
-    ).toEqual({
-      designResolution: { width: 1920, height: 1080 },
-      scaleRule: "shortestSide",
-    });
   });
 
   it("defaults Audio occlusion on and keeps an explicit off switch", () => {

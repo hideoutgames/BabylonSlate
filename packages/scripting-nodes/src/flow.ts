@@ -39,11 +39,6 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.endOverlap": "onEndOverlap",
   "flow.event.commandRun": "onCommandRun",
   "flow.event.editorBeginPlay": "onEditorBeginPlay",
-  "flow.event.mouseEnter": "onMouseEnter",
-  "flow.event.mouseExit": "onMouseExit",
-  "flow.event.mousePress": "onMousePress",
-  "flow.event.mouseRelease": "onMouseRelease",
-  "flow.event.widgetClick": "onWidgetClick",
   "flow.event.editorStartup": "onEditorStartup",
   "flow.event.sceneOpen": "onSceneOpen",
   "flow.event.sceneSaved": "onSceneSaved",
@@ -53,32 +48,6 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "bt.event.abort": "onAbort",
   "bt.event.evaluate": "onEvaluate",
 };
-
-function widgetPointerEventNode(id: string, title: string): NodeDefinition {
-  return {
-    id,
-    title,
-    category: "flow",
-    pure: true,
-    pins: () => [
-      pin("execOut", "then", "out", EXEC),
-      pin("widget", "widget", "out", objectRef("Widget")),
-      pin("widgetId", "widgetId", "out", STRING),
-    ],
-    codegen: () => ({
-      widget: "(ctx.args.widget)",
-      widgetId: "(ctx.args.widgetId)",
-    }),
-  };
-}
-
-const widgetPointerEventNodes: NodeDefinition[] = [
-  widgetPointerEventNode("flow.event.mouseEnter", "Event On Mouse Enter"),
-  widgetPointerEventNode("flow.event.mouseExit", "Event On Mouse Exit"),
-  widgetPointerEventNode("flow.event.mousePress", "Event On Mouse Press"),
-  widgetPointerEventNode("flow.event.mouseRelease", "Event On Mouse Release"),
-  widgetPointerEventNode("flow.event.widgetClick", "Event On Widget Click"),
-];
 
 export const flowNodes: NodeDefinition[] = [
   {
@@ -369,7 +338,6 @@ export const flowNodes: NodeDefinition[] = [
       /* entry point emitted by the compiler */
     },
   },
-  ...widgetPointerEventNodes,
   {
     id: "flow.entry",
     title: "Entry",
