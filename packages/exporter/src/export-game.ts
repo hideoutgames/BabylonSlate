@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_UI_PROJECT_SETTINGS, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -21,6 +21,11 @@ import type {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+const DEFAULT_PACKED_UI_SETTINGS = {
+  designResolution: { width: 1920, height: 1080 },
+  scaleRule: "shortestSide" as const,
+};
 
 function clampAudioScale(value: unknown, fallback = 1): number {
   const n =
@@ -77,15 +82,15 @@ function packedUiSettings(
   const scaleRule =
     record?.scaleRule === "fitWidth" || record?.scaleRule === "fitHeight"
       ? record.scaleRule
-      : DEFAULT_UI_PROJECT_SETTINGS.scaleRule;
+      : DEFAULT_PACKED_UI_SETTINGS.scaleRule;
   return {
     designResolution: {
       width:
-        width >= 1 ? Math.round(width) : DEFAULT_UI_PROJECT_SETTINGS.designResolution.width,
+        width >= 1 ? Math.round(width) : DEFAULT_PACKED_UI_SETTINGS.designResolution.width,
       height:
         height >= 1
           ? Math.round(height)
-          : DEFAULT_UI_PROJECT_SETTINGS.designResolution.height,
+          : DEFAULT_PACKED_UI_SETTINGS.designResolution.height,
     },
     scaleRule,
   };
