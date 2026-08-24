@@ -42,7 +42,7 @@ Folders organize the Outliner. They are **not** actors and never reach the objec
 
 Place Actors copies Class prefab `SerializedGraph.components` onto the spawned actor and stamps each row’s `sourceId` to the prefab component id. Actor placement fields (`name`, actor `transform`, `visible`, `locked`, `parentId`, `folderId`) stay instance-owned.
 
-When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab). Opening a scene runs the same merge against current Class graphs. Closed scene files are not rewritten in the background.
+When the Class Prefab list changes (`graph.setComponents`), the **open** scene re-merges every actor of that class (and descendants, using the same ancestor merge as the Prefab tab) through the scene command layer (dirty + undo). Opening a scene runs the same merge **in memory** so the viewport is current without auto-locking the file; Save All after a Prefab edit while the scene is open persists the instance rows. Closed scene files are not rewritten in the background.
 
 | Prefab change | Scene instance |
 | --- | --- |
