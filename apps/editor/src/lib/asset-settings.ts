@@ -1,5 +1,5 @@
 import { PIN_PICKER_TYPES } from "@babylonslate/editor-kit";
-import { shouldCompressTexture } from "@babylonslate/assets";
+import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@babylonslate/assets";
 import type {
   EnumAsset,
   EnumMember,
@@ -24,16 +24,13 @@ export const TEXTURE_USAGE_OPTIONS = [
 
 export type TextureUsage = (typeof TEXTURE_USAGE_OPTIONS)[number];
 
-export const TEXTURE_MAX_DIMENSION_OPTIONS = [
-  "source",
-  "4096",
-  "2048",
-  "1024",
-  "512",
-] as const;
-
-export type TextureMaxDimensionOption =
-  (typeof TEXTURE_MAX_DIMENSION_OPTIONS)[number];
+export const TEXTURE_DOWNSAMPLE_LABELS: Record<string, string> = {
+  "1": "Full",
+  "2": "1/2",
+  "4": "1/4",
+  "8": "1/8",
+  "16": "1/16",
+};
 
 function moveIndex<T>(items: T[], index: number, delta: number): T[] {
   const nextIndex = index + delta;
@@ -224,43 +221,58 @@ export function patchTextureUsage(
   return { ...payload, usage };
 }
 
-export function patchTextureMaxDimension(
+export function patchTextureDownsample(
   payload: Record<string, unknown>,
   value: string | number | undefined,
 ): Record<string, unknown> {
-  if (value === "source" || value === undefined || value === "") {
-    const next = { ...payload };
-    delete next.maxDimension;
-    return next;
-  }
   const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    const next = { ...payload };
-    delete next.maxDimension;
+  const next = { ...payload };
+  delete next.maxDimension;
+  if (!TEXTURE_DOWNSAMPLE_OPTIONS.includes(parsed as (typeof TEXTURE_DOWNSAMPLE_OPTIONS)[number])) {
+    delete next.downsample;
     return next;
   }
-  return { ...payload, maxDimension: parsed };
+  if (parsed === 1) {
+    delete next.downsample;
+    return next;
+  }
+  return { ...next, downsample: parsed };
 }
 
-export function textureMaxDimensionSelectValue(
+export function textureDownsampleSelectValue(
   payload: Record<string, unknown>,
 ): string {
-  const value = payload.maxDimension;
-  if (typeof value === "number" && value > 0) return String(value);
-  return "source";
+  const value = payload.downsample;
+  if (typeof value === "number" && value > 1) return String(value);
+  return "1";
 }
 
-export function applyTextureMaxDimensionChange(
+export function applyTextureDownsampleChange(
   payload: Record<string, unknown>,
   value: string,
 ): {
   payload: Record<string, unknown>;
   shouldRequeue: boolean;
 } {
-  const next = patchTextureMaxDimension(payload, value);
+  const next = patchTextureDownsample(payload, value);
   const usage = String(payload.usage ?? "albedo");
   return {
     payload: next,
+    shouldRequeue: shouldCompressTexture(usage),
+  };
+}
+
+export function applyTextureCompressionQualityChange(
+  payload: Record<string, unknown>,
+  value: number,
+): {
+  payload: Record<string, unknown>;
+  shouldRequeue: boolean;
+} {
+  const quality = Number.isFinite(value) ? value : 2;
+  const usage = String(payload.usage ?? "albedo");
+  return {
+    payload: { ...payload, compressionQuality: quality },
     shouldRequeue: shouldCompressTexture(usage),
   };
 }

@@ -14,6 +14,7 @@ import {
   DEFAULT_LOOP_COUNT,
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
+  engineCommandBus,
   isErr,
   resolveGameInstanceClass,
 } from "@babylonslate/core";
@@ -505,6 +506,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     () => onSessionDiagnostic(appendLog),
     [appendLog, onSessionDiagnostic],
   );
+
+  useEffect(() => {
+    return engineCommandBus.subscribe((command) => {
+      if (command.type === "log") {
+        appendLog(`[Engine] ${command.message}`);
+      }
+    });
+  }, [appendLog]);
 
   const registerSharedEngine = useCallback((engine: Engine | null) => {
     const previous = engineRef.current;

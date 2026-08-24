@@ -42,11 +42,13 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  decodeSourceToRgba,
   normalizeModelPayload,
   type ModelPayload,
   resolvePluginEnabled,
   newAssetGuid,
 } from "@babylonslate/assets";
+import { encodeRgbaPng } from "@babylonslate/render";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -91,6 +93,7 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
+import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
 import {
   recordedTraceFileName,
   spillRecordedTraceDocument,
@@ -469,7 +472,7 @@ interface DocumentContextValue {
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
   }>;
-  /** Texture pixels/source bytes for sprite, tileset, and material `textureGuid`s. */
+  /** GPU texture bytes (KTX2 or LOD-downsampled source) for sprite, tileset, and material `textureGuid`s. */
   collectPlayTextureBytes: (
     sprites: ReadonlyMap<string, SpritePayload>,
     tilesets: ReadonlyMap<string, TilesetPayload>,
@@ -2652,29 +2655,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
-      const byGuid = new Map(
-        assets.map((asset) => [asset.header.guid, asset] as const),
-      );
-      const bytes = new Map<string, Uint8Array>();
+      const settings = await createAppSettingsStore().load();
       const guids = [
         ...textureGuidsFromPlayPayloads(sprites, tilesets, spriteAnimations),
         ...extraGuids,
       ];
-      const seen = new Set<string>();
-      for (const guid of guids) {
-        if (!guid || seen.has(guid)) continue;
-        seen.add(guid);
-        const asset = byGuid.get(guid);
-        if (!asset) continue;
-        const pixels = await projectService.readAssetChunk(asset.path, "pixels");
-        if (pixels && pixels.byteLength > 0) {
-          bytes.set(guid, pixels);
-          continue;
-        }
-        const source = await projectService.readAssetChunk(asset.path, "source");
-        if (source && source.byteLength > 0) bytes.set(guid, source);
-      }
-      return bytes;
+      return collectGpuTextureBytes({
+        assets,
+        guids,
+        readChunk: (path, chunkId) =>
+          projectService.readAssetChunk(path, chunkId),
+        editorLod: {
+          enabled: settings.editorTextureLodEnabled,
+          quality: settings.editorTextureLodQuality,
+        },
+        downsampleSource: async (bytes, targetEdge) => {
+          const decoded = await decodeSourceToRgba(bytes, targetEdge);
+          return encodeRgbaPng(decoded.width, decoded.height, decoded.rgba);
+        },
+        onMissingKtx2: (guid) => {
+          void projectService.retryTextureEncoding(guid);
+        },
+      });
     },
     [projectService],
   );

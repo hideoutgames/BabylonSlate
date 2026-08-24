@@ -1,0 +1,58 @@
+import {
+  resolveGpuTexture,
+  type BabassetHeader,
+  type EditorTextureLod,
+} from "@babylonslate/assets";
+
+export type GpuTextureAsset = {
+  path: string;
+  header: BabassetHeader;
+};
+
+export async function collectGpuTextureBytes(options: {
+  assets: readonly GpuTextureAsset[];
+  guids: readonly string[];
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  editorLod?: EditorTextureLod | null;
+  downsampleSource?: (
+    bytes: Uint8Array,
+    targetEdge: number,
+  ) => Promise<Uint8Array>;
+  onMissingKtx2?: (guid: string) => void;
+}): Promise<Map<string, Uint8Array>> {
+  const byGuid = new Map(
+    options.assets.map((asset) => [asset.header.guid, asset] as const),
+  );
+  const bytes = new Map<string, Uint8Array>();
+  const seen = new Set<string>();
+  for (const guid of options.guids) {
+    if (!guid || seen.has(guid)) continue;
+    seen.add(guid);
+    const asset = byGuid.get(guid);
+    if (!asset || asset.header.type !== "Texture") continue;
+    const resolved = await resolveGpuTexture({
+      header: asset.header,
+      readChunk: (chunkId) => options.readChunk(asset.path, chunkId),
+      editorLod: options.editorLod,
+    });
+    if (!resolved) continue;
+    if (resolved.missingPreferred) options.onMissingKtx2?.(guid);
+    let payload = resolved.bytes;
+    if (
+      resolved.kind !== "ktx2" &&
+      resolved.targetEdge < resolved.sourceEdge &&
+      options.downsampleSource
+    ) {
+      try {
+        payload = await options.downsampleSource(
+          resolved.bytes,
+          resolved.targetEdge,
+        );
+      } catch {
+        payload = resolved.bytes;
+      }
+    }
+    bytes.set(guid, payload);
+  }
+  return bytes;
+}
