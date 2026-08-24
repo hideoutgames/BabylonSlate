@@ -1015,6 +1015,23 @@ describe("EditorSceneSync", () => {
     expect(visualMeshes(root!).length).toBeGreaterThan(0);
   });
 
+  it("whenEditorModelsReady gives up when a GLB load never settles", async () => {
+    vi.useFakeTimers();
+    const { scene } = createHandle();
+    const mesh = createMeshComponent("c1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const sync = new EditorSceneSync(scene);
+    const binding = (
+      sync as unknown as { modelLoadBinding: { slotAnimLoads: Map<number, Promise<void>> } }
+    ).modelLoadBinding;
+    binding.slotAnimLoads = new Map([[1, new Promise(() => undefined)]]);
+    const done = sync.whenEditorModelsReady();
+    const { SCENE_MODEL_READY_TIMEOUT_MS } = await import("./scene-perf");
+    await vi.advanceTimersByTimeAsync(SCENE_MODEL_READY_TIMEOUT_MS);
+    await expect(done).resolves.toBeUndefined();
+    vi.useRealTimers();
+  });
+
   it("puts instantiated GLB parts on the frozen active-mesh list", async () => {
     const { scene } = createHandle();
     createEditorCamera(scene, { mode: "3d" });

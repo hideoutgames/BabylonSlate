@@ -32,6 +32,8 @@ import { applySortingToMesh, resolveSortingLayer } from "./sorting";
 import {
   freezeEditorActiveMeshes,
   isStructuralEditorChange,
+  SCENE_MODEL_READY_TIMEOUT_MS,
+  settleOrTimeout,
   unfreezeEditorActiveMeshes,
 } from "./scene-perf";
 import { isColliderVisualMesh } from "./collider-visual";
@@ -274,7 +276,10 @@ export class EditorSceneSync {
   whenEditorModelsReady(): Promise<void> {
     const loads = [...(this.modelLoadBinding.slotAnimLoads?.values() ?? [])];
     if (loads.length === 0) return Promise.resolve();
-    return Promise.all(loads).then(() => undefined);
+    return settleOrTimeout(
+      Promise.all(loads).then(() => undefined),
+      SCENE_MODEL_READY_TIMEOUT_MS,
+    );
   }
 
   /**

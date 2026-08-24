@@ -100,25 +100,44 @@ export function applyEditorMaterialFreeze(
   }
 }
 
+export const SCENE_SHADER_WARM_TIMEOUT_MS = 4_000;
+export const SCENE_MODEL_READY_TIMEOUT_MS = 8_000;
+
+export async function settleOrTimeout(work: Promise<void>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      work,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 export async function prewarmSceneMaterials(scene: Scene): Promise<void> {
-  const warmed = new Set<Material>();
-  for (const mesh of scene.meshes) {
-    if (!(mesh instanceof Mesh)) continue;
-    const material = mesh.material;
-    if (!material || warmed.has(material)) continue;
-    if (material instanceof NodeMaterial) {
-      warmed.add(material);
-      await prewarmMaterial(material, mesh);
-      continue;
+  await settleOrTimeout((async () => {
+    const warmed = new Set<Material>();
+    for (const mesh of scene.meshes) {
+      if (!(mesh instanceof Mesh)) continue;
+      const material = mesh.material;
+      if (!material || warmed.has(material)) continue;
+      if (material instanceof NodeMaterial) {
+        warmed.add(material);
+        await prewarmMaterial(material, mesh);
+        continue;
+      }
+      if (isEngineDefaultMaterial(material) || material === scene.defaultMaterial) {
+        warmed.add(material);
+        await material.forceCompilationAsync(mesh);
+      }
     }
-    if (isEngineDefaultMaterial(material) || material === scene.defaultMaterial) {
-      warmed.add(material);
-      await material.forceCompilationAsync(mesh);
+    const fallback = scene.defaultMaterial;
+    if (fallback && !warmed.has(fallback)) {
+      const mesh = scene.meshes.find((entry): entry is Mesh => entry instanceof Mesh);
+      if (mesh) await fallback.forceCompilationAsync(mesh);
     }
-  }
-  const fallback = scene.defaultMaterial;
-  if (fallback && !warmed.has(fallback)) {
-    const mesh = scene.meshes.find((entry): entry is Mesh => entry instanceof Mesh);
-    if (mesh) await fallback.forceCompilationAsync(mesh);
-  }
+  })(), SCENE_SHADER_WARM_TIMEOUT_MS);
 }

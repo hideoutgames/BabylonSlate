@@ -521,11 +521,21 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       nextSharedEngineGeneration(current, next, previous),
     );
     return () => {
+      if (projectOpen) return;
       host.sync(false);
       ownedEngineRef.current = null;
       if (engineRef.current === engine) engineRef.current = null;
     };
   }, [projectOpen]);
+
+  useEffect(() => {
+    const host = projectEngineRef.current;
+    return () => {
+      host.dispose();
+      ownedEngineRef.current = null;
+      engineRef.current = null;
+    };
+  }, []);
 
   const ensureEngine = useCallback((): Engine | null => {
     if (isUsableEngine(ownedEngineRef.current)) {

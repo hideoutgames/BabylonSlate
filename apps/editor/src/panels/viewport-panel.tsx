@@ -466,13 +466,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       } catch (error) {
         console.error("[viewport] failed to load mesh assets", error);
       } finally {
-        if (!cancelled && blocking) {
-          completedLoadGenerationRef.current = generation;
-          setSceneLoad({
-            open: false,
-            progress: 100,
-            phase: "Warming Shaders",
-          });
+        if (!cancelled) {
+          if (blocking) {
+            completedLoadGenerationRef.current = generation;
+            setSceneLoad({
+              open: false,
+              progress: 100,
+              phase: "Warming Shaders",
+            });
+          }
           setSceneReady(true);
         }
       }

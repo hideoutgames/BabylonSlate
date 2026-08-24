@@ -27,6 +27,7 @@ export function createProjectEngineSession(): ProjectEngineSession | null {
   document.body.appendChild(canvas);
   try {
     const engine = createAppEngine(canvas);
+    canvas.style.display = "none";
     return {
       engine,
       dispose() {

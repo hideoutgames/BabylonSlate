@@ -44,6 +44,24 @@ describe("createProjectEngineSession", () => {
     session?.dispose();
   });
 
+  it("keeps the constructor canvas hidden after Engine construction", () => {
+    createAppEngineMock.mockImplementationOnce((canvas: HTMLCanvasElement) => {
+      canvas.style.display = "block";
+      canvas.style.touchAction = "none";
+      return {
+        canvas,
+        isDisposed: false,
+        dispose() {
+          this.isDisposed = true;
+        },
+      };
+    });
+    const session = createProjectEngineSession();
+    const canvas = createAppEngineMock.mock.calls[0][0];
+    expect(canvas.style.display).toBe("none");
+    session?.dispose();
+  });
+
   it("releases the resource cache, disposes the Engine, and removes the canvas", () => {
     const session = createProjectEngineSession();
     const engine = session!.engine;

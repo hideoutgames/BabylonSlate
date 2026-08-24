@@ -481,7 +481,9 @@ export function createEngine(
       antialias: false,
     });
 
-  if (options.sharedEngine && !presentRtt) {
+  const sharedViewBlit =
+    options.sharedEngine && !presentRtt ? canvas.getContext("2d") : null;
+  if (sharedViewBlit) {
     // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
     // clear, skipped render-on-demand frames composite additively.
     engine.registerView(canvas, undefined, true);
@@ -998,9 +1000,7 @@ export function createEngine(
     loadScene(createDefaultScene());
   }
 
-  const presentSharedView = Boolean(
-    options.sharedEngine && !presentRtt,
-  );
+  const presentSharedView = Boolean(sharedViewBlit);
 
   const resize = () => {
     if (presentRtt) {
@@ -1146,7 +1146,7 @@ export function createEngine(
       scene.dispose();
       rttPresent?.dispose();
       cacheBinding.releaseHandleRetains();
-      if (options.sharedEngine && !presentRtt) {
+      if (sharedViewBlit) {
         engine.unRegisterView(canvas);
       }
       if (ownsEngine) {

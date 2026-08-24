@@ -58,6 +58,11 @@ class FakeCanvas {
     };
   }
 
+  getContext(kind: string): unknown {
+    if (kind === "2d") return { clearRect() {}, drawImage() {} };
+    return null;
+  }
+
   emit(type: string, event: Record<string, unknown>): void {
     const payload = { preventDefault: () => {}, ...event } as unknown as Event;
     for (const listener of this.listeners.get(type) ?? []) {
@@ -166,6 +171,36 @@ describe("Play createEngine view", () => {
     const registerView = vi.spyOn(engine, "registerView");
     const { canvas } = playHandle(engine);
     expect(registerView).toHaveBeenCalledWith(canvas, undefined, true);
+  });
+
+  it("takes a 2d blit context on the view canvas before registerView", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    const getContext = vi.spyOn(canvas, "getContext");
+    const registerView = vi.spyOn(engine, "registerView");
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    expect(getContext).toHaveBeenCalledWith("2d");
+    expect(registerView).toHaveBeenCalledWith(canvas, undefined, true);
+    expect(getContext.mock.invocationCallOrder[0]!).toBeLessThan(
+      registerView.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("skips registerView when the view canvas cannot host a 2d blit", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    canvas.getContext = () => null;
+    const registerView = vi.spyOn(engine, "registerView");
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    expect(registerView).not.toHaveBeenCalled();
   });
 
   it("dispose stops the same render loop callback it registered", () => {
