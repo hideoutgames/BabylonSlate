@@ -23,6 +23,7 @@ import {
   SetActorTransformCommand,
   SetActorsTransformsCommand,
   SetComponentPropertyCommand,
+  SetComponentTransformCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
@@ -90,6 +91,22 @@ function diffComponents(
           id,
           previous.parentId ?? null,
           component.parentId ?? null,
+        ),
+      );
+    }
+    const previousTransform = previous.transform;
+    const nextTransform = component.transform;
+    if (
+      previousTransform &&
+      nextTransform &&
+      !transformEqual(previousTransform, nextTransform)
+    ) {
+      commands.push(
+        new SetComponentTransformCommand(
+          actorId,
+          id,
+          previousTransform,
+          nextTransform,
         ),
       );
     }

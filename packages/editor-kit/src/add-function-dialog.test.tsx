@@ -158,8 +158,9 @@ describe("AddFunctionDialog", () => {
       />,
     );
     const list = screen.getByTestId("add-function-list");
-    const scroller = list.closest("[data-slot='scroll-area']");
+    const scroller = list.closest("[data-testid='add-function-body']");
     expect(scroller).toBeTruthy();
+    expect(scroller?.className).toMatch(/overflow-y-auto/);
     expect(scroller?.className).not.toMatch(/(?:^|\s)h-0(?:\s|$)/);
     expect(scroller?.className).not.toMatch(/(?:^|\s)flex-1(?:\s|$)/);
     expect(Number.parseFloat((scroller as HTMLElement).style.height)).toBe(256);

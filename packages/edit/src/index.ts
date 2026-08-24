@@ -41,6 +41,7 @@ export {
   SetActorTransformCommand,
   SetActorsTransformsCommand,
   SetComponentPropertyCommand,
+  SetComponentTransformCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
