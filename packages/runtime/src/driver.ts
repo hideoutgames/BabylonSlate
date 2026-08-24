@@ -3,9 +3,6 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
   type CommandMessage,
-  type UiWidgetEventControl,
-  type UserInterfaceWidgetMeta,
-  uiWidgetEventExport,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -17,44 +14,18 @@ import {
   Actor,
   ActorComponent,
   BObject,
-  UserInterface,
-  Widget,
-  createWidgetForKind,
-  userInterfaceAssetClassDef,
-  hydrateClassVariableValue,
   type ClassKind,
   type DebugInspectSnapshot,
-  type TickContext,
   type TickPhase,
 } from "@babylonslate/object-model";
 import {
-  USER_INTERFACE_ENGINE_CLASS_ID,
   eulerDegreesToQuaternion,
-  isUserInterfaceClassId,
-  normalizeUserInterfaceClassRef,
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText3DProperties,
-  parseWidgetComponentProperties,
-  parseInputMode,
   type Transform,
-  userInterfaceAssetGuidFromClassId,
-  userInterfaceClassId,
-  widgetClassIdForKind,
-  widgetKindFromClassId,
   type SerializedScene,
 } from "@babylonslate/core";
-import {
-  applyUiTreeAddWidget,
-  applyUiTreePatchLayout,
-  applyUiTreeRemoveWidget,
-  applyUiTreeReparentWidget,
-  cloneUserInterfaceDocument,
-  normalizeUserInterfaceDocument,
-  userInterfaceDocumentFromMeta,
-  type UserInterfaceDocument,
-  type WidgetLayoutPatch,
-} from "@babylonslate/ui-runtime";
 import {
   InputRingBuffer,
   InputResolver,
@@ -185,8 +156,6 @@ export interface RuntimeDriverOptions {
   sprites?: Readonly<Record<string, SpritePayload>>;
   spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
   pixelsPerUnit?: number;
-  /** Slim UserInterface widget metadata keyed by asset guid. */
-  userInterfaces?: Readonly<Record<string, readonly UserInterfaceWidgetMeta[]>>;
 }
 
 export interface RuntimeDriver {
@@ -237,18 +206,6 @@ export interface RuntimeDriver {
     self?: BObject | null,
     args?: Record<string, unknown>,
   ): void;
-  registerUserInterfaceDocument(
-    guid: string,
-    widgets: readonly UserInterfaceWidgetMeta[],
-    document?: unknown,
-  ): void;
-  getUserInterface(instanceId: string): UserInterface | undefined;
-  listUserInterfaces(): readonly UserInterface[];
-  applyUserInterface(classIdOrGuid: string): UserInterface | null;
-  removeUserInterface(
-    instance: UserInterface | string | null | undefined,
-  ): void;
-  dispatchUiWidgetEvent(event: UiWidgetEventControl): void;
   registerUserCommand(def: UserCommandDef): void;
   bindUserCommand(
     def: Omit<UserCommandDef, "run"> & { classId: string },
@@ -357,21 +314,6 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly btMissingWarned = new Set<string>();
   private currentBtNodeId: string | null = null;
   private currentBtAssetGuid: string | null = null;
-  private uiInstanceSeq = 0;
-  private readonly userInterfaces = new Map<string, UserInterface>();
-  private readonly nestedUserInterfaces = new Map<string, UserInterface>();
-  private readonly uiChildren = new Map<string, string[]>();
-  private uiWidgetSeq = 0;
-  private readonly userInterfaceDocuments = new Map<
-    string,
-    UserInterfaceWidgetMeta[]
-  >();
-  private readonly widgetUiByComponent = new Map<string, string>();
-  private readonly userInterfaceTrees = new Map<string, UserInterfaceDocument>();
-  private readonly userInterfaceInstanceTrees = new Map<
-    string,
-    UserInterfaceDocument
-  >();
   private tilemaps = new Map<string, TilemapPayload>();
   private tilesets = new Map<string, TilesetPayload>();
   private sprites = new Map<string, SpritePayload>();
@@ -473,11 +415,6 @@ class InProcessRuntime implements RuntimeDriver {
     if (options.animClipCatalog) {
       for (const entry of options.animClipCatalog) {
         if (entry.guid) this.animClipCatalog.set(entry.guid, entry);
-      }
-    }
-    if (options.userInterfaces) {
-      for (const [guid, widgets] of Object.entries(options.userInterfaces)) {
-        this.registerUserInterfaceDocument(guid, widgets);
       }
     }
     const maxActors = options.maxActors ?? 256;
@@ -626,7 +563,6 @@ class InProcessRuntime implements RuntimeDriver {
         if (!actor) return;
         this.emitAudioStops(actor);
         this.emitParticleStops(actor);
-        this.emitWidgetStops(actor);
         this.world.destroyActor(actor.guid);
       },
       addComponent: (actor, classId, transform) => {
@@ -719,26 +655,6 @@ class InProcessRuntime implements RuntimeDriver {
         if (!target) return;
         this.physicsSync.moveCharacter(target, translation, dt, offset);
       },
-      setWidgetVisible: (widget, visible) => {
-        this.emitWidgetVisible(widget, visible);
-      },
-      applyUserInterface: (classIdOrGuid) =>
-        this.applyUserInterface(classIdOrGuid),
-      removeUserInterface: (instance) => {
-        this.removeUserInterface(instance);
-      },
-      addWidgetOn: (target, kind, name, parent) =>
-        this.addWidgetOn(target, kind, name, parent),
-      setWidgetParent: (widget, parent, index) => {
-        this.setWidgetParent(widget, parent, index);
-      },
-      removeWidget: (widget) => {
-        this.removeMountedWidget(widget);
-      },
-      setWidgetLayout: (widget, patch) => {
-        this.setWidgetLayout(widget, patch);
-      },
-      getWidgetLayout: (widget) => this.getWidgetLayout(widget),
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
@@ -749,12 +665,6 @@ class InProcessRuntime implements RuntimeDriver {
           type: "setRenderResolution",
           width: nextWidth,
           height: nextHeight,
-        });
-      },
-      setInputMode: (mode) => {
-        this.emit({
-          type: "setInputMode",
-          mode: parseInputMode(mode),
         });
       },
       possessCamera: (target) => {
@@ -874,10 +784,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   private registerScriptClass(script: CompiledScript): void {
     const requestedParent =
-      script.parentClassId?.trim() ||
-      (isUserInterfaceClassId(script.classId)
-        ? USER_INTERFACE_ENGINE_CLASS_ID
-        : "Actor");
+      script.parentClassId?.trim() || "Actor";
     const parentClassId = this.world.classRegistry.has(requestedParent)
       ? requestedParent
       : "Actor";
@@ -1004,12 +911,10 @@ class InProcessRuntime implements RuntimeDriver {
       this.world.loadScene(key);
       return;
     }
-    this.teardownAllUserInterfaces();
     for (const actor of [...this.world.getActors()]) {
       const slotId = this.slotByGuid.get(actor.guid);
       this.emitAudioStops(actor);
       this.emitParticleStops(actor);
-      this.emitWidgetStops(actor);
       if (slotId !== undefined) {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
         this.slotByGuid.delete(actor.guid);
@@ -1047,78 +952,6 @@ class InProcessRuntime implements RuntimeDriver {
     args?: Record<string, unknown>,
   ): void {
     this.scriptHost.invokeEvent(classId, event, self ?? null, args ?? {});
-  }
-
-  registerUserInterfaceDocument(
-    guid: string,
-    widgets: readonly UserInterfaceWidgetMeta[],
-    document?: unknown,
-  ): void {
-    const id = String(guid ?? "").trim();
-    if (!id) return;
-    const rows = widgets.map((widget) => ({ ...widget }));
-    this.userInterfaceDocuments.set(id, rows);
-    if (document && typeof document === "object") {
-      this.userInterfaceTrees.set(
-        id,
-        cloneUserInterfaceDocument(
-          normalizeUserInterfaceDocument(document as UserInterfaceDocument),
-        ),
-      );
-    } else {
-      this.userInterfaceTrees.set(
-        id,
-        userInterfaceDocumentFromMeta(id, rows),
-      );
-    }
-  }
-
-  getUserInterface(instanceId: string): UserInterface | undefined {
-    return (
-      this.userInterfaces.get(instanceId) ??
-      this.nestedUserInterfaces.get(instanceId)
-    );
-  }
-
-  listUserInterfaces(): readonly UserInterface[] {
-    return [...this.userInterfaces.values()];
-  }
-
-  applyUserInterface(classIdOrGuid: string): UserInterface | null {
-    const classId = normalizeUserInterfaceClassRef(classIdOrGuid);
-    if (!classId) return null;
-    const assetGuid = userInterfaceAssetGuidFromClassId(classId);
-    if (!assetGuid) return null;
-    const instanceId = `ui-${++this.uiInstanceSeq}`;
-    return this.mountUserInterface({
-      classId,
-      assetGuid,
-      instanceId,
-      emitCommands: true,
-      seenGuids: new Set(),
-    });
-  }
-
-  removeUserInterface(
-    instance: UserInterface | string | null | undefined,
-  ): void {
-    const id =
-      instance instanceof UserInterface
-        ? instance.guid
-        : String(instance ?? "").trim();
-    if (!id) return;
-    const ui = this.userInterfaces.get(id);
-    if (!ui) {
-      this.emit({ type: "uiRemove", instanceId: id });
-      return;
-    }
-    this.teardownUserInterface(ui);
-  }
-
-  dispatchUiWidgetEvent(event: UiWidgetEventControl): void {
-    const ui = this.getUserInterface(event.instanceId);
-    if (!ui || ui.destroyed) return;
-    this.dispatchUiWidgetEventOn(ui, event.widgetId, event);
   }
 
   registerUserCommand(def: UserCommandDef): void {
@@ -2174,7 +2007,6 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "TilemapComponent" ||
           component.classId === "SkyboxComponent" ||
           component.classId === "Text3DComponent" ||
-          component.classId === "WidgetComponent" ||
           (component.classId === "ColliderComponent" &&
             component.getVariable("renderInGame") === true)),
     );
@@ -2204,9 +2036,6 @@ class InProcessRuntime implements RuntimeDriver {
       const text3dComp = renderables.find(
         (component) => component.classId === "Text3DComponent",
       );
-      const widgetComp = renderables.find(
-        (component) => component.classId === "WidgetComponent",
-      );
       this.emit({
         type: "assignMesh",
         slotId,
@@ -2228,16 +2057,6 @@ class InProcessRuntime implements RuntimeDriver {
                 depth: text3dComp.getVariable("depth"),
                 color: text3dComp.getVariable("color"),
                 fontAssetGuid: text3dComp.getVariable("fontAssetGuid"),
-              }),
-            }
-          : {}),
-        ...(widgetComp
-          ? {
-              widget: parseWidgetComponentProperties({
-                uiAssetGuid: widgetComp.getVariable("uiAssetGuid"),
-                twoSided: widgetComp.getVariable("twoSided"),
-                width: widgetComp.getVariable("width"),
-                height: widgetComp.getVariable("height"),
               }),
             }
           : {}),
@@ -2416,7 +2235,6 @@ class InProcessRuntime implements RuntimeDriver {
     this.emitMeshAssignment(actor, slotId);
     this.emitAudioComponents(actor);
     this.emitParticleComponents(actor);
-    this.emitWidgetUserInterfaces(actor, slotId);
     this.world.spawnActorNow(actor);
   }
 
@@ -2493,42 +2311,6 @@ class InProcessRuntime implements RuntimeDriver {
         componentId: component.guid,
         particleSystemGuid: null,
       });
-    }
-  }
-
-  private emitWidgetUserInterfaces(actor: Actor, slotId: number): void {
-    for (const component of actor.components) {
-      if (component.destroyed || component.classId !== "WidgetComponent") continue;
-      const parsed = parseWidgetComponentProperties({
-        uiAssetGuid: component.getVariable("uiAssetGuid"),
-        twoSided: component.getVariable("twoSided"),
-        width: component.getVariable("width"),
-        height: component.getVariable("height"),
-      });
-      const assetGuid = parsed.uiAssetGuid ?? component.assetGuid;
-      if (!assetGuid) continue;
-      const classId = userInterfaceClassId(assetGuid);
-      const instanceId = `ui-${++this.uiInstanceSeq}`;
-      this.mountUserInterface({
-        classId,
-        assetGuid,
-        instanceId,
-        emitCommands: true,
-        seenGuids: new Set(),
-        target: { kind: "world", slotId, componentId: component.guid },
-      });
-      this.widgetUiByComponent.set(component.guid, instanceId);
-    }
-  }
-
-  private emitWidgetStops(actor: Actor): void {
-    for (const component of actor.components) {
-      if (component.classId !== "WidgetComponent") continue;
-      const instanceId = this.widgetUiByComponent.get(component.guid);
-      if (!instanceId) continue;
-      this.widgetUiByComponent.delete(component.guid);
-      const ui = this.userInterfaces.get(instanceId);
-      if (ui) this.teardownUserInterface(ui);
     }
   }
 
@@ -2681,7 +2463,6 @@ class InProcessRuntime implements RuntimeDriver {
   stop(): void {
     this.running = false;
     this.finalizeTrace();
-    this.teardownAllUserInterfaces();
     this.world.end();
     this.physicsSync.dispose();
   }
@@ -2749,7 +2530,6 @@ class InProcessRuntime implements RuntimeDriver {
       if (!isInfiniteLoopError(error)) throw error;
     }
     this.advanceDelays();
-    this.tickMountedUserInterfaces();
     this.tickAnimGraphs();
     this.tickBehaviourTrees();
     this.tickCrowd();
@@ -2953,420 +2733,6 @@ class InProcessRuntime implements RuntimeDriver {
     const kind = this.world.classRegistry.get(classId)?.kind;
     return kind !== "object" && kind !== "gameInstance";
   }
-
-  private ensureUserInterfaceClass(classId: string, assetGuid: string): void {
-    if (this.world.classRegistry.has(classId)) return;
-    this.world.classRegistry.ensure(userInterfaceAssetClassDef(assetGuid));
-  }
-
-  private objectDefaults(classId: string): {
-    variables: Record<string, unknown>;
-    implementedInterfaces: string[];
-  } {
-    const variables: Record<string, unknown> = {};
-    for (const variable of this.world.classRegistry.inheritedVariables(classId)) {
-      const value = hydrateClassVariableValue(variable);
-      if (value !== undefined) {
-        variables[variable.name] = value;
-      }
-    }
-    return {
-      variables,
-      implementedInterfaces: this.world.classRegistry.inheritedInterfaces(classId),
-    };
-  }
-
-  private emitWidgetVisible(widget: Widget | string, visible: boolean): void {
-    if (widget instanceof Widget) {
-      this.emit({
-        type: "uiSetVisible",
-        instanceId: widget.owner?.guid ?? "",
-        widgetId: widget.widgetId,
-        visible: Boolean(visible),
-      });
-      return;
-    }
-    const widgetId = String(widget ?? "").trim();
-    if (!widgetId) return;
-    this.emit({
-      type: "uiSetVisible",
-      instanceId: "",
-      widgetId,
-      visible: Boolean(visible),
-    });
-  }
-
-  private mountUserInterface(options: {
-    classId: string;
-    assetGuid: string;
-    instanceId: string;
-    emitCommands: boolean;
-    seenGuids: Set<string>;
-    target?: { kind: "world"; slotId: number; componentId: string };
-  }): UserInterface {
-    const { classId, assetGuid, instanceId, emitCommands, seenGuids, target } = options;
-    const nextSeen = new Set(seenGuids);
-    nextSeen.add(assetGuid);
-    this.ensureUserInterfaceClass(classId, assetGuid);
-    const hooks = this.scriptHost.hooksFor(classId);
-    const defaults = this.objectDefaults(classId);
-    const ui = new UserInterface({
-      classId,
-      guid: instanceId,
-      assetGuid,
-      variables: defaults.variables,
-      implementedInterfaces: defaults.implementedInterfaces,
-      hooks: hooks
-        ? {
-            onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
-            onTick: (self, ctx) =>
-              this.guardScript(() => hooks.onTick?.(self, ctx)),
-            onDestroyed: (self) =>
-              this.guardScript(() => hooks.onDestroyed?.(self)),
-          }
-        : undefined,
-    });
-    for (const meta of this.userInterfaceDocuments.get(assetGuid) ?? []) {
-      const widget = createWidgetForKind(meta.kind, {
-        classId: widgetClassIdForKind(meta.kind),
-        widgetId: meta.id,
-        guid: `${instanceId}:${meta.id}`,
-        owner: ui,
-      });
-      ui.widgets.push(widget);
-      widget.callOnCreation();
-      const bindingName =
-        typeof meta.name === "string" ? meta.name.trim() : "";
-      if (bindingName) ui.setVariable(bindingName, widget);
-      const nestedGuid = meta.nestedUiGuid?.trim();
-      if (
-        meta.kind === "UserInterface" &&
-        nestedGuid &&
-        !nextSeen.has(nestedGuid)
-      ) {
-        const nestedClassId = userInterfaceClassId(nestedGuid);
-        const nestedId = `${instanceId}/${meta.id}`;
-        const nested = this.mountUserInterface({
-          classId: nestedClassId,
-          assetGuid: nestedGuid,
-          instanceId: nestedId,
-          emitCommands: false,
-          seenGuids: nextSeen,
-        });
-        this.nestedUserInterfaces.set(nestedId, nested);
-        const kids = this.uiChildren.get(instanceId) ?? [];
-        kids.push(nestedId);
-        this.uiChildren.set(instanceId, kids);
-      }
-    }
-    const seed =
-      this.userInterfaceTrees.get(assetGuid) ??
-      userInterfaceDocumentFromMeta(
-        classId,
-        this.userInterfaceDocuments.get(assetGuid) ?? [],
-      );
-    this.userInterfaceInstanceTrees.set(
-      instanceId,
-      cloneUserInterfaceDocument(seed),
-    );
-    this.scriptHost.bindInterfaceHandlers(ui);
-    if (emitCommands) {
-      this.userInterfaces.set(instanceId, ui);
-    }
-    ui.callOnCreation();
-    if (emitCommands) {
-      this.emit({
-        type: "uiApply",
-        instanceId,
-        classId,
-        assetGuid,
-        ...(target ? { target } : {}),
-      });
-    }
-    return ui;
-  }
-
-  private uiFromTarget(target: unknown): UserInterface | null {
-    if (target instanceof UserInterface && !target.destroyed) return target;
-    return null;
-  }
-
-  private resolveWidgetKind(kind: unknown): string {
-    if (typeof kind !== "string" || !kind.trim()) return "Rectangle";
-    const trimmed = kind.trim();
-    const fromClass = widgetKindFromClassId(trimmed);
-    return fromClass ?? trimmed;
-  }
-
-  private parentIdFor(
-    ui: UserInterface,
-    parent: unknown,
-  ): string | null {
-    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
-    if (!tree) return null;
-    if (parent instanceof UserInterface) {
-      return parent === ui ? tree.rootId : null;
-    }
-    if (parent instanceof Widget) {
-      if (parent.owner !== ui || parent.destroyed) return null;
-      return parent.widgetId;
-    }
-    if (parent == null) return tree.rootId;
-    return null;
-  }
-
-  private bindWidgetVariable(ui: UserInterface, name: string, widget: Widget): void {
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    if (ui.getVariable(trimmed) !== undefined) return;
-    ui.setVariable(trimmed, widget);
-  }
-
-  addWidgetOn(
-    target: unknown,
-    kind: unknown,
-    name: unknown,
-    parent: unknown,
-  ): Widget | null {
-    const ui = this.uiFromTarget(target);
-    if (!ui) return null;
-    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
-    if (!tree) return null;
-    const widgetKind = this.resolveWidgetKind(kind);
-    const widgetName =
-      typeof name === "string" && name.trim() ? name.trim() : widgetKind;
-    const parentId = this.parentIdFor(ui, parent) ?? tree.rootId;
-    let widgetId = `dyn-${++this.uiWidgetSeq}`;
-    while (tree.widgets[widgetId] || ui.widgets.some((row) => row.widgetId === widgetId)) {
-      widgetId = `dyn-${++this.uiWidgetSeq}`;
-    }
-    const next = applyUiTreeAddWidget(tree, {
-      widgetId,
-      kind: widgetKind,
-      name: widgetName,
-      parentId,
-    });
-    if (next === tree) return null;
-    this.userInterfaceInstanceTrees.set(ui.guid, next);
-    const widget = createWidgetForKind(widgetKind, {
-      classId: widgetClassIdForKind(widgetKind),
-      widgetId,
-      guid: `${ui.guid}:${widgetId}`,
-      owner: ui,
-    });
-    ui.widgets.push(widget);
-    widget.callOnCreation();
-    this.bindWidgetVariable(ui, widgetName, widget);
-    this.emit({
-      type: "uiAddWidget",
-      instanceId: ui.guid,
-      widgetId,
-      kind: widgetKind,
-      name: widgetName,
-      parentId,
-    });
-    return widget;
-  }
-
-  setWidgetParent(
-    widget: unknown,
-    parent: unknown,
-    index: unknown,
-  ): void {
-    if (!(widget instanceof Widget) || widget.destroyed) return;
-    const ui = widget.owner;
-    if (!ui || ui.destroyed) return;
-    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
-    if (!tree) return;
-    const parentId = this.parentIdFor(ui, parent);
-    if (!parentId) return;
-    const siblingIndex =
-      typeof index === "number" && Number.isFinite(index)
-        ? Math.floor(index)
-        : undefined;
-    const next = applyUiTreeReparentWidget(tree, {
-      widgetId: widget.widgetId,
-      parentId,
-      siblingIndex,
-    });
-    if (next === tree) return;
-    this.userInterfaceInstanceTrees.set(ui.guid, next);
-    this.emit({
-      type: "uiReparentWidget",
-      instanceId: ui.guid,
-      widgetId: widget.widgetId,
-      parentId,
-      ...(siblingIndex !== undefined ? { siblingIndex } : {}),
-    });
-  }
-
-  removeMountedWidget(widget: unknown): void {
-    if (!(widget instanceof Widget) || widget.destroyed) return;
-    const ui = widget.owner;
-    if (!ui || ui.destroyed) return;
-    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
-    if (!tree || widget.widgetId === tree.rootId) return;
-    const next = applyUiTreeRemoveWidget(tree, widget.widgetId);
-    if (next === tree) return;
-    this.userInterfaceInstanceTrees.set(ui.guid, next);
-    const doomed = new Set(
-      Object.keys(tree.widgets).filter((id) => !next.widgets[id]),
-    );
-    for (const id of doomed) {
-      const row = ui.widgets.find((entry) => entry.widgetId === id);
-      if (!row) continue;
-      row.destroyed = true;
-      row.callOnDestroyed();
-      row.owner = null;
-    }
-    for (let index = ui.widgets.length - 1; index >= 0; index -= 1) {
-      if (doomed.has(ui.widgets[index]!.widgetId)) {
-        ui.widgets.splice(index, 1);
-      }
-    }
-    this.emit({
-      type: "uiRemoveWidget",
-      instanceId: ui.guid,
-      widgetId: widget.widgetId,
-    });
-  }
-
-  setWidgetLayout(widget: unknown, patch: unknown): void {
-    if (!(widget instanceof Widget) || widget.destroyed) return;
-    const ui = widget.owner;
-    if (!ui || ui.destroyed) return;
-    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
-    if (!tree || !patch || typeof patch !== "object") return;
-    const next = applyUiTreePatchLayout(
-      tree,
-      widget.widgetId,
-      patch as WidgetLayoutPatch,
-    );
-    if (next === tree) return;
-    this.userInterfaceInstanceTrees.set(ui.guid, next);
-    this.emit({
-      type: "uiPatchLayout",
-      instanceId: ui.guid,
-      widgetId: widget.widgetId,
-      layout: { ...(patch as WidgetLayoutPatch) },
-    });
-  }
-
-  getWidgetLayout(widget: unknown): WidgetLayoutPatch | null {
-    if (!(widget instanceof Widget) || widget.destroyed) return null;
-    const ui = widget.owner;
-    if (!ui) return null;
-    const tree = this.userInterfaceInstanceTrees.get(ui.guid);
-    const layout = tree?.widgets[widget.widgetId]?.layout;
-    if (!layout) return null;
-    return {
-      left: layout.left,
-      top: layout.top,
-      leftUnit: layout.leftUnit,
-      topUnit: layout.topUnit,
-      width: layout.width,
-      height: layout.height,
-      widthUnit: layout.widthUnit,
-      heightUnit: layout.heightUnit,
-      rotation: layout.rotation,
-      scaleX: layout.scaleX,
-      scaleY: layout.scaleY,
-      horizontalAlignment: layout.horizontalAlignment,
-      verticalAlignment: layout.verticalAlignment,
-    };
-  }
-
-  private dispatchUiWidgetEventOn(
-    ui: UserInterface,
-    widgetId: string,
-    event: UiWidgetEventControl,
-  ): void {
-    const slash = widgetId.indexOf("/");
-    if (slash > 0) {
-      const slotId = widgetId.slice(0, slash);
-      const rest = widgetId.slice(slash + 1);
-      const nestedId = `${ui.guid}/${slotId}`;
-      const nested = this.nestedUserInterfaces.get(nestedId);
-      if (nested && !nested.destroyed) {
-        this.dispatchUiWidgetEventOn(nested, rest, event);
-        return;
-      }
-    }
-    const widget =
-      ui.widgets.find((entry) => entry.widgetId === widgetId) ?? null;
-    const eventName = uiWidgetEventName(event.kind);
-    this.scriptHost.invokeEvent(ui.classId, eventName, ui, {
-      widget,
-      widgetId,
-      value: event.value,
-    });
-  }
-
-  private teardownUserInterface(ui: UserInterface, emitCommands = true): void {
-    const children = this.uiChildren.get(ui.guid) ?? [];
-    this.uiChildren.delete(ui.guid);
-    for (const childId of children) {
-      const child = this.nestedUserInterfaces.get(childId);
-      if (child && !child.destroyed) {
-        this.teardownUserInterface(child, false);
-      }
-    }
-    this.userInterfaces.delete(ui.guid);
-    this.nestedUserInterfaces.delete(ui.guid);
-    this.userInterfaceInstanceTrees.delete(ui.guid);
-    for (const widget of [...ui.widgets].reverse()) {
-      widget.destroyed = true;
-      widget.callOnDestroyed();
-      widget.owner = null;
-    }
-    ui.widgets.length = 0;
-    ui.destroyed = true;
-    ui.callOnDestroyed();
-    if (emitCommands) {
-      this.emit({ type: "uiRemove", instanceId: ui.guid });
-    }
-  }
-
-  private teardownAllUserInterfaces(): void {
-    for (const ui of [...this.userInterfaces.values()]) {
-      this.teardownUserInterface(ui);
-    }
-  }
-
-  private tickMountedUserInterfaces(): void {
-    const ctx: TickContext = {
-      dt: this.simulationDt(),
-      tickIndex: this.world.clock.tickIndex,
-      world: this.world,
-      isActionHeld: (action) => this.resolvedInput.actions[action]?.held ?? false,
-      wasActionPressed: (action) =>
-        this.resolvedInput.actions[action]?.pressed ?? false,
-      wasActionReleased: (action) =>
-        this.resolvedInput.actions[action]?.released ?? false,
-      getAxis: (axis) => this.resolvedInput.axes[axis] ?? 0,
-      getAxis2D: (axis) => this.resolvedInput.axes2D[axis] ?? { x: 0, y: 0 },
-      gamepadConnections: this.connectionBox.current,
-      setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
-        this.emit({
-          type: "log",
-          severity: "log",
-          category: "input",
-          message: `rumble pad=${gamepadIndex} intensity=${intensity} ms=${durationMs}`,
-          frameId: this.frameId,
-        });
-      },
-    };
-    for (const ui of [...this.userInterfaces.values(), ...this.nestedUserInterfaces.values()]) {
-      if (ui.destroyed) continue;
-      this.guardScript(() => ui.callOnTick(ctx));
-    }
-  }
-}
-
-function uiWidgetEventName(
-  kind: UiWidgetEventControl["kind"],
-): string {
-  return uiWidgetEventExport(kind);
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {
@@ -3374,7 +2740,6 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "Text3DComponent") return "text3d";
-  if (component.classId === "WidgetComponent") return "widget";
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");
     return `collider:${JSON.stringify(shape ?? {})}`;
@@ -3436,16 +2801,6 @@ function playMeshPartOf(
             depth: component.getVariable("depth"),
             color: component.getVariable("color"),
             fontAssetGuid: component.getVariable("fontAssetGuid"),
-          }),
-        }
-      : {}),
-    ...(component.classId === "WidgetComponent"
-      ? {
-          widget: parseWidgetComponentProperties({
-            uiAssetGuid: component.getVariable("uiAssetGuid"),
-            twoSided: component.getVariable("twoSided"),
-            width: component.getVariable("width"),
-            height: component.getVariable("height"),
           }),
         }
       : {}),

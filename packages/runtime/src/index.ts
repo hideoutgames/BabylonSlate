@@ -51,7 +51,3 @@ export {
   type ScriptContext,
   type ScriptHostServices,
 } from "./script-host";
-export {
-  applyUiRuntimeControl,
-  type UiRuntimeControlTarget,
-} from "./worker-control";
