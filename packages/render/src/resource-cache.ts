@@ -1,14 +1,21 @@
+import { sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
+import {
+  TEXTURE_BYTE_CEILING,
+  TEXTURE_EVICTION_TARGET_FACTOR,
+} from "./perf-ceilings";
 import { accountedTextureBytes, type TextureFormat } from "./texture-bytes";
 
 export interface ResourceCacheOptions {
   /** Accounted byte ceiling before evicting unreferenced LRU entries. */
   byteCeiling?: number;
-  /** Soft factor over ceiling before eviction (default 1.2). */
-  evictionFactor?: number;
+  /** Trim unreferenced entries toward this fraction of the ceiling (default 0.8). */
+  evictionTargetFactor?: number;
+  /** When false, skip LRU eviction. */
+  budgetEnabled?: boolean;
   onEvict?: (assetGuid: string, reason: string) => void;
 }
 
@@ -28,6 +35,7 @@ interface CacheEntry {
   refCount: number;
   lastUsed: number;
   samplingKey: string;
+  contentKey: string;
   texture?: BaseTexture;
 }
 
@@ -55,6 +63,16 @@ export function createEngineTextureFromUrl(
   });
   texture.hasAlpha = true;
   return texture;
+}
+
+function contentKey(bytes: Uint8Array | Blob): string {
+  if (bytes instanceof Blob) return `blob:${bytes.size}`;
+  const length = bytes.byteLength;
+  return `${length}:${bytes[0] ?? 0}:${bytes[Math.floor(length / 2)] ?? 0}:${bytes[length - 1] ?? 0}`;
+}
+
+function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
+  return bytes instanceof Uint8Array ? bytes : null;
 }
 
 function samplingKey(options: TextureSamplingOptions = {}): string {
@@ -97,8 +115,9 @@ export function releaseResourceCacheForEngine(engine: AbstractEngine): void {
  * Texture construction must go through this cache (lint-enforced).
  */
 export class ResourceCache {
-  private readonly ceiling: number;
-  private readonly evictionFactor: number;
+  private ceiling: number;
+  private evictionTargetFactor: number;
+  private budgetEnabled: boolean;
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly blobs = new Map<string, Blob>();
@@ -106,17 +125,48 @@ export class ResourceCache {
   private totalBytes = 0;
 
   constructor(options: ResourceCacheOptions = {}) {
-    this.ceiling = options.byteCeiling ?? 512 * 1024 * 1024;
-    this.evictionFactor = options.evictionFactor ?? 1.2;
+    this.ceiling = options.byteCeiling ?? TEXTURE_BYTE_CEILING;
+    this.evictionTargetFactor =
+      options.evictionTargetFactor ?? TEXTURE_EVICTION_TARGET_FACTOR;
+    this.budgetEnabled = options.budgetEnabled !== false;
     this.onEvict = options.onEvict;
   }
 
+  setByteCeiling(bytes: number): void {
+    if (!Number.isFinite(bytes) || bytes <= 0) return;
+    this.ceiling = bytes;
+    this.evictToCeiling();
+  }
+
+  setBudgetEnabled(enabled: boolean): void {
+    this.budgetEnabled = enabled;
+    if (enabled) this.evictToCeiling();
+  }
+
   blobUrlFor(assetGuid: string, bytes: Uint8Array | Blob): string {
+    const nextKey = contentKey(bytes);
     const existing = this.entries.get(assetGuid);
     if (existing) {
-      existing.refCount += 1;
-      existing.lastUsed = ++this.clock;
-      return existing.blobUrl;
+      if (existing.contentKey === nextKey) {
+        existing.refCount += 1;
+        existing.lastUsed = ++this.clock;
+        return existing.blobUrl;
+      }
+      if (existing.texture) {
+        existing.texture.dispose();
+        existing.texture = undefined;
+      }
+      if (existing.blobUrl.startsWith("blob:") && typeof URL !== "undefined") {
+        try {
+          URL.revokeObjectURL(existing.blobUrl);
+        } catch {
+          // ignore
+        }
+      }
+      this.totalBytes -= existing.bytes;
+      existing.bytes = 0;
+      this.entries.delete(assetGuid);
+      this.blobs.delete(assetGuid);
     }
     const blob =
       bytes instanceof Blob
@@ -142,6 +192,7 @@ export class ResourceCache {
       refCount: 1,
       lastUsed: ++this.clock,
       samplingKey: samplingKey(),
+      contentKey: nextKey,
     };
     this.entries.set(assetGuid, entry);
     return url;
@@ -187,6 +238,7 @@ export class ResourceCache {
         });
     entry.texture = texture;
     entry.samplingKey = key;
+    this.accountLoadedBytes(assetGuid, bytes, options.noMipmap !== true);
     return texture;
   }
 
@@ -233,6 +285,7 @@ export class ResourceCache {
       refCount: 1,
       lastUsed: ++this.clock,
       samplingKey: key,
+      contentKey: files.join(":"),
       texture,
     });
     return texture;
@@ -265,6 +318,7 @@ export class ResourceCache {
         refCount: 1,
         lastUsed: ++this.clock,
         samplingKey: samplingKey(),
+        contentKey: "",
       });
       this.totalBytes += bytes;
       this.evictToCeiling();
@@ -306,14 +360,45 @@ export class ResourceCache {
   }
 
   evictToCeiling(): void {
-    const limit = this.ceiling * this.evictionFactor;
-    if (this.totalBytes <= limit) return;
+    if (!this.budgetEnabled) return;
+    if (this.totalBytes <= this.ceiling) return;
+    const target = this.ceiling * this.evictionTargetFactor;
     const candidates = [...this.entries.values()]
       .filter((e) => e.refCount === 0)
       .sort((a, b) => a.lastUsed - b.lastUsed);
     for (const entry of candidates) {
-      if (this.totalBytes <= this.ceiling) break;
+      if (this.totalBytes <= target) break;
       this.evictEntry(entry.assetGuid, "lru");
+    }
+  }
+
+  private accountLoadedBytes(
+    assetGuid: string,
+    bytes: Uint8Array | Blob,
+    withMips: boolean,
+  ): void {
+    const raw = asUint8Array(bytes);
+    if (!raw) return;
+    const ktx2 = sniffKtx2Size(raw);
+    if (ktx2) {
+      this.accountTextureSize(
+        assetGuid,
+        ktx2.width,
+        ktx2.height,
+        "astc4x4",
+        withMips,
+      );
+      return;
+    }
+    const image = sniffImageSize(raw);
+    if (image) {
+      this.accountTextureSize(
+        assetGuid,
+        image.width,
+        image.height,
+        "rgba8",
+        withMips,
+      );
     }
   }
 

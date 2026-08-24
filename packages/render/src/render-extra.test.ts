@@ -109,6 +109,26 @@ describe("hardware scaling", () => {
     }
     engine.dispose();
   });
+
+  it("noteRestore returns to the Engine Settings floor and clears hitch samples", () => {
+    const engine = new NullEngine();
+    const scaling = new HardwareScalingController(engine, {
+      minLevel: 1,
+      maxLevel: 4,
+      cooldownFrames: 0,
+      initialLevel: 1,
+      targetFrameMs: 1000 / 60,
+    });
+    scaling.dropTier();
+    expect(scaling.getLevel()).toBe(1.25);
+    scaling.noteRestore();
+    expect(scaling.getLevel()).toBe(1);
+    for (let i = 0; i < 4; i++) {
+      scaling.noteFrameTime(200);
+    }
+    expect(scaling.getLevel()).toBe(1);
+    engine.dispose();
+  });
 });
 
 describe("snapshot apply under NullEngine", () => {
