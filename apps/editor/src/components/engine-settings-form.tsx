@@ -3,6 +3,7 @@ import type { EngineSettings } from "@babylonslate/vfs";
 import { DEVICE_PRESETS } from "@babylonslate/ui-runtime";
 import { Button } from "@babylonslate/ui/components/button";
 import { Slider } from "@babylonslate/ui/components/slider";
+import { Switch } from "@babylonslate/ui/components/switch";
 import {
   Field,
   FieldContent,

@@ -61,12 +61,7 @@ describe("resolveGpuTexture", () => {
   });
 
   it("does not bind a full-size KTX2 when editor LOD wants a smaller variant", async () => {
-    const png = new Uint8Array(24);
-    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
-    png.set([0, 0, 0, 13], 8);
-    png.set([0x49, 0x48, 0x44, 0x52], 12);
-    png[19] = 4;
-    png[23] = 4;
+    const pixels = new Uint8Array([1, 2, 3, 4]);
     const asset = header(
       [
         {
@@ -74,7 +69,7 @@ describe("resolveGpuTexture", () => {
           kind: "pixels",
           mime: "image/png",
           sha256: "aa",
-          locator: { inline: { offset: 0, length: 1 } },
+          locator: { inline: { offset: 0, length: 4 } },
         },
         {
           id: "ktx2:full",
@@ -93,7 +88,7 @@ describe("resolveGpuTexture", () => {
       },
     );
     const byId: Record<string, Uint8Array> = {
-      pixels: png,
+      pixels,
       "ktx2:full": new Uint8Array([9, 9, 9]),
     };
     const resolved = await resolveGpuTexture({
