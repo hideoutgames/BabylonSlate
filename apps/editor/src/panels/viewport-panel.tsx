@@ -108,6 +108,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     sharedEngineGeneration,
   } = usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [engineEpoch, setEngineEpoch] = useState(0);
   const navBake = useOptionalNavBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
   const selectActorRef = useRef(selectActor);
@@ -277,6 +278,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editorFlySpeed: () => flySpeedRef.current,
     });
     engineRef.current = handle;
+    setEngineEpoch((epoch) => epoch + 1);
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
     navDebugRef.current = new NavMeshDebugOverlay(handle.scene);
     setNavOverlayGeneration((generation) => generation + 1);
@@ -489,6 +491,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayMaterialLibrary,
     collectPlayUiLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
+    engineEpoch,
   ]);
 
   useEffect(() => {

@@ -511,7 +511,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, [projectDocument]);
 
   useEffect(() => {
-    const engine = projectEngineRef.current.sync(projectOpen);
+    const host = projectEngineRef.current;
+    const engine = host.sync(projectOpen);
     ownedEngineRef.current = engine;
     const previous = engineRef.current;
     const next = isUsableEngine(engine) ? engine : null;
@@ -519,12 +520,12 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setSharedEngineGeneration((current) =>
       nextSharedEngineGeneration(current, next, previous),
     );
+    return () => {
+      host.sync(false);
+      ownedEngineRef.current = null;
+      if (engineRef.current === engine) engineRef.current = null;
+    };
   }, [projectOpen]);
-
-  useEffect(() => {
-    const host = projectEngineRef.current;
-    return () => host.dispose();
-  }, []);
 
   const ensureEngine = useCallback((): Engine | null => {
     if (isUsableEngine(ownedEngineRef.current)) {
