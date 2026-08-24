@@ -145,7 +145,7 @@ export function prefabComponentsForGuid(
       header: {
         guid: string;
         name: string;
-        type?: string;
+        type: string;
         parentClass?: string | null;
       };
     }>;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+  type SerializedComponent,
+} from "@babylonslate/core";
 import {
   ENGINE_PLACE_ACTORS,
   duplicateSceneActor,
@@ -434,7 +439,7 @@ describe("projectPlaceActors", () => {
         },
       },
     ];
-    const graphs: Record<string, { components?: unknown[] }> = {
+    const graphs: Record<string, { components?: SerializedComponent[] }> = {
       "assets/pawn.class.babasset": {
         components: [createMeshComponent("prefab-mesh", "box")],
       },
