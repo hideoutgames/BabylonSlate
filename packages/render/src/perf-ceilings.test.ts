@@ -6,11 +6,19 @@ import {
   drawCallCeilingWarning,
   GEOMETRY_BYTE_CEILING,
   geometryByteCeilingWarning,
+  IPAD_TEXTURE_BYTE_SUGGESTION,
   TEXTURE_BYTE_CEILING,
+  TEXTURE_EVICTION_TARGET_FACTOR,
   textureByteCeilingWarning,
 } from "./perf-ceilings";
 
 describe("perf ceilings", () => {
+  it("defaults the texture budget to 2 GB and keeps 512 MB as an iPad suggestion", () => {
+    expect(TEXTURE_BYTE_CEILING).toBe(2 * 1024 * 1024 * 1024);
+    expect(IPAD_TEXTURE_BYTE_SUGGESTION).toBe(512 * 1024 * 1024);
+    expect(TEXTURE_EVICTION_TARGET_FACTOR).toBe(0.8);
+  });
+
   it("keeps the tiny CI fixture under texture and geometry ceilings", () => {
     const textureBytes = accountedTextureBytes(64, 64, "rgba8", true);
     const geometryBytes = accountedGeometryBytes(24, 36);

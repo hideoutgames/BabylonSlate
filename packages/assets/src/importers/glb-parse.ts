@@ -306,6 +306,93 @@ export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
   return encodeGlbJsonBin(split.json, split.bin);
 }
 
+/**
+ * Replace embedded rasters with a 1×1 PNG so the glTF loader does not decode
+ * full images when every material slot is bound through ResourceCache.
+ */
+export function slimGlbEmbeddedImages(bytes: Uint8Array): Uint8Array {
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return bytes;
+  const images = Array.isArray(split.json.images)
+    ? (split.json.images as Record<string, unknown>[])
+    : [];
+  if (images.length === 0) return bytes;
+  const views = Array.isArray(split.json.bufferViews)
+    ? (split.json.bufferViews as Record<string, unknown>[])
+    : [];
+  const imageViews = new Set<number>();
+  for (const image of images) {
+    if (typeof image.bufferView === "number") imageViews.add(image.bufferView);
+  }
+  if (imageViews.size === 0) return bytes;
+
+  const png = ONE_BY_ONE_PNG;
+  const pieces: Uint8Array[] = [];
+  const nextViews: Record<string, unknown>[] = [];
+  const indexMap = new Map<number, number>();
+  let offset = 0;
+  const bin = split.bin;
+
+  const append = (data: Uint8Array, extra: Record<string, unknown> = {}) => {
+    const pad = pad4(offset);
+    if (pad > 0) {
+      pieces.push(new Uint8Array(pad));
+      offset += pad;
+    }
+    const viewOffset = offset;
+    pieces.push(data);
+    offset += data.byteLength;
+    nextViews.push({
+      ...extra,
+      buffer: 0,
+      byteOffset: viewOffset,
+      byteLength: data.byteLength,
+    });
+    return nextViews.length - 1;
+  };
+
+  for (let i = 0; i < views.length; i++) {
+    if (imageViews.has(i)) continue;
+    const view = views[i]!;
+    const byteOffset = typeof view.byteOffset === "number" ? view.byteOffset : 0;
+    const byteLength = typeof view.byteLength === "number" ? view.byteLength : 0;
+    const slice = bin.subarray(byteOffset, byteOffset + byteLength).slice();
+    indexMap.set(i, append(slice, view));
+  }
+  const pngView = append(png);
+
+  if (Array.isArray(split.json.accessors)) {
+    split.json.accessors = (
+      split.json.accessors as Record<string, unknown>[]
+    ).map((accessor) => {
+      const next = { ...accessor };
+      if (
+        typeof next.bufferView === "number" &&
+        indexMap.has(next.bufferView)
+      ) {
+        next.bufferView = indexMap.get(next.bufferView);
+      }
+      return next;
+    });
+  }
+
+  split.json.bufferViews = nextViews;
+  split.json.buffers = [{ byteLength: offset }];
+  split.json.images = images.map((image) => {
+    const next = { ...image };
+    delete next.uri;
+    return { ...next, mimeType: "image/png", bufferView: pngView };
+  });
+
+  const outBin = new Uint8Array(offset);
+  let writeAt = 0;
+  for (const piece of pieces) {
+    outBin.set(piece, writeAt);
+    writeAt += piece.byteLength;
+  }
+  return encodeGlbJsonBin(split.json, outBin);
+}
+
 function gltfJsonToGlb(
   jsonText: string,
   sidecars: ReadonlyMap<string, Uint8Array>,

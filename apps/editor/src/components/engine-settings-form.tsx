@@ -2,6 +2,7 @@ import { NumberField } from "@babylonslate/editor-kit";
 import type { EngineSettings } from "@babylonslate/vfs";
 import { DEVICE_PRESETS } from "@babylonslate/ui-runtime";
 import { Button } from "@babylonslate/ui/components/button";
+import { Slider } from "@babylonslate/ui/components/slider";
 import { Switch } from "@babylonslate/ui/components/switch";
 import {
   Field,
@@ -348,6 +349,88 @@ export function EngineSettingsForm({
               Multiplier stamped onto newly imported Models. Does not change
               models already in the project or scene scale.
             </FieldDescription>
+          </Field>
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-editor-texture-lod">
+                Editor Texture LOD
+              </FieldLabel>
+              <FieldDescription>
+                Reduces large GPU textures in the editor and overlay Play. Small
+                maps stay full size. Packed games use each Texture&apos;s
+                Downsample setting.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-editor-texture-lod"
+              data-testid="setting-editor-texture-lod"
+              checked={settings.editorTextureLodEnabled}
+              onCheckedChange={(checked) =>
+                void onChange({ editorTextureLodEnabled: checked === true })
+              }
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="setting-editor-texture-lod-quality">
+              Editor Texture Quality
+            </FieldLabel>
+            <Slider
+              id="setting-editor-texture-lod-quality"
+              data-testid="setting-editor-texture-lod-quality"
+              min={25}
+              max={100}
+              step={5}
+              value={[Math.round(settings.editorTextureLodQuality * 100)]}
+              disabled={!settings.editorTextureLodEnabled}
+              onValueChange={(value) => {
+                const percent = Array.isArray(value) ? value[0] : value;
+                if (typeof percent !== "number") return;
+                void onChange({ editorTextureLodQuality: percent / 100 });
+              }}
+            />
+            <FieldDescription>
+              Percent of each texture&apos;s source size while LOD is on.
+              Default 50%.
+            </FieldDescription>
+          </Field>
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-texture-budget">
+                Texture Memory Budget
+              </FieldLabel>
+              <FieldDescription>
+                Evicts unused GPU textures toward 80% of the budget. 512 MB is
+                an iPad suggestion; the default is 2 GB.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-texture-budget"
+              data-testid="setting-texture-budget"
+              checked={settings.textureBudgetEnabled}
+              onCheckedChange={(checked) =>
+                void onChange({ textureBudgetEnabled: checked === true })
+              }
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="setting-texture-budget-mb">
+              Texture Budget (MB)
+            </FieldLabel>
+            <NumberField
+              id="setting-texture-budget-mb"
+              min={256}
+              max={8192}
+              step={64}
+              className="min-h-[var(--touch-target,44px)]"
+              data-testid="setting-texture-budget-mb"
+              value={Math.round(settings.textureByteCeiling / (1024 * 1024))}
+              disabled={!settings.textureBudgetEnabled}
+              onChange={(megabytes) =>
+                void onChange({
+                  textureByteCeiling: Math.round(megabytes) * 1024 * 1024,
+                })
+              }
+            />
           </Field>
         </FieldSet>
       ) : null}

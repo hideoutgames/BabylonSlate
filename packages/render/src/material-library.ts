@@ -180,7 +180,10 @@ export class MaterialLibrary {
   }
 
   materialFor(scene: Scene, assetGuid: string): NodeMaterial | null {
-    return this.scenes.get(scene)?.get(assetGuid)?.material ?? null;
+    const entry = this.scenes.get(scene)?.get(assetGuid);
+    if (!entry) return null;
+    if (isDisposedNodeMaterial(entry.material, scene)) return null;
+    return entry.material;
   }
 
   dispose(): void {

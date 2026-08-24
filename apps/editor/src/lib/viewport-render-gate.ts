@@ -21,6 +21,10 @@ export function dispatchEngineSettingsChanged(settings: {
   uiDesignerPresets?: EngineSettings["uiDesignerPresets"];
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
+  editorTextureLodEnabled?: boolean;
+  editorTextureLodQuality?: number;
+  textureBudgetEnabled?: boolean;
+  textureByteCeiling?: number;
   viewportFlySpeed?: number;
   viewportGridSize?: number;
   modelImportDefaultScale?: number;
@@ -37,12 +41,17 @@ export type LiveEngineSettingsTarget = {
   };
   scheduler?: { setFrameCap: (fps: number) => void };
   setPostProcessingEnabled?: (enabled: boolean) => void;
+  setTextureBudget?: (bytes: number, enabled: boolean) => void;
 };
 
 export type LiveEngineSettings = {
   viewportFrameCap?: number;
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
+  editorTextureLodEnabled?: boolean;
+  editorTextureLodQuality?: number;
+  textureBudgetEnabled?: boolean;
+  textureByteCeiling?: number;
 };
 
 /** Apply local Engine Settings that must take effect without writing a scene. */
@@ -72,6 +81,20 @@ export function applyLiveEngineSettings(
   }
   if (typeof settings.postProcessingEnabled === "boolean") {
     target.setPostProcessingEnabled?.(settings.postProcessingEnabled);
+  }
+  if (
+    typeof settings.textureByteCeiling === "number" ||
+    typeof settings.textureBudgetEnabled === "boolean"
+  ) {
+    const bytes =
+      typeof settings.textureByteCeiling === "number"
+        ? settings.textureByteCeiling
+        : 2 * 1024 * 1024 * 1024;
+    const enabled =
+      typeof settings.textureBudgetEnabled === "boolean"
+        ? settings.textureBudgetEnabled
+        : true;
+    target.setTextureBudget?.(bytes, enabled);
   }
 }
 
@@ -135,8 +158,12 @@ export function attachViewportRenderGate(options: {
   canvas: HTMLCanvasElement;
   scheduler: ViewportRenderTarget;
   loadFrameCap?: () => Promise<number>;
-  scaling?: { setLevel: (level: number) => void };
+  scaling?: {
+    setLevel: (level: number) => void;
+    setSettingsLevel?: (level: number) => void;
+  };
   setPostProcessingEnabled?: (enabled: boolean) => void;
+  setTextureBudget?: (bytes: number, enabled: boolean) => void;
 }): () => void {
   const { canvas, scheduler } = options;
 
@@ -186,6 +213,7 @@ export function attachViewportRenderGate(options: {
         scheduler,
         scaling: options.scaling,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
+        setTextureBudget: options.setTextureBudget,
       },
       detail,
     );
@@ -206,11 +234,14 @@ export function attachViewportRenderGate(options: {
         scheduler,
         scaling: options.scaling,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
+        setTextureBudget: options.setTextureBudget,
       },
       {
         viewportFrameCap: settings.viewportFrameCap,
         hardwareScalingLevel: settings.hardwareScalingLevel,
         postProcessingEnabled: settings.postProcessingEnabled,
+        textureBudgetEnabled: settings.textureBudgetEnabled,
+        textureByteCeiling: settings.textureByteCeiling,
       },
     );
   })();

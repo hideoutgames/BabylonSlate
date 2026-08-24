@@ -76,6 +76,58 @@ describe("loadExportDocuments", () => {
     );
   });
 
+  it("packs the authored ktx2 hash, not the first ktx2 chunk", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Hero.texture.babasset",
+          header: {
+            guid: "tex-1",
+            type: "Texture",
+            name: "Hero",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: { ktx2ChunkId: "ktx2:authored" },
+            chunks: [
+              {
+                id: "pixels",
+                kind: "pixels",
+                mime: "image/png",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 1 } },
+              },
+              {
+                id: "ktx2:stale",
+                kind: "ktx2",
+                mime: "image/ktx2",
+                sha256: "old",
+                locator: { inline: { offset: 1, length: 1 } },
+              },
+              {
+                id: "ktx2:authored",
+                kind: "ktx2",
+                mime: "image/ktx2",
+                sha256: "new",
+                locator: { inline: { offset: 2, length: 1 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => null,
+      readAssetChunk: async (_path, chunkId) => {
+        if (chunkId === "ktx2:authored") return new Uint8Array([7, 7]);
+        if (chunkId === "ktx2:stale") return new Uint8Array([3, 3]);
+        if (chunkId === "pixels") return new Uint8Array([1]);
+        return null;
+      },
+    });
+    expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([7, 7]));
+  });
+
   it("exposes sprite document payloads for the export closure", async () => {
     const loaded = await loadExportDocuments({
       assets: [

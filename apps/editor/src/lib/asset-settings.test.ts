@@ -11,9 +11,9 @@ import {
   patchScriptInterfacePin,
   patchStructureField,
   patchTextureUsage,
-  patchTextureMaxDimension,
-  applyTextureMaxDimensionChange,
-  textureMaxDimensionSelectValue,
+  applyTextureDownsampleChange,
+  textureDownsampleSelectValue,
+  patchTextureDownsample,
   removeEnumMember,
   removeScriptInterfaceMethod,
   removeStructureField,
@@ -115,37 +115,21 @@ describe("asset settings payloads", () => {
     });
   });
 
-  it("patches per-asset texture max dimension and treats Source as unset", () => {
-    expect(
-      patchTextureMaxDimension(
-        { compressionState: "compressed", usage: "albedo" },
-        1024,
-      ),
-    ).toEqual({
-      compressionState: "compressed",
+  it("patches per-asset texture downsample and requeues compressible usages", () => {
+    expect(patchTextureDownsample({ usage: "albedo" }, 4)).toEqual({
       usage: "albedo",
-      maxDimension: 1024,
+      downsample: 4,
     });
+    expect(textureDownsampleSelectValue({ usage: "albedo" })).toBe("1");
     expect(
-      patchTextureMaxDimension(
-        { usage: "albedo", maxDimension: 1024 },
-        "source",
-      ),
-    ).toEqual({ usage: "albedo" });
-    expect(textureMaxDimensionSelectValue({ usage: "albedo" })).toBe("source");
-    expect(
-      textureMaxDimensionSelectValue({ usage: "albedo", maxDimension: 512 }),
-    ).toBe("512");
-    expect(
-      applyTextureMaxDimensionChange({ usage: "albedo" }, "1024"),
-    ).toEqual({
-      payload: { usage: "albedo", maxDimension: 1024 },
+      textureDownsampleSelectValue({ usage: "albedo", downsample: 4 }),
+    ).toBe("4");
+    expect(applyTextureDownsampleChange({ usage: "albedo" }, "4")).toEqual({
+      payload: { usage: "albedo", downsample: 4 },
       shouldRequeue: true,
     });
-    expect(
-      applyTextureMaxDimensionChange({ usage: "pixelArt" }, "1024"),
-    ).toEqual({
-      payload: { usage: "pixelArt", maxDimension: 1024 },
+    expect(applyTextureDownsampleChange({ usage: "pixelArt" }, "4")).toEqual({
+      payload: { usage: "pixelArt", downsample: 4 },
       shouldRequeue: false,
     });
   });
