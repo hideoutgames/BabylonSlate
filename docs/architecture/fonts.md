@@ -1,6 +1,6 @@
 # Fonts (P9)
 
-Font assets, fallback stacks, and the main-thread `FontFace` registry (engineplan §11.4). Layout and CSS-stack compilation live in `@babylonslate/ui-runtime` (pure). `FontFace` load lives in `@babylonslate/render` because `document.fonts` is main-thread only.
+Font assets, fallback stacks, and the main-thread `FontFace` registry (engineplan §11.4). CSS-stack compilation lives in `@babylonslate/assets` (pure). `FontFace` load lives in `@babylonslate/render` because `document.fonts` is main-thread only.
 
 ## Asset
 
@@ -18,20 +18,20 @@ Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Ch
 
 ## 3D Text
 
-`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not UserInterface `TextBlock` and not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Serialized `depth` is ignored.
+`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Serialized `depth` is ignored.
 
 | Font data | When |
 | --- | --- |
 | Font `facetype-glyphs` bytes | `fontAssetGuid` set and the chunk parses |
 | Bundled ASCII TypeFace | No Font, missing chunk, or invalid JSON |
 
-Details shows a disabled **Typeface** note when the Font has no facetype chunk. Play/export collect those bytes independently of `FontFace` source bytes (GUI still uses woff/ttf). Export packs a `FontFacetype` sidecar (`font-facetype:<guid>`) so the source Font stays a font file. The component is **not** Development Only.
+Details shows a disabled **Typeface** note when the Font has no facetype chunk. Play/export collect those bytes independently of `FontFace` source bytes. Export packs a `FontFacetype` sidecar (`font-facetype:<guid>`) so the source Font stays a font file. The component is **not** Development Only.
 
 See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
 
 ## Fallback stack
 
-`compileFontStack` in `ui-runtime` builds a quoted CSS stack:
+`compileFontStack` in `@babylonslate/assets` builds a quoted CSS stack:
 
 1. The asset family.
 2. Ordered fallback families from `fallbackGuids`.
@@ -52,8 +52,6 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 4. Failed load → editor warning, never a silent substitution.
 
 The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
-
-Play HUD and the UserInterface designer both `FontRegistry.registerAll` project Font `source` bytes, then `consumeDirty()` → ADT `markAsDirty()` so a late face still redraws.
 
 ## Editor
 
