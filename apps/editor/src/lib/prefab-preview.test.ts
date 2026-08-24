@@ -70,6 +70,7 @@ describe("prefabComponentsFromGraph", () => {
         classId: "MeshComponent",
         properties: { ...mesh.properties },
         parentId: null,
+        sourceId: "prefab-mesh",
         transform: mesh.transform,
       },
     ]);

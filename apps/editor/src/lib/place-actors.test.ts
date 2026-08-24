@@ -221,6 +221,7 @@ describe("spawnPlacedActor", () => {
         classId: "SpriteComponent",
         properties: { assetGuid: "sprite-1" },
         parentId: null,
+        sourceId: "sprite",
         transform: {
           position: [0, 0, 0],
           rotation: [0, 0, 0, 1],
@@ -279,6 +280,23 @@ describe("duplicateSceneActor", () => {
     expect(copy.components).toEqual(source.components);
     expect(copy.transform).toEqual(source.transform);
     expect(copy).not.toBe(source);
+  });
+
+  it("keeps prefab sourceId and overrideKeys on the copy", () => {
+    const scene = createDefaultScene();
+    const source = createActor("actor-1", "Hero", {
+      classId: "Hero",
+      components: [
+        {
+          ...createMeshComponent("mesh-1", "box"),
+          sourceId: "prefab-mesh",
+          overrideKeys: ["meshKind"],
+        },
+      ],
+    });
+    const copy = duplicateSceneActor(scene, source);
+    expect(copy.components[0]?.sourceId).toBe("prefab-mesh");
+    expect(copy.components[0]?.overrideKeys).toEqual(["meshKind"]);
   });
 
   it("can drop the copy at a world position as a root actor", () => {

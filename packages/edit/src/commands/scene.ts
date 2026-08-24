@@ -485,6 +485,50 @@ export class SetComponentPropertyCommand
   }
 }
 
+export class SetComponentTransformCommand
+  implements EditCommand<SerializedScene>
+{
+  readonly type = "scene.setComponentTransform";
+  readonly mergeKey: string;
+  readonly actorId: string;
+  readonly componentId: string;
+  readonly from: SerializedTransform;
+  readonly to: SerializedTransform;
+
+  constructor(
+    actorId: string,
+    componentId: string,
+    from: SerializedTransform,
+    to: SerializedTransform,
+  ) {
+    this.actorId = actorId;
+    this.componentId = componentId;
+    this.from = from;
+    this.to = to;
+    this.mergeKey = `componentTransform:${actorId}:${componentId}`;
+  }
+
+  apply(doc: SerializedScene): SerializedScene {
+    return replaceActor(doc, this.actorId, (actor) => ({
+      ...actor,
+      components: actor.components.map((component) =>
+        component.id === this.componentId
+          ? { ...component, transform: this.to }
+          : component,
+      ),
+    }));
+  }
+
+  invert(): SetComponentTransformCommand {
+    return new SetComponentTransformCommand(
+      this.actorId,
+      this.componentId,
+      this.to,
+      this.from,
+    );
+  }
+}
+
 export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
   readonly type = "scene.setSceneSetting";
   readonly mergeKey: string;
@@ -705,6 +749,7 @@ export type SceneEditCommand =
   | ReorderComponentCommand
   | ReparentComponentCommand
   | SetComponentPropertyCommand
+  | SetComponentTransformCommand
   | SetSceneSettingCommand
   | SetViewportModeCommand
   | SetSceneNameCommand
@@ -728,6 +773,7 @@ export const SCENE_COMMAND_TYPES = [
   "scene.reorderComponent",
   "scene.reparentComponent",
   "scene.setComponentProperty",
+  "scene.setComponentTransform",
   "scene.setSceneSetting",
   "scene.setViewportMode",
   "scene.setSceneName",
@@ -864,6 +910,17 @@ export function createSetComponentPropertyCommandFromJson(
     String(payload.property),
     payload.from,
     payload.to,
+  );
+}
+
+export function createSetComponentTransformCommandFromJson(
+  payload: Record<string, unknown>,
+): SetComponentTransformCommand {
+  return new SetComponentTransformCommand(
+    String(payload.actorId),
+    String(payload.componentId),
+    payload.from as SerializedTransform,
+    payload.to as SerializedTransform,
   );
 }
 
