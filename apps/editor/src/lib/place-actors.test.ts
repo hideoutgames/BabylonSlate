@@ -413,6 +413,51 @@ describe("projectPlaceActors", () => {
     });
   });
 
+  it("places a subclass with ancestor-merged prefab components", () => {
+    const assets = [
+      {
+        path: "assets/pawn.class.babasset",
+        header: {
+          guid: "pawn-guid",
+          name: "Pawn",
+          type: "Class",
+          parentClass: "Actor",
+        },
+      },
+      {
+        path: "assets/hero.class.babasset",
+        header: {
+          guid: "hero-guid",
+          name: "Hero",
+          type: "Class",
+          parentClass: "Pawn",
+        },
+      },
+    ];
+    const graphs: Record<string, { components?: unknown[] }> = {
+      "assets/pawn.class.babasset": {
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+      "assets/hero.class.babasset": { components: [] },
+    };
+    const items = projectPlaceActors(assets, (guid) =>
+      prefabComponentsForGuid(guid, {
+        assets,
+        graphForPath: (path) => graphs[path],
+      }),
+    );
+    const hero = items.find((item) => item.title === "Hero");
+    expect(hero?.kind).toMatchObject({
+      type: "asset",
+      components: [
+        expect.objectContaining({
+          id: "prefab-mesh",
+          properties: expect.objectContaining({ meshKind: "box" }),
+        }),
+      ],
+    });
+  });
+
   it("uses the compile class id for a Class asset named main.class", () => {
     const items = projectPlaceActors([
       {

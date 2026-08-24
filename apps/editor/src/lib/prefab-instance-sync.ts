@@ -284,9 +284,45 @@ export function descendantClassIds(
   });
 }
 
+function pruneMatchingPrefabOverrides(
+  component: SerializedComponent,
+  prefab: SerializedComponent | undefined,
+): SerializedComponent {
+  if (!prefab) return component;
+  const keys = overrideSet(component.overrideKeys);
+  for (const key of [...keys]) {
+    if (key === PREFAB_TRANSFORM_OVERRIDE) {
+      if (
+        jsonEqual(
+          component.transform ?? identitySerializedTransform(),
+          prefab.transform ?? identitySerializedTransform(),
+        )
+      ) {
+        keys.delete(key);
+      }
+      continue;
+    }
+    if (key === PREFAB_PARENT_OVERRIDE) {
+      continue;
+    }
+    if (jsonEqual(component.properties[key], prefab.properties[key])) {
+      keys.delete(key);
+    }
+  }
+  const { overrideKeys: _dropped, ...rest } = component;
+  return {
+    ...rest,
+    sourceId: component.sourceId,
+    ...withOverrideKeys(keys),
+  };
+}
+
 export function stampUserComponentOverrides(
   previous: SerializedScene,
   next: SerializedScene,
+  prefabsByClassId?: Readonly<
+    Record<string, readonly SerializedComponent[]>
+  >,
 ): SerializedScene {
   const beforeActors = new Map(previous.actors.map((actor) => [actor.id, actor]));
   return {
@@ -297,6 +333,7 @@ export function stampUserComponentOverrides(
       const beforeComponents = new Map(
         beforeActor.components.map((component) => [component.id, component]),
       );
+      const prefabRows = prefabsByClassId?.[actor.classId] ?? [];
       return {
         ...actor,
         components: actor.components.map((component) => {
@@ -323,11 +360,14 @@ export function stampUserComponentOverrides(
           if ((before.parentId ?? null) !== (component.parentId ?? null)) {
             keys.add(PREFAB_PARENT_OVERRIDE);
           }
-          return {
-            ...component,
-            sourceId,
-            ...withOverrideKeys(keys),
-          };
+          return pruneMatchingPrefabOverrides(
+            {
+              ...component,
+              sourceId,
+              ...withOverrideKeys(keys),
+            },
+            prefabRows.find((row) => row.id === sourceId),
+          );
         }),
       };
     }),
@@ -352,8 +392,9 @@ export function copyInstanceLinkage(
         components: actor.components.map((component) => {
           const linked = fromComponents.get(component.id);
           if (!linked) return component;
+          const { overrideKeys: _dropped, ...rest } = component;
           return {
-            ...component,
+            ...rest,
             ...(linked.sourceId ? { sourceId: linked.sourceId } : {}),
             ...withOverrideKeys(overrideSet(linked.overrideKeys)),
           };

@@ -1,5 +1,5 @@
 import type { IDockviewPanelProps } from "dockview-react";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   AssetPicker,
   NamedListEditor,
@@ -41,6 +41,7 @@ import {
   projectAddComponentItems,
 } from "./add-component-catalog";
 import {
+  applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
   type AssetPickRequest,
@@ -49,9 +50,15 @@ import {
   sceneComponentDisplayLabel,
   sceneComponentEntries,
 } from "../lib/scene-component-entries";
-import { isPostProcessMaterialForPicker } from "../lib/content-browser-helpers";
+import {
+  classParentLookup,
+  isPostProcessMaterialForPicker,
+} from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
 import { fontAssetHasFacetype } from "../lib/play-fonts";
+import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
+import { classIdForGraphPath } from "../services/script-compiler";
+import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
 
 export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -110,6 +117,19 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
     doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
   const actorId = selectedActorIds[0] ?? null;
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
+  const prefabTemplates = useMemo(() => {
+    const assets = assetRegistry?.list() ?? [];
+    const graphs = collectClassGraphsForPalette({
+      assets,
+      openDocuments,
+      classIdForPath: classIdForGraphPath,
+    });
+    return prefabTemplatesByClassId({
+      classIds: Object.keys(graphs),
+      parentOf: classParentLookup(assets),
+      graphs,
+    });
+  }, [assetRegistry, openDocuments]);
 
   const mutate = useCallback(
     (next: SerializedScene) => {
@@ -684,7 +704,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               </div>
             </div>
             <PropertyGrid
-              rows={componentPropertyRows(
+              rows={applyPrefabPropertyDefaults(
+                componentPropertyRows(
                 actor.id,
                 component,
                 (property, value) =>
@@ -712,6 +733,12 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   physicsWorld: scene.settings.physicsWorld,
                   onPickAsset: setAssetPick,
                 },
+              ),
+                component.sourceId
+                  ? prefabTemplates[actor.classId]?.find(
+                      (row) => row.id === component.sourceId,
+                    )
+                  : undefined,
               )}
             />
             {component.classId === "ColliderComponent" ? (
@@ -730,6 +757,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                           : candidate,
                       ),
                     })),
+                  component.sourceId
+                    ? prefabTemplates[actor.classId]?.find(
+                        (row) => row.id === component.sourceId,
+                      )?.transform
+                    : undefined,
                 )}
                 data-testid={`collider-transform-grid-${component.id}`}
               />

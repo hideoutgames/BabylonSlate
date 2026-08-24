@@ -20,7 +20,8 @@ import {
   instantiatePrefabComponents,
   prefabComponentsFromGraph,
 } from "./prefab-preview";
-import { classIdFromClassAsset } from "./content-browser-helpers";
+import { classIdFromClassAsset, classParentLookup } from "./content-browser-helpers";
+import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
 
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
@@ -141,7 +142,12 @@ export function prefabComponentsForGuid(
   options: {
     assets: Array<{
       path?: string;
-      header: { guid: string; name: string; type?: string };
+      header: {
+        guid: string;
+        name: string;
+        type?: string;
+        parentClass?: string | null;
+      };
     }>;
     graphForPath: (
       path: string,
@@ -150,6 +156,23 @@ export function prefabComponentsForGuid(
 ): SerializedComponent[] | undefined {
   const asset = options.assets.find((entry) => entry.header.guid === guid);
   if (!asset?.path || asset.header.type !== "Class") return undefined;
+  const parentOf = classParentLookup(options.assets);
+  const graphs: Record<string, { components?: SerializedComponent[] }> = {};
+  for (const entry of options.assets) {
+    if (entry.header.type !== "Class" || !entry.path) continue;
+    const graph = options.graphForPath(entry.path);
+    if (!graph) continue;
+    const classId = classIdFromClassAsset(entry);
+    graphs[classId] = graph;
+    if (entry.header.name !== classId) graphs[entry.header.name] = graph;
+  }
+  const classId = classIdFromClassAsset(asset);
+  const merged = mergedPrefabComponentsForClass({
+    classId,
+    parentOf,
+    graphs,
+  });
+  if (merged) return merged;
   const graph = options.graphForPath(asset.path);
   if (!graph) return undefined;
   return prefabComponentsFromGraph(graph);

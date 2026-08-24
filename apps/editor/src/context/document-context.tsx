@@ -1925,6 +1925,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return readGitPrefill(projectService.storagePort);
   }, [projectService]);
 
+  const classGraphsForPrefabSync = useCallback(() => {
+    const assets = projectService.registry?.list() ?? [];
+    const graphs = collectClassGraphsForPalette({
+      assets,
+      openDocuments: [...documentService.getState().openDocuments.values()],
+      classIdForPath: classIdForGraphPath,
+    });
+    return {
+      graphs,
+      parentOf: classParentLookup(assets),
+    };
+  }, [documentService, projectService]);
+
+  const enqueuePrefabSyncForClassPath = useCallback(
+    async (path: string) => {
+      const { graphs, parentOf } = classGraphsForPrefabSync();
+      await syncPrefabInstancesRef.current({
+        classIds: descendantClassIds(
+          classIdForGraphPath(path),
+          Object.keys(graphs),
+          parentOf,
+        ),
+      });
+    },
+    [classGraphsForPrefabSync],
+  );
+
   const applyGraphChange = useCallback(
     async (id: string, next: SerializedGraph): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
@@ -1971,21 +1998,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       if (commands.some((command) => command.type === "graph.setComponents")) {
-        const assets = projectService.registry?.list() ?? [];
-        const parentOf = classParentLookup(assets);
-        const classId = classIdForGraphPath(doc.ref.path);
-        const graphs = collectClassGraphsForPalette({
-          assets,
-          openDocuments: [...documentService.getState().openDocuments.values()],
-          classIdForPath: classIdForGraphPath,
-        });
-        await syncPrefabInstancesRef.current({
-          classIds: descendantClassIds(classId, Object.keys(graphs), parentOf),
-        });
+        await enqueuePrefabSyncForClassPath(doc.ref.path);
       }
       return true;
     },
-    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+    [
+      bump,
+      documentService,
+      enqueuePrefabSyncForClassPath,
+      ensureDerived,
+      projectService,
+      scheduleDebouncedSave,
+    ],
   );
 
   const reparentClassDocument = useCallback(
@@ -2041,9 +2065,18 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as SerializedScene;
+      const { graphs, parentOf } = classGraphsForPrefabSync();
       const intended = options?.prefabSync
         ? next
-        : stampUserComponentOverrides(previous, next);
+        : stampUserComponentOverrides(
+            previous,
+            next,
+            prefabTemplatesByClassId({
+              classIds: Object.keys(graphs),
+              parentOf,
+              graphs,
+            }),
+          );
       const commands = diffSceneCommands(previous, intended);
       if (commands.length === 0) {
         if (scenesEqualForPrefabSync(previous, intended)) {
@@ -2088,7 +2121,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
-    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+    [
+      bump,
+      classGraphsForPrefabSync,
+      documentService,
+      ensureDerived,
+      projectService,
+      scheduleDebouncedSave,
+    ],
   );
 
   applySceneChangeRef.current = applySceneChange;
@@ -3432,6 +3472,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!result) return;
         documentService.updateGraph(activeDocumentId, result.doc);
         bump();
+        if (
+          JSON.stringify(content.components) !==
+          JSON.stringify(result.doc.components)
+        ) {
+          void enqueuePrefabSyncForClassPath(doc.ref.path);
+        }
         return;
       }
       if (doc.ref.kind === "scene") {
@@ -3457,7 +3503,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
       }
     },
-    [bump, documentService],
+    [bump, documentService, enqueuePrefabSyncForClassPath],
   );
 
   const undoActiveDocument = useCallback(() => {

@@ -386,9 +386,22 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               ...item,
               kind: {
                 ...kind,
-                components: graph
-                  ? prefabComponentsFromGraph(graph)
-                  : kind.components,
+                components:
+                  prefabComponentsForGuid(kind.guid, {
+                    assets: assetRegistry?.list() ?? [],
+                    graphForPath: (path) => {
+                      if (path === asset.path && graph) return graph;
+                      const open = openDocuments.find(
+                        (entry) =>
+                          entry.ref.kind === "graph" && entry.ref.path === path,
+                      );
+                      if (open?.content) return open.content as SerializedGraph;
+                      return diskGraphs.get(path);
+                    },
+                  }) ??
+                  (graph
+                    ? prefabComponentsFromGraph(graph)
+                    : kind.components),
               },
             });
           });
@@ -397,7 +410,16 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
       }
       finish(item);
     },
-    [assetRegistry, loadGraphDocument, mutate, scene, selectActor, viewportDropApi],
+    [
+      assetRegistry,
+      diskGraphs,
+      loadGraphDocument,
+      mutate,
+      openDocuments,
+      scene,
+      selectActor,
+      viewportDropApi,
+    ],
   );
 
   const removeActor = useCallback(

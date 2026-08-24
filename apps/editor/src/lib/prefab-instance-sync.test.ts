@@ -284,6 +284,32 @@ describe("stampUserComponentOverrides", () => {
       ]),
     );
   });
+
+  it("drops override keys that now match the prefab template", () => {
+    const previous = createDefaultScene();
+    previous.actors = [
+      createActor("hero", "Hero", {
+        classId: "Hero",
+        components: [
+          {
+            id: "c1",
+            classId: "MeshComponent",
+            properties: { meshKind: "sphere" },
+            parentId: null,
+            sourceId: "prefab-mesh",
+            overrideKeys: ["meshKind"],
+            transform: identity,
+          },
+        ],
+      }),
+    ];
+    const next = structuredClone(previous);
+    next.actors[0]!.components[0]!.properties.meshKind = "box";
+    const stamped = stampUserComponentOverrides(previous, next, {
+      Hero: [createMeshComponent("prefab-mesh", "box")],
+    });
+    expect(stamped.actors[0]?.components[0]?.overrideKeys).toBeUndefined();
+  });
 });
 
 describe("copyInstanceLinkage", () => {
@@ -310,5 +336,27 @@ describe("copyInstanceLinkage", () => {
     const copied = copyInstanceLinkage(from, onto);
     expect(copied.actors[0]?.components[0]?.sourceId).toBe("prefab-mesh");
     expect(copied.actors[0]?.components[0]?.overrideKeys).toEqual(["meshKind"]);
+  });
+
+  it("clears overrideKeys when the intended scene has none", () => {
+    const from = createDefaultScene();
+    from.actors = [
+      createActor("hero", "Hero", {
+        components: [
+          {
+            id: "c1",
+            classId: "MeshComponent",
+            properties: { meshKind: "box" },
+            parentId: null,
+            sourceId: "prefab-mesh",
+            transform: identity,
+          },
+        ],
+      }),
+    ];
+    const onto = structuredClone(from);
+    onto.actors[0]!.components[0]!.overrideKeys = ["meshKind"];
+    const copied = copyInstanceLinkage(from, onto);
+    expect(copied.actors[0]?.components[0]?.overrideKeys).toBeUndefined();
   });
 });
