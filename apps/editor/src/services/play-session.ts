@@ -383,6 +383,8 @@ export interface PlaySession {
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
+  whenModelsReady: () => Promise<void>;
+  modelLoadCount: () => number;
   drawCalls: () => number;
   bridgeMessagesPerSec: () => number;
   stop: () => PlaySessionResult;
@@ -1031,6 +1033,8 @@ export function startPlaySession(options: {
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
     liveObjectCounts: () => handle.liveObjectCounts(),
+    whenModelsReady: () => handle.whenEditorModelsReady(),
+    modelLoadCount: () => handle.modelLoadCount(),
     drawCalls: () => handle.drawCalls(),
     bridgeMessagesPerSec: () => {
       const now = performance.now();

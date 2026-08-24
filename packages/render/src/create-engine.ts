@@ -205,8 +205,10 @@ export interface EngineHandle {
   isFreeCamEnabled: () => boolean;
   /** Fly the Play free camera; no-op while it is off. */
   steerPlayFreeCam: (forward: number, right: number) => void;
-  /** Resolves when editor GLB instantiations from the last apply have finished. */
+  /** Resolves when editor or Play GLB instantiations from the last apply have finished. */
   whenEditorModelsReady: () => Promise<void>;
+  /** Snapshot/editor GLB loads currently tracked (including settled promises). */
+  modelLoadCount: () => number;
 }
 
 export interface CreateEngineOptions {
@@ -1416,8 +1418,16 @@ export function createEngine(
     steerPlayFreeCam: (forward, right) => {
       playFreeCam?.fly(forward, right);
     },
-    whenEditorModelsReady: () =>
-      editorSync?.whenEditorModelsReady() ?? Promise.resolve(),
+    whenEditorModelsReady: async () => {
+      await (editorSync?.whenEditorModelsReady() ?? Promise.resolve());
+      const playLoads = [...(binding.slotAnimLoads?.values() ?? [])];
+      if (playLoads.length > 0) {
+        await Promise.all(playLoads);
+      }
+    },
+    modelLoadCount: () =>
+      (editorSync?.pendingModelLoadCount() ?? 0) +
+      (binding.slotAnimLoads?.size ?? 0),
   };
 }
 

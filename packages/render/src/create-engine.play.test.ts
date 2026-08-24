@@ -16,6 +16,7 @@ import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { encodeTriangleGlb } from "./model-mesh";
 import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
+import { visualMeshes } from "./visual-meshes";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -201,6 +202,23 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     expect(registerView).not.toHaveBeenCalled();
+  });
+
+  it("whenEditorModelsReady waits for Play GLB instantiations", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.setMeshAssets({
+      modelBytes: new Map([["hero", encodeTriangleGlb()]]),
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "box",
+      meshAssetGuid: "hero",
+    });
+    expect(handle.modelLoadCount()).toBeGreaterThan(0);
+    const root = handle.scene.getMeshByName("actor-2");
+    await handle.whenEditorModelsReady();
+    expect(visualMeshes(root!).length).toBeGreaterThan(0);
   });
 
   it("does not throw when a shared view canvas has no getContext", () => {

@@ -101,7 +101,6 @@ export function applyEditorMaterialFreeze(
 }
 
 export const SCENE_SHADER_WARM_TIMEOUT_MS = 4_000;
-export const SCENE_MODEL_READY_TIMEOUT_MS = 8_000;
 
 export async function settleOrTimeout(work: Promise<void>, ms: number): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
