@@ -168,9 +168,6 @@ importers:
       '@babylonslate/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@babylonslate/ui-runtime':
-        specifier: workspace:*
-        version: link:../../packages/ui-runtime
       '@babylonslate/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs

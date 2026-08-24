@@ -107,71 +107,6 @@ describe("collectAndExportGame", () => {
     );
   });
 
-  it("packs Engine Settings designer presets for the player HUD", async () => {
-    const scene = createDefaultScene();
-    const phone = {
-      id: "custom-phone",
-      label: "Phone",
-      width: 390,
-      height: 844,
-      safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
-    };
-    const result = await collectAndExportGame({
-      startupSceneGuid: "scene-1",
-      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
-      plugins: [],
-      projectPluginOverrides: {},
-      preset: defaultExportPreset(),
-      parentOf: () => null,
-      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
-      graphByGuid: () => null,
-      bytesByGuid: (guid) =>
-        guid === "scene-1"
-          ? new TextEncoder().encode(JSON.stringify(scene))
-          : null,
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
-      playFrameCap: 60,
-      physicsWorld: "3d",
-      playerFiles,
-      uiDesignerPresets: [phone],
-    });
-    expect(result.ok).toBe(true);
-    if (!isOk(result)) return;
-    expect(result.value.manifest.uiDesignerPresets).toEqual([phone]);
-  });
-
-  it("packs Project Settings User Interface design space onto game.json", async () => {
-    const scene = createDefaultScene();
-    const result = await collectAndExportGame({
-      startupSceneGuid: "scene-1",
-      assets: [asset({ guid: "scene-1", type: "Scene", name: "Main" })],
-      plugins: [],
-      projectPluginOverrides: {},
-      preset: defaultExportPreset(),
-      parentOf: () => null,
-      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
-      graphByGuid: () => null,
-      bytesByGuid: (guid) =>
-        guid === "scene-1"
-          ? new TextEncoder().encode(JSON.stringify(scene))
-          : null,
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
-      playFrameCap: 60,
-      physicsWorld: "3d",
-      playerFiles,
-      ui: {
-        designResolution: { width: 1280, height: 720 },
-        scaleRule: "fitWidth",
-      },
-    });
-    expect(result.ok).toBe(true);
-    if (!isOk(result)) return;
-    expect(result.value.manifest.ui).toEqual({
-      designResolution: { width: 1280, height: 720 },
-      scaleRule: "fitWidth",
-    });
-  });
-
   it("packs a project Game Instance when the startup scene omits one", async () => {
     const scene = createDefaultScene();
     const result = await collectAndExportGame({
@@ -316,79 +251,6 @@ describe("collectAndExportGame", () => {
     );
   });
 
-  it("compiles UserInterface logic into the packed script bundle", async () => {
-    const scene = {
-      ...createDefaultScene(),
-      actors: [
-        createActor("hud", "HUD", {
-          components: [
-            {
-              id: "ui",
-              classId: "UserInterfaceComponent",
-              properties: { assetGuid: "ui-1" },
-            },
-          ],
-        }),
-      ],
-    };
-    const logic = {
-      nodes: [
-        {
-          id: "begin",
-          type: "flow.event.beginPlay",
-          position: { x: 0, y: 0 },
-          data: {},
-        },
-        {
-          id: "log",
-          type: "debug.log",
-          position: { x: 200, y: 0 },
-          data: { message: "hud-ready" },
-        },
-      ],
-      edges: [
-        {
-          id: "e1",
-          source: "begin",
-          sourceHandle: "execOut",
-          target: "log",
-          targetHandle: "execIn",
-        },
-      ],
-    };
-    const result = await collectAndExportGame({
-      startupSceneGuid: "scene-1",
-      assets: [
-        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({
-          guid: "ui-1",
-          type: "UserInterface",
-          name: "Status",
-          path: "assets/HUD.ui.babasset",
-        }),
-      ],
-      plugins: [],
-      projectPluginOverrides: {},
-      parentOf: () => null,
-      sceneByGuid: () => scene,
-      graphByGuid: () => null,
-      payloadByGuid: (guid) => (guid === "ui-1" ? { logic } : null),
-      bytesByGuid: (guid) =>
-        guid === "scene-1"
-          ? new TextEncoder().encode(JSON.stringify(scene))
-          : new TextEncoder().encode(JSON.stringify({ logic })),
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
-      playFrameCap: 60,
-      physicsWorld: "3d",
-      playerFiles,
-    });
-    expect(result.ok).toBe(true);
-    if (!isOk(result)) return;
-    const scripts = new TextDecoder().decode(result.value.files.get("scripts.js"));
-    expect(scripts).toContain("HUD");
-    expect(scripts).toContain("onBeginPlay");
-  });
-
   it("compiles AnimationGraph lifecycle and transition rules into packed scripts", async () => {
     const scene = {
       ...createDefaultScene(),
@@ -496,7 +358,7 @@ describe("collectAndExportGame", () => {
     ).toBe(true);
   });
 
-  it("packs Texture pixels as a UiImage sidecar alongside KTX2 GPU bytes", async () => {
+  it("packs Texture KTX2 GPU bytes", async () => {
     const scene = {
       ...createDefaultScene(),
       actors: [
@@ -514,7 +376,6 @@ describe("collectAndExportGame", () => {
     const ktx2 = new Uint8Array([
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
     ]);
-    const pixels = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     const result = await collectAndExportGame({
       startupSceneGuid: "scene-1",
       assets: [
@@ -531,7 +392,6 @@ describe("collectAndExportGame", () => {
         if (guid === "tex-1") return ktx2;
         return null;
       },
-      guiImageBytesByGuid: (guid) => (guid === "tex-1" ? pixels : null),
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       playFrameCap: 60,
       physicsWorld: "3d",
@@ -542,11 +402,6 @@ describe("collectAndExportGame", () => {
     expect(
       result.value.manifest.assets.some(
         (entry) => entry.type === "Texture" && entry.guid === "tex-1",
-      ),
-    ).toBe(true);
-    expect(
-      result.value.manifest.assets.some(
-        (entry) => entry.type === "UiImage" && entry.guid === "uiimage:tex-1",
       ),
     ).toBe(true);
   });
@@ -670,7 +525,7 @@ describe("collectAndExportGame", () => {
           components: [
             {
               id: "text",
-              classId: "UserInterfaceComponent",
+              classId: "Text3DComponent",
               properties: { fontGuid: "font-1" },
             },
           ],

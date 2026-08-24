@@ -25,7 +25,6 @@ export function WindowsMenu() {
     getOpenDockWindowCount,
     assetRegistry,
     sourceControl,
-    uiEditorMode,
     animEditorMode,
   } = useDocuments();
   useDockWindowTick();
@@ -58,7 +57,6 @@ export function WindowsMenu() {
       ? listDockWindows(activeKind, {
           actorPrefab,
           sourceControl: sourceControl.enabled,
-          uiEditorMode: activeKind === "ui" ? uiEditorMode : undefined,
           animEditorMode:
             activeKind === "anim-graph" ? animEditorMode : undefined,
         })
@@ -81,7 +79,6 @@ export function WindowsMenu() {
   }, [
     activeKind,
     actorPrefab,
-    uiEditorMode,
     animEditorMode,
     sourceControl.enabled,
     isDockWindowOpen,

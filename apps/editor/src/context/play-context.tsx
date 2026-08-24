@@ -17,7 +17,7 @@ import {
   isErr,
   resolveGameInstanceClass,
 } from "@babylonslate/core";
-import { createAppEngine, type FontAssetEntry } from "@babylonslate/render";
+import { createAppEngine } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
@@ -113,18 +113,7 @@ import {
 import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
-import {
-  collectImageGuidsFromUiDocuments,
-  type UserInterfaceDocument,
-} from "@babylonslate/ui-runtime";
-import { playUserInterfaceRuntimeDocuments, interfaceMaterialGuidsFromUiDocuments } from "../lib/play-content";
-import type { UserInterfaceRuntimeDocument } from "@babylonslate/bridge";
-import { collectFontAssetEntries } from "../lib/play-fonts";
 import { animClipCatalogFromAssets, modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
-import {
-  collectUiImageUrls,
-  revokeUiImageUrls,
-} from "../lib/play-ui-images";
 import {
   ENGINE_SETTINGS_CHANGED_EVENT,
   type LiveEngineSettings,
@@ -136,17 +125,6 @@ import {
 } from "../lib/shared-engine-generation";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
-
-/** Slim UI metadata for Play. Never auto-applies a HUD. */
-export function playSessionUiOptions(library: Record<string, UserInterfaceDocument>): {
-  userInterfaces: UserInterfaceRuntimeDocument[];
-  autoApply: false;
-} {
-  return {
-    userInterfaces: playUserInterfaceRuntimeDocuments(library),
-    autoApply: false,
-  };
-}
 
 export type LiveBtState = {
   slotId: number;
@@ -257,15 +235,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const previewCancelledRef = useRef(false);
   const previewClosingRef = useRef(false);
   const previewDiagnosticsRef = useRef<SessionReportEntry[]>([]);
-  const [playUiLibrary, setPlayUiLibrary] = useState<
-    Record<string, UserInterfaceDocument>
-  >({});
-  const [playFontEntries, setPlayFontEntries] = useState<FontAssetEntry[]>([]);
-  const [playImageUrls, setPlayImageUrls] = useState<Map<string, string>>(
-    () => new Map(),
-  );
-  const playImageUrlsRef = useRef(playImageUrls);
-  playImageUrlsRef.current = playImageUrls;
   playingRef.current = playing;
   previewOpenRef.current = previewOpen;
   const [playAnimGraphs, setPlayAnimGraphs] = useState<PlayAnimGraphEntry[]>(
@@ -333,7 +302,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   >([]);
   const {
     collectPlayPreviewScripts,
-    collectPlayUiLibrary,
     collectPlayAnimGraphs,
     collectPlayBehaviourTrees,
     collectPlayBlackboards,
@@ -833,52 +801,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setStartupAlertOpen(true);
           return;
         }
-        let uiLibrary: Record<string, UserInterfaceDocument> = {};
-        try {
-          uiLibrary = await collectPlayUiLibrary();
-          setPlayUiLibrary(uiLibrary);
-          const urls = await collectUiImageUrls(
-            collectImageGuidsFromUiDocuments(Object.values(uiLibrary)),
-            (assetRegistry?.list() ?? []).map((asset) => ({
-              guid: asset.header.guid,
-              path: asset.path,
-              type: asset.header.type,
-              chunks: asset.header.chunks,
-            })),
-            readAssetChunk,
-            playImageUrlsRef.current,
-          );
-          playImageUrlsRef.current = urls;
-          setPlayImageUrls(urls);
-        } catch (error) {
-          appendLog(
-            `UserInterface library failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          uiLibrary = {};
-          setPlayUiLibrary({});
-          revokeUiImageUrls(playImageUrlsRef.current);
-          playImageUrlsRef.current = new Map();
-          setPlayImageUrls(new Map());
-        }
-        try {
-          const fonts = assetRegistry?.list() ?? [];
-          setPlayFontEntries(
-            await collectFontAssetEntries(
-              fonts.map((asset) => ({
-                guid: asset.header.guid,
-                path: asset.path,
-                type: asset.header.type,
-                payload: asset.header.payload,
-              })),
-              readAssetChunk,
-            ),
-          );
-        } catch (error) {
-          appendLog(
-            `Font registry failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          setPlayFontEntries([]);
-        }
         let playGraphs: typeof playAnimGraphs = [];
         try {
           playGraphs = await collectPlayAnimGraphs(resolvedScene?.scene);
@@ -975,7 +897,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             resolvedScene?.scene,
             playLibrary.map((entry) => entry.scene),
             [
-              ...interfaceMaterialGuidsFromUiDocuments(Object.values(uiLibrary)),
               ...particleMaterialGuidsFromLibrary(particles),
               ...modelSlotMaterialGuidsFromPayloads(modelPayloads),
             ],
@@ -1094,7 +1015,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     [
       appendLog,
       collectPlayPreviewScripts,
-      collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlayBehaviourTrees,
       collectPlayBlackboards,
@@ -1146,9 +1066,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     (result: PlaySessionResult) => {
       setPlaying(false);
       setSessionPlayScene(null);
-      revokeUiImageUrls(playImageUrlsRef.current);
-      playImageUrlsRef.current = new Map();
-      setPlayImageUrls(new Map());
       setEncodeQueuePauseReason("play", false);
       setLiveBtState(null);
       setDropped(result.droppedDiagnostics);
@@ -1325,10 +1242,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               playScene?.scene,
             )}
             scenes={playSceneLibrary}
-            uiLibrary={playUiLibrary}
-            uiSettings={projectDocument?.settings.ui}
-            fontEntries={playFontEntries}
-            resolveImageUrl={(guid) => playImageUrls.get(guid) ?? null}
             animGraphs={playAnimGraphs}
             behaviourTrees={playBehaviourTrees}
             blackboards={playBlackboards}

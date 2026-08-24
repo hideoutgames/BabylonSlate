@@ -1,5 +1,4 @@
 import {
-  isEditorGraphHost,
   isFunctionLibraryClass,
   type GraphClassMember,
   type GraphClassMemberKind,
@@ -12,10 +11,6 @@ import {
   formatEventTitle,
   walkAncestry,
 } from "@babylonslate/editor-kit";
-import {
-  uiGetWidgetNodeId,
-  type BoundWidgetRef,
-} from "@babylonslate/scripting-nodes";
 
 export type { GraphClassMember, GraphClassMemberKind, GraphClassMemberPin };
 
@@ -30,7 +25,7 @@ export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.destroyed",
 ] as const;
 
-/** Default new graphs seed these Actor/UI natives; Destroyed stays in Events +. */
+/** Default new graphs seed these Actor natives; Destroyed stays in Events +. */
 export const SEEDED_NATIVE_EVENT_TYPES = [
   "flow.event.beginPlay",
   "flow.event.tick",
@@ -51,11 +46,6 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.endOverlap": "Event On End Overlap",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
-  "flow.event.mouseEnter": "Event On Mouse Enter",
-  "flow.event.mouseExit": "Event On Mouse Exit",
-  "flow.event.mousePress": "Event On Mouse Press",
-  "flow.event.mouseRelease": "Event On Mouse Release",
-  "flow.event.widgetClick": "Event On Widget Click",
   "flow.event.editorStartup": "Event On Editor Startup",
   "flow.event.sceneOpen": "Event On Scene Open",
   "flow.event.sceneSaved": "Event On Scene Saved",
@@ -74,14 +64,6 @@ const EDITOR_UTILITY_EVENT_TYPES = [
 ] as const;
 
 const EDITOR_BEGIN_PLAY_EVENT = "flow.event.editorBeginPlay";
-
-export const WIDGET_POINTER_EVENT_TYPE_IDS = [
-  "flow.event.mouseEnter",
-  "flow.event.mouseExit",
-  "flow.event.mousePress",
-  "flow.event.mouseRelease",
-  "flow.event.widgetClick",
-] as const;
 
 export function nativeEventTitle(eventType: string): string {
   return NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType);
@@ -128,7 +110,7 @@ export type ClassEventOptions = {
   animationGraphHost?: "object" | "rule";
 };
 
-export type ClassBlueprintMemberKind = GraphClassMemberKind | "widget";
+export type ClassBlueprintMemberKind = GraphClassMemberKind;
 
 export type BlueprintSection = {
   id: string;
@@ -155,23 +137,10 @@ const LOCAL_VARIABLES_SECTION: BlueprintSection = {
   local: true,
 };
 
-const WIDGETS_SECTION: BlueprintSection = {
-  id: "widgets",
-  label: "Widgets",
-  kind: "widget",
-};
-
 function parentLookup(
   options?: ClassEventOptions,
 ): (id: string) => string | null | undefined {
   return options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
-}
-
-export function isUserInterfaceLogicHost(options?: ClassEventOptions): boolean {
-  return (
-    options?.assetType === "UserInterface" ||
-    ancestryChain(options).includes("UserInterface")
-  );
 }
 
 function isFunctionLibraryHost(options?: ClassEventOptions): boolean {
@@ -202,17 +171,6 @@ export function blueprintSectionsForClass(
       sections.splice(variableIndex + 1, 0, LOCAL_VARIABLES_SECTION);
     }
   }
-  if (isUserInterfaceLogicHost(options)) {
-    const afterId = sections.some((section) => section.id === "local-variables")
-      ? "local-variables"
-      : "variables";
-    const afterIndex = sections.findIndex((section) => section.id === afterId);
-    sections.splice(
-      afterIndex >= 0 ? afterIndex + 1 : sections.length,
-      0,
-      WIDGETS_SECTION,
-    );
-  }
   return sections;
 }
 
@@ -220,34 +178,10 @@ export function classAllowsMemberKind(
   kind: ClassBlueprintMemberKind,
   options?: ClassEventOptions & { local?: boolean },
 ): boolean {
-  if (kind === "widget") return false;
   if (!isFunctionLibraryHost(options)) return true;
   if (kind === "function") return true;
   if (kind === "variable" && options?.local) return true;
   return false;
-}
-
-export function boundWidgetsFromContent(content: unknown): BoundWidgetRef[] {
-  if (!content || typeof content !== "object") return [];
-  const record = content as {
-    widgets?: Record<string, { id?: unknown; name?: unknown; kind?: unknown }>;
-  };
-  if (!record.widgets) return [];
-  return Object.values(record.widgets).flatMap((widget) => {
-    if (!widget || typeof widget.id !== "string" || !widget.id.trim()) {
-      return [];
-    }
-    return [
-      {
-        id: widget.id,
-        name:
-          typeof widget.name === "string" && widget.name.trim()
-            ? widget.name
-            : widget.id,
-        kind: typeof widget.kind === "string" ? widget.kind : "Border",
-      },
-    ];
-  });
 }
 
 function ancestryChain(options?: ClassEventOptions): string[] {
@@ -289,9 +223,6 @@ export function nativeEventStubs(
     chain.includes("EditorFunctionLibrary")
   ) {
     return [];
-  }
-  if (isUserInterfaceLogicHost(options)) {
-    return eventStubsForTypes(NATIVE_CLASS_EVENT_TYPES);
   }
   const types: string[] = [];
   if (chain.includes("Actor")) {
@@ -352,23 +283,11 @@ export function isScriptCatalogNodeAllowed(
   if (nodeId === "component.getNamed") {
     return false;
   }
-  if (nodeId === "ui.getWidget") {
-    return false;
-  }
   if (nodeId === "casting.cast" || nodeId === "casting.castActor") {
     return false;
   }
   if (nodeId === "struct.make" || nodeId === "struct.break") {
     return false;
-  }
-  if (nodeId === "input.setInputMode") {
-    if (options?.animationGraphHost) return false;
-    return !isEditorGraphHost({
-      parentClass: options?.parentClass,
-      parentOf: options?.parentOf,
-      assetType: options?.assetType,
-      editorGraph: options?.editorGraph,
-    });
   }
   if (isAnimCatalogNode(nodeId)) {
     return isAnimCatalogNodeAllowed(
@@ -383,11 +302,6 @@ export function isScriptCatalogNodeAllowed(
   const isEditorBeginPlay = nodeId === EDITOR_BEGIN_PLAY_EVENT;
   if (isEditorBeginPlay) {
     return ancestryChain(options).includes("EditorUtilityObject");
-  }
-  if (
-    (WIDGET_POINTER_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)
-  ) {
-    return isUserInterfaceLogicHost(options);
   }
   if (
     isEditorEvent &&
@@ -473,14 +387,14 @@ export function isScriptCatalogNodeAllowed(
     );
   }
   if ((COLLISION_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)) {
-    return chain.includes("Actor") && !isUserInterfaceLogicHost(options);
+    return chain.includes("Actor");
   }
   if (
     nodeId === "flow.event.beginPlay" ||
     nodeId === "flow.event.tick" ||
     nodeId === "flow.event.destroyed"
   ) {
-    return chain.includes("Actor") || isUserInterfaceLogicHost(options);
+    return chain.includes("Actor");
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("BDebugCommand");
@@ -1161,32 +1075,6 @@ export function addVariableAccessNode(
   );
 }
 
-/** Spawn a bound Get Widget node from a Class Widgets row. */
-export function addGetWidgetNode(
-  graph: SerializedGraph,
-  widget: { id: string; name: string; kind: string },
-  options?: GraphSpawnOptions,
-): SerializedGraph {
-  const type = uiGetWidgetNodeId;
-  const title = `Get ${widget.name}`;
-  return appendGraphNode(
-    graph,
-    {
-      id: nextId(options?.idFactory),
-      type,
-      position: spawnPosition(graph, options),
-      data: {
-        title,
-        widgetId: widget.id,
-        widgetName: widget.name,
-        widgetKind: widget.kind,
-        __nodeType: type,
-      },
-    },
-    options?.functionId,
-  );
-}
-
 /** Spawn a Call Custom Event node bound to a class event. */
 export function addCallEventNode(
   graph: SerializedGraph,
@@ -1252,8 +1140,6 @@ export type ClassMemberDropRow = {
   inherited?: boolean;
   inheritedFrom?: string;
   pins?: GraphClassMemberPin[];
-  widgetId?: string;
-  widgetKind?: string;
 };
 
 export type GraphDropPoint = {
@@ -1307,20 +1193,6 @@ export function resolveClassMemberDrop(options: {
   };
   if (row.kind === "variable") {
     return { kind: "choose-access", memberId: options.memberId, position };
-  }
-  if (row.kind === "widget") {
-    return {
-      kind: "spawn",
-      graph: addGetWidgetNode(
-        options.graph,
-        {
-          id: row.widgetId ?? options.memberId.replace(/^widget:/, ""),
-          name: row.name,
-          kind: row.widgetKind ?? "Border",
-        },
-        spawn,
-      ),
-    };
   }
   if (row.kind === "function") {
     return {

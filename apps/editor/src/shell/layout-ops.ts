@@ -32,7 +32,7 @@ export function canFocusLayout(kind: string | undefined): boolean {
 
 /**
  * Engine Settings keep-list for a document kind.
- * UserInterface Logic uses `uiLogic`; Designer uses `ui`.
+ * Animation Object uses `animGraphObject`; State Machine uses `anim-graph`.
  */
 export function focusKeepPanelIds(
   settings: Pick<EngineSettings, "focusKeepPanels">,
@@ -40,9 +40,6 @@ export function focusKeepPanelIds(
   options?: DockWindowOptions,
 ): readonly string[] | undefined {
   const panels = settings.focusKeepPanels;
-  if (kind === "ui" && options?.uiEditorMode === "logic") {
-    return panels.uiLogic;
-  }
   if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
     return panels.animGraphObject;
   }
@@ -57,7 +54,6 @@ export const SCENE_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
 export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
   catalogFocusCandidates("graph");
 
-/** Designer default for `ui`; Logic uses `primaryDockPanel("ui", { uiEditorMode: "logic" })`. */
 export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   scene: primaryDockPanel("scene"),
   graph: primaryDockPanel("graph"),
@@ -70,7 +66,6 @@ export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   tilemap: primaryDockPanel("tilemap"),
   material: primaryDockPanel("material"),
   "material-function": primaryDockPanel("material-function"),
-  ui: primaryDockPanel("ui"),
   "plugin-settings": primaryDockPanel("plugin-settings"),
   "anim-graph": primaryDockPanel("anim-graph"),
   "behaviour-tree": primaryDockPanel("behaviour-tree"),
@@ -166,8 +161,6 @@ export function restoreDockviewLayout(
 /** Drop retired panels and restack Class under Components. */
 export function migrateRestoredLayout(api: FocusableDockApi): void {
   api.getPanel("mini-asset-browser")?.api.close();
-  api.getPanel("ui-logic")?.api.close();
-  api.getPanel("ui-settings")?.api.close();
   const myClass = api.getPanel("my-class");
   const components = api.getPanel("actor-prefab");
   if (

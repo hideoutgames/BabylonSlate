@@ -9,7 +9,6 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { isTestModeEnabled } from "@babylonslate/vfs";
-import { widgetUiGuidsFromScene } from "@babylonslate/core";
 import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
@@ -57,7 +56,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
-    collectPlayUiLibrary,
     projectDocument,
     openDocuments,
     assetRegistry,
@@ -194,15 +192,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const widgetGuids = widgetUiGuidsFromScene(scene);
-        const uiDocuments = new Map();
-        if (widgetGuids.length > 0) {
-          const library = await collectPlayUiLibrary();
-          for (const guid of widgetGuids) {
-            const document = library[guid];
-            if (document) uiDocuments.set(guid, document);
-          }
-        }
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(
           materials.documents,
@@ -215,7 +204,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilesets: tileContent.tilesets,
           textureBytes,
           fontFacetypeBytes,
-          uiDocuments,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -240,7 +228,6 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
-    collectPlayUiLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
   ]);
 

@@ -1057,19 +1057,6 @@ describe("content-browser-helpers", () => {
     expect(parentOf("main.class")).toBe("Actor");
   });
 
-  it("parents a project UserInterface class id under UserInterface", () => {
-    const parentOf = classParentLookup([
-      {
-        header: {
-          type: "UserInterface",
-          name: "HUD",
-          guid: "hud-guid",
-        },
-      },
-    ]);
-    expect(parentOf("UserInterface:hud-guid")).toBe("UserInterface");
-  });
-
   it("uses the compile class id for a Class asset named main.class", () => {
     expect(
       classIdFromClassAsset({
@@ -1137,13 +1124,12 @@ describe("content-browser-helpers", () => {
   });
 
   it("seeds P9 document assets with typed suffixes", () => {
-    expect(newAssetFileName("UserInterface", "HUD")).toBe("HUD.ui.babasset");
-    expect(siblingAssetRelativePath("assets/HUD.ui.babasset", "Chip.ui.babasset")).toBe(
-      "Chip.ui.babasset",
+    expect(siblingAssetRelativePath("assets/HUD.class.babasset", "Chip.class.babasset")).toBe(
+      "Chip.class.babasset",
     );
     expect(
-      siblingAssetRelativePath("assets/ui/HUD.ui.babasset", "Chip.ui.babasset"),
-    ).toBe("ui/Chip.ui.babasset");
+      siblingAssetRelativePath("assets/ui/HUD.class.babasset", "Chip.class.babasset"),
+    ).toBe("ui/Chip.class.babasset");
     expect(newAssetFileName("Sprite", "Hero")).toBe("Hero.sprite.babasset");
     expect(newAssetFileName("SpriteAnimation", "Walk")).toBe(
       "Walk.spriteanim.babasset",
@@ -1204,26 +1190,6 @@ describe("content-browser-helpers", () => {
     });
     expect(tilemap.type).toBe("Tilemap");
     expect(tilemap.payload.chunkSize).toBe(32);
-    const hud = buildNewAssetResult({
-      type: "UserInterface",
-      name: "HUD",
-      guid: "ui-1",
-      parentClass: null,
-    });
-    expect(hud.type).toBe("UserInterface");
-    expect(hud.version).toBe(3);
-    expect(hud.payload.rootId).toBe("canvas");
-    expect(hud.payload.viewportLayer).toBe(true);
-    expect(
-      (hud.payload.logic as { nodes: Array<{ type: string }> }).nodes.map(
-        (node) => node.type,
-      ),
-    ).toEqual([]);
-    expect(Object.keys(hud.payload.widgets as object).sort()).toEqual(["canvas"]);
-    expect(
-      (hud.payload.widgets as { canvas: { children: string[] } }).canvas.children,
-    ).toEqual([]);
-    expect(hud.chunks.some((chunk) => chunk.id === "document")).toBe(true);
   });
 
   it("seeds Sprite Animation New Asset documents", () => {
@@ -1361,7 +1327,6 @@ describe("content-browser-helpers", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
       "Class",
-      "UserInterface",
       "Sprite",
       "SpriteAnimation",
       "AnimationGraph",
@@ -1385,7 +1350,6 @@ describe("content-browser-helpers", () => {
 
   it("labels creatable types in Title Case with spaces", () => {
     expect(creatableAssetTypeLabel("Scene")).toBe("Scene");
-    expect(creatableAssetTypeLabel("UserInterface")).toBe("User Interface");
     expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
     expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
@@ -1407,7 +1371,6 @@ describe("content-browser-helpers", () => {
     expect(CREATABLE_ASSET_TYPE_GROUPS.map((group) => group.label)).toEqual([
       "World",
       "Scripting",
-      "UI",
       "2D",
       "Animation",
       "Rendering",
@@ -1452,7 +1415,7 @@ describe("content-browser-helpers", () => {
   });
 
   it("filters creatable types by Title Case label", () => {
-    expect(filterCreatableAssetTypes("user")).toEqual(["UserInterface"]);
+    expect(filterCreatableAssetTypes("class")).toEqual(["Class"]);
     expect(filterCreatableAssetTypes("  ")).toEqual([...CREATABLE_ASSET_TYPES]);
   });
 

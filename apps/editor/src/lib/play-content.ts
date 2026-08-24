@@ -23,17 +23,10 @@ import {
   normalizeTilesetPayload,
   tilemapTilesetGuids,
 } from "@babylonslate/assets";
-import type {
-  CommandMessage,
-  UiWidgetEventControl,
-  UserInterfaceRuntimeDocument,
-} from "@babylonslate/bridge";
 import {
   isEditorOnlyAsset,
   parseSkyboxFaces,
   skyboxFaceGuids,
-  userInterfaceClassId,
-  userInterfaceClassMetadata,
   type SerializedGraph,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -42,127 +35,12 @@ import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import {
-  applyUiTreeAddWidget,
-  applyUiTreePatchLayout,
-  applyUiTreeRemoveWidget,
-  applyUiTreeReparentWidget,
-  cloneUserInterfaceDocument,
-  normalizeUserInterfaceDocument,
-  widgetRuntimeMeta,
-  type UserInterfaceDocument,
-  type WidgetLayoutPatch,
-  collectMaterialGuidsFromUiDocuments,
-} from "@babylonslate/ui-runtime";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 
 export interface PlayContentDocument {
   id: string;
   ref: { kind: string; path: string };
   content: unknown;
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-/** Hydrate a UserInterface document from an open asset payload. */
-export function asUiDocument(value: unknown): UserInterfaceDocument {
-  return normalizeUserInterfaceDocument(value);
-}
-
-/** True when a payload has a widget tree — not `{}` or dockKind-only. */
-export function isUsableUiDocumentPayload(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  if (typeof record.rootId === "string" && record.rootId.length > 0) return true;
-  return record.widgets !== null && typeof record.widgets === "object";
-}
-
-export type PlayUiLibrary = Record<string, UserInterfaceDocument>;
-
-export type NestedUiAssetRef = {
-  path: string;
-  header: { payload?: unknown };
-};
-
-export type ResolveNestedUiDocumentOptions = {
-  selfGuid?: string | null;
-  selfDocument?: UserInterfaceDocument | null;
-  openDocuments?: ReadonlyArray<{ ref: { path: string }; content: unknown }>;
-  getAsset?: (guid: string) => NestedUiAssetRef | null | undefined;
-  uiLibrary?: PlayUiLibrary;
-};
-
-/**
- * Nested UserInterface documents: open content, then the loaded library,
- * then a usable header payload. Empty `{}` / dockKind-only headers are ignored.
- */
-export function resolveNestedUiDocument(
-  guid: string,
-  options: ResolveNestedUiDocumentOptions,
-): UserInterfaceDocument | null {
-  if (!guid) return null;
-  if (options.selfGuid && guid === options.selfGuid) {
-    return options.selfDocument ?? null;
-  }
-  const asset = options.getAsset?.(guid) ?? null;
-  const open = asset
-    ? options.openDocuments?.find((entry) => entry.ref.path === asset.path)
-    : undefined;
-  if (isUsableUiDocumentPayload(open?.content)) {
-    return asUiDocument(open!.content);
-  }
-  const fromLibrary = options.uiLibrary?.[guid];
-  if (fromLibrary) return fromLibrary;
-  if (asset && isUsableUiDocumentPayload(asset.header.payload)) {
-    return asUiDocument(asset.header.payload);
-  }
-  return null;
-}
-
-function isSerializedGraph(value: unknown): value is SerializedGraph {
-  if (!value || typeof value !== "object") return false;
-  const record = value as { nodes?: unknown; edges?: unknown };
-  return Array.isArray(record.nodes) && Array.isArray(record.edges);
-}
-
-export type UiScriptCompileDocument = {
-  path: string;
-  content: SerializedGraph;
-  classId?: string;
-  parentClassId?: string | null;
-};
-
-/** Play compiles UserInterface `logic` the same way as Class graphs. */
-export function logicGraphFromUiPayload(
-  path: string,
-  payload: unknown,
-  guid?: string,
-): UiScriptCompileDocument | null {
-  const logic = asRecord(payload).logic;
-  if (!isSerializedGraph(logic) || logic.nodes.length === 0) return null;
-  if (!guid?.trim()) return { path, content: logic };
-  const metadata = userInterfaceClassMetadata(guid.trim());
-  return {
-    path,
-    content: logic,
-    classId: metadata.classId,
-    parentClassId: metadata.parentClassId,
-  };
-}
-
-export function mergePlayScriptDocuments(
-  classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
-  uiAssets: ReadonlyArray<{ path: string; payload: unknown; guid?: string }>,
-): Array<UiScriptCompileDocument> {
-  const extra = uiAssets.flatMap((asset) => {
-    const graph = logicGraphFromUiPayload(asset.path, asset.payload, asset.guid);
-    return graph ? [graph] : [];
-  });
-  return [...classGraphs, ...extra];
 }
 
 export function filterPlayScriptDocuments<
@@ -181,7 +59,6 @@ export function filterPlayScriptDocuments<
 
 export function collectPlayScriptDocuments(
   classGraphs: ReadonlyArray<{ path: string; content: SerializedGraph }>,
-  uiAssets: ReadonlyArray<{ path: string; payload: unknown; guid?: string }>,
   headers: Record<string, { type: string; parentClass?: string | null }>,
   parentOf: (id: string) => string | null | undefined,
 ): Array<{
@@ -190,227 +67,12 @@ export function collectPlayScriptDocuments(
   classId?: string;
   parentClassId?: string | null;
 }> {
-  return filterPlayScriptDocuments(
-    mergePlayScriptDocuments(classGraphs, uiAssets),
-    headers,
-    parentOf,
-  ).map((graph) => ({
-    ...graph,
-    parentClassId:
-      graph.parentClassId ?? headers[graph.path]?.parentClass ?? null,
-  }));
-}
-
-export type PlayHudInstance = {
-  instanceId: string;
-  assetGuid: string;
-  classId: string;
-  document?: UserInterfaceDocument;
-};
-
-/** Open in-memory UserInterface payloads win over disk bytes. */
-export function preferOpenPlayUiContent(
-  open: unknown | null | undefined,
-  disk: unknown | null | undefined,
-): unknown | null {
-  if (open != null) return open;
-  return disk ?? null;
-}
-
-export function playUiLibraryFromAssets(
-  assets: ReadonlyArray<{ guid: string; path: string; type: string }>,
-  contentByPath: (path: string) => unknown | null,
-): PlayUiLibrary {
-  const library: PlayUiLibrary = {};
-  for (const asset of assets) {
-    if (asset.type !== "UserInterface") continue;
-    const content = contentByPath(asset.path);
-    if (!content) continue;
-    library[asset.guid] = asUiDocument(content);
-  }
-  return library;
-}
-
-/** Slim widget rows for `loadUserInterfaces`. Does not apply a HUD. */
-export function playUserInterfaceRuntimeDocuments(
-  library: PlayUiLibrary,
-): UserInterfaceRuntimeDocument[] {
-  return Object.entries(library).map(([guid, document]) => ({
-    guid,
-    widgets: Object.values(document.widgets).map(widgetRuntimeMeta),
-    document,
-  }));
-}
-
-export function playHudVisibilityKey(instanceId: string, widgetId: string): string {
-  return `${instanceId}:${widgetId}`;
-}
-
-export function applyPlayHudVisibility(
-  hidden: ReadonlySet<string>,
-  instanceId: string,
-  widgetId: string,
-  visible: boolean,
-): Set<string> {
-  const next = new Set(hidden);
-  const key = playHudVisibilityKey(instanceId, widgetId);
-  if (visible) next.delete(key);
-  else next.add(key);
-  return next;
-}
-
-/** Split `instanceId:widgetId`, keeping nested `/` widget ids after the first colon. */
-export function parsePlayHudControlId(
-  prefixedId: string,
-): { instanceId: string; widgetId: string } | null {
-  const colon = prefixedId.indexOf(":");
-  if (colon <= 0 || colon === prefixedId.length - 1) return null;
-  return {
-    instanceId: prefixedId.slice(0, colon),
-    widgetId: prefixedId.slice(colon + 1),
-  };
-}
-
-export type PlayUiWidgetEvent = Omit<UiWidgetEventControl, "type">;
-
-let playUiWidgetEventSink: ((event: PlayUiWidgetEvent) => boolean) | null = null;
-
-/** Register the live Play session dispatcher for HUD and test-host events. */
-export function setPlayUiWidgetEventSink(
-  sink: ((event: PlayUiWidgetEvent) => boolean) | null,
-): void {
-  playUiWidgetEventSink = sink;
-}
-
-/** Forward a widget event to the mounted Play session, if any. */
-export function dispatchMountedPlayUiWidgetEvent(
-  event: PlayUiWidgetEvent,
-): boolean {
-  return playUiWidgetEventSink?.(event) ?? false;
-}
-
-export function applyPlayHudInstance(
-  instances: readonly PlayHudInstance[],
-  instanceId: string,
-  assetGuid: string,
-  classId?: string,
-): PlayHudInstance[] {
-  const id = instanceId.trim();
-  const guid = assetGuid.trim();
-  if (!id || !guid) return [...instances];
-  if (instances.some((entry) => entry.instanceId === id)) return [...instances];
-  const resolvedClassId = classId?.trim() || userInterfaceClassId(guid);
-  return [...instances, { instanceId: id, assetGuid: guid, classId: resolvedClassId }];
-}
-
-export function removePlayHudInstance(
-  instances: readonly PlayHudInstance[],
-  instanceId: string,
-): PlayHudInstance[] {
-  return instances.filter((entry) => entry.instanceId !== instanceId);
-}
-
-export function resolvePlayHudDocuments(
-  instances: readonly PlayHudInstance[],
-  library: PlayUiLibrary,
-): Array<{ instanceId: string; document: UserInterfaceDocument }> {
-  const resolved: Array<{ instanceId: string; document: UserInterfaceDocument }> =
-    [];
-  for (const entry of instances) {
-    const document = entry.document ?? library[entry.assetGuid];
-    if (document) resolved.push({ instanceId: entry.instanceId, document });
-  }
-  return resolved;
-}
-
-function seedHudDocument(
-  instance: PlayHudInstance,
-  library: PlayUiLibrary,
-): UserInterfaceDocument | undefined {
-  if (instance.document) return instance.document;
-  const seed = library[instance.assetGuid];
-  return seed ? cloneUserInterfaceDocument(seed) : undefined;
-}
-
-function replaceHudInstance(
-  instances: readonly PlayHudInstance[],
-  instanceId: string,
-  next: PlayHudInstance,
-): PlayHudInstance[] {
-  return instances.map((entry) =>
-    entry.instanceId === instanceId ? next : entry,
+  return filterPlayScriptDocuments(classGraphs, headers, parentOf).map(
+    (graph) => ({
+      ...graph,
+      parentClassId: headers[graph.path]?.parentClass ?? null,
+    }),
   );
-}
-
-/** Clone the library tree onto a Play HUD instance and apply hierarchy commands. */
-export function applyPlayHudUiCommand(
-  instances: readonly PlayHudInstance[],
-  library: PlayUiLibrary,
-  command: CommandMessage,
-): PlayHudInstance[] {
-  if (command.type === "uiApply") {
-    const next = applyPlayHudInstance(
-      instances,
-      command.instanceId,
-      command.assetGuid,
-      command.classId,
-    );
-    return next.map((entry) => {
-      if (entry.instanceId !== command.instanceId || entry.document) return entry;
-      const document = seedHudDocument(entry, library);
-      return document ? { ...entry, document } : entry;
-    });
-  }
-  if (
-    command.type !== "uiAddWidget" &&
-    command.type !== "uiRemoveWidget" &&
-    command.type !== "uiReparentWidget" &&
-    command.type !== "uiPatchLayout"
-  ) {
-    return [...instances];
-  }
-  const current = instances.find((entry) => entry.instanceId === command.instanceId);
-  if (!current) return [...instances];
-  const seed = seedHudDocument(current, library);
-  if (!seed) return [...instances];
-  if (command.type === "uiAddWidget") {
-    return replaceHudInstance(instances, current.instanceId, {
-      ...current,
-      document: applyUiTreeAddWidget(seed, {
-        widgetId: command.widgetId,
-        kind: command.kind,
-        name: command.name,
-        parentId: command.parentId,
-      }),
-    });
-  }
-  if (command.type === "uiRemoveWidget") {
-    return replaceHudInstance(instances, current.instanceId, {
-      ...current,
-      document: applyUiTreeRemoveWidget(seed, command.widgetId),
-    });
-  }
-  if (command.type === "uiReparentWidget") {
-    return replaceHudInstance(instances, current.instanceId, {
-      ...current,
-      document: applyUiTreeReparentWidget(seed, {
-        widgetId: command.widgetId,
-        parentId: command.parentId,
-        siblingIndex: command.siblingIndex,
-      }),
-    });
-  }
-  if (command.type === "uiPatchLayout") {
-    return replaceHudInstance(instances, current.instanceId, {
-      ...current,
-      document: applyUiTreePatchLayout(
-        seed,
-        command.widgetId,
-        command.layout as WidgetLayoutPatch,
-      ),
-    });
-  }
-  return [...instances];
 }
 
 export type PlayAnimGraphEntry = { guid: string; document: unknown };
@@ -793,20 +455,10 @@ export function materialGuidsFromScenes(
   return guids;
 }
 
-/** Interface Material guids referenced by HUD Material widgets. */
-export function interfaceMaterialGuidsFromUiDocuments(
-  documents: Iterable<UserInterfaceDocument>,
-  resolveNested?: (guid: string) => UserInterfaceDocument | null,
-): string[] {
-  return collectMaterialGuidsFromUiDocuments(documents, resolveNested);
-}
-
-/** Scene materials plus HUD Interface materials, in that order, de-duplicated. */
+/** Scene materials plus extra guids, de-duplicated. */
 export function playMaterialGuidsFromSources(
   scenes: readonly (SerializedScene | null | undefined)[],
-  uiDocuments: Iterable<UserInterfaceDocument>,
   extraGuids: readonly string[] = [],
-  resolveNested?: (guid: string) => UserInterfaceDocument | null,
 ): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -816,27 +468,8 @@ export function playMaterialGuidsFromSources(
     out.push(guid);
   };
   for (const guid of materialGuidsFromScenes(scenes)) add(guid);
-  for (const guid of interfaceMaterialGuidsFromUiDocuments(
-    uiDocuments,
-    resolveNested,
-  )) {
-    add(guid);
-  }
   for (const guid of extraGuids) add(guid);
   return out;
-}
-
-/** Interface-domain Material documents only; other domains do not bind on HUD. */
-export function lookupInterfaceMaterialDocument<
-  T extends { domain?: string },
->(
-  guid: string,
-  documents: ReadonlyMap<string, T> | undefined | null,
-): T | null {
-  const id = guid.trim();
-  if (!id || !documents) return null;
-  const document = documents.get(id);
-  return document?.domain === "interface" ? document : null;
 }
 
 /** Look up the scene document for an `activeScene` command. */

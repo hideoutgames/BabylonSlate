@@ -36,19 +36,6 @@ describe("nativeEventStubs", () => {
     expect(nativeEventStubs({ parentClass: "ActorComponent" })).toEqual([]);
   });
 
-  it("lists Begin Play, Tick, and On Actor Destroyed on UserInterface logic even when parentClass is BObject", () => {
-    expect(
-      nativeEventStubs({
-        assetType: "UserInterface",
-        parentClass: "BObject",
-      }).map((stub) => stub.eventType),
-    ).toEqual([
-      "flow.event.beginPlay",
-      "flow.event.tick",
-      "flow.event.destroyed",
-    ]);
-  });
-
   it("does not treat leftover EditorUtilityInterface as a logic host", () => {
     expect(
       nativeEventStubs({
@@ -107,16 +94,6 @@ describe("nativeEventStubs", () => {
     expect(nativeEventStubs({ parentClass: "BTComposite" })).toEqual([]);
   });
 
-  it("does not list collision events on UserInterface logic", () => {
-    const types = nativeEventStubs({
-      assetType: "UserInterface",
-      parentClass: "BObject",
-    }).map((stub) => stub.eventType);
-    expect(types).not.toContain("flow.event.hit");
-    expect(types).not.toContain("flow.event.beginOverlap");
-    expect(types).not.toContain("flow.event.endOverlap");
-  });
-
   it("allows collision events only on Actor graphs", () => {
     expect(
       isScriptCatalogNodeAllowed("flow.event.hit", { parentClass: "Actor" }),
@@ -128,7 +105,6 @@ describe("nativeEventStubs", () => {
     ).toBe(true);
     expect(
       isScriptCatalogNodeAllowed("flow.event.hit", {
-        assetType: "UserInterface",
         parentClass: "BObject",
       }),
     ).toBe(false);

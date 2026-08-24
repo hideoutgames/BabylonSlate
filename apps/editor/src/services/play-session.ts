@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, parseInputMode, printHudCssColor, type AudioProjectSettings, type InputMode, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, printHudCssColor, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -42,10 +42,7 @@ import {
   type CommandMessage,
   type ControlMessage,
   type ScriptBundleEntry,
-  type UiWidgetEventControl,
-  type UserInterfaceRuntimeDocument,
 } from "@babylonslate/bridge";
-import { applyUiRuntimeControl } from "@babylonslate/runtime";
 import { spawnListForScripts } from "./script-compiler";
 import { attachInputCapture, type InputCaptureHandle } from "./input-capture";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
@@ -107,13 +104,6 @@ export function isFatalPlayDiagnostic(code: string | undefined): boolean {
   return code === INFINITE_LOOP_DIAGNOSTIC_CODE;
 }
 
-export type PlayUiCommandHandlers = {
-  onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
-  onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
-  onUiRemove?: (instanceId: string) => void;
-  onUiTreeCommand?: (command: CommandMessage) => void;
-};
-
 /** Apply worker sessionPaused onto Play overlay chrome. */
 export function applyPlaySessionPausedCommand(
   command: CommandMessage,
@@ -148,10 +138,6 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "debugColliders",
   "debugDraw",
   "animState",
-  "uiApply",
-  "uiRemove",
-  "uiSetVisible",
-  "setInputMode",
 ]);
 
 export function shouldForwardPlayEngineCommand(type: string): boolean {
@@ -189,70 +175,6 @@ export function applyPlayHudConsoleCommand(
   return false;
 }
 
-/** Apply worker UI commands onto Play HUD callbacks. */
-export function applyPlayUiCommand(
-  command: CommandMessage,
-  handlers: PlayUiCommandHandlers,
-): boolean {
-  if (command.type === "uiSetVisible") {
-    handlers.onUiSetVisible?.(command.instanceId, command.widgetId, command.visible);
-    return true;
-  }
-  if (command.type === "uiApply") {
-    if (command.target?.kind === "world") return true;
-    handlers.onUiApply?.(command.instanceId, command.classId, command.assetGuid);
-    return true;
-  }
-  if (command.type === "uiRemove") {
-    handlers.onUiRemove?.(command.instanceId);
-    return true;
-  }
-  if (
-    command.type === "uiAddWidget" ||
-    command.type === "uiRemoveWidget" ||
-    command.type === "uiReparentWidget" ||
-    command.type === "uiPatchLayout"
-  ) {
-    handlers.onUiTreeCommand?.(command);
-    return true;
-  }
-  return false;
-}
-
-/** Apply worker `setInputMode` onto Play capture and HUD callbacks. */
-export function applyPlayInputModeCommand(
-  command: CommandMessage,
-  onSetInputMode?: (mode: InputMode) => void,
-): boolean {
-  if (command.type !== "setInputMode") return false;
-  onSetInputMode?.(parseInputMode(command.mode));
-  return true;
-}
-
-export type PlayUiWidgetEventTarget = {
-  worker?: { postControl: (message: ControlMessage) => void } | null;
-  runtime?: {
-    dispatchUiWidgetEvent: (event: UiWidgetEventControl) => void;
-  } | null;
-};
-
-/** Send a HUD widget event to the worker, or the in-process driver. */
-export function dispatchPlayUiWidgetEvent(
-  target: PlayUiWidgetEventTarget,
-  event: Omit<UiWidgetEventControl, "type">,
-): boolean {
-  const payload: UiWidgetEventControl = { type: "uiWidgetEvent", ...event };
-  if (target.worker) {
-    target.worker.postControl(payload);
-    return true;
-  }
-  if (target.runtime) {
-    target.runtime.dispatchUiWidgetEvent(payload);
-    return true;
-  }
-  return false;
-}
-
 export type PlaySessionStepTarget = {
   worker?: { postControl: (message: ControlMessage) => void } | null;
   runtime?: {
@@ -279,7 +201,6 @@ export function applyPlaySessionStep(target: PlaySessionStepTarget): boolean {
 
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
-  userInterfaces?: readonly UserInterfaceRuntimeDocument[];
   scripts?: readonly ScriptBundleEntry[];
   spawn?: Array<{ classId: string; variables?: Record<string, unknown> }>;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
@@ -291,12 +212,6 @@ export function playSessionBootControls(options: {
   pauseOnPlay?: boolean;
 }): ControlMessage[] {
   const controls: ControlMessage[] = [options.load];
-  if ((options.userInterfaces?.length ?? 0) > 0) {
-    controls.push({
-      type: "loadUserInterfaces",
-      documents: [...(options.userInterfaces ?? [])],
-    });
-  }
   if ((options.scripts?.length ?? 0) > 0) {
     controls.push({
       type: "loadScripts",
@@ -366,10 +281,6 @@ export interface PlaySession {
   lastActorPositions: () => readonly PlayActorPosition[];
   /** Push a touch joystick sample into the Play input ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
-  /** Route a mounted HUD widget event to the worker or in-process runtime. */
-  dispatchUiWidgetEvent: (
-    event: Omit<UiWidgetEventControl, "type">,
-  ) => boolean;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
   /** Actor guids spawned this session (authored scene + unmatched scripts). */
@@ -498,13 +409,6 @@ export function startPlaySession(options: {
   }) => void;
   /** Project `playFrameCap`; omitted or invalid → 60. */
   frameCap?: number;
-  onUiSetVisible?: (instanceId: string, widgetId: string, visible: boolean) => void;
-  onUiApply?: (instanceId: string, classId: string, assetGuid: string) => void;
-  onUiRemove?: (instanceId: string) => void;
-  onUiTreeCommand?: (command: CommandMessage) => void;
-  onSetInputMode?: (mode: InputMode) => void;
-  /** Slim UserInterface metadata; posted before `loadScripts`. */
-  userInterfaces?: readonly UserInterfaceRuntimeDocument[];
   /** AnimationGraph documents for `loadAnimGraphs` / `registerAnimGraph`. */
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   /** BehaviourTree / Blackboard documents for worker load. */
@@ -519,7 +423,6 @@ export function startPlaySession(options: {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
-  uiDocuments?: ReadonlyMap<string, import("@babylonslate/ui-runtime").UserInterfaceDocument>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -590,7 +493,6 @@ export function startPlaySession(options: {
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
     fontFacetypeBytes: options.fontFacetypeBytes,
-    uiDocuments: options.uiDocuments,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,
@@ -623,9 +525,6 @@ export function startPlaySession(options: {
     },
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
-    },
-    onWidgetEvent: (event) => {
-      dispatchPlayUiWidgetEvent({ worker, runtime }, event);
     },
   });
   if (options.scene) {
@@ -687,7 +586,6 @@ export function startPlaySession(options: {
         handle.applySceneEnvironment(scene);
         handle.resetAudioSession();
         handle.resetParticleSession();
-        handle.resetWidgetSession();
       }
     }
     if (command.type === "log") {
@@ -727,26 +625,12 @@ export function startPlaySession(options: {
     if (command.type === "trace") {
       recordedTrace = command.payload as unknown as TracePayload;
     }
-    applyPlayUiCommand(command, {
-      onUiSetVisible: options.onUiSetVisible,
-      onUiApply: options.onUiApply,
-      onUiRemove: options.onUiRemove,
-      onUiTreeCommand: options.onUiTreeCommand,
-    });
     applyPlaySessionPausedCommand(command, options.onSessionPaused);
     applyPlayHudConsoleCommand(command, {
       onShowFps: options.onShowFps,
       onStat: options.onStatHighlight,
       onFreeCam: options.onFreeCam,
     });
-    if (
-      applyPlayInputModeCommand(command, (mode) => {
-        input?.setInputMode(mode);
-        options.onSetInputMode?.(mode);
-      })
-    ) {
-      return;
-    }
     if (command.type === "setRenderResolution") {
       options.onSetRenderResolution?.(command.width, command.height);
     }
@@ -793,7 +677,6 @@ export function startPlaySession(options: {
     });
     for (const control of playSessionBootControls({
       load: loadControl,
-      userInterfaces: options.userInterfaces,
       scripts,
       spawn,
       animGraphs: options.animGraphs,
@@ -833,12 +716,6 @@ export function startPlaySession(options: {
       pause: () => inProcess.pause(),
       resume: () => inProcess.resume(),
     });
-    if ((options.userInterfaces?.length ?? 0) > 0) {
-      applyUiRuntimeControl(inProcess, {
-        type: "loadUserInterfaces",
-        documents: [...(options.userInterfaces ?? [])],
-      });
-    }
     if (scripts.length > 0) {
       boot.queueScripts(inProcess, scripts, spawn);
     }
@@ -992,8 +869,6 @@ export function startPlaySession(options: {
     pushTouchAxis: (controlId: string, value: number) => {
       input?.pushTouchAxis(controlId, value);
     },
-    dispatchUiWidgetEvent: (event) =>
-      dispatchPlayUiWidgetEvent({ worker, runtime }, event),
     setFrameCap: (fps: number) => {
       handle.scheduler.setFrameCap(fps);
     },

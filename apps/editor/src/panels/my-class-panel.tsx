@@ -15,7 +15,6 @@ import {
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import {
-  widgetClassIdForKind,
   type GraphClassMemberKind,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -25,7 +24,6 @@ import {
   addClassMember,
   addVariableAccessNode,
   blueprintSectionsForClass,
-  boundWidgetsFromContent,
   classAllowsMemberKind,
   ensureEventNodeOnGraph,
   isObjectInstanceVariableType,
@@ -57,12 +55,10 @@ import {
 import {
   collectOverridableEventRows,
   collectOverridableFunctionRows,
-  type NestedUiLogicGraph,
 } from "../lib/overridable-functions";
-import { collectNestedUiLogicSources } from "../lib/nested-ui-logic";
 
 export type MyClassMember = {
-  kind: "variable" | "function" | "event" | "interface" | "widget";
+  kind: "variable" | "function" | "event" | "interface";
   name: string;
   detail?: string;
   inherited?: boolean;
@@ -75,8 +71,6 @@ export type MyClassMember = {
   assetGuid?: string;
   pins?: import("@babylonslate/core").GraphClassMemberPin[];
   hasError?: boolean;
-  widgetId?: string;
-  widgetKind?: string;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -113,8 +107,6 @@ export type MembersForGraphOptions = {
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
-  widgets?: readonly import("@babylonslate/scripting-nodes").BoundWidgetRef[];
-  nestedUis?: readonly NestedUiLogicGraph[];
   scriptInterfaces?: Array<{
     guid: string;
     name: string;
@@ -170,7 +162,7 @@ function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
 }
 
 function memberIcon(member: MyClassMember) {
-  if (member.kind === "variable" || member.kind === "widget") {
+  if (member.kind === "variable") {
     return (
       <TypeColorMark
         colorVar={pinPickerColorVar(member.typeId ?? "float")}
@@ -281,16 +273,7 @@ export function membersForGraph(
   const inherited = inheritedMembers(options).filter(
     (row) => !declaredKeys.has(`${row.kind}:${row.name}`),
   );
-  const widgets: MyClassMember[] = (options?.widgets ?? []).map((widget) => ({
-    kind: "widget",
-    name: widget.name,
-    detail: `widget:${widget.id}`,
-    typeId: "object",
-    typeClassId: widgetClassIdForKind(widget.kind),
-    widgetId: widget.id,
-    widgetKind: widget.kind,
-  }));
-  return [...declared, ...events, ...inherited, ...widgets];
+  return [...declared, ...events, ...inherited];
 }
 
 export function membersForSection(
@@ -431,7 +414,6 @@ export function ClassMembersView({
         parentOf: membersOptions?.parentOf,
         parentGraphs: membersOptions?.parentGraphs,
         assetType: membersOptions?.assetType,
-        nestedUis: membersOptions?.nestedUis,
       }),
     [classId, graph, membersOptions],
   );
@@ -494,8 +476,6 @@ export function ClassMembersView({
         inherited: member.inherited,
         inheritedFrom: member.inheritedFrom,
         pins: member.pins,
-        widgetId: member.widgetId,
-        widgetKind: member.widgetKind,
       })),
       clientX,
       clientY,
@@ -522,7 +502,7 @@ export function ClassMembersView({
         if (!row.id.startsWith("section-")) return row;
         const sectionId = row.id.replace(/^section-/, "");
         const section = treeSections.find((entry) => entry.id === sectionId);
-        if (!section || section.kind === "widget") return row;
+        if (!section) return row;
         const kind = section.kind;
         if (
           !classAllowsMemberKind(kind, {
@@ -563,7 +543,7 @@ export function ClassMembersView({
           const member = members.find(
             (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === selectedId,
           );
-          if (!member || member.kind === "event" || member.kind === "widget" || member.inherited) return;
+          if (!member || member.kind === "event" || member.inherited) return;
           setRenameMemberId(selectedId);
         },
       },
@@ -572,10 +552,6 @@ export function ClassMembersView({
         label: "Delete",
         onSelect: () => {
           if (!graph || !selectedId) return;
-          const member = members.find(
-            (entry) => (entry.detail ?? `${entry.kind}-${entry.name}`) === selectedId,
-          );
-          if (member?.kind === "widget") return;
           onGraphChange(removeClassMember(graph, selectedId));
         },
       },
@@ -734,11 +710,6 @@ export function ClassMembersView({
             name,
             undefined,
             extras,
-            {
-              reservedNames: (membersOptions?.widgets ?? []).map(
-                (widget) => widget.name,
-              ),
-            },
           );
           onGraphChange(next);
           if (memberPromptKind === "event") {
@@ -846,10 +817,6 @@ export function ClassMembersView({
         confirmLabel="Rename"
         onSubmit={(name) => {
           if (!graph || !renameMemberId) return;
-          const reserved = new Set(
-            (membersOptions?.widgets ?? []).map((widget) => widget.name),
-          );
-          if (reserved.has(name.trim())) return;
           onGraphChange(patchClassMember(graph, renameMemberId, { name }));
         }}
       />
@@ -932,46 +899,11 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     openDocuments,
     classIdForPath: classIdForGraphPath,
   });
-  const nestedUis =
-    doc?.ref.kind === "ui" && doc.content
-      ? collectNestedUiLogicSources(doc.content, (guid) => {
-          const asset = (assetRegistry?.list() ?? []).find(
-            (entry) => entry.header.guid === guid,
-          );
-          if (!asset) return null;
-          const openDoc = openDocuments.find((entry) => entry.ref.path === asset.path);
-          if (openDoc?.content) {
-            return { path: asset.path, payload: openDoc.content };
-          }
-          if (asset.header.payload) {
-            return { path: asset.path, payload: asset.header.payload };
-          }
-          return null;
-        }).flatMap((entry) => {
-          const graph = serializedGraphFromDocument("ui", entry.payload);
-          if (!graph) return [];
-          const asset = (assetRegistry?.list() ?? []).find(
-            (item) => item.header.guid === entry.guid,
-          );
-          return [
-            {
-              guid: entry.guid,
-              name: asset?.header.name ?? "UserInterface",
-              graph,
-            },
-          ];
-        })
-      : [];
   const membersOptions = {
-    parentClass:
-      indexed?.header.parentClass ??
-      (doc?.ref.kind === "ui" ? "BObject" : null),
+    parentClass: indexed?.header.parentClass ?? null,
     parentOf,
     parentGraphs,
     assetType: indexed?.header.type,
-    widgets:
-      doc?.ref.kind === "ui" ? boundWidgetsFromContent(doc.content) : [],
-    nestedUis,
     scriptInterfaces: collectScriptInterfacesForPalette({
       assets: assetRegistry?.list() ?? [],
       openDocuments,

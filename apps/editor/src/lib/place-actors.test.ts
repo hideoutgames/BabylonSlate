@@ -129,22 +129,6 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.properties.text).toBe("Text");
   });
 
-  it("spawns an unlocked Widget actor with a WidgetComponent", () => {
-    const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "widget")!;
-    expect(item.category).toBe("UI");
-    expect(visualForPlaceActor(item).iconKey).toBe("WidgetComponent");
-    const actor = spawnPlacedActor(createDefaultScene(), item, "actor-widget", ORIGIN);
-    expect(actor.name).toBe("Widget");
-    expect(actor.locked).toBeFalsy();
-    expect(actor.components[0]?.classId).toBe("WidgetComponent");
-    expect(actor.components[0]?.properties).toEqual({
-      uiAssetGuid: null,
-      twoSided: false,
-      width: 1,
-      height: 1,
-    });
-  });
-
   it("spawns a NavMesh actor with Recast settings", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "navmesh")!;
     const actor = spawnPlacedActor(scene, item, "actor-nav", ORIGIN);

@@ -38,11 +38,6 @@ import {
   TilemapPalettePanel,
 } from "../components/tilemap-editor";
 import {
-  UiDesignPanel,
-  UiDetailsPanel,
-  UiHierarchyPanel,
-} from "../panels/ui-editor-panels";
-import {
   MaterialCompilerResultsPanel,
   MaterialDetailsPanel,
   MaterialFunctionGraphPanel,
@@ -170,11 +165,6 @@ export const panelComponents = {
   "tilemap-details": (props: IDockviewPanelProps) => (
     <TilemapDetailsPanel {...props} />
   ),
-  "ui-design": (props: IDockviewPanelProps) => <UiDesignPanel {...props} />,
-  "ui-hierarchy": (props: IDockviewPanelProps) => (
-    <UiHierarchyPanel {...props} />
-  ),
-  "ui-details": (props: IDockviewPanelProps) => <UiDetailsPanel {...props} />,
   "material-graph": (props: IDockviewPanelProps) => (
     <MaterialGraphPanel {...props} />
   ),

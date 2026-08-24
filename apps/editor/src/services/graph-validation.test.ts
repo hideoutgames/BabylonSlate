@@ -565,18 +565,6 @@ describe("createDefaultLogicGraphSerialized", () => {
     expect(graph.nodes).toEqual([]);
   });
 
-  it("seeds Begin Play and Tick for UserInterface logic with BObject parentClass", () => {
-    const graph = createDefaultLogicGraphSerialized(registry, {
-      parentClass: "BObject",
-      assetType: "UserInterface",
-    });
-    expect(
-      graph.nodes
-        .filter((node) => node.type.startsWith("flow.event.") && node.type !== "flow.event.callParent")
-        .map((node) => node.type),
-    ).toEqual(["flow.event.beginPlay", "flow.event.tick"]);
-  });
-
   it("does not seed leftover EditorUtilityInterface as a logic host", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BObject",
@@ -818,43 +806,6 @@ describe("scriptPaletteNodes", () => {
     }
   });
 
-  it("lists Set Input Mode on runtime graphs and hides it on EUO and EFL", () => {
-    expect(
-      scriptPaletteNodes(registry, { parentClass: "Actor" }).some(
-        (node) => node.id === "input.setInputMode",
-      ),
-    ).toBe(true);
-    expect(
-      scriptPaletteNodes(registry, { parentClass: "BObject" }).some(
-        (node) => node.id === "input.setInputMode",
-      ),
-    ).toBe(true);
-    expect(
-      scriptPaletteNodes(registry, { parentClass: "GameInstance" }).some(
-        (node) => node.id === "input.setInputMode",
-      ),
-    ).toBe(true);
-    expect(
-      scriptPaletteNodes(registry, { assetType: "UserInterface" }).some(
-        (node) => node.id === "input.setInputMode",
-      ),
-    ).toBe(true);
-    expect(
-      scriptPaletteNodes(registry, { parentClass: "EditorUtilityObject" }).some(
-        (node) => node.id === "input.setInputMode",
-      ),
-    ).toBe(false);
-    expect(
-      scriptPaletteNodes(registry, { parentClass: "EditorFunctionLibrary" }).some(
-        (node) => node.id === "input.setInputMode",
-      ),
-    ).toBe(false);
-    const actor = scriptPaletteNodes(registry, { parentClass: "Actor" }).find(
-      (node) => node.id === "input.setInputMode",
-    );
-    expect(actor?.defaultData).toMatchObject({ mode: "All" });
-  });
-
   it("injects Call I rows per ScriptInterface method", () => {
     const nodes = scriptPaletteNodes(registry, {
       scriptInterfaces: [
@@ -1047,116 +998,6 @@ describe("scriptPaletteNodes", () => {
     expect(
       nodes.some((node) => node.id === "functions.call:LevelTools:RebuildNav"),
     ).toBe(true);
-  });
-
-  it("hides editor lifecycle events on a UserInterface logic host", () => {
-    const nodes = scriptPaletteNodes(registry, {
-      assetType: "UserInterface",
-      parentClass: "BObject",
-    });
-    expect(nodes.some((node) => node.id === "flow.event.editorStartup")).toBe(
-      false,
-    );
-    expect(nodes.some((node) => node.id === "flow.event.editorBeginPlay")).toBe(
-      false,
-    );
-    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.mouseEnter")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.mouseExit")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.mousePress")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.mouseRelease")).toBe(true);
-    expect(nodes.some((node) => node.id === "flow.event.widgetClick")).toBe(true);
-    expect(nodes.some((node) => node.id === "ui.getWidget")).toBe(false);
-    const addWidget = nodes.find((node) => node.id === "ui.addWidget");
-    expect(addWidget?.title).toBe("Add Widget");
-    expect(addWidget?.defaultData).toMatchObject({ implicitSelf: true });
-    expect(addWidget?.pins.some((pin) => pin.id === "target")).toBe(false);
-  });
-
-  it("keeps Add Widget Target on Actor hosts", () => {
-    const nodes = scriptPaletteNodes(registry, { parentClass: "Actor" });
-    const addWidget = nodes.find((node) => node.id === "ui.addWidget");
-    expect(addWidget?.defaultData).toMatchObject({ implicitSelf: false });
-    expect(addWidget?.pins.some((pin) => pin.id === "target")).toBe(true);
-  });
-
-  it("injects bound Get Widget rows for the document widget ids", () => {
-    const nodes = scriptPaletteNodes(registry, {
-      assetType: "UserInterface",
-      widgets: [
-        { id: "play-btn", name: "Play Button", kind: "Button" },
-        { id: "logo", name: "Logo", kind: "Image" },
-      ],
-    });
-    const play = nodes.find((node) => node.id === "ui.getWidget:play-btn");
-    const logo = nodes.find((node) => node.id === "ui.getWidget:logo");
-    expect(play?.title).toBe("Get Play Button");
-    expect(play?.nodeType).toBe("ui.getWidget");
-    expect(play?.pins.find((pin) => pin.id === "widget")?.type).toEqual({
-      kind: "objectRef",
-      classId: "ButtonWidget",
-    });
-    expect(logo?.title).toBe("Get Logo");
-    expect(logo?.pins.find((pin) => pin.id === "widget")?.type).toEqual({
-      kind: "objectRef",
-      classId: "ImageWidget",
-    });
-  });
-
-  it("injects Get Variable rows for widgets and hides Set plus colliding Class variables", () => {
-    const nodes = scriptPaletteNodes(registry, {
-      assetType: "UserInterface",
-      classId: "UserInterface:hud",
-      widgets: [
-        { id: "play-btn", name: "Play Button", kind: "Button" },
-        { id: "logo", name: "Logo", kind: "Image" },
-      ],
-      graph: {
-        nodes: [],
-        edges: [],
-        members: [
-          {
-            id: "var-1",
-            kind: "variable",
-            name: "Play Button",
-            typeId: "float",
-          },
-          { id: "var-2", kind: "variable", name: "Score", typeId: "int" },
-        ],
-      },
-    });
-    const play = nodes.find(
-      (node) => node.id === "variables.get:widget:play-btn",
-    );
-    expect(play?.title).toBe("Get Play Button");
-    expect(play?.nodeType).toBe("variables.get");
-    expect(play?.category).toBe("variables");
-    expect(play?.defaultData).toMatchObject({
-      variableName: "Play Button",
-      typeId: "object",
-      typeClassId: "ButtonWidget",
-      implicitSelf: true,
-      scope: "member",
-    });
-    expect(play?.pins?.find((pin) => pin.id === "value")?.type).toEqual({
-      kind: "objectRef",
-      classId: "ButtonWidget",
-    });
-    expect(
-      nodes.some((node) => node.id === "variables.set:widget:play-btn"),
-    ).toBe(false);
-    expect(
-      nodes.some((node) => node.id === "variables.set:UserInterface:hud:Play Button"),
-    ).toBe(false);
-    expect(
-      nodes.some((node) => node.id === "variables.get:UserInterface:hud:Play Button"),
-    ).toBe(false);
-    expect(
-      nodes.some((node) => node.id === "variables.get:UserInterface:hud:Score"),
-    ).toBe(true);
-    expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(true);
   });
 
   it("stamps editorOnly on palette rows for editor-only catalog defs", () => {
@@ -1987,7 +1828,7 @@ describe("scriptPaletteNodes", () => {
     ).toBe(true);
   });
 
-  it("hides EditorFunctionLibrary calls on Actor and UserInterface hosts", () => {
+  it("hides EditorFunctionLibrary calls on Actor hosts", () => {
     const libraries = [
       {
         classId: "EditorMath",
@@ -2000,17 +1841,9 @@ describe("scriptPaletteNodes", () => {
       parentOf: libraryParentOf,
       functionLibraries: libraries,
     });
-    const ui = scriptPaletteNodes(registry, {
-      assetType: "UserInterface",
-      parentOf: libraryParentOf,
-      functionLibraries: libraries,
-    });
     expect(
       actor.some((node) => node.id === "functions.call:EditorMath:Snap"),
     ).toBe(false);
-    expect(ui.some((node) => node.id === "functions.call:EditorMath:Snap")).toBe(
-      false,
-    );
   });
 
   it("shows EditorFunctionLibrary calls on editor graph hosts", () => {
@@ -2128,19 +1961,15 @@ describe("scriptPaletteNodes", () => {
     expect(giCast?.defaultData).toMatchObject({
       resultKind: "objectRef",
     });
-    const uiCast = nodes.find((node) => node.id === "casting.cast:UserInterface");
-    expect(uiCast?.defaultData).toMatchObject({ resultKind: "objectRef" });
-    const widgetCast = nodes.find((node) => node.id === "casting.cast:Widget");
-    expect(widgetCast?.defaultData).toMatchObject({ resultKind: "objectRef" });
   });
 
-  it("includes UserInterface and Widget engine classes in the known-class set", () => {
+  it("does not include removed UserInterface engine classes in the known-class set", () => {
     const ids = knownClassIdSet(() => null, []);
-    expect(ids.has("UserInterface")).toBe(true);
-    expect(ids.has("Widget")).toBe(true);
-    expect(ids.has("ButtonWidget")).toBe(true);
-    expect(ids.has("ImageWidget")).toBe(true);
-    expect(ids.has("MaterialWidget")).toBe(true);
+    expect(ids.has("UserInterface")).toBe(false);
+    expect(ids.has("Widget")).toBe(false);
+    expect(ids.has("ButtonWidget")).toBe(false);
+    expect(ids.has("ImageWidget")).toBe(false);
+    expect(ids.has("MaterialWidget")).toBe(false);
   });
 
   it("hides native and editor lifecycle events on FunctionLibrary palettes", () => {
@@ -2362,12 +2191,10 @@ describe("ScriptPaletteCache", () => {
           functions: [{ name: "Add", pins: addPins }],
         },
       ],
-      widgets: [{ id: "play-btn", name: "Play Button", kind: "Button" }],
-      assetType: "UserInterface" as const,
     };
   }
 
-  it("omits Cast-to-Class, FL Call, and Get Widget rows when injectors are deferred", () => {
+  it("omits Cast-to-Class and FL Call rows when injectors are deferred", () => {
     const nodes = scriptPaletteNodes(
       registry,
       paletteOptions({
@@ -2382,12 +2209,6 @@ describe("ScriptPaletteCache", () => {
       false,
     );
     expect(nodes.some((node) => node.id === "functions.call:MathLib:Add")).toBe(
-      false,
-    );
-    expect(nodes.some((node) => node.id === "ui.getWidget:play-btn")).toBe(
-      false,
-    );
-    expect(nodes.some((node) => node.id === "variables.get:widget:play-btn")).toBe(
       false,
     );
   });
@@ -2416,9 +2237,6 @@ describe("ScriptPaletteCache", () => {
       true,
     );
     expect(first.some((node) => node.id === "functions.call:MathLib:Add")).toBe(
-      true,
-    );
-    expect(first.some((node) => node.id === "ui.getWidget:play-btn")).toBe(
       true,
     );
 

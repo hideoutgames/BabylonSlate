@@ -22,14 +22,7 @@ describe("serializedGraphFromDocument", () => {
     expect(serializedGraphFromDocument("graph", graph)).toEqual(graph);
   });
 
-  it("reads UserInterface payload.logic", () => {
-    expect(
-      serializedGraphFromDocument("ui", { rootId: "canvas", logic: graph }),
-    ).toEqual(graph);
-  });
-
-  it("returns null when UI payload has no logic graph", () => {
-    expect(serializedGraphFromDocument("ui", { rootId: "canvas" })).toBeNull();
+  it("returns null for non-logic document kinds", () => {
     expect(serializedGraphFromDocument("scene", { actors: [] })).toBeNull();
   });
 
@@ -58,25 +51,6 @@ describe("replaceSerializedGraphInDocument", () => {
   it("replaces a Class document body", () => {
     const next: SerializedGraph = { nodes: [], edges: [], members: [] };
     expect(replaceSerializedGraphInDocument("graph", graph, next)).toEqual(next);
-  });
-
-  it("merges logic back into a UserInterface payload without dropping widgets", () => {
-    const next: SerializedGraph = {
-      nodes: [],
-      edges: [],
-      members: [{ id: "fn-1", kind: "function", name: "Jump" }],
-    };
-    expect(
-      replaceSerializedGraphInDocument(
-        "ui",
-        { rootId: "canvas", widgets: { canvas: { id: "canvas" } }, logic: graph },
-        next,
-      ),
-    ).toEqual({
-      rootId: "canvas",
-      widgets: { canvas: { id: "canvas" } },
-      logic: next,
-    });
   });
 });
 
@@ -323,42 +297,6 @@ describe("commitLogicGraph", () => {
         edges: [],
         members: [{ id: "fn-1", kind: "function", name: "Jump" }],
       },
-    });
-  });
-
-  it("returns a UserInterface payload commit that keeps widgets", () => {
-    const next: SerializedGraph = {
-      nodes: [],
-      edges: [],
-      members: [{ id: "fn-1", kind: "function", name: "Dash" }],
-    };
-    expect(
-      commitLogicGraph(
-        "ui",
-        { rootId: "canvas", widgets: { canvas: { id: "canvas" } }, logic: graph },
-        next,
-      ),
-    ).toEqual({
-      kind: "ui",
-      payload: {
-        rootId: "canvas",
-        widgets: { canvas: { id: "canvas" } },
-        logic: next,
-      },
-    });
-  });
-
-  it("seeds payload.logic when a UserInterface document has none yet", () => {
-    const next: SerializedGraph = {
-      nodes: [],
-      edges: [],
-      members: [{ id: "fn-1", kind: "function", name: "Dash" }],
-    };
-    expect(
-      commitLogicGraph("ui", { rootId: "canvas", widgets: {} }, next),
-    ).toEqual({
-      kind: "ui",
-      payload: { rootId: "canvas", widgets: {}, logic: next },
     });
   });
 

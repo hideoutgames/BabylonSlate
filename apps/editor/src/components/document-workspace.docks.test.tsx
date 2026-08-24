@@ -1,15 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import {
-  AnimDocumentDocks,
-  UiDocumentDocks,
-} from "./document-workspace";
+import { AnimDocumentDocks } from "./document-workspace";
 
 const docs = vi.hoisted(() => ({
-  uiEditorMode: "designer" as "designer" | "logic",
   animEditorMode: "stateMachine" as "stateMachine" | "animationObject",
-  activeDocumentId: "ui:hud",
-  setUiEditorMode: vi.fn(),
+  activeDocumentId: "anim:hero",
   setAnimEditorMode: vi.fn(),
   registerDockviewApi: vi.fn(),
   captureLayoutForId: vi.fn(),
@@ -23,12 +18,11 @@ vi.mock("../context/document-context", () => ({
 
 vi.mock("../shell/dockview-shell", () => ({
   DockviewShell: (props: {
-    uiEditorMode?: string;
     animEditorMode?: string;
     documentKind: string;
   }) => (
     <div
-      data-testid={`mock-dock-${props.uiEditorMode ?? props.animEditorMode ?? props.documentKind}`}
+      data-testid={`mock-dock-${props.animEditorMode ?? props.documentKind}`}
     />
   ),
 }));
@@ -39,38 +33,13 @@ vi.mock("./document-lock-banner", () => ({
 
 afterEach(() => {
   cleanup();
-  docs.uiEditorMode = "designer";
   docs.animEditorMode = "stateMachine";
-  docs.activeDocumentId = "ui:hud";
+  docs.activeDocumentId = "anim:hero";
   docs.captureLayoutForId.mockClear();
   docs.unregisterDockviewApi.mockClear();
 });
 
 describe("mode DockView unmount", () => {
-  it("mounts only the active UserInterface DockView", () => {
-    docs.uiEditorMode = "designer";
-    docs.activeDocumentId = "ui:hud";
-    const { rerender } = render(
-      <UiDocumentDocks
-        id="ui:hud"
-        layout={null}
-      />,
-    );
-    expect(screen.getByTestId("mock-dock-designer")).toBeTruthy();
-    expect(screen.queryByTestId("mock-dock-logic")).toBeNull();
-    docs.uiEditorMode = "logic";
-    rerender(
-      <UiDocumentDocks
-        id="ui:hud"
-        layout={null}
-      />,
-    );
-    expect(screen.queryByTestId("mock-dock-designer")).toBeNull();
-    expect(screen.getByTestId("mock-dock-logic")).toBeTruthy();
-    expect(docs.captureLayoutForId).toHaveBeenCalledWith("ui:hud");
-    expect(docs.unregisterDockviewApi).toHaveBeenCalled();
-  });
-
   it("mounts only the active Animation Graph DockView", () => {
     docs.animEditorMode = "stateMachine";
     docs.activeDocumentId = "anim:hero";

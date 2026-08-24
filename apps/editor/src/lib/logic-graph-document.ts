@@ -28,16 +28,13 @@ function isSerializedGraph(value: unknown): value is SerializedGraph {
   return Array.isArray(value.nodes) && Array.isArray(value.edges);
 }
 
-/** Logic graph stored on a Class document or UserInterface `payload.logic`. */
+/** Logic graph stored on a Class document or Animation Object. */
 export function serializedGraphFromDocument(
   kind: string,
   content: unknown,
 ): SerializedGraph | null {
   if (kind === "graph") {
     return isSerializedGraph(content) ? content : null;
-  }
-  if (kind === "ui" && isRecord(content)) {
-    return isSerializedGraph(content.logic) ? content.logic : null;
   }
   if (kind === "anim-graph") {
     const parsed = parseAnimGraphDocument(content);
@@ -50,16 +47,13 @@ export function serializedGraphFromDocument(
   return null;
 }
 
-/** Write a logic graph back onto a Class body or UserInterface payload. */
+/** Write a logic graph back onto a Class body or Animation Object. */
 export function replaceSerializedGraphInDocument(
   kind: string,
   content: unknown,
   next: SerializedGraph,
 ): unknown {
   if (kind === "graph") return next;
-  if (kind === "ui" && isRecord(content)) {
-    return { ...content, logic: next };
-  }
   if (kind === "anim-graph" && isRecord(content)) {
     return {
       ...content,
@@ -442,7 +436,7 @@ export function collectClassGraphsForPalette(options: {
     );
   }
   for (const doc of options.openDocuments) {
-    if (doc.ref.kind !== "graph" && doc.ref.kind !== "ui") continue;
+    if (doc.ref.kind !== "graph") continue;
     const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
     if (!graph) continue;
     graphs[options.classIdForPath(doc.ref.path)] = graph;
@@ -452,22 +446,15 @@ export function collectClassGraphsForPalette(options: {
 
 export type LogicGraphCommit =
   | { kind: "graph"; graph: SerializedGraph }
-  | { kind: "ui"; payload: Record<string, unknown> }
   | { kind: "anim-graph"; payload: Record<string, unknown> };
 
-/** Persist a logic graph as a Class body, UserInterface payload, or Animation Object. */
+/** Persist a logic graph as a Class body or Animation Object. */
 export function commitLogicGraph(
   kind: string,
   content: unknown,
   next: SerializedGraph,
 ): LogicGraphCommit {
   next = pruneEventMembersToNodes(next);
-  if (kind === "ui") {
-    const payload = replaceSerializedGraphInDocument("ui", content, next);
-    if (isRecord(payload)) {
-      return { kind: "ui", payload };
-    }
-  }
   if (kind === "anim-graph") {
     const payload = replaceSerializedGraphInDocument(
       "anim-graph",

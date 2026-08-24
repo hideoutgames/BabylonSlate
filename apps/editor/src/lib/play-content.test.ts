@@ -1,17 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  createDefaultPlayHud,
-  createDefaultUserInterface,
-  createWidget,
-  pinLayout,
-  WIDGET_KINDS,
-} from "@babylonslate/ui-runtime";
+import { describe, expect, it } from "vitest";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
 import {
   createActor,
   createDefaultScene,
-  ENGINE_WIDGET_KINDS,
 } from "@babylonslate/core";
 import {
   createDefaultSpriteAnimationPayload,
@@ -22,38 +14,21 @@ import {
 } from "@babylonslate/assets";
 import {
   animationGraphGuidsFromScene,
-  applyPlayHudInstance,
-  applyPlayHudUiCommand,
-  applyPlayHudVisibility,
-  asUiDocument,
-  resolveNestedUiDocument,
   behaviourTreeGuidsFromScene,
   blackboardGuidsFromScene,
-  logicGraphFromUiPayload,
-  mergePlayScriptDocuments,
-  filterPlayScriptDocuments,
   collectPlayScriptDocuments,
   mergePlayAnimGraphs,
   collectAnimGraphCompileDocuments,
-  parsePlayHudControlId,
   playAnimGraphsFromOpenDocuments,
   playAnimGraphsFromGuids,
-  playHudVisibilityKey,
   playLoadTilemapsControl,
-  playUserInterfaceRuntimeDocuments,
-  preferOpenPlayUiContent,
-  dispatchMountedPlayUiWidgetEvent,
-  setPlayUiWidgetEventSink,
   readPlayNavmeshBytes,
   readPlayAudioReverbBytes,
   playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
   playLoadSpritesControl,
-  playUiLibraryFromAssets,
   spriteAnimationGuidsFromAnimGraphs,
   spriteAnimationGuidsFromBehaviourTrees,
-  removePlayHudInstance,
-  resolvePlayHudDocuments,
   spriteAssetGuidsFromScene,
   skyboxFaceGuidsFromScene,
   tilemapAssetGuidsFromScene,
@@ -65,443 +40,36 @@ import {
   materialAssetGuidsFromScene,
   postProcessMaterialGuidsFromScene,
   materialGuidsFromScenes,
-  interfaceMaterialGuidsFromUiDocuments,
-  lookupInterfaceMaterialDocument,
   playMaterialGuidsFromSources,
   playSceneByGuid,
   materialClosureFromGuids,
 } from "./play-content";
 
-describe("playUiLibraryFromAssets", () => {
-  it("indexes UserInterface assets by guid and ignores other types", () => {
-    const hud = createDefaultPlayHud("Score");
-    hud.widgets.header!.props.text = "Authored";
-    const library = playUiLibraryFromAssets(
+describe("collectPlayScriptDocuments", () => {
+  it("keeps Class graphs and drops editor-only assets", () => {
+    const graph = {
+      nodes: [],
+      edges: [],
+    };
+    const documents = collectPlayScriptDocuments(
       [
-        {
-          guid: "hud-guid",
-          path: "assets/HUD.ui.babasset",
-          type: "UserInterface",
-        },
-        {
-          guid: "font-guid",
-          path: "assets/Display.babasset",
-          type: "Font",
-        },
-        {
-          guid: "eui-guid",
-          path: "assets/Tools.eui.babasset",
-          type: "EditorUtilityInterface",
-        },
+        { path: "assets/Hero.class.babasset", content: graph },
+        { path: "assets/Tools.euo.babasset", content: graph },
       ],
-      (path) => (path.endsWith("HUD.ui.babasset") ? hud : null),
-    );
-    expect(library["hud-guid"]?.widgets.header?.props.text).toBe("Authored");
-    expect(library["font-guid"]).toBeUndefined();
-    expect(library["eui-guid"]).toBeUndefined();
-  });
-});
-
-describe("Play HUD instances", () => {
-  it("does not apply any UserInterface until a graph asks", () => {
-    expect(resolvePlayHudDocuments([], { "hud-guid": createDefaultPlayHud() })).toEqual(
-      [],
-    );
-  });
-
-  it("applies and removes instances by reference and keeps classId", () => {
-    const hud = createDefaultPlayHud("HUD");
-    const library = { "hud-guid": hud };
-    let instances = applyPlayHudInstance(
-      [],
-      "ui-1",
-      "hud-guid",
-      "UserInterface:hud-guid",
-    );
-    instances = applyPlayHudInstance(
-      instances,
-      "ui-2",
-      "hud-guid",
-      "UserInterface:hud-guid",
-    );
-    expect(instances).toEqual([
       {
-        instanceId: "ui-1",
-        assetGuid: "hud-guid",
-        classId: "UserInterface:hud-guid",
-      },
-      {
-        instanceId: "ui-2",
-        assetGuid: "hud-guid",
-        classId: "UserInterface:hud-guid",
-      },
-    ]);
-    expect(resolvePlayHudDocuments(instances, library)).toEqual([
-      { instanceId: "ui-1", document: hud },
-      { instanceId: "ui-2", document: hud },
-    ]);
-    instances = removePlayHudInstance(instances, "ui-1");
-    expect(resolvePlayHudDocuments(instances, library).map((row) => row.instanceId)).toEqual(
-      ["ui-2"],
-    );
-  });
-
-  it("appends Apply order so a second HUD stays after the first", () => {
-    const first = applyPlayHudInstance([], "ui-1", "hud-a");
-    const stacked = applyPlayHudInstance(first, "ui-2", "hud-b");
-    expect(stacked.map((row) => row.instanceId)).toEqual(["ui-1", "ui-2"]);
-    expect(applyPlayHudInstance(stacked, "ui-1", "hud-a")).toEqual(stacked);
-  });
-
-  it("derives classId from the asset guid when the apply command omits it", () => {
-    expect(applyPlayHudInstance([], "ui-1", "hud-guid")).toEqual([
-      {
-        instanceId: "ui-1",
-        assetGuid: "hud-guid",
-        classId: "UserInterface:hud-guid",
-      },
-    ]);
-  });
-
-  it("skips instances whose asset is missing from the library", () => {
-    expect(
-      resolvePlayHudDocuments(
-        [{ instanceId: "ui-1", assetGuid: "missing", classId: "UserInterface:missing" }],
-        {},
-      ),
-    ).toEqual([]);
-  });
-
-  it("scopes widget visibility to the owning instance", () => {
-    let hidden = new Set<string>();
-    hidden = applyPlayHudVisibility(hidden, "ui-1", "play-btn", false);
-    hidden = applyPlayHudVisibility(hidden, "ui-2", "play-btn", false);
-    expect(hidden.has(playHudVisibilityKey("ui-1", "play-btn"))).toBe(true);
-    expect(hidden.has(playHudVisibilityKey("ui-2", "play-btn"))).toBe(true);
-    hidden = applyPlayHudVisibility(hidden, "ui-1", "play-btn", true);
-    expect(hidden.has(playHudVisibilityKey("ui-1", "play-btn"))).toBe(false);
-    expect(hidden.has(playHudVisibilityKey("ui-2", "play-btn"))).toBe(true);
-  });
-
-  it("clones the library tree onto an instance and applies hierarchy commands", () => {
-    const hud = createDefaultUserInterface("HUD");
-    const button = createWidget("play-btn", "Button", "Play");
-    hud.widgets.canvas!.children = ["play-btn"];
-    hud.widgets["play-btn"] = button;
-    let instances = applyPlayHudInstance([], "ui-1", "hud-guid");
-    instances = applyPlayHudUiCommand(instances, { "hud-guid": hud }, {
-      type: "uiApply",
-      instanceId: "ui-1",
-      classId: "UserInterface:hud-guid",
-      assetGuid: "hud-guid",
-    });
-    expect(instances[0]?.document?.widgets["play-btn"]).toBeDefined();
-    expect(instances[0]?.document).not.toBe(hud);
-    instances = applyPlayHudUiCommand(instances, { "hud-guid": hud }, {
-      type: "uiAddWidget",
-      instanceId: "ui-1",
-      widgetId: "score",
-      kind: "TextBlock",
-      name: "Score",
-      parentId: "canvas",
-    });
-    expect(instances[0]?.document?.widgets.score?.kind).toBe("TextBlock");
-    expect(hud.widgets.score).toBeUndefined();
-    const resolved = resolvePlayHudDocuments(instances, { "hud-guid": hud });
-    expect(resolved[0]?.document.widgets.score).toBeDefined();
-  });
-});
-
-describe("playUserInterfaceRuntimeDocuments", () => {
-  it("builds slim widget metadata for every widget id/kind/name", () => {
-    const hud = createDefaultUserInterface("HUD");
-    const button = createWidget("play-btn", "Button", "Play");
-    const image = createWidget("logo", "Image", "Logo");
-    hud.widgets.canvas!.children = ["play-btn", "logo"];
-    hud.widgets["play-btn"] = button;
-    hud.widgets.logo = image;
-    expect(playUserInterfaceRuntimeDocuments({ "hud-guid": hud })).toEqual([
-      {
-        guid: "hud-guid",
-        widgets: expect.arrayContaining([
-          { id: "canvas", kind: "Canvas", name: "Canvas" },
-          { id: "play-btn", kind: "Button", name: "Play" },
-          { id: "logo", kind: "Image", name: "Logo" },
-        ]),
-        document: hud,
-      },
-    ]);
-  });
-
-  it("copies nestedUiGuid onto UserInterface widget metadata", () => {
-    const hud = createDefaultUserInterface("HUD");
-    const chip = createWidget("chip", "UserInterface", "Chip");
-    chip.nestedUiGuid = "chip-guid";
-    hud.widgets.canvas!.children = ["chip"];
-    hud.widgets.chip = chip;
-    expect(
-      playUserInterfaceRuntimeDocuments({ "hud-guid": hud })[0]?.widgets.find(
-        (widget) => widget.id === "chip",
-      ),
-    ).toEqual({
-      id: "chip",
-      kind: "UserInterface",
-      name: "Chip",
-      nestedUiGuid: "chip-guid",
-    });
-  });
-
-  it("copies exposed properties and slot overrides onto runtime metadata", () => {
-    const hud = createDefaultUserInterface("HUD");
-    const label = createWidget("label", "TextBlock", "HP");
-    label.exposed = { key: "hp", label: "HP Text" };
-    hud.widgets.canvas!.children = ["label"];
-    hud.widgets.label = label;
-    const chip = createWidget("chip", "UserInterface", "Chip");
-    chip.nestedUiGuid = "chip-guid";
-    chip.overrides = { label: { text: "MP" } };
-    hud.widgets.canvas!.children = ["label", "chip"];
-    hud.widgets.chip = chip;
-    const widgets = playUserInterfaceRuntimeDocuments({ "hud-guid": hud })[0]?.widgets;
-    expect(widgets?.find((row) => row.id === "label")?.exposed).toEqual({
-      key: "hp",
-      label: "HP Text",
-    });
-    expect(widgets?.find((row) => row.id === "chip")?.overrides).toEqual({
-      label: { text: "MP" },
-    });
-  });
-
-  it("does not invent an apply command or mount instances", () => {
-    const library = { "hud-guid": createDefaultUserInterface("HUD") };
-    expect(playUserInterfaceRuntimeDocuments(library)[0]?.guid).toBe("hud-guid");
-    expect(resolvePlayHudDocuments([], library)).toEqual([]);
-  });
-});
-
-describe("preferOpenPlayUiContent", () => {
-  it("lets an open in-memory document win over disk bytes", () => {
-    const open = createDefaultUserInterface("Open");
-    open.widgets.canvas!.name = "Live Canvas";
-    const disk = createDefaultUserInterface("Disk");
-    expect(preferOpenPlayUiContent(open, disk)).toBe(open);
-    expect(preferOpenPlayUiContent(null, disk)).toBe(disk);
-    expect(preferOpenPlayUiContent(undefined, null)).toBeNull();
-  });
-});
-
-describe("mounted Play UI widget event sink", () => {
-  it("forwards events after the test host object is replaced", () => {
-    const sink = vi.fn(() => true);
-    setPlayUiWidgetEventSink(sink);
-    const host: {
-      dispatchPlayUiWidgetEvent?: (event: {
-        instanceId: string;
-        widgetId: string;
-        kind: "click";
-      }) => boolean;
-    } = {};
-    host.dispatchPlayUiWidgetEvent = (event) =>
-      dispatchMountedPlayUiWidgetEvent(event);
-    const replaced: typeof host = {};
-    replaced.dispatchPlayUiWidgetEvent = (event) =>
-      dispatchMountedPlayUiWidgetEvent(event);
-    expect(
-      replaced.dispatchPlayUiWidgetEvent({
-        instanceId: "ui-1",
-        widgetId: "play-btn",
-        kind: "click",
-      }),
-    ).toBe(true);
-    expect(sink).toHaveBeenCalledWith({
-      instanceId: "ui-1",
-      widgetId: "play-btn",
-      kind: "click",
-    });
-    setPlayUiWidgetEventSink(null);
-    expect(
-      replaced.dispatchPlayUiWidgetEvent({
-        instanceId: "ui-1",
-        widgetId: "play-btn",
-        kind: "click",
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("parsePlayHudControlId", () => {
-  it("strips the instance prefix and keeps nested widget ids", () => {
-    expect(parsePlayHudControlId("ui-1:play-btn")).toEqual({
-      instanceId: "ui-1",
-      widgetId: "play-btn",
-    });
-    expect(parsePlayHudControlId("ui-2:host/nested-btn")).toEqual({
-      instanceId: "ui-2",
-      widgetId: "host/nested-btn",
-    });
-    expect(parsePlayHudControlId("play-btn")).toBeNull();
-    expect(parsePlayHudControlId(":only-widget")).toBeNull();
-  });
-});
-
-describe("asUiDocument", () => {
-  it("reads desired size from the payload", () => {
-    const doc = asUiDocument({
-      name: "Chip",
-      rootId: "canvas",
-      desiredSize: { width: 240, height: 64 },
-      widgets: {},
-    });
-    expect(doc.desiredSize).toEqual({ width: 240, height: 64 });
-  });
-
-  it("migrates legacy RectTransform widgets to Babylon layout", () => {
-    const doc = asUiDocument({
-      name: "HUD",
-      rootId: "canvas",
-      widgets: {
-        canvas: {
-          id: "canvas",
-          kind: "Canvas",
-          name: "Canvas",
-          layout: {
-            anchorMin: { x: 0, y: 0 },
-            anchorMax: { x: 1, y: 1 },
-            offsetMin: { x: 0, y: 0 },
-            offsetMax: { x: 0, y: 0 },
-            pivot: { x: 0.5, y: 0.5 },
-          },
-          visible: true,
-          children: ["stick"],
-          style: {},
-          props: {},
-        },
-        stick: {
-          id: "stick",
-          kind: "TouchJoystick",
-          name: "Stick",
-          layout: {
-            anchorMin: { x: 0.5, y: 0.5 },
-            anchorMax: { x: 0.5, y: 0.5 },
-            offsetMin: { x: -80, y: -80 },
-            offsetMax: { x: 80, y: 80 },
-            pivot: { x: 0.5, y: 0.5 },
-          },
-          visible: true,
-          children: [],
-          style: {},
-          props: {},
+        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
+        "assets/Tools.euo.babasset": {
+          type: "Class",
+          parentClass: "EditorUtilityObject",
         },
       },
-    });
-    expect(doc.widgets.stick?.layout.horizontalAlignment).toBe("center");
-    expect(doc.widgets.stick?.layout.width).toBe(160);
-  });
-
-  it("falls back desired size to design resolution when omitted", () => {
-    const doc = asUiDocument({
-      designResolution: { width: 1920, height: 1080 },
-      widgets: {},
-    });
-    expect(doc.desiredSize).toEqual({ width: 1920, height: 1080 });
-  });
-
-  it("creates a Canvas root instead of leaving widgets empty", () => {
-    const doc = asUiDocument({ name: "Broken" });
-    expect(doc.rootId).toBe("canvas");
-    expect(doc.widgets.canvas?.kind).toBe("Canvas");
-  });
-});
-
-describe("resolveNestedUiDocument", () => {
-  function labeledChip(text: string) {
-    const chip = createDefaultUserInterface("Chip");
-    const label = createWidget(
-      "label",
-      "TextBlock",
-      text,
-      pinLayout("left", "top", 80, 20),
+      (id) =>
+        id === "EditorUtilityObject" ? "BObject" : id === "Actor" ? "BObject" : null,
     );
-    label.props.text = text;
-    chip.widgets.canvas!.children = ["label"];
-    chip.widgets.label = label;
-    return chip;
-  }
-
-  const chipPath = "assets/Chip.ui.babasset";
-
-  it("prefers open document content over the UI library", () => {
-    const resolved = resolveNestedUiDocument("chip-guid", {
-      openDocuments: [{ ref: { path: chipPath }, content: labeledChip("OPEN") }],
-      getAsset: (guid) =>
-        guid === "chip-guid"
-          ? { path: chipPath, header: { payload: {} } }
-          : null,
-      uiLibrary: { "chip-guid": labeledChip("LIB") },
-    });
-    expect(resolved?.widgets.label?.props.text).toBe("OPEN");
-  });
-
-  it("uses the UI library when the nested asset is not open", () => {
-    const resolved = resolveNestedUiDocument("chip-guid", {
-      openDocuments: [],
-      getAsset: (guid) =>
-        guid === "chip-guid"
-          ? { path: chipPath, header: { payload: {} } }
-          : null,
-      uiLibrary: { "chip-guid": labeledChip("LIB") },
-    });
-    expect(resolved?.widgets.label?.props.text).toBe("LIB");
-  });
-
-  it("does not treat an empty header payload as a nested document", () => {
-    const resolved = resolveNestedUiDocument("chip-guid", {
-      openDocuments: [],
-      getAsset: (guid) =>
-        guid === "chip-guid"
-          ? { path: chipPath, header: { payload: {} } }
-          : null,
-      uiLibrary: {},
-    });
-    expect(resolved).toBeNull();
-  });
-
-  it("does not treat a dockKind-only header payload as a nested document", () => {
-    const resolved = resolveNestedUiDocument("chip-guid", {
-      openDocuments: [],
-      getAsset: (guid) =>
-        guid === "chip-guid"
-          ? { path: chipPath, header: { payload: { dockKind: "scene" } } }
-          : null,
-      uiLibrary: {},
-    });
-    expect(resolved).toBeNull();
-  });
-
-  it("uses a header payload that contains widgets when the library is empty", () => {
-    const resolved = resolveNestedUiDocument("chip-guid", {
-      openDocuments: [],
-      getAsset: (guid) =>
-        guid === "chip-guid"
-          ? {
-              path: chipPath,
-              header: { payload: labeledChip("HEADER") },
-            }
-          : null,
-      uiLibrary: {},
-    });
-    expect(resolved?.widgets.label?.props.text).toBe("HEADER");
-  });
-
-  it("returns the self document when the guid matches", () => {
-    const hud = createDefaultUserInterface("HUD");
-    const resolved = resolveNestedUiDocument("hud-1", {
-      selfGuid: "hud-1",
-      selfDocument: hud,
-      openDocuments: [],
-      uiLibrary: {},
-    });
-    expect(resolved).toBe(hud);
+    expect(documents.map((entry) => entry.path)).toEqual([
+      "assets/Hero.class.babasset",
+    ]);
+    expect(documents[0]?.parentClassId).toBe("Actor");
   });
 });
 
@@ -1024,34 +592,14 @@ describe("scene-referenced Play content", () => {
     const level2 = createDefaultScene();
     level2.settings.postProcessStack = [{ materialGuid: "pp-b", enabled: true }];
     expect(materialGuidsFromScenes([startup, level2])).toEqual(["pp-a", "pp-b"]);
-  });
-
-  it("collects Interface material graphs from applied HUD documents", () => {
-    const hud = createDefaultUserInterface("HUD");
-    const glow = createWidget("glow", "Material", "Glow");
-    glow.props.materialGuid = "mat-glow";
-    hud.widgets.canvas!.children = ["glow"];
-    hud.widgets.glow = glow;
-    expect(interfaceMaterialGuidsFromUiDocuments([hud])).toEqual(["mat-glow"]);
-    const startup = createDefaultScene();
-    startup.settings.postProcessStack = [{ materialGuid: "pp-a", enabled: true }];
-    expect(playMaterialGuidsFromSources([startup], [hud])).toEqual([
+    expect(playMaterialGuidsFromSources([startup, level2], ["extra"])).toEqual([
       "pp-a",
-      "mat-glow",
+      "pp-b",
+      "extra",
     ]);
   });
 
-  it("looks up Interface materials and ignores other domains", () => {
-    const documents = new Map<string, { domain: string; name: string }>([
-      ["mat-glow", { domain: "interface", name: "Glow" }],
-      ["mat-rock", { domain: "surface", name: "Rock" }],
-    ]);
-    expect(lookupInterfaceMaterialDocument("mat-glow", documents)?.name).toBe(
-      "Glow",
-    );
-    expect(lookupInterfaceMaterialDocument("mat-rock", documents)).toBeNull();
-    expect(lookupInterfaceMaterialDocument("missing", documents)).toBeNull();
-  });
+
 
   it("resolves an activeScene guid from the Play library", () => {
     const startup = createDefaultScene();
@@ -1063,233 +611,6 @@ describe("scene-referenced Play content", () => {
         scene: startup,
       }),
     ).toBe(level2);
-  });
-});
-
-describe("UI widget class mapping", () => {
-  it("keeps engine widget kinds aligned with the UserInterface payload kinds", () => {
-    expect([...ENGINE_WIDGET_KINDS]).toEqual([...WIDGET_KINDS]);
-  });
-});
-
-describe("UI logic Play compile", () => {
-  it("extracts a UserInterface payload.logic graph for Play", () => {
-    const logic = {
-      nodes: [
-        {
-          id: "begin",
-          type: "flow.event.beginPlay",
-          position: { x: 0, y: 0 },
-          data: {},
-        },
-      ],
-      edges: [],
-    };
-    expect(
-      logicGraphFromUiPayload("assets/HUD.ui.babasset", { logic }),
-    ).toEqual({
-      path: "assets/HUD.ui.babasset",
-      content: logic,
-    });
-    expect(logicGraphFromUiPayload("assets/HUD.ui.babasset", {})).toBeNull();
-  });
-
-  it("merges UI logic graphs onto the Class graph set", () => {
-    const classGraph = {
-      path: "assets/Hero.class.babasset",
-      content: { nodes: [], edges: [] },
-    };
-    const merged = mergePlayScriptDocuments(
-      [classGraph],
-      [
-        {
-          path: "assets/HUD.ui.babasset",
-          payload: {
-            logic: {
-              nodes: [
-                {
-                  id: "begin",
-                  type: "flow.event.beginPlay",
-                  position: { x: 0, y: 0 },
-                  data: {},
-                },
-              ],
-              edges: [],
-            },
-          },
-        },
-      ],
-    );
-    expect(merged.map((doc) => doc.path)).toEqual([
-      "assets/Hero.class.babasset",
-      "assets/HUD.ui.babasset",
-    ]);
-  });
-
-  it("drops EditorUtilityObject class graphs from Play compile", () => {
-    const filtered = filterPlayScriptDocuments(
-      [
-        {
-          path: "assets/Hero.class.babasset",
-          content: { nodes: [], edges: [] },
-        },
-        {
-          path: "assets/Tools.class.babasset",
-          content: { nodes: [], edges: [] },
-        },
-      ],
-      {
-        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
-        "assets/Tools.class.babasset": {
-          type: "Class",
-          parentClass: "EditorUtilityObject",
-        },
-      },
-      (id) =>
-        id === "EditorUtilityObject" || id === "Actor" ? "BObject" : null,
-    );
-    expect(filtered.map((doc) => doc.path)).toEqual([
-      "assets/Hero.class.babasset",
-    ]);
-  });
-
-  it("drops SkyboxCreator helpers from Play compile", () => {
-    const filtered = filterPlayScriptDocuments(
-      [
-        {
-          path: "assets/Hero.class.babasset",
-          content: { nodes: [], edges: [] },
-        },
-        {
-          path: "assets/Day.skyboxcreator.babasset",
-          content: { nodes: [], edges: [] },
-        },
-      ],
-      {
-        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
-        "assets/Day.skyboxcreator.babasset": { type: "SkyboxCreator" },
-      },
-      () => null,
-    );
-    expect(filtered.map((doc) => doc.path)).toEqual([
-      "assets/Hero.class.babasset",
-    ]);
-  });
-
-  it("merges UserInterface logic then strips EditorUtilityObject graphs", () => {
-    const collected = collectPlayScriptDocuments(
-      [
-        {
-          path: "assets/Hero.class.babasset",
-          content: { nodes: [], edges: [] },
-        },
-        {
-          path: "assets/Tools.class.babasset",
-          content: { nodes: [], edges: [] },
-        },
-      ],
-      [
-        {
-          path: "assets/HUD.ui.babasset",
-          payload: {
-            logic: {
-              nodes: [
-                {
-                  id: "begin",
-                  type: "flow.event.beginPlay",
-                  position: { x: 0, y: 0 },
-                  data: {},
-                },
-              ],
-              edges: [],
-            },
-          },
-        },
-      ],
-      {
-        "assets/Hero.class.babasset": { type: "Class", parentClass: "Actor" },
-        "assets/Tools.class.babasset": {
-          type: "Class",
-          parentClass: "EditorUtilityObject",
-        },
-        "assets/HUD.ui.babasset": { type: "UserInterface", parentClass: null },
-      },
-      (id) =>
-        id === "EditorUtilityObject" || id === "Actor" ? "BObject" : null,
-    );
-    expect(collected.map((doc) => doc.path)).toEqual([
-      "assets/Hero.class.babasset",
-      "assets/HUD.ui.babasset",
-    ]);
-    expect(collected[0]?.parentClassId).toBe("Actor");
-  });
-
-  it("identifies UserInterface scripts by asset guid, not the file stem", () => {
-    const collected = collectPlayScriptDocuments(
-      [],
-      [
-        {
-          path: "assets/HUD.ui.babasset",
-          guid: "hud-guid",
-          payload: {
-            logic: {
-              nodes: [
-                {
-                  id: "begin",
-                  type: "flow.event.beginPlay",
-                  position: { x: 0, y: 0 },
-                  data: {},
-                },
-              ],
-              edges: [],
-            },
-          },
-        },
-      ],
-      {
-        "assets/HUD.ui.babasset": { type: "UserInterface", parentClass: null },
-      },
-      () => null,
-    );
-    expect(collected).toEqual([
-      expect.objectContaining({
-        path: "assets/HUD.ui.babasset",
-        classId: "UserInterface:hud-guid",
-        parentClassId: "UserInterface",
-      }),
-    ]);
-  });
-
-  it("strips EditorUtilityInterface logic even if it is merged into the Play list", () => {
-    const collected = collectPlayScriptDocuments(
-      [],
-      [
-        {
-          path: "assets/Tools.eui.babasset",
-          payload: {
-            logic: {
-              nodes: [
-                {
-                  id: "start",
-                  type: "flow.event.beginPlay",
-                  position: { x: 0, y: 0 },
-                  data: {},
-                },
-              ],
-              edges: [],
-            },
-          },
-        },
-      ],
-      {
-        "assets/Tools.eui.babasset": {
-          type: "EditorUtilityInterface",
-          parentClass: null,
-        },
-      },
-      () => null,
-    );
-    expect(collected).toEqual([]);
   });
 });
 
