@@ -652,7 +652,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ) => Promise<boolean>
   >(async () => false);
   const syncPrefabInstancesRef = useRef<
-    (options?: { classIds?: readonly string[] }) => Promise<void>
+    (options?: { classIds?: readonly string[]; quiet?: boolean }) => Promise<void>
   >(async () => {});
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
@@ -1750,7 +1750,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       sourceControlRef.current.onOpenDocument(ref.path);
       bump();
       if (ref.kind === "scene") {
-        await syncPrefabInstancesRef.current();
+        await syncPrefabInstancesRef.current({ quiet: true });
       }
     },
     [bump, captureLayoutForId, closeDocument, documentService, projectService],
@@ -2112,6 +2112,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const scene = sceneDoc.content as SerializedScene;
     const next = syncSceneActorsFromPrefabs(scene, templates);
     if (scenesEqualForPrefabSync(scene, next)) return;
+    if (options?.quiet) {
+      sceneDoc.content = next;
+      bump();
+      return;
+    }
     await applySceneChange(sceneDoc.id, next, { prefabSync: true });
   };
 
