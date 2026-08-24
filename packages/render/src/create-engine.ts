@@ -482,7 +482,11 @@ export function createEngine(
     });
 
   const sharedViewBlit =
-    options.sharedEngine && !presentRtt ? canvas.getContext("2d") : null;
+    options.sharedEngine &&
+    !presentRtt &&
+    typeof canvas.getContext === "function"
+      ? canvas.getContext("2d")
+      : null;
   if (sharedViewBlit) {
     // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
     // clear, skipped render-on-demand frames composite additively.

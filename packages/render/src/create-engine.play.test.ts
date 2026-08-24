@@ -203,6 +203,19 @@ describe("Play createEngine view", () => {
     expect(registerView).not.toHaveBeenCalled();
   });
 
+  it("does not throw when a shared view canvas has no getContext", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    canvas.getContext = undefined as unknown as typeof canvas.getContext;
+    const registerView = vi.spyOn(engine, "registerView");
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    expect(registerView).not.toHaveBeenCalled();
+  });
+
   it("dispose stops the same render loop callback it registered", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
