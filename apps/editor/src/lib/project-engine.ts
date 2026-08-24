@@ -15,7 +15,7 @@ export type ProjectEngineController = {
   dispose: () => void;
 };
 
-/** Detached constructor canvas + Engine for one open project. */
+/** Hidden constructor canvas + Engine for one open project. */
 export function createProjectEngineSession(): ProjectEngineSession | null {
   if (typeof document === "undefined") return null;
   const canvas = document.createElement("canvas");
@@ -23,6 +23,8 @@ export function createProjectEngineSession(): ProjectEngineSession | null {
   canvas.height = 8;
   canvas.style.display = "none";
   canvas.setAttribute("aria-hidden", "true");
+  canvas.setAttribute("data-testid", "project-engine-canvas");
+  document.body.appendChild(canvas);
   try {
     const engine = createAppEngine(canvas);
     return {

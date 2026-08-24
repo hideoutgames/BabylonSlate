@@ -33,13 +33,14 @@ describe("createProjectEngineSession", () => {
     document.body.replaceChildren();
   });
 
-  it("creates an Engine on a detached hidden canvas", () => {
+  it("creates an Engine on a hidden tagged canvas", () => {
     const session = createProjectEngineSession();
     expect(session).not.toBeNull();
     expect(createAppEngineMock).toHaveBeenCalledTimes(1);
     const canvas = createAppEngineMock.mock.calls[0][0];
-    expect(canvas.isConnected).toBe(false);
+    expect(canvas.isConnected).toBe(true);
     expect(canvas.style.display).toBe("none");
+    expect(canvas.getAttribute("data-testid")).toBe("project-engine-canvas");
     session?.dispose();
   });
 
