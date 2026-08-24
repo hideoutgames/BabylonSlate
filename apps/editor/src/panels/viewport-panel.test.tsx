@@ -41,7 +41,7 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     dispose: vi.fn(),
     resourceCache: {},
   };
-  const createEngineMock = vi.fn((..._args: unknown[]) => handle);
+  const createEngineMock = vi.fn(() => handle);
   const sharedEngine = { isDisposed: false };
   return {
     createEngineMock,
