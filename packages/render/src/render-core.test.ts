@@ -89,6 +89,20 @@ describe("resource cache", () => {
     expect(cache.accountedBytes()).toBe(80);
     cache.dispose();
   });
+
+  it("evicts textures no handle still pins even if getTexture left a refCount", () => {
+    const evictions: string[] = [];
+    const cache = new ResourceCache({
+      byteCeiling: 100,
+      onEvict: (id) => evictions.push(id),
+    });
+    cache.account("gone", 80);
+    cache.account("kept", 80);
+    cache.setClientTextures("viewport", ["kept"]);
+    expect(evictions).toContain("gone");
+    expect(cache.accountedBytes()).toBe(80);
+    cache.dispose();
+  });
 });
 
 describe("render scheduler", () => {

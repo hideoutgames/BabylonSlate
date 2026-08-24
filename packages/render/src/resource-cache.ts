@@ -121,6 +121,7 @@ export class ResourceCache {
   private readonly onEvict?: (assetGuid: string, reason: string) => void;
   private readonly entries = new Map<string, CacheEntry>();
   private readonly blobs = new Map<string, Blob>();
+  private readonly clientTextures = new Map<string, Set<string>>();
   private clock = 0;
   private totalBytes = 0;
 
@@ -141,6 +142,30 @@ export class ResourceCache {
   setBudgetEnabled(enabled: boolean): void {
     this.budgetEnabled = enabled;
     if (enabled) this.evictToCeiling();
+  }
+
+  /**
+   * Pin GPU textures still referenced by one EngineHandle (viewport, Play,
+   * Prefab). Union across clients so a shared cache does not evict a guid
+   * another view still holds. When no client has registered, eviction uses
+   * `refCount` (tests and thumbnail paths).
+   */
+  setClientTextures(clientId: string, guids: Iterable<string>): void {
+    this.clientTextures.set(clientId, new Set(guids));
+    this.evictToCeiling();
+  }
+
+  clearClientTextures(clientId: string): void {
+    if (!this.clientTextures.delete(clientId)) return;
+    this.evictToCeiling();
+  }
+
+  private isUnreferenced(entry: CacheEntry): boolean {
+    if (this.clientTextures.size === 0) return entry.refCount === 0;
+    for (const guids of this.clientTextures.values()) {
+      if (guids.has(entry.assetGuid)) return false;
+    }
+    return true;
   }
 
   blobUrlFor(assetGuid: string, bytes: Uint8Array | Blob): string {
@@ -364,7 +389,7 @@ export class ResourceCache {
     if (this.totalBytes <= this.ceiling) return;
     const target = this.ceiling * this.evictionTargetFactor;
     const candidates = [...this.entries.values()]
-      .filter((e) => e.refCount === 0)
+      .filter((e) => this.isUnreferenced(e))
       .sort((a, b) => a.lastUsed - b.lastUsed);
     for (const entry of candidates) {
       if (this.totalBytes <= target) break;
@@ -404,7 +429,7 @@ export class ResourceCache {
 
   flushUnreferenced(): void {
     for (const entry of [...this.entries.values()]) {
-      if (entry.refCount === 0) {
+      if (this.isUnreferenced(entry)) {
         this.evictEntry(entry.assetGuid, "flush");
       }
     }

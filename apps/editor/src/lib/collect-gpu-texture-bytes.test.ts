@@ -83,4 +83,33 @@ describe("collectGpuTextureBytes", () => {
     expect(bytes.get("tex-1")).toEqual(png);
     expect(downsampleSource).not.toHaveBeenCalled();
   });
+
+  it("uses the stricter of engine LOD and per-texture downsample", async () => {
+    const png = new Uint8Array([1, 2, 3]);
+    const downsampleSource = vi.fn(async () => new Uint8Array([8, 8]));
+    await collectGpuTextureBytes({
+      assets: [
+        {
+          path: "assets/Hero.texture.babasset",
+          header: textureHeader(
+            [
+              {
+                id: "pixels",
+                kind: "pixels",
+                mime: "image/png",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 3 } },
+              },
+            ],
+            { usage: "albedo", downsample: 4, width: 4096, height: 4096 },
+          ),
+        },
+      ],
+      guids: ["tex-1"],
+      readChunk: async () => png,
+      editorLod: { enabled: true, quality: 0.5 },
+      downsampleSource,
+    });
+    expect(downsampleSource).toHaveBeenCalledWith(png, 1024);
+  });
 });

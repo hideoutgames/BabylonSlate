@@ -586,6 +586,10 @@ export function createEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  resourceCache.setClientTextures(
+    scene.uid,
+    options.textureBytes?.keys() ?? [],
+  );
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.uiDocuments = options.uiDocuments;
   binding.modelBytes = options.modelBytes;
@@ -1153,6 +1157,7 @@ export function createEngine(
       attachedStack?.dispose();
       attachedStack = null;
       materialLibrary.dispose();
+      resourceCache.clearClientTextures(scene.uid);
       audioService?.dispose();
       particleService?.dispose();
       widgetGuiService?.dispose();
@@ -1333,6 +1338,10 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      resourceCache.setClientTextures(
+        scene.uid,
+        assets.textureBytes?.keys() ?? [],
+      );
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.uiDocuments = assets.uiDocuments;
       if (assets.uiDocuments) {
