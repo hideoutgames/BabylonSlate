@@ -25,6 +25,10 @@ function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function overrideSet(keys: readonly string[] | undefined): Set<string> {
+  return new Set(keys ?? []);
+}
+
 function withoutOverrideKeys(
   component: SerializedComponent,
 ): SerializedComponent {
