@@ -10,7 +10,6 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { PickerIdentity } from "./picker-identity";
 import { pickerListHeightPx } from "./windowed-list";
 
@@ -90,9 +89,13 @@ export function AddFunctionDialog({
         >
           {emptyLabel}
         </Button>
-        <ScrollArea
-          className="min-h-0 overflow-hidden"
-          style={{ height: pickerListHeightPx(items.length) }}
+        <div
+          className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+          style={{
+            height: pickerListHeightPx(items.length),
+            overflowY: "auto",
+          }}
+          data-testid={`${prefix}-body`}
         >
           <div className="flex flex-col gap-1" data-testid={`${prefix}-list`}>
             {items.map((item) => (
@@ -124,7 +127,7 @@ export function AddFunctionDialog({
               </Button>
             ))}
           </div>
-        </ScrollArea>
+        </div>
         {mode === "empty" ? (
           <Field>
             <FieldLabel htmlFor={`${prefix}-name`}>{nameLabel}</FieldLabel>

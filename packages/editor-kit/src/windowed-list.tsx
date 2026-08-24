@@ -12,7 +12,7 @@ export const WINDOWED_LIST_TOUCH_ROW_HEIGHT = 44;
 /** 16rem — Tailwind `h-64`. Content-sized dialogs cannot grow `h-0 flex-1`. */
 export const PICKER_LIST_MAX_HEIGHT_PX = 256;
 
-/** Definite ScrollArea height for SearchDialog / AddFunctionDialog lists. */
+/** Definite list height for SearchDialog / AddFunctionDialog pickers. */
 export function pickerListHeightPx(itemCount: number): number {
   if (itemCount <= 0) return WINDOWED_LIST_TOUCH_ROW_HEIGHT;
   return Math.min(
@@ -22,6 +22,28 @@ export function pickerListHeightPx(itemCount: number): number {
 }
 
 const VIEWPORT_SLOT = '[data-slot="scroll-area-viewport"]';
+
+function isOverflowScroll(el: Element): boolean {
+  const overflowY = getComputedStyle(el).overflowY;
+  return overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+}
+
+/** ScrollArea viewport if present; otherwise nearest overflow-y auto/scroll ancestor. */
+export function findWindowedListScrollParent(
+  el: Element | null,
+): HTMLElement | null {
+  if (!el) return null;
+  const viewport = el.closest(VIEWPORT_SLOT);
+  if (viewport instanceof HTMLElement) return viewport;
+  let current: Element | null = el.parentElement;
+  while (current) {
+    if (isOverflowScroll(current) && current instanceof HTMLElement) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+}
 
 export type WindowedListProps = {
   itemCount: number;
@@ -39,7 +61,7 @@ export function WindowedList({
   const [scrollTop, setScrollTop] = useState(0);
 
   useLayoutEffect(() => {
-    const viewport = listRef.current?.closest(VIEWPORT_SLOT);
+    const viewport = findWindowedListScrollParent(listRef.current);
     if (!(viewport instanceof HTMLElement)) return;
     const read = () => {
       setViewportHeight(viewport.clientHeight);

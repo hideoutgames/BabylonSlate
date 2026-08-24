@@ -7,7 +7,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
-import { ScrollArea } from "@babylonslate/ui/components/scroll-area";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";
 import {
@@ -112,9 +111,13 @@ export function SearchDialog({
             onChange={setQuery}
             data-testid={testId ? `${testId}-query` : undefined}
           />
-          <ScrollArea
-            className="min-h-0 overflow-hidden"
-            style={{ height: pickerListHeightPx(filtered.length) }}
+          <div
+            className="min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y"
+            style={{
+              height: pickerListHeightPx(filtered.length),
+              overflowY: "auto",
+            }}
+            data-testid={testId ? `${testId}-body` : undefined}
           >
             {filtered.length === 0 ? (
               <p className="p-3 text-sm text-muted-foreground">{emptyLabel}</p>
@@ -149,7 +152,7 @@ export function SearchDialog({
                 }}
               </WindowedList>
             )}
-          </ScrollArea>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
