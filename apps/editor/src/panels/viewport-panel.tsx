@@ -1,3 +1,4 @@
+import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -99,7 +100,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   const { flySpeed } = useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
-  const { registerSharedEngine, registerScheduler, playing } = usePlay();
+  const {
+    registerSharedEngine,
+    registerScheduler,
+    playing,
+    ensureSharedEngine,
+    sharedEngineGeneration,
+  } = usePlay();
+  const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const navBake = useOptionalNavBake();
   const [navOverlayGeneration, setNavOverlayGeneration] = useState(0);
   const selectActorRef = useRef(selectActor);
@@ -237,13 +245,18 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   commitGizmoTransformRef.current = commitGizmoTransform;
 
   useEffect(() => {
+    setSharedEngine(ensureSharedEngine());
+  }, [ensureSharedEngine, sharedEngineGeneration]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !sharedEngine) return;
     engineGenerationRef.current += 1;
     setSceneReady(false);
 
     const handle = createEngine(canvas, {
       editor: true,
+      sharedEngine,
       viewportMode,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
@@ -332,10 +345,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       handle.dispose();
       engineRef.current = null;
     };
-    // The engine is created once per panel; mode, selection and tool changes
-    // are pushed to it by the effects below rather than recreating it.
+    // Mode, selection and tool changes are pushed by effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerSharedEngine, registerScheduler]);
+  }, [registerSharedEngine, registerScheduler, sharedEngine]);
 
   useEffect(() => {
     setFrameActorHandler((actorId) => {

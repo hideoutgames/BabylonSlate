@@ -177,13 +177,13 @@ test.describe("P18 iPad editor optimisation", () => {
       await expect(visibleGraphWorkspace(page)).toBeVisible();
     }
 
-    await expect(page.getByTestId("document-workspace-graph")).toHaveCount(3);
-    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(0);
+    await expect(page.getByTestId("document-workspace-graph")).toHaveCount(2);
+    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(1);
 
     await openContentBrowser(page);
     await advanceIdleClock(page, DOCUMENT_IDLE_UNMOUNT_MS);
     await expect(page.getByTestId("document-workspace-graph")).toHaveCount(0);
-    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(0);
+    await expect(page.getByTestId("document-workspace-scene")).toHaveCount(1);
 
     await clickPlayAndWaitForOverlay(page);
     await expect(page.getByTestId("play-canvas")).toBeVisible();

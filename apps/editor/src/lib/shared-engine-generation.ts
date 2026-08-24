@@ -23,9 +23,10 @@ export function nextRegisteredSharedEngine<T extends { isDisposed?: boolean }>(o
   owned: T | null;
   overlayPlaying: boolean;
 }): T | null {
+  if (isUsableEngine(options.owned)) return options.owned;
   if (isUsableEngine(options.incoming)) return options.incoming;
   if (options.overlayPlaying && isUsableEngine(options.previous)) {
     return options.previous;
   }
-  return isUsableEngine(options.owned) ? options.owned : null;
+  return isUsableEngine(options.previous) ? options.previous : null;
 }

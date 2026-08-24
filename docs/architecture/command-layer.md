@@ -97,7 +97,7 @@ Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan 
 - Named constants (not Engine Settings): `DOCUMENT_IDLE_UNMOUNT_MS` = 120_000, `MAX_WARM_DOCUMENT_WORKSPACES` = 3.
 - Pause the idle clock while the app is backgrounded.
 - Designer|Logic and State Machine|Animation Object unmount the **inactive mode** DockView immediately (no grace).
-- Overlay Play **pins open Scene workspaces** for the session (`overlayPlayScenePinIds`). The Scene canvas owns the Engine; idle-unmount would dispose it and remount `PlayOverlay` at Tick 0. After Stop, Scene can idle-unmount as usual. **Starting** overlay Play after the viewport is already unmounted still uses `ensureEngine` (hidden canvas). Preview Build is an iframe and does not pin.
+- Overlay Play **does not pin** Scene tabs. Open Scene documents stay mounted while the tab is open (they count toward the warm cap). The project owns the Engine on a hidden canvas; the Scene viewport is a `registerView` client. Closing the Scene tab (or exclusive one-Scene-tab replace) unmounts that Scene immediately and releases handle retains; it does not dispose the project Engine. Overlay Play / Prefab / Material reuse `ensureSharedEngine`. Preview Build is an iframe and does not use that Engine.
 - Closing a tab still tears down immediately (Save / Discard / Cancel unchanged).
 
 ## Scene apply path
@@ -110,4 +110,4 @@ See [scene-editing.md](scene-editing.md) for viewport/outliner wiring.
 
 ## Tests
 
-Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas; `e2e/p18-editor-opt.spec.ts` covers idle-unmount (2-minute grace, cap 3, Play **after** an unmounted scene viewport, overlay Play **through** idle grace without resetting Tick) plus Prefab/Play sharing the app-lifetime Engine.
+Every command type gets an apply-then-invert property test asserting structural equality of the document model. Stack tests cover merge keys, dual budgets, and active-document scoping. Playwright `e2e/p2-accept.spec.ts` covers killed-tab journal recovery; `e2e/p6-scene-editing.spec.ts` covers scene undo through the command layer; `e2e/p5-scripting.spec.ts` covers Class graph undo/redo on the canvas; `e2e/p18-editor-opt.spec.ts` covers idle-unmount (2-minute grace, cap 3 including the open Scene, overlay Play **through** idle grace without resetting Tick) plus Prefab/Play sharing the project-lifetime Engine.
