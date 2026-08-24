@@ -62,6 +62,7 @@ import {
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import {
+  bindResourceCacheToHandle,
   getMaterialTexture,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
@@ -458,10 +459,10 @@ function createPlayAudioBackend(
 }
 
 /**
- * Creates an editor or Play view. Prefer one Engine for the app lifetime and
- * pass it via `sharedEngine` + registerView for Play overlays. ResourceCache
- * is keyed on that Engine (`resourceCacheForEngine`); shared handles must not
- * dispose it.
+ * Creates an editor or Play view. Prefer one Engine for the open project and
+ * pass it via `sharedEngine` + registerView for Scene / Play canvases.
+ * ResourceCache is keyed on that Engine (`resourceCacheForEngine`); shared
+ * handles release their retains on dispose and must not dispose the cache.
  */
 export function createEngine(
   canvas: HTMLCanvasElement,
@@ -537,7 +538,9 @@ export function createEngine(
   const releasePlayLoop = options.playMode
     ? scheduler.acquireContinuous("play")
     : null;
-  const resourceCache = resourceCacheForEngine(engine);
+  const sharedCache = resourceCacheForEngine(engine);
+  const cacheBinding = bindResourceCacheToHandle(sharedCache);
+  const resourceCache = cacheBinding.cache;
   const audioService = options.playMode
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
@@ -995,14 +998,14 @@ export function createEngine(
     loadScene(createDefaultScene());
   }
 
-  const presentSharedPlayView = Boolean(
-    options.sharedEngine && !presentRtt && options.playMode,
+  const presentSharedView = Boolean(
+    options.sharedEngine && !presentRtt,
   );
 
   const resize = () => {
     if (presentRtt) {
       rttPresent?.clear();
-    } else if (presentSharedPlayView) {
+    } else if (presentSharedView) {
       const size = snapCanvasDrawingBuffer(canvas);
       engine.setSize(size.width, size.height);
     } else {
@@ -1142,6 +1145,7 @@ export function createEngine(
       widgetGuiService?.dispose();
       scene.dispose();
       rttPresent?.dispose();
+      cacheBinding.releaseHandleRetains();
       if (options.sharedEngine && !presentRtt) {
         engine.unRegisterView(canvas);
       }
@@ -1154,7 +1158,7 @@ export function createEngine(
     setSize: (width: number, height: number) => {
       const nextWidth = Math.max(1, Math.floor(width));
       const nextHeight = Math.max(1, Math.floor(height));
-      if (presentSharedPlayView) {
+      if (presentSharedView) {
         canvas.width = nextWidth;
         canvas.height = nextHeight;
       }
@@ -1429,7 +1433,7 @@ export function syncEditorPlayState(
   }
 }
 
-/** Create the single app-lifetime Engine (no scene). */
+/** Create the project-lifetime Engine (no scene). */
 export function createAppEngine(canvas: HTMLCanvasElement): Engine {
   configureKtx2Transcoder(KhronosTextureContainer2);
   return new Engine(canvas, true, {

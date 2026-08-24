@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { NullEngine, Texture } from "@babylonjs/core";
 import {
+  bindResourceCacheToHandle,
   getMaterialTexture,
   ResourceCache,
   resourceCacheForEngine,
   releaseResourceCacheForEngine,
 } from "./resource-cache";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { accountedTextureBytes } from "./texture-bytes";
 import { pickAtCanvas } from "./picking";
 import { Scene } from "@babylonjs/core/scene";
@@ -264,5 +266,35 @@ describe("encode queue pause reasons (editor helper contract)", () => {
     reasons.delete("visibility");
     expect(paused()).toBe(false);
     vi.clearAllMocks();
+  });
+});
+
+describe("bindResourceCacheToHandle", () => {
+  it("releases this handle's retains then flushes unreferenced GPU wrappers", () => {
+    const engine = new NullEngine();
+    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bound = bindResourceCacheToHandle(inner);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const texture = bound.cache.getTexture("tex-scene", engine, bytes);
+    bound.releaseHandleRetains();
+    expect(isDisposedGpuTexture(texture)).toBe(true);
+    inner.dispose();
+    engine.dispose();
+  });
+
+  it("keeps textures still retained by another handle", () => {
+    const engine = new NullEngine();
+    const inner = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const editor = bindResourceCacheToHandle(inner);
+    const play = bindResourceCacheToHandle(inner);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const texture = editor.cache.getTexture("tex-shared", engine, bytes);
+    play.cache.getTexture("tex-shared", engine, bytes);
+    play.releaseHandleRetains();
+    expect(isDisposedGpuTexture(texture)).toBe(false);
+    editor.releaseHandleRetains();
+    expect(isDisposedGpuTexture(texture)).toBe(true);
+    inner.dispose();
+    engine.dispose();
   });
 });

@@ -350,6 +350,58 @@ export class ResourceCache {
   }
 }
 
+const HANDLE_RETAIN_METHODS = new Set([
+  "getTexture",
+  "getCubeTextureFromImages",
+  "blobUrlFor",
+  "retain",
+]);
+
+/**
+ * Per-handle view of an Engine-keyed {@link ResourceCache}. Retains from this
+ * handle are released on `releaseHandleRetains` so closing a Scene can drop
+ * GPU wrappers without disposing the project Engine.
+ */
+export function bindResourceCacheToHandle(inner: ResourceCache): {
+  cache: ResourceCache;
+  releaseHandleRetains: () => void;
+} {
+  const retains = new Map<string, number>();
+  const note = (assetGuid: string) => {
+    retains.set(assetGuid, (retains.get(assetGuid) ?? 0) + 1);
+  };
+  const cache = new Proxy(inner, {
+    get(target, prop, receiver) {
+      if (prop === "dispose") {
+        return () => undefined;
+      }
+      if (typeof prop === "string" && HANDLE_RETAIN_METHODS.has(prop)) {
+        return (assetGuid: string, ...rest: unknown[]) => {
+          note(assetGuid);
+          return (target[prop as keyof ResourceCache] as (...args: unknown[]) => unknown)(
+            assetGuid,
+            ...rest,
+          );
+        };
+      }
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      return typeof value === "function"
+        ? (value as (...args: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+  return {
+    cache,
+    releaseHandleRetains() {
+      for (const [assetGuid, count] of retains) {
+        for (let i = 0; i < count; i += 1) inner.release(assetGuid);
+      }
+      retains.clear();
+      inner.flushUnreferenced();
+    },
+  };
+}
+
 /** glTF / NodeMaterial albedo: do not invert Y (Babylon glTF loader convention). */
 export const MATERIAL_TEXTURE_SAMPLING: TextureSamplingOptions = {
   invertY: false,

@@ -14,7 +14,7 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { encodeTriangleGlb } from "./model-mesh";
-import { ResourceCache } from "./resource-cache";
+import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
 
 /**
@@ -986,8 +986,12 @@ describe("Play createEngine view", () => {
     expect(prefab.scene).not.toBe(editor.scene);
     expect(prefab.scene).not.toBe(play.scene);
     expect(editor.scene).not.toBe(play.scene);
-    expect(editor.resourceCache).toBe(prefab.resourceCache);
-    expect(play.resourceCache).toBe(editor.resourceCache);
+    expect(resourceCacheForEngine(engine)).toBe(
+      resourceCacheForEngine(editor.engine),
+    );
+    expect(resourceCacheForEngine(play.engine)).toBe(
+      resourceCacheForEngine(editor.engine),
+    );
   });
 
   it("Play overlay dispose leaves the shared ResourceCache live for the editor", () => {
@@ -1001,7 +1005,7 @@ describe("Play createEngine view", () => {
       new FakeCanvas() as unknown as HTMLCanvasElement,
       { sharedEngine: engine, playMode: true },
     );
-    expect(play.resourceCache).toBe(editor.resourceCache);
+    expect(play.resourceCache).not.toBeNull();
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const first = editor.resourceCache.getTexture("tex-shared", engine, bytes);
     const disposeCache = vi.spyOn(ResourceCache.prototype, "dispose");
@@ -1102,6 +1106,27 @@ describe("Play createEngine view", () => {
     expect(setSize).toHaveBeenCalledWith(800, 450);
     expect(canvas.width).toBe(800);
     expect(canvas.height).toBe(450);
+  });
+
+  it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, {
+      clientWidth: 640,
+      clientHeight: 360,
+      width: 100,
+      height: 50,
+    });
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    const resize = vi.spyOn(engine, "resize");
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(resize).not.toHaveBeenCalled();
+    expect(setSize).toHaveBeenCalledWith(640, 360);
   });
 
   it("matches the overlay drawing buffer to a locked Play setSize", () => {
