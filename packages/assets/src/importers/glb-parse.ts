@@ -306,6 +306,30 @@ export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
   return encodeGlbJsonBin(split.json, split.bin);
 }
 
+/**
+ * Replace embedded rasters with a 1×1 PNG so the glTF loader does not decode
+ * full images when every material slot is bound through ResourceCache.
+ */
+export function slimGlbEmbeddedImages(bytes: Uint8Array): Uint8Array {
+  const split = splitGlbJsonBin(bytes);
+  if (!split) return bytes;
+  const images = Array.isArray(split.json.images)
+    ? (split.json.images as Record<string, unknown>[])
+    : [];
+  if (images.length === 0) return bytes;
+  const png = ONE_BY_ONE_PNG;
+  split.json.buffers = [{ byteLength: png.byteLength }];
+  split.json.bufferViews = [
+    { buffer: 0, byteOffset: 0, byteLength: png.byteLength },
+  ];
+  split.json.images = images.map((image) => {
+    const next = { ...image };
+    delete next.uri;
+    return { ...next, mimeType: "image/png", bufferView: 0 };
+  });
+  return encodeGlbJsonBin(split.json, png);
+}
+
 function gltfJsonToGlb(
   jsonText: string,
   sidecars: ReadonlyMap<string, Uint8Array>,

@@ -118,3 +118,14 @@ export function modelAssetGuids(payload: unknown): string[] {
   if (model.skeletonGuid) guids.add(model.skeletonGuid);
   return [...guids].sort();
 }
+
+export function shouldSlimModelEmbeddedTextures(payload: unknown): boolean {
+  const slots = normalizeModelPayload(payload).materialSlots;
+  return (
+    slots.length > 0 &&
+    slots.every(
+      (slot) =>
+        typeof slot.materialGuid === "string" && slot.materialGuid.length > 0,
+    )
+  );
+}

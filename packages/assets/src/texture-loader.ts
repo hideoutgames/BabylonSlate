@@ -11,6 +11,8 @@ export interface SelectTextureChunkOptions {
   transcoderAvailable?: boolean;
   /** Device reports no compressed GPU formats. */
   supportedFormatsEmpty?: boolean;
+  /** Prefer this `ktx2:<hash>` chunk (authored encode settings). */
+  preferredChunkId?: string;
 }
 
 /**
@@ -24,9 +26,18 @@ export function selectTextureChunk(
   const source = header.chunks.find(
     (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
   );
-  const ktx2 = header.chunks.find(
+  const preferredId =
+    options.preferredChunkId ??
+    (typeof header.payload.ktx2ChunkId === "string"
+      ? header.payload.ktx2ChunkId
+      : undefined);
+  const ktx2Chunks = header.chunks.filter(
     (chunk) => chunk.id.startsWith("ktx2:") || chunk.kind === "ktx2",
   );
+  const ktx2 =
+    (preferredId
+      ? ktx2Chunks.find((chunk) => chunk.id === preferredId)
+      : undefined) ?? ktx2Chunks[0];
 
   if (!source && !ktx2) {
     throw new Error(`Texture ${header.guid} has neither source nor KTX2 chunks`);

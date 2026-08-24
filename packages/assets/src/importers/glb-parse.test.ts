@@ -5,6 +5,7 @@ import {
   encodeGlbJsonBin,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
+  slimGlbEmbeddedImages,
   splitGlbJsonBin,
   stripUnmatchedGltfImageUris,
 } from "./glb-parse";
@@ -593,5 +594,17 @@ describe("importModel sidecar GLB", () => {
         expect(texture.payload.compressionState).not.toBe("pending");
       }
     }
+  });
+});
+
+describe("slimGlbEmbeddedImages", () => {
+  it("replaces embedded rasters with a tiny PNG", () => {
+    const glb = buildMinimalGlbFixture({
+      imageRgba: new Uint8Array(2048),
+    });
+    const slim = slimGlbEmbeddedImages(glb);
+    expect(slim.byteLength).toBeLessThan(glb.byteLength);
+    const parsed = parseGlbForBrowse(slim);
+    expect(parsed?.images[0]?.bytes.byteLength).toBeGreaterThan(0);
   });
 });

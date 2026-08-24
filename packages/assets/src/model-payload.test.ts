@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModelPayload, remapModelPayloadGuids } from "./model-payload";
+import { normalizeModelPayload, remapModelPayloadGuids, shouldSlimModelEmbeddedTextures } from "./model-payload";
 
 describe("normalizeModelPayload", () => {
   it("drops importer count fields and keeps named filled slots", () => {
@@ -95,5 +95,27 @@ describe("normalizeModelPayload", () => {
     expect(normalizeModelPayload({ importScale: Number.NaN }).importScale).toBe(
       1,
     );
+  });
+});
+
+describe("shouldSlimModelEmbeddedTextures", () => {
+  it("is true only when every material slot has a guid", () => {
+    expect(
+      shouldSlimModelEmbeddedTextures({
+        materialSlots: [
+          { index: 0, name: "A", materialGuid: "mat-1" },
+          { index: 1, name: "B", materialGuid: "mat-2" },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      shouldSlimModelEmbeddedTextures({
+        materialSlots: [
+          { index: 0, name: "A", materialGuid: "mat-1" },
+          { index: 1, name: "B", materialGuid: null },
+        ],
+      }),
+    ).toBe(false);
+    expect(shouldSlimModelEmbeddedTextures({ materialSlots: [] })).toBe(false);
   });
 });
