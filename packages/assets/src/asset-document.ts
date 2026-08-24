@@ -125,6 +125,29 @@ export async function decodeAssetDocument(
   };
 }
 
+/** Rewrite payload `name` in the document JSON chunk (Scene rename/duplicate). */
+export function stampDocumentChunkName(
+  chunks: Map<string, ChunkInput>,
+  name: string,
+): void {
+  const chunk = chunks.get(DOCUMENT_CHUNK_ID);
+  if (!chunk) return;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(chunk.data));
+  } catch {
+    return;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return;
+  }
+  (payload as Record<string, unknown>).name = name;
+  chunks.set(DOCUMENT_CHUNK_ID, {
+    ...chunk,
+    data: new TextEncoder().encode(JSON.stringify(payload)),
+  });
+}
+
 /** Header-only read for registry indexing: never touches chunk payloads. */
 export function readAssetDocumentHeader(bytes: Uint8Array) {
   return readBabassetHeader(bytes);

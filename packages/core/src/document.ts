@@ -388,9 +388,14 @@ export function createDocumentRef(
     content && typeof content === "object" && "name" in content
       ? content.name
       : undefined;
+  const fromPath = labelFromPath(path);
+  const namedLabel =
+    typeof named === "string" && named.trim() !== "" ? named.trim() : "";
   const baseLabel =
-    typeof named === "string" && named.trim() !== ""
-      ? named
-      : labelFromPath(path);
+    kind === "scene"
+      ? fromPath.trim() !== ""
+        ? fromPath
+        : namedLabel || fromPath
+      : namedLabel || fromPath;
   return { kind, path, label: `${baseLabel} ${documentKindLabel(kind)}` };
 }

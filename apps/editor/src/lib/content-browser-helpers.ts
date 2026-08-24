@@ -1425,6 +1425,7 @@ export function buildNewAssetResult(options: {
 
   if (type === "Scene") {
     const payload = createDefaultScene() as unknown as Record<string, unknown>;
+    payload.name = name;
     return {
       type: "Scene",
       name,
