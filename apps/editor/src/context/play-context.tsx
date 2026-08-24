@@ -80,6 +80,8 @@ import {
   playSceneFromOpenDocuments,
   playIsEnabled,
   resolvePlayScene,
+  resolvePreviewStartupGuid,
+  type PlaySceneLoad,
 } from "../services/play-physics";
 import { documentIdToRevealForDiagnostic, sessionReportNavigation } from "../services/diagnostic-navigation";
 import type {
@@ -163,6 +165,8 @@ interface PlayContextValue {
   canPlay: boolean;
   previewBuild: boolean;
   setPreviewBuild: (value: boolean) => void;
+  playFromScene: boolean;
+  setPlayFromScene: (value: boolean) => void;
   overlayStats: boolean;
   overlayConsole: boolean;
   overlayInspector: boolean;
@@ -223,6 +227,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   >(null);
   const [scripts, setScripts] = useState<ScriptBundleEntry[]>([]);
   const [previewBuild, setPreviewBuildState] = useState(false);
+  const [playFromScene, setPlayFromSceneState] = useState(true);
+  const [sessionPlayScene, setSessionPlayScene] = useState<PlaySceneLoad | null>(
+    null,
+  );
   const [overlayStats, setOverlayStatsState] = useState(
     DEFAULT_PLAY_DEBUGGER_OVERLAY.overlayStats,
   );
@@ -356,20 +364,36 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     onSessionDiagnostic,
   } = useDocuments();
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
-  const playScene = resolvePlayScene({
-    documents: openDocuments,
+  const guidForPath = (path: string) =>
+    assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
+    null;
+  const openPlayScene = playSceneFromOpenDocuments(
+    openDocuments,
     activeDocumentId,
-  });
+  );
+  const openPlaySceneGuid = openPlayScene
+    ? canonicalPlaySceneGuid(openPlayScene, guidForPath)
+    : null;
+  const projectStartupGuid =
+    projectDocument?.settings.startupSceneGuid?.trim() ?? "";
+  const startupAsset = projectStartupGuid
+    ? assetRegistry?.getByGuid(projectStartupGuid)
+    : undefined;
+  const hasStartupScene = startupAsset?.header.type === "Scene";
+  const playScene =
+    sessionPlayScene ??
+    resolvePlayScene({
+      documents: openDocuments,
+      activeDocumentId,
+      playFromScene,
+    });
   const playSceneGuid = playScene
-    ? canonicalPlaySceneGuid(
-        playScene,
-        (path) =>
-          assetRegistry?.list().find((asset) => asset.path === path)?.header
-            .guid ?? null,
-      )
+    ? canonicalPlaySceneGuid(playScene, guidForPath)
     : undefined;
   const canPlay = playIsEnabled(openDocuments, activeDocumentId, {
     previewBuild,
+    playFromScene,
+    hasStartupScene,
   });
   const playPhysics = playScene
     ? playPhysicsFromSceneSettings(playScene.scene.settings)
@@ -388,10 +412,14 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       hardwareScalingLevel?: number;
       debuggerDefaults?: {
         previewBuild?: boolean;
+        playFromScene?: boolean;
       } & Partial<PlayDebuggerOverlaySettings>;
     }) => {
       if (typeof settings.debuggerDefaults?.previewBuild === "boolean") {
         setPreviewBuildState(settings.debuggerDefaults.previewBuild);
+      }
+      if (typeof settings.debuggerDefaults?.playFromScene === "boolean") {
+        setPlayFromSceneState(settings.debuggerDefaults.playFromScene);
       }
       if (settings.debuggerDefaults) {
         applyOverlay(settings.debuggerDefaults);
@@ -407,6 +435,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       .load()
       .then((settings) => {
         setPreviewBuildState(settings.debuggerDefaults.previewBuild === true);
+        setPlayFromSceneState(settings.debuggerDefaults.playFromScene !== false);
         applyOverlay(settings.debuggerDefaults);
         apply(settings);
       });
@@ -421,7 +450,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const persistDebuggerDefaults = useCallback(
-    async (patch: Partial<PlayDebuggerOverlaySettings> & { previewBuild?: boolean }) => {
+    async (patch: Partial<PlayDebuggerOverlaySettings> & {
+      previewBuild?: boolean;
+      playFromScene?: boolean;
+    }) => {
       const store = createAppSettingsStore();
       const settings = await store.load();
       await store.save({
@@ -438,6 +470,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const setPreviewBuild = useCallback((value: boolean) => {
     setPreviewBuildState(value);
     void persistDebuggerDefaults({ previewBuild: value });
+  }, [persistDebuggerDefaults]);
+
+  const setPlayFromScene = useCallback((value: boolean) => {
+    setPlayFromSceneState(value);
+    void persistDebuggerDefaults({ playFromScene: value });
   }, [persistDebuggerDefaults]);
 
   const setOverlayStats = useCallback((value: boolean) => {
@@ -498,6 +535,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     if (projectDocument) return;
     setScripts([]);
     setPlaying(false);
+    setSessionPlayScene(null);
     setPrepareState(null);
     setPlayBlockedOpen(false);
     setBlockedDiagnostics([]);
@@ -556,6 +594,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     setPreviewError(null);
     setPreviewCanCancel(true);
     setPlaying(false);
+    setSessionPlayScene(null);
     setEncodeQueuePauseReason("play", false);
     window.setTimeout(() => {
       previewClosingRef.current = false;
@@ -615,9 +654,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
 
   const requestPreviewBuild = useCallback(async () => {
     if (playing || preparingRef.current) return;
-    const startup = projectDocument?.settings.startupSceneGuid?.trim() ?? "";
-    const asset = startup ? assetRegistry?.getByGuid(startup) : undefined;
-    if (!startup || asset?.header.type !== "Scene") {
+    const effectiveStartup = resolvePreviewStartupGuid({
+      playFromScene,
+      openSceneGuid: openPlaySceneGuid,
+      startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+    });
+    const asset = effectiveStartup
+      ? assetRegistry?.getByGuid(effectiveStartup)
+      : undefined;
+    if (!effectiveStartup || asset?.header.type !== "Scene") {
       setStartupAlertOpen(true);
       return;
     }
@@ -639,6 +684,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       const packed = await exportGameArtifact({
         previewBuild: true,
         playerFiles,
+        startupSceneGuid: effectiveStartup,
         onPhase: (phase) => {
           if (!previewCancelledRef.current) setPreviewPhase(phase);
         },
@@ -678,6 +724,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     assetRegistry,
     dirtyDocuments.length,
     exportGameArtifact,
+    openPlaySceneGuid,
+    playFromScene,
     playing,
     projectDocument,
     saveAll,
@@ -690,7 +738,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (playing || preparingRef.current) return;
-      if (!playIsEnabled(openDocuments, activeDocumentId)) return;
+      if (
+        !playIsEnabled(openDocuments, activeDocumentId, {
+          playFromScene,
+          hasStartupScene,
+        })
+      ) {
+        if (!hasStartupScene) setStartupAlertOpen(true);
+        return;
+      }
       pendingPlayOptionsRef.current = options;
       const inject = Boolean(options?.injectFixtureThrow);
       const plan = planPlayPreviewPrepare({
@@ -739,10 +795,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setScripts(nextScripts);
           setDiagnostics(nextDiagnostics);
         }
-        const resolvedScene = playSceneFromOpenDocuments(
-          openDocuments,
-          activeDocumentId,
-        );
         let playLibrary: Array<{
           guid: string;
           scene: import("@babylonslate/core").SerializedScene;
@@ -755,6 +807,31 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             `Scene library failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlaySceneLibrary([]);
+        }
+        const effectiveGuid = resolvePreviewStartupGuid({
+          playFromScene,
+          openSceneGuid: openPlaySceneGuid,
+          startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+        });
+        const fromLibrary = effectiveGuid
+          ? playLibrary.find((entry) => entry.guid === effectiveGuid)
+          : undefined;
+        const resolvedScene = resolvePlayScene({
+          documents: openDocuments,
+          activeDocumentId,
+          playFromScene,
+          fallback: fromLibrary
+            ? {
+                sceneAssetGuid: fromLibrary.guid,
+                scene: fromLibrary.scene,
+                path: assetRegistry?.getByGuid(fromLibrary.guid)?.path,
+              }
+            : null,
+        });
+        setSessionPlayScene(resolvedScene);
+        if (!resolvedScene) {
+          setStartupAlertOpen(true);
+          return;
         }
         let uiLibrary: Record<string, UserInterfaceDocument> = {};
         try {
@@ -1037,6 +1114,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       launchPlay,
       migrationPending.length,
       playing,
+      playFromScene,
+      hasStartupScene,
+      openPlaySceneGuid,
       playScene,
       previewBuild,
       requestPreviewBuild,
@@ -1048,6 +1128,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       scripts,
       scriptsStale,
       setDiagnostics,
+      projectDocument,
     ],
   );
 
@@ -1064,6 +1145,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const handleClose = useCallback(
     (result: PlaySessionResult) => {
       setPlaying(false);
+      setSessionPlayScene(null);
       revokeUiImageUrls(playImageUrlsRef.current);
       playImageUrlsRef.current = new Map();
       setPlayImageUrls(new Map());
@@ -1100,6 +1182,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       canPlay,
       previewBuild,
       setPreviewBuild,
+      playFromScene,
+      setPlayFromScene,
       overlayStats,
       overlayConsole,
       overlayInspector,
@@ -1117,6 +1201,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           return;
         }
         setPlaying(false);
+        setSessionPlayScene(null);
       },
       registerSharedEngine,
       ensureSharedEngine: ensureEngine,
@@ -1137,6 +1222,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       canPlay,
       previewBuild,
       setPreviewBuild,
+      playFromScene,
+      setPlayFromScene,
       overlayStats,
       overlayConsole,
       overlayInspector,

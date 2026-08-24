@@ -130,7 +130,7 @@ type Diagnostic = {
 | --- | --- |
 | Edit (≈300ms debounce) | Open graph |
 | Save | Document + dependents with reference diagnostics |
-| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents, UserInterface `payload.logic`, and AnimationGraph Animation Object / transition-rule scripts; Play loads the **open scene tab** and the project `gameInstanceClass` (`resolveGameInstanceClass`, scene field is fallback). No scene tab → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
+| Pre-Preview | Project graphs compiled for Play (`collectPlayPreviewScripts`), including Class/Graph documents, UserInterface `payload.logic`, and AnimationGraph Animation Object / transition-rule scripts; Play loads the seed from **Play from Scene** (open tab or `startupSceneGuid`). No seed → Play disabled. Enabled plugin Class graphs participate via `registry.list()`; plugin EUOs stay on the editor ScriptHost ([plugins.md](plugins.md)) |
 | Export | Hard gate + export-only rules (debug-tier commands); Development Only nodes stripped by codegen |
 | CI | Golden fixture projects |
 

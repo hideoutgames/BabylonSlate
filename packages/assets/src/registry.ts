@@ -23,7 +23,7 @@ import {
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
-import { DOCUMENT_CHUNK_ID, stampDocumentChunkName } from "./asset-document";
+import { stampDocumentChunkName } from "./asset-document";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   effectiveTextureMaxDimension,

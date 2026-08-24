@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openMainScene, openTestProject } from "./open-test-project";
+import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, PLAY_OVERLAY_TIMEOUT_MS, waitForPlayOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import {
@@ -222,11 +222,11 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Play is disabled until a scene tab is open; creating a scene opens it exclusively", async ({
+  test("Play is enabled from startup without a scene tab; creating a scene opens it exclusively", async ({
     page,
   }) => {
     await openTestProject(page);
-    await expect(page.getByTestId("play-preview")).toBeDisabled();
+    await expect(page.getByTestId("play-preview")).toBeEnabled();
     await expect(
       page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
     ).toHaveCount(0);
@@ -242,6 +242,9 @@ test.describe("P4 Play overlay and session report", () => {
     await expect(
       page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
     ).toHaveCount(1);
+    await expect(
+      page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
+    ).toContainText("LevelTwo Scene");
 
     await page
       .locator('[data-testid="document-tab"][data-document-kind="content-browser"]')
@@ -254,6 +257,49 @@ test.describe("P4 Play overlay and session report", () => {
       page.locator('[data-testid="document-tab"][data-document-kind="scene"]'),
     ).toHaveCount(1);
     await expect(page.getByTestId("play-preview")).toBeEnabled();
+  });
+
+  test("Play from Scene boots the open tab; off uses project startup", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await createContentBrowserAsset(page, "Scene", "LevelTwo");
+    const guids = await page.evaluate(() => {
+      const host = globalThis as unknown as {
+        __babylonslateTest?: {
+          guidForPath: (path: string) => string | null;
+          projectStartupSceneGuid: () => string;
+        };
+      };
+      return {
+        open:
+          host.__babylonslateTest?.guidForPath(
+            "assets/LevelTwo.scene.babasset",
+          ) ?? "",
+        startup: host.__babylonslateTest?.projectStartupSceneGuid() ?? "",
+      };
+    });
+    expect(guids.open.length).toBeGreaterThan(0);
+    expect(guids.startup.length).toBeGreaterThan(0);
+    expect(guids.open).not.toBe(guids.startup);
+
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-overlay")).toHaveAttribute(
+      "data-scene-guid",
+      guids.open,
+    );
+    await page.getByTestId("play-overlay-close").click();
+    await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("play-from-scene-toggle").click();
+    await page.keyboard.press("Escape");
+    await clickPlayAndWaitForOverlay(page);
+    await expect(page.getByTestId("play-overlay")).toHaveAttribute(
+      "data-scene-guid",
+      guids.startup,
+    );
+    await page.getByTestId("play-overlay-close").click();
   });
 
   test("infinite ExecuteJavaScript closes Play and opens the session report", async ({

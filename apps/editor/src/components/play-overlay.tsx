@@ -639,6 +639,7 @@ export function PlayOverlay({
           : "items-center justify-center bg-black",
       )}
       data-testid="play-overlay"
+      data-scene-guid={sceneAssetGuid ?? ""}
       data-post-process-passes={String(postProcessPasses)}
       data-assigned-materials={assignedMaterials}
     >
