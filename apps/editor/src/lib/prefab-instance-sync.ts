@@ -25,8 +25,12 @@ function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function overrideSet(keys: readonly string[] | undefined): Set<string> {
-  return new Set(keys ?? []);
+function withoutOverrideKeys(
+  component: SerializedComponent,
+): SerializedComponent {
+  const next = { ...component };
+  delete next.overrideKeys;
+  return next;
 }
 
 function withOverrideKeys(
@@ -309,7 +313,7 @@ function pruneMatchingPrefabOverrides(
       keys.delete(key);
     }
   }
-  const { overrideKeys: _dropped, ...rest } = component;
+  const rest = withoutOverrideKeys(component);
   return {
     ...rest,
     sourceId: component.sourceId,
@@ -392,7 +396,7 @@ export function copyInstanceLinkage(
         components: actor.components.map((component) => {
           const linked = fromComponents.get(component.id);
           if (!linked) return component;
-          const { overrideKeys: _dropped, ...rest } = component;
+          const rest = withoutOverrideKeys(component);
           return {
             ...rest,
             ...(linked.sourceId ? { sourceId: linked.sourceId } : {}),
