@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
-    "@babylonjs/gui": "^9.20.0",
     "@babylonjs/ktx2decoder": "9.20.0",
     "@babylonjs/loaders": "9.20.0",
     "@babylonjs/serializers": "9.20.0",
@@ -22,7 +21,6 @@
     "@babylonslate/navigation": "workspace:*",
     "@babylonslate/physics": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
-    "@babylonslate/ui-runtime": "workspace:*",
     "earcut": "^3.2.3"
   },
   "devDependencies": {

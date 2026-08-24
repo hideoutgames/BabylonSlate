@@ -122,7 +122,6 @@ import type { AudioLibrary } from "./audio-service";
 import { AudioService } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import { ParticleService } from "./particle-service";
-import { WidgetGuiService, type WidgetGuiEvent } from "./widget-gui-service";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
@@ -199,7 +198,6 @@ export interface EngineHandle {
   resetAudioSession: () => void;
   /** Dispose live particle systems (scene change / Play stop). GPU stop still draws leftovers. */
   resetParticleSession: () => void;
-  resetWidgetSession: () => void;
   /** Debug free camera is the Play active camera. */
   isFreeCamEnabled: () => boolean;
   /** Fly the Play free camera; no-op while it is off. */
@@ -266,8 +264,6 @@ export interface CreateEngineOptions {
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
-  /** UserInterface documents for WidgetComponent world-space GUI. */
-  uiDocuments?: ReadonlyMap<string, import("@babylonslate/ui-runtime").UserInterfaceDocument>;
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
@@ -328,7 +324,6 @@ export interface CreateEngineOptions {
     message: string;
     assetGuid?: string;
   }) => void;
-  onWidgetEvent?: (event: WidgetGuiEvent) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
@@ -577,7 +572,6 @@ export function createEngine(
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
-  binding.uiDocuments = options.uiDocuments;
   binding.modelBytes = options.modelBytes;
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
@@ -653,16 +647,6 @@ export function createEngine(
     : null;
   if (particleService && options.particleLibrary) {
     particleService.setLibrary(options.particleLibrary);
-  }
-
-  const widgetGuiService = options.playMode
-    ? new WidgetGuiService({
-        scene,
-        onWidgetEvent: options.onWidgetEvent,
-      })
-    : null;
-  if (widgetGuiService && options.uiDocuments) {
-    widgetGuiService.setLibrary(options.uiDocuments);
   }
 
   let postProcessingEnabled = options.postProcessingEnabled !== false;
@@ -1139,7 +1123,6 @@ export function createEngine(
       materialLibrary.dispose();
       audioService?.dispose();
       particleService?.dispose();
-      widgetGuiService?.dispose();
       scene.dispose();
       rttPresent?.dispose();
       if (options.sharedEngine && !presentRtt) {
@@ -1184,16 +1167,11 @@ export function createEngine(
       }
       audioService?.handleCommand(command);
       particleService?.handleCommand(command);
-      widgetGuiService?.handleCommand(command);
       if (command.type === "assignMesh") {
         const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
-          command.slotId,
-          binding.meshes.get(command.slotId) ?? null,
-        );
-        widgetGuiService?.bindSlot(
           command.slotId,
           binding.meshes.get(command.slotId) ?? null,
         );
@@ -1318,10 +1296,6 @@ export function createEngine(
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
-      binding.uiDocuments = assets.uiDocuments;
-      if (assets.uiDocuments) {
-        widgetGuiService?.setLibrary(assets.uiDocuments);
-      }
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
@@ -1400,9 +1374,6 @@ export function createEngine(
     },
     resetParticleSession: () => {
       particleService?.resetSession();
-    },
-    resetWidgetSession: () => {
-      widgetGuiService?.resetSession();
     },
     isFreeCamEnabled: () => playFreeCam?.enabled() ?? false,
     steerPlayFreeCam: (forward, right) => {
