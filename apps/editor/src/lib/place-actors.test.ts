@@ -27,7 +27,6 @@ describe("ENGINE_PLACE_ACTORS", () => {
         "Audio",
         "Particles",
         "Physics",
-        "UI",
       ]),
     );
     expect(ENGINE_PLACE_ACTORS.some((entry) => entry.id === "navmesh-blocker")).toBe(

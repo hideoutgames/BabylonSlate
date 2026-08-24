@@ -21,17 +21,11 @@ describe("engine type registry", () => {
     expect(isEngineTypeGuid("asset-guid")).toBe(false);
   });
 
-  it("registers Input Mode, Collision Channel, and Hit Result", () => {
+  it("registers Collision Channel and Hit Result", () => {
     expect(ENGINE_ENUMS.map((entry) => entry.id)).toEqual([
-      "engine:InputMode",
       ENGINE_COLLISION_CHANNEL_ENUM_ID,
     ]);
     expect(ENGINE_ENUMS[0]?.members.map((member) => member.name)).toEqual([
-      "All",
-      "Interface",
-      "Game",
-    ]);
-    expect(ENGINE_ENUMS[1]?.members.map((member) => member.name)).toEqual([
       "All",
       "WorldStatic",
       "WorldDynamic",

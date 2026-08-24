@@ -2,7 +2,6 @@ import {
   err,
   isEditorOnlyAsset,
   ok,
-  userInterfaceAssetGuidFromClassId,
   type Result,
   type SerializedGraph,
   type SerializedScene,
@@ -69,12 +68,6 @@ function enqueueRefs(
         pending.push(entry.guid);
       }
     }
-    const uiGuid = userInterfaceAssetGuidFromClassId(ref);
-    if (!uiGuid) continue;
-    const uiAsset = byGuid.get(uiGuid);
-    if (!uiAsset || seen.has(uiAsset.guid)) continue;
-    seen.add(uiAsset.guid);
-    pending.push(uiAsset.guid);
   }
 }
 

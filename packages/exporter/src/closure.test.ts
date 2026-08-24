@@ -682,7 +682,7 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-mat");
   });
 
-  it("includes a UserInterface referenced by namespaced class id", () => {
+  it("does not treat UserInterface:guid strings as asset refs", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
@@ -718,8 +718,9 @@ describe("collectExportClosure", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toEqual(
-      expect.arrayContaining(["scene-1", "class-host", "hud-1"]),
+      expect.arrayContaining(["scene-1", "class-host"]),
     );
+    expect(result.value).not.toContain("hud-1");
     expect(result.value).not.toContain("unused-ui");
   });
 

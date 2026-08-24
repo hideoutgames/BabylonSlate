@@ -388,15 +388,6 @@ describe("collectGraphTypeAssets", () => {
     ]);
     expect(catalog.enums).toEqual([
       {
-        guid: "engine:InputMode",
-        name: "Input Mode",
-        members: [
-          { name: "All", value: 0 },
-          { name: "Interface", value: 1 },
-          { name: "Game", value: 2 },
-        ],
-      },
-      {
         guid: "engine:CollisionChannel",
         name: "Collision Channel",
         members: [
