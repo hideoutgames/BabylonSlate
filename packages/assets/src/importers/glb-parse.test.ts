@@ -607,4 +607,40 @@ describe("slimGlbEmbeddedImages", () => {
     const parsed = parseGlbForBrowse(slim);
     expect(parsed?.images[0]?.bytes.byteLength).toBeGreaterThan(0);
   });
+
+  it("keeps mesh bufferViews when replacing images", () => {
+    const positions = new Uint8Array(36);
+    positions.fill(1);
+    const png = new Uint8Array(2048);
+    png.fill(7);
+    const bin = new Uint8Array(36 + 2048);
+    bin.set(positions, 0);
+    bin.set(png, 36);
+    const glb = encodeGlbJsonBin(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: bin.byteLength }],
+        bufferViews: [
+          { buffer: 0, byteOffset: 0, byteLength: 36 },
+          { buffer: 0, byteOffset: 36, byteLength: 2048 },
+        ],
+        accessors: [
+          { bufferView: 0, componentType: 5126, count: 3, type: "VEC3" },
+        ],
+        images: [{ bufferView: 1, mimeType: "image/png" }],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      },
+      bin,
+    );
+    const slim = slimGlbEmbeddedImages(glb);
+    expect(slim.byteLength).toBeLessThan(glb.byteLength);
+    const split = splitGlbJsonBin(slim);
+    expect(split).not.toBeNull();
+    const accessors = split!.json.accessors as Array<Record<string, unknown>>;
+    const views = split!.json.bufferViews as Array<Record<string, unknown>>;
+    const viewIndex = accessors[0]!.bufferView as number;
+    expect(views[viewIndex]!.byteLength).toBe(36);
+    const offset = views[viewIndex]!.byteOffset as number;
+    expect(split!.bin.subarray(offset, offset + 36)).toEqual(positions);
+  });
 });
