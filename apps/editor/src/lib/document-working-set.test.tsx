@@ -136,6 +136,30 @@ describe("document working set", () => {
     expect([...mounted].filter((id) => id !== CB)).toHaveLength(3);
   });
 
+  it("with a Scene open, four Class tabs leave the Scene plus two Class workspaces", () => {
+    const lastActiveAt = new Map<string, number>([
+      ["scene:S", 1],
+      ["graph:1", 2],
+      ["graph:2", 3],
+      ["graph:3", 4],
+      ["graph:4", 5],
+    ]);
+    const mounted = selectMountedDocumentIds({
+      tabIds: ids(CB, "scene:S", "graph:1", "graph:2", "graph:3", "graph:4"),
+      activeId: "graph:4",
+      lastActiveAt,
+      now: 5,
+      documents: [
+        { id: "scene:S", kind: "scene" },
+        { id: "graph:1", kind: "graph" },
+        { id: "graph:2", kind: "graph" },
+        { id: "graph:3", kind: "graph" },
+        { id: "graph:4", kind: "graph" },
+      ],
+    });
+    expect(mounted).toEqual(new Set([CB, "scene:S", "graph:4", "graph:3"]));
+  });
+
   it("keeps the three most recently active Class tabs when Content Browser is focused", () => {
     const mounted = selectMountedDocumentIds({
       tabIds: ids(CB, "graph:1", "graph:2", "graph:3", "graph:4", "graph:5"),

@@ -1011,7 +1011,7 @@ export function createEngine(
   const resize = () => {
     if (presentRtt) {
       rttPresent?.clear();
-    } else if (presentSharedView) {
+    } else if (options.sharedEngine && !presentRtt) {
       const size = snapCanvasDrawingBuffer(canvas);
       engine.setSize(size.width, size.height);
     } else {

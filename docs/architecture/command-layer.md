@@ -90,7 +90,7 @@ Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan 
 | State | Chrome tab | `DocumentService` JSON + `EditSession` | DockView / Babylon / GraphEditor |
 | --- | --- | --- | --- |
 | **Open** | In the tab bar | Yes | Maybe |
-| **Mounted-warm** | Open, and either active, Content Browser, or inactive inside the 2-minute grace (cap 3 non-CB) | Yes | Yes (`display: none` + P4 freeze if not active) |
+| **Mounted-warm** | Open, and either active, Content Browser, an **open Scene**, or inactive inside the 2-minute grace (cap 3 non-CB; Scenes count) | Yes | Yes (`display: none` + P4 freeze if not active) |
 | **Idle-unmounted** | Still in the tab bar | Yes — undo and dirty flags stay | No. Remount from `layout.json` + session camera / graph viewport / UI/Anim mode |
 | **Closed** | Gone | Dropped (`dropDocument`) | Gone |
 

@@ -1195,6 +1195,28 @@ describe("Play createEngine view", () => {
     expect(setSize).toHaveBeenCalledWith(640, 360);
   });
 
+  it("still sizes a shared view with setSize when the canvas cannot host a 2d blit", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    canvas.getContext = () => null;
+    Object.assign(canvas, {
+      clientWidth: 512,
+      clientHeight: 288,
+      width: 64,
+      height: 32,
+    });
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    const resize = vi.spyOn(engine, "resize");
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(resize).not.toHaveBeenCalled();
+    expect(setSize).toHaveBeenCalledWith(512, 288);
+  });
+
   it("matches the overlay drawing buffer to a locked Play setSize", () => {
     const { handle, canvas } = playHandle(sharedEngine());
     Object.assign(canvas, { width: 300, height: 150 });
