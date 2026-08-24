@@ -358,4 +358,12 @@ describe("document ids and layouts", () => {
       activeDocumentId: "scene:main",
     });
   });
+
+  it("labels a scene tab from the file stem when payload name is still Main", () => {
+    expect(
+      createDocumentRef("scene", "assets/Level2.scene.babasset", {
+        name: "Main",
+      }).label,
+    ).toBe("Level2 Scene");
+  });
 });

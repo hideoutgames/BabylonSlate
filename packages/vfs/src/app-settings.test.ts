@@ -46,6 +46,7 @@ describe("app settings", () => {
     expect(settings.graphDefaultZoom).toBe(0.5);
     expect(settings.uiDesignerPresets).toEqual([]);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);
+    expect(settings.debuggerDefaults.playFromScene).toBe(true);
     expect(settings.debuggerDefaults.overlayStats).toBe(true);
     expect(settings.debuggerDefaults.overlayConsole).toBe(true);
     expect(settings.debuggerDefaults.overlayInspector).toBe(true);
@@ -126,6 +127,13 @@ describe("app settings", () => {
     expect(parsed.graphDefaultZoom).toBe(0.5);
   });
 
+  it("defaults Play from Scene on when debuggerDefaults omits the field", () => {
+    const parsed = engineSettingsSchema.parse({
+      undoHistoryLength: 50,
+    });
+    expect(parsed.debuggerDefaults.playFromScene).toBe(true);
+  });
+
   it("defaults Preview Build off when debuggerDefaults omits the field", () => {
     const parsed = engineSettingsSchema.parse({
       undoHistoryLength: 50,
@@ -148,6 +156,7 @@ describe("app settings", () => {
       debuggerDefaults: { previewBuild: true },
     });
     expect(parsed.debuggerDefaults.previewBuild).toBe(true);
+    expect(parsed.debuggerDefaults.playFromScene).toBe(true);
     expect(parsed.debuggerDefaults.overlayStats).toBe(true);
     expect(parsed.debuggerDefaults.overlayConsole).toBe(true);
     expect(parsed.debuggerDefaults.overlayInspector).toBe(true);

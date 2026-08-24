@@ -8,6 +8,7 @@ import {
   playSceneFromOpenDocuments,
   playIsEnabled,
   resolvePlayScene,
+  resolvePreviewStartupGuid,
 } from "./play-physics";
 
 describe("playLoadControl", () => {
@@ -201,6 +202,26 @@ describe("playSceneFromOpenDocuments", () => {
     ).toBe(true);
   });
 
+  it("playIsEnabled is true without a scene tab when Play from Scene is off and startup exists", () => {
+    expect(
+      playIsEnabled(
+        [{ id: "graph:main", ref: { kind: "graph" }, content: {} }],
+        "graph:main",
+        { playFromScene: false, hasStartupScene: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("playIsEnabled is true without a scene tab when Play from Scene is on and startup exists", () => {
+    expect(
+      playIsEnabled(
+        [{ id: "graph:main", ref: { kind: "graph" }, content: {} }],
+        "graph:main",
+        { playFromScene: true, hasStartupScene: true },
+      ),
+    ).toBe(true);
+  });
+
   it("playIsEnabled is true when a scene tab is open even if it is not active", () => {
     expect(
       playIsEnabled(
@@ -217,9 +238,9 @@ describe("playSceneFromOpenDocuments", () => {
     ).toBe(true);
   });
 
-  it("resolvePlayScene does not fall back to a startup scene when no scene tab is open", () => {
+  it("resolvePlayScene falls back to startup when Play from Scene is on and no scene tab is open", () => {
     const fallback = {
-      sceneAssetGuid: "scene:assets/main.scene.babasset",
+      sceneAssetGuid: "startup-guid",
       scene: normalizeScene({
         name: "Main",
         viewportMode: "3d" as const,
@@ -232,9 +253,39 @@ describe("playSceneFromOpenDocuments", () => {
           { id: "graph:main", ref: { kind: "graph" }, content: {} },
         ],
         activeDocumentId: "graph:main",
+        playFromScene: true,
         fallback,
       }),
-    ).toBeNull();
+    ).toEqual(fallback);
+  });
+
+  it("resolvePlayScene ignores the open tab when Play from Scene is off", () => {
+    const open = {
+      name: "Level",
+      viewportMode: "2d" as const,
+      actors: [{ id: "open", name: "Open" }],
+    };
+    const fallback = {
+      sceneAssetGuid: "startup-guid",
+      scene: normalizeScene({
+        name: "Main",
+        actors: [{ id: "hero", name: "Hero" }],
+      }),
+    };
+    expect(
+      resolvePlayScene({
+        documents: [
+          {
+            id: "scene:assets/level.scene.babasset",
+            ref: { kind: "scene" },
+            content: open,
+          },
+        ],
+        activeDocumentId: "scene:assets/level.scene.babasset",
+        playFromScene: false,
+        fallback,
+      }),
+    ).toEqual(fallback);
   });
 
   it("does not export a path-based startup-scene Play loader", async () => {
@@ -271,6 +322,38 @@ describe("playSceneFromOpenDocuments", () => {
       sceneAssetGuid: "scene:assets/level.scene.babasset",
       scene: normalizeScene(open),
     });
+  });
+});
+
+describe("resolvePreviewStartupGuid", () => {
+  it("uses the open scene guid when Play from Scene is on", () => {
+    expect(
+      resolvePreviewStartupGuid({
+        playFromScene: true,
+        openSceneGuid: "open-guid",
+        startupSceneGuid: "startup-guid",
+      }),
+    ).toBe("open-guid");
+  });
+
+  it("falls back to project startup when Play from Scene is on but no scene is open", () => {
+    expect(
+      resolvePreviewStartupGuid({
+        playFromScene: true,
+        openSceneGuid: null,
+        startupSceneGuid: "startup-guid",
+      }),
+    ).toBe("startup-guid");
+  });
+
+  it("always uses project startup when Play from Scene is off", () => {
+    expect(
+      resolvePreviewStartupGuid({
+        playFromScene: false,
+        openSceneGuid: "open-guid",
+        startupSceneGuid: "startup-guid",
+      }),
+    ).toBe("startup-guid");
   });
 });
 

@@ -113,20 +113,50 @@ export function playSceneFromOpenDocuments(
 export function playIsEnabled(
   documents: readonly PlaySceneDocument[],
   activeDocumentId: string | null,
-  options?: { previewBuild?: boolean },
+  options?: {
+    previewBuild?: boolean;
+    playFromScene?: boolean;
+    hasStartupScene?: boolean;
+  },
 ): boolean {
   if (options?.previewBuild) return true;
-  return playSceneFromOpenDocuments(documents, activeDocumentId) !== null;
+  if (options?.playFromScene !== false) {
+    if (playSceneFromOpenDocuments(documents, activeDocumentId) !== null) {
+      return true;
+    }
+    return options?.hasStartupScene === true;
+  }
+  return options?.hasStartupScene === true;
 }
 
-/** Open scene tab only. Startup scene is export-only and must not feed Play. */
+/** Open scene when Play from Scene is on; otherwise the startup fallback. */
 export function resolvePlayScene(options: {
   documents: readonly PlaySceneDocument[];
   activeDocumentId: string | null;
+  playFromScene?: boolean;
   fallback?: PlaySceneLoad | null;
 }): PlaySceneLoad | null {
-  void options.fallback;
-  return playSceneFromOpenDocuments(options.documents, options.activeDocumentId);
+  if (options.playFromScene !== false) {
+    const open = playSceneFromOpenDocuments(
+      options.documents,
+      options.activeDocumentId,
+    );
+    if (open) return open;
+  }
+  return options.fallback ?? null;
+}
+
+export function resolvePreviewStartupGuid(options: {
+  playFromScene: boolean;
+  openSceneGuid: string | null | undefined;
+  startupSceneGuid: string | null | undefined;
+}): string | null {
+  if (options.playFromScene) {
+    const open = options.openSceneGuid?.trim() ?? "";
+    if (open) return open;
+  }
+  const startup = options.startupSceneGuid?.trim() ?? "";
+  return startup || null;
 }
 
 export function playLoadControl(options: {

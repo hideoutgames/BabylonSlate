@@ -190,9 +190,9 @@ test.describe("P5 visual scripting acceptance", () => {
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
   });
 
-  test("Play without a scene tab is disabled", async ({ page }) => {
+  test("Play without a scene tab still launches from startup", async ({ page }) => {
     await openTestProject(page);
-    await expect(page.getByTestId("play-preview")).toBeDisabled();
+    await expect(page.getByTestId("play-preview")).toBeEnabled();
   });
 
   test("GetAxis2D Move from a compiled graph prints the stick in Play", async ({

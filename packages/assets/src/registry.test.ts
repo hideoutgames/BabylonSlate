@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorageAdapter } from "@babylonslate/vfs";
+import { encodeAssetDocument, decodeAssetDocument } from "./asset-document";
 import { encodeBabasset } from "./babasset";
 import { projectContentRoot, type ContentRoot } from "./content-root";
 import {
@@ -504,17 +505,48 @@ describe("AssetRegistry", () => {
 
   it("preserves .scene.babasset when duplicating a scene", async () => {
     const storage = await createStorage();
-    await writeAsset(storage, "assets/main.scene.babasset", {
-      guid: "scene-1",
-      type: "Scene",
-      name: "main",
-    });
+    await storage.mkdir("assets", true);
+    await storage.writeBinary(
+      "assets/main.scene.babasset",
+      await encodeAssetDocument({
+        type: "Scene",
+        name: "main",
+        guid: "scene-1",
+        version: 1,
+        payload: { name: "Main", actors: [] },
+      }),
+    );
 
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
     const copy = await registry.duplicateAsset("scene-1", "project", "");
     expect(copy.path).toBe("assets/main_1.scene.babasset");
     expect(copy.header.name).toBe("main_1");
+    const copyBytes = await storage.readBinary(copy.path);
+    const copyDoc = await decodeAssetDocument(copyBytes);
+    expect(copyDoc.payload.name).toBe("main_1");
+  });
+
+  it("rewrites scene payload name when renaming a Scene asset", async () => {
+    const storage = await createStorage();
+    await storage.mkdir("assets", true);
+    const bytes = await encodeAssetDocument({
+      type: "Scene",
+      name: "main",
+      guid: "scene-rename",
+      version: 1,
+      payload: { name: "Main", actors: [] },
+    });
+    await storage.writeBinary("assets/main.scene.babasset", bytes);
+
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const renamed = await registry.renameAsset("scene-rename", "Arena");
+    expect(renamed.header.name).toBe("Arena");
+    const renamedDoc = await decodeAssetDocument(
+      await storage.readBinary(renamed.path),
+    );
+    expect(renamedDoc.payload.name).toBe("Arena");
   });
 
   it("refuses to overwrite an existing asset path", async () => {

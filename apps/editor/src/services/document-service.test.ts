@@ -474,6 +474,9 @@ describe("DocumentService", () => {
     expect(service.getState().openDocuments.has(oldId)).toBe(false);
     expect(service.getState().openDocuments.get(newId)?.ref.path).toBe(newPath);
     expect(service.getState().tabOrder).toContain(newId);
+    expect(service.getState().openDocuments.get(newId)?.ref.label).toBe(
+      "Main Scene",
+    );
   });
 
   it("opens Enum documents with the Enum tab suffix", async () => {

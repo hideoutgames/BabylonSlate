@@ -23,6 +23,7 @@ import {
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
+import { stampDocumentChunkName } from "./asset-document";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   effectiveTextureMaxDimension,
@@ -428,6 +429,9 @@ export class AssetRegistry {
     }
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
+    if (decoded.header.type === "Scene") {
+      stampDocumentChunkName(chunksById, safe);
+    }
     const encoded = await encodeBabasset({
       header: { ...headerRest, name: safe },
       chunks: [...chunksById.values()],
@@ -506,6 +510,9 @@ export class AssetRegistry {
     const candidate = joinRootPath(root, relativePath);
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
+    if (decoded.header.type === "Scene") {
+      stampDocumentChunkName(chunksById, uniqueName);
+    }
     const encoded = await encodeBabasset({
       header: { ...headerRest, guid: newGuid, name: uniqueName },
       chunks: [...chunksById.values()],

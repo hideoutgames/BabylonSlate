@@ -256,6 +256,8 @@ export function EditorChromeBar({
     canPlay,
     previewBuild,
     setPreviewBuild,
+    playFromScene,
+    setPlayFromScene,
     overlayStats,
     overlayConsole,
     overlayInspector,
@@ -557,13 +559,15 @@ export function EditorChromeBar({
               variant="ghost"
               data-testid="play-preview"
               className="chrome-action-button chrome-play-button relative"
-              aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay)}
+              aria-label={playChromeLaunchAriaLabel(previewBuild, canPlay, {
+                playFromScene,
+              })}
               title={
                 canPlay
                   ? undefined
-                  : previewBuild
-                    ? "Set Startup Scene in Project Settings."
-                    : "Open a scene to play"
+                  : playFromScene && !previewBuild
+                    ? "Open a scene to play"
+                    : "Set Startup Scene in Project Settings."
               }
               disabled={!projectName || playing || preparing || !canPlay}
               onClick={() => {
@@ -609,12 +613,14 @@ export function EditorChromeBar({
                 overlayInspector={overlayInspector}
                 pauseOnPlay={pauseOnPlay}
                 previewBuild={previewBuild}
+                playFromScene={playFromScene}
                 sessionLocked={playing || preparing}
                 onOverlayStatsChange={setOverlayStats}
                 onOverlayConsoleChange={setOverlayConsole}
                 onOverlayInspectorChange={setOverlayInspector}
                 onPauseOnPlayChange={setPauseOnPlay}
                 onPreviewBuildChange={setPreviewBuild}
+                onPlayFromSceneChange={setPlayFromScene}
               />
             </DropdownMenu>
           </div>

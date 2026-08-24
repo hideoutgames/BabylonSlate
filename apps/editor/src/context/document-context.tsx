@@ -325,6 +325,7 @@ interface DocumentContextValue {
     previewBuild?: boolean;
     playerFiles?: Map<string, Uint8Array>;
     onPhase?: (phase: "Compiling" | "Writing Pack") => void;
+    startupSceneGuid?: string | null;
   }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
   dismissRecovery: () => Promise<void>;
@@ -1517,6 +1518,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       previewBuild?: boolean;
       playerFiles?: Map<string, Uint8Array>;
       onPhase?: (phase: "Compiling" | "Writing Pack") => void;
+      startupSceneGuid?: string | null;
     }) => {
       const list = projectService.registry?.list() ?? [];
       await flushAudioReverbForSave();
@@ -1532,8 +1534,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const engineSettings = await settingsStore.load();
+      const startupSceneGuid =
+        typeof options?.startupSceneGuid === "string" &&
+        options.startupSceneGuid.trim() !== ""
+          ? options.startupSceneGuid.trim()
+          : (projectDocument?.settings.startupSceneGuid ?? null);
       return collectAndExportGame({
-        startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+        startupSceneGuid,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
@@ -1564,9 +1571,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
         pixelPerfect: projectDocument?.settings.twoD.pixelPerfect === true,
         physicsWorld:
-          loaded.sceneByGuid(
-            projectDocument?.settings.startupSceneGuid ?? "",
-          )?.settings.physicsWorld === "2d"
+          loaded.sceneByGuid(startupSceneGuid ?? "")?.settings.physicsWorld ===
+          "2d"
             ? "2d"
             : "3d",
         infiniteLoopDetection:

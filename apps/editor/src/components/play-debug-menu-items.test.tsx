@@ -15,6 +15,7 @@ function renderMenu(
   const onOverlayInspectorChange = vi.fn();
   const onPauseOnPlayChange = vi.fn();
   const onPreviewBuildChange = vi.fn();
+  const onPlayFromSceneChange = vi.fn();
   const view = render(
     <DropdownMenu open>
       <DropdownMenuTrigger render={<Button data-testid="debug-menu">Debug</Button>} />
@@ -24,12 +25,14 @@ function renderMenu(
         overlayInspector
         pauseOnPlay={false}
         previewBuild={false}
+        playFromScene
         sessionLocked={false}
         onOverlayStatsChange={onOverlayStatsChange}
         onOverlayConsoleChange={onOverlayConsoleChange}
         onOverlayInspectorChange={onOverlayInspectorChange}
         onPauseOnPlayChange={onPauseOnPlayChange}
         onPreviewBuildChange={onPreviewBuildChange}
+        onPlayFromSceneChange={onPlayFromSceneChange}
         {...overrides}
       />
     </DropdownMenu>,
@@ -61,6 +64,9 @@ describe("PlayDebugMenuItems", () => {
     expect(screen.getByTestId("preview-build-toggle").textContent).toContain(
       "Preview Build",
     );
+    expect(screen.getByTestId("play-from-scene-toggle").textContent).toContain(
+      "Play from Scene",
+    );
     expect(screen.getByTestId("overlay-stats-toggle").getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -75,6 +81,9 @@ describe("PlayDebugMenuItems", () => {
     );
     expect(screen.getByTestId("preview-build-toggle").getAttribute("aria-checked")).toBe(
       "false",
+    );
+    expect(screen.getByTestId("play-from-scene-toggle").getAttribute("aria-checked")).toBe(
+      "true",
     );
   });
 
@@ -96,6 +105,9 @@ describe("PlayDebugMenuItems", () => {
     ).toBeNull();
     expect(
       screen.getByTestId("preview-build-toggle").getAttribute("data-disabled"),
+    ).not.toBeNull();
+    expect(
+      screen.getByTestId("play-from-scene-toggle").getAttribute("data-disabled"),
     ).not.toBeNull();
   });
 });
