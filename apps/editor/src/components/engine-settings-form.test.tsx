@@ -76,7 +76,7 @@ describe("EngineSettingsForm viewport", () => {
 });
 
 describe("EngineSettingsForm assets", () => {
-  it("shows model import default scale 10", () => {
+  it("shows model import default scale 1", () => {
     const { getByTestId } = render(
       <EngineSettingsForm
         settings={defaultEngineSettings()}
@@ -86,7 +86,7 @@ describe("EngineSettingsForm assets", () => {
     );
     expect(getByTestId("setting-model-import-scale")).toHaveProperty(
       "value",
-      "10",
+      "1",
     );
   });
 });

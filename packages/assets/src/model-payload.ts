@@ -5,7 +5,7 @@ export interface ModelMaterialSlot {
 }
 
 /** Importer fallback when Engine Settings are not passed. Not used for missing payload fields. */
-export const DEFAULT_MODEL_IMPORT_SCALE = 10;
+export const DEFAULT_MODEL_IMPORT_SCALE = 1;
 
 export interface ModelPayload {
   materialSlots: ModelMaterialSlot[];
