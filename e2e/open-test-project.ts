@@ -121,7 +121,19 @@ export async function createContentBrowserAsset(
   await expect(
     page.getByTestId("content-browser-new-asset-dialog"),
   ).toHaveCount(0);
-  await openContentBrowser(page);
+  // New Scene assets auto-open. Wait for that tab so we do not click Content
+  // Browser while still on it, then lose it when the scene activates.
+  if (type === "Scene") {
+    await expect(page.getByTestId("document-workspace-scene")).toBeVisible({
+      timeout: 30_000,
+    });
+  }
+  await expect(async () => {
+    await openContentBrowser(page);
+    await expect(page.getByTestId("content-browser-search")).toBeVisible({
+      timeout: 2_000,
+    });
+  }).toPass({ timeout: 20_000 });
   await revealAssetTile(page, `[data-asset-path*="${name}."]`, name);
   await page.getByTestId("content-browser-search").fill("");
 }
