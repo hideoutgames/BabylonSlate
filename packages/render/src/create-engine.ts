@@ -13,9 +13,10 @@ import {
   readSnapshotHeader,
   type CommandMessage,
 } from "@babylonslate/bridge";
-import type {
-  MaterialDocument,
-  MaterialFunctionDocument,
+import {
+  materialDependencies,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import {
   createEditorCamera,
@@ -43,7 +44,10 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
-import { configureKtx2Transcoder } from "./ktx2-transcoder";
+import {
+  configureKtx2DecoderRuntime,
+  configureKtx2Transcoder,
+} from "./ktx2-transcoder";
 import {
   documentEditorColorScheme,
   editorClearColor,
@@ -175,6 +179,8 @@ export interface EngineHandle {
     worldMatrixPosition: [number, number, number];
     materialName: string | null;
   }>;
+  /** Material names on Play meshes and GLB descendants (Preview e2e). */
+  playMeshMaterialNames: () => string[];
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -492,6 +498,13 @@ export function createEngine(
       adaptToDeviceRatio: false,
       antialias: false,
     });
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    mainThread: options.playMode === true,
+    caps: engine.getCaps(),
+    renderer: (
+      engine as { getGlInfo?: () => { renderer?: string } }
+    ).getGlInfo?.().renderer,
+  });
 
   const sharedViewBlit =
     options.sharedEngine &&
@@ -659,6 +672,7 @@ export function createEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
   const materialLibrary = new MaterialLibrary({
     functions: () => Object.fromEntries(materialFunctions),
@@ -1361,6 +1375,17 @@ export function createEngine(
         (a, b) => a.slotId - b.slotId || a.name.localeCompare(b.name),
       );
     },
+    playMeshMaterialNames: () => {
+      const names = new Set<string>();
+      for (const root of binding.meshes.values()) {
+        const meshes = [root, ...root.getChildMeshes()];
+        for (const mesh of meshes) {
+          const name = mesh.material?.name;
+          if (name) names.add(name);
+        }
+      }
+      return [...names].sort();
+    },
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
@@ -1378,10 +1403,17 @@ export function createEngine(
         assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
+      if (assets.materialTextureGuids) {
+        binding.materialTextureGuids = assets.materialTextureGuids;
+      }
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      const rebuilt = editorSync?.setMeshAssets(assets) === true;
+      const rebuilt =
+        editorSync?.setMeshAssets({
+          ...assets,
+          materialTextureGuids: binding.materialTextureGuids,
+        }) === true;
       if (rebuilt && lastSelectedActorIds.length > 0) {
         editor?.setSelectedActors(lastSelectedActorIds);
       }
@@ -1429,6 +1461,7 @@ export function createEngine(
       for (const [guid, document] of documents) {
         materialDocuments.set(guid, document);
       }
+      binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
       if (functions) {
         materialFunctions.clear();
         for (const [guid, document] of functions) {
@@ -1493,6 +1526,16 @@ export function syncEditorPlayState(
   }
 }
 
+function materialTextureGuidMap(
+  documents: ReadonlyMap<string, MaterialDocument>,
+): Map<string, readonly string[]> {
+  const out = new Map<string, readonly string[]>();
+  for (const [guid, document] of documents) {
+    out.set(guid, materialDependencies(document).textures);
+  }
+  return out;
+}
+
 function setOtherEngineViewsEnabled(
   engine: Engine,
   except: HTMLCanvasElement,
@@ -1506,10 +1549,17 @@ function setOtherEngineViewsEnabled(
 /** Create the project-lifetime Engine (no scene). */
 export function createAppEngine(canvas: HTMLCanvasElement): Engine {
   configureKtx2Transcoder(KhronosTextureContainer2);
-  return new Engine(canvas, true, {
+  const engine = new Engine(canvas, true, {
     preserveDrawingBuffer: true,
     stencil: true,
     adaptToDeviceRatio: false,
     antialias: false,
   });
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    caps: engine.getCaps(),
+    renderer: (
+      engine as { getGlInfo?: () => { renderer?: string } }
+    ).getGlInfo?.().renderer,
+  });
+  return engine;
 }

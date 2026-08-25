@@ -325,6 +325,7 @@ interface DocumentContextValue {
     playerFiles?: Map<string, Uint8Array>;
     onPhase?: (phase: "Compiling" | "Writing Pack") => void;
     startupSceneGuid?: string | null;
+    transcoderAvailable?: boolean;
   }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
   dismissRecovery: () => Promise<void>;
@@ -1482,6 +1483,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       playerFiles?: Map<string, Uint8Array>;
       onPhase?: (phase: "Compiling" | "Writing Pack") => void;
       startupSceneGuid?: string | null;
+      /** When set, overrides `playerFilesHaveKtx2Transcoder` for Texture packing. */
+      transcoderAvailable?: boolean;
     }) => {
       const list = projectService.registry?.list() ?? [];
       await flushAudioReverbForSave();
@@ -1495,7 +1498,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ),
         readAssetChunk: (path, chunkId) =>
           projectService.readAssetChunk(path, chunkId),
-        transcoderAvailable: playerFilesHaveKtx2Transcoder(playerFiles),
+        transcoderAvailable:
+          options?.transcoderAvailable ??
+          playerFilesHaveKtx2Transcoder(playerFiles),
       });
       const startupSceneGuid =
         typeof options?.startupSceneGuid === "string" &&

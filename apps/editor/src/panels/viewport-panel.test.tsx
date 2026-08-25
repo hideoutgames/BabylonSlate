@@ -3,6 +3,7 @@ import { cleanup, render } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
+import { syncEditorPlayState } from "@babylonslate/render";
 
 const { createEngineMock, play, documents } = vi.hoisted(() => {
   const handle = {
@@ -54,6 +55,7 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
       ensureSharedEngine: vi.fn(() => sharedEngine),
       sharedEngineGeneration: 1,
       playing: false,
+      preparing: false,
     },
   };
 });
@@ -157,6 +159,8 @@ describe("ViewportPanel engine", () => {
     cleanup();
     createEngineMock.mockClear();
     play.registerSharedEngine.mockClear();
+    play.playing = false;
+    play.preparing = false;
   });
 
   it("does not recreate the Engine when applySceneChange identity changes", () => {
@@ -181,5 +185,20 @@ describe("ViewportPanel engine", () => {
         sharedEngine: play.ensureSharedEngine(),
       }),
     );
+  });
+
+  it("pauses the editor viewport while Preview Build is preparing", () => {
+    const { rerender } = renderViewport();
+    play.preparing = true;
+    rerender(
+      <DocumentWorkspaceProvider documentId="scene:S">
+        <ViewportPanel {...({} as IDockviewPanelProps)} />
+      </DocumentWorkspaceProvider>,
+    );
+    expect(syncEditorPlayState).toHaveBeenCalledWith(
+      expect.anything(),
+      true,
+    );
+    play.preparing = false;
   });
 });

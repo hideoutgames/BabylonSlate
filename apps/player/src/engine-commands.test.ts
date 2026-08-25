@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDefaultScene } from "@babylonslate/core";
-import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
+import {
+  applyPlayerActiveScene,
+  applyPlayerEngineCommand,
+  schedulePlayerMaterialPrewarm,
+} from "./engine-commands";
 
 describe("applyPlayerEngineCommand", () => {
   it("forwards assignMaterial onto the Engine handle", () => {
@@ -221,5 +225,28 @@ describe("applyPlayerActiveScene", () => {
       "reset-audio",
       "reset-particles",
     ]);
+  });
+});
+
+describe("schedulePlayerMaterialPrewarm", () => {
+  it("prewarms after the first assignMesh once models are ready", async () => {
+    const order: string[] = [];
+    const handle = {
+      whenEditorModelsReady: async () => {
+        order.push("models");
+      },
+      prewarmSceneMaterials: async () => {
+        order.push("prewarm");
+      },
+    };
+    const scheduled = { current: false };
+    schedulePlayerMaterialPrewarm(handle, "spawn", scheduled);
+    expect(scheduled.current).toBe(false);
+    schedulePlayerMaterialPrewarm(handle, "assignMesh", scheduled);
+    schedulePlayerMaterialPrewarm(handle, "assignMesh", scheduled);
+    expect(scheduled.current).toBe(true);
+    await vi.waitFor(() => {
+      expect(order).toEqual(["models", "prewarm"]);
+    });
   });
 });

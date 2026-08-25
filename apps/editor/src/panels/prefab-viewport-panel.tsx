@@ -15,6 +15,7 @@ import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
 import { useSceneEditing } from "../context/scene-editing-context";
+import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import {
@@ -76,7 +77,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
-  const { registerScheduler, playing, ensureSharedEngine, sharedEngineGeneration } =
+  const { registerScheduler, playing, preparing, ensureSharedEngine, sharedEngineGeneration } =
     usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
   const setSelectedIdRef = useRef(setSelectedId);
@@ -169,9 +170,12 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     if (engineRef.current) {
-      syncEditorPlayState(engineRef.current, playing);
+      syncEditorPlayState(
+        engineRef.current,
+        editorViewportPausedForSession({ playing, preparing }),
+      );
     }
-  }, [playing]);
+  }, [playing, preparing]);
 
   const previewLoadKey = prefabPreviewLoadKey(components);
 

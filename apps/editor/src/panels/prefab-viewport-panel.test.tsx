@@ -97,6 +97,7 @@ const {
       sharedEngineGeneration: 1,
       registerScheduler: vi.fn(() => () => {}),
       playing: false,
+      preparing: false,
     },
   };
 });

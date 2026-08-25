@@ -307,8 +307,9 @@ export function stripUnmatchedGltfImageUris(bytes: Uint8Array): Uint8Array {
 }
 
 /**
- * Replace embedded rasters with a 1×1 PNG so the glTF loader does not decode
- * full images when every material slot is bound through ResourceCache.
+ * Replace embedded rasters with a 1×1 red PNG so the glTF loader does not
+ * decode full images. Callers must only slim when every slot Material texture
+ * guid exists in packed Texture bytes — otherwise construction mats stay red.
  */
 export function slimGlbEmbeddedImages(bytes: Uint8Array): Uint8Array {
   const split = splitGlbJsonBin(bytes);

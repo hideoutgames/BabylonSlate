@@ -3,10 +3,15 @@
  * (engineplan §3.5). Never point at a CDN — editor and exports must work offline.
  */
 
-export {
+import {
   KTX2_TRANSCODER_RELATIVE_FILES,
   playerFilesHaveKtx2Transcoder,
 } from "@babylonslate/assets";
+
+export {
+  KTX2_TRANSCODER_RELATIVE_FILES,
+  playerFilesHaveKtx2Transcoder,
+};
 
 export interface Ktx2TranscoderUrls {
   jsDecoderModule: string;
@@ -65,6 +70,77 @@ export function configureKtx2Transcoder(
     wasmZSTDDecoder: urls.wasmZSTDDecoder,
   };
   return urls;
+}
+
+export type Ktx2DecoderRuntimeContainer = {
+  DefaultNumWorkers: number;
+  DefaultDecoderOptions: {
+    forceRGBA: boolean | undefined;
+    useRGBAIfASTCBC7NotAvailableWhenUASTC: boolean | undefined;
+  };
+};
+
+export type Ktx2DecoderRuntimeOptions = {
+  /**
+   * Packed player / Preview iframe: decode on this thread so wasm URLs are
+   * not loaded from a blob Worker (COEP / importScripts often fail there).
+   * Also forces uncompressed RGBA — software GL often advertises ASTC then
+   * fails texImage2D.
+   */
+  mainThread?: boolean;
+  /** Engine compressed-texture caps. Missing ASTC and BC7 → uncompressed RGBA. */
+  caps?: { astc?: unknown; bptc?: unknown };
+  /** `engine.getGlInfo().renderer` — software GL often lies about ASTC/S3TC. */
+  renderer?: string;
+};
+
+const SOFTWARE_GL_RENDERER =
+  /swiftshader|llvmpipe|softpipe|microsoft basic render|\bsoftware\b/i;
+
+export function isSoftwareGlRenderer(renderer: string): boolean {
+  return SOFTWARE_GL_RENDERER.test(renderer);
+}
+
+/** Uncompressed RGBA when compressed upload would fail (missing caps or software GL). */
+export function shouldForceKtx2Rgba(
+  caps?: { astc?: unknown; bptc?: unknown },
+  renderer?: string,
+): boolean {
+  if (isSoftwareGlRenderer(renderer ?? "")) return true;
+  return !caps?.astc && !caps?.bptc;
+}
+
+/**
+ * Preview Build packs KTX2 only when the player has the transcoder **and** the
+ * editor GPU is not software GL. SwiftShader can decode some KTX2 in Playwright
+ * Chromium and still fail texImage2D in other Chromium builds; PNG matches the
+ * overlay LOD path.
+ */
+export function shouldPackKtx2Textures(
+  playerFiles: ReadonlyMap<string, Uint8Array>,
+  renderer?: string,
+): boolean {
+  return (
+    playerFilesHaveKtx2Transcoder(playerFiles) &&
+    !isSoftwareGlRenderer(renderer ?? "")
+  );
+}
+
+/**
+ * After Engine construction: pick a transcode target the GPU can upload.
+ * Software WebGL often advertises S3TC/ASTC then fails `texImage2D`.
+ */
+export function configureKtx2DecoderRuntime(
+  container: Ktx2DecoderRuntimeContainer,
+  options: Ktx2DecoderRuntimeOptions = {},
+): void {
+  if (options.mainThread) {
+    container.DefaultNumWorkers = 0;
+  }
+  container.DefaultDecoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC = true;
+  container.DefaultDecoderOptions.forceRGBA =
+    options.mainThread === true ||
+    shouldForceKtx2Rgba(options.caps, options.renderer);
 }
 
 /**

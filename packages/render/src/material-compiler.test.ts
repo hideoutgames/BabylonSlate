@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Material, NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   lowerMaterialDocument,
+  migrateLegacyShaderPayload,
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
@@ -919,6 +920,29 @@ describe("material compiler", () => {
       (block) => block.getClassName() === "TextureBlock",
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
+  });
+
+  it("rebuilds the NodeMaterial when a packed Texture Parameter becomes ready", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "imported-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const rebuild = vi.spyOn(result.material, "build");
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(rebuild).toHaveBeenCalled();
   });
 
   it("keeps invertY false on the compiled sampling TextureBlock", () => {

@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Engine } from "@babylonjs/core";
+import { shouldPackKtx2Textures } from "@babylonslate/render";
 import {
   DEFAULT_INFINITE_LOOP_DETECTION,
   DEFAULT_LOOP_COUNT,
@@ -688,10 +689,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       setPreviewPhase("Collecting Assets");
       const playerFiles = await loadPlayerDistFiles();
       if (previewCancelledRef.current) return;
+      const engine = ensureEngine();
+      const renderer = (
+        engine as { getGlInfo?: () => { renderer?: string } } | null
+      )?.getGlInfo?.().renderer;
       const packed = await exportGameArtifact({
         previewBuild: true,
         playerFiles,
         startupSceneGuid: effectiveStartup,
+        transcoderAvailable: shouldPackKtx2Textures(playerFiles, renderer),
         onPhase: (phase) => {
           if (!previewCancelledRef.current) setPreviewPhase(phase);
         },
@@ -730,6 +736,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     appendLog,
     assetRegistry,
     dirtyDocuments.length,
+    ensureEngine,
     exportGameArtifact,
     openPlaySceneGuid,
     playFromScene,

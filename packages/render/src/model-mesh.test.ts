@@ -37,21 +37,32 @@ describe("packedGltfBytes", () => {
 });
 
 describe("gpuModelBytes", () => {
-  it("slims embedded rasters only when every material slot is bound", () => {
+  it("keeps embedded rasters unless every slot texture guid is packed", () => {
     const glb = buildMinimalGlbFixture({
       imageRgba: new Uint8Array(2048),
     });
+    const bound = {
+      materialSlots: [{ index: 0, name: "HeroMat", materialGuid: "mat-1" }],
+    };
     expect(gpuModelBytes(glb).byteLength).toBe(glb.byteLength);
     expect(
       gpuModelBytes(glb, {
         materialSlots: [{ index: 0, name: "HeroMat", materialGuid: "" }],
       }).byteLength,
     ).toBe(glb.byteLength);
+    expect(gpuModelBytes(glb, bound).byteLength).toBe(glb.byteLength);
     expect(
-      gpuModelBytes(glb, {
-        materialSlots: [{ index: 0, name: "HeroMat", materialGuid: "mat-1" }],
+      gpuModelBytes(glb, bound, {
+        packedTextureGuids: new Set(["tex-1"]),
+        texturesByMaterialGuid: new Map([["mat-1", ["tex-1"]]]),
       }).byteLength,
     ).toBeLessThan(glb.byteLength);
+    expect(
+      gpuModelBytes(glb, bound, {
+        packedTextureGuids: new Set(),
+        texturesByMaterialGuid: new Map([["mat-1", ["tex-1"]]]),
+      }).byteLength,
+    ).toBe(glb.byteLength);
   });
 });
 

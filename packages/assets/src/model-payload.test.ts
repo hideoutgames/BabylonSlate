@@ -147,15 +147,14 @@ describe("packed Model envelope", () => {
 });
 
 describe("shouldSlimModelEmbeddedTextures", () => {
-  it("is true only when every material slot has a guid", () => {
-    expect(
-      shouldSlimModelEmbeddedTextures({
-        materialSlots: [
-          { index: 0, name: "A", materialGuid: "mat-1" },
-          { index: 1, name: "B", materialGuid: "mat-2" },
-        ],
-      }),
-    ).toBe(true);
+  const boundSlots = {
+    materialSlots: [
+      { index: 0, name: "A", materialGuid: "mat-1" },
+      { index: 1, name: "B", materialGuid: "mat-2" },
+    ],
+  };
+
+  it("is false when a slot has no material guid", () => {
     expect(
       shouldSlimModelEmbeddedTextures({
         materialSlots: [
@@ -165,5 +164,44 @@ describe("shouldSlimModelEmbeddedTextures", () => {
       }),
     ).toBe(false);
     expect(shouldSlimModelEmbeddedTextures({ materialSlots: [] })).toBe(false);
+  });
+
+  it("is false when slots are bound but packed Texture proof is missing", () => {
+    expect(shouldSlimModelEmbeddedTextures(boundSlots)).toBe(false);
+  });
+
+  it("is true only when every slot Material texture guid is packed", () => {
+    const packed = {
+      packedTextureGuids: new Set(["tex-a", "tex-b"]),
+      texturesByMaterialGuid: new Map([
+        ["mat-1", ["tex-a"]],
+        ["mat-2", ["tex-b"]],
+      ]),
+    };
+    expect(shouldSlimModelEmbeddedTextures(boundSlots, packed)).toBe(true);
+    expect(
+      shouldSlimModelEmbeddedTextures(boundSlots, {
+        packedTextureGuids: new Set(["tex-a"]),
+        texturesByMaterialGuid: packed.texturesByMaterialGuid,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSlimModelEmbeddedTextures(boundSlots, {
+        packedTextureGuids: packed.packedTextureGuids,
+        texturesByMaterialGuid: new Map([["mat-1", ["tex-a"]]]),
+      }),
+    ).toBe(false);
+  });
+
+  it("is true when known slot Materials reference no textures", () => {
+    expect(
+      shouldSlimModelEmbeddedTextures(boundSlots, {
+        packedTextureGuids: new Set(),
+        texturesByMaterialGuid: new Map([
+          ["mat-1", []],
+          ["mat-2", []],
+        ]),
+      }),
+    ).toBe(true);
   });
 });

@@ -112,10 +112,12 @@ async function launchLoaded(
       window as typeof window & {
         __babylonslatePlayerTest?: {
           visuals: () => ReturnType<typeof session.visuals>;
+          meshMaterialNames: () => string[];
         };
       }
     ).__babylonslatePlayerTest = {
       visuals: () => session.visuals(),
+      meshMaterialNames: () => session.meshMaterialNames(),
     };
   }
   if (window.parent !== window) {

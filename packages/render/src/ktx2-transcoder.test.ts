@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
   ktx2TranscoderUrls,
   playerFilesHaveKtx2Transcoder,
   probeKtx2TranscoderAvailable,
+  shouldPackKtx2Textures,
 } from "./ktx2-transcoder";
 
 describe("ktx2 transcoder config", () => {
@@ -51,6 +53,77 @@ describe("ktx2 transcoder config", () => {
     ).resolves.toBe(false);
   });
 
+  it("decodes packed player KTX2 on the main thread and uses RGBA without ASTC/BC7", () => {
+    const decoderOptions = {
+      forceRGBA: false,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      mainThread: true,
+      caps: { astc: null, bptc: null },
+    });
+    expect(mock.DefaultNumWorkers).toBe(0);
+    expect(decoderOptions.forceRGBA).toBe(true);
+    expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
+  });
+
+  it("forces RGBA on SwiftShader even when ASTC caps are present", () => {
+    const decoderOptions = {
+      forceRGBA: false,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      mainThread: true,
+      caps: { astc: {}, bptc: {} },
+      renderer: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 16.0.0)))",
+    });
+    expect(decoderOptions.forceRGBA).toBe(true);
+  });
+
+  it("forces RGBA for packed play even when ASTC caps look valid", () => {
+    const decoderOptions = {
+      forceRGBA: false,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      mainThread: true,
+      caps: { astc: {}, bptc: {} },
+      renderer: "WebKit WebGL",
+    });
+    expect(mock.DefaultNumWorkers).toBe(0);
+    expect(decoderOptions.forceRGBA).toBe(true);
+  });
+
+  it("keeps GPU compressed transcode when ASTC is available", () => {
+    const decoderOptions = {
+      forceRGBA: true,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      caps: { astc: {}, bptc: null },
+      renderer: "Apple A16 GPU",
+    });
+    expect(mock.DefaultNumWorkers).toBe(4);
+    expect(decoderOptions.forceRGBA).toBe(false);
+    expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
+  });
+
   it("requires every transcoder wasm in a player file map", () => {
     const files = new Map<string, Uint8Array>([
       ["ktx2/babylon.ktx2Decoder.js", new Uint8Array([1])],
@@ -67,5 +140,13 @@ describe("ktx2 transcoder config", () => {
     files.set("ktx2/uastc_r8_unorm.wasm", new Uint8Array([1]));
     files.set("ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1]));
     expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
+    expect(shouldPackKtx2Textures(files, "Apple A16 GPU")).toBe(true);
+    expect(shouldPackKtx2Textures(files, "Google SwiftShader")).toBe(false);
+    expect(
+      shouldPackKtx2Textures(
+        files,
+        "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 16.0.0)))",
+      ),
+    ).toBe(false);
   });
 });
