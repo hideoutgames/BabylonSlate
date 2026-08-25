@@ -864,11 +864,15 @@ export function createEngine(
       blockLook: (x, y) =>
         gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
-      onPointer: presentRtt
-        ? (type, x, y, pointerId) => {
-            gizmos.forwardPointer(type, x, y, { ...pointerCanvas(), pointerId });
-          }
-        : undefined,
+      onPointer:
+        options.sharedEngine || presentRtt
+          ? (type, x, y, pointerId) => {
+              gizmos.forwardPointer(type, x, y, {
+                ...pointerCanvas(),
+                pointerId,
+              });
+            }
+          : undefined,
       onTap: (x, y, tap) => {
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
         const hit = pickAtCanvas(scene, mapped.x, mapped.y);

@@ -1222,6 +1222,29 @@ describe("Play createEngine view", () => {
     expect(down).toHaveBeenCalled();
   });
 
+  it("forwards Scene shared-view canvas pointers into the scene for gizmo drags", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(400);
+    const canvas = new FakeCanvas();
+    canvas.clientWidth = 200;
+    canvas.clientHeight = 100;
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    const down = vi.spyOn(handle.scene, "simulatePointerDown");
+    canvas.emit("pointerdown", {
+      pointerId: 3,
+      clientX: 100,
+      clientY: 50,
+    });
+    expect(handle.scene.pointerX).toBeCloseTo(400);
+    expect(handle.scene.pointerY).toBeCloseTo(200);
+    expect(down).toHaveBeenCalled();
+  });
+
   it("sizes the shared Play framebuffer from the overlay canvas instead of engine.resize", () => {
     const engine = sharedEngine();
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
