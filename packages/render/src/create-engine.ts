@@ -1020,8 +1020,6 @@ export function createEngine(
     loadScene(createDefaultScene());
   }
 
-  const presentSharedView = Boolean(sharedViewBlit);
-
   const resize = () => {
     if (presentRtt) {
       rttPresent?.clear();
