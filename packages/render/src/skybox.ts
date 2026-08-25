@@ -23,10 +23,41 @@ import {
   createEngineCubeTextureFromImages,
   type ResourceCache,
 } from "./resource-cache";
+import { RENDERING_GROUP } from "./sorting";
 
 export { encodePngRgba } from "./default-skybox/png";
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
+
+/** ResourceCache key for a skybox cubemap (not a project Texture guid). */
+export function skyboxCubeCacheGuid(faces?: SkyboxFaces | null): string {
+  const parsed = parseSkyboxFaces(faces);
+  if (skyboxFaceGuids(parsed).length === 0) return ENGINE_DEFAULT_SKYBOX_GUID;
+  return `skybox:${SKYBOX_FACE_KEYS.map((key) => parsed[key] ?? "default").join(",")}`;
+}
+
+export function skyboxCubeCacheGuidsFromScene(
+  scene:
+    | {
+        actors: ReadonlyArray<{
+          components: ReadonlyArray<{
+            classId: string;
+            properties: Record<string, unknown>;
+          }>;
+        }>;
+      }
+    | null
+    | undefined,
+): string[] {
+  const guids = new Set<string>();
+  for (const actor of scene?.actors ?? []) {
+    for (const component of actor.components) {
+      if (component.classId !== "SkyboxComponent") continue;
+      guids.add(skyboxCubeCacheGuid(parseSkyboxFaces(component.properties.faces)));
+    }
+  }
+  return [...guids];
+}
 
 const defaultCubeByEngine = new WeakMap<AbstractEngine, CubeTexture>();
 
@@ -91,7 +122,7 @@ export function resolveSkyboxCubeTexture(
     }
     return engineDefaultSkyboxFaceUrl(key);
   });
-  const cacheKey = `skybox:${SKYBOX_FACE_KEYS.map((key) => parsed[key] ?? "default").join(",")}`;
+  const cacheKey = skyboxCubeCacheGuid(parsed);
   if (cache) {
     return cache.getCubeTextureFromImages(cacheKey, scene, files);
   }
@@ -111,12 +142,17 @@ export function createSkyboxMesh(
   material.twoSidedLighting = true;
   cubeTexture.coordinatesMode = Texture.SKYBOX_MODE;
   material.reflectionTexture = cubeTexture;
+  material.onDisposeObservable.add(() => {
+    if (material.reflectionTexture === cubeTexture) {
+      material.reflectionTexture = null;
+    }
+  });
   mesh.material = material;
-  mesh.infiniteDistance = true;
   mesh.ignoreCameraMaxZ = true;
   mesh.receiveShadows = false;
   mesh.applyFog = false;
   mesh.isPickable = false;
+  mesh.renderingGroupId = RENDERING_GROUP.background;
   mesh.metadata = { ...(mesh.metadata ?? {}), skybox: true };
   return mesh;
 }

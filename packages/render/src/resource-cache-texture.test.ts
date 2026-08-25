@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { NullEngine, Texture } from "@babylonjs/core";
+import { NullEngine, PBRMaterial, Texture } from "@babylonjs/core";
 import {
   bindResourceCacheToHandle,
   getMaterialTexture,
@@ -156,6 +156,51 @@ describe("resource cache getTexture", () => {
     expect(cube.getInternalTexture()).not.toBeNull();
     cache.dispose();
     expect(cube.getInternalTexture()).toBeNull();
+    engine.dispose();
+  });
+
+  it("keeps a live cube when another client pins unrelated textureBytes", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const files = [
+      "blob:px",
+      "blob:py",
+      "blob:pz",
+      "blob:nx",
+      "blob:ny",
+      "blob:nz",
+    ];
+    const cube = cache.getCubeTextureFromImages("engine-default-skybox", scene, files);
+    cache.setClientTextures("viewport", ["tex-albedo"]);
+    cache.setClientTextures("play", ["tex-albedo"]);
+    cache.flushUnreferenced();
+    expect(isDisposedGpuTexture(cube)).toBe(false);
+    expect(cube.getInternalTexture()).not.toBeNull();
+    cache.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("does not dispose a cache cube when a Play PBR skybox material is disposed", () => {
+    const engine = new NullEngine();
+    const playScene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const files = [
+      "blob:px",
+      "blob:py",
+      "blob:pz",
+      "blob:nx",
+      "blob:ny",
+      "blob:nz",
+    ];
+    const cube = cache.getCubeTextureFromImages("engine-default-skybox", playScene, files);
+    const material = new PBRMaterial("play-skybox", playScene);
+    material.reflectionTexture = cube;
+    playScene.dispose();
+    expect(isDisposedGpuTexture(cube)).toBe(false);
+    expect(cube.getInternalTexture()).not.toBeNull();
+    cache.dispose();
     engine.dispose();
   });
 

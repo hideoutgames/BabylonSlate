@@ -27,13 +27,13 @@ describe("createParticlePreviewScene", () => {
     host.dispose();
   });
 
-  it("adds an unpickable infinite default skybox when skybox is on", () => {
+  it("adds an unpickable default skybox when skybox is on", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const host = createParticlePreviewScene(handle.engine, { skybox: true });
     const skybox = host.scene.meshes.find((mesh) => isSkyboxMesh(mesh));
     expect(skybox).toBeTruthy();
-    expect(skybox!.infiniteDistance).toBe(true);
+    expect(skybox!.infiniteDistance).toBe(false);
     expect(skybox!.isPickable).toBe(false);
     host.dispose();
   });
