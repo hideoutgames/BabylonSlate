@@ -31,6 +31,17 @@ describe("ClassRegistry", () => {
     expect(registry.isA("BTDecorator_BlackboardIsSet", "BTDecorator")).toBe(true);
     expect(isLockedEngineClassId("MeshComponent")).toBe(true);
     expect(isLockedEngineClassId("BTTask_Wait")).toBe(true);
+    expect(registry.has("SceneLayer")).toBe(true);
+    expect(registry.has("SceneLayerActor")).toBe(true);
+    expect(registry.isA("SceneLayer", "BObject")).toBe(true);
+    expect(registry.isA("SceneLayerActor", "Actor")).toBe(true);
+    expect(registry.isA("2DAnchorComponent", "ActorComponent")).toBe(true);
+    expect(registry.isA("2DButtonComponent", "ActorComponent")).toBe(true);
+    expect(registry.isA("2DMaterialComponent", "ActorComponent")).toBe(true);
+    expect(registry.isA("2DTextureComponent", "ActorComponent")).toBe(true);
+    expect(isLockedEngineClassId("SceneLayer")).toBe(true);
+    expect(isLockedEngineClassId("SceneLayerActor")).toBe(true);
+    expect(isLockedEngineClassId("2DButtonComponent")).toBe(true);
   });
 
   it("supports user class inheritance queries", () => {

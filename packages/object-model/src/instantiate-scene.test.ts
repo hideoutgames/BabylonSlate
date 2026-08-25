@@ -7,7 +7,7 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { ClassRegistry } from "./class-registry";
-import { createActorsFromSerializedScene } from "./instantiate-scene";
+import { createActorsFromSerializedScene, createActorsFromSerializedSceneLayer } from "./instantiate-scene";
 import { World } from "./world";
 
 function testWorld() {
@@ -31,6 +31,32 @@ describe("outliner folders", () => {
     };
     const actors = createActorsFromSerializedScene(world, scene);
     expect(actors.map((actor) => actor.guid)).toEqual(["grouped", "loose"]);
+  });
+});
+
+describe("createActorsFromSerializedSceneLayer", () => {
+  it("tags overlay actors with the live SceneLayer id", () => {
+    const world = testWorld();
+    const layer = world.createSceneLayer({ assetGuid: "hud", zOrder: 1 });
+    const actors = createActorsFromSerializedSceneLayer(
+      world,
+      {
+        name: "HUD",
+        settings: {
+          gravity: [0, -9.81, 0],
+          fixedTimestepMs: 16.6667,
+          postProcessStack: [],
+        },
+        folders: [],
+        actors: [
+          createActor("banner", "Banner", { classId: "SceneLayerActor" }),
+        ],
+      },
+      layer.guid,
+    );
+    expect(actors).toHaveLength(1);
+    expect(actors[0]?.classId).toBe("SceneLayerActor");
+    expect(actors[0]?.sceneLayerId).toBe(layer.guid);
   });
 });
 

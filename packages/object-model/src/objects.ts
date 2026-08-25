@@ -97,6 +97,8 @@ export class Actor extends BObject {
   generateHitEvents = true;
   /** When false, skip script begin/end overlap for this actor. */
   generateOverlapEvents = true;
+  /** Owning overlay instance; null for world-scene actors. */
+  sceneLayerId: Guid | null = null;
 
   constructor(
     options: {
@@ -107,6 +109,7 @@ export class Actor extends BObject {
       hooks?: LifecycleHooks<Actor>;
       implementedInterfaces?: string[];
       transform?: Transform;
+      sceneLayerId?: Guid | null;
     },
   ) {
     super({
@@ -120,6 +123,7 @@ export class Actor extends BObject {
           scale: { ...options.transform.scale },
         }
       : identityTransform();
+    this.sceneLayerId = options.sceneLayerId ?? null;
   }
 
   attachComponent(component: ActorComponent): void {
@@ -173,6 +177,37 @@ export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
   onGameEnd?: (self: GameInstance) => void;
   onSceneLoaded?: (self: GameInstance, sceneName: string) => void;
 };
+
+export class SceneLayer extends BObject {
+  assetGuid: string;
+  zOrder: number;
+  ownerSceneGuid: string | null;
+  postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+
+  constructor(options: {
+    classId?: string;
+    guid?: Guid;
+    guidFactory?: GuidFactory;
+    assetGuid: string;
+    zOrder: number;
+    ownerSceneGuid?: string | null;
+    postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    variables?: Record<string, unknown>;
+    hooks?: LifecycleHooks;
+  }) {
+    super({
+      classId: options.classId ?? "SceneLayer",
+      guid: options.guid,
+      guidFactory: options.guidFactory,
+      variables: options.variables,
+      hooks: options.hooks,
+    });
+    this.assetGuid = options.assetGuid;
+    this.zOrder = options.zOrder;
+    this.ownerSceneGuid = options.ownerSceneGuid ?? null;
+    this.postProcessStack = [...(options.postProcessStack ?? [])];
+  }
+}
 
 export class GameInstance extends BObject {
   private readonly gameHooks: GameInstanceHooks;

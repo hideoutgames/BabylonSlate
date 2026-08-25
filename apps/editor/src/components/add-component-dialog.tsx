@@ -7,7 +7,7 @@ import {
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
 import {
-  ADDABLE_COMPONENT_CLASSES,
+  addableComponentsForHost,
   type AddComponentItem,
   type AddComponentSelection,
 } from "../panels/add-component-catalog";
@@ -17,20 +17,22 @@ export function AddComponentDialog({
   onOpenChange,
   onSelect,
   projectItems = [],
+  overlay = false,
   "data-testid": testId = "add-component-catalog",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (selection: AddComponentSelection) => void;
   projectItems?: readonly AddComponentItem[];
+  overlay?: boolean;
   "data-testid"?: string;
 }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
 
   const items = useMemo(
-    () => [...ADDABLE_COMPONENT_CLASSES, ...projectItems],
-    [projectItems],
+    () => [...addableComponentsForHost({ overlay }), ...projectItems],
+    [overlay, projectItems],
   );
 
   const categories = useMemo(() => {

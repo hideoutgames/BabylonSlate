@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   ActivityIcon,
+  AnchorIcon,
   BoxIcon,
   BoxesIcon,
   BracesIcon,
@@ -22,6 +23,7 @@ import {
   ListIcon,
   ListTreeIcon,
   MapIcon,
+  MousePointerClickIcon,
   NavigationIcon,
   PaintbrushIcon,
   PersonStandingIcon,
@@ -75,6 +77,8 @@ const ACTOR_ICON = PersonStandingIcon;
 const ENGINE_PARENT: Record<string, string | null> = {
   BObject: null,
   Actor: "BObject",
+  SceneLayer: "BObject",
+  SceneLayerActor: "Actor",
   ActorComponent: "BObject",
   GameInstance: "BObject",
   FunctionLibrary: "BObject",
@@ -117,6 +121,10 @@ const ENGINE_PARENT: Record<string, string | null> = {
   NavMeshComponent: "ActorComponent",
   NavMeshBlockerComponent: "ActorComponent",
   BlockingVolumeComponent: "ActorComponent",
+  "2DAnchorComponent": "ActorComponent",
+  "2DButtonComponent": "ActorComponent",
+  "2DMaterialComponent": "ActorComponent",
+  "2DTextureComponent": "ActorComponent",
 };
 
 const ICON_BY_ID: Record<string, LucideIcon> = {
@@ -132,12 +140,18 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   BTComposite: OBJECT_ICON,
   ActorComponent: OBJECT_ICON,
   Actor: ACTOR_ICON,
+  SceneLayer: Layers2Icon,
+  SceneLayerActor: ACTOR_ICON,
   AnimationGraphComponent: WorkflowIcon,
   BehaviourTreeComponent: ListTreeIcon,
   NavAgentComponent: NavigationIcon,
   NavMeshComponent: MapIcon,
   NavMeshBlockerComponent: BoxIcon,
   BlockingVolumeComponent: SquareDashedIcon,
+  "2DAnchorComponent": AnchorIcon,
+  "2DButtonComponent": MousePointerClickIcon,
+  "2DMaterialComponent": PaintbrushIcon,
+  "2DTextureComponent": ImageIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -201,6 +215,10 @@ const COMPONENT_CLASS_IDS = new Set([
   "NavMeshComponent",
   "NavMeshBlockerComponent",
   "BlockingVolumeComponent",
+  "2DAnchorComponent",
+  "2DButtonComponent",
+  "2DMaterialComponent",
+  "2DTextureComponent",
 ]);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {

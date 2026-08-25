@@ -19,7 +19,7 @@ import {
   defaultNavMeshComponentProperties,
 } from "@babylonslate/navigation";
 import { humanizePropertyLabel, walkAncestry } from "@babylonslate/editor-kit";
-import { isLockedEngineClassId } from "@babylonslate/object-model";
+import { isLockedEngineClassId, isSceneLayerAllowedComponent, isSceneLayerExclusiveComponent } from "@babylonslate/object-model";
 import {
   classIdFromClassAsset,
   classParentLookup,
@@ -107,6 +107,30 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Particles",
   ),
   engineComponent(
+    "2DAnchorComponent",
+    "2D Anchor",
+    "Pins an overlay actor to a SceneLayer edge or center",
+    "Overlay",
+  ),
+  engineComponent(
+    "2DButtonComponent",
+    "2D Button",
+    "Pointer enter, leave, click, and press events",
+    "Overlay",
+  ),
+  engineComponent(
+    "2DMaterialComponent",
+    "2D Material",
+    "Unlit plane shaded by a surface Material",
+    "Overlay",
+  ),
+  engineComponent(
+    "2DTextureComponent",
+    "2D Texture",
+    "Unlit plane shaded by a Texture",
+    "Overlay",
+  ),
+  engineComponent(
     "RigidBodyComponent",
     "Rigid Body",
     "Physics body",
@@ -182,6 +206,14 @@ export function defaultPropertiesFor(
         sortingLayer: "Default",
         orderInLayer: 0,
       };
+    case "2DAnchorComponent":
+      return { anchor: "center", offsetX: 0, offsetY: 0 };
+    case "2DButtonComponent":
+      return { hitTest: "block" };
+    case "2DMaterialComponent":
+      return { materialGuid: null, hitTest: "ignore" };
+    case "2DTextureComponent":
+      return { textureGuid: null, hitTest: "ignore" };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent":
@@ -189,6 +221,17 @@ export function defaultPropertiesFor(
     default:
       return {};
   }
+}
+
+export function addableComponentsForHost(options: {
+  overlay: boolean;
+}): AddComponentItem[] {
+  return ADDABLE_COMPONENT_CLASSES.filter((entry) => {
+    if (options.overlay) {
+      return isSceneLayerAllowedComponent(entry.classId);
+    }
+    return !isSceneLayerExclusiveComponent(entry.classId);
+  });
 }
 
 const PROJECT_ASSET_BINDINGS: Record<

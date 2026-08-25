@@ -80,6 +80,20 @@ export class ClassRegistry {
       implementedInterfaces: [],
     });
     this.register({
+      id: "SceneLayer",
+      parentClassId: "BObject",
+      kind: "object",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
+      id: "SceneLayerActor",
+      parentClassId: "Actor",
+      kind: "actor",
+      variables: [],
+      implementedInterfaces: [],
+    });
+    this.register({
       id: "ActorComponent",
       parentClassId: "BObject",
       kind: "component",

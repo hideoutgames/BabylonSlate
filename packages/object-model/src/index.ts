@@ -3,6 +3,9 @@ export {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
   isLockedEngineClassId,
+  isSceneLayerAllowedComponent,
+  isSceneLayerExclusiveComponent,
+  SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS,
   type EngineBaseClassId,
   type EngineComponentClassId,
 } from "./ids";
@@ -29,6 +32,7 @@ export {
   ActorComponent,
   BObject,
   GameInstance,
+  SceneLayer,
   type GameInstanceHooks,
   type LifecycleHooks,
   type TickContext,
@@ -44,6 +48,7 @@ export {
 export { World, type WorldOptions, type WorldInputProvider } from "./world";
 export {
   createActorsFromSerializedScene,
+  createActorsFromSerializedSceneLayer,
   runtimeTransformFromSerialized,
   type SceneActorHooks,
 } from "./instantiate-scene";
