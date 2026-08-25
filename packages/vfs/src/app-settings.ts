@@ -77,7 +77,7 @@ export const engineSettingsSchema = z.object({
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
-  }, z.number().positive().default(10)),
+  }, z.number().positive().default(1)),
   viewportFlySpeed: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
