@@ -1164,7 +1164,7 @@ export function createEngine(
     setSize: (width: number, height: number) => {
       const nextWidth = Math.max(1, Math.floor(width));
       const nextHeight = Math.max(1, Math.floor(height));
-      if (presentSharedView) {
+      if (options.sharedEngine && !presentRtt) {
         canvas.width = nextWidth;
         canvas.height = nextHeight;
       }

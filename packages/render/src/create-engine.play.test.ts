@@ -1215,6 +1215,9 @@ describe("Play createEngine view", () => {
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
     expect(setSize).toHaveBeenCalledWith(512, 288);
+    handle.setSize(800, 450);
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(450);
   });
 
   it("matches the overlay drawing buffer to a locked Play setSize", () => {
