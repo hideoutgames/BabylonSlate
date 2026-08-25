@@ -234,7 +234,6 @@ export function SettingsModal({
     retryFailedTextureEncoding,
     updateProjectSettings,
     assetRegistry,
-    openDocuments,
     sourceControl,
     prefillSourceControlFromGit,
   } = useDocuments();

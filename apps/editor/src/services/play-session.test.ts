@@ -4,7 +4,6 @@ import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   snapshotFloatCount,
   writeSnapshotHeader,
-  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   applyPlayFpsSample,
