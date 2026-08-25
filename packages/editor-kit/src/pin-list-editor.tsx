@@ -16,6 +16,7 @@ import { TypeColorMark } from "./type-color-mark";
 import { PinTypePicker } from "./pin-type-picker";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
+import { AssetPickerControl } from "./asset-picker-control";
 import { SearchDropdown } from "./search-dropdown";
 import {
   PickerIdentity,
@@ -317,25 +318,27 @@ export function PinListEditor({
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-type-asset`}>
                       {row.type === "enum" ? "Enum Type" : "Structure Type"}
                     </FieldLabel>
-                    <Button
-                      id={`${testIdPrefix}-${row.id}-type-asset`}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-auto min-h-7 justify-start"
-                      data-testid={`${testIdPrefix}-${row.id}-type-asset`}
-                      onClick={() => setTypeAssetPickRowId(row.id)}
-                    >
-                      <PickerIdentity
-                        label={
-                          typeAssetIdentity.displayLabel ??
-                          row.typeClassId ??
-                          "None"
-                        }
-                        description={typeAssetIdentity.displayType}
-                        visual={typeAssetIdentity.visual}
-                      />
-                    </Button>
+                    <AssetPickerControl value={row.typeClassId}>
+                      <Button
+                        id={`${testIdPrefix}-${row.id}-type-asset`}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-auto min-h-7 justify-start w-full"
+                        data-testid={`${testIdPrefix}-${row.id}-type-asset`}
+                        onClick={() => setTypeAssetPickRowId(row.id)}
+                      >
+                        <PickerIdentity
+                          label={
+                            typeAssetIdentity.displayLabel ??
+                            row.typeClassId ??
+                            "None"
+                          }
+                          description={typeAssetIdentity.displayType}
+                          visual={typeAssetIdentity.visual}
+                        />
+                      </Button>
+                    </AssetPickerControl>
                   </Field>
                 ) : (
                   <Field className="min-w-32 flex-1">

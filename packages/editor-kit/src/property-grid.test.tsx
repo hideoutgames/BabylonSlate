@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PropertyGrid, type PropertyRow } from "./property-grid";
+import { AssetOpenProvider } from "./asset-picker-control";
 import {
   formatEventMemberName,
   formatEventTitle,
@@ -237,6 +238,38 @@ describe("PropertyGrid", () => {
     const button = screen.getByLabelText("Texture");
     expect(button.textContent).toBe("None");
     expect(button.querySelector("[data-type-family]")).toBeNull();
+  });
+
+  it("shows Open Asset beside an openable asset picker", () => {
+    const openAsset = vi.fn();
+    render(
+      <AssetOpenProvider
+        value={{
+          canOpen: (guid) => guid === "guid-grass",
+          openAsset,
+        }}
+      >
+        <PropertyGrid
+          rows={[
+            {
+              kind: "asset",
+              id: "texture",
+              label: "Texture",
+              value: "guid-grass",
+              displayLabel: "Grass",
+              displayType: "Texture",
+              visual: { assetType: "Texture" },
+              placeholder: "None",
+              onPick: () => {},
+              onChange: () => {},
+            },
+          ]}
+        />
+      </AssetOpenProvider>,
+    );
+    screen.getByTestId("property-texture-open").click();
+    expect(openAsset).toHaveBeenCalledWith("guid-grass");
+    expect(screen.getByTestId("property-texture").textContent).toContain("Grass");
   });
 
   it("humanizes camelCase property keys as Title Case", () => {

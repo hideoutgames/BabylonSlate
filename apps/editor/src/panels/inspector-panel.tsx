@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AssetPicker,
+  AssetPickerControl,
   ClassPicker,
   FUNCTION_PIN_PICKER_TYPES,
   PIN_PICKER_TYPES,
@@ -317,18 +318,20 @@ function ClassMemberDetails({
             <FieldLabel>
               {isEnum ? "Enum Type" : "Structure Type"}
             </FieldLabel>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto w-full justify-start"
-              data-testid="inspector-member-type-asset"
-              onClick={() => setTypeAssetPickerOpen(true)}
-            >
-              {selectedPickerIdentity(
-                typeAssetIdentity,
-                typeClassId || "Pick type",
-              )}
-            </Button>
+            <AssetPickerControl value={typeClassId}>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto w-full justify-start"
+                data-testid="inspector-member-type-asset"
+                onClick={() => setTypeAssetPickerOpen(true)}
+              >
+                {selectedPickerIdentity(
+                  typeAssetIdentity,
+                  typeClassId || "Pick type",
+                )}
+              </Button>
+            </AssetPickerControl>
           </Field>
         ) : isAsset ? (
           <Field>
@@ -493,20 +496,22 @@ function ClassMemberDetails({
             },
           ]}
         />
-        <Button
-          type="button"
-          variant="outline"
-          className="h-auto w-full justify-start"
-          data-testid="inspector-member-interface-pick"
-          onClick={() => setInterfacePickerOpen(true)}
-        >
-          {selectedPickerIdentity(
-            assetRowIdentity(
-              interfaceAssets.find((asset) => asset.guid === member.assetGuid),
-            ),
-            picked || "Pick Script Interface",
-          )}
-        </Button>
+        <AssetPickerControl value={member.assetGuid}>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto w-full justify-start"
+            data-testid="inspector-member-interface-pick"
+            onClick={() => setInterfacePickerOpen(true)}
+          >
+            {selectedPickerIdentity(
+              assetRowIdentity(
+                interfaceAssets.find((asset) => asset.guid === member.assetGuid),
+              ),
+              picked || "Pick Script Interface",
+            )}
+          </Button>
+        </AssetPickerControl>
         <AssetPicker
           open={interfacePickerOpen}
           onOpenChange={setInterfacePickerOpen}

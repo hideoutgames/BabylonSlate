@@ -21,6 +21,7 @@ import { ColorField, type ColorValue } from "./color-field";
 import { FlagsField } from "./flags-field";
 import { PickerIdentity } from "./picker-identity";
 import { type TypeVisualQuery } from "./type-visuals";
+import { AssetPickerControl } from "./asset-picker-control";
 
 export type Vector3Value = [number, number, number] | [number, number, number, number];
 
@@ -324,24 +325,26 @@ function RowControl({ row }: { row: PropertyRow }) {
     case "asset": {
       const selected = Boolean(row.displayLabel ?? row.value);
       return (
-        <Button
-          id={`property-${row.id}`}
-          variant="outline"
-          className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
-          disabled={row.disabled}
-          onClick={row.onPick}
-          data-testid={`property-${row.id}`}
-        >
-          {selected && (row.visual || row.displayType) ? (
-            <PickerIdentity
-              label={row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
-              description={row.displayType}
-              visual={row.visual}
-            />
-          ) : (
-            (row.displayLabel ?? row.value ?? row.placeholder ?? "None")
-          )}
-        </Button>
+        <AssetPickerControl value={row.value}>
+          <Button
+            id={`property-${row.id}`}
+            variant="outline"
+            className="min-h-[var(--chrome-row,28px)] h-auto w-full justify-start"
+            disabled={row.disabled}
+            onClick={row.onPick}
+            data-testid={`property-${row.id}`}
+          >
+            {selected && (row.visual || row.displayType) ? (
+              <PickerIdentity
+                label={row.displayLabel ?? row.value ?? row.placeholder ?? "None"}
+                description={row.displayType}
+                visual={row.visual}
+              />
+            ) : (
+              (row.displayLabel ?? row.value ?? row.placeholder ?? "None")
+            )}
+          </Button>
+        </AssetPickerControl>
       );
     }
   }

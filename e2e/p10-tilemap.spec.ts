@@ -140,11 +140,22 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId("document-workspace-tileset")).toBeVisible();
     await expect(page.getByTestId("tileset-preview")).toBeVisible();
     await expect(page.getByTestId("tileset-editor")).toBeVisible();
+    await expect(page.getByTestId("property-texture-open")).toHaveCount(0);
     await page.getByTestId("property-texture").click();
     const textureGuid = await guidForPath(page, "assets/albedo.babasset");
     expect(textureGuid.length).toBeGreaterThan(0);
     await expect(page.getByTestId(`search-item-${textureGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${textureGuid}`).click();
+    await expect(page.getByTestId("property-texture-open")).toBeVisible();
+    await page.getByTestId("property-texture-open").click();
+    await expect(
+      page.locator(
+        '[data-testid="document-tab"][data-document-kind="asset-settings"]',
+      ),
+    ).toBeVisible();
+    await page
+      .locator('[data-testid="document-tab"][data-document-kind="tileset"]')
+      .click();
     await expect(page.getByTestId("tileset-preview-cell-1")).toBeVisible();
     await expect(page.locator('[data-testid^="tileset-preview-cell-"]')).toHaveCount(
       1,

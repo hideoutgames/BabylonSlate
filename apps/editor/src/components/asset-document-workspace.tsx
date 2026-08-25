@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AssetPicker,
+  AssetPickerControl,
   NamedListEditor,
   PanelFrame,
   PropertyGrid,
@@ -200,25 +201,27 @@ function FontEditor({
             onAdd={() => setFallbackPick("new")}
             data-testid="font-fallbacks"
             renderItem={({ value, index }) => (
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                data-testid={`font-fallback-${index}`}
-                onClick={() => setFallbackPick(index)}
-              >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    (() => {
-                      const asset = assetRegistry?.getByGuid(value);
-                      return asset
-                        ? { name: asset.header.name, type: asset.header.type }
-                        : undefined;
-                    })(),
-                  ),
-                  value,
-                )}
-              </Button>
+              <AssetPickerControl value={value}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                  data-testid={`font-fallback-${index}`}
+                  onClick={() => setFallbackPick(index)}
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      (() => {
+                        const asset = assetRegistry?.getByGuid(value);
+                        return asset
+                          ? { name: asset.header.name, type: asset.header.type }
+                          : undefined;
+                      })(),
+                    ),
+                    value,
+                  )}
+                </Button>
+              </AssetPickerControl>
             )}
           />
         </div>

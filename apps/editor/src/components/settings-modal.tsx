@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AssetPicker,
+  AssetPickerControl,
   CatalogDialog,
   ClassPicker,
   InputMappingEditor,
@@ -663,33 +664,37 @@ export function SettingsModal({
             <FieldLegend>Fonts</FieldLegend>
             <Field>
               <FieldLabel>Default Font</FieldLabel>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                onClick={() => setFontPickerOpen(true)}
-                data-testid="settings-default-font"
+              <AssetPickerControl
+                value={projectDocument.settings.fonts.defaultFontGuid}
               >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    (() => {
-                      const asset = assetRegistry
-                        ?.list()
-                        .find(
-                          (entry) =>
-                            entry.header.guid ===
-                            projectDocument.settings.fonts.defaultFontGuid,
-                        );
-                      return asset
-                        ? {
-                            name: asset.header.name,
-                            type: asset.header.type,
-                          }
-                        : undefined;
-                    })(),
-                  ),
-                )}
-              </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                  onClick={() => setFontPickerOpen(true)}
+                  data-testid="settings-default-font"
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      (() => {
+                        const asset = assetRegistry
+                          ?.list()
+                          .find(
+                            (entry) =>
+                              entry.header.guid ===
+                              projectDocument.settings.fonts.defaultFontGuid,
+                          );
+                        return asset
+                          ? {
+                              name: asset.header.name,
+                              type: asset.header.type,
+                            }
+                          : undefined;
+                      })(),
+                    ),
+                  )}
+                </Button>
+              </AssetPickerControl>
               <FieldDescription>
                 Font asset inserted after authored families. Empty means the
                 compiled stack is the source family plus the global fallback.
@@ -747,33 +752,37 @@ export function SettingsModal({
             <FieldLegend>Audio</FieldLegend>
             <Field>
               <FieldLabel>Audio Mixer</FieldLabel>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                onClick={() => setMixerPickerOpen(true)}
-                data-testid="settings-audio-mixer"
+              <AssetPickerControl
+                value={projectDocument.settings.audio.audioMixerGuid}
               >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    (() => {
-                      const asset = assetRegistry
-                        ?.list()
-                        .find(
-                          (entry) =>
-                            entry.header.guid ===
-                            projectDocument.settings.audio.audioMixerGuid,
-                        );
-                      return asset
-                        ? {
-                            name: asset.header.name,
-                            type: asset.header.type,
-                          }
-                        : undefined;
-                    })(),
-                  ),
-                )}
-              </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                  onClick={() => setMixerPickerOpen(true)}
+                  data-testid="settings-audio-mixer"
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      (() => {
+                        const asset = assetRegistry
+                          ?.list()
+                          .find(
+                            (entry) =>
+                              entry.header.guid ===
+                              projectDocument.settings.audio.audioMixerGuid,
+                          );
+                        return asset
+                          ? {
+                              name: asset.header.name,
+                              type: asset.header.type,
+                            }
+                          : undefined;
+                      })(),
+                    ),
+                  )}
+                </Button>
+              </AssetPickerControl>
               <FieldDescription>
                 Optional mixer for Play and export. None plays Audio without
                 channel or global gain.
@@ -1021,33 +1030,37 @@ export function SettingsModal({
             <FieldLegend>Export</FieldLegend>
             <Field>
               <FieldLabel>Startup Scene</FieldLabel>
-              <Button
-                type="button"
-                variant="outline"
-                className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                onClick={() => setScenePickerOpen(true)}
-                data-testid="settings-startup-scene"
+              <AssetPickerControl
+                value={projectDocument.settings.startupSceneGuid}
               >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    (() => {
-                      const asset = assetRegistry
-                        ?.list()
-                        .find(
-                          (entry) =>
-                            entry.header.guid ===
-                            projectDocument.settings.startupSceneGuid,
-                        );
-                      return asset
-                        ? {
-                            name: asset.header.name,
-                            type: asset.header.type,
-                          }
-                        : undefined;
-                    })(),
-                  ),
-                )}
-              </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                  onClick={() => setScenePickerOpen(true)}
+                  data-testid="settings-startup-scene"
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      (() => {
+                        const asset = assetRegistry
+                          ?.list()
+                          .find(
+                            (entry) =>
+                              entry.header.guid ===
+                              projectDocument.settings.startupSceneGuid,
+                          );
+                        return asset
+                          ? {
+                              name: asset.header.name,
+                              type: asset.header.type,
+                            }
+                          : undefined;
+                      })(),
+                    ),
+                  )}
+                </Button>
+              </AssetPickerControl>
               <FieldDescription>
                 Packaged builds boot this scene. Editor Play uses the open scene
                 tab.

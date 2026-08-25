@@ -38,7 +38,8 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { enqueueModelThumbnailJobs } from "../lib/model-thumbnail-queue";
-import { documentId, documentKindForAssetType, labelFromPath, CONTENT_BROWSER_ID } from "@babylonslate/core";
+import { openOrFocusAssetDocument } from "../lib/open-asset-document";
+import { documentKindForAssetType, CONTENT_BROWSER_ID } from "@babylonslate/core";
 import { createAppSettingsStore, isMobilePlatform, pickImportFiles } from "@babylonslate/vfs";
 import { Button } from "@babylonslate/ui/components/button";
 import {
@@ -699,19 +700,13 @@ export function ContentBrowserWorkspace({
 
   const openOrFocusDocument = useCallback(
     async (asset: IndexedAsset) => {
-      const kind = documentKindForAssetType(asset.header.type);
-      if (!kind) return;
-      const path = asset.path;
-      const id = documentId({ kind, path });
-      if (openIds.has(id)) {
-        setActiveDocument(id);
-        return;
-      }
       try {
-        await openDocument({
-          kind,
-          path,
-          label: labelFromPath(path),
+        await openOrFocusAssetDocument({
+          guid: asset.header.guid,
+          getByGuid: () => asset,
+          openDocumentIds: openIds,
+          setActiveDocument,
+          openDocument,
         });
       } catch (error) {
         setOpenError(

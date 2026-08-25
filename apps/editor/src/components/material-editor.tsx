@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
+  AssetPickerControl,
   PanelFrame,
   PinListEditor,
   PropertyGrid,
@@ -744,29 +745,37 @@ function MaterialNodeDetails({
       node.type === "texture.sample" ||
       node.type === "texture.sampleLod" ? (
         <div className="px-3">
-          <Button
-            type="button"
-            variant="outline"
-            className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-            onClick={() => setPickOpen(true)}
-            data-testid="material-node-texture"
+          <AssetPickerControl
+            value={
+              typeof node.properties.textureGuid === "string"
+                ? node.properties.textureGuid
+                : null
+            }
           >
-            {selectedPickerIdentity(
-              assetRowIdentity(
-                (() => {
-                  const guid =
-                    typeof node.properties.textureGuid === "string"
-                      ? node.properties.textureGuid
-                      : "";
-                  const asset = assetRegistry?.getByGuid(guid);
-                  return asset
-                    ? { name: asset.header.name, type: asset.header.type }
-                    : undefined;
-                })(),
-              ),
-              "Pick Texture",
-            )}
-          </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+              onClick={() => setPickOpen(true)}
+              data-testid="material-node-texture"
+            >
+              {selectedPickerIdentity(
+                assetRowIdentity(
+                  (() => {
+                    const guid =
+                      typeof node.properties.textureGuid === "string"
+                        ? node.properties.textureGuid
+                        : "";
+                    const asset = assetRegistry?.getByGuid(guid);
+                    return asset
+                      ? { name: asset.header.name, type: asset.header.type }
+                      : undefined;
+                  })(),
+                ),
+                "Pick Texture",
+              )}
+            </Button>
+          </AssetPickerControl>
           <AssetPicker
             open={pickOpen}
             onOpenChange={setPickOpen}
@@ -815,25 +824,27 @@ function MaterialFunctionPicker({
     }));
   return (
     <div className="px-3">
-      <Button
-        type="button"
-        variant="outline"
-        className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-        onClick={() => setOpen(true)}
-        data-testid="material-node-function"
-      >
-        {selectedPickerIdentity(
-          assetRowIdentity(
-            (() => {
-              const asset = assetRegistry?.getByGuid(guid);
-              return asset
-                ? { name: asset.header.name, type: asset.header.type }
-                : undefined;
-            })(),
-          ),
-          "Pick Material Function",
-        )}
-      </Button>
+      <AssetPickerControl value={guid}>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+          onClick={() => setOpen(true)}
+          data-testid="material-node-function"
+        >
+          {selectedPickerIdentity(
+            assetRowIdentity(
+              (() => {
+                const asset = assetRegistry?.getByGuid(guid);
+                return asset
+                  ? { name: asset.header.name, type: asset.header.type }
+                  : undefined;
+              })(),
+            ),
+            "Pick Material Function",
+          )}
+        </Button>
+      </AssetPickerControl>
       <AssetPicker
         open={open}
         onOpenChange={setOpen}

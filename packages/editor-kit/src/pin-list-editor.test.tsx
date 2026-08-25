@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PinListEditor, type PinListRow } from "./pin-list-editor";
+import { AssetOpenProvider } from "./asset-picker-control";
 
 if (typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -133,6 +134,37 @@ describe("PinListEditor", () => {
     await waitFor(() => {
       expect(screen.getByTestId("search-item-struct-stats")).toBeTruthy();
     });
+  });
+
+  it("shows Open Asset beside a Structure type picker", () => {
+    const openAsset = vi.fn();
+    render(
+      <AssetOpenProvider
+        value={{
+          canOpen: (guid) => guid === "struct-stats",
+          openAsset,
+        }}
+      >
+        <PinListEditor
+          rows={[
+            {
+              id: "a",
+              name: "stats",
+              type: "struct",
+              direction: "in",
+              typeClassId: "struct-stats",
+            },
+          ]}
+          selectedId="a"
+          typeAssets={[
+            { guid: "struct-stats", name: "Stats", type: "Structure" },
+          ]}
+          onChange={() => {}}
+        />
+      </AssetOpenProvider>,
+    );
+    screen.getByTestId("pin-a-type-asset-open").click();
+    expect(openAsset).toHaveBeenCalledWith("struct-stats");
   });
 
   it("does not clear typeClassId when switching the pin type to enum", async () => {

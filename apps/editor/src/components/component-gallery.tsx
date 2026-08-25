@@ -2,6 +2,8 @@ import { OctagonAlertIcon, SaveIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AssetPicker,
+  AssetOpenProvider,
+  AssetPickerControl,
   AtlasTileGrid,
   BindingCodePicker,
   CatalogDialog,
@@ -280,9 +282,25 @@ function GalleryComposites() {
       onChange: () => {},
       ...assetRowIdentity({ name: "Rock", type: "Mesh" }),
     },
+    {
+      kind: "asset",
+      id: "gallery-texture",
+      label: "Texture",
+      value: "gallery-texture",
+      placeholder: "None",
+      onPick: () => setPickerOpen(true),
+      onChange: () => {},
+      ...assetRowIdentity({ name: "Grass", type: "Texture" }),
+    },
   ];
 
   return (
+    <AssetOpenProvider
+      value={{
+        canOpen: (guid) => guid === "gallery-texture",
+        openAsset: () => {},
+      }}
+    >
     <div className="flex flex-col gap-4">
       <div className="rounded-lg border border-border">
         <PanelFrame title="Property grid" data-testid="gallery-property-grid">
@@ -502,6 +520,19 @@ function GalleryComposites() {
             "Open asset picker",
           )}
         </Button>
+        <AssetPickerControl value="gallery-texture">
+          <Button
+            variant="outline"
+            className="h-auto"
+            data-testid="gallery-texture-picker"
+            onClick={() => setPickerOpen(true)}
+          >
+            {selectedPickerIdentity(
+              assetRowIdentity({ name: "Grass", type: "Texture" }),
+              "Open asset picker",
+            )}
+          </Button>
+        </AssetPickerControl>
         <Button variant="outline" className="h-auto" onClick={() => setClassPickerOpen(true)}>
           {selectedPickerIdentity(
             classRowIdentity({ id: "MyGame", name: "My Game" }),
@@ -615,6 +646,7 @@ function GalleryComposites() {
         onPick={() => {}}
       />
     </div>
+    </AssetOpenProvider>
   );
 }
 

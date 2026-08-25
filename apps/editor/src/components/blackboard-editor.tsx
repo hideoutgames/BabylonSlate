@@ -7,6 +7,7 @@ import {
 } from "@babylonslate/behaviour-tree";
 import {
   AssetPicker,
+  AssetPickerControl,
   PanelFrame,
   PinTypePicker,
   PropertyGrid,
@@ -189,18 +190,20 @@ export function BlackboardEditor({
                 <div className="text-sm font-medium">
                   {isEnum ? "Enum Type" : "Structure Type"}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto w-full justify-start"
-                  data-testid="blackboard-key-type-asset"
-                  onClick={() => setTypeAssetPickerOpen(true)}
-                >
-                  {selectedPickerIdentity(
-                    typeAssetIdentity,
-                    typeClassId || "Pick type",
-                  )}
-                </Button>
+                <AssetPickerControl value={typeClassId}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-auto w-full justify-start"
+                    data-testid="blackboard-key-type-asset"
+                    onClick={() => setTypeAssetPickerOpen(true)}
+                  >
+                    {selectedPickerIdentity(
+                      typeAssetIdentity,
+                      typeClassId || "Pick type",
+                    )}
+                  </Button>
+                </AssetPickerControl>
               </div>
             ) : null}
             <Button
