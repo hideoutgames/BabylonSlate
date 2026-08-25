@@ -623,7 +623,7 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Idle-unmount background chrome tabs (2 min grace, cap 3) | Done (`p18-inactive-documents`) | `apps/editor` (`document-workspace`, UI/Anim docks) | P17 done |
+| Idle-unmount background chrome tabs (2 min grace, cap 3) | Done (`p18-inactive-documents`) | `apps/editor` (`document-workspace`, Anim docks) | P17 done |
 | Off-screen node virtualisation for every `GraphEditor` host | Done (`p18-graph-virtualize`) | `graph-ui`, hosts in `apps/editor` | P17 done (can parallel) |
 | Windowed Add Node catalog body (~1000 nodes) | Done (`p18-add-node-virtualize`) | `graph-ui` (`NodePalette`); `editor-kit` `windowedSlice` | P17 done (can parallel) |
 | Windowed Content Browser grid + revoke off-screen thumbs | Done (`p18-content-browser-virtualize`) | `apps/editor` Content Browser; `assets` thumbnail LRU | P17 done (can parallel) |

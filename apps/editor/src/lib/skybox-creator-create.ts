@@ -2,7 +2,7 @@ import { emptySkyboxFaces, type SkyboxFaces } from "@babylonslate/core";
 import {
   createSkyboxFaceTextureResult,
   fitSourceIntoSkyboxNet,
-  mimeForGuiTextureBytes,
+  sniffRasterImageMime,
   normalizeSkyboxCreatorPayload,
   planSkyboxCreatorFaceWrites,
   stripAssetFileSuffix,
@@ -89,12 +89,12 @@ export async function readTextureImageBytes(
   const pixels = await readAssetChunk(path, "pixels");
   const source = await readAssetChunk(path, "source");
   const pixelsMime =
-    pixels && pixels.byteLength > 0 ? mimeForGuiTextureBytes(pixels) : null;
+    pixels && pixels.byteLength > 0 ? sniffRasterImageMime(pixels) : null;
   if (pixels && pixelsMime) {
     return { bytes: pixels, mime: pixelsMime };
   }
   if (source && source.byteLength > 0) {
-    return { bytes: source, mime: mimeForGuiTextureBytes(source) };
+    return { bytes: source, mime: sniffRasterImageMime(source) };
   }
   if (pixels && pixels.byteLength > 0) {
     return { bytes: pixels, mime: null };
