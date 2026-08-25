@@ -44,7 +44,10 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
-import { configureKtx2Transcoder } from "./ktx2-transcoder";
+import {
+  configureKtx2DecoderRuntime,
+  configureKtx2Transcoder,
+} from "./ktx2-transcoder";
 import {
   documentEditorColorScheme,
   editorClearColor,
@@ -495,6 +498,10 @@ export function createEngine(
       adaptToDeviceRatio: false,
       antialias: false,
     });
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    mainThread: options.playMode === true,
+    caps: engine.getCaps(),
+  });
 
   const sharedViewBlit =
     options.sharedEngine &&
@@ -1539,10 +1546,14 @@ function setOtherEngineViewsEnabled(
 /** Create the project-lifetime Engine (no scene). */
 export function createAppEngine(canvas: HTMLCanvasElement): Engine {
   configureKtx2Transcoder(KhronosTextureContainer2);
-  return new Engine(canvas, true, {
+  const engine = new Engine(canvas, true, {
     preserveDrawingBuffer: true,
     stencil: true,
     adaptToDeviceRatio: false,
     antialias: false,
   });
+  configureKtx2DecoderRuntime(KhronosTextureContainer2, {
+    caps: engine.getCaps(),
+  });
+  return engine;
 }

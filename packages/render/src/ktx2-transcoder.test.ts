@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
   ktx2TranscoderUrls,
   playerFilesHaveKtx2Transcoder,
@@ -49,6 +50,41 @@ describe("ktx2 transcoder config", () => {
     await expect(
       probeKtx2TranscoderAvailable("/ktx2/", fetchImpl as unknown as typeof fetch),
     ).resolves.toBe(false);
+  });
+
+  it("decodes packed player KTX2 on the main thread and uses RGBA without ASTC/BC7", () => {
+    const decoderOptions = {
+      forceRGBA: false,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      mainThread: true,
+      caps: { astc: null, bptc: null },
+    });
+    expect(mock.DefaultNumWorkers).toBe(0);
+    expect(decoderOptions.forceRGBA).toBe(true);
+    expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
+  });
+
+  it("keeps GPU compressed transcode when ASTC is available", () => {
+    const decoderOptions = {
+      forceRGBA: true,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      caps: { astc: {}, bptc: null },
+    });
+    expect(mock.DefaultNumWorkers).toBe(4);
+    expect(decoderOptions.forceRGBA).toBe(false);
+    expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
   });
 
   it("requires every transcoder wasm in a player file map", () => {

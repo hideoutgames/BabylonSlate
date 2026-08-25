@@ -77,7 +77,12 @@ from Editor Texture LOD. Preview Build packs KTX2 into a cold iframe Engine, so
 `acquire` / `resolveMaterial` stay **synchronous** (slot bind cannot wait): the
 compiler assigns the live `Texture` object, calls `material.build()`, then
 subscribes `onLoadObservable` and **rebuilds** so the mesh does not stay on
-Babylon’s error sampler. After `material.build()`, authored
+Babylon’s error sampler. The packed player also sets
+`KhronosTextureContainer2.DefaultNumWorkers = 0` (decode on this thread; blob
+Workers often fail to `importScripts` the self-hosted wasm under COEP) and
+`DefaultDecoderOptions.forceRGBA` when the Engine has neither ASTC nor BC7
+(software WebGL can advertise compressed formats then fail `texImage2D`). After
+`material.build()`, authored
 `blendMode` / `twoSided` / `alphaCutoff` are applied (`MATERIAL_OPAQUE` for
 opaque including unlit, alphatest + cutoff for masked, alphablend +
 `needDepthPrePass` for translucent/additive, `backFaceCulling = false` when

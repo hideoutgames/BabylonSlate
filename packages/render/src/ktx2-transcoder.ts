@@ -67,6 +67,42 @@ export function configureKtx2Transcoder(
   return urls;
 }
 
+export type Ktx2DecoderRuntimeContainer = {
+  DefaultNumWorkers: number;
+  DefaultDecoderOptions: {
+    forceRGBA: boolean;
+    useRGBAIfASTCBC7NotAvailableWhenUASTC: boolean;
+  };
+};
+
+export type Ktx2DecoderRuntimeOptions = {
+  /**
+   * Packed player / Preview iframe: decode on this thread so wasm URLs are
+   * not loaded from a blob Worker (COEP / importScripts often fail there).
+   */
+  mainThread?: boolean;
+  /** Engine compressed-texture caps. Missing ASTC and BC7 → uncompressed RGBA. */
+  caps?: { astc?: unknown; bptc?: unknown };
+};
+
+/**
+ * After Engine construction: pick a transcode target the GPU can upload.
+ * Software WebGL often advertises S3TC/ASTC then fails `texImage2D`.
+ */
+export function configureKtx2DecoderRuntime(
+  container: Ktx2DecoderRuntimeContainer,
+  options: Ktx2DecoderRuntimeOptions = {},
+): void {
+  if (options.mainThread) {
+    container.DefaultNumWorkers = 0;
+  }
+  container.DefaultDecoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC = true;
+  const caps = options.caps;
+  if (caps) {
+    container.DefaultDecoderOptions.forceRGBA = !caps.astc && !caps.bptc;
+  }
+}
+
 /**
  * HEAD/GET every self-hosted transcoder URL (JS and wasm). Used to decide
  * `fallback_uncompressed` and whether export should pack PNG instead of KTX2.
