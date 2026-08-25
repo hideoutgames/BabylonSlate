@@ -70,6 +70,13 @@ describe("WindowedList", () => {
     cleanup();
   });
 
+  it("lets row slots pan vertically instead of taking the default touch action", () => {
+    const { getByTestId } = renderList(2, 28);
+    expect(getByTestId("windowed-row-0").parentElement?.className).toMatch(
+      /touch-pan-y/,
+    );
+  });
+
   it("mounts every row when the scroll viewport height is 0", () => {
     const { queryByTestId } = renderList(80, 28);
     expect(queryByTestId("windowed-row-0")).toBeTruthy();
