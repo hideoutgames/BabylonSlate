@@ -83,7 +83,25 @@ export type Ktx2DecoderRuntimeOptions = {
   mainThread?: boolean;
   /** Engine compressed-texture caps. Missing ASTC and BC7 → uncompressed RGBA. */
   caps?: { astc?: unknown; bptc?: unknown };
+  /** `engine.getGlInfo().renderer` — software GL often lies about ASTC/S3TC. */
+  renderer?: string;
 };
+
+const SOFTWARE_GL_RENDERER =
+  /swiftshader|llvmpipe|softpipe|microsoft basic render|\bsoftware\b/i;
+
+export function isSoftwareGlRenderer(renderer: string): boolean {
+  return SOFTWARE_GL_RENDERER.test(renderer);
+}
+
+/** Uncompressed RGBA when compressed upload would fail (missing caps or software GL). */
+export function shouldForceKtx2Rgba(
+  caps?: { astc?: unknown; bptc?: unknown },
+  renderer?: string,
+): boolean {
+  if (isSoftwareGlRenderer(renderer ?? "")) return true;
+  return !caps?.astc && !caps?.bptc;
+}
 
 /**
  * After Engine construction: pick a transcode target the GPU can upload.
@@ -97,10 +115,10 @@ export function configureKtx2DecoderRuntime(
     container.DefaultNumWorkers = 0;
   }
   container.DefaultDecoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC = true;
-  const caps = options.caps;
-  if (caps) {
-    container.DefaultDecoderOptions.forceRGBA = !caps.astc && !caps.bptc;
-  }
+  container.DefaultDecoderOptions.forceRGBA = shouldForceKtx2Rgba(
+    options.caps,
+    options.renderer,
+  );
 }
 
 /**

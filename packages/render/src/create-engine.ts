@@ -501,6 +501,9 @@ export function createEngine(
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: options.playMode === true,
     caps: engine.getCaps(),
+    renderer: (
+      engine as { getGlInfo?: () => { renderer?: string } }
+    ).getGlInfo?.().renderer,
   });
 
   const sharedViewBlit =
@@ -1554,6 +1557,9 @@ export function createAppEngine(canvas: HTMLCanvasElement): Engine {
   });
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     caps: engine.getCaps(),
+    renderer: (
+      engine as { getGlInfo?: () => { renderer?: string } }
+    ).getGlInfo?.().renderer,
   });
   return engine;
 }

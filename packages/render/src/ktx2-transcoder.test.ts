@@ -70,6 +70,23 @@ describe("ktx2 transcoder config", () => {
     expect(decoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC).toBe(true);
   });
 
+  it("forces RGBA on SwiftShader even when ASTC caps are present", () => {
+    const decoderOptions = {
+      forceRGBA: false,
+      useRGBAIfASTCBC7NotAvailableWhenUASTC: false,
+    };
+    const mock = {
+      DefaultNumWorkers: 4,
+      DefaultDecoderOptions: decoderOptions,
+    };
+    configureKtx2DecoderRuntime(mock, {
+      mainThread: true,
+      caps: { astc: {}, bptc: {} },
+      renderer: "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 16.0.0)))",
+    });
+    expect(decoderOptions.forceRGBA).toBe(true);
+  });
+
   it("keeps GPU compressed transcode when ASTC is available", () => {
     const decoderOptions = {
       forceRGBA: true,
@@ -81,6 +98,7 @@ describe("ktx2 transcoder config", () => {
     };
     configureKtx2DecoderRuntime(mock, {
       caps: { astc: {}, bptc: null },
+      renderer: "Apple A16 GPU",
     });
     expect(mock.DefaultNumWorkers).toBe(4);
     expect(decoderOptions.forceRGBA).toBe(false);
