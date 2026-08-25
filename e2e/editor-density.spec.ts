@@ -625,6 +625,8 @@ test.describe("Editor density and IA", () => {
       guid,
     );
   });
+
+  test("Content Browser empty-grid double-click opens New Asset", {
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
     await openTestProject(page);
