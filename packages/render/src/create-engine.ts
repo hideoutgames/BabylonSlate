@@ -13,9 +13,10 @@ import {
   readSnapshotHeader,
   type CommandMessage,
 } from "@babylonslate/bridge";
-import type {
-  MaterialDocument,
-  MaterialFunctionDocument,
+import {
+  materialDependencies,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
 import {
   createEditorCamera,
@@ -659,6 +660,7 @@ export function createEngine(
   const materialFunctions = new Map<string, MaterialFunctionDocument>(
     options.materialFunctions ?? [],
   );
+  binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
   const materialLibrary = new MaterialLibrary({
     functions: () => Object.fromEntries(materialFunctions),
@@ -1378,10 +1380,17 @@ export function createEngine(
         assets.spriteAnimations ?? binding.spriteAnimations;
       binding.tilemaps = assets.tilemaps ?? binding.tilemaps;
       binding.tilesets = assets.tilesets ?? binding.tilesets;
+      if (assets.materialTextureGuids) {
+        binding.materialTextureGuids = assets.materialTextureGuids;
+      }
       if (typeof assets.pixelsPerUnit === "number") {
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
-      const rebuilt = editorSync?.setMeshAssets(assets) === true;
+      const rebuilt =
+        editorSync?.setMeshAssets({
+          ...assets,
+          materialTextureGuids: binding.materialTextureGuids,
+        }) === true;
       if (rebuilt && lastSelectedActorIds.length > 0) {
         editor?.setSelectedActors(lastSelectedActorIds);
       }
@@ -1429,6 +1438,7 @@ export function createEngine(
       for (const [guid, document] of documents) {
         materialDocuments.set(guid, document);
       }
+      binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
       if (functions) {
         materialFunctions.clear();
         for (const [guid, document] of functions) {
@@ -1491,6 +1501,16 @@ export function syncEditorPlayState(
     handle.resize();
     handle.scheduler.invalidate("play");
   }
+}
+
+function materialTextureGuidMap(
+  documents: ReadonlyMap<string, MaterialDocument>,
+): Map<string, readonly string[]> {
+  const out = new Map<string, readonly string[]>();
+  for (const [guid, document] of documents) {
+    out.set(guid, materialDependencies(document).textures);
+  }
+  return out;
 }
 
 function setOtherEngineViewsEnabled(

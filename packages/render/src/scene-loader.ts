@@ -827,6 +827,8 @@ export function applySceneToBabylonScene(
     modelPayloads: assets?.modelPayloads,
     modelClipAnimationGuids: assets?.modelClipAnimationGuids,
     retargetAnimationLoads: assets?.retargetAnimationLoads,
+    textureBytes: assets?.textureBytes,
+    materialTextureGuids: assets?.materialTextureGuids,
   };
   let loadSlot = 0;
   for (const actor of sceneData.actors) {

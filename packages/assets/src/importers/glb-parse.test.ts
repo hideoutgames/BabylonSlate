@@ -643,4 +643,19 @@ describe("slimGlbEmbeddedImages", () => {
     const offset = views[viewIndex]!.byteOffset as number;
     expect(split!.bin.subarray(offset, offset + 36)).toEqual(positions);
   });
+
+  it("uses the 1x1 red PNG stub so leftover construction mats are visibly red", () => {
+    const glb = buildMinimalGlbFixture({
+      imageRgba: new Uint8Array(2048),
+    });
+    const slim = slimGlbEmbeddedImages(glb);
+    const parsed = parseGlbForBrowse(slim);
+    const stub = parsed?.images[0]?.bytes;
+    expect(stub).toBeDefined();
+    expect(stub!.byteLength).toBeLessThan(128);
+    expect([...stub!.subarray(0, 8)]).toEqual([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
+    expect(stub).toEqual(ONE_BY_ONE_PNG);
+  });
 });

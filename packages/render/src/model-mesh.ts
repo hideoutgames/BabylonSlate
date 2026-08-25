@@ -1,5 +1,9 @@
 import { Matrix, Mesh, Quaternion, Scene, Vector3, VertexData } from "@babylonjs/core";
-import { slimGlbEmbeddedImages, shouldSlimModelEmbeddedTextures } from "@babylonslate/assets";
+import {
+  slimGlbEmbeddedImages,
+  shouldSlimModelEmbeddedTextures,
+  type PackedTextureSlimProof,
+} from "@babylonslate/assets";
 
 const GLB_MAGIC = 0x46546c67;
 const CHUNK_JSON = 0x4e4f534a;
@@ -277,13 +281,14 @@ export function packedGltfBytes(bytes: Uint8Array): Uint8Array {
   return packed ? bytes : bytes.slice();
 }
 
-/** Packed GLB for the loader; slims rasters when every material slot is bound. */
+/** Packed GLB for the loader; slims rasters only when slot textures are packed. */
 export function gpuModelBytes(
   bytes: Uint8Array,
   payload?: unknown,
+  packedTextures?: PackedTextureSlimProof | null,
 ): Uint8Array {
   const packed = packedGltfBytes(bytes);
-  if (payload && shouldSlimModelEmbeddedTextures(payload)) {
+  if (payload && shouldSlimModelEmbeddedTextures(payload, packedTextures)) {
     return slimGlbEmbeddedImages(packed);
   }
   return packed;

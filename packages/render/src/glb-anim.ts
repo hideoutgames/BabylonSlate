@@ -11,7 +11,7 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { Scene } from "@babylonjs/core/scene";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
-import { normalizeModelImportScale } from "@babylonslate/assets";
+import { normalizeModelImportScale, type PackedTextureSlimProof } from "@babylonslate/assets";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
@@ -38,6 +38,8 @@ export type ModelAnimLoadBinding = Pick<
   | "modelClipAnimationGuids"
   | "retargetAnimationLoads"
   | "spritePayloads"
+  | "textureBytes"
+  | "materialTextureGuids"
 >;
 
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
@@ -210,13 +212,24 @@ async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
   });
 }
 
+function packedSlimProof(
+  binding: Pick<ModelAnimLoadBinding, "textureBytes" | "materialTextureGuids">,
+): PackedTextureSlimProof | undefined {
+  if (!binding.textureBytes || !binding.materialTextureGuids) return undefined;
+  return {
+    packedTextureGuids: new Set(binding.textureBytes.keys()),
+    texturesByMaterialGuid: binding.materialTextureGuids,
+  };
+}
+
 function getCachedGlbContainer(
   scene: Scene,
   guid: string,
   bytes: Uint8Array,
   payload?: unknown,
+  packed?: PackedTextureSlimProof | null,
 ): Promise<AssetContainer> {
-  const loadBytes = gpuModelBytes(bytes, payload);
+  const loadBytes = gpuModelBytes(bytes, payload, packed);
   const cache = cacheFor(scene);
   const existing = cache.entries.get(guid);
   if (existing && existing.byteLength === loadBytes.byteLength) {
@@ -368,6 +381,7 @@ export function beginSlotModelAnimLoad(
         clipAssetGuid,
         bytes,
         binding.modelPayloads?.get(clipAssetGuid),
+        packedSlimProof(binding),
       );
       if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
         return;
@@ -403,6 +417,7 @@ export function beginSlotModelAnimLoad(
           row.sourceModelGuid,
           sourceBytes,
           binding.modelPayloads?.get(row.sourceModelGuid),
+          packedSlimProof(binding),
         );
         if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
           return;

@@ -20,6 +20,11 @@ export interface MeshAssetContext {
   tilesets?: ReadonlyMap<string, TilesetPayload>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
+  /**
+   * Texture guids sampled by each Material document (`materialDependencies`).
+   * With `textureBytes`, GLB slim runs only when those guids are packed.
+   */
+  materialTextureGuids?: ReadonlyMap<string, readonly string[]>;
   /** Native clipName → Animation guid, keyed by Model guid. */
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */

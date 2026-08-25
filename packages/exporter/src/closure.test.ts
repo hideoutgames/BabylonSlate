@@ -682,6 +682,65 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-mat");
   });
 
+  it("includes Model slot Materials and graph textureGuids from payloads", () => {
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.assetGuid = "model-1";
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", { components: [mesh] })],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({
+          guid: "model-1",
+          type: "Model",
+          name: "Mannequin",
+          dependencies: [],
+        }),
+        asset({
+          guid: "mat-hero",
+          type: "Material",
+          name: "HeroMat",
+          dependencies: [],
+        }),
+        asset({ guid: "tex-albedo", type: "Texture", name: "Albedo" }),
+        asset({ guid: "unused-tex", type: "Texture", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => {
+        if (guid === "model-1") {
+          return {
+            materialSlots: [
+              { index: 0, name: "HeroMat", materialGuid: "mat-hero" },
+            ],
+          };
+        }
+        if (guid === "mat-hero") {
+          return {
+            nodes: [
+              {
+                type: "param.texture",
+                properties: { textureGuid: "tex-albedo" },
+              },
+            ],
+          };
+        }
+        return null;
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining(["scene-1", "model-1", "mat-hero", "tex-albedo"]),
+    );
+    expect(result.value).not.toContain("unused-tex");
+  });
+
   it("does not treat Type:guid strings as asset refs", () => {
     const graph: SerializedGraph = {
       nodes: [

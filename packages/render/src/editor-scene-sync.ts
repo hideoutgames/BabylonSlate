@@ -316,6 +316,9 @@ export class EditorSceneSync {
       this.assets?.modelClipAnimationGuids;
     this.modelLoadBinding.retargetAnimationLoads =
       this.assets?.retargetAnimationLoads;
+    this.modelLoadBinding.textureBytes = this.assets?.textureBytes;
+    this.modelLoadBinding.materialTextureGuids =
+      this.assets?.materialTextureGuids;
     const placeholder = editorModelLoadTarget(root, actor);
     void beginSlotModelAnimLoad(
       this.scene,
