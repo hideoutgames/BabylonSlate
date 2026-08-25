@@ -19,6 +19,9 @@ Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds
 | Resource | Budget | Notes |
 | --- | --- | --- |
 | Editor + project open | Engine Settings texture budget (default **2 GB**, on) | LRU trims **unreferenced** entries toward 80% of the budget. 512 MB is an iPad suggestion, not the runtime default. WKWebView kills the tab rather than swapping |
+| Overlay Play / player PCM | Engine Settings audio budget (default **256 MiB**, on) | Unpinned decoded clips LRU-evict; AudioV2 buffers dispose on evict. 64 MB is an iPad suggestion. Audio Preview is not this cache |
+| Max concurrent voices | Engine Settings (default **32**, 8–128) | Oldest voice stops when over cap |
+| Geometry | **512 MB** warn (`GEOMETRY_BYTE_CEILING`) | Accounted Scene GLB verts/indices. HUD Geo High. Not LRU, not Settings. 256 MB iPad suggestion in docs |
 | Texture accounting | Self-computed bytes | No `performance.memory` on Safari |
 
 Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
@@ -51,7 +54,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 - Tiny in-process scene: `lastScriptMs`, `lastPhysicsMs`, and combined tick `< TICK_BUDGET_MS` (8 ms). Keep the fixture small so GitHub runners stay under budget.
 - 120 ticks → `stats` command count is ~5 Hz (not 120); snapshot header `tickIndex` is still 120. 2000 ticks with one looping `AudioComponent`: one `playSound`, `stats` stays ~5 Hz, last-100 median tick cost is not much worse than first-100.
-- Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 2 GB, `GEOMETRY_BYTE_CEILING` 128 MB). Drift fails CI.
+- Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 2 GB, `GEOMETRY_BYTE_CEILING` 512 MB). Drift fails CI.
 - Obstructed / hidden editor: `RenderScheduler.shouldRender() === false` (zero frames).
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.
 

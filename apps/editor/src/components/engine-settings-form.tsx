@@ -432,6 +432,63 @@ export function EngineSettingsForm({
               }
             />
           </Field>
+          <Field orientation="horizontal">
+            <FieldContent>
+              <FieldLabel htmlFor="setting-audio-budget">
+                Audio Memory Budget
+              </FieldLabel>
+              <FieldDescription>
+                Evicts unused decoded clips. 64 MB is an iPad suggestion; the
+                default is 256 MB. Audio document Preview is not this cache.
+              </FieldDescription>
+            </FieldContent>
+            <Switch
+              id="setting-audio-budget"
+              data-testid="setting-audio-budget"
+              checked={settings.audioBudgetEnabled}
+              onCheckedChange={(checked) =>
+                void onChange({ audioBudgetEnabled: checked === true })
+              }
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="setting-audio-budget-mb">
+              Audio Budget (MB)
+            </FieldLabel>
+            <NumberField
+              id="setting-audio-budget-mb"
+              min={32}
+              max={2048}
+              step={16}
+              className="min-h-[var(--touch-target,44px)]"
+              data-testid="setting-audio-budget-mb"
+              value={Math.round(settings.audioByteCeiling / (1024 * 1024))}
+              disabled={!settings.audioBudgetEnabled}
+              onChange={(megabytes) =>
+                void onChange({
+                  audioByteCeiling: Math.round(megabytes) * 1024 * 1024,
+                })
+              }
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="setting-audio-max-voices">
+              Max Concurrent Voices
+            </FieldLabel>
+            <NumberField
+              id="setting-audio-max-voices"
+              min={8}
+              max={128}
+              step={1}
+              className="min-h-[var(--touch-target,44px)]"
+              data-testid="setting-audio-max-voices"
+              value={settings.audioMaxVoices}
+              onChange={(audioMaxVoices) => void onChange({ audioMaxVoices })}
+            />
+            <FieldDescription>
+              Oldest playing voice stops when the cap is exceeded. Default 32.
+            </FieldDescription>
+          </Field>
         </FieldSet>
       ) : null}
 

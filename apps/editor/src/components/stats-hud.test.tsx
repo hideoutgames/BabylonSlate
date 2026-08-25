@@ -44,6 +44,19 @@ describe("StatsHud", () => {
     expect(screen.getByTestId("stats-hud-draw-warn")).toBeTruthy();
   });
 
+  it("warns when accounted geometry bytes exceed the ceiling", () => {
+    render(
+      <StatsHud
+        fps={60}
+        scriptMs={1}
+        physicsMs={1}
+        geometryBytes={512 * 1024 * 1024 + 1}
+      />,
+    );
+    expect(screen.getByTestId("stats-hud-geo").textContent).toMatch(/geo/i);
+    expect(screen.getByTestId("stats-hud-geo-warn")).toBeTruthy();
+  });
+
   it("marks the highlighted stats row", () => {
     render(
       <StatsHud fps={60} scriptMs={1} physicsMs={1} draws={12} highlight="unit" />,

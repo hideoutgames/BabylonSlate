@@ -10,6 +10,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { LoadAssetContainerAsync } from "@babylonjs/core/Loading/sceneLoader";
 import { Scene } from "@babylonjs/core/scene";
+import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { normalizeModelImportScale } from "@babylonslate/assets";
 import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
@@ -19,6 +20,7 @@ import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes, gpuModelBytes }
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
+import { accountedGeometryBytes } from "./perf-ceilings";
 
 /**
  * Fields `beginSlotModelAnimLoad` mutates. Play passes the full snapshot
@@ -51,11 +53,13 @@ type ModelPlaceholderMeta = {
 
 type CachedGlb = {
   byteLength: number;
+  accounted: number;
   load: Promise<AssetContainer>;
 };
 
 type SceneGlbCache = {
   loadCount: number;
+  accountedBytes: number;
   entries: Map<string, CachedGlb>;
 };
 
@@ -64,16 +68,37 @@ const glbCaches = new WeakMap<Scene, SceneGlbCache>();
 function cacheFor(scene: Scene): SceneGlbCache {
   let cache = glbCaches.get(scene);
   if (!cache) {
-    cache = { loadCount: 0, entries: new Map() };
+    cache = { loadCount: 0, accountedBytes: 0, entries: new Map() };
     glbCaches.set(scene, cache);
     scene.onDisposeObservable.addOnce(() => {
       for (const entry of cache!.entries.values()) {
         void entry.load.then((container) => container.dispose()).catch(() => {});
       }
       cache!.entries.clear();
+      cache!.accountedBytes = 0;
     });
   }
   return cache;
+}
+
+function accountedAssetContainerGeometry(container: AssetContainer): number {
+  let total = 0;
+  for (const mesh of container.meshes) {
+    const positions = mesh.getVerticesData?.(VertexBuffer.PositionKind);
+    const vertexCount = positions
+      ? positions.length / 3
+      : (mesh.getTotalVertices?.() ?? 0);
+    const indices = mesh.getIndices?.();
+    const indexCount = indices ? indices.length : 0;
+    if (vertexCount <= 0 && indexCount <= 0) continue;
+    total += accountedGeometryBytes(vertexCount, indexCount);
+  }
+  return total;
+}
+
+/** Accounted GPU vertex+index bytes for GLB containers cached on this Scene. */
+export function accountedGeometryBytesForScene(scene: Scene): number {
+  return glbCaches.get(scene)?.accountedBytes ?? 0;
 }
 
 /** Count of `LoadAssetContainerAsync` calls for this Scene (cache misses). */
@@ -198,11 +223,25 @@ function getCachedGlbContainer(
     return existing.load;
   }
   if (existing) {
+    cache.accountedBytes = Math.max(0, cache.accountedBytes - existing.accounted);
     void existing.load.then((container) => container.dispose()).catch(() => {});
   }
   cache.loadCount += 1;
-  const load = loadGlbContainer(scene, loadBytes, `${guid}.glb`);
-  cache.entries.set(guid, { byteLength: loadBytes.byteLength, load });
+  const load = loadGlbContainer(scene, loadBytes, `${guid}.glb`).then(
+    (container) => {
+      const current = cache.entries.get(guid);
+      if (current && current.load === load) {
+        current.accounted = accountedAssetContainerGeometry(container);
+        cache.accountedBytes += current.accounted;
+      }
+      return container;
+    },
+  );
+  cache.entries.set(guid, {
+    byteLength: loadBytes.byteLength,
+    accounted: 0,
+    load,
+  });
   return load;
 }
 

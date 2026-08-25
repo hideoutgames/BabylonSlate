@@ -91,7 +91,7 @@ describe("EngineSettingsForm assets", () => {
   });
 
   it("defaults editor texture LOD on at 50% with a 2 GB budget", () => {
-    const { getByTestId } = render(
+    const { getByTestId, queryByTestId } = render(
       <EngineSettingsForm
         settings={defaultEngineSettings()}
         onChange={() => {}}
@@ -104,6 +104,9 @@ describe("EngineSettingsForm assets", () => {
     );
     expect(getByTestId("setting-editor-texture-lod-quality")).toBeTruthy();
     expect(getByTestId("setting-texture-budget-mb")).toHaveProperty("value", "2048");
+    expect(getByTestId("setting-audio-budget-mb")).toHaveProperty("value", "256");
+    expect(getByTestId("setting-audio-max-voices")).toHaveProperty("value", "32");
+    expect(queryByTestId("setting-geometry-budget-mb")).toBeNull();
   });
 
   it("reports a texture LOD toggle", () => {

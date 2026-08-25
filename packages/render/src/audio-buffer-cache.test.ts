@@ -8,7 +8,34 @@ describe("AudioBufferCache", () => {
     cache.put("a", new Uint8Array(40), 40);
     expect(cache.get("a")?.byteLength).toBe(40);
     expect(cache.accountedBytes()).toBe(40);
-    expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(64 * 1024 * 1024);
+    expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(256 * 1024 * 1024);
+  });
+
+  it("trims unpinned entries when the ceiling is lowered", () => {
+    const evicted: string[] = [];
+    const cache = new AudioBufferCache({
+      byteCeiling: 100,
+      onEvict: (guid) => evicted.push(guid),
+    });
+    cache.put("old", new Uint8Array(40), 40);
+    cache.put("fresh", new Uint8Array(40), 40);
+    cache.setByteCeiling(50);
+    expect(evicted).toContain("old");
+    expect(cache.get("fresh")?.byteLength).toBe(40);
+    expect(cache.accountedBytes()).toBe(40);
+  });
+
+  it("skips eviction when the budget is disabled", () => {
+    const evicted: string[] = [];
+    const cache = new AudioBufferCache({
+      byteCeiling: 50,
+      onEvict: (guid) => evicted.push(guid),
+    });
+    cache.setBudgetEnabled(false);
+    cache.put("a", new Uint8Array(40), 40);
+    cache.put("b", new Uint8Array(40), 40);
+    expect(evicted).toEqual([]);
+    expect(cache.accountedBytes()).toBe(80);
   });
 
   it("evicts unpinned LRU entries when the ceiling is exceeded", () => {

@@ -139,6 +139,7 @@ export class AudioService {
   private readonly ownedCache: boolean;
   private readonly onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
   private readonly loadSourceBytes?: AudioSourceBytesLoader;
+  private maxVoices: number;
   private library: AudioLibrary = emptyLibrary();
   private readonly sourceBytes = new Map<string, Uint8Array>();
   private readonly sourceLoads = new Map<string, Promise<Uint8Array | null>>();
@@ -175,10 +176,13 @@ export class AudioService {
     loadSourceBytes?: AudioSourceBytesLoader;
     now?: () => number;
     random?: () => number;
+    maxVoices?: number;
   }) {
     this.backend = options.backend;
     this.ownedCache = !options.cache;
     this.cache = options.cache ?? new AudioBufferCache();
+    this.maxVoices = Math.max(1, options.maxVoices ?? AUDIO_MAX_CONCURRENT_VOICES);
+    this.cache.addEvictListener((guid) => this.releaseEvictedClip(guid));
     this.onDiagnostic = options.onDiagnostic;
     this.loadSourceBytes = options.loadSourceBytes;
     this.now = options.now ?? (() => performance.now());
@@ -276,6 +280,30 @@ export class AudioService {
 
   setPaused(paused: boolean): void {
     this.backend.setPaused(paused);
+  }
+
+  setAudioBudget(bytes: number, enabled: boolean): void {
+    this.cache.setByteCeiling(bytes);
+    this.cache.setBudgetEnabled(enabled);
+  }
+
+  setMaxVoices(maxVoices: number): void {
+    if (!Number.isFinite(maxVoices)) return;
+    this.maxVoices = Math.max(1, Math.round(maxVoices));
+    this.stealToCap();
+  }
+
+  private releaseEvictedClip(cacheKey: string): void {
+    this.backend.disposeBuffer(cacheKey);
+    this.sourceBytes.delete(cacheKey);
+  }
+
+  private stealToCap(): void {
+    while (this.voices.size > this.maxVoices) {
+      const oldest = this.voices.keys().next().value;
+      if (!oldest) break;
+      this.stopVoice(oldest);
+    }
   }
 
   /** Wait until in-flight play/stop work has settled (tests). */
@@ -492,7 +520,7 @@ export class AudioService {
     }
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
     this.stopVoice(voiceId);
-    if (this.voices.size >= AUDIO_MAX_CONCURRENT_VOICES) {
+    if (this.voices.size >= this.maxVoices) {
       const oldest = this.voices.keys().next().value;
       if (oldest) this.stopVoice(oldest);
     }

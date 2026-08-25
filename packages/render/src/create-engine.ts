@@ -51,7 +51,7 @@ import {
   type EditorColorScheme,
 } from "./editor-clear-color";
 import { applySceneToBabylonScene, unfreezeActorWorldMatrix, freezeStaticActorWorldMatrix } from "./scene-loader";
-import { isEditorModelPlaceholder } from "./glb-anim";
+import { accountedGeometryBytesForScene, isEditorModelPlaceholder } from "./glb-anim";
 import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
 import { isSkyboxMesh } from "./skybox";
 import {
@@ -153,6 +153,8 @@ export interface EngineHandle {
   liveObjectCounts: () => { meshes: number; textures: number };
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
   drawCalls: () => number;
+  /** Accounted GPU vertex+index bytes for this Scene's GLB cache. */
+  accountedGeometryBytes: () => number;
   /** Explicit tap pick (hover picking is disabled). */
   pickAt: (
     canvasX: number,
@@ -186,6 +188,10 @@ export interface EngineHandle {
   setPostProcessingEnabled: (enabled: boolean) => void;
   /** Live Engine Settings texture LRU budget. */
   setTextureBudget: (bytes: number, enabled: boolean) => void;
+  /** Live Engine Settings decoded-PCM LRU (Play only). */
+  setAudioBudget: (bytes: number, enabled: boolean) => void;
+  /** Live Engine Settings max concurrent voices (Play only). */
+  setMaxVoices: (maxVoices: number) => void;
   setPostProcessStack: (stack: readonly PostProcessStackInput[]) => void;
   setMaterialDocuments: (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -296,6 +302,9 @@ export interface CreateEngineOptions {
   postProcessingEnabled?: boolean;
   textureByteCeiling?: number;
   textureBudgetEnabled?: boolean;
+  audioByteCeiling?: number;
+  audioBudgetEnabled?: boolean;
+  audioMaxVoices?: number;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
   /** Stack skip / compile messages (exported player and Play overlay). */
@@ -553,9 +562,19 @@ export function createEngine(
         backend: createPlayAudioBackend(options.audioBackend),
         onDiagnostic: options.onAudioDiagnostic,
         loadSourceBytes: options.loadAudioSourceBytes,
+        maxVoices: options.audioMaxVoices,
       })
     : null;
   if (audioService) {
+    if (typeof options.audioByteCeiling === "number" ||
+      typeof options.audioBudgetEnabled === "boolean") {
+      audioService.setAudioBudget(
+        typeof options.audioByteCeiling === "number"
+          ? options.audioByteCeiling
+          : 256 * 1024 * 1024,
+        options.audioBudgetEnabled !== false,
+      );
+    }
     if (options.audioLibrary) audioService.setLibrary(options.audioLibrary);
     for (const [guid, bytes] of options.audioBytes ?? []) {
       audioService.setSourceBytes(guid, bytes);
@@ -1286,6 +1305,7 @@ export function createEngine(
       textures: engine.getLoadedTexturesCache().length,
     }),
     drawCalls: () => lastDrawCalls,
+    accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
       const hit = pickAtCanvas(scene, mapped.x, mapped.y);
@@ -1387,6 +1407,12 @@ export function createEngine(
     setTextureBudget: (bytes: number, enabled: boolean) => {
       resourceCache.setByteCeiling(bytes);
       resourceCache.setBudgetEnabled(enabled);
+    },
+    setAudioBudget: (bytes: number, enabled: boolean) => {
+      audioService?.setAudioBudget(bytes, enabled);
+    },
+    setMaxVoices: (maxVoices: number) => {
+      audioService?.setMaxVoices(maxVoices);
     },
     setPostProcessStack: (stack: readonly PostProcessStackInput[]) => {
       postProcessStack = normalizePostProcessStack(stack);

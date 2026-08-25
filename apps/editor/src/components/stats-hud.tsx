@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isTickOverBudget } from "@babylonslate/debugger";
-import { drawCallCeilingWarning } from "@babylonslate/render";
+import { drawCallCeilingWarning, geometryByteCeilingWarning } from "@babylonslate/render";
 import { SelectableText } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -12,6 +12,7 @@ export type StatsHudProps = {
   scriptMs: number;
   physicsMs: number;
   memoryBytes?: number;
+  geometryBytes?: number;
   meshCount?: number;
   textureCount?: number;
   draws?: number;
@@ -36,6 +37,7 @@ export function StatsHud({
   scriptMs,
   physicsMs,
   memoryBytes,
+  geometryBytes,
   meshCount,
   textureCount,
   draws,
@@ -59,6 +61,10 @@ export function StatsHud({
   const overBudget = isTickOverBudget(scriptMs, physicsMs);
   const drawsHigh =
     draws != null ? drawCallCeilingWarning(draws) !== null : false;
+  const geoHigh =
+    geometryBytes != null
+      ? geometryByteCeilingWarning(geometryBytes) !== null
+      : false;
 
   return (
     <div
@@ -111,6 +117,19 @@ export function StatsHud({
           >
             <SelectableText>mem {formatBytes(memoryBytes)}</SelectableText>
           </span>
+        ) : null}
+        {geometryBytes != null ? (
+          <span data-testid="stats-hud-geo">
+            <SelectableText>geo {formatBytes(geometryBytes)}</SelectableText>
+          </span>
+        ) : null}
+        {geoHigh ? (
+          <Badge
+            variant="destructive"
+            data-testid="stats-hud-geo-warn"
+          >
+            Geo High
+          </Badge>
         ) : null}
         {meshCount != null ? (
           <span data-testid="stats-hud-meshes">

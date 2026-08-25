@@ -364,6 +364,81 @@ describe("AudioService", () => {
     expect(AUDIO_MAX_CONCURRENT_VOICES).toBe(32);
   });
 
+  it("disposes the backend buffer when LRU evicts an unpinned clip", async () => {
+    const cache = new AudioBufferCache({ byteCeiling: 50 });
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, cache });
+    service.setLibrary(
+      library({
+        audio: {
+          a: createDefaultAudioPayload(),
+          b: createDefaultAudioPayload(),
+        },
+      }),
+    );
+    service.setSourceBytes("a", new Uint8Array(30));
+    service.setSourceBytes("b", new Uint8Array(30));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "a",
+      volume: 1,
+      frameId: 1,
+      voiceId: "va",
+    });
+    await service.flush();
+    service.handleCommand({ type: "stopSound", voiceId: "va" });
+    await service.flush();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "b",
+      volume: 1,
+      frameId: 2,
+      voiceId: "vb",
+    });
+    await service.flush();
+    expect(backend.disposedBuffers).toContain(audioClipCacheKey("a", "source"));
+    expect(cache.get(audioClipCacheKey("a", "source"))).toBeUndefined();
+    service.dispose();
+  });
+
+  it("steals the oldest voice when over maxVoices and trims on setMaxVoices", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend, maxVoices: 2 });
+    service.setLibrary(
+      library({
+        audio: {
+          a: createDefaultAudioPayload(),
+          b: createDefaultAudioPayload(),
+          c: createDefaultAudioPayload(),
+        },
+      }),
+    );
+    service.setSourceBytes("a", new Uint8Array(8));
+    service.setSourceBytes("b", new Uint8Array(8));
+    service.setSourceBytes("c", new Uint8Array(8));
+    await service.unlockAsync();
+    for (const [guid, voiceId] of [
+      ["a", "v1"],
+      ["b", "v2"],
+      ["c", "v3"],
+    ] as const) {
+      service.handleCommand({
+        type: "playSound",
+        assetGuid: guid,
+        volume: 1,
+        frameId: 1,
+        voiceId,
+      });
+      await service.flush();
+    }
+    expect(service.stats().voices).toBe(2);
+    expect(backend.stopped).toContain("v1");
+    service.setMaxVoices(1);
+    expect(service.stats().voices).toBe(1);
+    service.dispose();
+  });
+
   it("plays attenuated sounds without an actor as non-spatial and diagnoses once", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const diagnostics: Array<{ code: string }> = [];

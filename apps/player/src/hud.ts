@@ -3,6 +3,7 @@ import {
   audioDebugOverlayText,
   audioStats,
   drawCallCeilingWarning,
+  geometryByteCeilingWarning,
   PLAY_AUDIO_UNLOCK_HINT,
   shouldShowPlayAudioUnlockHint,
 } from "@babylonslate/render";
@@ -13,6 +14,7 @@ export type PlayerHudStats = {
   scriptMs: number;
   physicsMs: number;
   draws: number;
+  geometryBytes?: number;
 };
 
 /** Worker `stats` commands are the source of truth for script/physics ms. */
@@ -31,6 +33,7 @@ export function applyWorkerPlayerStats(
     scriptMs: command.scriptMs,
     physicsMs: command.physicsMs,
     draws: previous?.draws ?? 0,
+    geometryBytes: previous?.geometryBytes,
   };
 }
 
@@ -45,6 +48,7 @@ export function applyPlayerFpsSample(
     scriptMs: previous?.scriptMs ?? 0,
     physicsMs: previous?.physicsMs ?? 0,
     draws: previous?.draws ?? 0,
+    geometryBytes: previous?.geometryBytes,
   };
 }
 
@@ -69,9 +73,17 @@ export function mountPlayerHud(
   element.hidden = false;
   const setStats = (stats: PlayerHudStats) => {
     const warn = drawCallCeilingWarning(stats.draws);
+    const geoWarn =
+      stats.geometryBytes != null
+        ? geometryByteCeilingWarning(stats.geometryBytes)
+        : null;
     element.dataset.fps = String(Math.round(stats.fps));
     element.dataset.ticks = String(stats.ticks);
-    element.textContent = `fps ${stats.fps.toFixed(0)}  script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  draws ${stats.draws}  ticks ${stats.ticks}${warn ? "  DRAWS HIGH" : ""}`;
+    const geo =
+      stats.geometryBytes != null
+        ? `  geo ${(stats.geometryBytes / (1024 * 1024)).toFixed(1)}MB`
+        : "";
+    element.textContent = `fps ${stats.fps.toFixed(0)}  script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  draws ${stats.draws}${geo}  ticks ${stats.ticks}${warn ? "  DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
   };
   setStats({ ticks: 0, fps: 0, scriptMs: 0, physicsMs: 0, draws: 0 });
   return { setStats };

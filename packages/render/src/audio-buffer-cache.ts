@@ -2,6 +2,7 @@ import { AUDIO_DECODED_PCM_LRU_BYTES } from "@babylonslate/assets";
 
 export interface AudioBufferCacheOptions {
   byteCeiling?: number;
+  budgetEnabled?: boolean;
   onEvict?: (assetGuid: string, reason: string) => void;
 }
 
@@ -14,20 +15,39 @@ interface AudioCacheEntry {
 }
 
 /**
- * Guid-keyed decoded PCM cache with a 64 MiB LRU ceiling, separate from the
+ * Guid-keyed decoded PCM cache with a 256 MiB LRU ceiling, separate from the
  * texture ResourceCache. Active voices pin their buffer so playback cannot
  * evict the bytes they are reading.
  */
 export class AudioBufferCache {
-  private readonly ceiling: number;
-  private readonly onEvict?: (assetGuid: string, reason: string) => void;
+  private ceiling: number;
+  private budgetEnabled: boolean;
+  private readonly evictListeners: Array<
+    (assetGuid: string, reason: string) => void
+  > = [];
   private readonly entries = new Map<string, AudioCacheEntry>();
   private clock = 0;
   private totalBytes = 0;
 
   constructor(options: AudioBufferCacheOptions = {}) {
     this.ceiling = options.byteCeiling ?? AUDIO_DECODED_PCM_LRU_BYTES;
-    this.onEvict = options.onEvict;
+    this.budgetEnabled = options.budgetEnabled !== false;
+    if (options.onEvict) this.evictListeners.push(options.onEvict);
+  }
+
+  addEvictListener(listener: (assetGuid: string, reason: string) => void): void {
+    this.evictListeners.push(listener);
+  }
+
+  setByteCeiling(bytes: number): void {
+    if (!Number.isFinite(bytes) || bytes <= 0) return;
+    this.ceiling = bytes;
+    this.evictToCeiling();
+  }
+
+  setBudgetEnabled(enabled: boolean): void {
+    this.budgetEnabled = enabled;
+    if (enabled) this.evictToCeiling();
   }
 
   put(assetGuid: string, bytes: Uint8Array, accounted = bytes.byteLength): void {
@@ -89,6 +109,7 @@ export class AudioBufferCache {
   }
 
   private evictToCeiling(keepGuid?: string): void {
+    if (!this.budgetEnabled) return;
     if (this.totalBytes <= this.ceiling) return;
     const candidates = [...this.entries.values()]
       .filter((entry) => entry.pins === 0 && entry.assetGuid !== keepGuid)
@@ -104,6 +125,8 @@ export class AudioBufferCache {
     if (!entry) return;
     this.totalBytes -= entry.accounted;
     this.entries.delete(assetGuid);
-    this.onEvict?.(assetGuid, reason);
+    for (const listener of this.evictListeners) {
+      listener(assetGuid, reason);
+    }
   }
 }

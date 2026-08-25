@@ -6,6 +6,7 @@ import {
   drawCallCeilingWarning,
   GEOMETRY_BYTE_CEILING,
   geometryByteCeilingWarning,
+  IPAD_GEOMETRY_BYTE_SUGGESTION,
   IPAD_TEXTURE_BYTE_SUGGESTION,
   TEXTURE_BYTE_CEILING,
   TEXTURE_EVICTION_TARGET_FACTOR,
@@ -16,6 +17,8 @@ describe("perf ceilings", () => {
   it("defaults the texture budget to 2 GB and keeps 512 MB as an iPad suggestion", () => {
     expect(TEXTURE_BYTE_CEILING).toBe(2 * 1024 * 1024 * 1024);
     expect(IPAD_TEXTURE_BYTE_SUGGESTION).toBe(512 * 1024 * 1024);
+    expect(GEOMETRY_BYTE_CEILING).toBe(512 * 1024 * 1024);
+    expect(IPAD_GEOMETRY_BYTE_SUGGESTION).toBe(256 * 1024 * 1024);
     expect(TEXTURE_EVICTION_TARGET_FACTOR).toBe(0.8);
   });
 
