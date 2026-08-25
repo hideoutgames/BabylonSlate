@@ -504,6 +504,48 @@ describe("Play createEngine view", () => {
     expect(resize).toHaveBeenCalled();
   });
 
+  it("disables the Scene registerView while overlay Play owns the framebuffer", () => {
+    const engine = sharedEngine();
+    const { handle: editor, canvas: editorCanvas } = editorHandle(engine);
+    const playCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const play = createEngine(playCanvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+
+    const editorView = engine.views.find((view) => view.target === editorCanvas);
+    const playView = engine.views.find((view) => view.target === playCanvas);
+    expect(editorView?.enabled).toBe(false);
+    expect(playView?.enabled).toBe(true);
+
+    play.dispose();
+    syncEditorPlayState(editor, false);
+    expect(editorView?.enabled).toBe(true);
+  });
+
+  it("syncEditorPlayState disables the editor view while playing", () => {
+    const engine = sharedEngine();
+    const { handle, canvas } = editorHandle(engine);
+    expect(engine.views.find((view) => view.target === canvas)?.enabled).toBe(
+      true,
+    );
+
+    syncEditorPlayState(handle, true);
+    expect(engine.views.find((view) => view.target === canvas)?.enabled).toBe(
+      false,
+    );
+  });
+
+  it("does not setSize from a disabled Scene view while Play is open", () => {
+    const engine = sharedEngine();
+    const { handle, canvas } = editorHandle(engine);
+    Object.assign(canvas, { clientWidth: 640, clientHeight: 360 });
+    syncEditorPlayState(handle, true);
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(setSize).not.toHaveBeenCalled();
+  });
+
   it("keeps Play autoClear on after Intermediate so frames do not accumulate", () => {
     const { handle } = playHandle(sharedEngine());
     expect(handle.scene.autoClear).toBe(true);
