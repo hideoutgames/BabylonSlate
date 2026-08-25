@@ -92,12 +92,14 @@ describe("resource cache getTexture", () => {
     ]);
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
-    const texture = cache.getTexture("tex", engine, ktx2) as Texture & {
+    const texture = cache.getTexture("tex", engine, ktx2);
+    const loaderHints = texture as unknown as {
+      mimeType?: string;
       _mimeType?: string;
       _forcedExtension?: string;
     };
-    expect(texture._mimeType).toBe("image/ktx2");
-    expect(texture._forcedExtension).toBe(".ktx2");
+    expect(loaderHints.mimeType ?? loaderHints._mimeType).toBe("image/ktx2");
+    expect(loaderHints._forcedExtension).toBe(".ktx2");
     cache.dispose();
     engine.dispose();
   });
