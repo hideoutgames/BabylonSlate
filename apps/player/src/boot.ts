@@ -57,6 +57,7 @@ export type PlayerDiagnostic = {
 export type PlayerBootHandle = {
   ticks: () => number;
   visuals: () => ReturnType<EngineHandle["playVisualStates"]>;
+  meshMaterialNames: () => string[];
   stop: () => { diagnostics: PlayerDiagnostic[] };
 };
 
@@ -379,6 +380,7 @@ export function startPlayer(options: {
   return {
     ticks: () => ticks,
     visuals: () => handle.playVisualStates(),
+    meshMaterialNames: () => handle.playMeshMaterialNames(),
     stop: () => {
       halted = true;
       cancelAnimationFrame(raf);

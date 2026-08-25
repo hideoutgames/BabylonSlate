@@ -7,19 +7,19 @@ import {
   previewPlacementScene,
 } from "./preview-scene-fixture";
 
-async function previewIframe(page: Page) {
-  return page.locator('[data-testid="preview-build-iframe"]').contentFrame();
-}
-
 async function previewSlotMaterialNames(page: Page): Promise<string[]> {
-  const frame = await previewIframe(page);
-  if (!frame) return [];
-  return frame.evaluate(() => {
+  const root = page
+    .frameLocator('[data-testid="preview-build-iframe"]')
+    .getByTestId("player-root");
+  return root.evaluate(() => {
     const host = globalThis as unknown as {
       __babylonslatePlayerTest?: {
+        meshMaterialNames?: () => string[];
         visuals: () => Array<{ materialName: string | null }>;
       };
     };
+    const named = host.__babylonslatePlayerTest?.meshMaterialNames?.() ?? [];
+    if (named.length > 0) return named;
     return (host.__babylonslatePlayerTest?.visuals() ?? [])
       .map((visual) => visual.materialName)
       .filter((name): name is string => typeof name === "string");
@@ -38,15 +38,15 @@ async function previewCanvasPixelStats(page: Page): Promise<
       height: number;
     }
 > {
-  const frame = await previewIframe(page);
-  if (!frame) return { ok: false, reason: "no-frame" };
-  return frame.evaluate(() => {
-    const canvas = document.querySelector('[data-testid="player-canvas"]');
-    if (!(canvas instanceof HTMLCanvasElement)) {
+  const canvas = page
+    .frameLocator('[data-testid="preview-build-iframe"]')
+    .getByTestId("player-canvas");
+  return canvas.evaluate((node) => {
+    if (!(node instanceof HTMLCanvasElement)) {
       return { ok: false as const, reason: "no-canvas" };
     }
-    const width = canvas.width;
-    const height = canvas.height;
+    const width = node.width;
+    const height = node.height;
     if (width < 2 || height < 2) {
       return { ok: false as const, reason: "tiny", width, height };
     }
@@ -55,7 +55,7 @@ async function previewCanvasPixelStats(page: Page): Promise<
     dst.height = height;
     const ctx = dst.getContext("2d");
     if (!ctx) return { ok: false as const, reason: "2d" };
-    ctx.drawImage(canvas, 0, 0);
+    ctx.drawImage(node, 0, 0);
     const data = ctx.getImageData(0, 0, width, height).data;
     let total = 0;
     let redStub = 0;

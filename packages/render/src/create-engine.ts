@@ -176,6 +176,8 @@ export interface EngineHandle {
     worldMatrixPosition: [number, number, number];
     materialName: string | null;
   }>;
+  /** Material names on Play meshes and GLB descendants (Preview e2e). */
+  playMeshMaterialNames: () => string[];
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
@@ -1362,6 +1364,17 @@ export function createEngine(
       return states.sort(
         (a, b) => a.slotId - b.slotId || a.name.localeCompare(b.name),
       );
+    },
+    playMeshMaterialNames: () => {
+      const names = new Set<string>();
+      for (const root of binding.meshes.values()) {
+        const meshes = [root, ...root.getChildMeshes()];
+        for (const mesh of meshes) {
+          const name = mesh.material?.name;
+          if (name) names.add(name);
+        }
+      }
+      return [...names].sort();
     },
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
