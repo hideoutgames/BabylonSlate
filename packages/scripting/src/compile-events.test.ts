@@ -29,11 +29,12 @@ describe("editor utility events", () => {
     expect(eventNameForEntry(entry("flow.event.editorBeginPlay"))).toBe(
       "onEditorBeginPlay",
     );
-    expect(EVENT_BY_TYPE_ID["flow.event.mouseEnter"]).toBe("onMouseEnter");
-    expect(EVENT_BY_TYPE_ID["flow.event.mouseExit"]).toBe("onMouseExit");
-    expect(EVENT_BY_TYPE_ID["flow.event.mousePress"]).toBe("onMousePress");
-    expect(EVENT_BY_TYPE_ID["flow.event.mouseRelease"]).toBe("onMouseRelease");
-    expect(EVENT_BY_TYPE_ID["flow.event.widgetClick"]).toBe("onWidgetClick");
+    expect(EVENT_BY_TYPE_ID["flow.event.mouseEnter"]).toBeUndefined();
+    expect(EVENT_BY_TYPE_ID["flow.event.mouseExit"]).toBeUndefined();
+    expect(EVENT_BY_TYPE_ID["flow.event.mousePress"]).toBeUndefined();
+    expect(EVENT_BY_TYPE_ID["flow.event.mouseRelease"]).toBeUndefined();
+    expect(EVENT_BY_TYPE_ID["flow.event.widgetClick"]).toBeUndefined();
+    expect(eventNameForEntry(entry("flow.event.widgetClick"))).toBeUndefined();
     expect(EVENT_BY_TYPE_ID["flow.event.destroyed"]).toBe("onDestroyed");
     expect(eventNameForEntry(entry("flow.event.destroyed"))).toBe("onDestroyed");
   });

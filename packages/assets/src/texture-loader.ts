@@ -78,10 +78,10 @@ export function isKtx2Bytes(bytes: Uint8Array): boolean {
 }
 
 /**
- * Browser-decodable MIME for Babylon GUI `Image.source`. KTX2 and unknown
- * blobs return null — they must not be labeled `image/png`.
+ * Browser-decodable MIME for raster bytes (skybox overlay, blob URLs).
+ * KTX2 and unknown blobs return null — they must not be labeled `image/png`.
  */
-export function mimeForGuiTextureBytes(bytes: Uint8Array): string | null {
+export function sniffRasterImageMime(bytes: Uint8Array): string | null {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) {
     return "image/jpeg";
   }
@@ -119,27 +119,5 @@ export function mimeForGuiTextureBytes(bytes: Uint8Array): string | null {
     return "image/webp";
   }
   if (isKtx2Bytes(bytes)) return null;
-  return null;
-}
-
-/**
- * Pixels (then imported `source`) for GUI Image blob URLs. Never the KTX2
- * GPU chunk — Babylon GUI cannot decode it.
- */
-export function selectGuiImageChunk(
-  header: BabassetHeader,
-): TextureChunkSelection | null {
-  const pixels = header.chunks.find(
-    (chunk) => chunk.id === "pixels" || chunk.kind === "pixels",
-  );
-  if (pixels) {
-    return { chunk: pixels, kind: "source", reason: "gui-pixels" };
-  }
-  const source = header.chunks.find(
-    (chunk) => chunk.id === "source" || chunk.kind === "source",
-  );
-  if (source) {
-    return { chunk: source, kind: "source", reason: "gui-source" };
-  }
   return null;
 }
