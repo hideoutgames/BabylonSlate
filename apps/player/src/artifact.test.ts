@@ -129,4 +129,82 @@ describe("loadGameFromFiles", () => {
     expect(loaded.fontBytes.get("font-1")).toEqual(new Uint8Array([1, 2]));
     expect(loaded.fontFacetypeBytes.get("font-1")).toEqual(new Uint8Array([9, 8, 7]));
   });
+
+  it("peels packed Model payload so importScale reaches the player", async () => {
+    const { encodePackedModelAsset } = await import("@babylonslate/assets");
+    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3]);
+    const packedModel = encodePackedModelAsset(
+      {
+        importScale: 4,
+        clipNames: ["Walk"],
+        materialSlots: [],
+        skeletonGuid: null,
+      },
+      glb,
+    );
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "hero-model",
+          type: "Model",
+          sceneGuid: "scene-1",
+          name: "Hero",
+          bytes: packedModel,
+        },
+      ],
+      playerFiles: new Map([
+        ["index.html", new TextEncoder().encode("<html></html>")],
+        ["player.js", new TextEncoder().encode("void 0")],
+      ]),
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const loaded = await loadGameFromFiles(packed.value.files);
+    expect(loaded.modelBytes.get("hero-model")).toEqual(glb);
+    expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(4);
+  });
+
+  it("loads a raw GLB Model pack as source with default payload", async () => {
+    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9]);
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "hero-model",
+          type: "Model",
+          sceneGuid: "scene-1",
+          name: "Hero",
+          bytes: glb,
+        },
+      ],
+      playerFiles: new Map([
+        ["index.html", new TextEncoder().encode("<html></html>")],
+        ["player.js", new TextEncoder().encode("void 0")],
+      ]),
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const loaded = await loadGameFromFiles(packed.value.files);
+    expect(loaded.modelBytes.get("hero-model")).toEqual(glb);
+    expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(1);
+  });
 });
