@@ -14,6 +14,16 @@ export interface Ktx2TranscoderUrls {
 
 export const DEFAULT_KTX2_PUBLIC_BASE = "/ktx2/";
 
+/** Relative player/export paths for every file `ktx2TranscoderUrls` names. */
+export const KTX2_TRANSCODER_RELATIVE_FILES = [
+  "ktx2/babylon.ktx2Decoder.js",
+  "ktx2/msc_basis_transcoder.js",
+  "ktx2/msc_basis_transcoder.wasm",
+  "ktx2/uastc_astc.wasm",
+  "ktx2/uastc_bc7.wasm",
+  "ktx2/zstddec.wasm",
+] as const;
+
 export function ktx2TranscoderUrls(
   basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
 ): Ktx2TranscoderUrls {
@@ -26,6 +36,15 @@ export function ktx2TranscoderUrls(
     wasmUASTCToBC7: `${base}uastc_bc7.wasm`,
     wasmZSTDDecoder: `${base}zstddec.wasm`,
   };
+}
+
+export function playerFilesHaveKtx2Transcoder(
+  files: ReadonlyMap<string, Uint8Array>,
+): boolean {
+  return KTX2_TRANSCODER_RELATIVE_FILES.every((name) => {
+    const bytes = files.get(name);
+    return Boolean(bytes && bytes.byteLength > 0);
+  });
 }
 
 /**
@@ -51,19 +70,22 @@ export function configureKtx2Transcoder(
 }
 
 /**
- * HEAD/GET the decoder module URL. Used to decide `fallback_uncompressed`
- * when self-hosted transcoder files are missing (export / bad deploy).
+ * HEAD/GET every self-hosted transcoder URL (JS and wasm). Used to decide
+ * `fallback_uncompressed` and whether export should pack PNG instead of KTX2.
  */
 export async function probeKtx2TranscoderAvailable(
   basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
-  const urls = ktx2TranscoderUrls(basePath);
+  const urls = Object.values(ktx2TranscoderUrls(basePath));
   try {
-    const response = await fetchImpl(urls.jsDecoderModule, { method: "HEAD" });
-    if (response.ok) return true;
-    const get = await fetchImpl(urls.jsDecoderModule, { method: "GET" });
-    return get.ok;
+    for (const url of urls) {
+      const head = await fetchImpl(url, { method: "HEAD" });
+      if (head.ok) continue;
+      const get = await fetchImpl(url, { method: "GET" });
+      if (!get.ok) return false;
+    }
+    return true;
   } catch {
     return false;
   }

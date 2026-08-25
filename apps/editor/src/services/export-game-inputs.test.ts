@@ -75,6 +75,20 @@ describe("loadExportDocuments", () => {
     );
   });
 
+  it("packs PNG pixels when the player transcoder is unavailable", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [textureAsset()],
+      loadDocument: async () => null,
+      readAssetChunk: async (_path, chunkId) => {
+        if (chunkId === "ktx2:hash") return new Uint8Array([9, 9]);
+        if (chunkId === "pixels") return new Uint8Array([1]);
+        return null;
+      },
+      transcoderAvailable: false,
+    });
+    expect(loaded.bytesByGuid("tex-1")).toEqual(new Uint8Array([1]));
+  });
+
   it("packs the authored ktx2 hash, not the first ktx2 chunk", async () => {
     const loaded = await loadExportDocuments({
       assets: [

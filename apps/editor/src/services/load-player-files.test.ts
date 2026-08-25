@@ -21,4 +21,26 @@ describe("loadPlayerDistFiles", () => {
     expect(new TextDecoder().decode(files.get("index.html"))).toContain("doctype");
     expect(files.has("player.js")).toBe(true);
   });
+
+  it("fetches UASTC and Zstd wasm when player-files.json is missing", async () => {
+    const requested: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.endsWith("index.html")) {
+        return new Response("<!doctype html>");
+      }
+      return new Response("missing", { status: 404 });
+    };
+    await loadPlayerDistFiles("/player/", fetchImpl);
+    expect(requested.some((url) => url.includes("ktx2/uastc_astc.wasm"))).toBe(
+      true,
+    );
+    expect(requested.some((url) => url.includes("ktx2/uastc_bc7.wasm"))).toBe(
+      true,
+    );
+    expect(requested.some((url) => url.includes("ktx2/zstddec.wasm"))).toBe(
+      true,
+    );
+  });
 });

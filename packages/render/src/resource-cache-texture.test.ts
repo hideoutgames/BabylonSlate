@@ -85,6 +85,23 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
+  it("tells Babylon to use the KTX2 loader for packed ktx2 bytes", () => {
+    const ktx2 = new Uint8Array([
+      0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+      1, 2, 3, 4,
+    ]);
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const texture = cache.getTexture("tex", engine, ktx2) as Texture & {
+      _mimeType?: string;
+      _forcedExtension?: string;
+    };
+    expect(texture._mimeType).toBe("image/ktx2");
+    expect(texture._forcedExtension).toBe(".ktx2");
+    cache.dispose();
+    engine.dispose();
+  });
+
   it("builds a cube texture when isCube is set", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });

@@ -48,7 +48,7 @@ import {
   resolvePluginEnabled,
   newAssetGuid,
 } from "@babylonslate/assets";
-import { encodeRgbaPng } from "@babylonslate/render";
+import { encodeRgbaPng, playerFilesHaveKtx2Transcoder } from "@babylonslate/render";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -1484,6 +1484,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }) => {
       const list = projectService.registry?.list() ?? [];
       await flushAudioReverbForSave();
+      const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const loaded = await loadExportDocuments({
         assets: list,
         loadDocument: (kind, path) =>
@@ -1493,8 +1494,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           ),
         readAssetChunk: (path, chunkId) =>
           projectService.readAssetChunk(path, chunkId),
+        transcoderAvailable: playerFilesHaveKtx2Transcoder(playerFiles),
       });
-      const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const startupSceneGuid =
         typeof options?.startupSceneGuid === "string" &&
         options.startupSceneGuid.trim() !== ""
