@@ -1,5 +1,5 @@
 import { defaultPlayerIndexHtml } from "@babylonslate/exporter";
-import { KTX2_TRANSCODER_RELATIVE_FILES } from "@babylonslate/render";
+import { KTX2_TRANSCODER_RELATIVE_FILES } from "@babylonslate/assets";
 import { playerHostBase } from "../lib/player-host-url";
 
 const PLAYER_CANDIDATES = [

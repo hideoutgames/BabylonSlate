@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   sniffRasterImageMime,
   selectTextureChunk,
+  playerFilesHaveKtx2Transcoder,
+  KTX2_TRANSCODER_RELATIVE_FILES,
 } from "./texture-loader";
 import type { BabassetHeader } from "./babasset";
 
@@ -45,6 +47,29 @@ describe("sniffRasterImageMime", () => {
     ).toBe("image/webp");
     expect(sniffRasterImageMime(KTX2_PREFIX)).toBeNull();
     expect(sniffRasterImageMime(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
+
+describe("player KTX2 transcoder files", () => {
+  it("requires every decoder and wasm file in the player map", () => {
+    expect(KTX2_TRANSCODER_RELATIVE_FILES).toEqual([
+      "ktx2/babylon.ktx2Decoder.js",
+      "ktx2/msc_basis_transcoder.js",
+      "ktx2/msc_basis_transcoder.wasm",
+      "ktx2/uastc_astc.wasm",
+      "ktx2/uastc_bc7.wasm",
+      "ktx2/zstddec.wasm",
+    ]);
+    const files = new Map<string, Uint8Array>([
+      ["ktx2/babylon.ktx2Decoder.js", new Uint8Array([1])],
+      ["ktx2/msc_basis_transcoder.js", new Uint8Array([1])],
+      ["ktx2/msc_basis_transcoder.wasm", new Uint8Array([1])],
+    ]);
+    expect(playerFilesHaveKtx2Transcoder(files)).toBe(false);
+    files.set("ktx2/uastc_astc.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_bc7.wasm", new Uint8Array([1]));
+    files.set("ktx2/zstddec.wasm", new Uint8Array([1]));
+    expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
   });
 });
 

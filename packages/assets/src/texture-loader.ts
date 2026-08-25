@@ -121,3 +121,23 @@ export function sniffRasterImageMime(bytes: Uint8Array): string | null {
   if (isKtx2Bytes(bytes)) return null;
   return null;
 }
+
+/** Relative player/export paths for every self-hosted KTX2 transcoder file. */
+export const KTX2_TRANSCODER_RELATIVE_FILES = [
+  "ktx2/babylon.ktx2Decoder.js",
+  "ktx2/msc_basis_transcoder.js",
+  "ktx2/msc_basis_transcoder.wasm",
+  "ktx2/uastc_astc.wasm",
+  "ktx2/uastc_bc7.wasm",
+  "ktx2/zstddec.wasm",
+] as const;
+
+/** True when the packed player map includes every transcoder JS and wasm file. */
+export function playerFilesHaveKtx2Transcoder(
+  files: ReadonlyMap<string, Uint8Array>,
+): boolean {
+  return KTX2_TRANSCODER_RELATIVE_FILES.every((name) => {
+    const bytes = files.get(name);
+    return Boolean(bytes && bytes.byteLength > 0);
+  });
+}

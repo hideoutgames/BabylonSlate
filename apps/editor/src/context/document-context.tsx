@@ -47,8 +47,9 @@ import {
   type ModelPayload,
   resolvePluginEnabled,
   newAssetGuid,
+  playerFilesHaveKtx2Transcoder,
 } from "@babylonslate/assets";
-import { encodeRgbaPng, playerFilesHaveKtx2Transcoder } from "@babylonslate/render";
+import { encodeRgbaPng } from "@babylonslate/render";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,

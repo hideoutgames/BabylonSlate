@@ -3,6 +3,11 @@
  * (engineplan §3.5). Never point at a CDN — editor and exports must work offline.
  */
 
+export {
+  KTX2_TRANSCODER_RELATIVE_FILES,
+  playerFilesHaveKtx2Transcoder,
+} from "@babylonslate/assets";
+
 export interface Ktx2TranscoderUrls {
   jsDecoderModule: string;
   jsMSCTranscoder: string;
@@ -13,16 +18,6 @@ export interface Ktx2TranscoderUrls {
 }
 
 export const DEFAULT_KTX2_PUBLIC_BASE = "/ktx2/";
-
-/** Relative player/export paths for every file `ktx2TranscoderUrls` names. */
-export const KTX2_TRANSCODER_RELATIVE_FILES = [
-  "ktx2/babylon.ktx2Decoder.js",
-  "ktx2/msc_basis_transcoder.js",
-  "ktx2/msc_basis_transcoder.wasm",
-  "ktx2/uastc_astc.wasm",
-  "ktx2/uastc_bc7.wasm",
-  "ktx2/zstddec.wasm",
-] as const;
 
 export function ktx2TranscoderUrls(
   basePath: string = DEFAULT_KTX2_PUBLIC_BASE,
@@ -36,15 +31,6 @@ export function ktx2TranscoderUrls(
     wasmUASTCToBC7: `${base}uastc_bc7.wasm`,
     wasmZSTDDecoder: `${base}zstddec.wasm`,
   };
-}
-
-export function playerFilesHaveKtx2Transcoder(
-  files: ReadonlyMap<string, Uint8Array>,
-): boolean {
-  return KTX2_TRANSCODER_RELATIVE_FILES.every((name) => {
-    const bytes = files.get(name);
-    return Boolean(bytes && bytes.byteLength > 0);
-  });
 }
 
 /**
