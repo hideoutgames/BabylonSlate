@@ -79,6 +79,8 @@ export type Ktx2DecoderRuntimeOptions = {
   /**
    * Packed player / Preview iframe: decode on this thread so wasm URLs are
    * not loaded from a blob Worker (COEP / importScripts often fail there).
+   * Also forces uncompressed RGBA — software GL often advertises ASTC then
+   * fails texImage2D.
    */
   mainThread?: boolean;
   /** Engine compressed-texture caps. Missing ASTC and BC7 → uncompressed RGBA. */
@@ -115,10 +117,9 @@ export function configureKtx2DecoderRuntime(
     container.DefaultNumWorkers = 0;
   }
   container.DefaultDecoderOptions.useRGBAIfASTCBC7NotAvailableWhenUASTC = true;
-  container.DefaultDecoderOptions.forceRGBA = shouldForceKtx2Rgba(
-    options.caps,
-    options.renderer,
-  );
+  container.DefaultDecoderOptions.forceRGBA =
+    options.mainThread === true ||
+    shouldForceKtx2Rgba(options.caps, options.renderer);
 }
 
 /**
