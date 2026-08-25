@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
-import { clickPlayAndWaitForOverlay } from "./play";
+import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
@@ -114,31 +114,19 @@ test.describe("P14 Preview Build", () => {
     await expect(page.getByTestId("play-preview")).toBeEnabled();
     await expect(page.getByTestId("play-preview")).toHaveText("Preview");
     await page.getByTestId("play-preview").click();
-    await expect(page.getByTestId("preparing-preview-dialog")).toBeVisible();
-    await expect(page.getByTestId("preview-build-overlay")).toBeVisible({
-      timeout: 30_000,
-    });
-
-    const startupGuid = await page.evaluate(async () => {
+    const startupGuid = await page.evaluate(() => {
       const host = globalThis as unknown as {
         __babylonslateTest?: { projectStartupSceneGuid: () => string };
       };
       return host.__babylonslateTest?.projectStartupSceneGuid() ?? "";
     });
     expect(startupGuid.length).toBeGreaterThan(0);
-
-    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    const root = frame.getByTestId("player-root");
-    await expect(root).toBeVisible({ timeout: 30_000 });
-    // A black overlay used to hide a player that never booted, so assert the
-    // packaged game actually started and is drawing.
-    await expect(page.getByTestId("preview-build-error")).toHaveCount(0);
+    const root = await waitForPreviewBuildBoot(page);
     await expect(root).toHaveAttribute("data-startup-scene", startupGuid);
-    await expect(root).toHaveAttribute("data-booted", "true", { timeout: 30_000 });
     await expect
       .poll(async () => root.getAttribute("data-ticks"), { timeout: 30_000 })
       .not.toBe("0");
-    await expect(root).not.toHaveAttribute("data-error", /.+/);
+    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
     const hud = frame.getByTestId("player-hud");
     await expect(hud).toBeVisible();
     await expect
@@ -184,11 +172,7 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("preview-build-toggle").click();
     await page.getByTestId("play-preview").click();
-    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    const root = frame.getByTestId("player-root");
-    await expect(root).toHaveAttribute("data-booted", "true", {
-      timeout: 30_000,
-    });
+    const root = await waitForPreviewBuildBoot(page);
     await expect
       .poll(
         () =>
@@ -237,8 +221,7 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("preview-build-toggle").click();
     await page.getByTestId("play-preview").click();
-    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    const root = frame.getByTestId("player-root");
+    const root = await waitForPreviewBuildBoot(page);
     await expect(root).toHaveAttribute("data-startup-scene", guids.open, {
       timeout: 30_000,
     });
@@ -248,7 +231,8 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("play-from-scene-toggle").click();
     await page.getByTestId("play-preview").click();
-    await expect(root).toHaveAttribute("data-startup-scene", guids.startup, {
+    const startupRoot = await waitForPreviewBuildBoot(page);
+    await expect(startupRoot).toHaveAttribute("data-startup-scene", guids.startup, {
       timeout: 30_000,
     });
     await page.getByTestId("preview-build-close").click();
@@ -292,11 +276,7 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("debug-menu").click();
     await page.getByTestId("preview-build-toggle").click();
     await page.getByTestId("play-preview").click();
-    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
-    const root = frame.getByTestId("player-root");
-    await expect(root).toHaveAttribute("data-booted", "true", {
-      timeout: 30_000,
-    });
+    const root = await waitForPreviewBuildBoot(page);
     await expect
       .poll(async () => Number((await root.getAttribute("data-ticks")) ?? "0"), {
         timeout: 30_000,

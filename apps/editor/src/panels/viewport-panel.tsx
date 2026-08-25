@@ -33,6 +33,7 @@ import { ViewportToolbar } from "../components/viewport-toolbar";
 import { ViewportJoystick } from "../components/viewport-joystick";
 import { SceneLoadingDialog } from "../components/scene-loading-dialog";
 import { isTestModeEnabled } from "@babylonslate/vfs";
+import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
@@ -100,6 +101,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     registerSharedEngine,
     registerScheduler,
     playing,
+    preparing,
     ensureSharedEngine,
     sharedEngineGeneration,
   } = usePlay();
@@ -376,9 +378,12 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     if (engineRef.current) {
-      syncEditorPlayState(engineRef.current, playing);
+      syncEditorPlayState(
+        engineRef.current,
+        editorViewportPausedForSession({ playing, preparing }),
+      );
     }
-  }, [playing]);
+  }, [playing, preparing]);
 
   // Key on the scene payload, not `openDocuments` array identity. Save All
   // calls bump() after markAllClean; a new array would reload the viewport
