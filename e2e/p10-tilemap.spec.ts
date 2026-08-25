@@ -147,6 +147,9 @@ test.describe("P10 tilemaps", () => {
     await expect(page.getByTestId(`search-item-${textureGuid}`)).toBeVisible();
     await page.getByTestId(`search-item-${textureGuid}`).click();
     await expect(page.getByTestId("property-texture-open")).toBeVisible();
+    const openBox = await page.getByTestId("property-texture-open").boundingBox();
+    expect(openBox).toBeTruthy();
+    expect(Math.abs((openBox?.width ?? 0) - (openBox?.height ?? 0))).toBeLessThan(2);
     await page.getByTestId("property-texture-open").click();
     await expect(
       page.locator(
