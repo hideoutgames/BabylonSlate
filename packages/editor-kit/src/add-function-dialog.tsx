@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { Button, buttonVariants } from "@babylonslate/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,8 @@ import {
 } from "@babylonslate/ui/components/dialog";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { cn } from "@babylonslate/ui/lib/utils";
+import { commitPickerOptionKeyDown } from "./search-dialog";
 import { PickerIdentity } from "./picker-identity";
 import { pickerListHeightPx } from "./windowed-list";
 
@@ -95,37 +97,45 @@ export function AddFunctionDialog({
             height: pickerListHeightPx(items.length),
             overflowY: "auto",
           }}
+          role="listbox"
           data-testid={`${prefix}-body`}
         >
           <div className="flex flex-col gap-1" data-testid={`${prefix}-list`}>
-            {items.map((item) => (
-              <Button
-                key={item.id}
-                type="button"
-                variant="ghost"
-                size="touch"
-                className={`w-full justify-between gap-2 text-left ${
-                  item.overwritten ? "text-muted-foreground" : ""
-                }`}
-                disabled={item.overwritten}
-                data-testid={`${prefix}-item-${item.id}`}
-                data-overwritten={item.overwritten ? "true" : "false"}
-                onClick={() => {
-                  if (item.overwritten) return;
-                  onPick(item.id);
-                  onOpenChange(false);
-                }}
-              >
-                <PickerIdentity
-                  label={item.name}
-                  description={
-                    item.overwritten
-                      ? `${item.description} · Overwritten`
-                      : item.description
+            {items.map((item) => {
+              const commit = () => {
+                if (item.overwritten) return;
+                onPick(item.id);
+                onOpenChange(false);
+              };
+              return (
+                <div
+                  key={item.id}
+                  role="option"
+                  tabIndex={item.overwritten ? -1 : 0}
+                  aria-disabled={item.overwritten ? true : undefined}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "touch" }),
+                    "w-full justify-between gap-2 text-left touch-pan-y",
+                    item.overwritten ? "text-muted-foreground" : "",
+                  )}
+                  data-testid={`${prefix}-item-${item.id}`}
+                  data-overwritten={item.overwritten ? "true" : "false"}
+                  onClick={commit}
+                  onKeyDown={(event) =>
+                    commitPickerOptionKeyDown(event, commit)
                   }
-                />
-              </Button>
-            ))}
+                >
+                  <PickerIdentity
+                    label={item.name}
+                    description={
+                      item.overwritten
+                        ? `${item.description} · Overwritten`
+                        : item.description
+                    }
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
         {mode === "empty" ? (

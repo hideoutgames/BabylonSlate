@@ -129,6 +129,49 @@ describe("SearchDialog", () => {
     expect(screen.getByTestId("lead")).toBeTruthy();
   });
 
+  it("uses non-button option rows so a finger pan can scroll the list", () => {
+    render(
+      <SearchDialog
+        open
+        onOpenChange={() => {}}
+        title="Pick Asset"
+        items={items}
+        onSelect={() => {}}
+        data-testid="picker"
+      />,
+    );
+    const row = screen.getByTestId("search-item-a");
+    expect(row.tagName).not.toBe("BUTTON");
+    expect(row.getAttribute("role")).toBe("option");
+    expect(row.className).toMatch(/touch-pan-y/);
+    expect(screen.getByTestId("picker-body").getAttribute("role")).toBe(
+      "listbox",
+    );
+  });
+
+  it("commits a focused option with Enter or Space", () => {
+    const onSelect = vi.fn();
+    const onOpenChange = vi.fn();
+    render(
+      <SearchDialog
+        open
+        onOpenChange={onOpenChange}
+        title="Pick Asset"
+        items={items}
+        onSelect={onSelect}
+        data-testid="picker"
+      />,
+    );
+    const row = screen.getByTestId("search-item-a");
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("a");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    onSelect.mockClear();
+    onOpenChange.mockClear();
+    fireEvent.keyDown(screen.getByTestId("search-item-b"), { key: " " });
+    expect(onSelect).toHaveBeenCalledWith("b");
+  });
+
   it("gives the list a definite height so rows are visible in a content-sized dialog", () => {
     render(
       <SearchDialog

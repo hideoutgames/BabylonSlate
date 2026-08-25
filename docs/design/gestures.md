@@ -60,8 +60,8 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 - Content browser — folder tree and asset grid
 - Graph panel — React Flow pan/zoom (unchanged)
 - Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog
-- SearchDialog / AssetPicker / ClassPicker / SceneComponentPicker (`*-body`) — native `overflow-y-auto overscroll-y-contain touch-pan-y` with a definite `pickerListHeightPx` cap (16rem). Finger pan scrolls the list; the document overscroll guard allows it because the body is `overflow-y: auto`.
-- AddFunctionDialog / Add Event (`*-body`) — same native overflow list as SearchDialog
+- SearchDialog / AssetPicker / ClassPicker / SceneComponentPicker (`*-body`) — native `overflow-y-auto overscroll-y-contain touch-pan-y` with a definite `pickerListHeightPx` cap (16rem). Rows are `role="option"` divs (`buttonVariants` ghost touch, `touch-pan-y`), not native buttons, so a finger pan on a row scrolls. WindowedList slots also use `touch-pan-y`. The document overscroll guard allows the body because it is `overflow-y: auto`.
+- AddFunctionDialog / Add Event (`*-body`) — same native overflow list and non-button option rows as SearchDialog
 
 ## Virtual keyboard
 
