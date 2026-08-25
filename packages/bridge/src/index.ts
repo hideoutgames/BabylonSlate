@@ -35,11 +35,6 @@ export {
   type ScriptAnchorPayload,
   type ScriptBundleEntry,
   type ScriptConsoleCommand,
-  type UiWidgetEventControl,
-  type UiWidgetEventKind,
-  uiWidgetEventExport,
-  type UserInterfaceRuntimeDocument,
-  type UserInterfaceWidgetMeta,
 } from "./channels";
 export {
   createRpcHost,

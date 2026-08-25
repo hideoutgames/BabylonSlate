@@ -6,8 +6,7 @@ import {
   type PaletteNode,
 } from "@babylonslate/graph-ui";
 import { PanelFrame } from "@babylonslate/editor-kit";
-import { userInterfaceClassId, type SerializedGraph } from "@babylonslate/core";
-import type { BoundWidgetRef } from "@babylonslate/scripting-nodes";
+import { type SerializedGraph } from "@babylonslate/core";
 import {
   Empty,
   EmptyDescription,
@@ -23,10 +22,7 @@ import { useGraphEditing } from "../context/graph-editing-context";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { classParentLookup } from "../lib/content-browser-helpers";
-import {
-  boundWidgetsFromContent,
-  functionLibraryShowsEventGraphEmpty,
-} from "../lib/class-members";
+import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
   classHierarchyFromParentOf,
   classMemberSymbolsFromGraphs,
@@ -70,7 +66,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     applyAssetDocumentChange,
     assetRegistry,
     activeDocumentId,
-    uiEditorMode,
     animEditorMode,
   } = useDocuments();
   const { focusedNodeId } = usePlay();
@@ -113,19 +108,9 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   );
   const parentClass =
     indexed?.header.parentClass ??
-    (doc?.ref.kind === "ui" || doc?.ref.kind === "anim-graph" ? "BObject" : null);
+    (doc?.ref.kind === "anim-graph" ? "BObject" : null);
   const parentOf = classParentLookup(assetRegistry?.list() ?? []);
-  const classId =
-    doc?.ref.kind === "ui" && indexed?.header.guid
-      ? userInterfaceClassId(indexed.header.guid)
-      : doc?.ref.path
-        ? classIdForGraphPath(doc.ref.path)
-        : undefined;
-  const widgets = useMemo(
-    (): BoundWidgetRef[] =>
-      doc?.ref.kind === "ui" ? boundWidgetsFromContent(doc.content) : [],
-    [doc?.content, doc?.ref.kind],
-  );
+  const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = serializedGraphFromDocument(
     doc?.ref.kind ?? "",
     doc?.content,
@@ -243,7 +228,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         documentId,
         activeDocumentId,
         documentKind: doc?.ref.kind ?? "",
-        uiEditorMode: doc?.ref.kind === "ui" ? uiEditorMode : undefined,
         animEditorMode:
           doc?.ref.kind === "anim-graph" ? animEditorMode : undefined,
       })
@@ -305,7 +289,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     scriptInterfaces,
     setDiagnostics,
     typeSchemas,
-    uiEditorMode,
     animEditorMode,
   ]);
 
@@ -314,7 +297,6 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     parentOf,
     classId,
     graph: graphContent ?? undefined,
-    widgets,
     otherClassGraphs,
     activeFunctionId,
     assetType: indexed?.header.type,

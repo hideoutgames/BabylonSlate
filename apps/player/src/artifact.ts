@@ -1,9 +1,4 @@
-import { mimeForGuiTextureBytes } from "@babylonslate/assets";
 import { normalizeScene, type SerializedScene } from "@babylonslate/core";
-import {
-  normalizeUserInterfaceDocument,
-  type UserInterfaceDocument,
-} from "@babylonslate/ui-runtime";
 import {
   createHttpPackSource,
   createMemoryPackSource,
@@ -13,8 +8,6 @@ import {
   SCRIPTS_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
-  UI_IMAGE_EXPORT_TYPE,
-  textureGuidFromUiImageExport,
   AUDIO_REVERB_EXPORT_TYPE,
   sceneGuidFromAudioReverbExport,
   FONT_FACETYPE_EXPORT_TYPE,
@@ -41,7 +34,6 @@ export type LoadedGame = {
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
   textureBytes: Map<string, Uint8Array>;
-  guiImageBytes: Map<string, Uint8Array>;
   modelBytes: Map<string, Uint8Array>;
   modelPayloads: Map<string, ModelPayload>;
   fontBytes: Map<string, Uint8Array>;
@@ -52,7 +44,6 @@ export type LoadedGame = {
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
-  userInterfaces: Map<string, UserInterfaceDocument>;
 };
 
 function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
@@ -101,7 +92,6 @@ export async function loadGameFromFiles(
   const scripts = parseScriptRegistry(textFromFiles(files, SCRIPTS_FILE));
   const scenes = new Map<string, SerializedScene>();
   const textureBytes = new Map<string, Uint8Array>();
-  const guiImageBytes = new Map<string, Uint8Array>();
   const modelBytes = new Map<string, Uint8Array>();
   const modelPayloads = new Map<string, ModelPayload>();
   const fontBytes = new Map<string, Uint8Array>();
@@ -112,7 +102,6 @@ export async function loadGameFromFiles(
   const payloads = new Map<string, Uint8Array>();
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
-  const userInterfaces = new Map<string, UserInterfaceDocument>();
 
   const packSources = new Map<string, PackSource>();
   for (const packName of manifest.packs) {
@@ -164,18 +153,9 @@ export async function loadGameFromFiles(
       navmeshBytes.set(sceneGuid, bytes);
       continue;
     }
-    if (entry.type === UI_IMAGE_EXPORT_TYPE) {
-      const textureGuid = textureGuidFromUiImageExport(entry.guid) ?? entry.guid;
-      guiImageBytes.set(textureGuid, bytes);
-      continue;
-    }
     if (entry.type === AUDIO_REVERB_EXPORT_TYPE) {
       const sceneGuid = sceneGuidFromAudioReverbExport(entry.guid) ?? entry.guid;
       audioReverbBytes.set(sceneGuid, bytes);
-      continue;
-    }
-    if (entry.type === "UserInterface") {
-      userInterfaces.set(entry.guid, normalizeUserInterfaceDocument(parseJsonAsset(bytes)));
       continue;
     }
   }
@@ -185,7 +165,6 @@ export async function loadGameFromFiles(
     scripts,
     scenes,
     textureBytes,
-    guiImageBytes,
     modelBytes,
     modelPayloads,
     fontBytes,
@@ -196,7 +175,6 @@ export async function loadGameFromFiles(
     payloads,
     navmeshBytes,
     audioReverbBytes,
-    userInterfaces,
   };
 }
 
@@ -257,18 +235,4 @@ export async function loadGameFromHttp(
     }
   }
   return loadGameFromFiles(files, { fetchImpl, baseUrl });
-}
-
-/** Browser-decodable texture bytes for Babylon GUI Image widgets. */
-export function guiTextureBytesFromGame(
-  game: LoadedGame,
-): Map<string, Uint8Array> {
-  const map = new Map<string, Uint8Array>();
-  for (const [guid, bytes] of game.textureBytes) {
-    if (mimeForGuiTextureBytes(bytes)) map.set(guid, bytes);
-  }
-  for (const [guid, bytes] of game.guiImageBytes) {
-    map.set(guid, bytes);
-  }
-  return map;
 }

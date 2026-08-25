@@ -1,6 +1,5 @@
 /** Engine enum/struct registry (stable ids, not Content Browser assets). */
 
-import { ENGINE_INPUT_MODE_ENUM_ID, INPUT_MODE_MEMBERS } from "@babylonslate/core";
 import type { EnumMember, StructField } from "./type-assets";
 
 export const ENGINE_TYPE_GUID_PREFIX = "engine:";
@@ -28,13 +27,8 @@ export type EngineStruct = {
   fields: StructField[];
 };
 
-/** Built-in engine enums (`engine:InputMode`, `engine:CollisionChannel`, …). */
+/** Built-in engine enums (`engine:CollisionChannel`, …). */
 export const ENGINE_ENUMS: readonly EngineEnum[] = [
-  {
-    id: ENGINE_INPUT_MODE_ENUM_ID,
-    name: "Input Mode",
-    members: INPUT_MODE_MEMBERS.map((name, value) => ({ name, value })),
-  },
   {
     id: ENGINE_COLLISION_CHANNEL_ENUM_ID,
     name: "Collision Channel",

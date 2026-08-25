@@ -29,11 +29,10 @@ packages/physics/     Havok 3D + Rapier 2D (game worker)
 packages/bridge/      SAB + transferable transports
 packages/runtime/     Game worker + in-process driver
 packages/debugger/    Console command registry, BDebugCommand, stats HUD helpers, trace recorder (P8)
-packages/ui-runtime/  Widget tree, anchors, layout (P9)
 packages/anim-graph/  AnimationGraph evaluator (P9)
 packages/shader-graph/ Shader IR (P9)
 packages/input/       Action/axis mappings
-packages/render/      Snapshot sync, resource cache, editor tools, FontFace registry, Babylon GUI
+packages/render/      Snapshot sync, resource cache, editor tools, FontFace registry
 packages/scripting/   Graph IR, validator, JS codegen
 packages/scripting-nodes/ Node catalog
 packages/graph-ui/    React Flow graph editor

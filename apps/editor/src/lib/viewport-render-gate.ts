@@ -1,4 +1,4 @@
-import { createAppSettingsStore, type EngineSettings } from "@babylonslate/vfs";
+import { createAppSettingsStore } from "@babylonslate/vfs";
 
 export const ENGINE_SETTINGS_CHANGED_EVENT = "babylonslate:engine-settings";
 
@@ -18,7 +18,6 @@ export function dispatchEngineSettingsChanged(settings: {
   viewportFrameCap: number;
   theme?: "system" | "light" | "dark";
   graphDefaultZoom?: number;
-  uiDesignerPresets?: EngineSettings["uiDesignerPresets"];
   hardwareScalingLevel?: number;
   postProcessingEnabled?: boolean;
   editorTextureLodEnabled?: boolean;

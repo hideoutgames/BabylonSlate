@@ -8,7 +8,7 @@ export interface FontAssetSource {
   payload?: unknown;
 }
 
-/** Load Font `source` chunks for Play / designer ADT registration. */
+/** Load Font `source` chunks for Play FontFace registration. */
 export async function collectFontAssetEntries(
   assets: readonly FontAssetSource[],
   readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,

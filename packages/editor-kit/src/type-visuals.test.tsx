@@ -2,11 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
   ActivityIcon,
-  AppWindowIcon,
   CloudIcon,
   FilmIcon,
   ListTreeIcon,
-  PanelTopIcon,
   PersonStandingIcon,
   PuzzleIcon,
   TypeIcon,
@@ -137,19 +135,12 @@ describe("resolveTypeVisual", () => {
     expect(mesh.colorVar).toBe(model.colorVar);
   });
 
-  it("shares Class color for Object, Actor, and Widget with different icons", () => {
+  it("shares Class color for Object and Actor with different icons", () => {
     const objectVisual = resolveTypeVisual({ classId: "BObject" });
     const actorVisual = resolveTypeVisual({ classId: "Actor" });
-    const widgetVisual = resolveTypeVisual({
-      classId: "WidgetComponent",
-      family: "class",
-    });
     expect(objectVisual.colorVar).toBe("var(--asset-animation)");
     expect(actorVisual.colorVar).toBe(objectVisual.colorVar);
-    expect(widgetVisual.colorVar).toBe(objectVisual.colorVar);
     expect(objectVisual.icon).not.toBe(actorVisual.icon);
-    expect(actorVisual.icon).not.toBe(widgetVisual.icon);
-    expect(objectVisual.icon).not.toBe(widgetVisual.icon);
   });
 
   it("reuses the Object icon for GameInstance, FunctionLibrary, ActorComponent, and BDebugCommand", () => {
@@ -173,11 +164,6 @@ describe("resolveTypeVisual", () => {
     expect(engineParentOf("BDebugCommand")).toBe("BObject");
     expect(engineParentOf("EditorUtilityObject")).toBe("BObject");
     expect(engineParentOf("EditorFunctionLibrary")).toBe("FunctionLibrary");
-    expect(engineParentOf("UserInterface")).toBe("BObject");
-    expect(engineParentOf("Widget")).toBe("BObject");
-    expect(engineParentOf("ButtonWidget")).toBe("Widget");
-    expect(engineParentOf("ImageWidget")).toBe("Widget");
-    expect(engineParentOf("MaterialWidget")).toBe("Widget");
   });
 
   it("uses Class color and the parent icon for Class assets", () => {
@@ -234,14 +220,6 @@ describe("resolveTypeVisual", () => {
     expect(tileset.iconKey).toBe("Tileset");
     expect(tilemap.iconKey).toBe("Tilemap");
     expect(tileset.icon).not.toBe(tilemap.icon);
-  });
-
-  it("uses a clean window glyph for UserInterface instead of AppWindow title-bar ticks", () => {
-    const visual = resolveTypeVisual({ assetType: "UserInterface" });
-    const widget = resolveTypeVisual({ classId: "WidgetComponent" });
-    expect(visual.icon).toBe(PanelTopIcon);
-    expect(visual.icon).not.toBe(AppWindowIcon);
-    expect(widget.icon).toBe(PanelTopIcon);
   });
 
   it("reuses the Animation Film glyph for Sprite Animation clips", () => {

@@ -1,7 +1,4 @@
-import {
-  userInterfaceAssetGuidFromClassId,
-  type ProjectSettings,
-} from "@babylonslate/core";
+import type { ProjectSettings } from "@babylonslate/core";
 
 export type ClearDeletedAssetRefsResult<T> = {
   value: T;
@@ -15,9 +12,7 @@ function isDeletedAssetRef(
   value: string,
   deletedGuids: ReadonlySet<string>,
 ): boolean {
-  if (deletedGuids.has(value)) return true;
-  const uiGuid = userInterfaceAssetGuidFromClassId(value);
-  return uiGuid !== null && deletedGuids.has(uiGuid);
+  return deletedGuids.has(value);
 }
 
 /**

@@ -22,30 +22,6 @@ describe("material validation", () => {
     expect(validateMaterialDocument(doc)).toEqual([]);
   });
 
-  it("accepts the default interface material", () => {
-    const doc = createDefaultMaterialDocument("HudGlow", "interface");
-    expect(validateMaterialDocument(doc)).toEqual([]);
-  });
-
-  it("flags World Position and Scene Color inside an interface material", () => {
-    const doc = createDefaultMaterialDocument("HudGlow", "interface");
-    doc.nodes.push(
-      {
-        id: "world",
-        type: "input.worldPosition",
-        position: { x: 0, y: 0 },
-        properties: {},
-      },
-      {
-        id: "scene",
-        type: "input.sceneColor",
-        position: { x: 0, y: 0 },
-        properties: {},
-      },
-    );
-    expect(codes(doc)).toContain("material.domainMismatch");
-  });
-
   it("accepts the default particle material", () => {
     expect(
       validateMaterialDocument(
@@ -437,23 +413,24 @@ describe("material validation", () => {
     ).not.toContain("material.function.missing");
   });
 
-  it("lets an interface material call a domain-neutral math function", () => {
-    const fn = createDefaultMaterialFunctionDocument("Opacity");
-    fn.inputs = [{ id: "in_value", name: "Value", type: "float" }];
-    fn.outputs = [{ id: "out_value", name: "Result", type: "float" }];
-    const doc = createDefaultMaterialDocument("HudGlow", "interface");
+  it("lets a particle material call a domain-neutral math function", () => {
+    const fn = createDefaultMaterialFunctionDocument("Tint");
+    fn.inputs = [{ id: "in_value", name: "Value", type: "vec4" }];
+    fn.outputs = [{ id: "out_value", name: "Result", type: "vec4" }];
+    const doc = createDefaultMaterialDocument("Sparks", "particle");
     doc.nodes.push({
       id: "call",
       type: "function.call",
       position: { x: 0, y: 0 },
       properties: { functionGuid: "fn-1" },
     });
+    doc.edges = doc.edges.filter((edge) => edge.targetPinId !== "color");
     doc.edges.push({
-      id: "e-fn-opacity",
+      id: "e-fn-color",
       sourceNodeId: "call",
       sourcePinId: "out_value",
       targetNodeId: "output",
-      targetPinId: "opacity",
+      targetPinId: "color",
     });
     expect(
       validateMaterialDocument(doc, {

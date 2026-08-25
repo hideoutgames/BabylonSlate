@@ -3,7 +3,6 @@ import {
   FragmentOutputBlock,
   InputBlock,
   Material,
-  MultiplyBlock,
   NodeMaterial,
   NodeMaterialBlockConnectionPointTypes,
   NodeMaterialModes,
@@ -95,7 +94,7 @@ export function compileMaterialPlan(
   const { scene } = options;
   const material = new NodeMaterial(options.name, scene);
   material.mode =
-    plan.domain === "postProcess" || plan.domain === "interface"
+    plan.domain === "postProcess"
       ? NodeMaterialModes.PostProcess
       : plan.domain === "particle"
         ? NodeMaterialModes.Particle
@@ -121,11 +120,8 @@ export function compileMaterialPlan(
   // Engine-owned plumbing must exist before operations so nodes such as World
   // Normal and Screen UV read the real transformed values.
   try {
-    if (plan.domain === "postProcess" || plan.domain === "interface") {
+    if (plan.domain === "postProcess") {
       outputNodes.push(...createPostProcessPlumbing(options.name, created, plumbing));
-      if (plan.domain === "interface") {
-        plumbing.uv = plumbing.screenUv;
-      }
     } else if (plan.domain !== "particle") {
       outputNodes.push(...createSurfacePlumbing(options.name, created, plumbing));
     }
@@ -348,10 +344,6 @@ export function compileMaterialPlan(
       const color = outputPoint("color", `${options.name}_color`, true);
       if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
-    } else if (plan.domain === "interface") {
-      outputNodes.push(
-        attachInterfaceShading(options, created, outputPoint),
-      );
     } else {
       outputNodes.push(
         attachSurfaceShading(plan, options, created, plumbing, outputPoint),
@@ -417,11 +409,7 @@ function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
   plan: MaterialBuildPlan,
 ): void {
-  if (
-    plan.domain === "postProcess" ||
-    plan.domain === "interface" ||
-    plan.domain === "particle"
-  ) {
+  if (plan.domain === "postProcess" || plan.domain === "particle") {
     return;
   }
   material.backFaceCulling = plan.twoSided !== true;
@@ -683,40 +671,6 @@ function createPostProcessPlumbing(
   created.push(position, one, merger, vertexOutput, screenUv);
   plumbing.screenUv = screenUv.output;
   return [vertexOutput];
-}
-
-/**
- * Unlit 2D fragment: authored Color (vec4) with Opacity multiplying alpha.
- * Reuses the post-process quad; never the PBR shading block.
- */
-function attachInterfaceShading(
-  options: CompileMaterialOptions,
-  created: NodeMaterialBlock[],
-  outputPoint: (
-    pinId: string,
-    name: string,
-    asColor: boolean,
-  ) => NodeMaterialConnectionPoint | null,
-): NodeMaterialBlock {
-  const fragment = new FragmentOutputBlock(`${options.name}_fragment`);
-  created.push(fragment);
-  const color = outputPoint("color", `${options.name}_color`, true);
-  const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
-  if (color && opacity) {
-    const split = new VectorSplitterBlock(`${options.name}_ifaceSplit`);
-    color.connectTo(split.xyzw);
-    const mul = new MultiplyBlock(`${options.name}_ifaceOpacity`);
-    split.w.connectTo(mul.left);
-    opacity.connectTo(mul.right);
-    const merge = new VectorMergerBlock(`${options.name}_ifaceRgba`);
-    split.xyzOut.connectTo(merge.xyzIn);
-    mul.output.connectTo(merge.w);
-    created.push(split, mul, merge);
-    merge.xyzw.connectTo(fragment.rgba);
-  } else if (color) {
-    color.connectTo(fragment.rgba);
-  }
-  return fragment;
 }
 
 /**

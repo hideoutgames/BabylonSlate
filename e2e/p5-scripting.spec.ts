@@ -104,14 +104,16 @@ async function closeGraphTab(page: import("@playwright/test").Page): Promise<voi
   await expect(page.getByTestId("graph-panel")).toHaveCount(0);
 }
 
-const INPUT_MODE_SELECT_DATA = {
-  enumGuid: "engine:InputMode",
+const COLLISION_CHANNEL_SELECT_DATA = {
+  enumGuid: "engine:CollisionChannel",
   members: [
     { name: "All", value: 0 },
-    { name: "Interface", value: 1 },
-    { name: "Game", value: 2 },
+    { name: "WorldStatic", value: 1 },
+    { name: "WorldDynamic", value: 2 },
+    { name: "Pawn", value: 3 },
+    { name: "Visibility", value: 4 },
   ],
-  "default:index": "Interface",
+  "default:index": "Pawn",
 };
 
 function enumSelectGraph(wiredInt: boolean) {
@@ -131,7 +133,7 @@ function enumSelectGraph(wiredInt: boolean) {
         id: "select",
         type: "enum.select",
         position: { x: 280, y: 80 },
-        data: INPUT_MODE_SELECT_DATA,
+        data: COLLISION_CHANNEL_SELECT_DATA,
       },
     ],
     edges: wiredInt
@@ -141,7 +143,7 @@ function enumSelectGraph(wiredInt: boolean) {
             source: "value",
             target: "select",
             sourceHandle: "out",
-            targetHandle: "option:Interface",
+            targetHandle: "option:Pawn",
           },
         ]
       : [],
@@ -292,13 +294,15 @@ test.describe("P5 visual scripting acceptance", () => {
             type: "enum.select",
             position: { x: 280, y: 220 },
             data: {
-              enumGuid: "engine:InputMode",
+              enumGuid: "engine:CollisionChannel",
               members: [
                 { name: "All", value: 0 },
-                { name: "Interface", value: 1 },
-                { name: "Game", value: 2 },
+                { name: "WorldStatic", value: 1 },
+                { name: "WorldDynamic", value: 2 },
+                { name: "Pawn", value: 3 },
+                { name: "Visibility", value: 4 },
               ],
-              "default:index": "Interface",
+              "default:index": "Pawn",
             },
           },
           {
@@ -331,7 +335,7 @@ test.describe("P5 visual scripting acceptance", () => {
             source: "value",
             target: "select",
             sourceHandle: "out",
-            targetHandle: "option:Interface",
+            targetHandle: "option:Pawn",
           },
           {
             id: "selected",
@@ -458,7 +462,7 @@ test.describe("P5 visual scripting acceptance", () => {
       "style",
       /--pin-wildcard/,
     );
-    await expect(selectPinVisual(page, "option:Game")).toHaveAttribute(
+    await expect(selectPinVisual(page, "option:WorldDynamic")).toHaveAttribute(
       "style",
       /--pin-wildcard/,
     );
@@ -471,7 +475,7 @@ test.describe("P5 visual scripting acceptance", () => {
     await saveAllIfEnabled(page);
     await closeGraphTab(page);
     await openMannequinClass(page);
-    await expect(selectPinVisual(page, "option:Interface")).toHaveAttribute(
+    await expect(selectPinVisual(page, "option:Pawn")).toHaveAttribute(
       "style",
       /--pin-int/,
     );

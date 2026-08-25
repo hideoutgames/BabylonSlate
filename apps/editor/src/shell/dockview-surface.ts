@@ -1,15 +1,12 @@
-import type { UiEditorMode } from "./ui-document-layout";
-
 export type DockviewSurface =
   | "default"
-  | "designer"
-  | "logic"
   | "stateMachine"
   | "animationObject";
 
-export function dockviewSurfaceForUiMode(mode: UiEditorMode): DockviewSurface {
-  return mode === "logic" ? "logic" : "designer";
-}
+export type PreFocusSnapshot = {
+  layout: Record<string, unknown>;
+  surface: DockviewSurface;
+};
 
 export function dockviewSurfaceForAnimMode(
   mode: "stateMachine" | "animationObject",
@@ -27,8 +24,6 @@ export function dockviewApiKey(
 export function dockviewApiKeysForDocument(documentId: string): string[] {
   return [
     dockviewApiKey(documentId),
-    dockviewApiKey(documentId, "designer"),
-    dockviewApiKey(documentId, "logic"),
     dockviewApiKey(documentId, "stateMachine"),
     dockviewApiKey(documentId, "animationObject"),
   ];

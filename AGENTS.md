@@ -12,6 +12,6 @@ Never use or enable GitHub Actions larger runners — standard hosted runners on
 
 PRs stay draft until local `pnpm verify` passes; mark ready once **only if fewer than 2 counted non-draft PRs target `main`**. **[#271](https://github.com/hideoutgames/BabylonSlate/pull/271) is excluded** from that cap. Verify is 9 jobs (`static` + unsharded `unit` + 7 e2e shards). If both slots are taken, leave the draft and stop — a human marks ready. Details in [.cursor/rules/github-actions-pr-cadence.mdc](.cursor/rules/github-actions-pr-cadence.mdc).
 
-Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work, and for **UserInterface** work (Babylon GUI). React editor chrome stays on the shadcn / editor-ui-components skills.
+Follow `.cursor/skills/BabylonJS/SKILL.md` for engine and scene work. React editor chrome stays on the shadcn / editor-ui-components skills. Do not re-add the game HUD / UserInterface system.
 
 Read-only deep codebase investigation uses `.cursor/skills/investigate/SKILL.md` (parent keeps context; more `explore` sub-agents as scope grows). Short Q&A stays on the ask skill.

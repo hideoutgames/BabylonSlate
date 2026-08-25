@@ -11,7 +11,6 @@ import { createDefaultLayoutForKind } from "./default-layout";
 import { migrateRestoredLayout, restoreDockviewLayout } from "./layout-ops";
 import { panelComponents } from "./panel-registry";
 import { usePlatformLayoutOptions } from "./use-platform-layout";
-import type { UiEditorMode } from "./ui-document-layout";
 import type { AnimEditorMode } from "./anim-document-layout";
 
 export interface DockviewShellProps {
@@ -20,7 +19,6 @@ export interface DockviewShellProps {
   initialLayout?: Record<string, unknown> | null;
   actorPrefab?: boolean;
   sourceControl?: boolean;
-  uiEditorMode?: UiEditorMode;
   animEditorMode?: AnimEditorMode;
 }
 
@@ -30,7 +28,6 @@ export function DockviewShell({
   initialLayout,
   actorPrefab = true,
   sourceControl = false,
-  uiEditorMode,
   animEditorMode,
 }: DockviewShellProps) {
   const apiRef = useRef<DockviewApi | null>(null);
@@ -48,7 +45,6 @@ export function DockviewShell({
         createDefaultLayoutForKind(event.api, documentKind, {
           actorPrefab,
           sourceControl,
-          uiEditorMode,
           animEditorMode,
         });
       });
@@ -69,7 +65,7 @@ export function DockviewShell({
 
       onReadyRef.current?.(event.api);
     },
-    [documentKind, actorPrefab, sourceControl, uiEditorMode, animEditorMode, platformOptions.disableFloatingGroups],
+    [documentKind, actorPrefab, sourceControl, animEditorMode, platformOptions.disableFloatingGroups],
   );
 
   return (

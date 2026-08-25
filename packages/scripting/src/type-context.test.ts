@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  userInterfaceClassId,
-  widgetClassIdForKind,
-} from "@babylonslate/core";
-import {
   isActorClassId,
   resultKindForClassId,
 } from "./type-context";
@@ -25,25 +21,17 @@ describe("type context Actor assumptions", () => {
     expect(resultKindForClassId("Hero", hierarchy)).toBe("actorRef");
   });
 
-  it("excludes UserInterface and Widget class ids from Actor assumptions", () => {
-    const uiClassId = userInterfaceClassId("hud-guid");
-    expect(isActorClassId("UserInterface", hierarchy)).toBe(false);
-    expect(isActorClassId(uiClassId, hierarchy)).toBe(false);
-    expect(isActorClassId("Widget", hierarchy)).toBe(false);
-    expect(isActorClassId(widgetClassIdForKind("Button"), hierarchy)).toBe(false);
-    expect(isActorClassId(widgetClassIdForKind("Image"), hierarchy)).toBe(false);
-    expect(resultKindForClassId("UserInterface", hierarchy)).toBe("objectRef");
-    expect(resultKindForClassId(uiClassId, hierarchy)).toBe("objectRef");
-    expect(resultKindForClassId("Widget", hierarchy)).toBe("objectRef");
-    expect(resultKindForClassId("ButtonWidget", hierarchy)).toBe("objectRef");
+  it("treats non-Actor classes as object refs", () => {
+    expect(isActorClassId("BObject", hierarchy)).toBe(false);
+    expect(isActorClassId("GameInstance", hierarchy)).toBe(false);
+    expect(resultKindForClassId("BObject", hierarchy)).toBe("objectRef");
+    expect(resultKindForClassId("GameInstance", hierarchy)).toBe("objectRef");
   });
 
-  it("does not treat a namespaced UI class as Actor even without hierarchy", () => {
-    expect(isActorClassId(userInterfaceClassId("hud-guid"))).toBe(false);
-    expect(resultKindForClassId(userInterfaceClassId("hud-guid"))).toBe(
-      "objectRef",
-    );
+  it("treats Actor as actorRef even without hierarchy", () => {
     expect(isActorClassId("Actor")).toBe(true);
     expect(resultKindForClassId("Actor")).toBe("actorRef");
+    expect(isActorClassId("BObject")).toBe(false);
+    expect(resultKindForClassId("BObject")).toBe("objectRef");
   });
 });

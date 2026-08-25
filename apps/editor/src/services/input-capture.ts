@@ -1,13 +1,7 @@
 import {
   InputRingBuffer,
-  shouldPushRawInput,
   type RawInputEvent,
 } from "@babylonslate/input";
-import {
-  DEFAULT_INPUT_MODE,
-  parseInputMode,
-  type InputMode,
-} from "@babylonslate/core";
 
 export interface InputCaptureHandle {
   ring: InputRingBuffer;
@@ -15,10 +9,8 @@ export interface InputCaptureHandle {
   setTick: (tick: number) => void;
   /** Poll gamepads once per frame (axes have no events). */
   pollGamepads: () => void;
-  /** Push a TouchJoystick / TouchDPad sample into the Play ring. */
+  /** Push a Play overlay joystick sample into the Play ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
-  /** Session-scoped Play input mode (All / Interface / Game). */
-  setInputMode: (mode: InputMode | string) => void;
   dispose: () => void;
 }
 
@@ -36,11 +28,10 @@ export function attachInputCapture(
 ): InputCaptureHandle {
   const ring = options.ring ?? new InputRingBuffer(512);
   let tick = 0;
-  let mode: InputMode = DEFAULT_INPUT_MODE;
   canvas.style.touchAction = "none";
 
   const push = (raw: RawInputEvent) => {
-    if (shouldPushRawInput(mode, raw.kind)) ring.push(raw);
+    ring.push(raw);
   };
 
   const onPointer = (phase: "down" | "move" | "up" | "cancel") =>
@@ -85,9 +76,6 @@ export function attachInputCapture(
     ring,
     setTick: (value) => {
       tick = value;
-    },
-    setInputMode: (next) => {
-      mode = parseInputMode(next);
     },
     pollGamepads: () => {
       if (typeof navigator === "undefined" || !navigator.getGamepads) return;

@@ -423,14 +423,6 @@ function GalleryComposites() {
           </div>
           <div className="flex flex-col items-center gap-1">
             <TypeVisualIcon
-              visual={resolveTypeVisual({ assetType: "UserInterface" })}
-              size={TYPE_VISUAL_ICON_TILE_SIZE}
-              data-testid="gallery-type-visual-user-interface"
-            />
-            <span className="text-[10px] text-muted-foreground">User Interface</span>
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <TypeVisualIcon
               visual={resolveTypeVisual({ assetType: "AnimationGraph" })}
               size={TYPE_VISUAL_ICON_TILE_SIZE}
               data-testid="gallery-type-visual-animation-graph"

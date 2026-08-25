@@ -4,12 +4,9 @@ import type { DebugInspectSnapshot } from "@babylonslate/object-model";
 import {
   snapshotFloatCount,
   writeSnapshotHeader,
-  type CommandMessage,
 } from "@babylonslate/bridge";
 import {
   applyPlayFpsSample,
-  applyPlayInputModeCommand,
-  applyPlayUiCommand,
   applyWorkerPlayStats,
   applyPlaySnapshotTick,
   diagnosticFromCommand,
@@ -17,7 +14,6 @@ import {
   applyPlaySessionPausedCommand,
   applyPlayHudConsoleCommand,
   shouldForwardPlayEngineCommand,
-  dispatchPlayUiWidgetEvent,
   deliverInspectSnapshot,
   inspectSnapshotFromCommand,
   isFatalPlayDiagnostic,
@@ -235,112 +231,6 @@ describe("Play HUD stats merge", () => {
   });
 });
 
-describe("applyPlayUiCommand", () => {
-  it("forwards classId on apply and instanceId on visibility", () => {
-    const onUiApply = vi.fn();
-    const onUiRemove = vi.fn();
-    const onUiSetVisible = vi.fn();
-    expect(
-      applyPlayUiCommand(
-        {
-          type: "uiApply",
-          instanceId: "ui-1",
-          classId: "UserInterface:hud-guid",
-          assetGuid: "hud-guid",
-        },
-        { onUiApply, onUiRemove, onUiSetVisible },
-      ),
-    ).toBe(true);
-    expect(onUiApply).toHaveBeenCalledWith(
-      "ui-1",
-      "UserInterface:hud-guid",
-      "hud-guid",
-    );
-    expect(
-      applyPlayUiCommand(
-        {
-          type: "uiSetVisible",
-          instanceId: "ui-1",
-          widgetId: "play-btn",
-          visible: false,
-        },
-        { onUiApply, onUiRemove, onUiSetVisible },
-      ),
-    ).toBe(true);
-    expect(onUiSetVisible).toHaveBeenCalledWith("ui-1", "play-btn", false);
-    expect(
-      applyPlayUiCommand(
-        { type: "uiRemove", instanceId: "ui-1" },
-        { onUiApply, onUiRemove, onUiSetVisible },
-      ),
-    ).toBe(true);
-    expect(onUiRemove).toHaveBeenCalledWith("ui-1");
-  });
-
-  it("forwards hierarchy commands onto onUiTreeCommand", () => {
-    const onUiTreeCommand = vi.fn();
-    const command = {
-      type: "uiAddWidget",
-      instanceId: "ui-1",
-      widgetId: "score",
-      kind: "TextBlock",
-      name: "Score",
-      parentId: "canvas",
-    } satisfies CommandMessage;
-    expect(applyPlayUiCommand(command, { onUiTreeCommand })).toBe(true);
-    expect(onUiTreeCommand).toHaveBeenCalledWith(command);
-  });
-
-  it("forwards setInputMode members onto the Play HUD callback", () => {
-    const onSetInputMode = vi.fn();
-    expect(
-      applyPlayInputModeCommand(
-        { type: "setInputMode", mode: "Game" },
-        onSetInputMode,
-      ),
-    ).toBe(true);
-    expect(onSetInputMode).toHaveBeenCalledWith("Game");
-    expect(
-      applyPlayInputModeCommand(
-        { type: "stats", frameId: 1, tickIndex: 1, scriptMs: 0, physicsMs: 0 },
-        onSetInputMode,
-      ),
-    ).toBe(false);
-  });
-
-  it("does not forward world WidgetComponent applies onto the HUD host", () => {
-    const onUiApply = vi.fn();
-    expect(
-      applyPlayUiCommand(
-        {
-          type: "uiApply",
-          instanceId: "ui-1",
-          classId: "UserInterface:panel-ui",
-          assetGuid: "panel-ui",
-          target: { kind: "world", slotId: 0, componentId: "widget-comp" },
-        },
-        { onUiApply },
-      ),
-    ).toBe(true);
-    expect(onUiApply).not.toHaveBeenCalled();
-  });
-
-  it("ignores non-UI commands", () => {
-    expect(
-      applyPlayUiCommand(
-        {
-          type: "stats",
-          frameId: 1,
-          tickIndex: 1,
-          scriptMs: 0,
-          physicsMs: 0,
-        },
-        {},
-      ),
-    ).toBe(false);
-  });
-});
-
 describe("applyPlayHudConsoleCommand", () => {
   it("opens Stats HUD and highlights a row", () => {
     const onShowFps = vi.fn();
@@ -388,9 +278,6 @@ describe("shouldForwardPlayEngineCommand", () => {
     expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setShowAudioDebug")).toBe(true);
     expect(shouldForwardPlayEngineCommand("debugDraw")).toBe(true);
-    expect(shouldForwardPlayEngineCommand("uiApply")).toBe(true);
-    expect(shouldForwardPlayEngineCommand("uiRemove")).toBe(true);
-    expect(shouldForwardPlayEngineCommand("setInputMode")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });
 });
@@ -446,50 +333,6 @@ describe("applyPlaySessionPausedCommand", () => {
   });
 });
 
-describe("dispatchPlayUiWidgetEvent", () => {
-  it("posts uiWidgetEvent to the worker when present", () => {
-    const postControl = vi.fn();
-    expect(
-      dispatchPlayUiWidgetEvent(
-        { worker: { postControl }, runtime: null },
-        {
-          instanceId: "ui-1",
-          widgetId: "play-btn",
-          kind: "click",
-        },
-      ),
-    ).toBe(true);
-    expect(postControl).toHaveBeenCalledWith({
-      type: "uiWidgetEvent",
-      instanceId: "ui-1",
-      widgetId: "play-btn",
-      kind: "click",
-    });
-  });
-
-  it("dispatches to the in-process runtime when the worker is absent", () => {
-    const dispatchUiWidgetEvent = vi.fn();
-    expect(
-      dispatchPlayUiWidgetEvent(
-        { worker: null, runtime: { dispatchUiWidgetEvent } },
-        {
-          instanceId: "ui-2",
-          widgetId: "slider",
-          kind: "value",
-          value: 0.4,
-        },
-      ),
-    ).toBe(true);
-    expect(dispatchUiWidgetEvent).toHaveBeenCalledWith({
-      type: "uiWidgetEvent",
-      instanceId: "ui-2",
-      widgetId: "slider",
-      kind: "value",
-      value: 0.4,
-    });
-  });
-});
-
 describe("applyPlaySessionStep", () => {
   it("steps the in-process runtime when the worker is absent", () => {
     const resume = vi.fn();
@@ -527,18 +370,12 @@ describe("applyPlaySessionStep", () => {
 });
 
 describe("playSessionBootControls", () => {
-  it("sends loadUserInterfaces before loadScripts so Apply can resolve widgets", () => {
+  it("sends loadScripts before play", () => {
     const controls = playSessionBootControls({
       load: {
         type: "load",
         sceneAssetGuid: "play-scene",
       },
-      userInterfaces: [
-        {
-          guid: "hud-guid",
-          widgets: [{ id: "play-btn", kind: "Button", name: "Play" }],
-        },
-      ],
       scripts: [
         {
           assetGuid: "hero",
@@ -549,31 +386,11 @@ describe("playSessionBootControls", () => {
         },
       ],
     });
-    const types = controls.map((control) => control.type);
-    expect(types.indexOf("loadUserInterfaces")).toBeGreaterThanOrEqual(0);
-    expect(types.indexOf("loadScripts")).toBeGreaterThan(
-      types.indexOf("loadUserInterfaces"),
-    );
-    expect(types.indexOf("play")).toBeGreaterThan(types.indexOf("loadScripts"));
-    expect(controls.find((control) => control.type === "loadUserInterfaces")).toEqual({
-      type: "loadUserInterfaces",
-      documents: [
-        {
-          guid: "hud-guid",
-          widgets: [{ id: "play-btn", kind: "Button", name: "Play" }],
-        },
-      ],
-    });
-  });
-
-  it("omits loadUserInterfaces when the Play library is empty and still does not auto-apply", () => {
-    const controls = playSessionBootControls({
-      load: { type: "load", sceneAssetGuid: "play-scene" },
-      userInterfaces: [],
-    });
-    const types = controls.map((control) => control.type);
-    expect(types).toEqual(["load", "play"]);
-    expect(types).not.toContain("loadUserInterfaces");
+    expect(controls.map((control) => control.type)).toEqual([
+      "load",
+      "loadScripts",
+      "play",
+    ]);
   });
 
   it("appends setPaused after play when Pause On Play is on", () => {

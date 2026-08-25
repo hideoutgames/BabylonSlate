@@ -257,6 +257,7 @@ test.describe("P16 audio", () => {
     await expect(
       page.locator('[data-asset-path="assets/beep.babasset"]'),
     ).toBeVisible({ timeout: 30_000 });
+    await enableImportedAudioLoop(page);
     await createContentBrowserAsset(page, "SoundAttenuation", "Near");
 
     await openAssetFromBrowser(page, "assets/beep.babasset");

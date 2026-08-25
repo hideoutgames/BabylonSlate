@@ -38,7 +38,6 @@ import {
 import type { ControlMessage, ScriptBundleEntry } from "@babylonslate/bridge";
 import type { ScenePostProcessEntry } from "@babylonslate/core";
 import { shouldSpawnScriptedActor } from "@babylonslate/runtime";
-import { widgetRuntimeMeta, type UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import {
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -82,7 +81,6 @@ export type PackedGameContent = {
   pixelPerfect: boolean;
   audioLibrary: PackedAudioLibrary;
   particleLibrary: PackedParticleLibrary;
-  userInterfaces: Map<string, UserInterfaceDocument>;
   modelClipAnimationGuids: Map<string, Map<string, string>>;
   retargetAnimationLoads: Map<string, RetargetAnimationLoad[]>;
 };
@@ -293,7 +291,6 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
       emitters,
       systems,
     },
-    userInterfaces: new Map(game.userInterfaces ?? []),
     modelClipAnimationGuids: modelClipAnimationGuidsFromAnimations(
       [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
     ),
@@ -351,31 +348,12 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
   return controls;
 }
 
-function widgetMetaFromDocument(document: UserInterfaceDocument) {
-  return Object.values(document.widgets).map(widgetRuntimeMeta);
-}
-
-export function packedUserInterfaceControl(
-  content: PackedGameContent,
-): Extract<ControlMessage, { type: "loadUserInterfaces" }> | null {
-  if (content.userInterfaces.size === 0) return null;
-  return {
-    type: "loadUserInterfaces",
-    documents: [...content.userInterfaces.entries()].map(([guid, document]) => ({
-      guid,
-      widgets: widgetMetaFromDocument(document),
-    })),
-  };
-}
-
 export function packedBootControls(
   content: PackedGameContent,
   scripts: readonly ScriptBundleEntry[],
   spawn: readonly { classId: string }[] = [],
 ): ControlMessage[] {
   const controls: ControlMessage[] = [];
-  const userInterfaces = packedUserInterfaceControl(content);
-  if (userInterfaces) controls.push(userInterfaces);
   if (scripts.length > 0) {
     controls.push({
       type: "loadScripts",

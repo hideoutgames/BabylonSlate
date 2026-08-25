@@ -37,16 +37,11 @@ import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
-  ENGINE_WIDGET_CLASS_IDS,
 } from "@babylonslate/object-model";
 import {
-  boundGetWidgetEntries,
-  boundWidgetVariableEntries,
   createDefaultNodeRegistry,
   castDefaultClassId,
   callInterfaceTitle,
-  uiGetWidgetNodeId,
-  type BoundWidgetRef,
 } from "@babylonslate/scripting-nodes";
 import {
   warnDebugTierConsoleCommands,
@@ -58,7 +53,6 @@ import {
   inheritedCustomEventSeeds,
   isObjectInstanceVariableType,
   isScriptCatalogNodeAllowed,
-  isUserInterfaceLogicHost,
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
   SEEDED_NATIVE_EVENT_TYPES,
@@ -196,7 +190,6 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "flow.switchString" ||
     typeId === "array.make" ||
     typeId === "map.make" ||
-    typeId === uiGetWidgetNodeId ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
 }
@@ -800,7 +793,6 @@ export function createDefaultLogicGraphSerialized(
 export type ScriptPaletteOptions = ClassEventOptions & {
   classId?: string;
   graph?: SerializedGraph;
-  widgets?: readonly BoundWidgetRef[];
   otherClassGraphs?: Record<string, SerializedGraph>;
   activeFunctionId?: string | null;
   functionLibraries?: Array<{
@@ -1175,9 +1167,7 @@ function variableAccessPaletteNodes(
   const validatedDef = nodeRegistry.get("variables.getValidated");
   if (!getDef || !setDef) return [];
   const localClassId = options?.classId ?? "BObject";
-  const classVars = classVariableRows(options?.graph).filter(
-    (variable) => !widgetBindingNames(options).has(variable.name),
-  );
+  const classVars = classVariableRows(options?.graph);
   const classNames = new Set(classVars.map((entry) => entry.name));
   const rows: Array<{
     classId: string;
@@ -1270,35 +1260,6 @@ function variableAccessPaletteNodes(
     }
   }
   return injected;
-}
-
-function widgetBindingNames(options?: ScriptPaletteOptions): Set<string> {
-  return new Set((options?.widgets ?? []).map((widget) => widget.name));
-}
-
-function widgetVariablePaletteNodes(
-  nodeRegistry: NodeRegistry,
-  options?: ScriptPaletteOptions,
-): PaletteNode[] {
-  const def = nodeRegistry.get("variables.get");
-  if (!def || !options?.widgets?.length) return [];
-  const classId = options.classId ?? "UserInterface";
-  return boundWidgetVariableEntries(options.widgets).map((entry) => {
-    const defaultData: Record<string, unknown> = {
-      ...entry.defaultData,
-      classId,
-    };
-    return {
-      id: entry.id,
-      nodeType: entry.nodeType,
-      title: entry.title,
-      category: def.category,
-      pins: def.pins(defaultData),
-      pure: def.pure,
-      latent: def.latent,
-      defaultData,
-    };
-  });
 }
 
 function castPaletteNodes(
@@ -1519,7 +1480,7 @@ function graphPaletteMemberFingerprint(graph?: SerializedGraph): unknown {
   };
 }
 
-/** Identity for Cast/FL/Get Widget injectors — not graph pin or position data. */
+/** Identity for Cast/FL injectors — not graph pin or position data. */
 export function scriptPaletteInjectorKey(
   options?: ScriptPaletteOptions,
 ): string {
@@ -1547,7 +1508,6 @@ export function scriptPaletteInjectorKey(
     graph: graphPaletteMemberFingerprint(options?.graph),
     other,
     functionLibraries: options?.functionLibraries ?? [],
-    widgets: options?.widgets ?? [],
     scriptInterfaces: options?.scriptInterfaces ?? [],
     structures: options?.structures ?? [],
     enums: options?.enums ?? [],
@@ -1589,18 +1549,6 @@ function scriptPaletteCatalogNodes(
       ) {
         defaultData["default:volume"] = 1;
       }
-      if (def.id === "input.setInputMode") {
-        defaultData.mode = "All";
-      }
-      if (
-        def.id === "ui.addWidget" ||
-        def.id === "ui.setWidgetParent" ||
-        def.id === "ui.removeWidget" ||
-        def.id === "ui.setWidgetLayout" ||
-        def.id === "ui.getWidgetLayout"
-      ) {
-        defaultData.implicitSelf = isUserInterfaceLogicHost(options);
-      }
       const pins = def.pins(defaultData);
       if (def.editorOnly) defaultData.__editorOnly = true;
       return {
@@ -1629,15 +1577,13 @@ function scriptPaletteInjectorNodes(
     ...callFunctionPaletteNodes(nodeRegistry, options),
     ...callInterfacePaletteNodes(nodeRegistry, options),
     ...variableAccessPaletteNodes(nodeRegistry, options),
-    ...widgetVariablePaletteNodes(nodeRegistry, options),
     ...castPaletteNodes(nodeRegistry, options),
     ...structPaletteNodes(nodeRegistry, options),
     ...enumPaletteNodes(nodeRegistry, options),
-    ...getWidgetPaletteNodes(nodeRegistry, options),
   ];
 }
 
-/** Palette rows for Class graphs and UserInterface Logic (pins from the registry). */
+/** Palette rows for Class graphs (pins from the registry). */
 export function scriptPaletteNodes(
   nodeRegistry: NodeRegistry = registry,
   options?: ScriptPaletteOptions,
@@ -1654,24 +1600,6 @@ export function scriptPaletteNodes(
     return build.cache.getOrBuild(scriptPaletteInjectorKey(options), assemble);
   }
   return assemble();
-}
-
-function getWidgetPaletteNodes(
-  nodeRegistry: NodeRegistry,
-  options?: ScriptPaletteOptions,
-): PaletteNode[] {
-  const def = nodeRegistry.get(uiGetWidgetNodeId);
-  if (!def || !options?.widgets?.length) return [];
-  return boundGetWidgetEntries(options.widgets).map((entry) => ({
-    id: entry.id,
-    nodeType: entry.nodeType,
-    title: entry.title,
-    category: def.category,
-    pins: def.pins(entry.defaultData),
-    pure: def.pure,
-    latent: def.latent,
-    defaultData: entry.defaultData,
-  }));
 }
 
 export function hydrateClassDocumentPayload(
@@ -1823,7 +1751,6 @@ export function knownClassIdSet(
   const ids = new Set<string>([
     ...ENGINE_BASE_CLASS_IDS,
     ...ENGINE_COMPONENT_CLASS_IDS,
-    ...ENGINE_WIDGET_CLASS_IDS,
     ...ENGINE_BT_BUILTIN_CLASSES.map((entry) => entry.id),
   ]);
   for (const id of classIds) {

@@ -7,7 +7,7 @@ export type ExportIndexedAsset = {
   guid: string;
   type: string;
   name: string;
-  /** Asset path; UserInterface logic compiles from this so class ids match overlay Play. */
+  /** Asset path. */
   path?: string;
   parentClass?: string | null;
   dependencies: string[];
@@ -48,19 +48,6 @@ export type GameAssetIndexEntry = {
   name?: string;
 };
 
-export type PackedUiDesignerPreset = {
-  id: string;
-  label: string;
-  width: number;
-  height: number;
-  safeArea: {
-    left: number;
-    right: number;
-    top: number;
-    bottom: number;
-  };
-};
-
 export type GameManifest = {
   startupSceneGuid: string;
   gameInstanceClass?: string;
@@ -83,13 +70,6 @@ export type GameManifest = {
   infiniteLoopDetection?: boolean;
   /** Present only when `bundleDebugger` is true. */
   loopCount?: number;
-  /** Engine Settings `uiDesignerPresets` packed for HUD Safe Area matching. */
-  uiDesignerPresets?: PackedUiDesignerPreset[];
-  /** Project Settings User Interface design space (Play/player ADT ideal). */
-  ui?: {
-    designResolution: { width: number; height: number };
-    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
-  };
 };
 
 export type ExportGameOptions = {
@@ -115,11 +95,6 @@ export type ExportGameOptions = {
   extraFiles?: ReadonlyMap<string, Uint8Array>;
   fileCountWarn?: number;
   fileCountFail?: number;
-  uiDesignerPresets?: readonly PackedUiDesignerPreset[];
-  ui?: {
-    designResolution: { width: number; height: number };
-    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
-  };
 };
 
 export type ExportArtifact = {

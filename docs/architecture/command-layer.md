@@ -91,12 +91,12 @@ Chrome tabs, undo, and DockView hosts are three different lifetimes (engineplan 
 | --- | --- | --- | --- |
 | **Open** | In the tab bar | Yes | Maybe |
 | **Mounted-warm** | Open, and either active, Content Browser, an **open Scene**, or inactive inside the 2-minute grace (cap 3 non-CB; Scenes count) | Yes | Yes (`display: none` + P4 freeze if not active) |
-| **Idle-unmounted** | Still in the tab bar | Yes — undo and dirty flags stay | No. Remount from `layout.json` + session camera / graph viewport / UI/Anim mode |
+| **Idle-unmounted** | Still in the tab bar | Yes — undo and dirty flags stay | No. Remount from `layout.json` + session camera / graph viewport / Anim mode |
 | **Closed** | Gone | Dropped (`dropDocument`) | Gone |
 
 - Named constants (not Engine Settings): `DOCUMENT_IDLE_UNMOUNT_MS` = 120_000, `MAX_WARM_DOCUMENT_WORKSPACES` = 3.
 - Pause the idle clock while the app is backgrounded.
-- Designer|Logic and State Machine|Animation Object unmount the **inactive mode** DockView immediately (no grace).
+- State Machine|Animation Object unmounts the **inactive mode** DockView immediately (no grace).
 - Overlay Play **does not pin** Scene tabs. Open Scene documents stay mounted while the tab is open (they count toward the warm cap). The project owns the Engine on a hidden constructor canvas (`data-testid="project-engine-canvas"`); the Scene viewport is a `registerView` client. Closing the Scene tab (or exclusive one-Scene-tab replace) unmounts that Scene immediately and releases handle retains; it does not dispose the project Engine. Overlay Play / Prefab / Material reuse `ensureSharedEngine`. Preview Build is an iframe and does not use that Engine.
 - Closing a tab still tears down immediately (Save / Discard / Cancel unchanged).
 

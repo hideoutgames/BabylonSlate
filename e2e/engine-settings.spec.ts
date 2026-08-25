@@ -74,19 +74,6 @@ test("graph default zoom shows 0.5", async ({ page }) => {
   await expect(field).toHaveValue("0.5");
 });
 
-test("User Interface category can add a custom designer preset", async ({
-  page,
-}) => {
-  await page.goto("/?test=1");
-  await expect(page.getByTestId("homepage")).toBeVisible();
-  await page.getByTestId("engine-settings").click();
-  await page.getByTestId("engine-settings-modal-category-ui").click();
-
-  await expect(page.getByTestId("ui-preset-builtin-desktop-16-9")).toBeVisible();
-  await page.getByTestId("ui-preset-add").click();
-  await expect(page.locator('[data-testid^="ui-preset-custom-"]')).toHaveCount(1);
-});
-
 test("Focus keep-list can add a Material tab", async ({ page }) => {
   await page.goto("/?test=1");
   await expect(page.getByTestId("homepage")).toBeVisible();

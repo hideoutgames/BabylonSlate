@@ -11,7 +11,6 @@ import {
   FONT_FACETYPE_CHUNK_ID,
   normalizeAudioPayload,
   normalizeModelPayload,
-  selectGuiImageChunk,
   selectTextureChunk,
   type IndexedAsset,
 } from "@babylonslate/assets";
@@ -21,7 +20,6 @@ const JSON_TYPES = new Set([
   "Scene",
   "Class",
   "Graph",
-  "UserInterface",
   "AnimationGraph",
   "BehaviourTree",
   "Blackboard",
@@ -55,7 +53,6 @@ export type LoadedExportDocuments = {
   graphByGuid: (guid: string) => SerializedGraph | null;
   payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
-  guiImageBytesByGuid: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
   audioReverbByGuid: (guid: string) => Uint8Array | null;
@@ -105,26 +102,6 @@ async function bytesForAsset(
   return null;
 }
 
-async function guiImageBytesForAsset(
-  asset: IndexedAsset,
-  readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
-): Promise<Uint8Array | null> {
-  if (asset.header.type !== "Texture") return null;
-  const selected = selectGuiImageChunk(asset.header);
-  if (!selected) return null;
-  try {
-    const preferred = await readAssetChunk(asset.path, selected.chunk.id);
-    if (preferred && preferred.byteLength > 0) return preferred;
-    if (selected.chunk.id === "pixels") {
-      const source = await readAssetChunk(asset.path, "source");
-      if (source && source.byteLength > 0) return source;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 async function fontFacetypeBytesForAsset(
   asset: IndexedAsset,
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
@@ -145,7 +122,6 @@ export async function loadExportDocuments(
   const graphs = new Map<string, SerializedGraph>();
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
-  const guiImages = new Map<string, Uint8Array>();
   const fontFacetypes = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
@@ -185,8 +161,6 @@ export async function loadExportDocuments(
     }
     const payload = await bytesForAsset(asset, document, loaders.readAssetChunk);
     if (payload) bytes.set(asset.header.guid, payload);
-    const guiImage = await guiImageBytesForAsset(asset, loaders.readAssetChunk);
-    if (guiImage) guiImages.set(asset.header.guid, guiImage);
     const facetype = await fontFacetypeBytesForAsset(asset, loaders.readAssetChunk);
     if (facetype) fontFacetypes.set(asset.header.guid, facetype);
     if (asset.header.type === "Scene") {
@@ -216,7 +190,6 @@ export async function loadExportDocuments(
     graphByGuid: (guid) => graphs.get(guid) ?? null,
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => bytes.get(guid) ?? null,
-    guiImageBytesByGuid: (guid) => guiImages.get(guid) ?? null,
     fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
     audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,

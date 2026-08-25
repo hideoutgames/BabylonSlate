@@ -20,10 +20,7 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import {
-  widgetUiGuidsFromScene,
-  type SerializedScene,
-} from "@babylonslate/core";
+import { type SerializedScene } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -72,7 +69,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
-    collectPlayUiLibrary,
     readAssetChunk,
     assetRegistry,
   } = useDocuments();
@@ -417,15 +413,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const widgetGuids = widgetUiGuidsFromScene(scene);
-        const uiDocuments = new Map();
-        if (widgetGuids.length > 0) {
-          const library = await collectPlayUiLibrary();
-          for (const guid of widgetGuids) {
-            const document = library[guid];
-            if (document) uiDocuments.set(guid, document);
-          }
-        }
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
         handle.setMeshAssets({
@@ -435,7 +422,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           tilesets: tileContent.tilesets,
           textureBytes,
           fontFacetypeBytes,
-          uiDocuments,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -489,7 +475,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
-    collectPlayUiLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
     engineEpoch,
   ]);
@@ -520,15 +505,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
-        const widgetGuids = widgetUiGuidsFromScene(scene);
-        const uiDocuments = new Map();
-        if (widgetGuids.length > 0) {
-          const library = await collectPlayUiLibrary();
-          for (const guid of widgetGuids) {
-            const document = library[guid];
-            if (document) uiDocuments.set(guid, document);
-          }
-        }
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
         handle.setMeshAssets({
@@ -538,7 +514,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           tilesets: tileContent.tilesets,
           textureBytes,
           fontFacetypeBytes,
-          uiDocuments,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -560,7 +535,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
-    collectPlayUiLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
   ]);
 

@@ -24,7 +24,6 @@ import { createRuntimeFromLoad, shouldSpawnScriptedActor } from "./play-load";
 import { createPlayBootCoordinator } from "./play-boot";
 import { createPlayPauseGate } from "./play-pause-gate";
 import { applyInspectControl } from "./inspect-control";
-import { applyUiRuntimeControl } from "./worker-control";
 
 let runtime: RuntimeDriver | null = null;
 const boot = createPlayBootCoordinator();
@@ -70,14 +69,6 @@ function handleControl(msg: ControlMessage): void {
           .filter((script) => shouldSpawnScriptedActor(script.classId))
           .map((script) => ({ classId: script.classId }));
       boot.queueScripts(rt, msg.scripts, spawn);
-      return;
-    }
-    case "loadUserInterfaces": {
-      applyUiRuntimeControl(ensureRuntime(), msg);
-      return;
-    }
-    case "uiWidgetEvent": {
-      if (runtime) applyUiRuntimeControl(runtime, msg);
       return;
     }
     case "loadAnimGraphs": {

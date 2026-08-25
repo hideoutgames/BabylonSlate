@@ -3,13 +3,10 @@ import type {
   GraphClassMemberPin,
   SerializedGraph,
 } from "@babylonslate/core";
-import { userInterfaceClassId } from "@babylonslate/core";
 import { engineParentOf, formatEventMemberName, walkAncestry } from "@babylonslate/editor-kit";
 import {
   DEFAULT_FUNCTION_PINS,
   nativeEventStubs,
-  nativeEventTitle,
-  WIDGET_POINTER_EVENT_TYPE_IDS,
 } from "./class-members";
 
 export type OverridableFunctionKind = "interface" | "function";
@@ -213,7 +210,7 @@ export function collectParentFunctionSignatures(options: {
   return rows;
 }
 
-export type OverridableEventKind = "native" | "parent" | "nested";
+export type OverridableEventKind = "native" | "parent";
 
 export type OverridableEventRow = {
   id: string;
@@ -224,12 +221,6 @@ export type OverridableEventRow = {
   eventType: string;
   pins: GraphClassMemberPin[];
   parentClassId?: string;
-};
-
-export type NestedUiLogicGraph = {
-  guid: string;
-  name: string;
-  graph: SerializedGraph;
 };
 
 function localCustomEventNames(graph?: SerializedGraph): Set<string> {
@@ -298,10 +289,6 @@ function customEventsFromGraph(
   return rows;
 }
 
-function isWidgetEventHost(options?: { assetType?: string | null }): boolean {
-  return options?.assetType === "UserInterface";
-}
-
 export function collectOverridableEventRows(options: {
   graph?: SerializedGraph;
   classId?: string;
@@ -309,7 +296,6 @@ export function collectOverridableEventRows(options: {
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
-  nestedUis?: readonly NestedUiLogicGraph[];
 }): OverridableEventRow[] {
   const takenNative = localNativeEventTypes(options.graph);
   const takenCustom = localCustomEventNames(options.graph);
@@ -323,16 +309,6 @@ export function collectOverridableEventRows(options: {
       assetType: options.assetType,
     }),
   ];
-  const nativeTypes = new Set(native.map((stub) => stub.eventType));
-  if (isWidgetEventHost(options)) {
-    for (const eventType of WIDGET_POINTER_EVENT_TYPE_IDS) {
-      if (nativeTypes.has(eventType)) continue;
-      native.push({
-        eventType,
-        name: nativeEventTitle(eventType),
-      });
-    }
-  }
   for (const stub of native) {
     const id = `native:${stub.eventType}`;
     if (seen.has(id)) continue;
@@ -370,24 +346,6 @@ export function collectOverridableEventRows(options: {
           parentClassId: ancestor,
         });
       }
-    }
-  }
-
-  for (const nested of options.nestedUis ?? []) {
-    for (const event of customEventsFromGraph(nested.graph)) {
-      const id = `nested:${nested.guid}:${event.name}`;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      rows.push({
-        id,
-        kind: "nested",
-        name: event.name,
-        description: `Nested · ${nested.name}`,
-        overwritten: takenCustom.has(event.name),
-        eventType: "flow.event.custom",
-        pins: event.pins,
-        parentClassId: userInterfaceClassId(nested.guid),
-      });
     }
   }
 

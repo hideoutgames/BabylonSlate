@@ -33,7 +33,6 @@
     "@babylonslate/shader-graph": "workspace:*",
     "@babylonslate/source-control": "workspace:*",
     "@babylonslate/ui": "workspace:*",
-    "@babylonslate/ui-runtime": "workspace:*",
     "@babylonslate/vfs": "workspace:*",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",

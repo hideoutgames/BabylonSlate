@@ -1,11 +1,3 @@
-import {
-  ENGINE_WIDGET_KINDS,
-  USER_INTERFACE_ENGINE_CLASS_ID,
-  WIDGET_ENGINE_CLASS_ID,
-  userInterfaceClassId,
-  widgetClassIdForKind,
-} from "@babylonslate/core";
-
 /** Stable engine base class ids (Content Browser / class registry). */
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
@@ -20,8 +12,6 @@ export const ENGINE_BASE_CLASS_IDS = [
   "BTDecorator",
   "BTService",
   "BTComposite",
-  USER_INTERFACE_ENGINE_CLASS_ID,
-  WIDGET_ENGINE_CLASS_ID,
 ] as const;
 
 export type EngineBaseClassId = (typeof ENGINE_BASE_CLASS_IDS)[number];
@@ -39,7 +29,6 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "ParticleComponent",
   "RigidBodyComponent",
   "ColliderComponent",
-  "WidgetComponent",
   "AnimationGraphComponent",
   "BehaviourTreeComponent",
   "NavAgentComponent",
@@ -51,26 +40,6 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
 export type EngineComponentClassId =
   (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
 
-/** v2 kind class ids kept so existing graphs still resolve. */
-export const LEGACY_ENGINE_WIDGET_CLASS_IDS = [
-  "HorizontalBoxWidget",
-  "VerticalBoxWidget",
-  "ScrollBoxWidget",
-  "OverlayWidget",
-  "SizeBoxWidget",
-  "BorderWidget",
-  "TextWidget",
-  "TextInputWidget",
-  "CheckBoxWidget",
-  "SpacerWidget",
-] as const;
-
-/** Concrete Widget subclasses, one per authored widget kind. */
-export const ENGINE_WIDGET_CLASS_IDS = [
-  ...ENGINE_WIDGET_KINDS.map((kind) => widgetClassIdForKind(kind)),
-  ...LEGACY_ENGINE_WIDGET_CLASS_IDS,
-];
-
 /** Engine types that must not be reparented (bases, components, BT builtins). */
 export function isLockedEngineClassId(classId: string): boolean {
   if ((ENGINE_BASE_CLASS_IDS as readonly string[]).includes(classId)) {
@@ -79,27 +48,7 @@ export function isLockedEngineClassId(classId: string): boolean {
   if ((ENGINE_COMPONENT_CLASS_IDS as readonly string[]).includes(classId)) {
     return true;
   }
-  if ((ENGINE_WIDGET_CLASS_IDS as readonly string[]).includes(classId)) {
-    return true;
-  }
   return ENGINE_BT_BUILTIN_CLASSES.some((entry) => entry.id === classId);
-}
-
-/** ClassDef fields for a project UserInterface asset. Runtime registers these later. */
-export function userInterfaceAssetClassDef(assetGuid: string): {
-  id: string;
-  parentClassId: typeof USER_INTERFACE_ENGINE_CLASS_ID;
-  kind: "object";
-  variables: [];
-  implementedInterfaces: [];
-} {
-  return {
-    id: userInterfaceClassId(assetGuid),
-    parentClassId: USER_INTERFACE_ENGINE_CLASS_ID,
-    kind: "object",
-    variables: [],
-    implementedInterfaces: [],
-  };
 }
 
 /** Built-in behaviour-tree classes users can inherit (engineplan §14.1). */

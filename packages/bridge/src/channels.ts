@@ -2,71 +2,6 @@
 
 import type { SerializedScene } from "@babylonslate/core";
 
-/** Slim widget rows the worker needs to spawn typed Widget objects. */
-export type UserInterfaceWidgetMeta = {
-  id: string;
-  name?: string;
-  kind: string;
-  nestedUiGuid?: string;
-  exposed?: { key: string; label: string };
-  overrides?: Record<string, Record<string, unknown>>;
-};
-
-/** UserInterface document metadata shipped on `loadUserInterfaces`. */
-export type UserInterfaceRuntimeDocument = {
-  guid: string;
-  widgets: UserInterfaceWidgetMeta[];
-  /** Full widget tree for runtime hierarchy mutation. */
-  document?: unknown;
-};
-
-export type UiLayoutPatch = {
-  left?: number;
-  top?: number;
-  leftUnit?: string;
-  topUnit?: string;
-  width?: number;
-  height?: number;
-  widthUnit?: string;
-  heightUnit?: string;
-  rotation?: number;
-  scaleX?: number;
-  scaleY?: number;
-  horizontalAlignment?: string;
-  verticalAlignment?: string;
-};
-
-export type UiWidgetEventKind =
-  | "click"
-  | "value"
-  | "checked"
-  | "text"
-  | "pointerEnter"
-  | "pointerExit"
-  | "pointerDown"
-  | "pointerUp";
-
-/** ScriptHost export invoked for a main-thread widget event. */
-export function uiWidgetEventExport(kind: UiWidgetEventKind): string {
-  if (kind === "pointerEnter") return "onMouseEnter";
-  if (kind === "pointerExit") return "onMouseExit";
-  if (kind === "pointerDown") return "onMousePress";
-  if (kind === "pointerUp") return "onMouseRelease";
-  if (kind === "value") return "onWidgetValue";
-  if (kind === "checked") return "onWidgetChecked";
-  if (kind === "text") return "onWidgetText";
-  return "onWidgetClick";
-}
-
-/** Main-thread widget input routed to the owning UserInterface object. */
-export type UiWidgetEventControl = {
-  type: "uiWidgetEvent";
-  instanceId: string;
-  widgetId: string;
-  kind: UiWidgetEventKind;
-  value?: unknown;
-};
-
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
   line: number;
@@ -190,11 +125,6 @@ export type ControlMessage =
       pixelsPerUnit?: number;
     }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
-  | {
-      type: "loadUserInterfaces";
-      documents: UserInterfaceRuntimeDocument[];
-    }
-  | UiWidgetEventControl
   | { type: "play" }
   | { type: "pause" }
   | { type: "step" }
@@ -308,12 +238,6 @@ export type CommandMessage =
           color: [number, number, number];
           fontAssetGuid: string | null;
         };
-        widget?: {
-          uiAssetGuid: string | null;
-          twoSided: boolean;
-          width: number;
-          height: number;
-        };
       }>;
       skybox?: {
         size: number;
@@ -332,12 +256,6 @@ export type CommandMessage =
         depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
-      };
-      widget?: {
-        uiAssetGuid: string | null;
-        twoSided: boolean;
-        width: number;
-        height: number;
       };
     }
   | { type: "possessCamera"; slotId: number }
@@ -419,56 +337,9 @@ export type CommandMessage =
         }>;
       };
     }
-  | {
+    | {
       type: "trace";
       payload: Record<string, unknown>;
-    }
-    | {
-      type: "uiSetVisible";
-      instanceId: string;
-      widgetId: string;
-      visible: boolean;
-    }
-    | {
-      type: "uiAddWidget";
-      instanceId: string;
-      widgetId: string;
-      kind: string;
-      name: string;
-      parentId: string;
-    }
-    | {
-      type: "uiRemoveWidget";
-      instanceId: string;
-      widgetId: string;
-    }
-    | {
-      type: "uiReparentWidget";
-      instanceId: string;
-      widgetId: string;
-      parentId: string;
-      siblingIndex?: number;
-    }
-    | {
-      type: "uiPatchLayout";
-      instanceId: string;
-      widgetId: string;
-      layout: UiLayoutPatch;
-    }
-    | {
-      type: "uiApply";
-      instanceId: string;
-      classId: string;
-      assetGuid: string;
-      target?: {
-        kind: "world";
-        slotId: number;
-        componentId: string;
-      };
-    }
-    | {
-      type: "uiRemove";
-      instanceId: string;
     }
   | {
       type: "animState";
@@ -547,10 +418,6 @@ export type CommandMessage =
   | {
       type: "debugColliders";
       colliders: readonly DebugColliderPrimitive[];
-    }
-  | {
-      type: "setInputMode";
-      mode: "All" | "Interface" | "Game";
     };
 
 export type BridgeHostMessage =

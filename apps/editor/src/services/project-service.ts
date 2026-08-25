@@ -27,10 +27,6 @@ import {
   type ProjectDocument,
   type RenderProjectSettings,
 } from "@babylonslate/core";
-import {
-  projectUiSettingsOmitted,
-  seedUiProjectSettings,
-} from "@babylonslate/ui-runtime";
 import type { ProjectFolderHandle, ProjectStorage } from "@babylonslate/core";
 import {
   AssetRegistry,
@@ -574,7 +570,6 @@ export class ProjectService {
     const raw = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
     ) as ProjectDocument & { guid?: string; kind?: string; version?: number };
-    const uiOmitted = projectUiSettingsOmitted(raw.settings);
     const document = normalizeProjectDocument(raw, folder.name);
     this.projectGuid = raw.guid ?? newGuid();
     this.loadedTextureSettings = document.settings.textures;
@@ -596,12 +591,9 @@ export class ProjectService {
     }
 
     const withDocuments = await this.ensureDocuments(document);
-    const withUi = uiOmitted
-      ? await this.seedUiSettingsFromAssets(withDocuments)
-      : withDocuments;
     const scenePayloads: SerializedScene[] = [];
-    if (!withUi.settings.gameInstanceClass) {
-      for (const path of withUi.scenes) {
+    if (!withDocuments.settings.gameInstanceClass) {
+      for (const path of withDocuments.scenes) {
         try {
           const loaded = await this.loadDocument("scene", path);
           if (loaded && typeof loaded === "object" && "settings" in loaded) {
@@ -613,13 +605,13 @@ export class ProjectService {
       }
     }
     const settings = migrateGameInstanceClassFromScenes(
-      withUi.settings,
+      withDocuments.settings,
       scenePayloads,
     );
     const migratedDocument =
-      settings === withUi.settings
-        ? withUi
-        : { ...withUi, settings };
+      settings === withDocuments.settings
+        ? withDocuments
+        : { ...withDocuments, settings };
     const layouts = await this.loadLayouts(
       documentId({
         kind: "scene",
@@ -682,44 +674,6 @@ export class ProjectService {
     }
     await this.mountAssetRegistry();
     return { ...document, scenes, graphs };
-  }
-
-  private async seedUiSettingsFromAssets(
-    document: ProjectDocument,
-  ): Promise<ProjectDocument> {
-    const assets = this.assetRegistry?.list() ?? [];
-    const payloads: Array<{
-      viewportLayer?: boolean;
-      designResolution?: { width: number; height: number };
-      scaleRule?: string;
-    }> = [];
-    for (const asset of assets) {
-      if (asset.header.type !== "UserInterface") continue;
-      try {
-        const loaded = await this.loadDocument("ui", asset.path);
-        if (loaded && typeof loaded === "object") {
-          payloads.push(loaded as {
-            viewportLayer?: boolean;
-            designResolution?: { width: number; height: number };
-            scaleRule?: string;
-          });
-        }
-      } catch {
-        /* unreadable HUD */
-      }
-    }
-    const ui = seedUiProjectSettings(document.settings.ui, true, payloads);
-    if (
-      ui.designResolution.width === document.settings.ui.designResolution.width &&
-      ui.designResolution.height === document.settings.ui.designResolution.height &&
-      ui.scaleRule === document.settings.ui.scaleRule
-    ) {
-      return document;
-    }
-    return {
-      ...document,
-      settings: { ...document.settings, ui },
-    };
   }
 
   private loadedTextureSettings: {

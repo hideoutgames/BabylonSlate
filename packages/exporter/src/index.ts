@@ -9,10 +9,6 @@ export {
   NAVMESH_EXPORT_GUID_PREFIX,
   navmeshExportGuid,
   sceneGuidFromNavmeshExport,
-  UI_IMAGE_EXPORT_TYPE,
-  UI_IMAGE_EXPORT_GUID_PREFIX,
-  uiImageExportGuid,
-  textureGuidFromUiImageExport,
   AUDIO_REVERB_EXPORT_TYPE,
   AUDIO_REVERB_EXPORT_GUID_PREFIX,
   audioReverbExportGuid,
@@ -68,5 +64,4 @@ export type {
   ExportArtifact,
   GameManifest,
   GameAssetIndexEntry,
-  PackedUiDesignerPreset,
 } from "./types";

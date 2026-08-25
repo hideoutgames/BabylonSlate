@@ -26,9 +26,7 @@ function rowsFor(
           ? "Rock"
           : guid === "sprite-1"
             ? "Hero"
-            : guid === "ui-1"
-              ? "HUD"
-              : guid === "graph-1"
+            : guid === "graph-1"
                 ? "Locomotion"
                 : guid === "tile-1"
                   ? "Overworld"
@@ -44,9 +42,7 @@ function rowsFor(
           ? "Mesh"
           : guid === "sprite-1"
             ? "Sprite"
-            : guid === "ui-1"
-              ? "UserInterface"
-              : guid === "graph-1"
+            : guid === "graph-1"
                 ? "AnimationGraph"
                 : guid === "tile-1"
                   ? "Tilemap"
@@ -222,28 +218,7 @@ describe("componentPropertyRows", () => {
     );
   });
 
-  it("picks UserInterface and AnimationGraph assets by guid field", () => {
-    const widget = rowsFor({
-      id: "hud",
-      classId: "WidgetComponent",
-      properties: { uiAssetGuid: "ui-1", twoSided: true, width: 2, height: 0.5 },
-    });
-    const ui = widget.rows.find((row) => row.id.endsWith("-uiAssetGuid"));
-    expect(ui).toMatchObject({ kind: "asset", displayLabel: "HUD" });
-    if (ui?.kind === "asset") ui.onPick();
-    expect(widget.onPickAsset).toHaveBeenCalledWith(
-      expect.objectContaining({ allowedTypes: ["UserInterface"] }),
-    );
-    const twoSided = widget.rows.find((row) => row.id.endsWith("-twoSided"));
-    expect(twoSided).toMatchObject({ kind: "boolean", label: "Two Sided", value: true });
-    const width = widget.rows.find((row) => row.id.endsWith("-width"));
-    const height = widget.rows.find((row) => row.id.endsWith("-height"));
-    expect(width).toMatchObject({ kind: "number", label: "Width", value: 2 });
-    expect(height).toMatchObject({ kind: "number", label: "Height", value: 0.5 });
-    expect(widget.rows.some((row) => row.id.endsWith("-viewportLayer"))).toBe(
-      false,
-    );
-
+  it("picks AnimationGraph assets by guid field", () => {
     const graph = rowsFor({
       id: "anim",
       classId: "AnimationGraphComponent",
@@ -865,30 +840,6 @@ describe("subclassClassEntries", () => {
     const main = entries.find((entry) => entry.id === "main");
     expect(main).toMatchObject({ id: "main", name: "main", group: "Project" });
     expect(entries.map((entry) => entry.id)).not.toContain("main.class");
-  });
-
-  it("lists project UserInterface classes on an Apply classRef pin", () => {
-    const entries = subclassClassEntries("UserInterface", [
-      {
-        header: {
-          type: "UserInterface",
-          name: "HUD",
-          guid: "hud-guid",
-        },
-      },
-      {
-        header: { type: "Class", name: "Hero", parentClass: "Actor" },
-      },
-    ]);
-    const ids = entries.map((entry) => entry.id);
-    expect(ids).toContain("UserInterface");
-    expect(ids).toContain("UserInterface:hud-guid");
-    expect(ids).not.toContain("Hero");
-    expect(entries.find((entry) => entry.id === "UserInterface:hud-guid")).toMatchObject({
-      id: "UserInterface:hud-guid",
-      name: "HUD",
-      group: "Project",
-    });
   });
 });
 

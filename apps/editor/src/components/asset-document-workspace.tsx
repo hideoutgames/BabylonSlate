@@ -10,8 +10,7 @@ import {
 } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { glyphsFallingToFallback } from "@babylonslate/ui-runtime";
-import { normalizeFontPayload } from "@babylonslate/assets";
+import { glyphsFallingToFallback, normalizeFontPayload } from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";

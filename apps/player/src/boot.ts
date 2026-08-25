@@ -6,7 +6,6 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import {
-  applyUiRuntimeControl,
   createPlayBootCoordinator,
   createRuntimeFromLoad,
   type RuntimeDriver,
@@ -21,14 +20,10 @@ import {
 import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
-import { createGameAudioSourceLoader, guiTextureBytesFromGame, type LoadedGame } from "./artifact";
+import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
 import { applyPlayerActiveScene, applyPlayerEngineCommand } from "./engine-commands";
 import { mountPlayerPrintOverlay } from "./print-overlay";
-import {
-  packedBootControls,
-  packedContentFromGame,
-  packedUserInterfaceControl,
-} from "./hydrate";
+import { packedBootControls, packedContentFromGame } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
 import {
   applyPlayerFpsSample,
@@ -38,9 +33,6 @@ import {
   type PlayerHudStats,
 } from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
-import { packedFontEntries } from "./fonts";
-import { applyPlayerUiCommand, createPlayerUiHost } from "./player-ui-host";
-import { resolvePlayerInterfaceTexture } from "./interface-texture";
 import { playerSpawnListForScripts } from "./spawn-list";
 
 function havokWasmUrl(): string {
@@ -106,7 +98,6 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     fontFacetypeBytes: game.fontFacetypeBytes,
-    uiDocuments: game.userInterfaces,
     modelBytes: game.modelBytes,
     modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
@@ -157,11 +148,6 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
-    onWidgetEvent: (event) => {
-      const payload = { type: "uiWidgetEvent" as const, ...event };
-      if (worker) worker.postControl(payload);
-      else if (runtime) applyUiRuntimeControl(runtime, payload);
-    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -181,44 +167,6 @@ export function startPlayer(options: {
     handle.resize();
   }
 
-  const uiHost = createPlayerUiHost({
-    scene: handle.scene,
-    library: content.userInterfaces,
-    textureBytes: guiTextureBytesFromGame(game),
-    viewport: {
-      width: Math.max(1, canvas.width || canvas.clientWidth || 1),
-      height: Math.max(1, canvas.height || canvas.clientHeight || 1),
-    },
-    designerPresets: manifest.uiDesignerPresets,
-    uiSettings: manifest.ui,
-    fontEntries: packedFontEntries({
-      fontBytes: game.fontBytes,
-      fontFamilies: game.fontFamilies,
-    }),
-    resolveInterfaceMaterial: (guid) => {
-      const document = content.materialDocuments.get(guid);
-      return document?.domain === "interface" ? document : null;
-    },
-    materialFunctions: () => Object.fromEntries(content.materialFunctions),
-    resolveTexture: (guid) => {
-      const bytes = game.textureBytes.get(guid);
-      if (!bytes) return null;
-      return resolvePlayerInterfaceTexture(
-        handle.resourceCache,
-        handle.engine,
-        guid,
-        bytes,
-      );
-    },
-    onWidgetEvent: (event) => {
-      if (worker) worker.postControl(event);
-      else if (runtime) applyUiRuntimeControl(runtime, event);
-    },
-    onTouchAxis: (controlId, value) => {
-      input?.pushTouchAxis(controlId, value);
-    },
-  });
-
   // Without a locked framebuffer the canvas is CSS-sized, so the backing store
   // has to follow the element or the first frames draw at the wrong size.
   const resizeObserver =
@@ -227,10 +175,6 @@ export function startPlayer(options: {
       : new ResizeObserver(() => {
           if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
             handle.resize();
-            uiHost.resize(
-              Math.max(1, canvas.width || canvas.clientWidth),
-              Math.max(1, canvas.height || canvas.clientHeight),
-            );
           }
         });
   resizeObserver?.observe(canvas);
@@ -289,7 +233,6 @@ export function startPlayer(options: {
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
     applyPlayerActiveScene(handle, game.scenes, command);
-    applyPlayerUiCommand(uiHost, command);
     if (command.type === "print") {
       printHud.applyPrint({
         message: command.message,
@@ -297,9 +240,6 @@ export function startPlayer(options: {
         duration: command.duration,
         color: command.color,
       });
-    }
-    if (command.type === "setInputMode") {
-      input?.setInputMode(String(command.mode ?? "All"));
     }
     if (command.type === "stats") {
       emitHudStats(
@@ -349,8 +289,6 @@ export function startPlayer(options: {
     );
     runtime = inProcess;
     const boot = createPlayBootCoordinator();
-    const uiControl = packedUserInterfaceControl(content);
-    if (uiControl) applyUiRuntimeControl(inProcess, uiControl);
     if (game.scripts.length > 0) {
       boot.queueScripts(inProcess, game.scripts, spawn);
     }
@@ -445,7 +383,6 @@ export function startPlayer(options: {
       resizeObserver?.disconnect();
       input?.dispose();
       releaseUnlock();
-      uiHost.dispose();
       printHud.dispose();
       worker?.terminate();
       runtime?.stop();

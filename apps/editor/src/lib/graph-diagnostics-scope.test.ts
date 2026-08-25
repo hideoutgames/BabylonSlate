@@ -22,28 +22,6 @@ describe("shouldPublishGraphDiagnostics", () => {
     ).toBe(false);
   });
 
-  it("does not publish UI Logic while Designer is active", () => {
-    expect(
-      shouldPublishGraphDiagnostics({
-        documentId: "ui:hud",
-        activeDocumentId: "ui:hud",
-        documentKind: "ui",
-        uiEditorMode: "designer",
-      }),
-    ).toBe(false);
-  });
-
-  it("publishes UI Logic only in Logic mode", () => {
-    expect(
-      shouldPublishGraphDiagnostics({
-        documentId: "ui:hud",
-        activeDocumentId: "ui:hud",
-        documentKind: "ui",
-        uiEditorMode: "logic",
-      }),
-    ).toBe(true);
-  });
-
   it("publishes Animation Object graphs only in Animation Object mode", () => {
     expect(
       shouldPublishGraphDiagnostics({

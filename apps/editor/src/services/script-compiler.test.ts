@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  userInterfaceClassId,
   type GraphClassMemberPin,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -48,10 +47,7 @@ describe("script compiler service", () => {
     expect(classIdForGraphPath("assets/hero.class.babasset")).toBe("hero");
     expect(classIdForGraphPath("graphs/My Enemy.graph.json")).toBe("My_Enemy");
     expect(classIdForGraphPath("")).toBe("Graph");
-    expect(classIdForGraphPath("assets/HUD.ui.babasset")).toBe("HUD");
-    expect(classIdForGraphPath("assets/SceneTools.eui.babasset")).toBe(
-      "SceneTools",
-    );
+    expect(classIdForGraphPath("assets/HUD.class.babasset")).toBe("HUD");
   });
 
   it("compiles authored GetAxis2D pin data into getAxis2D(\"Move\")", () => {
@@ -659,45 +655,6 @@ describe("script compiler service", () => {
     expect(spawnListForScripts([script!])).toEqual([]);
   });
 
-  it("compiles UI onWidgetClick default:message into the log literal", () => {
-    const script = compileGraphDocument(
-      {
-        nodes: [
-          {
-            id: "click",
-            type: "flow.event.custom",
-            position: { x: 40, y: 80 },
-            data: { name: "onWidgetClick" },
-          },
-          {
-            id: "log",
-            type: "debug.log",
-            position: { x: 320, y: 80 },
-            data: { "default:message": "hud-clicked" },
-          },
-        ],
-        edges: [
-          {
-            id: "e1",
-            source: "click",
-            target: "log",
-            sourceHandle: "execOut",
-            targetHandle: "execIn",
-          },
-        ],
-      },
-      {
-        path: "assets/HUD.ui.babasset",
-        classId: "UserInterface:hud-guid",
-        parentClassId: "UserInterface",
-      },
-    );
-    expect(script?.entryPoints.some((entry) => entry.event === "onWidgetClick")).toBe(
-      true,
-    );
-    expect(script?.source).toContain("hud-clicked");
-  });
-
   it("copies actorDefaults from the serialized graph onto the bundle", () => {
     const script = compileGraphDocument(
       {
@@ -710,31 +667,6 @@ describe("script compiler service", () => {
       generateHitEvents: false,
       generateOverlapEvents: true,
     });
-  });
-
-  it("binds a UserInterface script to an explicit guid class id", () => {
-    const classId = userInterfaceClassId("hud-guid");
-    const script = compileGraphDocument(tickToLog, {
-      path: "assets/HUD.ui.babasset",
-      classId,
-      parentClassId: "UserInterface",
-    });
-    expect(script?.classId).toBe(classId);
-    expect(script?.parentClassId).toBe("UserInterface");
-    expect(script?.classId).not.toBe("HUD");
-  });
-
-  it("does not spawn actors for UserInterface script class ids", () => {
-    const classId = userInterfaceClassId("hud-guid");
-    const script = compileGraphDocument(tickToLog, {
-      path: "assets/HUD.ui.babasset",
-      classId,
-      parentClassId: "UserInterface",
-    })!;
-    expect(script.entryPoints.some((entry) => entry.event === "onTick")).toBe(
-      true,
-    );
-    expect(spawnListForScripts([script])).toEqual([]);
   });
 });
 

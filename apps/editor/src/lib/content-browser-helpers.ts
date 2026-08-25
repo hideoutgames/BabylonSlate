@@ -39,12 +39,6 @@ import {
   normalizeMaterialFunctionDocument,
   parseMaterialDomain,
 } from "@babylonslate/shader-graph";
-import { createDefaultUserInterface, type UserInterfaceDocument } from "@babylonslate/ui-runtime";
-import {
-  isUserInterfaceClassId,
-  USER_INTERFACE_ENGINE_CLASS_ID,
-  userInterfaceClassId,
-} from "@babylonslate/core";
 import {
   engineParentOf,
   rangeSelectTreeIds,
@@ -202,7 +196,6 @@ export function buildParentClassTreeRows(
 export const CREATABLE_ASSET_TYPES = [
   "Scene",
   "Class",
-  "UserInterface",
   "Sprite",
   "SpriteAnimation",
   "AnimationGraph",
@@ -241,11 +234,6 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
     types: ["Class", "Enum", "Structure", "ScriptInterface"],
   },
   {
-    id: "ui",
-    label: "UI",
-    types: ["UserInterface"],
-  },
-  {
     id: "2d",
     label: "2D",
     types: ["Sprite", "Tileset", "Tilemap"],
@@ -277,7 +265,6 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
 const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Scene: "A 3D or 2D world document.",
   Class: "A class with a parent and a logic graph.",
-  UserInterface: "A game HUD or menu authored with Babylon GUI.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
   AnimationGraph: "A state machine that plays Sprite or Animation clips.",
@@ -1362,13 +1349,6 @@ export function classParentLookup(
 ): (id: string) => string | null {
   const map = new Map<string, string | null>();
   for (const asset of assets) {
-    if (asset.header.type === "UserInterface" && asset.header.guid) {
-      map.set(
-        userInterfaceClassId(asset.header.guid),
-        USER_INTERFACE_ENGINE_CLASS_ID,
-      );
-      continue;
-    }
     if (asset.header.type !== "Class") continue;
     const parent = asset.header.parentClass ?? "BObject";
     const id = classIdFromClassAsset(asset);
@@ -1376,7 +1356,6 @@ export function classParentLookup(
     if (asset.header.name !== id) map.set(asset.header.name, parent);
   }
   return (id) => {
-    if (isUserInterfaceClassId(id)) return USER_INTERFACE_ENGINE_CLASS_ID;
     return map.get(id) ?? engineParentOf(id) ?? null;
   };
 }
@@ -1471,16 +1450,6 @@ export function buildNewAssetResult(options: {
         },
       ],
     };
-  }
-
-  if (type === "UserInterface") {
-    const payload = {
-      ...createDefaultUserInterface(name),
-      logic: createDefaultLogicGraphSerialized(defaultNodeRegistry, {
-        parentClass: "BObject",
-      }),
-    } as unknown as Record<string, unknown>;
-    return documentAsset(type, name, guid, payload);
   }
 
   if (type === "Sprite") {
@@ -1648,7 +1617,6 @@ export function buildNewAssetResult(options: {
 const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Scene: ".scene.babasset",
   Class: ".class.babasset",
-  UserInterface: ".ui.babasset",
   Sprite: ".sprite.babasset",
   SpriteAnimation: ".spriteanim.babasset",
   AnimationGraph: ".anim.babasset",
@@ -1675,27 +1643,13 @@ export function newAssetFileName(
   return `${safe}${ASSET_FILE_SUFFIX[type] ?? ".babasset"}`;
 }
 
-/** Relative path next to an existing asset (`assets/HUD.ui.babasset` → `Chip.ui.babasset`). */
+/** Relative path next to an existing asset (`assets/HUD.class.babasset` → `Chip.class.babasset`). */
 export function siblingAssetRelativePath(hostPath: string, fileName: string): string {
   const slash = hostPath.lastIndexOf("/");
   const dir = slash >= 0 ? hostPath.slice(0, slash) : "";
   const relativeDir =
     dir === "assets" || dir === "" ? "" : dir.replace(/^assets\//, "");
   return relativeDir ? `${relativeDir}/${fileName}` : fileName;
-}
-
-/** New UserInterface asset whose document chunk is an extracted prefab. */
-export function buildUserInterfacePrefabResult(
-  prefab: UserInterfaceDocument,
-  guid: string,
-): ImportResult {
-  const payload = {
-    ...prefab,
-    logic: createDefaultLogicGraphSerialized(defaultNodeRegistry, {
-      parentClass: "BObject",
-    }),
-  } as unknown as Record<string, unknown>;
-  return documentAsset("UserInterface", prefab.name, guid, payload);
 }
 
 /**
@@ -1785,35 +1739,6 @@ export function isPostProcessMaterialForPicker(
     return (open.content as { domain?: unknown }).domain === "postProcess";
   }
   return isPostProcessMaterialAsset(asset);
-}
-
-export function isInterfaceMaterialAsset(asset: {
-  header: { type: string; payload?: Record<string, unknown> };
-}): boolean {
-  return (
-    asset.header.type === "Material" &&
-    asset.header.payload?.domain === "interface"
-  );
-}
-
-export function isInterfaceMaterialForPicker(
-  asset: {
-    path: string;
-    header: { type: string; payload?: Record<string, unknown> };
-  },
-  openDocuments: ReadonlyArray<{
-    ref: { kind: string; path: string };
-    content: unknown;
-  }>,
-): boolean {
-  const open = openDocuments.find(
-    (entry) =>
-      entry.ref.kind === "material" && entry.ref.path === asset.path,
-  );
-  if (open && open.content && typeof open.content === "object") {
-    return (open.content as { domain?: unknown }).domain === "interface";
-  }
-  return isInterfaceMaterialAsset(asset);
 }
 
 export function isParticleMaterialForPicker(

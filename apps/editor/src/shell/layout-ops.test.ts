@@ -34,12 +34,11 @@ function fakeApi(ids: string[]) {
 }
 
 describe("canFocusLayout", () => {
-  it("is enabled for DockView document kinds including Material and UserInterface", () => {
+  it("is enabled for DockView document kinds including Material", () => {
     expect(canFocusLayout("scene")).toBe(true);
     expect(canFocusLayout("graph")).toBe(true);
     expect(canFocusLayout("material")).toBe(true);
     expect(canFocusLayout("material-function")).toBe(true);
-    expect(canFocusLayout("ui")).toBe(true);
     expect(canFocusLayout("script-interface")).toBe(true);
     expect(canFocusLayout("enum")).toBe(true);
     expect(canFocusLayout("sprite")).toBe(true);
@@ -74,20 +73,6 @@ describe("focusKeepPanelIds", () => {
     ]);
   });
 
-  it("returns the User Interface Designer keep list by default", () => {
-    expect(focusKeepPanelIds(defaultEngineSettings(), "ui")).toEqual([
-      "ui-design",
-    ]);
-  });
-
-  it("returns the User Interface Logic keep list when Logic is active", () => {
-    expect(
-      focusKeepPanelIds(defaultEngineSettings(), "ui", {
-        uiEditorMode: "logic",
-      }),
-    ).toEqual(["graph"]);
-  });
-
   it("returns the Animation Object keep list when Animation Object mode is active", () => {
     expect(
       focusKeepPanelIds(defaultEngineSettings(), "anim-graph", {
@@ -118,27 +103,18 @@ describe("focusKeepCandidates", () => {
     );
   });
 
-  it("lists Designer or Logic UI docks depending on editor mode", () => {
+  it("lists Animation Graph docks depending on editor mode", () => {
     expect(
-      focusKeepCandidates("ui").map((panel) => panel.id),
-    ).toEqual(listDockWindows("ui").map((entry) => entry.id));
+      focusKeepCandidates("anim-graph").map((panel) => panel.id),
+    ).toEqual(listDockWindows("anim-graph").map((entry) => entry.id));
     expect(
-      focusKeepCandidates("ui", { uiEditorMode: "logic" }).map(
+      focusKeepCandidates("anim-graph", { animEditorMode: "animationObject" }).map(
         (panel) => panel.id,
       ),
     ).toEqual(
-      listDockWindows("ui", { uiEditorMode: "logic" }).map((entry) => entry.id),
-    );
-  });
-
-  it("lists Designer Design, Hierarchy, and Details — not Settings", () => {
-    expect(
-      focusKeepCandidates("ui").map((panel) => panel.id),
-    ).toEqual(
-      listDockWindows("ui").map((entry) => entry.id),
-    );
-    expect(focusKeepCandidates("ui").some((panel) => panel.id === "ui-settings")).toBe(
-      false,
+      listDockWindows("anim-graph", { animEditorMode: "animationObject" }).map(
+        (entry) => entry.id,
+      ),
     );
   });
 });
@@ -157,11 +133,6 @@ describe("resolveFocusKeepPanelIds", () => {
     ]);
     expect(resolveFocusKeepPanelIds("tileset", [])).toEqual(["tileset-preview"]);
     expect(resolveFocusKeepPanelIds("tilemap", [])).toEqual(["tilemap-paint"]);
-    expect(resolveFocusKeepPanelIds("ui", [])).toEqual(["ui-design"]);
-    expect(
-      resolveFocusKeepPanelIds("ui", [], { uiEditorMode: "logic" }),
-    ).toEqual(["graph"]);
-    expect(FOCUS_PRIMARY_PANEL.ui).toBe("ui-design");
     expect(FOCUS_PRIMARY_PANEL["anim-graph"]).toBe("anim-graph-graph");
     expect(FOCUS_PRIMARY_PANEL["behaviour-tree"]).toBe("behaviour-tree-graph");
     expect(resolveFocusKeepPanelIds("plugin-settings", [])).toEqual([
@@ -236,14 +207,6 @@ describe("applyFocusLayout", () => {
     expect(api.getPanel("material-compiler-results")!.api.close).toHaveBeenCalled();
   });
 
-  it("closes User Interface Hierarchy, keeping Design", () => {
-    const api = fakeApi(["ui-design", "ui-hierarchy", "ui-details"]);
-    applyFocusLayout("ui", api, ["ui-design"]);
-    expect(api.getPanel("ui-design")!.api.close).not.toHaveBeenCalled();
-    expect(api.getPanel("ui-hierarchy")!.api.close).toHaveBeenCalled();
-    expect(api.getPanel("ui-details")!.api.close).toHaveBeenCalled();
-  });
-
   it("closes every open class panel except Graph when keep is graph only", () => {
     const api = fakeApi([
       "graph",
@@ -293,14 +256,6 @@ describe("migrateRestoredLayout", () => {
     const api = fakeApi(["viewport", "mini-asset-browser", "scene-details"]);
     migrateRestoredLayout(api);
     expect(api.getPanel("mini-asset-browser")!.api.close).toHaveBeenCalled();
-  });
-
-  it("closes leftover UI Settings and UI Logic docks when restoring a Designer layout", () => {
-    const api = fakeApi(["ui-design", "ui-logic", "ui-settings", "ui-details"]);
-    migrateRestoredLayout(api);
-    expect(api.getPanel("ui-logic")!.api.close).toHaveBeenCalled();
-    expect(api.getPanel("ui-settings")!.api.close).toHaveBeenCalled();
-    expect(api.getPanel("ui-design")!.api.close).not.toHaveBeenCalled();
   });
 
   it("moves Class below Components when they share a group", () => {
