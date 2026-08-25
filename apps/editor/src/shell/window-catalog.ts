@@ -1,8 +1,6 @@
 import type { DockWindowDirection } from "@babylonslate/core";
-import type { UiEditorMode } from "./ui-document-layout";
 import type { AnimEditorMode } from "./anim-document-layout";
 
-export type { UiEditorMode };
 export type { AnimEditorMode };
 export type DockviewDocumentKind =
   | "scene"
@@ -16,7 +14,6 @@ export type DockviewDocumentKind =
   | "tilemap"
   | "material"
   | "material-function"
-  | "ui"
   | "plugin-settings"
   | "anim-graph"
   | "behaviour-tree"
@@ -45,7 +42,6 @@ const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "tilemap",
   "material",
   "material-function",
-  "ui",
   "plugin-settings",
   "anim-graph",
   "behaviour-tree",
@@ -79,8 +75,6 @@ export type DockWindowOptions = {
   actorPrefab?: boolean;
   /** Opt-in Git LFS locking; hides the Locks window entirely when off. */
   sourceControl?: boolean;
-  /** UserInterface Designer vs Logic surface. */
-  uiEditorMode?: UiEditorMode;
   /** Animation Graph State Machine vs Animation Object surface. */
   animEditorMode?: AnimEditorMode;
 };
@@ -99,7 +93,6 @@ const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   tilemap: "tilemap-paint",
   material: "material-graph",
   "material-function": "material-function-graph",
-  ui: "ui-design",
   "plugin-settings": "plugin-settings-details",
   "anim-graph": "anim-graph-graph",
   "behaviour-tree": "behaviour-tree-graph",
@@ -120,7 +113,6 @@ export function primaryDockPanel(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): string {
-  if (kind === "ui" && options?.uiEditorMode === "logic") return "graph";
   if (kind === "anim-graph" && options?.animEditorMode === "animationObject") {
     return "anim-object-graph";
   }
@@ -681,30 +673,6 @@ const MATERIAL_FUNCTION_WINDOWS: DockWindowDefinition[] = [
   },
 ];
 
-const UI_DESIGNER_WINDOWS: DockWindowDefinition[] = [
-  { id: "ui-design", component: "ui-design", title: "Design" },
-  {
-    id: "ui-hierarchy",
-    component: "ui-hierarchy",
-    title: "Hierarchy",
-    defaultPosition: {
-      referencePanelId: "ui-design",
-      direction: "left",
-      initialWidth: 240,
-    },
-  },
-  {
-    id: "ui-details",
-    component: "ui-details",
-    title: "Details",
-    defaultPosition: {
-      referencePanelId: "ui-design",
-      direction: "right",
-      initialWidth: 280,
-    },
-  },
-];
-
 const PLUGIN_SETTINGS_WINDOWS: DockWindowDefinition[] = [
   {
     id: "plugin-settings-details",
@@ -888,12 +856,6 @@ export function listDockWindows(
   }
   if (kind === "material-function") {
     return withOptionalLocks(kind, MATERIAL_FUNCTION_WINDOWS, options);
-  }
-  if (kind === "ui") {
-    if (options?.uiEditorMode === "logic") {
-      return withOptionalLocks(kind, OBJECT_GRAPH_WINDOWS, options);
-    }
-    return withOptionalLocks(kind, UI_DESIGNER_WINDOWS, options);
   }
   if (kind === "plugin-settings") {
     return withOptionalLocks(kind, PLUGIN_SETTINGS_WINDOWS, options);

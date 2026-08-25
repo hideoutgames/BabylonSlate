@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-function clampMin(value: unknown, min: number): unknown {
-  if (typeof value !== "number" || !Number.isFinite(value)) return value;
-  return Math.max(min, value);
-}
-
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
   graph: ["graph"],
@@ -17,8 +12,6 @@ export const DEFAULT_FOCUS_KEEP_PANELS = {
   tilemap: ["tilemap-paint"],
   material: ["material-graph"],
   "material-function": ["material-function-graph"],
-  ui: ["ui-design"],
-  uiLogic: ["graph"],
   "plugin-settings": ["plugin-settings-details"],
   "anim-graph": ["anim-graph-graph"],
   animGraphObject: ["anim-object-graph"],
@@ -157,8 +150,6 @@ export const engineSettingsSchema = z.object({
       "material-function": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["material-function"],
       ),
-      ui: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.ui),
-      uiLogic: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.uiLogic),
       "plugin-settings": focusKeepPanelList(
         DEFAULT_FOCUS_KEEP_PANELS["plugin-settings"],
       ),
@@ -194,27 +185,6 @@ export const engineSettingsSchema = z.object({
       trace: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.trace),
     })
     .default(mutableFocusKeepPanels),
-  uiDesignerPresets: z
-    .array(
-      z.object({
-        id: z.string().min(1),
-        label: z.string().min(1),
-        width: z.preprocess((value) => clampMin(value, 1), z.number().min(1)),
-        height: z.preprocess((value) => clampMin(value, 1), z.number().min(1)),
-        safeArea: z
-          .object({
-            left: z.preprocess((value) => clampMin(value, 0), z.number().min(0).default(0)),
-            right: z.preprocess((value) => clampMin(value, 0), z.number().min(0).default(0)),
-            top: z.preprocess((value) => clampMin(value, 0), z.number().min(0).default(0)),
-            bottom: z.preprocess(
-              (value) => clampMin(value, 0),
-              z.number().min(0).default(0),
-            ),
-          })
-          .default({ left: 0, right: 0, top: 0, bottom: 0 }),
-      }),
-    )
-    .default([]),
 });
 
 export type EngineSettings = z.infer<typeof engineSettingsSchema>;

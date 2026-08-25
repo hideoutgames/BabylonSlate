@@ -99,11 +99,14 @@ describe("createPlayBootCoordinator", () => {
     expect(runtime.spawned).toEqual(["Extra"]);
   });
 
-  it("does not spawn UserInterface script classes as Actors", async () => {
+  it("does not spawn GameInstance, FunctionLibrary, or editor script classes as Actors", async () => {
     const runtime = fakeRuntime();
     const boot = createPlayBootCoordinator();
     boot.queueScripts(runtime, [], [
-      { classId: "UserInterface:hud-guid" },
+      { classId: "GameInstance" },
+      { classId: "FunctionLibrary" },
+      { classId: "EditorUtilityObject" },
+      { classId: "EditorFunctionLibrary" },
       { classId: "Extra" },
     ]);
     await boot.play(runtime);

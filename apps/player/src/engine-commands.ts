@@ -25,10 +25,6 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "debugDraw",
   "assignParticle",
   "setParticlePlaying",
-  "uiApply",
-  "uiRemove",
-  "uiSetVisible",
-  "setInputMode",
 ]);
 
 export function applyPlayerEngineCommand(
@@ -48,7 +44,6 @@ export function applyPlayerActiveScene(
     applySceneEnvironment: (scene: SerializedScene) => void;
     resetAudioSession?: () => void;
     resetParticleSession?: () => void;
-    resetWidgetSession?: () => void;
   },
   scenes: ReadonlyMap<string, SerializedScene>,
   command: { type: string; sceneAssetGuid?: unknown },
@@ -62,6 +57,5 @@ export function applyPlayerActiveScene(
   handle.applySceneEnvironment(scene);
   handle.resetAudioSession?.();
   handle.resetParticleSession?.();
-  handle.resetWidgetSession?.();
   return true;
 }

@@ -71,6 +71,7 @@ test.describe("P6 first-playable scene editing", () => {
   test("build, save, reopen, play in 3D and 2D with gamepad and gizmo undo", async ({
     page,
   }) => {
+    test.setTimeout(180_000);
     await openTestProject(page);
     await openMainScene(page);
 

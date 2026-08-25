@@ -1,4 +1,4 @@
-import { compileFontStack } from "@babylonslate/ui-runtime";
+import { compileFontStack } from "@babylonslate/assets";
 
 export function familyFromAssetPayload(payload: unknown): string | null {
   if (!payload || typeof payload !== "object") return null;

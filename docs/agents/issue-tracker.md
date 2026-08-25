@@ -181,9 +181,8 @@ Read-only deep investigation of the repo from the user's prompt: [`.cursor/skill
 
 ## BabylonJS skill
 
-Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work, and before **UserInterface** work. UserInterface is Babylon GUI (`@babylonjs/gui` / `AdvancedDynamicTexture`), not React chrome.
+Agents must read [`.cursor/skills/BabylonJS/SKILL.md`](../../.cursor/skills/BabylonJS/SKILL.md) before engine or scene work. The game HUD / UserInterface system is **removed from the engine**. Do **not** re-add `@babylonslate/ui-runtime`, UserInterface assets, WidgetComponent, `ui.*` nodes, Interface-domain materials, or Play/player Babylon GUI apply.
 
-- **UserInterface** — game HUD, viewport-layer apply, designer canvas ([ui-runtime.md](../architecture/ui-runtime.md)).
 - React editor chrome (Dockview, shadcn, editor-kit) still uses the editor-ui-components and shadcn skills.
 - Rule: [.cursor/rules/agent-workflow.mdc](../../.cursor/rules/agent-workflow.mdc) (BabylonJS).
 
@@ -301,7 +300,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Keyed Print HUD polish | P8 / export | Print works; HUD polish deferred |
 | Development Only node flag | Done | Inspector checkbox; Print defaults on; `compileGraphDocumentsForExport` skips the node and continues exec (`then` / Sequence `then_*`). P14 release export must call that helper |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
-| Audio / UI node runtime helpers beyond stubs | P9 / P16 | `setWidgetVisible` / `applyUserInterface` / `removeUserInterface` emit UI commands; Play Sound / Set Channel Volume / Set Global Volume emit audio commands (P16 Done) |
+| Audio node runtime helpers beyond stubs | P16 | Play Sound / Set Channel Volume / Set Global Volume emit audio commands (P16 Done) |
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (exec highway / independent chain roots); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
@@ -309,7 +308,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 
 **Closed (class-owned graphs):** logic graphs live on Class assets (`.class.babasset`); New Asset is authored-only; Prefab/Components are Actor-lineage only; Enum/Structure/ScriptInterface open DockView documents (import data types stay compact `asset-settings` tabs). Legacy Graph files still load.
 
-**Closed (`cursor/ui-logic-graph-pass-2e3e`):** FunctionLibrary static Call Function palette (open docs + `header.payload.functions`); EditorFunctionLibrary engine base; UI Designer | Logic mode bar with Class docks on `payload.logic`; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive (host-legal catalog; pin filter only when on).
+**Closed (`cursor/ui-logic-graph-pass-2e3e`):** FunctionLibrary static Call Function palette (open docs + `header.payload.functions`); EditorFunctionLibrary engine base; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive (host-legal catalog; pin filter only when on). HUD Designer | Logic from that pass was later **removed from the engine**.
 
 ## P6 slice ownership
 
@@ -387,20 +386,17 @@ Command catalog and slice order: [console-commands.md](../architecture/console-c
 
 ## P9 slice ownership
 
-P9 content systems have landed (`p9-ui-anchoring`, `p9-fonts`, `p9-ui-system`, `p9-widget-library`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). Do **not** rebuild P9 packages. Authoring-surface hosts (canvas gestures, Logic palette, Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Expression-only Custom GLSL (`CustomBlock`) landed on `cursor/material-shader-improvements-fa96`. World-space `WidgetComponent` `CreateForMesh` landed on `cursor/widget-component-planes-afda`. A richer GLSL IDE stays later polish.
+P9 content systems have landed (`p9-fonts`, `p9-sprite`, `p9-anim-graph`, `p9-shader-graph`). The HUD slices (`p9-ui-anchoring`, `p9-ui-system`, `p9-widget-library`) landed and were later **removed from the engine** — do **not** re-add `@babylonslate/ui-runtime` or UserInterface. Authoring-surface hosts (Sprite Texture picker, `NodeMaterial.Parse` preview) landed on `cursor/authoring-surface-8678`. Expression-only Custom GLSL (`CustomBlock`) landed on `cursor/material-shader-improvements-fa96`. A richer GLSL IDE stays later polish.
 
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
-| Design notes | — | `docs/architecture/ui-runtime.md`, `fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
-| Anchoring + layout | `p9-ui-anchoring` (done) | `ui-runtime` | Design notes |
-| Font payload + registry | `p9-fonts` (done) | `assets`, `core`, `render`, `ui-runtime`, `apps/editor` | Design notes |
-| UserInterface + designer | `p9-ui-system` (done) | `ui-runtime`, `render`, `bridge`, `runtime`, `apps/editor`, `edit` | Anchoring + fonts |
-| Widget library + touch axis | `p9-widget-library` (done) | `ui-runtime`, `input`, `apps/editor` | UI system |
+| Design notes | — | `docs/architecture/fonts.md`, `sprites.md`, `anim-graph.md`, `shader-graph.md` | P8 complete |
+| Font payload + registry | `p9-fonts` (done) | `assets`, `core`, `render`, `apps/editor` | Design notes |
 | Sprite packer + quad | `p9-sprite` (done) | `assets`, `render`, `apps/editor` | Design notes |
 | AnimationGraph | `p9-anim-graph` (done) | `anim-graph`, `runtime`, `render`, `graph-ui`, `scripting`, `apps/editor` | Dual-mode State Machine / Animation Object host, typed variables, compiled transition rules |
 | Shader graph | `p9-shader-graph` (done) | `shader-graph`, `render`, `graph-ui`, `apps/editor` | Design notes + graph-ui host |
 
-Design notes: [ui-runtime.md](../architecture/ui-runtime.md), [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
+Design notes: [fonts.md](../architecture/fonts.md), [sprites.md](../architecture/sprites.md), [anim-graph.md](../architecture/anim-graph.md), [shader-graph.md](../architecture/shader-graph.md).
 
 ### P9 Play-path residuals (do not rebuild P8/P9)
 
@@ -412,24 +408,24 @@ Chrome polish (pin flash) stays parked. Multi-select gizmo group transforms are 
 | Worker HUD `scriptMs` / `physicsMs` not clobbered by rAF | Done |
 | Play loads anim graphs / sprites from scene refs | Done |
 | `ctx.changeScene` / `changescene` loads a scene from the Play scene library | Done (foundation wave) |
-| Catalog honesty (Tilemap / BT / Nav / Widget / AudioComponent) | Done (Tilemap addable; BT/Nav gated; Widget hidden; AudioComponent not in Search/Add) |
+| Catalog honesty (Tilemap / BT / Nav / AudioComponent) | Done (Tilemap addable; BT/Nav gated; AudioComponent in Search/Add) |
 | Enum / Structure / ScriptInterface editors | DockView Members / Methods / Preview / Details |
 | Prefab → class document persistence | Done (open tab **or** disk graph) |
 | Map nodes | Done (`map.get` / `set` / `has` / `remove` / `size` / `keys`) |
 | ScriptHost input / tick Delay / spawn / addComponent / GameInstance | Done (foundation wave; worker Play applies queued input each tick — host wall-clock stamps must not drop GetAxis) |
 | Play startup scene with no scene tab open | Superseded — Play is **disabled** until a scene tab is open; `startupSceneGuid` is packaged/export only |
 | Sprite/tilemap `ResourceCache` textures + GLB `assetGuid` | Done (foundation wave) |
-| HUD TouchButton / TouchDPad → input | Done (foundation wave) |
-| `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer Done; `.babtrace` tab Done (`p8-trace-playback`). §9.4 HUD parked. ADT HUD done |
+| HUD TouchButton / TouchDPad → input | Removed with the game HUD. Play overlay virtual sticks remain (`play-hud-joystick.ts`) |
+| `playSound` command (log, not a mixer), `.babtrace` tab, §9.4 HUD | Command landed; mixer Done; `.babtrace` tab Done (`p8-trace-playback`). §9.4 stats HUD parked. Game HUD removed |
 
 ### Authoring-surface wave (before P11)
 
-Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime`). Do **not** rebuild `@babylonslate/ui-runtime`, `@babylonslate/shader-graph`, `@babylonslate/anim-graph`, or `@babylonslate/scripting`. Do not start P11 `behaviour-tree` / `navigation` from leftover chrome polish.
+Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime`). Do **not** rebuild `@babylonslate/shader-graph`, `@babylonslate/anim-graph`, or `@babylonslate/scripting`. Do **not** re-add the game HUD / `@babylonslate/ui-runtime`. Do not start leftover chrome polish.
 
 | Wave | Status |
 | --- | --- |
-| A — UI design canvas pan/zoom/drag + alignment / left / top PropertyGrid | Done (`cursor/authoring-surface-8678`; Babylon-native fields on `cursor/babylon-native-ui-138e`) |
-| B — UI Logic palette + Play compile + Class `flow.event.custom` | Done (`cursor/authoring-surface-8678`) |
+| A — UI design canvas (historical) | Later **removed from the engine** with the game HUD |
+| B — UI Logic palette (historical) | Later **removed from the engine** with the game HUD |
 | C — Sprite Texture picker | Done (`cursor/authoring-surface-8678`) |
 | D — Shader `NodeMaterial.Parse` preview + shader/anim catalog pin hydration | Done (`cursor/authoring-surface-8678`) |
 | E — Touch-first Input / asset / class authoring | Done (`cursor/touch-authoring-controls-c4cd`) |
@@ -437,21 +433,16 @@ Fill **hosts** in `apps/editor` (and bind helpers already in `render` / `runtime
 | G — Behaviour tree Details / catalogs / tree ops / honest Loop-Cooldown-TimeLimit | Done (`p-bt-editor-authoring`) |
 | G2 — Behaviour tree free placement, Auto Arrange, Blackboard / Compiler docks | Done (`p-bt-editor-ux`). Follow-on hosts/nav leftovers are **P19** (Done), not this wave |
 
-Parked with this wave: pin flash, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface **authoring** editors (Designer | Logic mode bar + dual DockView catalogs + editing-stage Babylon GUI) landed as last P12 (`p12-ui-editors`) and this pass. World-space `WidgetComponent` `CreateForMesh` unparked (`cursor/widget-component-planes-afda`).
+Parked with this wave: pin flash, a richer CustomBlock GLSL IDE (syntax-aware editor beyond the expression Textarea). Assigning a shader to a live scene mesh unparked (`cursor/material-shader-improvements-fa96`). Multi-select gizmo unparked (group TRS follow). FunctionLibrary static Call Function rows unparked (`cursor/ui-logic-graph-pass-2e3e`). UserInterface / WidgetComponent work from this wave was later **removed from the engine** — do not re-add it.
 
 ### P9 follow-ups / open deferrals
 
 | Gap vs engineplan §11–§14 | Reality | Owner |
 | --- | --- | --- |
-| Viewport-layer HUD as Babylon `AdvancedDynamicTexture` | `BabylonUiApplyHost` + `attachFullscreenGui` (Play scene Layer). Designer uses the same host on a standalone ADT copied onto the document canvas (not `registerView`). DOM testid markers remain for jsdom / Playwright | Done (`cursor/ui-designer-rework-138e`) |
-| Every UserInterface in the asset registry auto-hosted in Play | Play does **not** auto-apply UI. Class graphs call `ui.applyToViewport` / `ui.removeFromViewport`; the host loads a guid-keyed library of all UserInterface assets | Done (`cursor/ui-apply-nested-8c7a`) |
+| Game HUD / UserInterface / WidgetComponent | **Removed from the engine.** Do not re-add `@babylonslate/ui-runtime`, UserInterface assets, WidgetComponent, `ui.*` nodes, or Play/player Babylon GUI apply | Removed |
 | `NodeMaterial.Parse` + live Babylon preview | `applyShaderGraphPreview` throttles `compileShaderGraphForRender` then `NodeMaterial.Parse` (injected `forceCompilationAsync` / parser in tests). Shader tab hosts a preview canvas; catalog `__pins` hydrated | Done (`cursor/authoring-surface-8678`) |
 | Thin-instance / merged-static sprite batching | Out of v1 (measure later, §13.2) | After a profile on device |
 | Play engine applies sprite-clip UVs from `animState` | `applyAnimStateToScene` calls `applySpriteAnimFrame` when `clipKind === "sprite"`; Play loads sprite payloads from scene `SpriteComponent` guids | Done (`cursor/play-path-harden-8678`) |
-| World-space `WidgetComponent` (`CreateForMesh`) | Owned plane + mesh ADT; Add Component / Search / Place Actors **Widget**; Play auto-mounts world `uiApply` | Done (`cursor/widget-component-planes-afda`) |
-| Designer nested-UI guid field + cycle check UI | `UserInterface` widget kind + Details `AssetPicker`; `nestedUiPickableGuids` excludes self and cycle partners | Done (`cursor/ui-apply-nested-8c7a`) |
-| Play HUD `FontRegistry.registerAll` from project Font assets | Play overlay and the UserInterface designer `registerAll` Font `source` bytes then `markAsDirty()` on the HUD/designer ADT | Done (`cursor/babylon-native-ui-138e`) |
-| UserInterface **authoring** editors | Chrome **Designer \| Logic** mode bar; Designer Design / Hierarchy / Details; Logic Class docks on `payload.logic` | Done (`p12-ui-editors` + `cursor/ui-logic-graph-pass-2e3e`) |
 | Animation Graph Object + transition-rule graphs | Chrome **State Machine \| Animation Object**; typed variables; compiled `AnimGraph:` / `AnimRule:` scripts; per-slot `animState` layers; Unreal state nodes + nested Enter/Exit rule graphs | Done (`cursor/complete-animation-graph-9a46`) |
 
 ## P10 tilemaps
@@ -475,7 +466,7 @@ Design note: [tilemaps.md](../architecture/tilemaps.md). Codecs first, then Rapi
 
 ## Pre-P11 foundation hardening
 
-Do **not** rebuild `@babylonslate/ui-runtime`, `shader-graph`, `anim-graph`, `scripting`, `physics`, or `debugger`. Host wiring + runtime bindings + honest e2e. P11 (`behaviour-tree` / `navigation`) starts only after this wave is on `main`.
+Do **not** rebuild `shader-graph`, `anim-graph`, `scripting`, `physics`, or `debugger`. Do **not** re-add the game HUD / `@babylonslate/ui-runtime`. Host wiring + runtime bindings + honest e2e.
 
 | Item | Status |
 | --- | --- |
@@ -559,12 +550,12 @@ Spec: [engineplan.md](../engineplan.md) §7, §18 P12, Appendix A `p12-editor-ex
 | Slice | Checklist | Packages | Depends on |
 | --- | --- | --- | --- |
 | EditorUtilityObject | Done (`p12-editor-extensions`) | `object-model`, `apps/editor`, export strip | P11 done |
-| UserInterface **authoring** editors | Done (`p12-ui-editors` + fundamentals rework) | `apps/editor` (designer Dockview host), `render` (`createUiSurface` hosts ADT canvas), `ui-runtime` schema v3 | `p12-editor-extensions` |
+| UserInterface **authoring** editors | **Removed from the engine** | Do not re-add UserInterface / Designer \| Logic | `p12-editor-extensions` |
 | Lighting / cameras | Done (`p-lighting-camera`) | `render`, `core`, `runtime`, `apps/editor`, `scripting-nodes` | §2.5 landed |
 
-UserInterface authoring (`p12-ui-editors`): chrome **Designer | Logic** mode bar, Designer Design / Hierarchy / Details, Logic Class docks, editing-stage widgets paint on a hosted ADT canvas. Schema v3 Babylon kinds; nested UserInterface is a slot.
+The game HUD / UserInterface authoring pass (`p12-ui-editors`) was later **removed from the engine**. Do not re-add Designer | Logic, WidgetComponent, or Play HUD overlay.
 
-Follow-up (`cursor/ui-logic-graph-pass-2e3e`): dual DockView surfaces (`layout.json` `{ uiEditorMode, designer, logic }`); leftover `ui-logic` panel closed on restore; FunctionLibrary / EditorFunctionLibrary static Call Function unparked; `NodeDefinition.editorOnly` + Editor Only tape; Add Node Context Sensitive.
+FunctionLibrary / EditorFunctionLibrary static Call Function, `NodeDefinition.editorOnly` + Editor Only tape, and Add Node Context Sensitive remain.
 
 Do not start leftover chrome polish (pin flash).
 
@@ -639,7 +630,7 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §18 / §19, Appendix A `p18-*`.
 | Prefab Preview on the app-lifetime Engine | Done (`p18-shared-prefab-engine`) | `render`, Prefab viewport in `apps/editor` | P17 done (can parallel) |
 | Architecture docs + Playwright + verify | Done | unit + `e2e/p18-editor-opt.spec.ts` | all P18 slices |
 
-Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers (Done); **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Add Widget / Settings catalogs.
+Out of scope: collapse-inactive-subtree / cap-auto-layout; P19 BT/nav leftovers (Done); **P20** (shared `ResourceCache`, editor freezes, Play compile/audio, palette generation, windowed logs, search-on-demand); pin flash; bake-collect hitch; Place Actors / Add Component / Settings catalogs.
 
 **P18 is Done.** Idle-unmount, GraphEditor virtualisation, windowed Add Node, windowed Content Browser grid, and Prefab on the app-lifetime Engine all landed. Playwright: `e2e/p18-editor-opt.spec.ts`.
 
@@ -669,7 +660,7 @@ Spec: [engineplan.md](../engineplan.md) §2.4 / §7.5 / §18 / §19, Appendix A 
 | Windowed Output Log + Compiler Results | Done (`p20-log-virtualize`) | `apps/editor` panels; `editor-kit` `WindowedList` / `SearchDialog` | P18 Done (TreeView arithmetic) |
 | Global Search rebuild on dialog initiate | Done (`p20-search-on-demand`) | `packages/assets` (`ProjectSearchIndex`), `apps/editor` | P18 Done; `p6-global-search` |
 
-Out of scope: expanding P18; pin flash; BT collapse-inactive-subtree; Place Actors / Add Component / Add Widget / Settings catalogs; dirty-skip of a **visible** editor viewport; sprite thin-instance / alpha-test fill-rate; `p1-device-spikes`; SAB live path; on-disk search cache.
+Out of scope: expanding P18; pin flash; BT collapse-inactive-subtree; Place Actors / Add Component / Settings catalogs; dirty-skip of a **visible** editor viewport; sprite thin-instance / alpha-test fill-rate; `p1-device-spikes`; SAB live path; on-disk search cache.
 
 **P20 is Done.**
 

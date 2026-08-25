@@ -25,7 +25,6 @@ export default defineConfig({
             "packages/bridge/**/*.test.ts",
             "packages/runtime/**/*.test.ts",
             "packages/debugger/**/*.test.ts",
-            "packages/ui-runtime/**/*.test.ts",
             "packages/anim-graph/**/*.test.ts",
             "packages/behaviour-tree/**/*.test.ts",
             "packages/navigation/**/*.test.ts",
@@ -87,8 +86,6 @@ export default defineConfig({
         // Needs a real WebGL context; covered by the Playwright viewport specs.
         "**/create-engine.ts",
         "**/babylon-audio-backend.ts",
-        // Standalone CreateFullscreenUI + Canvas2D blit; covered by Playwright HUD / designer.
-        "**/ui-surface.ts",
         // Game worker entry needs a Worker host; covered by Play e2e.
         "**/worker-entry.ts",
         // Navmesh bake worker; covered by bake-job unit tests + editor host.
@@ -178,12 +175,6 @@ export default defineConfig({
           statements: 60,
         },
         "packages/debugger/src/**": {
-          lines: 60,
-          functions: 60,
-          branches: 60,
-          statements: 60,
-        },
-        "packages/ui-runtime/src/**": {
           lines: 60,
           functions: 60,
           branches: 60,

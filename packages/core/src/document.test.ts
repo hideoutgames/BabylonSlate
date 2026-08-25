@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ASSET_DOCUMENT_KINDS,
   CONTENT_BROWSER_ID,
   CONTENT_BROWSER_REF,
   assetTypeForDocumentKind,
@@ -48,14 +49,15 @@ describe("P9 document kinds", () => {
     expect(labelFromPath("assets/Legacy.shader.babasset")).toBe("Legacy");
   });
 
-  it("maps UserInterface / Sprite / AnimationGraph kinds", () => {
-    expect(documentKindForAssetType("UserInterface")).toBe("ui");
+  it("does not treat UserInterface as a document kind", () => {
+    expect(documentKindForAssetType("UserInterface")).toBeNull();
     expect(documentKindForAssetType("EditorUtilityInterface")).toBeNull();
-    expect(assetTypeForDocumentKind("ui")).toBe("UserInterface");
-    expect(assetTypeForDocumentSave("ui", "EditorUtilityInterface")).toBe(
-      "UserInterface",
-    );
-    expect(assetTypeForDocumentSave("ui", null)).toBe("UserInterface");
+    expect(isAssetDocumentKind("ui")).toBe(false);
+    expect(parseDocumentId("ui:assets/hud.ui.babasset")).toBeNull();
+    expect(ASSET_DOCUMENT_KINDS).not.toContain("ui");
+  });
+
+  it("maps Sprite / AnimationGraph kinds", () => {
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
     expect(documentKindForAssetType("Blackboard")).toBe("blackboard");
@@ -97,15 +99,8 @@ describe("P9 document kinds", () => {
   });
 
   it("parses document ids and labels compound suffixes", () => {
-    expect(parseDocumentId("ui:assets/hud.ui.babasset")).toEqual({
-      kind: "ui",
-      path: "assets/hud.ui.babasset",
-    });
     expect(labelFromPath("assets/player_hud.ui.babasset")).toBe("Player Hud");
     expect(labelFromPath("assets/scene_tools.eui.babasset")).toBe("Scene Tools");
-    expect(createDocumentRef("ui", "assets/hud.ui.babasset", { name: "HUD" }).label).toBe(
-      "HUD UI",
-    );
   });
 });
 

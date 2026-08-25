@@ -3,13 +3,10 @@ import {
   DEFAULT_PLAY_FRAME_CAP,
   DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   DEFAULT_RENDER_PROJECT_SETTINGS,
-  DEFAULT_INPUT_MODE,
-  type InputMode,
   type PlayPreviewProjectSettings,
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
-  type UiProjectSettings,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
@@ -39,7 +36,7 @@ import { PlayFreeCamJoystick } from "./play-freecam-joystick";
 import { StatsHud } from "./stats-hud";
 import { playConsoleCommands, playConsoleCompletionContext } from "../lib/play-console";
 import { nextPlayInspectorOpen } from "../lib/play-debugger-defaults";
-import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import { applyPlayPreviewCanvasLayout, clampRenderResolution, playFramebufferSize } from "../lib/play-preview-aspect";
 import type { PlayPhysicsSettings } from "../services/play-physics";
 import type {
@@ -50,7 +47,6 @@ import type {
   ModelPayload,
   RetargetAnimationLoad,
 } from "@babylonslate/assets";
-import type { FontAssetEntry } from "@babylonslate/render";
 import type { PlayAudioLibrary } from "../lib/play-audio";
 import type { PlayParticleLibrary } from "../lib/play-particles";
 import {
@@ -61,27 +57,13 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 import { isTestModeEnabled } from "@babylonslate/vfs";
 import {
   audioDebugOverlayText,
   audioStats,
-  getMaterialTexture,
-  resourceCacheForEngine,
 } from "@babylonslate/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
-import { PlayHudOverlay } from "./play-hud-overlay";
-import {
-  applyPlayHudUiCommand,
-  applyPlayHudVisibility,
-  lookupInterfaceMaterialDocument,
-  playUserInterfaceRuntimeDocuments,
-  removePlayHudInstance,
-  resolvePlayHudDocuments,
-  setPlayUiWidgetEventSink,
-  type PlayHudInstance,
-} from "../lib/play-content";
 
 export interface PlayOverlayProps {
   sharedEngine: Engine;
@@ -100,10 +82,6 @@ export interface PlayOverlayProps {
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
   render?: RenderProjectSettings;
-  uiLibrary?: Record<string, UserInterfaceDocument>;
-  uiSettings?: UiProjectSettings;
-  fontEntries?: readonly FontAssetEntry[];
-  resolveImageUrl?: (guid: string) => string | null;
   animGraphs?: ReadonlyArray<{ guid: string; document: unknown }>;
   behaviourTrees?: ReadonlyArray<{ guid: string; document: unknown }>;
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
@@ -169,10 +147,6 @@ export function PlayOverlay({
   loopCount,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
-  uiLibrary = {},
-  uiSettings,
-  fontEntries = [],
-  resolveImageUrl,
   animGraphs,
   behaviourTrees,
   blackboards,
@@ -234,15 +208,6 @@ export function PlayOverlay({
   );
   const inspectSelectionRef = useRef<string | null>(null);
   const userPausedRef = useRef(pauseOnPlay);
-  const [overlaySize, setOverlaySize] = useState({ width: 1280, height: 720 });
-  const [hiddenWidgetIds, setHiddenWidgetIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [hudInstances, setHudInstances] = useState<PlayHudInstance[]>([]);
-  const [inputMode, setInputMode] = useState<InputMode>(DEFAULT_INPUT_MODE);
-  const [hudScene, setHudScene] = useState<import("@babylonjs/core").Scene | null>(
-    null,
-  );
   const [postProcessPasses, setPostProcessPasses] = useState(0);
   const [assignedMaterials, setAssignedMaterials] = useState("");
   const { entries: printEntries, print } = usePrintRegistry();
@@ -257,7 +222,6 @@ export function PlayOverlay({
     closedRef.current = true;
     const session = sessionRef.current;
     sessionRef.current = null;
-    setHudScene(null);
     void (async () => {
       const result = session
         ? await finishPlaySessionWithTrace(session)
@@ -267,8 +231,6 @@ export function PlayOverlay({
   };
   const scriptsRef = useRef(scripts);
   scriptsRef.current = scripts;
-  const uiLibraryRef = useRef(uiLibrary);
-  uiLibraryRef.current = uiLibrary;
   const animGraphsRef = useRef(animGraphs);
   animGraphsRef.current = animGraphs;
   const behaviourTreesRef = useRef(behaviourTrees);
@@ -370,10 +332,6 @@ export function PlayOverlay({
         render: initialRenderRef.current,
         liveSize: liveSizeRef.current,
       });
-      setOverlaySize({
-        width: overlay.clientWidth || 1280,
-        height: overlay.clientHeight || 720,
-      });
     };
     const resizeIfSized = createCanvasResizeGuard(
       () => {
@@ -399,7 +357,6 @@ export function PlayOverlay({
     layoutPlay();
     userPausedRef.current = initialPauseOnPlayRef.current;
     setPaused(initialPauseOnPlayRef.current);
-    setInputMode(DEFAULT_INPUT_MODE);
     const session = startPlaySession({
       canvas,
       sharedEngine,
@@ -422,7 +379,6 @@ export function PlayOverlay({
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
       fontFacetypeBytes: fontFacetypeBytesRef.current,
-      uiDocuments: new Map(Object.entries(uiLibraryRef.current)),
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,
@@ -464,33 +420,6 @@ export function PlayOverlay({
             ? name
             : null,
         );
-      },
-      userInterfaces: playUserInterfaceRuntimeDocuments(uiLibrary),
-      onUiSetVisible: (instanceId, widgetId, visible) => {
-        setHiddenWidgetIds((prev) =>
-          applyPlayHudVisibility(prev, instanceId, widgetId, visible),
-        );
-      },
-      onUiApply: (instanceId, classId, assetGuid) => {
-        setHudInstances((prev) =>
-          applyPlayHudUiCommand(prev, uiLibraryRef.current, {
-            type: "uiApply",
-            instanceId,
-            classId,
-            assetGuid,
-          }),
-        );
-      },
-      onUiRemove: (instanceId) => {
-        setHudInstances((prev) => removePlayHudInstance(prev, instanceId));
-      },
-      onUiTreeCommand: (command) => {
-        setHudInstances((prev) =>
-          applyPlayHudUiCommand(prev, uiLibraryRef.current, command),
-        );
-      },
-      onSetInputMode: (mode) => {
-        setInputMode(mode);
       },
       onStats: (stats) => {
         setFps(stats.fps);
@@ -535,28 +464,6 @@ export function PlayOverlay({
     if (initialPauseOnPlayRef.current) {
       session.setPaused(true);
     }
-    setPlayUiWidgetEventSink((event) =>
-      sessionRef.current?.dispatchUiWidgetEvent(event) ?? false,
-    );
-    if (isTestModeEnabled()) {
-      const host = globalThis as {
-        __babylonslateTest?: {
-          dispatchPlayUiWidgetEvent?: (
-            event: {
-              instanceId: string;
-              widgetId: string;
-              kind: UiWidgetEventKind;
-              value?: unknown;
-            },
-          ) => boolean;
-        };
-      };
-      if (host.__babylonslateTest) {
-        host.__babylonslateTest.dispatchPlayUiWidgetEvent = (event) =>
-          sessionRef.current?.dispatchUiWidgetEvent(event) ?? false;
-      }
-    }
-    setHudScene(session.handle.scene);
     syncFramebuffer(session.handle);
     const resizeObserver = new ResizeObserver(() => {
       layoutPlay();
@@ -606,12 +513,10 @@ export function PlayOverlay({
       window.clearInterval(movePoll);
       detachLifecycle();
       reportBtState(null);
-      setPlayUiWidgetEventSink(null);
       if (sessionRef.current) {
         sessionRef.current.stop();
         sessionRef.current = null;
       }
-      setHudScene(null);
     };
   }, [sharedEngine, injectFixtureThrow, reportBtState]);
 
@@ -750,40 +655,6 @@ export function PlayOverlay({
         enabled={freeCamEnabled}
         onFly={(forward, right) =>
           sessionRef.current?.handle.steerPlayFreeCam(forward, right)
-        }
-      />
-      <PlayHudOverlay
-        instances={resolvePlayHudDocuments(hudInstances, uiLibrary)}
-        uiLibrary={uiLibrary}
-      uiSettings={uiSettings}
-        fontEntries={fontEntries}
-        resolveImageUrl={resolveImageUrl}
-        resolveInterfaceMaterial={(guid) =>
-          lookupInterfaceMaterialDocument(guid, materialDocuments)
-        }
-        resolveTexture={(guid) => {
-          const bytes = textureBytes?.get(guid);
-          if (!bytes) return null;
-          return getMaterialTexture(
-            resourceCacheForEngine(sharedEngine),
-            guid,
-            sharedEngine,
-            bytes,
-          );
-        }}
-        materialFunctions={() =>
-          Object.fromEntries(materialFunctions ?? [])
-        }
-        width={overlaySize.width}
-        height={overlaySize.height}
-        hiddenWidgetIds={hiddenWidgetIds}
-        scene={hudScene}
-        inputMode={inputMode}
-        onTouchAxis={(controlId, value) =>
-          sessionRef.current?.pushTouchAxis(controlId, value)
-        }
-        onWidgetEvent={(event) =>
-          sessionRef.current?.dispatchUiWidgetEvent(event)
         }
       />
       <PrintOverlay entries={printEntries} />

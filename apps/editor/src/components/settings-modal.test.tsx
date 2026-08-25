@@ -183,23 +183,6 @@ describe("SettingsModal project authoring", () => {
     expect(screen.getByTestId("input-action-0-binding-3-code")).toBeTruthy();
   });
 
-  it("authors Project Settings User Interface design resolution and scale rule", () => {
-    render(
-      <SettingsModal open onOpenChange={() => {}} scope="project" />,
-    );
-    fireEvent.click(screen.getByTestId("settings-modal-category-ui"));
-    fireEvent.change(screen.getByTestId("settings-ui-design-width"), {
-      target: { value: "1280" },
-    });
-    expect(updateProjectSettings).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ui: expect.objectContaining({
-          designResolution: expect.objectContaining({ width: 1280 }),
-        }),
-      }),
-    );
-  });
-
   it("picks the default font from Font assets instead of a guid field", async () => {
     render(
       <SettingsModal open onOpenChange={() => {}} scope="project" />,

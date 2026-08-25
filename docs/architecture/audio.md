@@ -132,7 +132,7 @@ Named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in
 
 ## Test hatch
 
-Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/render`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes`, and `debugVoices` when `showaudiodebug` is on — same idea as `uiHostStats`. Playwright: `e2e/p16-audio.spec.ts` (overlay Play unlock plus Preview Build iframe unlock). Cross-package gain/unlock/reverb proofs: `packages/render/src/p16-acceptance.test.ts`.
+Test-mode `window.__babylonslateAudioStats` (`audioStats` from `@babylonslate/render`) exposes `unlocked`, `queued`, `voices`, `lastGain`, `lastDistance`, `wet`, `accountedBytes`, and `debugVoices` when `showaudiodebug` is on. Playwright: `e2e/p16-audio.spec.ts` (overlay Play unlock plus Preview Build iframe unlock). Cross-package gain/unlock/reverb proofs: `packages/render/src/p16-acceptance.test.ts`.
 
 `showaudiodebug [on|off]` is a debug-tier flag (same bool parser as `showfps`) that **applies**. Runtime emits `{ type: "setShowAudioDebug"; enabled }`; `AudioService` publishes a per-voice snapshot and a DOM overlay (not Babylon GUI) polls it with `requestAnimationFrame` so it still draws while sim is paused. Per voice: asset guid, clip name, gain, pitch, loop, spatial vs not, listener–emitter distance, inner/max radius, and **inside radius** (`distance <= maxRadius` when spatial and pose known; `n/a` otherwise). Empty list: `No playing voices`. Off: overlay unmounted. Overlay Play and the bundled-debugger player both mount it.
 

@@ -33,24 +33,8 @@ describe("clearDeletedAssetRefs", () => {
     });
   });
 
-  it("replaces a UserInterface class id whose guid was deleted", () => {
-    expect(clearDeletedAssetRefs("UserInterface:hud-1", deleted)).toEqual({
-      value: null,
-      changed: true,
-    });
-  });
-
-  it("leaves a UserInterface class id for a living asset", () => {
-    expect(clearDeletedAssetRefs("UserInterface:hud-2", deleted)).toEqual({
-      value: "UserInterface:hud-2",
-      changed: false,
-    });
-  });
-
   it("drops deleted guids from string arrays instead of inserting null", () => {
-    expect(
-      clearDeletedAssetRefs(["keep", "tex-1", "UserInterface:hud-1", "also"], deleted),
-    ).toEqual({
+    expect(clearDeletedAssetRefs(["keep", "tex-1", "also"], deleted)).toEqual({
       value: ["keep", "also"],
       changed: true,
     });

@@ -4,9 +4,7 @@ import {
   zipExport,
   MISSING_STARTUP_SCENE_MESSAGE,
   NAVMESH_EXPORT_TYPE,
-  UI_IMAGE_EXPORT_TYPE,
   navmeshExportGuid,
-  uiImageExportGuid,
   AUDIO_REVERB_EXPORT_TYPE,
   audioReverbExportGuid,
   FONT_FACETYPE_EXPORT_TYPE,
@@ -14,7 +12,6 @@ import {
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
-  type PackedUiDesignerPreset,
 } from "@babylonslate/exporter";
 import {
   defaultExportPreset,
@@ -36,7 +33,6 @@ import {
   compileGraphDocuments,
   compileGraphDocumentsForExport,
 } from "./script-compiler";
-import { logicGraphFromUiPayload } from "../lib/play-content";
 
 export { MISSING_STARTUP_SCENE_MESSAGE };
 
@@ -77,7 +73,6 @@ export type CollectExportGameParams = {
   bytesByGuid: (guid: string) => Uint8Array | null;
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
-  guiImageBytesByGuid?: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
@@ -91,11 +86,6 @@ export type CollectExportGameParams = {
   extraFiles?: Map<string, Uint8Array>;
   /** Preview Build keeps Development Only nodes. */
   previewBuild?: boolean;
-  uiDesignerPresets?: readonly PackedUiDesignerPreset[];
-  ui?: {
-    designResolution: { width: number; height: number };
-    scaleRule: "fitWidth" | "fitHeight" | "shortestSide";
-  };
   onPhase?: (phase: "Compiling" | "Writing Pack") => void;
 };
 
@@ -184,18 +174,6 @@ export async function collectAndExportGame(
         });
       }
     }
-    if (asset.type === "UserInterface") {
-      const uiPath =
-        asset.path && /\.ui\.(babasset|json)$/i.test(asset.path)
-          ? asset.path
-          : `assets/${asset.name}.ui.babasset`;
-      const uiGraph = logicGraphFromUiPayload(
-        uiPath,
-        params.payloadByGuid?.(guid) ?? null,
-        guid,
-      );
-      if (uiGraph) graphDocs.push(uiGraph);
-    }
     if (asset.type === "AnimationGraph") {
       const payload = params.payloadByGuid?.(guid) ?? null;
       if (payload) {
@@ -250,20 +228,6 @@ export async function collectAndExportGame(
   }
   for (const guid of closure.value) {
     const asset = params.assets.find((entry) => entry.guid === guid);
-    if (!asset || asset.type !== "Texture") continue;
-    const gui = params.guiImageBytesByGuid?.(guid);
-    if (!gui || gui.byteLength === 0) continue;
-    exportAssets.push({
-      guid: uiImageExportGuid(guid),
-      type: UI_IMAGE_EXPORT_TYPE,
-      sceneGuid: sceneGuidForAsset(guid, startup, params.assets, params.sceneByGuid),
-      bytes: gui,
-      encoding: "bytes",
-      name: `${asset.name} UI Image`,
-    });
-  }
-  for (const guid of closure.value) {
-    const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Font") continue;
     const facetype = params.fontFacetypeBytesByGuid?.(guid);
     if (!facetype || facetype.byteLength === 0) continue;
@@ -310,8 +274,6 @@ export async function collectAndExportGame(
     extraFiles: params.extraFiles,
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
-    uiDesignerPresets: params.uiDesignerPresets,
-    ui: params.ui,
   });
 }
 

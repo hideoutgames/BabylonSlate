@@ -1,4 +1,4 @@
-import { err, ok, DEFAULT_LOOP_COUNT, DEFAULT_UI_PROJECT_SETTINGS, type Result } from "@babylonslate/core";
+import { err, ok, DEFAULT_LOOP_COUNT, type Result } from "@babylonslate/core";
 import { zipSync, unzipSync } from "fflate";
 import { encodeBabpack } from "./babpack";
 import {
@@ -16,7 +16,6 @@ import type {
   ExportGameOptions,
   GameAssetIndexEntry,
   GameManifest,
-  PackedUiDesignerPreset,
 } from "./types";
 
 const encoder = new TextEncoder();
@@ -30,72 +29,10 @@ function clampAudioScale(value: unknown, fallback = 1): number {
   return n;
 }
 
-function packedUiDesignerPresets(
-  value: unknown,
-): PackedUiDesignerPreset[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined;
-  const rows: PackedUiDesignerPreset[] = [];
-  for (const row of value) {
-    if (!row || typeof row !== "object") continue;
-    const entry = row as Partial<PackedUiDesignerPreset> & {
-      safeArea?: Partial<PackedUiDesignerPreset["safeArea"]>;
-    };
-    const id = typeof entry.id === "string" ? entry.id.trim() : "";
-    const label = typeof entry.label === "string" ? entry.label.trim() : "";
-    const width = Number(entry.width);
-    const height = Number(entry.height);
-    if (!id || !label || !(width >= 1) || !(height >= 1)) continue;
-    const safe = entry.safeArea;
-    rows.push({
-      id,
-      label,
-      width,
-      height,
-      safeArea: {
-        left: Math.max(0, Number(safe?.left) || 0),
-        right: Math.max(0, Number(safe?.right) || 0),
-        top: Math.max(0, Number(safe?.top) || 0),
-        bottom: Math.max(0, Number(safe?.bottom) || 0),
-      },
-    });
-  }
-  return rows.length > 0 ? rows : undefined;
-}
-
-function packedUiSettings(
-  value: unknown,
-): NonNullable<GameManifest["ui"]> {
-  const record =
-    value && typeof value === "object"
-      ? (value as {
-          designResolution?: { width?: unknown; height?: unknown };
-          scaleRule?: unknown;
-        })
-      : undefined;
-  const width = Number(record?.designResolution?.width);
-  const height = Number(record?.designResolution?.height);
-  const scaleRule =
-    record?.scaleRule === "fitWidth" || record?.scaleRule === "fitHeight"
-      ? record.scaleRule
-      : DEFAULT_UI_PROJECT_SETTINGS.scaleRule;
-  return {
-    designResolution: {
-      width:
-        width >= 1 ? Math.round(width) : DEFAULT_UI_PROJECT_SETTINGS.designResolution.width,
-      height:
-        height >= 1
-          ? Math.round(height)
-          : DEFAULT_UI_PROJECT_SETTINGS.designResolution.height,
-    },
-    scaleRule,
-  };
-}
-
 const JSON_TYPES = new Set([
   "Scene",
   "Class",
   "Graph",
-  "UserInterface",
   "AnimationGraph",
   "BehaviourTree",
   "Blackboard",
@@ -283,7 +220,6 @@ export async function exportGame(
 
   inlineCssIntoIndex(files);
 
-  const designerPresets = packedUiDesignerPresets(options.uiDesignerPresets);
   const manifest: GameManifest = {
     startupSceneGuid: options.startupSceneGuid,
     ...(options.gameInstanceClass?.trim()
@@ -309,8 +245,6 @@ export async function exportGame(
     scriptsFile: SCRIPTS_FILE,
     physicsWorld: options.physicsWorld ?? "3d",
     assets: packed.index,
-    ...(designerPresets ? { uiDesignerPresets: designerPresets } : {}),
-    ui: packedUiSettings(options.ui),
     ...(options.bundleDebugger
       ? {
           infiniteLoopDetection: options.infiniteLoopDetection !== false,
@@ -359,7 +293,10 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 }
 
 export function parseGameManifest(source: string): GameManifest {
-  const parsed = JSON.parse(source) as GameManifest;
+  const parsed = JSON.parse(source) as GameManifest & {
+    ui?: unknown;
+    uiDesignerPresets?: unknown;
+  };
   const gameInstanceClass =
     typeof parsed.gameInstanceClass === "string" &&
     parsed.gameInstanceClass.trim()
@@ -370,10 +307,12 @@ export function parseGameManifest(source: string): GameManifest {
       ? parsed.audioMixerGuid.trim()
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
-  const designerPresets = packedUiDesignerPresets(parsed.uiDesignerPresets);
-  const rest = { ...parsed };
-  delete rest.uiDesignerPresets;
+  const rest = { ...parsed } as GameManifest & {
+    ui?: unknown;
+    uiDesignerPresets?: unknown;
+  };
   delete rest.ui;
+  delete rest.uiDesignerPresets;
   return {
     ...rest,
     ...(gameInstanceClass ? { gameInstanceClass } : {}),
@@ -388,8 +327,6 @@ export function parseGameManifest(source: string): GameManifest {
         ? parsed.pixelsPerUnit
         : 100,
     pixelPerfect: parsed.pixelPerfect === true,
-    ...(designerPresets ? { uiDesignerPresets: designerPresets } : {}),
-    ui: packedUiSettings(parsed.ui),
     ...(bundleDebugger
       ? {
           infiniteLoopDetection: parsed.infiniteLoopDetection !== false,

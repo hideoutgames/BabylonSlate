@@ -202,31 +202,12 @@ describe("schema migration", () => {
     expect(result.payload).toEqual({ name: "Icon" });
   });
 
-  it("migrates UserInterface v1 RectTransform payloads through schema v3", () => {
+  it("does not register a UserInterface migration chain", () => {
     const registry = createDefaultMigrationRegistry();
-    const result = registry.migrate("UserInterface", 1, {
-      name: "HUD",
-      widgets: {
-        stick: {
-          id: "stick",
-          layout: {
-            anchorMin: { x: 0.5, y: 0.5 },
-            anchorMax: { x: 0.5, y: 0.5 },
-            offsetMin: { x: -80, y: -80 },
-            offsetMax: { x: 80, y: 80 },
-            pivot: { x: 0.5, y: 0.5 },
-          },
-        },
-      },
-    });
-    expect(result.migrated).toBe(true);
-    expect(result.version).toBe(3);
-    const stick = (result.payload.widgets as Record<
-      string,
-      { layout: { horizontalAlignment: string; leftUnit: string; padding: { left: number } } }
-    >).stick;
-    expect(stick.layout.horizontalAlignment).toBe("center");
-    expect(stick.layout.leftUnit).toBe("px");
-    expect(stick.layout.padding.left).toBe(0);
+    expect(registry.currentVersion("UserInterface")).toBe(0);
+    const result = registry.migrate("UserInterface", 1, { name: "HUD" });
+    expect(result.migrated).toBe(false);
+    expect(result.version).toBe(1);
+    expect(result.payload).toEqual({ name: "HUD" });
   });
 });

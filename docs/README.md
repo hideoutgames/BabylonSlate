@@ -29,7 +29,6 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/physics.md](architecture/physics.md) | Havok 3D and Rapier 2D |
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
 | [architecture/console-commands.md](architecture/console-commands.md) | Builtin catalog, apply audit, autocomplete |
-| [architecture/ui-runtime.md](architecture/ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [architecture/fonts.md](architecture/fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [architecture/sprites.md](architecture/sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [architecture/tilemaps.md](architecture/tilemaps.md) | Tileset / Tilemap assets, chunk VertexData, painting, Rapier chains |
@@ -41,7 +40,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/shader-graph.md](architecture/shader-graph.md) | Material and Material Function graphs, compiler, preview, runtime |
 | [architecture/theming.md](architecture/theming.md) | UI color palette and semantic tokens |
 | [architecture/components.md](architecture/components.md) | Reusable Editor UI primitives and composites |
-| [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject / Interface, live Dockview GUI tabs |
+| [architecture/editor-extensions.md](architecture/editor-extensions.md) | EditorUtilityObject, editor-only graphs, Skybox Creator |
 | [architecture/exporter.md](architecture/exporter.md) | Itch zip, `.babpack`, Preview Build, `apps/player` |
 | [architecture/source-control.md](architecture/source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [architecture/testing.md](architecture/testing.md) | Vitest projects, coverage gates, Playwright |

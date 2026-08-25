@@ -728,28 +728,6 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("material-preview-panel")).toBeVisible();
   });
 
-  test("UserInterface Designer Focus hides Hierarchy", async ({ page }) => {
-    await openTestProject(page);
-    await createContentBrowserAsset(page, "UserInterface", "HUD");
-    await page.locator('[data-asset-path="assets/HUD.ui.babasset"]').dblclick();
-    await expect(page.getByTestId("document-workspace-ui")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByTestId("ui-design-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-hierarchy-panel")).toBeVisible();
-
-    const focus = page.getByTestId("focus-layout");
-    await expect(focus).toBeEnabled();
-    await focus.click();
-    await expect(focus).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("ui-design-panel")).toBeVisible();
-    await expect(page.getByTestId("ui-hierarchy-panel")).not.toBeVisible();
-
-    await focus.click();
-    await expect(focus).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByTestId("ui-hierarchy-panel")).toBeVisible();
-  });
-
   test("ScriptInterface Focus hides Methods", async ({ page }) => {
     await openTestProject(page);
     await createContentBrowserAsset(page, "ScriptInterface", "IHit");

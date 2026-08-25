@@ -71,7 +71,7 @@ import {
   createNativeHttp,
 } from "@babylonslate/vfs";
 import type { ProjectStorage } from "@babylonslate/core";
-import type { ScriptBundleEntry, UiWidgetEventKind } from "@babylonslate/bridge";
+import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
 import type { TracePayload } from "@babylonslate/debugger";
 import {
@@ -144,13 +144,6 @@ import {
   type DockWindowOptions,
 } from "../shell/window-catalog";
 import {
-  applyPreFocusToUiLayout,
-  parseUiDocumentLayout,
-  serializeUiDocumentLayout,
-  type PreFocusSnapshot,
-  type UiEditorMode,
-} from "../shell/ui-document-layout";
-import {
   applyPreFocusToAnimLayout,
   parseAnimDocumentLayout,
   serializeAnimDocumentLayout,
@@ -160,12 +153,10 @@ import {
   dockviewApiKey,
   dockviewApiKeysForDocument,
   dockviewSurfaceForAnimMode,
-  dockviewSurfaceForUiMode,
   type DockviewSurface,
+  type PreFocusSnapshot,
 } from "../shell/dockview-surface";
-import { resetProjectUiAssets } from "../lib/project-ui-asset-cache";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
-import { asDevicePresets } from "../lib/engine-ui-presets";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
@@ -222,10 +213,7 @@ import {
   spriteAnimationGuidsFromBehaviourTrees,
   playTilemapPayloadsFromGuids,
   playTilesetPayloadsFromGuids,
-  playUiLibraryFromAssets,
-  preferOpenPlayUiContent,
   collectPlayScriptDocuments,
-  dispatchMountedPlayUiWidgetEvent,
   spriteAssetGuidsFromScene,
   tilemapAssetGuidsFromScene,
   tilesetGuidsFromTilemaps,
@@ -260,7 +248,6 @@ import {
   type MaterialDocument,
   type MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import type { UserInterfaceDocument } from "@babylonslate/ui-runtime";
 export type AppRoute = "home" | "editor";
 
 interface DocumentContextValue {
@@ -423,8 +410,6 @@ interface DocumentContextValue {
   ) => void;
   unregisterDockviewApi: (id: string, surface?: DockviewSurface) => void;
   captureLayoutForId: (id: string) => void;
-  uiEditorMode: UiEditorMode;
-  setUiEditorMode: (id: string, mode: UiEditorMode) => void;
   animEditorMode: AnimEditorMode;
   setAnimEditorMode: (id: string, mode: AnimEditorMode) => void;
   activateDockPanel: (panelId: string) => void;
@@ -456,8 +441,6 @@ interface DocumentContextValue {
     kind: AssetDocumentKind,
     path: string,
   ) => Promise<unknown | null>;
-  /** UserInterface assets keyed by guid for Play apply/remove. */
-  collectPlayUiLibrary: () => Promise<Record<string, UserInterfaceDocument>>;
   /** AnimationGraphs referenced by the Play scene (plus any open graph tabs). */
   collectPlayAnimGraphs: (
     scene?: SerializedScene | null,
@@ -509,7 +492,7 @@ interface DocumentContextValue {
     library: import("../lib/play-audio").PlayAudioLibrary;
     loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
   }>;
-  /** Surface, post-process, and HUD Interface materials plus transitive Material Functions. */
+  /** Surface, post-process, and particle materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
@@ -565,7 +548,6 @@ function dockOptionsForIndexed(
     | undefined,
   parentOf: (id: string) => string | null | undefined,
   sourceControlEnabled = false,
-  uiEditorMode?: UiEditorMode,
   animEditorMode?: AnimEditorMode,
 ): DockWindowOptions {
   return {
@@ -576,7 +558,6 @@ function dockOptionsForIndexed(
         assetType: indexed.header.type,
       }),
     sourceControl: sourceControlEnabled,
-    uiEditorMode: kind === "ui" ? (uiEditorMode ?? "designer") : undefined,
     animEditorMode:
       kind === "anim-graph" ? (animEditorMode ?? "stateMachine") : undefined,
   };
@@ -592,18 +573,6 @@ function animEditorModeForDocument(
     return parseAnimDocumentLayout(doc.layout).animEditorMode;
   }
   return "stateMachine";
-}
-
-function uiEditorModeForDocument(
-  id: string,
-  modes: Record<string, UiEditorMode>,
-  doc: OpenDocument | undefined,
-): UiEditorMode {
-  if (modes[id]) return modes[id];
-  if (doc?.ref.kind === "ui") {
-    return parseUiDocumentLayout(doc.layout).uiEditorMode;
-  }
-  return "designer";
 }
 
 function findWindowDefinition(
@@ -660,9 +629,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
-  const [uiEditorModes, setUiEditorModes] = useState<Record<string, UiEditorMode>>(
-    {},
-  );
   const [animEditorModes, setAnimEditorModes] = useState<
     Record<string, AnimEditorMode>
   >({});
@@ -850,31 +816,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const captureLayoutForId = useCallback(
     (id: string) => {
       const doc = documentService.getDocument(id);
-      if (doc?.ref.kind === "ui") {
-        const parsed = parseUiDocumentLayout(doc.layout);
-        const mode = uiEditorModeForDocument(id, uiEditorModes, doc);
-        const designerApi = dockviewApisRef.current.get(
-          dockviewApiKey(id, "designer"),
-        );
-        const logicApi = dockviewApisRef.current.get(dockviewApiKey(id, "logic"));
-        const live: typeof parsed = {
-          uiEditorMode: mode,
-          designer: designerApi
-            ? projectService.captureLayout(designerApi)
-            : parsed.designer,
-          logic: logicApi
-            ? projectService.captureLayout(logicApi)
-            : parsed.logic,
-        };
-        const preFocus = preFocusLayoutsRef.current.get(id);
-        documentService.setLayout(
-          id,
-          serializeUiDocumentLayout(
-            preFocus ? applyPreFocusToUiLayout(live, preFocus) : live,
-          ),
-        );
-        return;
-      }
       if (doc?.ref.kind === "anim-graph") {
         const parsed = parseAnimDocumentLayout(doc.layout);
         const mode = animEditorModeForDocument(id, animEditorModes, doc);
@@ -914,7 +855,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         documentService.setLayout(id, projectService.captureLayout(api));
       }
     },
-    [documentService, projectService, uiEditorModes, animEditorModes],
+    [documentService, projectService, animEditorModes],
   );
 
   const captureAllLayouts = useCallback(() => {
@@ -1159,9 +1100,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setLastCompiledSignature(null);
       graphCompileCacheRef.current.clear();
       setRoute("editor");
-      setUiEditorModes({});
       setAnimEditorModes({});
-      resetProjectUiAssets();
       const { probeKtx2TranscoderAvailable } = await import(
         "@babylonslate/render"
       );
@@ -1509,9 +1448,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setLastCompiledSignature(null);
     graphCompileCacheRef.current.clear();
     setRoute("home");
-    setUiEditorModes({});
     setAnimEditorModes({});
-    resetProjectUiAssets();
     mtimeSnapshotRef.current = null;
     setExternalChangePrompt(null);
     await refreshProjectList();
@@ -1558,7 +1495,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           projectService.readAssetChunk(path, chunkId),
       });
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
-      const engineSettings = await settingsStore.load();
       const startupSceneGuid =
         typeof options?.startupSceneGuid === "string" &&
         options.startupSceneGuid.trim() !== ""
@@ -1585,7 +1521,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         graphByGuid: loaded.graphByGuid,
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
-        guiImageBytesByGuid: loaded.guiImageBytesByGuid,
         fontFacetypeBytesByGuid: loaded.fontFacetypeBytesByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
@@ -1606,11 +1541,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         playerFiles,
         previewBuild: options?.previewBuild,
         onPhase: options?.onPhase,
-        uiDesignerPresets: asDevicePresets(engineSettings.uiDesignerPresets),
-        ui: projectDocument?.settings.ui,
       });
     },
-    [projectDocument, projectService, settingsStore],
+    [projectDocument, projectService],
   );
 
   const zipExportedGame = useCallback((artifact: ExportArtifact) => {
@@ -1637,12 +1570,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       disposeDockSubscriptions(id);
       preFocusLayoutsRef.current.delete(id);
-      setUiEditorModes((current) => {
-        if (!(id in current)) return current;
-        const next = { ...current };
-        delete next[id];
-        return next;
-      });
       setAnimEditorModes((current) => {
         if (!(id in current)) return current;
         const next = { ...current };
@@ -1891,14 +1818,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             fonts: {
               ...current.settings.fonts,
               ...settings.fonts,
-            },
-            ui: {
-              ...current.settings.ui,
-              ...settings.ui,
-              designResolution: {
-                ...current.settings.ui.designResolution,
-                ...settings.ui?.designResolution,
-              },
             },
             audio: {
               ...current.settings.audio,
@@ -2288,31 +2207,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }>
   > => {
     const documents = await loadClassGraphDocuments();
-    const open = documentService.getState().openDocuments;
-    const uiAssets = (projectService.registry?.list() ?? []).filter(
-      (asset) => asset.header.type === "UserInterface",
-    );
-    const uiPayloads: Array<{ path: string; payload: unknown; guid?: string }> = [];
-    for (const asset of uiAssets) {
-      const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
-      if (openDoc?.content) {
-        uiPayloads.push({
-          path: asset.path,
-          payload: openDoc.content,
-          guid: asset.header.guid,
-        });
-        continue;
-      }
-      try {
-        uiPayloads.push({
-          path: asset.path,
-          payload: await projectService.loadDocument("ui", asset.path),
-          guid: asset.header.guid,
-        });
-      } catch (error) {
-        console.error(`[play] failed to load UserInterface logic ${asset.path}`, error);
-      }
-    }
     const assets = projectService.registry?.list() ?? [];
     const headers = Object.fromEntries(
       assets.map((asset) => [
@@ -2325,8 +2219,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ]),
     );
     const parentOf = classParentLookup(assets);
-    return collectPlayScriptDocuments(documents, uiPayloads, headers, parentOf);
-  }, [documentService, loadClassGraphDocuments, projectService]);
+    return collectPlayScriptDocuments(documents, headers, parentOf);
+  }, [loadClassGraphDocuments, projectService]);
 
   const loadProjectAnimGraphDocuments = useCallback(async () => {
     const assets = (projectService.registry?.list() ?? []).filter(
@@ -2494,33 +2388,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     projectService,
   ]);
 
-  const collectPlayUiLibrary = useCallback(async (): Promise<
-    Record<string, UserInterfaceDocument>
-  > => {
-    const assets = (projectService.registry?.list() ?? []).map((asset) => ({
-      guid: asset.header.guid,
-      path: asset.path,
-      type: asset.header.type,
-    }));
-    const open = documentService.getState().openDocuments;
-    const loaded = new Map<string, unknown>();
-    for (const asset of assets) {
-      if (asset.type !== "UserInterface") continue;
-      const openDoc = open.get(documentId({ kind: "ui", path: asset.path }));
-      let disk: unknown | null = null;
-      if (!openDoc?.content) {
-        try {
-          disk = await projectService.loadDocument("ui", asset.path);
-        } catch (error) {
-          console.error(`[play] failed to load UserInterface ${asset.path}`, error);
-        }
-      }
-      const content = preferOpenPlayUiContent(openDoc?.content, disk);
-      if (content) loaded.set(asset.path, content);
-    }
-    return playUiLibraryFromAssets(assets, (path) => loaded.get(path) ?? null);
-  }, [documentService, projectService]);
-
   const loadPlayAssetContent = useCallback(
     async (
       kind:
@@ -2529,7 +2396,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "blackboard"
         | "sprite"
         | "sprite-animation"
-        | "ui"
         | "tileset"
         | "tilemap"
         | "material"
@@ -2977,7 +2843,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const needed = new Set(
         playMaterialGuidsFromSources(
           [scene, ...extraScenes],
-          [],
           extraMaterialGuids,
         ),
       );
@@ -3105,16 +2970,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         } | null) => void;
         injectTestTouchAxis: (axes: Record<string, number> | null) => void;
         setMainGraphContent: (graph: SerializedGraph) => Promise<boolean>;
-        setUiDocumentContent: (
-          path: string,
-          content: Record<string, unknown>,
-        ) => Promise<boolean>;
-        dispatchPlayUiWidgetEvent: (event: {
-          instanceId: string;
-          widgetId: string;
-          kind: UiWidgetEventKind;
-          value?: unknown;
-        }) => boolean;
         setMainGraphComponents: (
           components: SerializedGraph["components"],
         ) => Promise<boolean>;
@@ -3325,23 +3180,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
         return true;
       },
-      setUiDocumentContent: async (
-        path: string,
-        content: Record<string, unknown>,
-      ) => {
-        const id = documentId({ kind: "ui", path });
-        if (!documentService.getState().openDocuments.has(id)) {
-          await documentService.openDocument(
-            projectService,
-            { kind: "ui", path, label: path.split("/").pop() ?? path },
-            null,
-            false,
-          );
-        }
-        return applyAssetDocumentChange(id, content);
-      },
-      dispatchPlayUiWidgetEvent: (event) =>
-        dispatchMountedPlayUiWidgetEvent(event),
       setMainGraphComponents: async (components) => {
         const openGraph = [...documentService.getState().openDocuments.values()].find(
           (entry) => entry.ref.kind === "graph" && entry.content,
@@ -3536,12 +3374,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         ?.list()
         .find((asset) => asset.path === doc?.ref.path);
       const parentOf = classParentLookup(projectService.registry?.list() ?? []);
-      const surfaceMode: UiEditorMode | undefined =
-        surface === "logic"
-          ? "logic"
-          : surface === "designer"
-            ? "designer"
-            : undefined;
       const animSurfaceMode: AnimEditorMode | undefined =
         surface === "animationObject"
           ? "animationObject"
@@ -3553,7 +3385,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         indexed,
         parentOf,
         sourceControlRef.current.enabled,
-        surfaceMode,
         animSurfaceMode,
       );
       for (const panel of listDockPanels(dock)) {
@@ -3592,18 +3423,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     if (!activeDocumentId) return undefined;
     const doc = documentService.getDocument(activeDocumentId);
     if (!doc) return undefined;
-    if (doc.ref.kind === "ui") {
-      const mode = uiEditorModeForDocument(
-        activeDocumentId,
-        uiEditorModes,
-        doc,
-      );
-      return (
-        dockviewApisRef.current.get(
-          dockviewApiKey(activeDocumentId, dockviewSurfaceForUiMode(mode)),
-        ) ?? dockviewApisRef.current.get(activeDocumentId)
-      );
-    }
     if (doc.ref.kind === "anim-graph") {
       const mode = animEditorModeForDocument(
         activeDocumentId,
@@ -3617,42 +3436,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }
     return dockviewApisRef.current.get(activeDocumentId);
-  }, [documentService, uiEditorModes, animEditorModes]);
-
-  const setUiEditorMode = useCallback(
-    (id: string, mode: UiEditorMode) => {
-      captureLayoutForId(id);
-      const doc = documentService.getDocument(id);
-      const currentMode = uiEditorModeForDocument(id, uiEditorModes, doc);
-      if (currentMode !== mode) {
-        const snapshot = preFocusLayoutsRef.current.get(id);
-        if (snapshot) {
-          restorePreFocusSnapshot(id, snapshot, dockviewApisRef.current);
-          preFocusLayoutsRef.current.delete(id);
-          setFocusedLayoutIds((current) => {
-            if (!current.has(id)) return current;
-            const next = new Set(current);
-            next.delete(id);
-            return next;
-          });
-        }
-      }
-      setUiEditorModes((current) =>
-        current[id] === mode ? current : { ...current, [id]: mode },
-      );
-      if (doc?.ref.kind === "ui") {
-        const parsed = parseUiDocumentLayout(doc.layout);
-        if (parsed.uiEditorMode !== mode) {
-          documentService.setLayout(
-            id,
-            serializeUiDocumentLayout({ ...parsed, uiEditorMode: mode }),
-          );
-        }
-      }
-      bumpDockWindows();
-    },
-    [bumpDockWindows, captureLayoutForId, documentService, uiEditorModes],
-  );
+  }, [documentService, animEditorModes]);
 
   const setAnimEditorMode = useCallback(
     (id: string, mode: AnimEditorMode) => {
@@ -3711,9 +3495,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       indexed,
       parentOf,
       sourceControlRef.current.enabled,
-      doc.ref.kind === "ui"
-        ? uiEditorModeForDocument(activeDocumentId, uiEditorModes, doc)
-        : undefined,
       doc.ref.kind === "anim-graph"
         ? animEditorModeForDocument(activeDocumentId, animEditorModes, doc)
         : undefined,
@@ -3735,7 +3516,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
     }
     bumpDockWindows();
-  }, [activeDockApi, bumpDockWindows, documentService, projectService, uiEditorModes, animEditorModes]);
+  }, [activeDockApi, bumpDockWindows, documentService, projectService, animEditorModes]);
 
   const isDockWindowOpen = useCallback((panelId: string) => {
     const api = activeDockApi();
@@ -3786,10 +3567,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       ?.list()
       .find((asset) => asset.path === doc.ref.path);
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
-    const uiMode =
-      doc.ref.kind === "ui"
-        ? uiEditorModeForDocument(activeDocumentId, uiEditorModes, doc)
-        : undefined;
     const animMode =
       doc.ref.kind === "anim-graph"
         ? animEditorModeForDocument(activeDocumentId, animEditorModes, doc)
@@ -3799,17 +3576,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       indexed,
       parentOf,
       sourceControlRef.current.enabled,
-      uiMode,
       animMode,
     );
 
     preFocusLayoutsRef.current.set(activeDocumentId, {
       layout: dock.toJSON() as unknown as Record<string, unknown>,
-      surface: uiMode
-        ? dockviewSurfaceForUiMode(uiMode)
-        : animMode
-          ? dockviewSurfaceForAnimMode(animMode)
-          : "default",
+      surface: animMode ? dockviewSurfaceForAnimMode(animMode) : "default",
     });
     applyFocusLayout(
       doc.ref.kind,
@@ -3822,7 +3594,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       next.add(activeDocumentId);
       return next;
     });
-  }, [activeDockApi, documentService, projectService, settingsStore, uiEditorModes, animEditorModes]);
+  }, [activeDockApi, documentService, projectService, settingsStore, animEditorModes]);
 
   const captureActiveLayout = useCallback(() => {
     const { activeDocumentId } = documentService.getState();
@@ -3948,16 +3720,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      uiEditorMode: (() => {
-        const activeId = documentService.getState().activeDocumentId;
-        if (!activeId) return "designer" as const;
-        return uiEditorModeForDocument(
-          activeId,
-          uiEditorModes,
-          documentService.getDocument(activeId),
-        );
-      })(),
-      setUiEditorMode,
       animEditorMode: (() => {
         const activeId = documentService.getState().activeDocumentId;
         if (!activeId) return "stateMachine" as const;
@@ -4005,7 +3767,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
-      collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlayBehaviourTrees,
       collectPlayBlackboards,
@@ -4057,7 +3818,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayPreviewScripts,
       collectEditorUtilityScripts,
       loadAssetDocument,
-      collectPlayUiLibrary,
       collectPlayAnimGraphs,
       collectPlayBehaviourTrees,
       collectPlayBlackboards,
@@ -4133,8 +3893,6 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       registerDockviewApi,
       unregisterDockviewApi,
       captureLayoutForId,
-      setUiEditorMode,
-      uiEditorModes,
       setAnimEditorMode,
       animEditorModes,
       activateDockPanel,

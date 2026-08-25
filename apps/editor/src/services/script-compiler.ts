@@ -1,5 +1,4 @@
 import {
-  isUserInterfaceClassId,
   type GraphClassMember,
   type SerializedGraph,
 } from "@babylonslate/core";
@@ -38,7 +37,7 @@ const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
 export function classIdForGraphPath(path: string): string {
   const file = path.split("/").pop() ?? path;
   const base = file
-    .replace(/\.(graph|class|ui|eui)\.(babasset|json)$/, "")
+    .replace(/\.(graph|class)\.(babasset|json)$/, "")
     .replace(/\.babasset$/, "");
   const cleaned = base.replace(/[^A-Za-z0-9_]+/g, "_");
   return cleaned.length > 0 ? cleaned : "Graph";
@@ -295,7 +294,6 @@ export function spawnListForScripts(
   const seen = new Set<string>();
   const spawn: Array<{ classId: string }> = [];
   for (const script of scripts) {
-    if (isUserInterfaceClassId(script.classId)) continue;
     if (
       !script.entryPoints.some(
         (entry) => entry.event && ACTOR_LIFECYCLE_EVENTS.has(entry.event),

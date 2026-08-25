@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { userInterfaceClassId } from "@babylonslate/core";
 import {
   collectOverridableEventRows,
   collectOverridableFunctionRows,
@@ -69,43 +68,6 @@ describe("collectOverridableFunctionRows", () => {
 });
 
 describe("collectOverridableEventRows", () => {
-  it("lists UserInterface native events including pointer events and greys ones already on the graph", () => {
-    const rows = collectOverridableEventRows({
-      assetType: "UserInterface",
-      parentClass: "BObject",
-      graph: {
-        nodes: [
-          {
-            id: "begin",
-            type: "flow.event.beginPlay",
-            position: { x: 0, y: 0 },
-            data: {},
-          },
-        ],
-        edges: [],
-      },
-    });
-    expect(rows.find((row) => row.eventType === "flow.event.beginPlay")).toMatchObject(
-      {
-        kind: "native",
-        name: "Event Begin Play",
-        overwritten: true,
-      },
-    );
-    expect(rows.find((row) => row.eventType === "flow.event.tick")?.overwritten).toBe(
-      false,
-    );
-    expect(rows.some((row) => row.eventType === "flow.event.mouseEnter")).toBe(
-      true,
-    );
-    expect(rows.some((row) => row.eventType === "flow.event.widgetClick")).toBe(
-      true,
-    );
-    expect(rows.some((row) => row.eventType === "flow.event.editorBeginPlay")).toBe(
-      false,
-    );
-  });
-
   it("does not list leftover EditorUtilityInterface editor events as overridable", () => {
     const rows = collectOverridableEventRows({
       assetType: "EditorUtilityInterface",
@@ -152,57 +114,6 @@ describe("collectOverridableEventRows", () => {
       eventType: "flow.event.custom",
       parentClassId: "Pawn",
     });
-  });
-
-  it("lists nested UserInterface custom events and greys host overrides", () => {
-    const rows = collectOverridableEventRows({
-      assetType: "UserInterface",
-      parentClass: "BObject",
-      graph: {
-        nodes: [
-          {
-            id: "e1",
-            type: "flow.event.custom",
-            position: { x: 0, y: 0 },
-            data: { name: "On Host Hit" },
-          },
-        ],
-        edges: [],
-      },
-      nestedUis: [
-        {
-          guid: "chip-guid",
-          name: "Chip",
-          graph: {
-            nodes: [
-              {
-                id: "n",
-                type: "flow.event.custom",
-                position: { x: 0, y: 0 },
-                data: { name: "On Chip" },
-              },
-              {
-                id: "h",
-                type: "flow.event.custom",
-                position: { x: 0, y: 0 },
-                data: { name: "On Host Hit" },
-              },
-            ],
-            edges: [],
-          },
-        },
-      ],
-    });
-    expect(rows.find((row) => row.name === "On Chip")).toMatchObject({
-      kind: "nested",
-      description: "Nested · Chip",
-      overwritten: false,
-      parentClassId: userInterfaceClassId("chip-guid"),
-    });
-    expect(
-      rows.find((row) => row.kind === "nested" && row.name === "On Host Hit")
-        ?.overwritten,
-    ).toBe(true);
   });
 
   it("lists Actor native events including On Actor Destroyed and greys ones already on the graph", () => {

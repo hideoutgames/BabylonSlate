@@ -274,43 +274,6 @@ function defaultPostProcessGraph(): {
   };
 }
 
-function defaultInterfaceGraph(): {
-  nodes: MaterialGraphNode[];
-  edges: MaterialGraphEdge[];
-} {
-  return {
-    nodes: [
-      {
-        id: "uv",
-        type: "input.uv",
-        position: { x: 0, y: 0 },
-        properties: {},
-      },
-      {
-        id: "color",
-        type: "const.vec4",
-        position: { x: 0, y: 140 },
-        properties: { value: [0.8, 0.8, 0.8, 1] },
-      },
-      {
-        id: "output",
-        type: "output.interface",
-        position: { x: 300, y: 0 },
-        properties: {},
-      },
-    ],
-    edges: [
-      {
-        id: "e-color-output",
-        sourceNodeId: "color",
-        sourcePinId: "out",
-        targetNodeId: "output",
-        targetPinId: "color",
-      },
-    ],
-  };
-}
-
 function defaultParticleGraph(): {
   nodes: MaterialGraphNode[];
   edges: MaterialGraphEdge[];
@@ -349,17 +312,14 @@ export function createDefaultMaterialDocument(
   const graph =
     domain === "postProcess"
       ? defaultPostProcessGraph()
-      : domain === "interface"
-        ? defaultInterfaceGraph()
-        : domain === "particle"
-          ? defaultParticleGraph()
-          : defaultSurfaceGraph();
+      : domain === "particle"
+        ? defaultParticleGraph()
+        : defaultSurfaceGraph();
   return {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     name,
     domain,
-    shadingModel:
-      domain === "interface" || domain === "particle" ? "unlit" : "pbr",
+    shadingModel: domain === "particle" ? "unlit" : "pbr",
     blendMode: domain === "particle" ? "additive" : "opaque",
     twoSided: false,
     alphaCutoff: 0.5,

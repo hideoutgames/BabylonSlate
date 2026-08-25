@@ -4,7 +4,6 @@ import type { SerializedScene } from "./scene";
 export const ASSET_DOCUMENT_KINDS = [
   "scene",
   "graph",
-  "ui",
   "font",
   "sprite",
   "sprite-animation",
@@ -65,8 +64,6 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
       return "Scene";
     case "graph":
       return "Class";
-    case "ui":
-      return "UserInterface";
     case "font":
       return "Font";
     case "sprite":
@@ -150,8 +147,6 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
     case "Graph":
     case "Class":
       return "graph";
-    case "UserInterface":
-      return "ui";
     case "Font":
       return "font";
     case "Sprite":
@@ -221,8 +216,6 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
       return "Scene";
     case "graph":
       return "Class";
-    case "ui":
-      return "UI";
     case "font":
       return "Font";
     case "sprite":

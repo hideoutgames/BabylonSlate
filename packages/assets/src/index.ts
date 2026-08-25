@@ -11,6 +11,7 @@ export * from "./encode-queue";
 export * from "./encode-worker-protocol";
 export * from "./guid";
 export * from "./font-payload";
+export * from "./font-stack";
 export * from "./audio-payload";
 export * from "./audio-waveform";
 export * from "./particle-payload";

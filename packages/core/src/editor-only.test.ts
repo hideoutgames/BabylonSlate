@@ -27,7 +27,7 @@ describe("editor-only assets", () => {
     expect(isEditorOnlyAssetType("EditorUtilityInterface")).toBe(true);
     expect(isEditorOnlyAssetType("PluginSettings")).toBe(true);
     expect(isEditorOnlyAssetType("SkyboxCreator")).toBe(true);
-    expect(isEditorOnlyAssetType("UserInterface")).toBe(false);
+    expect(isEditorOnlyAssetType("Class")).toBe(false);
     expect(isEditorOnlyAssetType("Texture")).toBe(false);
     expect(
       isEditorOnlyAsset(
@@ -69,7 +69,7 @@ describe("editor-only assets", () => {
   });
 
   it("detects editor graph hosts from parent class and editorGraph", () => {
-    expect(isEditorGraphHost({ assetType: "UserInterface" })).toBe(false);
+    expect(isEditorGraphHost({ assetType: "Class" })).toBe(false);
     expect(isEditorGraphHost({ assetType: "EditorUtilityInterface" })).toBe(
       false,
     );

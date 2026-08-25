@@ -39,7 +39,6 @@ vi.mock("../context/document-context", () => ({
     getOpenDockWindowCount: docs.getOpenDockWindowCount,
     assetRegistry: { list: () => docs.assets },
     sourceControl: { enabled: false },
-    uiEditorMode: "designer",
     animEditorMode: "stateMachine",
   }),
   useDockWindowTick: () => 0,

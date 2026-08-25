@@ -75,15 +75,6 @@ describe("flow nodes", () => {
     expect(byId["flow.event.destroyed"]?.editorOnly).toBeFalsy();
   });
 
-  it("titles widget pointer events", () => {
-    const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
-    expect(byId["flow.event.mouseEnter"]?.title).toBe("Event On Mouse Enter");
-    expect(byId["flow.event.mouseExit"]?.title).toBe("Event On Mouse Exit");
-    expect(byId["flow.event.mousePress"]?.title).toBe("Event On Mouse Press");
-    expect(byId["flow.event.mouseRelease"]?.title).toBe("Event On Mouse Release");
-    expect(byId["flow.event.widgetClick"]?.title).toBe("Event On Widget Click");
-  });
-
   it("registers Actor collision events with Hit Result and Instigator pins", () => {
     const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
     expect(byId["flow.event.hit"]?.title).toBe("Event On Hit");

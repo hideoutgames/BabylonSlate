@@ -682,14 +682,14 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("unused-mat");
   });
 
-  it("includes a UserInterface referenced by namespaced class id", () => {
+  it("does not treat Type:guid strings as asset refs", () => {
     const graph: SerializedGraph = {
       nodes: [
         {
           id: "n1",
-          type: "ui.applyToViewport",
+          type: "material.assign",
           position: { x: 0, y: 0 },
-          data: { properties: { asset: "UserInterface:hud-1" } },
+          data: { properties: { asset: "Material:mat-1" } },
         },
       ],
       edges: [],
@@ -701,149 +701,26 @@ describe("collectExportClosure", () => {
         asset({
           guid: "class-host",
           type: "Class",
-          name: "HudHost",
+          name: "Host",
           parentClass: "Actor",
         }),
-        asset({ guid: "hud-1", type: "UserInterface", name: "HUD" }),
-        asset({ guid: "unused-ui", type: "UserInterface", name: "Unused" }),
+        asset({ guid: "mat-1", type: "Material", name: "Glow" }),
+        asset({ guid: "unused-mat", type: "Material", name: "Unused" }),
       ],
       pluginEnabledGuids: new Set(),
       parentOf: () => "Actor",
       sceneByGuid: () => ({
         ...createDefaultScene(),
-        actors: [createActor("a", "HudHost", { classId: "HudHost" })],
+        actors: [createActor("a", "Host", { classId: "Host" })],
       }),
       graphByGuid: (guid) => (guid === "class-host" ? graph : null),
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value).toEqual(
-      expect.arrayContaining(["scene-1", "class-host", "hud-1"]),
+      expect.arrayContaining(["scene-1", "class-host"]),
     );
-    expect(result.value).not.toContain("unused-ui");
-  });
-
-  it("includes nested UserInterface, image, and Font family references from a UI payload", () => {
-    const scene: SerializedScene = {
-      ...createDefaultScene(),
-      actors: [
-        createActor("hud", "HUD", {
-          components: [
-            {
-              id: "ui",
-              classId: "UserInterfaceComponent",
-              properties: { assetGuid: "hud-1" },
-            },
-          ],
-        }),
-      ],
-    };
-    const result = collectExportClosure({
-      startupSceneGuid: "scene-1",
-      assets: [
-        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "hud-1", type: "UserInterface", name: "HUD" }),
-        asset({ guid: "chip-1", type: "UserInterface", name: "Chip" }),
-        asset({ guid: "tex-logo", type: "Texture", name: "Logo" }),
-        asset({ guid: "font-1", type: "Font", name: "Display" }),
-        asset({ guid: "unused-tex", type: "Texture", name: "Unused" }),
-        asset({
-          guid: "eui-1",
-          type: "EditorUtilityInterface",
-          name: "Dock",
-        }),
-      ],
-      pluginEnabledGuids: new Set(),
-      parentOf: () => null,
-      sceneByGuid: () => scene,
-      graphByGuid: () => null,
-      payloadByGuid: (guid) => {
-        if (guid === "hud-1") {
-          return {
-            widgets: {
-              canvas: { id: "canvas", kind: "Canvas", children: ["logo", "host"] },
-              logo: {
-                id: "logo",
-                kind: "Image",
-                props: { imageGuid: "tex-logo" },
-                style: { fontFamily: "Display" },
-              },
-              host: {
-                id: "host",
-                kind: "UserInterface",
-                nestedUiGuid: "chip-1",
-              },
-            },
-          };
-        }
-        if (guid === "chip-1") {
-          return {
-            widgets: {
-              canvas: { id: "canvas", kind: "Canvas", children: ["label"] },
-              label: { id: "label", kind: "TextBlock", style: { fontFamily: "Display" } },
-            },
-          };
-        }
-        return null;
-      },
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value).toEqual(
-      expect.arrayContaining(["scene-1", "hud-1", "chip-1", "tex-logo", "font-1"]),
-    );
-    expect(result.value).not.toContain("unused-tex");
-    expect(result.value).not.toContain("eui-1");
-  });
-
-  it("includes Interface materials referenced by HUD Material widgets", () => {
-    const scene: SerializedScene = {
-      ...createDefaultScene(),
-      actors: [
-        createActor("hud", "HUD", {
-          components: [
-            {
-              id: "ui",
-              classId: "UserInterfaceComponent",
-              properties: { assetGuid: "hud-1" },
-            },
-          ],
-        }),
-      ],
-    };
-    const result = collectExportClosure({
-      startupSceneGuid: "scene-1",
-      assets: [
-        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
-        asset({ guid: "hud-1", type: "UserInterface", name: "HUD" }),
-        asset({ guid: "mat-glow", type: "Material", name: "Glow" }),
-        asset({ guid: "mat-unused", type: "Material", name: "Unused" }),
-      ],
-      pluginEnabledGuids: new Set(),
-      parentOf: () => null,
-      sceneByGuid: () => scene,
-      graphByGuid: () => null,
-      payloadByGuid: (guid) => {
-        if (guid === "hud-1") {
-          return {
-            widgets: {
-              canvas: { id: "canvas", kind: "Canvas", children: ["glow"] },
-              glow: {
-                id: "glow",
-                kind: "Material",
-                props: { materialGuid: "mat-glow" },
-              },
-            },
-          };
-        }
-        return null;
-      },
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value).toEqual(
-      expect.arrayContaining(["scene-1", "hud-1", "mat-glow"]),
-    );
-    expect(result.value).not.toContain("mat-unused");
+    expect(result.value).not.toContain("mat-1");
+    expect(result.value).not.toContain("unused-mat");
   });
 });

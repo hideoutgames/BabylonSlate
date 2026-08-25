@@ -68,7 +68,6 @@ describe("Playwright iPad project filter", () => {
         "component-gallery.spec.ts",
         "global-search.spec.ts",
         "p6-scene-editing.spec.ts",
-        "p9-content.spec.ts",
         "texture-encode-ipad.spec.ts",
       ]),
     );
@@ -76,6 +75,7 @@ describe("Playwright iPad project filter", () => {
       "p2-accept.spec.ts",
       "p4-play.spec.ts",
       "p5-scripting.spec.ts",
+      "p9-content.spec.ts",
       "editor-smoke.spec.ts",
       "editor-theme.spec.ts",
       "engine-settings.spec.ts",
@@ -100,8 +100,6 @@ describe("Playwright iPad project filter", () => {
         "Global project search › toolbar search opens a dialog and focuses a scene actor",
         "Global project search › dialog stays a fixed tall height and results scroll when they overflow",
         "P6 first-playable scene editing › scene panels expose touch-sized toolbar controls",
-        "P9 content systems › UserInterface designer on iPad opens a Canvas-only document",
-        "P9 content systems › Play overlay stick is reachable on iPad",
         "Texture encode iPad › import encode settles to compressed or usable source fallback",
       ]),
     );

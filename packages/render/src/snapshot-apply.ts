@@ -18,10 +18,8 @@ import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import {
   emptySkyboxFaces,
   parseText3DProperties,
-  parseWidgetComponentProperties,
   type SkyboxFaces,
   type Text3DProperties,
-  type WidgetComponentProperties,
 } from "@babylonslate/core";
 import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
@@ -58,7 +56,6 @@ import {
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
-import { createWidgetVisualMesh, resolveWidgetBitmapSize } from "./widget-gui";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -78,7 +75,6 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   cameraProps: Map<number, AuthoredCameraProperties>;
   skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
   text3dProps: Map<number, Text3DProperties>;
-  widgetProps: Map<number, WidgetComponentProperties>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
@@ -135,7 +131,6 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),
-    widgetProps: new Map(),
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
@@ -360,11 +355,6 @@ export function applyAssignMesh(
   } else if (meshKind === "text3d") {
     binding.text3dProps.set(command.slotId, parseText3DProperties({}));
   }
-  if (command.widget) {
-    binding.widgetProps.set(command.slotId, command.widget);
-  } else if (meshKind === "widget") {
-    binding.widgetProps.set(command.slotId, parseWidgetComponentProperties({}));
-  }
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
     if (command.camera.isDefault) {
@@ -519,7 +509,6 @@ function disposeSlotVisuals(
   binding.cameras.delete(slotId);
   binding.skyboxProps.delete(slotId);
   binding.text3dProps.delete(slotId);
-  binding.widgetProps.delete(slotId);
   if (binding.shadowOwnerSlot === slotId) {
     binding.shadow?.dispose();
     binding.shadow = null;
@@ -552,7 +541,6 @@ function createPlayVisual(
       binding,
       playComponentMeshName(slotId, part.componentId),
       part.text3d,
-      part.widget,
     );
     applyPartTransform(child, part);
     meshes.set(part.componentId, child);
@@ -574,7 +562,6 @@ export function createPlayMesh(
   binding?: SnapshotSceneBinding,
   meshName?: string,
   partText3d?: Text3DProperties,
-  partWidget?: WidgetComponentProperties,
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -659,22 +646,6 @@ export function createPlayMesh(
         ?.text3d;
     const props = fromPart ?? binding?.text3dProps.get(slotId);
     return finishPlayWorldMesh(createText3DMesh(scene, name, props ?? {}, binding));
-  }
-  if (meshKind === "widget") {
-    const fromPart =
-      partWidget ??
-      binding?.meshParts
-        .get(slotId)
-        ?.find((part) => playComponentMeshName(slotId, part.componentId) === name)
-        ?.widget;
-    const props = fromPart ?? binding?.widgetProps.get(slotId) ?? parseWidgetComponentProperties({});
-    const document = props.uiAssetGuid
-      ? binding?.uiDocuments?.get(props.uiAssetGuid)
-      : undefined;
-    const bitmap = document
-      ? resolveWidgetBitmapSize(document)
-      : { width: 400, height: 300 };
-    return finishPlayWorldMesh(createWidgetVisualMesh(scene, name, props, bitmap));
   }
   if (isPlayHelperMeshKind(meshKind)) {
     const mesh = createPrimitiveMesh(scene, name, null);
@@ -794,7 +765,6 @@ export function applySnapshotToScene(
         binding.cameraProps.delete(slotId);
         binding.skyboxProps.delete(slotId);
         binding.text3dProps.delete(slotId);
-  binding.widgetProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
         binding.lights.delete(slotId);
         binding.cameras.get(slotId)?.dispose();

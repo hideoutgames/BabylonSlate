@@ -20,7 +20,6 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Physics](physics.md) | Havok 3D and Rapier 2D |
 | [Debugger](debugger.md) | Command registry, console, stats HUD |
 | [Console commands](console-commands.md) | Builtin catalog, apply audit, autocomplete |
-| [UI runtime](ui-runtime.md) | UserInterface widget tree, layout, designer |
 | [Fonts](fonts.md) | Font payload, FontFace registry, fallback stacks |
 | [Sprites](sprites.md) | Sprite atlas, packer, SpriteComponent quad |
 | [Animation graph](anim-graph.md) | Worker Animation Graph evaluator, Animation Object, transition rules |
@@ -31,7 +30,7 @@ Package and subsystem notes. Authoritative detail lives in the [engine plan](/en
 | [Shader graph](shader-graph.md) | Shader IR to NodeMaterial |
 | [Theming](theming.md) | UI color palette and semantic tokens |
 | [Components](components.md) | Reusable Editor UI primitives and composites |
-| [Editor extensions](editor-extensions.md) | EditorUtilityObject / Interface, live Dockview GUI tabs |
+| [Editor extensions](editor-extensions.md) | EditorUtilityObject, editor-only graphs, Skybox Creator |
 | [Exporter](exporter.md) | Itch zip, `.babpack`, Preview Build, standalone player |
 | [Source control](source-control.md) | Git LFS locking, SecretStore, advisory UX, mtime rescan |
 | [Testing](testing.md) | Vitest projects, coverage gates, Playwright |

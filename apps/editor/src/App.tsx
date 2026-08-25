@@ -35,7 +35,6 @@ import { ValidationProvider } from "./context/validation-context";
 import { MaterialRenderControlProvider } from "./context/material-render-control-context";
 import { EditorUtilityRuntime } from "./components/editor-utility-runtime";
 import { ModelThumbnailCaptureHost } from "./components/model-thumbnail-capture-host";
-import { TestUiHostStats } from "./lib/test-ui-host-stats";
 import { TestAudioHostStats } from "./lib/test-audio-host-stats";
 import { TestParticleHostStats } from "./lib/test-particle-host-stats";
 import {
@@ -412,7 +411,6 @@ export default function App() {
             <PlayProvider>
               <MaterialRenderControlProvider>
                 <EditorUtilityRuntime />
-                <TestUiHostStats />
                 <TestAudioHostStats />
                 <TestParticleHostStats />
                 <ModelThumbnailCaptureHost />

@@ -12,7 +12,7 @@ Editor-only types that never ship in Play or export. Spec: [engineplan.md](../en
 
 `isEditorOnlyAsset` / `isEditorUtilityObjectClass` / `isEditorFunctionLibraryClass` / `isEditorGraphClass` / `isEditorGraphHost` in `@babylonslate/core` (`packages/core/src/editor-only.ts`) walk the parent chain. P14 export reuses the same helpers.
 
-Runtime graphs (Actor, UserInterface, FunctionLibrary, …) never see EditorUtilityObject / EditorFunctionLibrary **or their functions**, even with Add Node **Context Sensitive** off. `NodeDefinition.editorOnly` marks catalog nodes (editor lifecycle events) — not a user Inspector flag. Hydrate stamps `data.__editorOnly`; GraphEditor draws an Editor Only hazard-tape footer (`--node-editor-only-tape` / `--node-editor-only-stripe`), like Development Only.
+Runtime graphs (Actor, FunctionLibrary, …) never see EditorUtilityObject / EditorFunctionLibrary **or their functions**, even with Add Node **Context Sensitive** off. `NodeDefinition.editorOnly` marks catalog nodes (editor lifecycle events) — not a user Inspector flag. Hydrate stamps `data.__editorOnly`; GraphEditor draws an Editor Only hazard-tape footer (`--node-editor-only-tape` / `--node-editor-only-stripe`), like Development Only.
 
 Leftover `.eui.babasset` files from the removed **EditorUtilityInterface** type are not a document kind and are not creatable. `isEditorOnlyAssetType("EditorUtilityInterface")` still treats that header type as editor-only so they never enter Play or export.
 

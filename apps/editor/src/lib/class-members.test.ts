@@ -218,7 +218,7 @@ describe("addClassMember", () => {
     expect(graph.nodes[0]?.data.title).toBe("Event Begin Play");
   });
 
-  it("rejects a Class variable whose name matches a reserved widget name", () => {
+  it("rejects a Class variable whose name is reserved", () => {
     const graph = addClassMember(
       emptyGraph(),
       "variable",
@@ -426,42 +426,6 @@ describe("addClassMember", () => {
       type: "functions.call",
       position: { x: 8, y: 16 },
       data: { functionName: "Jump", implicitSelf: true },
-    });
-  });
-
-  it("spawns a bound Get Widget node when a widget row is dropped on the canvas", () => {
-    const canvas = {
-      containsClientPoint: () => true,
-      clientToFlow: () => ({ x: 48, y: 24 }),
-    };
-    const result = resolveClassMemberDrop({
-      graph: emptyGraph(),
-      memberId: "widget:play-btn",
-      members: [
-        {
-          id: "widget:play-btn",
-          kind: "widget",
-          name: "Play Button",
-          widgetId: "play-btn",
-          widgetKind: "Button",
-        },
-      ],
-      clientX: 1,
-      clientY: 1,
-      canvas,
-      idFactory: () => "dropped-widget",
-    });
-    expect(result.kind).toBe("spawn");
-    if (result.kind !== "spawn") return;
-    expect(result.graph.nodes.find((node) => node.id === "dropped-widget")).toMatchObject({
-      type: "ui.getWidget",
-      position: { x: 48, y: 24 },
-      data: {
-        title: "Get Play Button",
-        widgetId: "play-btn",
-        widgetName: "Play Button",
-        widgetKind: "Button",
-      },
     });
   });
 
@@ -776,17 +740,6 @@ describe("blueprintSectionsForClass", () => {
     ).toEqual(["functions", "variables", "events", "interfaces"]);
     expect(
       blueprintSectionsForClass({
-        parentClass: "BObject",
-        assetType: "UserInterface",
-      }).map((s) => s.id),
-    ).toEqual(["functions", "variables", "widgets", "events", "interfaces"]);
-    expect(
-      blueprintSectionsForClass({
-        parentClass: "UserInterface",
-      }).map((s) => s.id),
-    ).toEqual(["functions", "variables", "widgets", "events", "interfaces"]);
-    expect(
-      blueprintSectionsForClass({
         parentClass: "Actor",
         activeFunctionId: "fn-1",
       }).map((s) => s.id),
@@ -817,15 +770,6 @@ describe("blueprintSectionsForClass", () => {
 });
 
 describe("classAllowsMemberKind", () => {
-  it("does not offer Add on the Widgets section", () => {
-    expect(
-      classAllowsMemberKind("widget", {
-        parentClass: "BObject",
-        assetType: "UserInterface",
-      }),
-    ).toBe(false);
-  });
-
   it("allows every member kind on Actor", () => {
     expect(classAllowsMemberKind("function", { parentClass: "Actor" })).toBe(
       true,

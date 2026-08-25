@@ -3,7 +3,6 @@ import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect } from "react";
 import { useDocuments } from "../context/document-context";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
-import { UiEditingProvider } from "../context/ui-editing-context";
 import { useProjectSearch } from "../context/project-search-context";
 import {
   SceneEditingProvider,
@@ -38,9 +37,7 @@ import {
   isDockviewDocumentKind,
   type DockviewDocumentKind,
 } from "../shell/window-catalog";
-import { UiEditorModeBar } from "./ui-editor-mode-bar";
 import { AnimEditorModeBar } from "./anim-editor-mode-bar";
-import { parseUiDocumentLayout } from "../shell/ui-document-layout";
 import { parseAnimDocumentLayout } from "../shell/anim-document-layout";
 import { cn } from "@babylonslate/ui/lib/utils";
 
@@ -70,7 +67,6 @@ function RegisteredDockviewShell({
   documentKind,
   initialLayout,
   actorPrefab,
-  uiEditorMode,
   animEditorMode,
   surface,
 }: {
@@ -78,7 +74,6 @@ function RegisteredDockviewShell({
   documentKind: DockviewDocumentKind;
   initialLayout: Record<string, unknown> | null;
   actorPrefab?: boolean;
-  uiEditorMode?: import("../shell/ui-document-layout").UiEditorMode;
   animEditorMode?: import("../shell/anim-document-layout").AnimEditorMode;
   surface?: import("../shell/dockview-surface").DockviewSurface;
 }) {
@@ -104,7 +99,6 @@ function RegisteredDockviewShell({
       initialLayout={initialLayout}
       actorPrefab={actorPrefab}
       sourceControl={sourceControl.enabled}
-      uiEditorMode={uiEditorMode}
       animEditorMode={animEditorMode}
       onReady={onReady}
     />
@@ -130,70 +124,6 @@ function DocumentShell({
     >
       <DocumentLockBanner path={path} sourceControl={sourceControl} />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
-    </div>
-  );
-}
-
-export function UiDocumentDocks({
-  id,
-  layout,
-}: {
-  id: string;
-  layout: Record<string, unknown> | null;
-}) {
-  const { uiEditorMode, setUiEditorMode, activeDocumentId } = useDocuments();
-  const parsed = parseUiDocumentLayout(layout);
-  const mode = activeDocumentId === id ? uiEditorMode : parsed.uiEditorMode;
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <UiEditorModeBar
-        mode={mode}
-        onModeChange={(next) => setUiEditorMode(id, next)}
-      />
-      <div className="relative min-h-0 flex-1">
-        <div
-          className={cn(
-            "absolute inset-0",
-            mode === "designer" ? "ui-dock-surface-active" : "ui-dock-surface-inactive",
-          )}
-          aria-hidden={mode !== "designer"}
-          inert={mode !== "designer" ? true : undefined}
-          data-testid="ui-dock-surface-designer"
-          data-active={mode === "designer" ? "true" : "false"}
-        >
-          {mode === "designer" ? (
-          <RegisteredDockviewShell
-            id={id}
-            documentKind="ui"
-            initialLayout={parsed.designer}
-            uiEditorMode="designer"
-            surface="designer"
-          />
-          ) : null}
-        </div>
-        <div
-          className={cn(
-            "absolute inset-0",
-            mode === "logic" ? "ui-dock-surface-active" : "ui-dock-surface-inactive",
-          )}
-          aria-hidden={mode !== "logic"}
-          inert={mode !== "logic" ? true : undefined}
-          data-testid="ui-dock-surface-logic"
-          data-active={mode === "logic" ? "true" : "false"}
-        >
-          {mode === "logic" ? (
-          <RegisteredDockviewShell
-            id={id}
-            documentKind="ui"
-            initialLayout={parsed.logic}
-            actorPrefab={false}
-            uiEditorMode="logic"
-            surface="logic"
-          />
-          ) : null}
-        </div>
-      </div>
     </div>
   );
 }
@@ -348,29 +278,6 @@ export function DocumentWorkspace() {
           doc.ref.kind === "enum" ||
           doc.ref.kind === "structure" ||
           doc.ref.kind === "script-interface";
-
-        if (doc.ref.kind === "ui") {
-          if (!shouldMount) return null;
-          return (
-            <WorkspaceErrorBoundary key={id}>
-              <DocumentWorkspaceProvider documentId={id}>
-                <PrefabEditingProvider>
-                <GraphEditingProvider>
-                <UiEditingProvider>
-                  <DocumentShell
-                    path={doc.ref.path}
-                    testId="document-workspace-ui"
-                    active={active}
-                  >
-                    <UiDocumentDocks id={id} layout={doc.layout} />
-                  </DocumentShell>
-                </UiEditingProvider>
-                </GraphEditingProvider>
-                </PrefabEditingProvider>
-              </DocumentWorkspaceProvider>
-            </WorkspaceErrorBoundary>
-          );
-        }
 
         if (
           doc.ref.kind === "material" ||

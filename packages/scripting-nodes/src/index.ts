@@ -14,7 +14,6 @@ import { registerPhysicsValidationRules } from "./physics";
 import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
-import { uiNodes } from "./ui";
 import { sceneNodes } from "./scene";
 import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
@@ -49,7 +48,6 @@ export * from "./physics";
 export * from "./input";
 export * from "./audio";
 export * from "./particles";
-export * from "./ui";
 export * from "./scene";
 export * from "./render";
 export * from "./debug";
@@ -86,7 +84,6 @@ export const ALL_NODE_CATEGORIES = [
   "input",
   "audio",
   "particles",
-  "ui",
   "scene",
   "render",
   "debug",
@@ -124,7 +121,6 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...inputNodes,
     ...audioNodes,
     ...particleNodes,
-    ...uiNodes,
     ...sceneNodes,
     ...renderNodes,
     ...debugNodes,

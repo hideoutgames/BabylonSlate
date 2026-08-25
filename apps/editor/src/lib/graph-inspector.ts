@@ -35,12 +35,6 @@ import {
   vec4TupleToObject,
   type TypeSchemas,
 } from "@babylonslate/scripting";
-import {
-  ENGINE_INPUT_MODE_ENUM_ID,
-  INPUT_MODE_MEMBERS,
-  normalizeUserInterfaceClassRef,
-  USER_INTERFACE_ENGINE_CLASS_ID,
-} from "@babylonslate/core";
 
 export function connectedInputPinIds(
   edges: ReadonlyArray<{ target: string; targetHandle?: string }>,
@@ -116,7 +110,6 @@ export function collectEnumMemberNames(
       result[entry.id] = entry.members.map((member) => member.name);
     }
   }
-  result[ENGINE_INPUT_MODE_ENUM_ID] = [...INPUT_MODE_MEMBERS];
   return result;
 }
 
@@ -349,12 +342,8 @@ export function pinDefaultPropertyRows(
       }
       case "classRef": {
         const classId = entry.type.classId;
-        const raw =
-          pinDefaultAsString(entry.value) || pinDefaultAsString(typeDefault);
         const current =
-          classId === USER_INTERFACE_ENGINE_CLASS_ID
-            ? (normalizeUserInterfaceClassRef(raw) ?? raw)
-            : raw;
+          pinDefaultAsString(entry.value) || pinDefaultAsString(typeDefault);
         const display =
           mappingNames?.classEntries?.find((item) => item.id === current)
             ?.name ?? current;
