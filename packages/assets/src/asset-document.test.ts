@@ -132,20 +132,20 @@ describe("asset documents", () => {
   it("keeps headerMeta on the scanned header next to the document chunk", async () => {
     const bytes = await encodeAssetDocument(
       {
-        type: "UserInterface",
-        name: "HUD",
-        guid: "ui-1",
+        type: "Sprite",
+        name: "Hero",
+        guid: "sprite-1",
         version: 1,
-        payload: { name: "HUD", widgets: {} },
+        payload: { name: "Hero", frames: [] },
       },
-      { headerMeta: { name: "HUD" } },
+      { headerMeta: { name: "Hero" } },
     );
     const header = readAssetDocumentHeader(bytes);
-    expect(header.type).toBe("UserInterface");
-    expect(header.payload).toEqual({ name: "HUD" });
+    expect(header.type).toBe("Sprite");
+    expect(header.payload).toEqual({ name: "Hero" });
     expect(header.chunks.map((chunk) => chunk.id)).toEqual([DOCUMENT_CHUNK_ID]);
     const decoded = await decodeAssetDocument(bytes);
-    expect(decoded.payload.name).toBe("HUD");
+    expect(decoded.payload.name).toBe("Hero");
   });
 
   it("writes supplied dependencies onto the scanned header", async () => {

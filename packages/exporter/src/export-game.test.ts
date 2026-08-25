@@ -84,94 +84,6 @@ describe("exportGame", () => {
     expect(zipExport(artifact as never).byteLength).toBeGreaterThan(0);
   });
 
-  it("writes Engine Settings designer presets onto game.json", async () => {
-    const phone = {
-      id: "custom-phone",
-      label: "Phone",
-      width: 390,
-      height: 844,
-      safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
-    };
-    const result = await exportGame({
-      bundleDebugger: false,
-      startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
-      scripts: [],
-      assets: [
-        {
-          guid: "scene-1",
-          type: "Scene",
-          sceneGuid: "scene-1",
-          bytes: new Uint8Array([1]),
-        },
-      ],
-      playerFiles: stubPlayer(),
-      uiDesignerPresets: [phone],
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.manifest.uiDesignerPresets).toEqual([phone]);
-    const parsed = parseGameManifest(
-      new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)),
-    );
-    expect(parsed.uiDesignerPresets).toEqual([phone]);
-  });
-
-  it("writes Project Settings User Interface design space onto game.json", async () => {
-    const result = await exportGame({
-      bundleDebugger: false,
-      startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
-      scripts: [],
-      assets: [
-        {
-          guid: "scene-1",
-          type: "Scene",
-          sceneGuid: "scene-1",
-          bytes: new Uint8Array([1]),
-        },
-      ],
-      playerFiles: stubPlayer(),
-      ui: {
-        designResolution: { width: 1280, height: 720 },
-        scaleRule: "fitWidth",
-      },
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.manifest.ui).toEqual({
-      designResolution: { width: 1280, height: 720 },
-      scaleRule: "fitWidth",
-    });
-    const parsed = parseGameManifest(
-      new TextDecoder().decode(result.value.files.get(GAME_MANIFEST_FILE)),
-    );
-    expect(parsed.ui).toEqual({
-      designResolution: { width: 1280, height: 720 },
-      scaleRule: "fitWidth",
-    });
-  });
-
-  it("defaults User Interface design space when game.json omits it", () => {
-    const manifest = parseGameManifest(
-      JSON.stringify({
-        startupSceneGuid: "scene-1",
-        bundleDebugger: false,
-        mode: "packed",
-        render: DEFAULT_RENDER_PROJECT_SETTINGS,
-        playFrameCap: 60,
-        packs: [],
-        scriptsFile: "scripts.js",
-        physicsWorld: "3d",
-        assets: [],
-      }),
-    );
-    expect(manifest.ui).toEqual({
-      designResolution: { width: 1920, height: 1080 },
-      scaleRule: "shortestSide",
-    });
-  });
-
   it("defaults to packed mode with a boot pack", async () => {
     const result = await exportGame({
       bundleDebugger: true,
@@ -554,6 +466,19 @@ describe("exportGame", () => {
         scriptsFile: "scripts.js",
         physicsWorld: "3d",
         assets: [],
+        ui: {
+          designResolution: { width: 1280, height: 720 },
+          scaleRule: "fitWidth",
+        },
+        uiDesignerPresets: [
+          {
+            id: "phone",
+            label: "Phone",
+            width: 390,
+            height: 844,
+            safeArea: { left: 0, right: 0, top: 47, bottom: 34 },
+          },
+        ],
       }),
     );
     expect(manifest.pixelsPerUnit).toBe(100);
@@ -561,6 +486,8 @@ describe("exportGame", () => {
     expect(manifest.infiniteLoopDetection).toBeUndefined();
     expect(manifest.loopCount).toBeUndefined();
     expect(manifest.occlusionEnabled).toBe(true);
+    expect(manifest).not.toHaveProperty("ui");
+    expect(manifest).not.toHaveProperty("uiDesignerPresets");
   });
 
   it("writes Audio occlusion into game.json", async () => {
@@ -669,58 +596,6 @@ describe("exportGame", () => {
     );
     expect(manifest.infiniteLoopDetection).toBe(true);
     expect(manifest.loopCount).toBe(1_000_000);
-  });
-
-  it("packs UserInterface JSON in the boot pack and omits EditorUtilityInterface", async () => {
-    const hud = { name: "HUD", rootId: "canvas", widgets: { canvas: { id: "canvas", kind: "Canvas" } } };
-    const result = await exportGame({
-      bundleDebugger: false,
-      startupSceneGuid: "scene-1",
-      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
-      scripts: [
-        {
-          assetGuid: "hud-1",
-          classId: "UserInterface:hud-1",
-          source: "export function onBeginPlay() {}\n",
-          anchors: [],
-          entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }],
-          parentClassId: "UserInterface",
-        },
-      ],
-      assets: [
-        {
-          guid: "scene-1",
-          type: "Scene",
-          sceneGuid: "scene-1",
-          bytes: new TextEncoder().encode('{"name":"Main"}'),
-        },
-        {
-          guid: "hud-1",
-          type: "UserInterface",
-          sceneGuid: "scene-1",
-          name: "HUD",
-          bytes: new TextEncoder().encode(JSON.stringify(hud)),
-        },
-      ],
-      playerFiles: stubPlayer(),
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    const entry = result.value.manifest.assets.find((asset) => asset.guid === "hud-1");
-    expect(entry).toEqual(
-      expect.objectContaining({
-        guid: "hud-1",
-        type: "UserInterface",
-        encoding: "json",
-        name: "HUD",
-      }),
-    );
-    expect(
-      result.value.manifest.assets.some((asset) => asset.type === "EditorUtilityInterface"),
-    ).toBe(false);
-    expect(parseScriptRegistry(
-      new TextDecoder().decode(result.value.files.get("scripts.js")),
-    ).some((script) => script.classId === "UserInterface:hud-1")).toBe(true);
   });
 
   it("records Animation catalog payloads as JSON", async () => {

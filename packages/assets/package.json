@@ -13,7 +13,6 @@
   "dependencies": {
     "@babylonslate/core": "workspace:*",
     "@babylonslate/shader-graph": "workspace:*",
-    "@babylonslate/ui-runtime": "workspace:*",
     "fflate": "^0.8.3",
     "ktx-parse": "^1.1.0",
     "zod": "^4.0.0"

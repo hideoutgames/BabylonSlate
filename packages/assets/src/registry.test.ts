@@ -74,14 +74,14 @@ describe("AssetRegistry", () => {
 
   it("reindexes a saved header payload without remounting", async () => {
     const storage = await createStorage();
-    const path = "assets/hud.ui.babasset";
+    const path = "assets/hero.sprite.babasset";
     const dir = "assets";
     await storage.mkdir(dir, true);
     const write = async (name: string) => {
       const bytes = await encodeBabasset({
         header: {
-          guid: "ui-1",
-          type: "UserInterface",
+          guid: "sprite-1",
+          type: "Sprite",
           name,
           engineVersion: "0.0.0",
           version: 1,
@@ -101,13 +101,13 @@ describe("AssetRegistry", () => {
       });
       await storage.writeBinary(path, bytes);
     };
-    await write("HUD");
+    await write("Hero");
     const registry = new AssetRegistry(storage);
     await registry.mountRoot(projectContentRoot());
-    expect(registry.getByGuid("ui-1")?.header.payload.name).toBe("HUD");
-    await write("Menu");
+    expect(registry.getByGuid("sprite-1")?.header.payload.name).toBe("Hero");
+    await write("Walk");
     await registry.reindexPath(path);
-    expect(registry.getByGuid("ui-1")?.header.payload.name).toBe("Menu");
+    expect(registry.getByGuid("sprite-1")?.header.payload.name).toBe("Walk");
   });
 
   it("mounts a second synthetic root and resolves references across roots", async () => {

@@ -107,13 +107,9 @@ export function collectExportClosure(
     byClassName.set(asset.name, list);
   }
   const bySceneName = new Map<string, ExportIndexedAsset>();
-  const byFontName = new Map<string, ExportIndexedAsset>();
   for (const asset of input.assets) {
     if (asset.type === "Scene" && asset.name.trim() !== "") {
       if (!bySceneName.has(asset.name)) bySceneName.set(asset.name, asset);
-    }
-    if (asset.type === "Font" && asset.name.trim() !== "") {
-      if (!byFontName.has(asset.name)) byFontName.set(asset.name, asset);
     }
   }
 
@@ -166,9 +162,6 @@ export function collectExportClosure(
     const payload = input.payloadByGuid?.(guid);
     if (payload) {
       enqueueRefs(payload, byGuid, byClassName, pending, seen);
-      if (asset.type === "UserInterface") {
-        enqueueSceneNameRefs(payload, byFontName, pending, seen);
-      }
     }
   }
 

@@ -25,8 +25,6 @@ describe("app settings", () => {
       tilemap: ["tilemap-paint"],
       material: ["material-graph"],
       "material-function": ["material-function-graph"],
-      ui: ["ui-design"],
-      uiLogic: ["graph"],
       "plugin-settings": ["plugin-settings-details"],
       "anim-graph": ["anim-graph-graph"],
       animGraphObject: ["anim-object-graph"],
@@ -44,7 +42,6 @@ describe("app settings", () => {
       trace: ["trace-timeline"],
     });
     expect(settings.graphDefaultZoom).toBe(0.5);
-    expect(settings.uiDesignerPresets).toEqual([]);
     expect(settings.debuggerDefaults.previewBuild).toBe(false);
     expect(settings.debuggerDefaults.playFromScene).toBe(true);
     expect(settings.debuggerDefaults.overlayStats).toBe(true);
@@ -88,36 +85,6 @@ describe("app settings", () => {
     });
     expect(parsed.viewportFlySpeed).toBe(8);
     expect(parsed.viewportGridSize).toBe(1);
-  });
-
-  it("fills UserInterface designer presets when saved JSON omits the field", () => {
-    const parsed = engineSettingsSchema.parse({
-      undoHistoryLength: 50,
-    });
-    expect(parsed.uiDesignerPresets).toEqual([]);
-  });
-
-  it("clamps custom UserInterface preset sizes and insets", () => {
-    const parsed = engineSettingsSchema.parse({
-      uiDesignerPresets: [
-        {
-          id: "custom-phone",
-          label: "Phone",
-          width: 0,
-          height: -10,
-          safeArea: { left: -2, right: 4, top: -1, bottom: 8 },
-        },
-      ],
-    });
-    expect(parsed.uiDesignerPresets).toEqual([
-      {
-        id: "custom-phone",
-        label: "Phone",
-        width: 1,
-        height: 1,
-        safeArea: { left: 0, right: 4, top: 0, bottom: 8 },
-      },
-    ]);
   });
 
   it("fills graph default zoom when saved JSON omits the field", () => {
@@ -186,8 +153,6 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels.scene).toEqual(["viewport"]);
     expect(parsed.focusKeepPanels.graph).toEqual(["graph"]);
     expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
-    expect(parsed.focusKeepPanels.ui).toEqual(["ui-design"]);
-    expect(parsed.focusKeepPanels.uiLogic).toEqual(["graph"]);
     expect(parsed.focusKeepPanels["anim-graph"]).toEqual(["anim-graph-graph"]);
     expect(parsed.focusKeepPanels.animGraphObject).toEqual(["anim-object-graph"]);
     expect(parsed.focusKeepPanels["behaviour-tree"]).toEqual([
@@ -226,7 +191,6 @@ describe("app settings", () => {
     expect(parsed.focusKeepPanels.scene).toEqual(["viewport", "scene-outliner"]);
     expect(parsed.focusKeepPanels.graph).toEqual(["graph", "inspector"]);
     expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
-    expect(parsed.focusKeepPanels.uiLogic).toEqual(["graph"]);
     expect(parsed.focusKeepPanels["script-interface"]).toEqual([
       "script-interface-preview",
     ]);
