@@ -606,12 +606,19 @@ export function PlayOverlay({
         }[];
         visuals: () => ReturnType<PlaySession["handle"]["playVisualStates"]>;
         liveObjectCounts: () => { meshes: number; textures: number } | null;
+        whenModelsReady: () => Promise<void>;
+        modelLoadCount: () => number;
+        tickIndex: () => number;
       };
     };
     host.__babylonslatePlayTest = {
       actorPositions: () => sessionRef.current?.lastActorPositions() ?? [],
       visuals: () => sessionRef.current?.handle.playVisualStates() ?? [],
       liveObjectCounts: () => sessionRef.current?.liveObjectCounts() ?? null,
+      whenModelsReady: () =>
+        sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
+      modelLoadCount: () => sessionRef.current?.modelLoadCount() ?? 0,
+      tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
     };
     return () => {
       delete host.__babylonslatePlayTest;

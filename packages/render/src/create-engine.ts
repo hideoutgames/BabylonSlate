@@ -62,6 +62,7 @@ import {
 import { setupDefaultViewport } from "./viewport";
 import { RenderScheduler } from "./render-scheduler";
 import {
+  bindResourceCacheToHandle,
   getMaterialTexture,
   releaseResourceCacheForEngine,
   resourceCacheForEngine,
@@ -206,8 +207,10 @@ export interface EngineHandle {
   isFreeCamEnabled: () => boolean;
   /** Fly the Play free camera; no-op while it is off. */
   steerPlayFreeCam: (forward: number, right: number) => void;
-  /** Resolves when editor GLB instantiations from the last apply have finished. */
+  /** Resolves when editor or Play GLB instantiations from the last apply have finished. */
   whenEditorModelsReady: () => Promise<void>;
+  /** Snapshot/editor GLB loads currently tracked (including settled promises). */
+  modelLoadCount: () => number;
 }
 
 export interface CreateEngineOptions {
@@ -462,10 +465,10 @@ function createPlayAudioBackend(
 }
 
 /**
- * Creates an editor or Play view. Prefer one Engine for the app lifetime and
- * pass it via `sharedEngine` + registerView for Play overlays. ResourceCache
- * is keyed on that Engine (`resourceCacheForEngine`); shared handles must not
- * dispose it.
+ * Creates an editor or Play view. Prefer one Engine for the open project and
+ * pass it via `sharedEngine` + registerView for Scene / Play canvases.
+ * ResourceCache is keyed on that Engine (`resourceCacheForEngine`); shared
+ * handles release their retains on dispose and must not dispose the cache.
  */
 export function createEngine(
   canvas: HTMLCanvasElement,
@@ -484,7 +487,13 @@ export function createEngine(
       antialias: false,
     });
 
-  if (options.sharedEngine && !presentRtt) {
+  const sharedViewBlit =
+    options.sharedEngine &&
+    !presentRtt &&
+    typeof canvas.getContext === "function"
+      ? canvas.getContext("2d")
+      : null;
+  if (sharedViewBlit) {
     // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
     // clear, skipped render-on-demand frames composite additively.
     engine.registerView(canvas, undefined, true);
@@ -541,7 +550,9 @@ export function createEngine(
   const releasePlayLoop = options.playMode
     ? scheduler.acquireContinuous("play")
     : null;
-  const resourceCache = resourceCacheForEngine(engine);
+  const sharedCache = resourceCacheForEngine(engine);
+  const cacheBinding = bindResourceCacheToHandle(sharedCache);
+  const resourceCache = cacheBinding.cache;
   if (typeof options.textureByteCeiling === "number") {
     resourceCache.setByteCeiling(options.textureByteCeiling);
   }
@@ -1009,14 +1020,10 @@ export function createEngine(
     loadScene(createDefaultScene());
   }
 
-  const presentSharedPlayView = Boolean(
-    options.sharedEngine && !presentRtt && options.playMode,
-  );
-
   const resize = () => {
     if (presentRtt) {
       rttPresent?.clear();
-    } else if (presentSharedPlayView) {
+    } else if (options.sharedEngine && !presentRtt) {
       const size = snapCanvasDrawingBuffer(canvas);
       engine.setSize(size.width, size.height);
     } else {
@@ -1163,7 +1170,8 @@ export function createEngine(
       widgetGuiService?.dispose();
       scene.dispose();
       rttPresent?.dispose();
-      if (options.sharedEngine && !presentRtt) {
+      cacheBinding.releaseHandleRetains();
+      if (sharedViewBlit) {
         engine.unRegisterView(canvas);
       }
       if (ownsEngine) {
@@ -1175,7 +1183,7 @@ export function createEngine(
     setSize: (width: number, height: number) => {
       const nextWidth = Math.max(1, Math.floor(width));
       const nextHeight = Math.max(1, Math.floor(height));
-      if (presentSharedPlayView) {
+      if (options.sharedEngine && !presentRtt) {
         canvas.width = nextWidth;
         canvas.height = nextHeight;
       }
@@ -1437,8 +1445,16 @@ export function createEngine(
     steerPlayFreeCam: (forward, right) => {
       playFreeCam?.fly(forward, right);
     },
-    whenEditorModelsReady: () =>
-      editorSync?.whenEditorModelsReady() ?? Promise.resolve(),
+    whenEditorModelsReady: async () => {
+      await (editorSync?.whenEditorModelsReady() ?? Promise.resolve());
+      const playLoads = [...(binding.slotAnimLoads?.values() ?? [])];
+      if (playLoads.length > 0) {
+        await Promise.all(playLoads);
+      }
+    },
+    modelLoadCount: () =>
+      (editorSync?.pendingModelLoadCount() ?? 0) +
+      (binding.slotAnimLoads?.size ?? 0),
   };
 }
 
@@ -1458,7 +1474,7 @@ export function syncEditorPlayState(
   }
 }
 
-/** Create the single app-lifetime Engine (no scene). */
+/** Create the project-lifetime Engine (no scene). */
 export function createAppEngine(canvas: HTMLCanvasElement): Engine {
   configureKtx2Transcoder(KhronosTextureContainer2);
   return new Engine(canvas, true, {

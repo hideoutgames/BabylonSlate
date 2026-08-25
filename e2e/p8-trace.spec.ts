@@ -2,6 +2,15 @@ import { expect, test } from "@playwright/test";
 import { openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 
+async function playTickIndex(page: import("@playwright/test").Page): Promise<number> {
+  return page.evaluate(() => {
+    const host = globalThis as unknown as {
+      __babylonslatePlayTest?: { tickIndex?: () => number };
+    };
+    return host.__babylonslatePlayTest?.tickIndex?.() ?? 0;
+  });
+}
+
 async function runPlayConsole(page: import("@playwright/test").Page, line: string) {
   await page.getByTestId("play-console-open").click();
   await expect(page.getByTestId("debug-console")).toBeVisible();
@@ -36,16 +45,11 @@ test.describe("P8 Trace document tab", () => {
       .toBeGreaterThan(0);
 
     await runPlayConsole(page, "snapshot start");
-    const fps = page.getByTestId("play-fps");
-    const started = await fps.getAttribute("data-fps");
+    // `data-fps` is a 1 Hz integer and can stay 60 on a stable CI vsync.
+    // The recorder needs extra sim ticks, not an FPS string change.
+    const startedTick = await playTickIndex(page);
     await expect
-      .poll(async () => (await fps.getAttribute("data-fps")) !== started, {
-        timeout: 10_000,
-      })
-      .toBe(true);
-    const mid = await fps.getAttribute("data-fps");
-    await expect
-      .poll(async () => (await fps.getAttribute("data-fps")) !== mid, {
+      .poll(async () => (await playTickIndex(page)) >= startedTick + 2, {
         timeout: 10_000,
       })
       .toBe(true);
