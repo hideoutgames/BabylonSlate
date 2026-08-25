@@ -70,8 +70,8 @@ export function configureKtx2Transcoder(
 export type Ktx2DecoderRuntimeContainer = {
   DefaultNumWorkers: number;
   DefaultDecoderOptions: {
-    forceRGBA: boolean;
-    useRGBAIfASTCBC7NotAvailableWhenUASTC: boolean;
+    forceRGBA: boolean | undefined;
+    useRGBAIfASTCBC7NotAvailableWhenUASTC: boolean | undefined;
   };
 };
 
