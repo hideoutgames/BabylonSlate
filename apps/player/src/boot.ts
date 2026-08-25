@@ -108,6 +108,7 @@ export function startPlayer(options: {
     fontFacetypeBytes: game.fontFacetypeBytes,
     uiDocuments: game.userInterfaces,
     modelBytes: game.modelBytes,
+    modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
     audioBytes: game.audioBytes,

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModelPayload, remapModelPayloadGuids } from "./model-payload";
+import {
+  decodePackedModelAsset,
+  encodePackedModelAsset,
+  extractPackedModelAsset,
+  normalizeModelPayload,
+  peekPackedModelPayload,
+  remapModelPayloadGuids,
+  shouldSlimModelEmbeddedTextures,
+} from "./model-payload";
 
 describe("normalizeModelPayload", () => {
   it("drops importer count fields and keeps named filled slots", () => {
@@ -95,5 +103,67 @@ describe("normalizeModelPayload", () => {
     expect(normalizeModelPayload({ importScale: Number.NaN }).importScale).toBe(
       1,
     );
+  });
+});
+
+describe("packed Model envelope", () => {
+  const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3]);
+
+  it("round-trips payload JSON with GLB source bytes", () => {
+    const packed = encodePackedModelAsset(
+      {
+        importScale: 4,
+        clipNames: ["Walk"],
+        materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
+        skeletonGuid: "skel-1",
+      },
+      glb,
+    );
+    expect(peekPackedModelPayload(packed)).toEqual({
+      importScale: 4,
+      clipNames: ["Walk"],
+      materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
+      skeletonGuid: "skel-1",
+    });
+    expect(decodePackedModelAsset(packed)).toEqual({
+      payload: {
+        importScale: 4,
+        clipNames: ["Walk"],
+        materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
+        skeletonGuid: "skel-1",
+      },
+      source: glb,
+    });
+  });
+
+  it("treats raw GLB as unenveloped source so old packs stay loadable", () => {
+    expect(peekPackedModelPayload(glb)).toBeNull();
+    expect(decodePackedModelAsset(glb)).toBeNull();
+    expect(extractPackedModelAsset(glb)).toEqual({
+      payload: normalizeModelPayload({}),
+      source: glb,
+    });
+  });
+});
+
+describe("shouldSlimModelEmbeddedTextures", () => {
+  it("is true only when every material slot has a guid", () => {
+    expect(
+      shouldSlimModelEmbeddedTextures({
+        materialSlots: [
+          { index: 0, name: "A", materialGuid: "mat-1" },
+          { index: 1, name: "B", materialGuid: "mat-2" },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      shouldSlimModelEmbeddedTextures({
+        materialSlots: [
+          { index: 0, name: "A", materialGuid: "mat-1" },
+          { index: 1, name: "B", materialGuid: null },
+        ],
+      }),
+    ).toBe(false);
+    expect(shouldSlimModelEmbeddedTextures({ materialSlots: [] })).toBe(false);
   });
 });

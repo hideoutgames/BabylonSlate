@@ -135,6 +135,50 @@ describe("scene schema", () => {
     });
   });
 
+  it("keeps prefab instance sourceId and overrideKeys on components", () => {
+    const scene = normalizeScene({
+      actors: [
+        {
+          id: "hero",
+          components: [
+            {
+              id: "hero-mesh",
+              classId: "MeshComponent",
+              properties: { meshKind: "sphere" },
+              sourceId: "prefab-mesh",
+              overrideKeys: ["meshKind", "transform"],
+            },
+          ],
+        },
+      ],
+    });
+    expect(scene.actors[0]?.components[0]).toMatchObject({
+      sourceId: "prefab-mesh",
+      overrideKeys: ["meshKind", "transform"],
+    });
+  });
+
+  it("drops empty prefab instance linkage fields", () => {
+    const scene = normalizeScene({
+      actors: [
+        {
+          id: "hero",
+          components: [
+            {
+              id: "hero-mesh",
+              classId: "MeshComponent",
+              properties: {},
+              sourceId: "  ",
+              overrideKeys: ["", 2],
+            },
+          ],
+        },
+      ],
+    });
+    expect(scene.actors[0]?.components[0]?.sourceId).toBeUndefined();
+    expect(scene.actors[0]?.components[0]?.overrideKeys).toBeUndefined();
+  });
+
   it("gives duplicated actor ids a unique id so both actors stay addressable", () => {
     const scene = normalizeScene({
       actors: [

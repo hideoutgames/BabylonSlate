@@ -1,4 +1,9 @@
-export const TEXTURE_BYTE_CEILING = 512 * 1024 * 1024;
+export const TEXTURE_BYTE_CEILING = 2 * 1024 * 1024 * 1024;
+export const TEXTURE_BYTE_CEILING_MIN = 256 * 1024 * 1024;
+export const TEXTURE_BYTE_CEILING_MAX = 8 * 1024 * 1024 * 1024;
+export const TEXTURE_EVICTION_TARGET_FACTOR = 0.8;
+/** Documented iPad suggestion — not the runtime default. */
+export const IPAD_TEXTURE_BYTE_SUGGESTION = 512 * 1024 * 1024;
 export const GEOMETRY_BYTE_CEILING = 128 * 1024 * 1024;
 export const DRAW_CALL_WARN_CEILING = 400;
 

@@ -9,6 +9,7 @@ import {
   createActor,
   createDefaultScene,
   createMeshComponent,
+  engineCommandBus,
 } from "@babylonslate/core";
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
@@ -454,6 +455,31 @@ describe("Play createEngine view", () => {
     expect(handle.scene.clearColor.g).toBeCloseTo(0.4);
     expect(handle.scene.clearColor.b).toBeCloseTo(0.6);
     expect(handle.scene.clearColor.a).toBe(1);
+  });
+
+  it("does not drop a hardware scaling tier on WebGL context restore", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+      hardwareScalingLevel: 1,
+    });
+    handles.push(handle);
+    const logs: string[] = [];
+    const unsubscribe = engineCommandBus.subscribe((command) => {
+      if (command.type === "log") logs.push(command.message);
+    });
+    handle.scaling.dropTier();
+    expect(handle.scaling.getLevel()).toBe(1.25);
+    engine.onContextLostObservable.notifyObservers(engine);
+    engine.onContextRestoredObservable.notifyObservers(engine);
+    expect(handle.scaling.getLevel()).toBe(1);
+    expect(logs.some((message) => /context lost/i.test(message))).toBe(true);
+    expect(logs.some((message) => /context restored/i.test(message))).toBe(
+      true,
+    );
+    unsubscribe();
   });
 
   it("applies Engine Settings hardware scaling to the shared Engine", () => {

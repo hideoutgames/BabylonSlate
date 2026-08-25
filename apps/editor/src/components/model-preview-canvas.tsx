@@ -19,6 +19,7 @@ import {
 } from "@babylonslate/render";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
+import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 
 export function ModelPreviewCanvas({
   payload,
@@ -30,6 +31,8 @@ export function ModelPreviewCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const play = useOptionalPlay();
   const { collectPlayMaterialLibrary, collectPlayTextureBytes } = useDocuments();
+  const { editorTextureLodEnabled, editorTextureLodQuality } =
+    useEditorViewportPrefs();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
@@ -153,6 +156,8 @@ export function ModelPreviewCanvas({
     engine,
     previewGeneration,
     slotKey,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
   ]);
 
   return (

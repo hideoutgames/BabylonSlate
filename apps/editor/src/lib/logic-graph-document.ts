@@ -437,15 +437,17 @@ export function collectClassGraphsForPalette(options: {
     if (asset.header.type !== "Class" && asset.header.type !== "Graph") {
       continue;
     }
-    graphs[options.classIdForPath(asset.path)] = classGraphFromHeaderPayload(
-      asset.header.payload,
-    );
+    const classId = options.classIdForPath(asset.path);
+    const graph = classGraphFromHeaderPayload(asset.header.payload);
+    graphs[classId] = graph;
+    if (asset.header.name !== classId) graphs[asset.header.name] = graph;
   }
   for (const doc of options.openDocuments) {
     if (doc.ref.kind !== "graph" && doc.ref.kind !== "ui") continue;
     const graph = serializedGraphFromDocument(doc.ref.kind, doc.content);
     if (!graph) continue;
-    graphs[options.classIdForPath(doc.ref.path)] = graph;
+    const classId = options.classIdForPath(doc.ref.path);
+    graphs[classId] = graph;
   }
   return graphs;
 }

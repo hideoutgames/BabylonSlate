@@ -47,6 +47,7 @@ describe("material library", () => {
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     first.material.dispose();
+    expect(library.materialFor(scene, "mat-1")).toBeNull();
     expect(library.isCompiled(scene, "mat-1", tinted(1))).toBe(false);
     const second = library.acquire(scene, "mat-1", tinted(1));
     expect(second.ok).toBe(true);

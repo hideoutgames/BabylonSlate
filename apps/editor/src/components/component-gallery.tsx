@@ -557,6 +557,11 @@ function GalleryComposites() {
         items={[
           { id: "mesh", label: "MeshComponent", description: "Renderable mesh" },
           { id: "camera", label: "CameraComponent", description: "Scene camera" },
+          ...Array.from({ length: 18 }, (_, index) => ({
+            id: `extra-${index}`,
+            label: `Gallery Item ${index}`,
+            description: "Overflow row",
+          })),
         ]}
         onSelect={() => {}}
         data-testid="gallery-search-dialog"

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SerializedComponent } from "@babylonslate/core";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
 import {
+  applyPrefabPropertyDefaults,
   componentPropertyRows,
   gameInstanceClassEntries,
   subclassClassEntries,
@@ -887,6 +888,26 @@ describe("subclassClassEntries", () => {
       id: "UserInterface:hud-guid",
       name: "HUD",
       group: "Project",
+    });
+  });
+});
+
+describe("applyPrefabPropertyDefaults", () => {
+  it("uses prefab property values as Details reset targets", () => {
+    const { rows } = rowsFor({
+      id: "mesh",
+      classId: "MeshComponent",
+      properties: { meshKind: "sphere", assetGuid: null },
+    });
+    const next = applyPrefabPropertyDefaults(rows, {
+      id: "prefab-mesh",
+      classId: "MeshComponent",
+      properties: { meshKind: "cylinder", assetGuid: null },
+      parentId: null,
+    });
+    expect(next.find((row) => row.id.endsWith("-meshKind"))).toMatchObject({
+      kind: "enum",
+      defaultValue: "cylinder",
     });
   });
 });

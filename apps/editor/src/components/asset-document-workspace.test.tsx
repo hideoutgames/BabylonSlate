@@ -168,7 +168,7 @@ describe("AssetDocumentWorkspace authoring", () => {
       <AssetDocumentWorkspace documentId="asset-settings:assets/albedo.babasset" />,
     );
     expect(screen.getByTestId("texture-preview")).toBeTruthy();
-    expect(screen.getByTestId("property-maxDimension")).toBeTruthy();
+    expect(screen.getByTestId("property-downsample")).toBeTruthy();
     expect(screen.getByTestId("property-usage")).toBeTruthy();
     expect(screen.queryByTestId("property-mipmap")).toBeNull();
     expect(screen.queryByTestId("property-nearest")).toBeNull();
@@ -189,7 +189,7 @@ describe("AssetDocumentWorkspace authoring", () => {
       <AssetDocumentWorkspace documentId="asset-settings:assets/sprite.babasset" />,
     );
     expect(screen.getByTestId("texture-preview")).toBeTruthy();
-    expect(screen.getByTestId("property-maxDimension")).toBeTruthy();
+    expect(screen.getByTestId("property-downsample")).toBeTruthy();
     expect(screen.getByTestId("property-usage")).toBeTruthy();
   });
 

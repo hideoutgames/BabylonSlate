@@ -89,6 +89,35 @@ describe("EngineSettingsForm assets", () => {
       "1",
     );
   });
+
+  it("defaults editor texture LOD on at 50% with a 2 GB budget", () => {
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={() => {}}
+        categoryId="assets"
+      />,
+    );
+    const lod = getByTestId("setting-editor-texture-lod");
+    expect(lod.getAttribute("data-state") ?? lod.getAttribute("aria-checked")).toMatch(
+      /checked|true/,
+    );
+    expect(getByTestId("setting-editor-texture-lod-quality")).toBeTruthy();
+    expect(getByTestId("setting-texture-budget-mb")).toHaveProperty("value", "2048");
+  });
+
+  it("reports a texture LOD toggle", () => {
+    const onChange = vi.fn();
+    const { getByTestId } = render(
+      <EngineSettingsForm
+        settings={defaultEngineSettings()}
+        onChange={onChange}
+        categoryId="assets"
+      />,
+    );
+    fireEvent.click(getByTestId("setting-editor-texture-lod"));
+    expect(onChange).toHaveBeenCalledWith({ editorTextureLodEnabled: false });
+  });
 });
 
 describe("EngineSettingsForm User Interface presets", () => {

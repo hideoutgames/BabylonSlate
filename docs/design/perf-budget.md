@@ -18,7 +18,7 @@ Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds
 
 | Resource | Budget | Notes |
 | --- | --- | --- |
-| Editor + project open | ~512 MB textures accounted | WKWebView kills tab rather than swapping |
+| Editor + project open | Engine Settings texture budget (default **2 GB**, on) | LRU trims **unreferenced** entries toward 80% of the budget. 512 MB is an iPad suggestion, not the runtime default. WKWebView kills the tab rather than swapping |
 | Texture accounting | Self-computed bytes | No `performance.memory` on Safari |
 
 Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
@@ -37,7 +37,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Output Log and Compiler Results window-virtualise to viewport plus overscan (`p20-log-virtualize`; `WindowedList` / TreeView arithmetic). Ring buffer cap 500 stays. SearchDialog (AssetPicker / ClassPicker) uses the same helper. Place Actors catalogs stay unwindowed. Global Search **result** body is not virtualised.
 - One `Engine` for editor viewport, Play overlay, Material Preview, UI designer, **and Prefab Preview** (`p18-shared-prefab-engine`).
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
-- Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags). **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material / UI reuse the viewport cache even when `sharedEngine` is set; eviction stays unreferenced-LRU only.
+- Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags). **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material / UI reuse the viewport cache even when `sharedEngine` is set. Each `createEngine` handle pins its `textureBytes` guids (`setClientTextures`); LRU eviction of **unreferenced** entries (not pinned by any handle) trims toward 80% of the Engine Settings ceiling (default 2 GB). `getTexture` accounts sniffed KTX2/PNG sizes. GUI `Image.source` blob URLs stay on the MIME-typed `resolveUiImages` path.
 - Editor idle `freezeActiveMeshes()` / static `freezeWorldMatrix()` / `material.freeze()` / unique-id maps / scene-load `forceCompilationAsync` are **Done** (`p20-editor-scene-freeze`). Visible editor stays at `viewportFrameCap` — do not dirty-skip an on-screen scene. Remount dialog: Collecting Assets → Loading Models → Warming Shaders.
 - Play prepare caches compiled scripts by graph content hash and loads Audio `source` chunks on first `playSound` (`p20-play-compile-audio`, **Done**). Overlay Play and `apps/player` share the lazy audio path.
 - Global Search rebuilds when the dialog is initiated (`p20-search-on-demand`, **Done**), not on project open. Async/chunked; include open-document JSON. No on-disk search cache.
@@ -51,7 +51,7 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 
 - Tiny in-process scene: `lastScriptMs`, `lastPhysicsMs`, and combined tick `< TICK_BUDGET_MS` (8 ms). Keep the fixture small so GitHub runners stay under budget.
 - 120 ticks → `stats` command count is ~5 Hz (not 120); snapshot header `tickIndex` is still 120. 2000 ticks with one looping `AudioComponent`: one `playSound`, `stats` stays ~5 Hz, last-100 median tick cost is not much worse than first-100.
-- Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 512 MB, `GEOMETRY_BYTE_CEILING` 128 MB). Drift fails CI.
+- Accounted texture + geometry bytes vs committed ceilings (`TEXTURE_BYTE_CEILING` 2 GB, `GEOMETRY_BYTE_CEILING` 128 MB). Drift fails CI.
 - Obstructed / hidden editor: `RenderScheduler.shouldRender() === false` (zero frames).
 - Draw-call ceiling (`DRAW_CALL_WARN_CEILING` 400) as HUD warnings.
 

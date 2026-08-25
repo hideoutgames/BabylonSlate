@@ -26,6 +26,7 @@ import {
   SetActorTransformCommand,
   SetActorsTransformsCommand,
   SetComponentPropertyCommand,
+  SetComponentTransformCommand,
   SetSceneNameCommand,
   SetSceneSettingCommand,
   SetViewportModeCommand,
@@ -235,6 +236,16 @@ describe("scene commands", () => {
     );
   });
 
+  it("SetComponentTransformCommand apply-then-invert restores the document", () => {
+    const scene = baseScene();
+    const from = scene.actors[0]!.components[0]!.transform!;
+    const to = { ...from, position: [2, 0, 0] as [number, number, number] };
+    expectRoundTrip(
+      scene,
+      new SetComponentTransformCommand("a", "c1", from, to),
+    );
+  });
+
   it("SetSceneSettingCommand apply-then-invert restores the document", () => {
     const scene = baseScene();
     expectRoundTrip(
@@ -430,6 +441,18 @@ describe("diffSceneCommands", () => {
     expect(types).toContain("scene.addComponent");
     expect(types).toContain("scene.removeComponent");
     expect(types).toContain("scene.reparentComponent");
+  });
+
+  it("derives SetComponentTransformCommand when a component transform changes", () => {
+    const before = baseScene();
+    const after = structuredClone(before);
+    after.actors[0]!.components[0]!.transform = {
+      ...after.actors[0]!.components[0]!.transform!,
+      position: [3, 0, 0],
+    };
+    expect(diffSceneCommands(before, after).map((command) => command.type)).toEqual(
+      ["scene.setComponentTransform"],
+    );
   });
 
   it("derives ReorderActorCommand when actor order changes", () => {
