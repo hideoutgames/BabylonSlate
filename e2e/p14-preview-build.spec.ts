@@ -32,6 +32,7 @@ async function previewCanvasPixelStats(page: Page): Promise<
   | {
       ok: true;
       total: number;
+      albedo: number;
       redStub: number;
       magenta: number;
       width: number;
@@ -57,7 +58,7 @@ async function previewCanvasPixelStats(page: Page): Promise<
     if (!ctx) return { ok: false as const, reason: "2d" };
     ctx.drawImage(node, 0, 0);
     const data = ctx.getImageData(0, 0, width, height).data;
-    let total = 0;
+    let albedo = 0;
     let redStub = 0;
     let magenta = 0;
     for (let i = 0; i < data.length; i += 4) {
@@ -66,11 +67,24 @@ async function previewCanvasPixelStats(page: Page): Promise<
       const b = data[i + 2]!;
       const a = data[i + 3]!;
       if (a < 8 || r + g + b < 24) continue;
-      total += 1;
-      if (r > 220 && g < 30 && b < 30) redStub += 1;
-      if (r > 220 && g < 30 && b > 220) magenta += 1;
+      // Default Empty sky is blue; do not let it drown a small red character.
+      if (b > 90 && b > r + 15 && b > g) continue;
+      if (r > 200 && g < 40 && b < 40) {
+        redStub += 1;
+        continue;
+      }
+      if (r > 200 && g < 40 && b > 200) {
+        magenta += 1;
+        continue;
+      }
+      // Kenney albedo is tan/cloth (green channel present). Error-sampler
+      // checkerboard is red/black/magenta; grey AA must not count as success.
+      if (g >= 50 && r >= 40) {
+        albedo += 1;
+      }
     }
-    return { ok: true as const, total, redStub, magenta, width, height };
+    const total = albedo + redStub + magenta;
+    return { ok: true as const, total, albedo, redStub, magenta, width, height };
   });
 }
 
@@ -309,9 +323,9 @@ test.describe("P14 Preview Build", () => {
             return `wait:${JSON.stringify(stats)}`;
           }
           const bad = stats.redStub + stats.magenta;
-          return bad / stats.total < 0.25
+          return stats.albedo > bad && bad / stats.total < 0.25
             ? "ok"
-            : `red:${stats.redStub}/magenta:${stats.magenta}/total:${stats.total}`;
+            : `albedo:${stats.albedo}/red:${stats.redStub}/magenta:${stats.magenta}/total:${stats.total}`;
         },
         { timeout: 30_000 },
       )
