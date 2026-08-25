@@ -135,24 +135,11 @@ describe("material node catalog", () => {
     expect(nodeIsLegalInDomain("output.postProcess", "surface")).toBe(false);
   });
 
-  it("keeps interface graphs unlit 2D: UV and texture, not world or scene samples", () => {
-    expect(nodeIsLegalInDomain("input.uv", "interface")).toBe(true);
-    expect(nodeIsLegalInDomain("input.time", "interface")).toBe(true);
-    expect(nodeIsLegalInDomain("texture.sample", "interface")).toBe(true);
-    expect(nodeIsLegalInDomain("math.sin", "interface")).toBe(true);
-    expect(nodeIsLegalInDomain("color.desaturate", "interface")).toBe(true);
-    expect(nodeIsLegalInDomain("output.interface", "interface")).toBe(true);
-    expect(nodeIsLegalInDomain("input.worldPosition", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("input.worldNormal", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("input.vertexColor", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("input.sceneColor", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("input.sceneDepth", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("input.sceneNormal", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("input.screenUv", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("output.surface", "interface")).toBe(false);
-    expect(nodeIsLegalInDomain("output.postProcess", "interface")).toBe(false);
+  it("does not define an interface output node", () => {
+    expect(materialNodeDefinition("output.interface")).toBeUndefined();
     expect(nodeIsLegalInDomain("output.interface", "surface")).toBe(false);
     expect(nodeIsLegalInDomain("output.interface", "postProcess")).toBe(false);
+    expect(nodeIsLegalInDomain("output.interface", "particle")).toBe(false);
   });
 
   it("scopes Particle Color and Particle Texture to the particle domain", () => {
@@ -179,11 +166,11 @@ describe("material node catalog", () => {
   });
 
   it("parses known material domains and falls back to surface", () => {
-    expect(parseMaterialDomain("interface")).toBe("interface");
     expect(parseMaterialDomain("particle")).toBe("particle");
     expect(parseMaterialDomain("postProcess")).toBe("postProcess");
     expect(parseMaterialDomain("surface")).toBe("surface");
     expect(parseMaterialDomain("nope")).toBe("surface");
+    expect(parseMaterialDomain("interface")).toBe("surface");
   });
 
   it("exposes the Unreal-style surface output channels", () => {
@@ -213,20 +200,6 @@ describe("material node catalog", () => {
     expect(post?.inputs[0]?.type).toEqual({ kind: "vec4" });
   });
 
-  it("takes Color and Opacity on the interface output", () => {
-    const terminal = materialNodeDefinition("output.interface");
-    expect(terminal?.inputs.map((pin) => pin.id)).toEqual(["color", "opacity"]);
-    expect(terminal?.inputs[0]).toMatchObject({
-      name: "Color",
-      type: { kind: "vec4" },
-    });
-    expect(terminal?.inputs[1]).toMatchObject({
-      name: "Opacity",
-      type: { kind: "float" },
-      defaultValue: [1],
-    });
-  });
-
   it("takes a single Color input on the particle output", () => {
     const particle = materialNodeDefinition("output.particle");
     expect(particle?.terminal).toBe("particle");
@@ -241,14 +214,7 @@ describe("material node catalog", () => {
     expect(surface).not.toContain("input.sceneColor");
     expect(surface).not.toContain("input.sceneNormal");
     expect(surface).not.toContain("input.particleColor");
-    const iface = materialPaletteEntries("interface").map((row) => row.type);
-    expect(iface).toContain("output.interface");
-    expect(iface).toContain("input.uv");
-    expect(iface).toContain("texture.sample");
-    expect(iface).not.toContain("output.surface");
-    expect(iface).not.toContain("output.postProcess");
-    expect(iface).not.toContain("input.sceneColor");
-    expect(iface).not.toContain("input.worldPosition");
+    expect(surface).not.toContain("output.interface");
     const particle = materialPaletteEntries("particle").map((row) => row.type);
     expect(particle).toContain("output.particle");
     expect(particle).toContain("input.particleColor");
@@ -256,6 +222,7 @@ describe("material node catalog", () => {
     expect(particle).not.toContain("output.surface");
     expect(particle).not.toContain("input.worldPosition");
     expect(particle).not.toContain("input.sceneColor");
+    expect(particle).not.toContain("output.interface");
   });
 
   it("costs a texture sample above a scalar multiply", () => {

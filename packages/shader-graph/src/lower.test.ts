@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
+  normalizeMaterialDocument,
   type MaterialDocument,
 } from "./document";
 import { lowerMaterialDocument, materialCompileKey } from "./lower";
@@ -58,20 +59,14 @@ describe("material lowering", () => {
     expect(plan.plan.outputs.baseColor).not.toBeNull();
   });
 
-  it("lowers an interface material to Color and Opacity channels", () => {
+  it("lowers leftover interface domain strings as a surface material", () => {
     const result = lowerMaterialDocument(
-      createDefaultMaterialDocument("HudGlow", "interface"),
+      normalizeMaterialDocument({ name: "HudGlow", domain: "interface" }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.plan.domain).toBe("interface");
-    expect(result.plan.outputs.color).not.toBeNull();
-    expect(result.plan.outputs.opacity).not.toBeNull();
-    expect(result.plan.bufferRequirements).toEqual({
-      sceneColor: false,
-      sceneDepth: false,
-      sceneNormal: false,
-    });
+    expect(result.plan.domain).toBe("surface");
+    expect(result.plan.outputs.baseColor).not.toBeNull();
   });
 
   it("refuses to lower a graph with errors", () => {

@@ -1,18 +1,10 @@
 import type { MaterialValueType } from "./types";
 
-/** Surface shades a mesh; post-process shades a camera pass; interface shades HUD widgets; particle shades GPUParticleSystem quads. */
-export type MaterialDomain =
-  | "surface"
-  | "postProcess"
-  | "interface"
-  | "particle";
+/** Surface shades a mesh; post-process shades a camera pass; particle shades GPUParticleSystem quads. */
+export type MaterialDomain = "surface" | "postProcess" | "particle";
 
 export function parseMaterialDomain(value: unknown): MaterialDomain {
-  if (
-    value === "postProcess" ||
-    value === "interface" ||
-    value === "particle"
-  ) {
+  if (value === "postProcess" || value === "particle") {
     return value;
   }
   return "surface";
@@ -711,25 +703,6 @@ const OUTPUT_NODES: MaterialNodeDefinition[] = [
     outputs: [],
   },
   {
-    type: "output.interface",
-    title: "Interface Output",
-    category: "Output",
-    domains: ["interface"],
-    terminal: "interface",
-    cost: 0,
-    inputs: [
-      {
-        id: "color",
-        name: "Color",
-        type: VEC4,
-        colorHint: true,
-        defaultValue: [0.8, 0.8, 0.8, 1],
-      },
-      { id: "opacity", name: "Opacity", type: FLOAT, defaultValue: [1] },
-    ],
-    outputs: [],
-  },
-  {
     type: "output.particle",
     title: "Particle Output",
     category: "Output",
@@ -805,7 +778,6 @@ export function materialPaletteEntries(
 
 export function terminalNodeTypeFor(domain: MaterialDomain): string {
   if (domain === "postProcess") return "output.postProcess";
-  if (domain === "interface") return "output.interface";
   if (domain === "particle") return "output.particle";
   return "output.surface";
 }

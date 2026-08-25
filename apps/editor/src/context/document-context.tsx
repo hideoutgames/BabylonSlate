@@ -477,7 +477,7 @@ interface DocumentContextValue {
     library: import("../lib/play-audio").PlayAudioLibrary;
     loadSourceBytes: import("../lib/play-audio").PlayAudioSourceLoader;
   }>;
-  /** Surface, post-process, and HUD Interface materials plus transitive Material Functions. */
+  /** Surface, post-process, and particle materials plus transitive Material Functions. */
   collectPlayMaterialLibrary: (
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
