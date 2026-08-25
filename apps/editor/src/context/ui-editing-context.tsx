@@ -37,6 +37,7 @@ import {
   useOptionalDocumentWorkspace,
 } from "./document-workspace-context";
 import { useOptionalPlay } from "./play-context";
+import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
 import { familyFromAssetPayload } from "../lib/font-preview";
 import { asUiDocument, interfaceMaterialGuidsFromUiDocuments, lookupInterfaceMaterialDocument, resolveNestedUiDocument, type PlayUiLibrary } from "../lib/play-content";
 import { collectFontAssetEntries } from "../lib/play-fonts";
@@ -173,6 +174,8 @@ export function UiEditingProvider({
     refreshAssetRegistry,
   } = useDocuments();
   const play = useOptionalPlay();
+  const { editorTextureLodEnabled, editorTextureLodQuality } =
+    useEditorViewportPrefs();
   const doc = workspace
     ? openDocuments.find((entry) => entry.id === workspace.documentId)
     : undefined;
@@ -386,7 +389,14 @@ export function UiEditingProvider({
     return () => {
       cancelled = true;
     };
-  }, [collectPlayMaterialLibrary, collectPlayTextureBytes, resolveNested, ui]);
+  }, [
+    collectPlayMaterialLibrary,
+    collectPlayTextureBytes,
+    resolveNested,
+    ui,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
+  ]);
 
   const resolveInterfaceMaterial = useCallback(
     (guid: string) =>

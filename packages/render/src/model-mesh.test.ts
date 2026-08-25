@@ -9,7 +9,9 @@ import {
   encodeYRotatedTriangleGlb,
   glbClipNames,
   packedGltfBytes,
+  gpuModelBytes,
 } from "./model-mesh";
+import { buildMinimalGlbFixture } from "@babylonslate/assets";
 
 describe("packedGltfBytes", () => {
   it("returns the same bytes when the ArrayBuffer is already packed", () => {
@@ -31,6 +33,25 @@ describe("packedGltfBytes", () => {
     expect(packed.byteOffset).toBe(0);
     expect(packed.buffer.byteLength).toBe(packed.byteLength);
     expect(packed).toEqual(glb);
+  });
+});
+
+describe("gpuModelBytes", () => {
+  it("slims embedded rasters only when every material slot is bound", () => {
+    const glb = buildMinimalGlbFixture({
+      imageRgba: new Uint8Array(2048),
+    });
+    expect(gpuModelBytes(glb).byteLength).toBe(glb.byteLength);
+    expect(
+      gpuModelBytes(glb, {
+        materialSlots: [{ index: 0, name: "HeroMat", materialGuid: "" }],
+      }).byteLength,
+    ).toBe(glb.byteLength);
+    expect(
+      gpuModelBytes(glb, {
+        materialSlots: [{ index: 0, name: "HeroMat", materialGuid: "mat-1" }],
+      }).byteLength,
+    ).toBeLessThan(glb.byteLength);
   });
 });
 

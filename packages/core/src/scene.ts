@@ -38,6 +38,16 @@ export interface SerializedComponent {
   parentId?: string | null;
   /** Local TRS relative to parent component, or the actor origin when unparented. */
   transform?: SerializedTransform;
+  /**
+   * Prefab component id this instance row was spawned from. Missing means the
+   * component was added on the scene actor and prefab sync must not remove it.
+   */
+  sourceId?: string;
+  /**
+   * Property names plus `transform` / `parentId` that the scene instance owns.
+   * Prefab sync copies every other field from the Class prefab.
+   */
+  overrideKeys?: string[];
 }
 
 export interface SerializedActor {
@@ -246,11 +256,24 @@ export function normalizeTransform(value: unknown): SerializedTransform {
   };
 }
 
+function normalizeOverrideKeys(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const keys = value.filter(
+    (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+  );
+  return keys.length > 0 ? keys : undefined;
+}
+
 function normalizeComponent(
   value: unknown,
   index: number,
 ): SerializedComponent {
   const source = (value ?? {}) as Record<string, unknown>;
+  const sourceId =
+    typeof source.sourceId === "string" && source.sourceId.trim()
+      ? source.sourceId.trim()
+      : undefined;
+  const overrideKeys = normalizeOverrideKeys(source.overrideKeys);
   return {
     id: typeof source.id === "string" ? source.id : `component-${index}`,
     classId:
@@ -261,6 +284,8 @@ function normalizeComponent(
         : {},
     parentId: typeof source.parentId === "string" ? source.parentId : null,
     transform: normalizeTransform(source.transform),
+    ...(sourceId ? { sourceId } : {}),
+    ...(overrideKeys ? { overrideKeys } : {}),
   };
 }
 

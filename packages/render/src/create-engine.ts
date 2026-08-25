@@ -6,7 +6,7 @@ import {
   ScenePerformancePriority,
 } from "@babylonjs/core";
 import type { AudioProjectSettings, SerializedScene, ViewportMode } from "@babylonslate/core";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene, engineCommandBus } from "@babylonslate/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   isPublishedSnapshot,
@@ -185,6 +185,8 @@ export interface EngineHandle {
   postProcessDiagnostics: () => readonly PostProcessStackDiagnostic[];
   /** Local Engine Settings gate. Does not mutate the scene document. */
   setPostProcessingEnabled: (enabled: boolean) => void;
+  /** Live Engine Settings texture LRU budget. */
+  setTextureBudget: (bytes: number, enabled: boolean) => void;
   setPostProcessStack: (stack: readonly PostProcessStackInput[]) => void;
   setMaterialDocuments: (
     documents: ReadonlyMap<string, MaterialDocument>,
@@ -295,6 +297,8 @@ export interface CreateEngineOptions {
    * stack without mutating scene documents.
    */
   postProcessingEnabled?: boolean;
+  textureByteCeiling?: number;
+  textureBudgetEnabled?: boolean;
   /** Engine Settings `hardwareScalingLevel`. 1 is native. */
   hardwareScalingLevel?: number;
   /** Stack skip / compile messages (exported player and Play overlay). */
@@ -549,6 +553,12 @@ export function createEngine(
   const sharedCache = resourceCacheForEngine(engine);
   const cacheBinding = bindResourceCacheToHandle(sharedCache);
   const resourceCache = cacheBinding.cache;
+  if (typeof options.textureByteCeiling === "number") {
+    resourceCache.setByteCeiling(options.textureByteCeiling);
+  }
+  if (typeof options.textureBudgetEnabled === "boolean") {
+    resourceCache.setBudgetEnabled(options.textureBudgetEnabled);
+  }
   const audioService = options.playMode
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
@@ -587,6 +597,10 @@ export function createEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  resourceCache.setClientTextures(
+    scene.uid,
+    options.textureBytes?.keys() ?? [],
+  );
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.uiDocuments = options.uiDocuments;
   binding.modelBytes = options.modelBytes;
@@ -1093,11 +1107,17 @@ export function createEngine(
   }
 
   engine.onContextLostObservable.add(() => {
-    // Context loss is treated as memory pressure.
+    engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
   });
   engine.onContextRestoredObservable.add(() => {
-    scaling.dropTier();
+    engineCommandBus.dispatch({
+      type: "log",
+      message: "WebGL context restored",
+    });
+    scaling.noteRestore();
+    resourceCache.releaseGpuTextures();
     resourceCache.flushUnreferenced();
+    materialLibrary.invalidate();
     scheduler.invalidate("manual");
   });
 
@@ -1146,6 +1166,7 @@ export function createEngine(
       attachedStack?.dispose();
       attachedStack = null;
       materialLibrary.dispose();
+      resourceCache.clearClientTextures(scene.uid);
       audioService?.dispose();
       particleService?.dispose();
       widgetGuiService?.dispose();
@@ -1327,6 +1348,10 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      resourceCache.setClientTextures(
+        scene.uid,
+        assets.textureBytes?.keys() ?? [],
+      );
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.uiDocuments = assets.uiDocuments;
       if (assets.uiDocuments) {
@@ -1368,6 +1393,10 @@ export function createEngine(
       postProcessingEnabled = enabled;
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
+    },
+    setTextureBudget: (bytes: number, enabled: boolean) => {
+      resourceCache.setByteCeiling(bytes);
+      resourceCache.setBudgetEnabled(enabled);
     },
     setPostProcessStack: (stack: readonly PostProcessStackInput[]) => {
       postProcessStack = normalizePostProcessStack(stack);

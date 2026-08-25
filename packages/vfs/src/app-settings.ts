@@ -87,6 +87,19 @@ export const engineSettingsSchema = z.object({
     return Math.max(0.0001, value);
   }, z.number().positive().default(1)),
   postProcessingEnabled: z.boolean().default(true),
+  editorTextureLodEnabled: z.boolean().default(true),
+  editorTextureLodQuality: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(1, Math.max(0.25, value));
+  }, z.number().min(0.25).max(1).default(0.5)),
+  textureBudgetEnabled: z.boolean().default(true),
+  textureByteCeiling: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(
+      8 * 1024 * 1024 * 1024,
+      Math.max(256 * 1024 * 1024, value),
+    );
+  }, z.number().min(256 * 1024 * 1024).max(8 * 1024 * 1024 * 1024).default(2 * 1024 * 1024 * 1024)),
   thumbnailsEnabled: z.boolean().default(true),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
@@ -97,6 +110,7 @@ export const engineSettingsSchema = z.object({
       showFps: z.boolean().default(false),
       logLevel: z.enum(["error", "warn", "info", "debug"]).default("warn"),
       previewBuild: z.boolean().default(false),
+      playFromScene: z.boolean().default(true),
       overlayStats: z.boolean().default(true),
       overlayConsole: z.boolean().default(true),
       overlayInspector: z.boolean().default(true),
@@ -106,6 +120,7 @@ export const engineSettingsSchema = z.object({
       showFps: false,
       logLevel: "warn",
       previewBuild: false,
+      playFromScene: true,
       overlayStats: true,
       overlayConsole: true,
       overlayInspector: true,

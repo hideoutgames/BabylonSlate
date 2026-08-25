@@ -23,8 +23,8 @@ import {
   nextCopyName,
   stripAssetFileSuffix,
 } from "./unique-names";
-import {
-  DEFAULT_TEXTURE_ENCODE_SETTINGS,
+import { stampDocumentChunkName } from "./asset-document";
+import { DEFAULT_TEXTURE_ENCODE_SETTINGS,
   effectiveTextureMaxDimension,
   encodeSettingsHash,
   ktx2ChunkId,
@@ -32,6 +32,7 @@ import {
   type TextureCompressionState,
   type TextureEncodeSettings,
 } from "./texture-compression";
+import { authoredEncodeMaxDimension } from "./resolve-gpu-texture";
 import { DEFAULT_THUMBNAIL_MAX_EDGE, generateThumbnailBytes } from "./thumbnails";
 
 /** Index entry: header-only, never a decoded payload (engineplan §2.4). */
@@ -428,6 +429,9 @@ export class AssetRegistry {
     }
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
+    if (decoded.header.type === "Scene") {
+      stampDocumentChunkName(chunksById, safe);
+    }
     const encoded = await encodeBabasset({
       header: { ...headerRest, name: safe },
       chunks: [...chunksById.values()],
@@ -506,6 +510,9 @@ export class AssetRegistry {
     const candidate = joinRootPath(root, relativePath);
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
+    if (decoded.header.type === "Scene") {
+      stampDocumentChunkName(chunksById, uniqueName);
+    }
     const encoded = await encodeBabasset({
       header: { ...headerRest, guid: newGuid, name: uniqueName },
       chunks: [...chunksById.values()],
@@ -786,21 +793,18 @@ export class AssetRegistry {
     const latest = this.byGuid.get(guid) ?? asset;
     const source = await this.loadSourcePixels(latest);
     if (!source) return false;
-    const assetMax =
-      options && "maxDimension" in options
-        ? options.maxDimension
-        : latest.header.payload.maxDimension;
+    const settings = this.encodeSettingsFor(latest);
+    if (options && "maxDimension" in options && options.maxDimension) {
+      settings.maxDimension = effectiveTextureMaxDimension(
+        options.maxDimension,
+        this.encodeSettings.maxDimension,
+      );
+    }
     this.encodeQueue.enqueue({
       assetGuid: guid,
       source: source.bytes,
       mime: source.mime,
-      settings: {
-        ...this.encodeSettingsFor(latest),
-        maxDimension: effectiveTextureMaxDimension(
-          assetMax,
-          this.encodeSettings.maxDimension,
-        ),
-      },
+      settings,
     });
     return true;
   }
@@ -863,10 +867,17 @@ export class AssetRegistry {
   }
 
   private encodeSettingsFor(asset: IndexedAsset): TextureEncodeSettings {
+    const payload = asset.header.payload;
+    const quality =
+      typeof payload.compressionQuality === "number" &&
+      Number.isFinite(payload.compressionQuality)
+        ? payload.compressionQuality
+        : this.encodeSettings.quality;
     return {
       ...this.encodeSettings,
-      maxDimension: effectiveTextureMaxDimension(
-        asset.header.payload.maxDimension,
+      quality,
+      maxDimension: authoredEncodeMaxDimension(
+        payload,
         this.encodeSettings.maxDimension,
       ),
     };

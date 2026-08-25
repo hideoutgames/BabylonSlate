@@ -25,5 +25,8 @@ describe("playChromeLaunchAriaLabel", () => {
     expect(playChromeLaunchAriaLabel(true, false)).toBe(
       "Preview (Set Startup Scene)",
     );
+    expect(
+      playChromeLaunchAriaLabel(false, false, { playFromScene: false }),
+    ).toBe("Play (Set Startup Scene)");
   });
 });

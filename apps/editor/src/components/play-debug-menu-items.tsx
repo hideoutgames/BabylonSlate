@@ -12,12 +12,14 @@ export type PlayDebugMenuItemsProps = {
   overlayInspector: boolean;
   pauseOnPlay: boolean;
   previewBuild: boolean;
+  playFromScene: boolean;
   sessionLocked: boolean;
   onOverlayStatsChange: (checked: boolean) => void;
   onOverlayConsoleChange: (checked: boolean) => void;
   onOverlayInspectorChange: (checked: boolean) => void;
   onPauseOnPlayChange: (checked: boolean) => void;
   onPreviewBuildChange: (checked: boolean) => void;
+  onPlayFromSceneChange: (checked: boolean) => void;
 };
 
 /** Debug-menu overlay chrome and session checkboxes next to Play. */
@@ -27,12 +29,14 @@ export function PlayDebugMenuItems({
   overlayInspector,
   pauseOnPlay,
   previewBuild,
+  playFromScene,
   sessionLocked,
   onOverlayStatsChange,
   onOverlayConsoleChange,
   onOverlayInspectorChange,
   onPauseOnPlayChange,
   onPreviewBuildChange,
+  onPlayFromSceneChange,
 }: PlayDebugMenuItemsProps) {
   return (
     <DropdownMenuContent align="center">
@@ -84,6 +88,16 @@ export function PlayDebugMenuItems({
           }
         >
           Preview Build
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          data-testid="play-from-scene-toggle"
+          checked={playFromScene}
+          disabled={sessionLocked}
+          onCheckedChange={(checked) =>
+            onPlayFromSceneChange(checked === true)
+          }
+        >
+          Play from Scene
         </DropdownMenuCheckboxItem>
       </DropdownMenuGroup>
     </DropdownMenuContent>

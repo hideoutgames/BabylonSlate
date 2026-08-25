@@ -42,11 +42,13 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  decodeSourceToRgba,
   normalizeModelPayload,
   type ModelPayload,
   resolvePluginEnabled,
   newAssetGuid,
 } from "@babylonslate/assets";
+import { encodeRgbaPng } from "@babylonslate/render";
 import {
   commandToJournalPayload,
   DEFAULT_EDIT_BYTE_BUDGET,
@@ -91,6 +93,7 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
+import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
 import {
   recordedTraceFileName,
   spillRecordedTraceDocument,
@@ -168,6 +171,14 @@ import {
   classParentLookup,
 } from "../lib/content-browser-helpers";
 import { tryReparentUserClass } from "../lib/reparent-class";
+import {
+  copyInstanceLinkage,
+  descendantClassIds,
+  prefabTemplatesByClassId,
+  scenesEqualForPrefabSync,
+  stampUserComponentOverrides,
+  syncSceneActorsFromPrefabs,
+} from "../lib/prefab-instance-sync";
 import {
   classAssetPaths,
   createProjectPluginAndRevealContent,
@@ -325,6 +336,7 @@ interface DocumentContextValue {
     previewBuild?: boolean;
     playerFiles?: Map<string, Uint8Array>;
     onPhase?: (phase: "Compiling" | "Writing Pack") => void;
+    startupSceneGuid?: string | null;
   }) => Promise<Result<ExportArtifact, string>>;
   zipExportedGame: (artifact: ExportArtifact) => Uint8Array;
   dismissRecovery: () => Promise<void>;
@@ -357,7 +369,11 @@ interface DocumentContextValue {
     newParentId: string,
   ) => Promise<string | null>;
   /** Apply a scene edit through the command layer (marks dirty + undoable). */
-  applySceneChange: (id: string, next: SerializedScene) => Promise<boolean>;
+  applySceneChange: (
+    id: string,
+    next: SerializedScene,
+    options?: { prefabSync?: boolean },
+  ) => Promise<boolean>;
   applyAssetDocumentChange: (
     id: string,
     next: Record<string, unknown>,
@@ -468,7 +484,7 @@ interface DocumentContextValue {
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
   }>;
-  /** Texture pixels/source bytes for sprite, tileset, and material `textureGuid`s. */
+  /** GPU texture bytes (KTX2 or LOD-downsampled source) for sprite, tileset, and material `textureGuid`s. */
   collectPlayTextureBytes: (
     sprites: ReadonlyMap<string, SpritePayload>,
     tilesets: ReadonlyMap<string, TilesetPayload>,
@@ -631,6 +647,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const editSessionRef = useRef(
     new EditSession({ maxBytes: DEFAULT_EDIT_BYTE_BUDGET }),
   );
+  const applySceneChangeRef = useRef<
+    (
+      id: string,
+      next: SerializedScene,
+      options?: { prefabSync?: boolean },
+    ) => Promise<boolean>
+  >(async () => false);
+  const syncPrefabInstancesRef = useRef<
+    (options?: { classIds?: readonly string[]; quiet?: boolean }) => Promise<void>
+  >(async () => {});
   const dockviewApisRef = useRef(new Map<string, DockviewApi>());
   const dockSubscriptionsRef = useRef(new Map<string, Array<{ dispose: () => void }>>());
   const preFocusLayoutsRef = useRef(new Map<string, PreFocusSnapshot>());
@@ -1517,6 +1543,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       previewBuild?: boolean;
       playerFiles?: Map<string, Uint8Array>;
       onPhase?: (phase: "Compiling" | "Writing Pack") => void;
+      startupSceneGuid?: string | null;
     }) => {
       const list = projectService.registry?.list() ?? [];
       await flushAudioReverbForSave();
@@ -1532,8 +1559,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       });
       const playerFiles = options?.playerFiles ?? (await loadPlayerDistFiles());
       const engineSettings = await settingsStore.load();
+      const startupSceneGuid =
+        typeof options?.startupSceneGuid === "string" &&
+        options.startupSceneGuid.trim() !== ""
+          ? options.startupSceneGuid.trim()
+          : (projectDocument?.settings.startupSceneGuid ?? null);
       return collectAndExportGame({
-        startupSceneGuid: projectDocument?.settings.startupSceneGuid ?? null,
+        startupSceneGuid,
         gameInstanceClass: projectDocument?.settings.gameInstanceClass ?? null,
         audioMixerGuid: projectDocument?.settings.audio.audioMixerGuid ?? null,
         occlusionEnabled:
@@ -1564,9 +1596,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
         pixelPerfect: projectDocument?.settings.twoD.pixelPerfect === true,
         physicsWorld:
-          loaded.sceneByGuid(
-            projectDocument?.settings.startupSceneGuid ?? "",
-          )?.settings.physicsWorld === "2d"
+          loaded.sceneByGuid(startupSceneGuid ?? "")?.settings.physicsWorld ===
+          "2d"
             ? "2d"
             : "3d",
         infiniteLoopDetection:
@@ -1721,6 +1752,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       }
       sourceControlRef.current.onOpenDocument(ref.path);
       bump();
+      if (ref.kind === "scene") {
+        await syncPrefabInstancesRef.current({ quiet: true });
+      }
     },
     [bump, captureLayoutForId, closeDocument, documentService, projectService],
   );
@@ -1894,6 +1928,33 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     return readGitPrefill(projectService.storagePort);
   }, [projectService]);
 
+  const classGraphsForPrefabSync = useCallback(() => {
+    const assets = projectService.registry?.list() ?? [];
+    const graphs = collectClassGraphsForPalette({
+      assets,
+      openDocuments: [...documentService.getState().openDocuments.values()],
+      classIdForPath: classIdForGraphPath,
+    });
+    return {
+      graphs,
+      parentOf: classParentLookup(assets),
+    };
+  }, [documentService, projectService]);
+
+  const enqueuePrefabSyncForClassPath = useCallback(
+    async (path: string) => {
+      const { graphs, parentOf } = classGraphsForPrefabSync();
+      await syncPrefabInstancesRef.current({
+        classIds: descendantClassIds(
+          classIdForGraphPath(path),
+          Object.keys(graphs),
+          parentOf,
+        ),
+      });
+    },
+    [classGraphsForPrefabSync],
+  );
+
   const applyGraphChange = useCallback(
     async (id: string, next: SerializedGraph): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
@@ -1939,9 +2000,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         },
       });
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
+      if (commands.some((command) => command.type === "graph.setComponents")) {
+        await enqueuePrefabSyncForClassPath(doc.ref.path);
+      }
       return true;
     },
-    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+    [
+      bump,
+      documentService,
+      enqueuePrefabSyncForClassPath,
+      ensureDerived,
+      projectService,
+      scheduleDebouncedSave,
+    ],
   );
 
   const reparentClassDocument = useCallback(
@@ -1980,7 +2051,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const applySceneChange = useCallback(
-    async (id: string, next: SerializedScene): Promise<boolean> => {
+    async (
+      id: string,
+      next: SerializedScene,
+      options?: { prefabSync?: boolean },
+    ): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
       if (!doc || doc.ref.kind !== "scene" || !doc.content) {
         return false;
@@ -1993,14 +2068,37 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         return false;
       }
       const previous = doc.content as SerializedScene;
-      const commands = diffSceneCommands(previous, next);
+      const { graphs, parentOf } = classGraphsForPrefabSync();
+      const intended = options?.prefabSync
+        ? next
+        : stampUserComponentOverrides(
+            previous,
+            next,
+            prefabTemplatesByClassId({
+              classIds: Object.keys(graphs),
+              parentOf,
+              graphs,
+            }),
+          );
+      const commands = diffSceneCommands(previous, intended);
       if (commands.length === 0) {
-        return false;
+        if (scenesEqualForPrefabSync(previous, intended)) {
+          return false;
+        }
+        documentService.updateScene(id, intended);
+        await notifyDocumentEdited({
+          scheduleDebouncedSave,
+          bump,
+          journal: async () => {},
+        });
+        void afterMutatingApply(sourceControlRef.current, doc.ref.path);
+        return true;
       }
       let current = previous;
       for (const command of commands) {
         current = editSessionRef.current.apply(id, current, command).doc;
       }
+      current = copyInstanceLinkage(intended, current);
       documentService.updateScene(id, current);
       await notifyDocumentEdited({
         scheduleDebouncedSave,
@@ -2026,8 +2124,44 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       void afterMutatingApply(sourceControlRef.current, doc.ref.path);
       return true;
     },
-    [bump, documentService, ensureDerived, projectService, scheduleDebouncedSave],
+    [
+      bump,
+      classGraphsForPrefabSync,
+      documentService,
+      ensureDerived,
+      projectService,
+      scheduleDebouncedSave,
+    ],
   );
+
+  applySceneChangeRef.current = applySceneChange;
+  syncPrefabInstancesRef.current = async (options) => {
+    const open = [...documentService.getState().openDocuments.values()];
+    const sceneDoc = open.find((entry) => entry.ref.kind === "scene");
+    if (!sceneDoc?.content) return;
+    const assets = projectService.registry?.list() ?? [];
+    const graphs = collectClassGraphsForPalette({
+      assets,
+      openDocuments: open,
+      classIdForPath: classIdForGraphPath,
+    });
+    const parentOf = classParentLookup(assets);
+    const classIds = options?.classIds ?? Object.keys(graphs);
+    const templates = prefabTemplatesByClassId({
+      classIds: [...classIds],
+      parentOf,
+      graphs,
+    });
+    const scene = sceneDoc.content as SerializedScene;
+    const next = syncSceneActorsFromPrefabs(scene, templates);
+    if (scenesEqualForPrefabSync(scene, next)) return;
+    if (options?.quiet) {
+      sceneDoc.content = next;
+      bump();
+      return;
+    }
+    await applySceneChange(sceneDoc.id, next, { prefabSync: true });
+  };
 
   const applyAssetDocumentChange = useCallback(
     async (
@@ -2646,29 +2780,28 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
-      const byGuid = new Map(
-        assets.map((asset) => [asset.header.guid, asset] as const),
-      );
-      const bytes = new Map<string, Uint8Array>();
+      const settings = await createAppSettingsStore().load();
       const guids = [
         ...textureGuidsFromPlayPayloads(sprites, tilesets, spriteAnimations),
         ...extraGuids,
       ];
-      const seen = new Set<string>();
-      for (const guid of guids) {
-        if (!guid || seen.has(guid)) continue;
-        seen.add(guid);
-        const asset = byGuid.get(guid);
-        if (!asset) continue;
-        const pixels = await projectService.readAssetChunk(asset.path, "pixels");
-        if (pixels && pixels.byteLength > 0) {
-          bytes.set(guid, pixels);
-          continue;
-        }
-        const source = await projectService.readAssetChunk(asset.path, "source");
-        if (source && source.byteLength > 0) bytes.set(guid, source);
-      }
-      return bytes;
+      return collectGpuTextureBytes({
+        assets,
+        guids,
+        readChunk: (path, chunkId) =>
+          projectService.readAssetChunk(path, chunkId),
+        editorLod: {
+          enabled: settings.editorTextureLodEnabled,
+          quality: settings.editorTextureLodQuality,
+        },
+        downsampleSource: async (bytes, targetEdge) => {
+          const decoded = await decodeSourceToRgba(bytes, targetEdge);
+          return encodeRgbaPng(decoded.width, decoded.height, decoded.rgba);
+        },
+        onMissingKtx2: (guid) => {
+          void projectService.retryTextureEncoding(guid);
+        },
+      });
     },
     [projectService],
   );
@@ -3341,6 +3474,12 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         if (!result) return;
         documentService.updateGraph(activeDocumentId, result.doc);
         bump();
+        if (
+          JSON.stringify(content.components) !==
+          JSON.stringify(result.doc.components)
+        ) {
+          void enqueuePrefabSyncForClassPath(doc.ref.path);
+        }
         return;
       }
       if (doc.ref.kind === "scene") {
@@ -3366,7 +3505,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         bump();
       }
     },
-    [bump, documentService],
+    [bump, documentService, enqueuePrefabSyncForClassPath],
   );
 
   const undoActiveDocument = useCallback(() => {

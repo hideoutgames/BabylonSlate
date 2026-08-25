@@ -1,6 +1,7 @@
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import {
   eulerDegreesToQuaternion,
+  identitySerializedTransform,
   quaternionToEulerDegrees,
   type SerializedTransform,
   type ViewportMode,
@@ -12,15 +13,18 @@ export function spatialTransformPropertyRows(
   viewportMode: ViewportMode,
   transform: SerializedTransform,
   onUpdateTransform: (next: SerializedTransform) => void,
+  defaults?: SerializedTransform,
 ): PropertyRow[] {
   const twoD = viewportMode === "2d";
+  const reset = defaults ?? identitySerializedTransform();
+  const defaultEuler = quaternionToEulerDegrees(reset.rotation);
   const rows: PropertyRow[] = [
     {
       kind: "vector3",
       id: `${idPrefix}-position`,
       label: "Position",
       value: transform.position,
-      defaultValue: [0, 0, 0],
+      defaultValue: [...reset.position] as [number, number, number],
       axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
       onChange: (position) =>
         onUpdateTransform({
@@ -35,7 +39,7 @@ export function spatialTransformPropertyRows(
       id: `${idPrefix}-z-order`,
       label: "Z-Order",
       value: transform.position[2],
-      defaultValue: 0,
+      defaultValue: reset.position[2],
       onChange: (z) =>
         onUpdateTransform({
           ...transform,
@@ -51,7 +55,7 @@ export function spatialTransformPropertyRows(
       value: twoD
         ? [quaternionToEulerDegrees(transform.rotation)[2], 0, 0]
         : quaternionToEulerDegrees(transform.rotation),
-      defaultValue: [0, 0, 0],
+      defaultValue: twoD ? [defaultEuler[2], 0, 0] : defaultEuler,
       axes: twoD ? ["Z"] : ["X", "Y", "Z"],
       onChange: (next) =>
         onUpdateTransform({
@@ -66,7 +70,7 @@ export function spatialTransformPropertyRows(
       id: `${idPrefix}-scale`,
       label: "Scale",
       value: transform.scale,
-      defaultValue: [1, 1, 1],
+      defaultValue: [...reset.scale] as [number, number, number],
       axes: twoD ? ["X", "Y"] : ["X", "Y", "Z"],
       onChange: (scale) =>
         onUpdateTransform({

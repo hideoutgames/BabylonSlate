@@ -147,6 +147,7 @@ export function instantiatePrefabComponents(
       classId: component.classId,
       properties: { ...component.properties },
       parentId,
+      sourceId: component.id,
       transform: component.transform
         ? {
             position: [...component.transform.position] as [

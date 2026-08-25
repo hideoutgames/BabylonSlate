@@ -1526,6 +1526,11 @@ describe("content-browser-helpers", () => {
     expect(scene.version).toBe(
       createDefaultMigrationRegistry().currentVersion("Scene"),
     );
+    expect(scene.payload.name).toBe("Arena");
+    const decoded = JSON.parse(
+      new TextDecoder().decode(scene.chunks[0]!.data),
+    ) as { name?: string };
+    expect(decoded.name).toBe("Arena");
   });
 
   it("shows Prefab only for Actor-lineage classes", () => {

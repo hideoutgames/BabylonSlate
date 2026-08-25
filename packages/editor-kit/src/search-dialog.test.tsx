@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { filterSearchItems, groupSearchItems, SearchDialog } from "./search-dialog";
 import { AssetPicker } from "./asset-picker";
 
-const VIEWPORT = '[data-slot="scroll-area-viewport"]';
+const LIST_BODY = '[data-testid="picker-body"]';
 
 function stubScrollViewportHeight(height: number): () => void {
   const descriptor = Object.getOwnPropertyDescriptor(
@@ -13,7 +13,8 @@ function stubScrollViewportHeight(height: number): () => void {
   Object.defineProperty(HTMLElement.prototype, "clientHeight", {
     configurable: true,
     get() {
-      if ((this as HTMLElement).matches?.(VIEWPORT)) {
+      const el = this as HTMLElement;
+      if (el.matches?.(LIST_BODY) || el.getAttribute?.("data-testid") === "picker-body") {
         return height;
       }
       return descriptor?.get?.call(this) ?? 0;
@@ -140,8 +141,9 @@ describe("SearchDialog", () => {
       />,
     );
     const list = screen.getByTestId("search-item-a");
-    const scroller = list.closest("[data-slot='scroll-area']");
+    const scroller = list.closest("[data-testid='picker-body']");
     expect(scroller).toBeTruthy();
+    expect(scroller?.className).toMatch(/overflow-y-auto/);
     expect(scroller?.className).not.toMatch(/(?:^|\s)h-0(?:\s|$)/);
     expect(scroller?.className).not.toMatch(/(?:^|\s)flex-1(?:\s|$)/);
     expect(Number.parseFloat((scroller as HTMLElement).style.height)).toBe(
@@ -166,7 +168,7 @@ describe("SearchDialog", () => {
       />,
     );
     const longList = screen.getByTestId("search-item-n0");
-    const longScroller = longList.closest("[data-slot='scroll-area']");
+    const longScroller = longList.closest("[data-testid='picker-body']");
     expect(Number.parseFloat((longScroller as HTMLElement).style.height)).toBe(
       256,
     );
@@ -183,7 +185,7 @@ describe("SearchDialog", () => {
       />,
     );
     const empty = screen.getByText("No matches");
-    const emptyScroller = empty.closest("[data-slot='scroll-area']");
+    const emptyScroller = empty.closest("[data-testid='picker-body']");
     expect(Number.parseFloat((emptyScroller as HTMLElement).style.height)).toBeGreaterThan(
       0,
     );

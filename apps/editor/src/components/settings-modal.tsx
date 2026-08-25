@@ -173,7 +173,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "assets",
     label: "Assets",
-    keywords: "model import default scale glb gltf",
+    keywords: "model import default scale glb gltf texture lod budget quality",
   },
   {
     id: "graph",
@@ -309,6 +309,10 @@ export function SettingsModal({
         uiDesignerPresets: next.uiDesignerPresets,
         hardwareScalingLevel: next.hardwareScalingLevel,
         postProcessingEnabled: next.postProcessingEnabled,
+        editorTextureLodEnabled: next.editorTextureLodEnabled,
+        editorTextureLodQuality: next.editorTextureLodQuality,
+        textureBudgetEnabled: next.textureBudgetEnabled,
+        textureByteCeiling: next.textureByteCeiling,
         viewportFlySpeed: next.viewportFlySpeed,
         viewportGridSize: next.viewportGridSize,
         modelImportDefaultScale: next.modelImportDefaultScale,

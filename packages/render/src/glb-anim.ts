@@ -15,7 +15,7 @@ import { applyAnimStateToScene,
   sceneAnimHostFromBinding,
   type NamedSeekableGroup,
 } from "./anim-apply";
-import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes } from "./model-mesh";
+import { gltfLoaderExtension, isGltfModelBytes, packedGltfBytes, gpuModelBytes } from "./model-mesh";
 import { retargetAnimationGroupWithMeshProxy } from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
@@ -189,18 +189,20 @@ function getCachedGlbContainer(
   scene: Scene,
   guid: string,
   bytes: Uint8Array,
+  payload?: unknown,
 ): Promise<AssetContainer> {
+  const loadBytes = gpuModelBytes(bytes, payload);
   const cache = cacheFor(scene);
   const existing = cache.entries.get(guid);
-  if (existing && existing.byteLength === bytes.byteLength) {
+  if (existing && existing.byteLength === loadBytes.byteLength) {
     return existing.load;
   }
   if (existing) {
     void existing.load.then((container) => container.dispose()).catch(() => {});
   }
   cache.loadCount += 1;
-  const load = loadGlbContainer(scene, bytes, `${guid}.glb`);
-  cache.entries.set(guid, { byteLength: bytes.byteLength, load });
+  const load = loadGlbContainer(scene, loadBytes, `${guid}.glb`);
+  cache.entries.set(guid, { byteLength: loadBytes.byteLength, load });
   return load;
 }
 
@@ -322,7 +324,12 @@ export function beginSlotModelAnimLoad(
   const epoch = bumpSlotAnimEpoch(binding, slotId);
   const load = (async () => {
     try {
-      const container = await getCachedGlbContainer(scene, clipAssetGuid, bytes);
+      const container = await getCachedGlbContainer(
+        scene,
+        clipAssetGuid,
+        bytes,
+        binding.modelPayloads?.get(clipAssetGuid),
+      );
       if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
         return;
       }
@@ -356,6 +363,7 @@ export function beginSlotModelAnimLoad(
           scene,
           row.sourceModelGuid,
           sourceBytes,
+          binding.modelPayloads?.get(row.sourceModelGuid),
         );
         if (binding.slotAnimEpoch?.get(slotId) !== epoch) {
           return;

@@ -5,9 +5,12 @@ export function playChromeLaunchLabel(previewBuild: boolean): "Preview" | "Play"
 export function playChromeLaunchAriaLabel(
   previewBuild: boolean,
   canPlay: boolean,
+  options?: { playFromScene?: boolean },
 ): string {
   if (canPlay) return playChromeLaunchLabel(previewBuild);
-  return previewBuild
-    ? "Preview (Set Startup Scene)"
-    : "Play (Open a Scene)";
+  const prefix = playChromeLaunchLabel(previewBuild);
+  if (!previewBuild && options?.playFromScene !== false) {
+    return `${prefix} (Open a Scene)`;
+  }
+  return `${prefix} (Set Startup Scene)`;
 }

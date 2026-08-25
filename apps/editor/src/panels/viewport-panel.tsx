@@ -21,7 +21,6 @@ import {
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
 import {
-  engineCommandBus,
   widgetUiGuidsFromScene,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -97,7 +96,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     pivotAroundCenter,
     viewportShadingMode,
   } = useSceneEditing();
-  const { flySpeed } = useEditorViewportPrefs();
+  const { flySpeed, editorTextureLodEnabled, editorTextureLodQuality } =
+    useEditorViewportPrefs();
   const flySpeedRef = useRef(flySpeed);
   flySpeedRef.current = flySpeed;
   const {
@@ -294,18 +294,14 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       scaling: handle.scaling,
       setPostProcessingEnabled: (enabled) =>
         handle.setPostProcessingEnabled(enabled),
+      setTextureBudget: (bytes, enabled) =>
+        handle.setTextureBudget(bytes, enabled),
     });
 
     const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {
       onHoldChange: (holding) => handle.scheduler.setResizing(holding),
     });
     resizeIfSized(canvas);
-
-    const unsubscribe = engineCommandBus.subscribe((command) => {
-      if (command.type === "log") {
-        console.info("[Engine]", command.message);
-      }
-    });
 
     const resizeObserver = new ResizeObserver(() => {
       resizeIfSized(canvas);
@@ -330,7 +326,6 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
 
     return () => {
-      unsubscribe();
       resizeIfSized.dispose();
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
@@ -494,6 +489,76 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     collectPlayUiLibrary,
     projectDocument?.settings.twoD.pixelsPerUnit,
     engineEpoch,
+  ]);
+
+  const textureLodKey = `${editorTextureLodEnabled}:${editorTextureLodQuality}`;
+  const textureLodKeyRef = useRef(textureLodKey);
+  useEffect(() => {
+    const lodChanged = textureLodKeyRef.current !== textureLodKey;
+    textureLodKeyRef.current = textureLodKey;
+    if (!lodChanged || !scene) return;
+    const handle = engineRef.current;
+    if (!handle) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sprites = await collectPlaySpritePayloads(scene);
+        const tileContent = await collectPlayTilemapContent(scene);
+        const modelBytes = await collectPlayModelBytes(scene);
+        const modelPayloads = await collectPlayModelPayloads(scene);
+        const materials = await collectPlayMaterialLibrary(
+          scene,
+          [],
+          modelSlotMaterialGuidsFromPayloads(modelPayloads),
+        );
+        const textureBytes = await collectPlayTextureBytes(
+          sprites,
+          tileContent.tilesets,
+          [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
+        );
+        const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        const widgetGuids = widgetUiGuidsFromScene(scene);
+        const uiDocuments = new Map();
+        if (widgetGuids.length > 0) {
+          const library = await collectPlayUiLibrary();
+          for (const guid of widgetGuids) {
+            const document = library[guid];
+            if (document) uiDocuments.set(guid, document);
+          }
+        }
+        if (cancelled || engineRef.current !== handle) return;
+        handle.setMaterialDocuments(materials.documents, materials.functions);
+        handle.setMeshAssets({
+          resourceCache: handle.resourceCache,
+          spritePayloads: sprites,
+          tilemaps: tileContent.tilemaps,
+          tilesets: tileContent.tilesets,
+          textureBytes,
+          fontFacetypeBytes,
+          uiDocuments,
+          modelBytes,
+          modelPayloads,
+          pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
+        });
+      } catch (error) {
+        console.error("[viewport] failed to refresh mesh assets", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    textureLodKey,
+    scene,
+    collectPlaySpritePayloads,
+    collectPlayTilemapContent,
+    collectPlayTextureBytes,
+    collectPlayFontFacetypeBytes,
+    collectPlayModelBytes,
+    collectPlayModelPayloads,
+    collectPlayMaterialLibrary,
+    collectPlayUiLibrary,
+    projectDocument?.settings.twoD.pixelsPerUnit,
   ]);
 
   useEffect(() => {

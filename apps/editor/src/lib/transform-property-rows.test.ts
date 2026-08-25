@@ -53,4 +53,28 @@ describe("spatialTransformPropertyRows", () => {
       position: [4, 5, 9],
     });
   });
+
+  it("uses a prefab transform as the reset default", () => {
+    const rows = spatialTransformPropertyRows(
+      "mesh",
+      "3d",
+      {
+        position: [9, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [2, 2, 2],
+      },
+      vi.fn(),
+      {
+        position: [1, 2, 3],
+        rotation: [0, 0, 0, 1],
+        scale: [4, 4, 4],
+      },
+    );
+    expect(rows.find((row) => row.id === "mesh-position")).toMatchObject({
+      defaultValue: [1, 2, 3],
+    });
+    expect(rows.find((row) => row.id === "mesh-scale")).toMatchObject({
+      defaultValue: [4, 4, 4],
+    });
+  });
 });
