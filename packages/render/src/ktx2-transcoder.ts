@@ -3,10 +3,15 @@
  * (engineplan §3.5). Never point at a CDN — editor and exports must work offline.
  */
 
-export {
+import {
   KTX2_TRANSCODER_RELATIVE_FILES,
   playerFilesHaveKtx2Transcoder,
 } from "@babylonslate/assets";
+
+export {
+  KTX2_TRANSCODER_RELATIVE_FILES,
+  playerFilesHaveKtx2Transcoder,
+};
 
 export interface Ktx2TranscoderUrls {
   jsDecoderModule: string;
@@ -103,6 +108,22 @@ export function shouldForceKtx2Rgba(
 ): boolean {
   if (isSoftwareGlRenderer(renderer ?? "")) return true;
   return !caps?.astc && !caps?.bptc;
+}
+
+/**
+ * Preview Build packs KTX2 only when the player has the transcoder **and** the
+ * editor GPU is not software GL. SwiftShader can decode some KTX2 in Playwright
+ * Chromium and still fail texImage2D in other Chromium builds; PNG matches the
+ * overlay LOD path.
+ */
+export function shouldPackKtx2Textures(
+  playerFiles: ReadonlyMap<string, Uint8Array>,
+  renderer?: string,
+): boolean {
+  return (
+    playerFilesHaveKtx2Transcoder(playerFiles) &&
+    !isSoftwareGlRenderer(renderer ?? "")
+  );
 }
 
 /**
