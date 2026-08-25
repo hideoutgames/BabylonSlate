@@ -148,7 +148,9 @@ export function shouldSlimModelEmbeddedTextures(
   }
   if (!packed) return false;
   for (const slot of slots) {
-    const textures = packed.texturesByMaterialGuid.get(slot.materialGuid!);
+    const materialGuid = slot.materialGuid;
+    if (!materialGuid) return false;
+    const textures = packed.texturesByMaterialGuid.get(materialGuid);
     if (!textures) return false;
     for (const guid of textures) {
       if (!packed.packedTextureGuids.has(guid)) return false;

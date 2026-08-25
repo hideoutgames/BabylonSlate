@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay } from "./play";
 import { saveAllIfEnabled } from "./save-all";
@@ -6,6 +6,73 @@ import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
   previewPlacementScene,
 } from "./preview-scene-fixture";
+
+async function previewIframe(page: Page) {
+  return page.locator('[data-testid="preview-build-iframe"]').contentFrame();
+}
+
+async function previewSlotMaterialNames(page: Page): Promise<string[]> {
+  const frame = await previewIframe(page);
+  if (!frame) return [];
+  return frame.evaluate(() => {
+    const host = globalThis as unknown as {
+      __babylonslatePlayerTest?: {
+        visuals: () => Array<{ materialName: string | null }>;
+      };
+    };
+    return (host.__babylonslatePlayerTest?.visuals() ?? [])
+      .map((visual) => visual.materialName)
+      .filter((name): name is string => typeof name === "string");
+  });
+}
+
+/** Count slim-stub red and Babylon error-sampler magenta among non-clear pixels. */
+async function previewCanvasPixelStats(page: Page): Promise<
+  | { ok: false; reason: string; width?: number; height?: number }
+  | {
+      ok: true;
+      total: number;
+      redStub: number;
+      magenta: number;
+      width: number;
+      height: number;
+    }
+> {
+  const frame = await previewIframe(page);
+  if (!frame) return { ok: false, reason: "no-frame" };
+  return frame.evaluate(() => {
+    const canvas = document.querySelector('[data-testid="player-canvas"]');
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      return { ok: false as const, reason: "no-canvas" };
+    }
+    const width = canvas.width;
+    const height = canvas.height;
+    if (width < 2 || height < 2) {
+      return { ok: false as const, reason: "tiny", width, height };
+    }
+    const dst = document.createElement("canvas");
+    dst.width = width;
+    dst.height = height;
+    const ctx = dst.getContext("2d");
+    if (!ctx) return { ok: false as const, reason: "2d" };
+    ctx.drawImage(canvas, 0, 0);
+    const data = ctx.getImageData(0, 0, width, height).data;
+    let total = 0;
+    let redStub = 0;
+    let magenta = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i]!;
+      const g = data[i + 1]!;
+      const b = data[i + 2]!;
+      const a = data[i + 3]!;
+      if (a < 8 || r + g + b < 24) continue;
+      total += 1;
+      if (r > 220 && g < 30 && b < 30) redStub += 1;
+      if (r > 220 && g < 30 && b > 220) magenta += 1;
+    }
+    return { ok: true as const, total, redStub, magenta, width, height };
+  });
+}
 
 test.describe("P14 Preview Build", () => {
   test("default overlay Play is unchanged when Preview Build is off", async ({
@@ -200,5 +267,55 @@ test.describe("P14 Preview Build", () => {
     await page.getByTestId("preview-build-toggle").click();
     await expect(page.getByTestId("play-preview")).toBeDisabled();
     await expect(page.getByTestId("play-overlay")).toHaveCount(0);
+  });
+
+  test("Preview Build Main Scene Mannequin is not slim-stub red or the error sampler", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    await openMainScene(page);
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    const frame = page.frameLocator('[data-testid="preview-build-iframe"]');
+    const root = frame.getByTestId("player-root");
+    await expect(root).toHaveAttribute("data-booted", "true", {
+      timeout: 30_000,
+    });
+    await expect
+      .poll(async () => Number((await root.getAttribute("data-ticks")) ?? "0"), {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(0);
+
+    await expect
+      .poll(
+        async () => {
+          const names = await previewSlotMaterialNames(page);
+          return names.some((name) => name.startsWith("material:"))
+            ? "bound"
+            : names.join(",") || "none";
+        },
+        { timeout: 30_000 },
+      )
+      .toBe("bound");
+
+    await expect
+      .poll(
+        async () => {
+          const stats = await previewCanvasPixelStats(page);
+          if (!stats.ok || stats.total < 50) {
+            return `wait:${JSON.stringify(stats)}`;
+          }
+          const bad = stats.redStub + stats.magenta;
+          return bad / stats.total < 0.25
+            ? "ok"
+            : `red:${stats.redStub}/magenta:${stats.magenta}/total:${stats.total}`;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe("ok");
+    await page.getByTestId("preview-build-close").click();
   });
 });
