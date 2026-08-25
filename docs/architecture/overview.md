@@ -24,13 +24,12 @@ packages/physics/     Body/shape protocol; Havok 3D + Rapier 2D backends (P7)
 packages/bridge/      SAB + transferable transports, snapshot layout, typed RPC
 packages/runtime/     Game worker + in-process driver, snapshot writer, diagnostics, module loader, script host
 packages/debugger/    Command registry, parser, BDebugCommand helpers, stats budget, trace recorder (P8)
-packages/ui-runtime/  Widget tree, anchors, layout (P9 package; `apps/editor` does not create or open UserInterface)
 packages/anim-graph/  AnimationGraph evaluator in the game worker (P9)
 packages/behaviour-tree/ Tree IR, blackboard, explicit-stack evaluator (P11)
 packages/navigation/  Recast bake/query port, 2D remap, Scene navmesh chunk (P11)
 packages/shader-graph/ Shader IR; compile-to-NodeMaterial in render (P9)
 packages/input/       Raw input ring + action/axis mapping model and `InputResolver`
-packages/render/      Snapshot sync, visibility-gated editor loop, resource cache, editor tools, KTX2 transcoder, FontFace registry, Babylon GUI apply
+packages/render/      Snapshot sync, visibility-gated editor loop, resource cache, editor tools, KTX2 transcoder, FontFace registry
 packages/scripting/   Graph IR, pin types, validator, JS codegen + anchors (P5)
 packages/scripting-nodes/ Data-driven node catalog (P5)
 packages/graph-ui/    React Flow graph editor with Blueprint node chrome (mutations via edit); see [components.md](components.md)
@@ -63,13 +62,13 @@ Game logic and physics share one worker; transforms use SAB or transferable snap
 - **Global search**: `ProjectSearchIndex` (same package) may load Scene/Graph document JSON for actors/nodes from the asset’s root storage; it must not load binary payloads. Toolbar Search opens a centered dialog; see [global-search.md](global-search.md).
 - **Edits**: `@babylonslate/edit` owns per-document undo; graph, scene, and P9 asset documents (Font / Sprite / AnimationGraph / Shader) route mutations through commands (`applyGraphChange` / `applySceneChange` / `applyAssetDocumentChange`). When Source Control is enabled, the first mutating apply auto-locks the document path ([source-control.md](source-control.md)).
 - **Scene editing (P6)**: `SerializedScene` v2 actors/components; shared `SceneEditingProvider` selection; viewport gizmo + 2D mode via `@babylonslate/render` editor tools. See [scene-editing.md](scene-editing.md).
-- **Input mappings (P6)**: Project Settings → `InputResolver` → runtime `TickContext` and scripting input nodes. **Set Input Mode** (`engine:InputMode`) is a session command, not a mapping. See [input.md](input.md).
+- **Input mappings (P6)**: Project Settings → `InputResolver` → runtime `TickContext` and scripting input nodes. See [input.md](input.md).
 - **Object model**: `@babylonslate/object-model` owns headless World, class registry, and deterministic tick.
 - **Bridge / runtime**: `@babylonslate/bridge` + `@babylonslate/runtime` own Play transports, fixed-step worker, and diagnostics. Play `load` carries the open `SerializedScene`; the worker instantiates those actors (no demo seeds), binds compiled graphs to matching class ids, and emits `assignMesh` `meshKind` so Play primitives match `MeshComponent`.
 
 - **Graph → engine**: `engineCommandBus` in `core` for light UI commands; Play hot path uses the bridge.
 - **Visual scripting (P5)**: `@babylonslate/scripting` compiles logic graphs to JS modules with anchor tables; `@babylonslate/scripting-nodes` supplies the catalog; `runtime.ScriptHost` loads those modules and binds Begin Play / Tick entry points to actor lifecycle hooks, and Preview ships compiled project graphs to the worker (see [scripting.md](scripting.md)). `ExecuteConsoleCommand` runs through `@babylonslate/debugger` (see [debugger.md](debugger.md)).
-- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); Prefab Preview on that Engine (`p18-shared-prefab-engine`); visible editor canvases always render at `viewportFrameCap` (default 30) and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Play hosts viewport-layer HUD as a Babylon GUI Layer on the Play scene (`BabylonUiApplyHost`); later `uiApply`s append so later HUDs paint/pick above; Hit Testable maps to Babylon pick flags; **Set Input Mode** gates HUD pick vs the input ring; TouchJoystick / TouchDPad / TouchButton write `touchAxis` into the P6 input ring (default Move + Jump); HUD **Material** widgets blit Interface NodeMaterials. **Preview Build** (Debug checkbox, off by default) packages via `@babylonslate/exporter` and hosts `apps/player` in a same-origin iframe with its own Engine — see [exporter.md](exporter.md).
+- **Viewport**: App-lifetime `Engine`; Play overlay via `registerView(..., true)` (clear-before-copy blit); Prefab Preview on that Engine (`p18-shared-prefab-engine`); visible editor canvases always render at `viewportFrameCap` (default 30) and freeze when hidden or a modal is open; Play holds a continuous lease and renders at project `playFrameCap` (default 60). Debug Stats / Print overlays are DOM. **Preview Build** (Debug checkbox, off by default) packages via `@babylonslate/exporter` and hosts `apps/player` in a same-origin iframe with its own Engine — see [exporter.md](exporter.md).
 
 ## Asset document docks
 
@@ -85,7 +84,7 @@ Boundaries are enforced by `no-restricted-imports` patterns in `eslint.config.js
 
 | Package | May not import |
 | --- | --- |
-| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `ui-runtime`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes`, `exporter`, `source-control` | React, Babylon, Capacitor |
+| `core`, `edit`, `object-model`, `bridge`, `runtime`, `debugger`, `anim-graph`, `behaviour-tree`, `navigation`, `shader-graph`, `input`, `test-kit`, `scripting`, `scripting-nodes`, `exporter`, `source-control` | React, Babylon, Capacitor |
 | `physics` | React, Capacitor, editor Babylon packages (gui/loaders/inspector). May import `@babylonjs/core` Physics V2 and `@babylonjs/havok` on a worker-local NullEngine Scene. |
 | `assets` | React, Babylon, Capacitor |
 | `vfs` | React, Babylon |

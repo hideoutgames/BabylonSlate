@@ -24,12 +24,9 @@ Do all of these in the same change:
 
 `WindowsMenu` lists `listDockWindows(kind)` automatically. `registerDockviewApi` persists placements in `layout.json`.
 
-## UserInterface exception
+## Animation Graph exception
 
-UserInterface documents host a chrome **Designer | Logic** `ToggleGroup` (`UiEditorModeBar`) **outside** DockView. Below the bar, two stacked DockView surfaces persist separately (`layout.json` `{ uiEditorMode, designer, logic }`; raw old snapshots migrate to Designer). The mode bar is **not** a dock tab. **Windows** and Focus follow the **active mode**. Nested shadcn `Tabs` still must not be the document layout.
-
-- **Designer** catalog: Design, Hierarchy, Details. Not Graph/Class.
-- **Logic** catalog: same as BObject Class — Graph, Class, Inspector, Compiler Results. Graph is `payload.logic`. Primary panel is `graph`. Leftover `ui-logic` / `ui-settings` panels close on restore.
+Animation Graph documents host a chrome **State Machine | Animation Object** `ToggleGroup` (`AnimEditorModeBar`) **outside** DockView. Below the bar, two stacked DockView surfaces persist separately (`layout.json` `{ animEditorMode, stateMachine, animationObject }`). The mode bar is **not** a dock tab. **Windows** and Focus follow the **active mode**. Nested shadcn `Tabs` still must not be the document layout.
 
 ## Do not
 
