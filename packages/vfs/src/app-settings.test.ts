@@ -56,7 +56,7 @@ describe("app settings", () => {
     expect(settings.editorTextureLodQuality).toBe(0.5);
     expect(settings.textureBudgetEnabled).toBe(true);
     expect(settings.textureByteCeiling).toBe(2 * 1024 * 1024 * 1024);
-    expect(settings.modelImportDefaultScale).toBe(10);
+    expect(settings.modelImportDefaultScale).toBe(1);
     expect(settings.viewportFlySpeed).toBe(8);
     expect(settings.viewportGridSize).toBe(1);
   });
@@ -68,11 +68,11 @@ describe("app settings", () => {
     expect(parsed.viewportFrameCap).toBe(30);
   });
 
-  it("fills model import default scale at 10 when saved JSON omits the field", () => {
+  it("fills model import default scale at 1 when saved JSON omits the field", () => {
     const parsed = engineSettingsSchema.parse({
       undoHistoryLength: 50,
     });
-    expect(parsed.modelImportDefaultScale).toBe(10);
+    expect(parsed.modelImportDefaultScale).toBe(1);
   });
 
   it("clamps model import default scale to a positive finite number", () => {
