@@ -76,6 +76,9 @@ export async function patchEngineViewportPrefs(patch: {
     editorTextureLodQuality: next.editorTextureLodQuality,
     textureBudgetEnabled: next.textureBudgetEnabled,
     textureByteCeiling: next.textureByteCeiling,
+    audioBudgetEnabled: next.audioBudgetEnabled,
+    audioByteCeiling: next.audioByteCeiling,
+    audioMaxVoices: next.audioMaxVoices,
     graphDefaultZoom: next.graphDefaultZoom,
     theme: next.appearance.theme,
   });

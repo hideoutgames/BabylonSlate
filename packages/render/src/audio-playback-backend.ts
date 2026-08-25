@@ -51,6 +51,8 @@ export interface AudioPlaybackBackend {
   setVoiceMuffle(voiceId: string, factor: number): void;
   /** Pause or resume live voices without stopping them. */
   setPaused(paused: boolean): void;
+  /** Drop a decoded clip when the PCM LRU evicts it. */
+  disposeBuffer(cacheKey: string): void;
   dispose(): void;
   onVoiceEnded: ((voiceId: string) => void) | null;
 }
@@ -71,6 +73,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   decay = 0.4;
   damping = 0.5;
   disposed = false;
+  disposedBuffers: string[] = [];
   onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   isUnlocked(): boolean {
@@ -133,6 +136,10 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setPaused(paused: boolean): void {
     this.paused = paused;
+  }
+
+  disposeBuffer(cacheKey: string): void {
+    this.disposedBuffers.push(cacheKey);
   }
 
   dispose(): void {

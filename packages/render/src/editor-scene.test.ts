@@ -28,7 +28,7 @@ import {
 } from "./editor-camera";
 import { worldPositionFromCanvas } from "./editor-place";
 import { EditorSceneSync } from "./editor-scene-sync";
-import { glbContainerLoadCount } from "./glb-anim";
+import { glbContainerLoadCount, accountedGeometryBytesForScene } from "./glb-anim";
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import {
@@ -1057,6 +1057,7 @@ describe("EditorSceneSync", () => {
       expect(visualMeshes(sync.meshForActor("b")!).length).toBeGreaterThan(0);
     });
     expect(glbContainerLoadCount(scene)).toBe(1);
+    expect(accountedGeometryBytesForScene(scene)).toBeGreaterThan(0);
   });
 
   it("binds MeshComponent.materialGuid onto the visual mesh", () => {

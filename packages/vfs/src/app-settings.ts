@@ -70,7 +70,7 @@ export const engineSettingsSchema = z.object({
   modelImportDefaultScale: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
-  }, z.number().positive().default(10)),
+  }, z.number().positive().default(1)),
   viewportFlySpeed: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;
     return Math.max(0.0001, value);
@@ -93,6 +93,18 @@ export const engineSettingsSchema = z.object({
       Math.max(256 * 1024 * 1024, value),
     );
   }, z.number().min(256 * 1024 * 1024).max(8 * 1024 * 1024 * 1024).default(2 * 1024 * 1024 * 1024)),
+  audioBudgetEnabled: z.boolean().default(true),
+  audioByteCeiling: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(
+      2 * 1024 * 1024 * 1024,
+      Math.max(32 * 1024 * 1024, value),
+    );
+  }, z.number().min(32 * 1024 * 1024).max(2 * 1024 * 1024 * 1024).default(256 * 1024 * 1024)),
+  audioMaxVoices: z.preprocess((value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return value;
+    return Math.min(128, Math.max(8, Math.round(value)));
+  }, z.number().int().min(8).max(128).default(32)),
   thumbnailsEnabled: z.boolean().default(true),
   graphDefaultZoom: z.preprocess((value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return value;

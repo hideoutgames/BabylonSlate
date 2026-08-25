@@ -1,3 +1,5 @@
+import { concatBytes, readU32LE, writeU32LE } from "./bytes";
+
 export interface ModelMaterialSlot {
   index: number;
   name: string;
@@ -5,7 +7,7 @@ export interface ModelMaterialSlot {
 }
 
 /** Importer fallback when Engine Settings are not passed. Not used for missing payload fields. */
-export const DEFAULT_MODEL_IMPORT_SCALE = 10;
+export const DEFAULT_MODEL_IMPORT_SCALE = 1;
 
 export interface ModelPayload {
   materialSlots: ModelMaterialSlot[];
@@ -128,4 +130,71 @@ export function shouldSlimModelEmbeddedTextures(payload: unknown): boolean {
         typeof slot.materialGuid === "string" && slot.materialGuid.length > 0,
     )
   );
+}
+
+const PACKED_MODEL_MAGIC = new Uint8Array([0x42, 0x53, 0x4d, 0x4f]); // BSMO
+const packedEncoder = new TextEncoder();
+const packedDecoder = new TextDecoder();
+
+/** Pack Model JSON payload with GLB source so export can ship both. */
+export function encodePackedModelAsset(
+  payload: ModelPayload | Record<string, unknown>,
+  source: Uint8Array,
+): Uint8Array {
+  const json = packedEncoder.encode(JSON.stringify(normalizeModelPayload(payload)));
+  return concatBytes([
+    PACKED_MODEL_MAGIC,
+    writeU32LE(json.byteLength),
+    json,
+    source,
+  ]);
+}
+
+function packedModelJsonRange(
+  bytes: Uint8Array,
+): { jsonStart: number; jsonEnd: number } | null {
+  if (bytes.byteLength < 8) return null;
+  for (let i = 0; i < PACKED_MODEL_MAGIC.length; i++) {
+    if (bytes[i] !== PACKED_MODEL_MAGIC[i]) return null;
+  }
+  const jsonLen = readU32LE(bytes, 4);
+  const jsonStart = 8;
+  const jsonEnd = jsonStart + jsonLen;
+  if (jsonLen < 0 || jsonEnd > bytes.byteLength) return null;
+  return { jsonStart, jsonEnd };
+}
+
+/** JSON payload from a BSMO envelope without copying GLB bytes. */
+export function peekPackedModelPayload(bytes: Uint8Array): ModelPayload | null {
+  const range = packedModelJsonRange(bytes);
+  if (!range) return null;
+  try {
+    return normalizeModelPayload(
+      JSON.parse(packedDecoder.decode(bytes.subarray(range.jsonStart, range.jsonEnd))),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Unwrap a packed Model envelope; raw GLB returns null. */
+export function decodePackedModelAsset(
+  bytes: Uint8Array,
+): { payload: ModelPayload; source: Uint8Array } | null {
+  const payload = peekPackedModelPayload(bytes);
+  if (!payload) return null;
+  const range = packedModelJsonRange(bytes);
+  if (!range) return null;
+  return { payload, source: bytes.subarray(range.jsonEnd) };
+}
+
+/** Packed Model source plus payload; raw GLB uses a default payload. */
+export function extractPackedModelAsset(bytes: Uint8Array): {
+  payload: ModelPayload;
+  source: Uint8Array;
+} {
+  return decodePackedModelAsset(bytes) ?? {
+    payload: normalizeModelPayload({}),
+    source: bytes,
+  };
 }

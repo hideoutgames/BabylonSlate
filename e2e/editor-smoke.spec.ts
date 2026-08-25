@@ -27,7 +27,7 @@ test.describe("BabylonSlate editor smoke", () => {
     await expect(
       page.locator('[data-asset-path="assets/main.scene.babasset"]'),
     ).toBeVisible();
-    await expect(page.locator("canvas")).toHaveCount(0);
+    await expect(page.locator("canvas:visible")).toHaveCount(0);
 
     await page.locator('[data-asset-path="assets/main.scene.babasset"]').dblclick();
     await expect(page.getByTestId("document-workspace-scene")).toBeVisible();
@@ -70,14 +70,14 @@ test.describe("BabylonSlate editor smoke", () => {
   }) => {
     await openTestProject(page);
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
-    await expect(page.locator("canvas")).toHaveCount(0);
+    await expect(page.locator("canvas:visible")).toHaveCount(0);
 
     await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);
     await expect(page.getByTestId("homepage")).toBeVisible();
     await openTestProject(page);
     await expect(page.getByTestId("content-browser-workspace")).toBeVisible();
-    await expect(page.locator("canvas")).toHaveCount(0);
+    await expect(page.locator("canvas:visible")).toHaveCount(0);
   });
 
   test("cold-reopens an OPFS project from the Homepage without a prompt", async ({

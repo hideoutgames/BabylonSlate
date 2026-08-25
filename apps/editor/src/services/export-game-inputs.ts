@@ -7,8 +7,10 @@ import {
   AUDIO_REVERB_CHUNK_ID,
   collectPackedAudioClipBlobs,
   encodePackedAudioAsset,
+  encodePackedModelAsset,
   FONT_FACETYPE_CHUNK_ID,
   normalizeAudioPayload,
+  normalizeModelPayload,
   selectTextureChunk,
   type IndexedAsset,
 } from "@babylonslate/assets";
@@ -84,6 +86,14 @@ async function bytesForAsset(
       blobs.length === 1 ? blobs[0]! : blobs,
     );
   }
+  if (asset.header.type === "Model") {
+    const source = await readAssetChunk(asset.path, "source");
+    if (!source || source.byteLength === 0) return null;
+    return encodePackedModelAsset(
+      normalizeModelPayload(document ?? asset.header.payload),
+      source,
+    );
+  }
   for (const chunk of asset.header.chunks) {
     if (chunk.id === "document" || chunk.id === FONT_FACETYPE_CHUNK_ID) continue;
     const bytes = await readAssetChunk(asset.path, chunk.id);
@@ -126,12 +136,15 @@ export async function loadExportDocuments(
         asset.header.type === "Graph" ||
         asset.header.type === "Scene" ||
         asset.header.type === "Font" ||
-        asset.header.type === "Audio")
+        asset.header.type === "Audio" ||
+        asset.header.type === "Model")
     ) {
       try {
         document = await loaders.loadDocument(kind, asset.path);
       } catch {
-        document = asset.header.type === "Audio" ? asset.header.payload : null;
+        document = asset.header.type === "Audio" || asset.header.type === "Model"
+          ? asset.header.payload
+          : null;
       }
     }
     if (document && typeof document === "object") {

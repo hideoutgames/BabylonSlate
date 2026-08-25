@@ -46,6 +46,17 @@ describe("nextRegisteredSharedEngine", () => {
     ).toBe(owned);
   });
 
+  it("keeps the project-owned engine when the viewport unregisters during overlay Play", () => {
+    expect(
+      nextRegisteredSharedEngine({
+        incoming: null,
+        previous: viewport,
+        owned,
+        overlayPlaying: true,
+      }),
+    ).toBe(owned);
+  });
+
   it("accepts a usable incoming engine even during overlay Play", () => {
     const remounted = { isDisposed: false };
     expect(

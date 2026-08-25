@@ -19,6 +19,9 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents / p20-shared-resource-cache | Spec | Shared-view `resize` used `engine.resize()` when the view canvas had no 2D blit context | Resolved |
+| 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents / p20-shared-resource-cache | Spec | Shared-view `setSize` skipped the view canvas bitmap unless `registerView` had a 2D blit | Resolved |
+| 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents | Standards | `perf-budget.md` dropped still-true CB / Add Node / log virtualisation bullets while editing Engine lifetime | Resolved |
 | 2026-08-19 | cursor/validate-compiled-nodes-f8d7 | Validate only compiled nodes | Spec | `hasCycle` blamed compiled consumers for dead data loops reachable through an uncompiled impure | Resolved |
 | 2026-08-19 | cursor/validate-compiled-nodes-f8d7 | Validate only compiled nodes | Spec | Source-stamped edge codes (`pin.direction`) into a compiled pin were dropped | Resolved |
 | 2026-08-19 | cursor/validate-compiled-nodes-f8d7 | Validate only compiled nodes | Standards | Duplicated `entryNodes` in compile.ts and compiled-nodes.ts; compile now imports the shared helper | Resolved |

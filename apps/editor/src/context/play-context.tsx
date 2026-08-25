@@ -18,7 +18,6 @@ import {
   isErr,
   resolveGameInstanceClass,
 } from "@babylonslate/core";
-import { createAppEngine } from "@babylonslate/render";
 import type { SessionReportEntry } from "@babylonslate/runtime";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
@@ -124,6 +123,7 @@ import {
   nextRegisteredSharedEngine,
   nextSharedEngineGeneration,
 } from "../lib/shared-engine-generation";
+import { createProjectEngineController } from "../lib/project-engine";
 
 type PlayOptions = { injectFixtureThrow?: boolean };
 
@@ -178,7 +178,7 @@ const OverlayPlayingContext = createContext(false);
 export function PlayProvider({ children }: { children: ReactNode }) {
   const engineRef = useRef<Engine | null>(null);
   const ownedEngineRef = useRef<Engine | null>(null);
-  const ownedCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const projectEngineRef = useRef(createProjectEngineController());
   const schedulerRegistryRef = useRef(new EditorSchedulerRegistry());
   const preparingRef = useRef(false);
   const pendingPlayOptionsRef = useRef<PlayOptions | undefined>(undefined);
@@ -332,6 +332,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     readAssetChunk,
     onSessionDiagnostic,
   } = useDocuments();
+  const projectOpen = projectDocument != null;
+  const projectOpenRef = useRef(projectOpen);
+  projectOpenRef.current = projectOpen;
   const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
   const guidForPath = (path: string) =>
     assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
@@ -521,20 +524,47 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     pendingPlayOptionsRef.current = undefined;
   }, [projectDocument]);
 
+  useEffect(() => {
+    const host = projectEngineRef.current;
+    const engine = host.sync(projectOpen);
+    ownedEngineRef.current = engine;
+    const previous = engineRef.current;
+    const next = isUsableEngine(engine) ? engine : null;
+    engineRef.current = next;
+    setSharedEngineGeneration((current) =>
+      nextSharedEngineGeneration(current, next, previous),
+    );
+    return () => {
+      if (projectOpen) return;
+      host.sync(false);
+      ownedEngineRef.current = null;
+      if (engineRef.current === engine) engineRef.current = null;
+    };
+  }, [projectOpen]);
+
+  useEffect(() => {
+    const host = projectEngineRef.current;
+    return () => {
+      host.dispose();
+      ownedEngineRef.current = null;
+      engineRef.current = null;
+    };
+  }, []);
+
   const ensureEngine = useCallback((): Engine | null => {
-    if (isUsableEngine(engineRef.current)) return engineRef.current;
     if (isUsableEngine(ownedEngineRef.current)) {
       engineRef.current = ownedEngineRef.current;
       return ownedEngineRef.current;
     }
-    const canvas = document.createElement("canvas");
-    canvas.width = 8;
-    canvas.height = 8;
-    canvas.style.display = "none";
-    document.body.appendChild(canvas);
-    const engine = createAppEngine(canvas);
-    ownedCanvasRef.current = canvas;
+    if (!projectOpenRef.current) {
+      return isUsableEngine(engineRef.current) ? engineRef.current : null;
+    }
+    const engine = projectEngineRef.current.sync(true);
     ownedEngineRef.current = engine;
+    if (!isUsableEngine(engine)) {
+      engineRef.current = null;
+      return null;
+    }
     const previous = engineRef.current;
     engineRef.current = engine;
     setSharedEngineGeneration((current) =>

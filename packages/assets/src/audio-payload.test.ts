@@ -84,7 +84,7 @@ describe("audio payloads", () => {
     expect(AUDIO_REVERB_ALLPASS_COUNT).toBe(2);
     expect(AUDIO_CROSSFADING_PROFILES).toBe(2);
     expect(AUDIO_PRE_UNLOCK_QUEUE_CAP).toBe(32);
-    expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(64 * 1024 * 1024);
+    expect(AUDIO_DECODED_PCM_LRU_BYTES).toBe(256 * 1024 * 1024);
     expect(AUDIO_MAX_CONCURRENT_VOICES).toBe(32);
     expect(AUDIO_MAX_CLIPS).toBe(8);
   });

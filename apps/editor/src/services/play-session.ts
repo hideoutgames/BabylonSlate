@@ -279,6 +279,8 @@ export interface PlaySession {
   lastMoveX: () => number | null;
   /** Latest snapshot actor positions for e2e collision / motion. */
   lastActorPositions: () => readonly PlayActorPosition[];
+  /** Latest sim tick (in-process World clock, else last published snapshot). */
+  lastTickIndex: () => number;
   /** Push a touch joystick sample into the Play input ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
@@ -294,6 +296,8 @@ export interface PlaySession {
   lastTrace: () => TracePayload | null;
   accountedBytes: () => number;
   liveObjectCounts: () => { meshes: number; textures: number };
+  whenModelsReady: () => Promise<void>;
+  modelLoadCount: () => number;
   drawCalls: () => number;
   bridgeMessagesPerSec: () => number;
   stop: () => PlaySessionResult;
@@ -866,6 +870,11 @@ export function startPlaySession(options: {
       return lastObservedMoveX;
     },
     lastActorPositions: () => handle.lastActorPositions(),
+    lastTickIndex: () =>
+      playInputStampTick(
+        runtime?.getWorld().clock.tickIndex,
+        lastWorkerTickIndex,
+      ),
     pushTouchAxis: (controlId: string, value: number) => {
       input?.pushTouchAxis(controlId, value);
     },
@@ -906,6 +915,8 @@ export function startPlaySession(options: {
     lastTrace: () => recordedTrace ?? runtime?.stopTrace() ?? null,
     accountedBytes: () => handle.resourceCache.accountedBytes(),
     liveObjectCounts: () => handle.liveObjectCounts(),
+    whenModelsReady: () => handle.whenEditorModelsReady(),
+    modelLoadCount: () => handle.modelLoadCount(),
     drawCalls: () => handle.drawCalls(),
     bridgeMessagesPerSec: () => {
       const now = performance.now();

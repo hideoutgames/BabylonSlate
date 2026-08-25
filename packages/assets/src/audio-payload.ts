@@ -16,8 +16,14 @@ export const AUDIO_REVERB_ALLPASS_COUNT = 2;
 export const AUDIO_CROSSFADING_PROFILES = 2;
 export const AUDIO_SPEED_OF_SOUND = 343;
 export const AUDIO_PRE_UNLOCK_QUEUE_CAP = 32;
-export const AUDIO_DECODED_PCM_LRU_BYTES = 64 * 1024 * 1024;
+export const AUDIO_DECODED_PCM_LRU_BYTES = 256 * 1024 * 1024;
+/** Documented iPad suggestion — not the runtime default. */
+export const IPAD_AUDIO_PCM_SUGGESTION = 64 * 1024 * 1024;
+export const AUDIO_PCM_BYTE_CEILING_MIN = 32 * 1024 * 1024;
+export const AUDIO_PCM_BYTE_CEILING_MAX = 2 * 1024 * 1024 * 1024;
 export const AUDIO_MAX_CONCURRENT_VOICES = 32;
+export const AUDIO_MAX_VOICES_MIN = 8;
+export const AUDIO_MAX_VOICES_MAX = 128;
 export const AUDIO_MAX_CLIPS = 8;
 export const AUDIO_PITCH_MIN = 0.25;
 export const AUDIO_PITCH_MAX = 4;

@@ -457,4 +457,61 @@ describe("loadExportDocuments", () => {
     expect(loaded.bytesByGuid("font-1")).toEqual(new Uint8Array([1, 2]));
     expect(loaded.fontFacetypeBytesByGuid("font-1")).toEqual(new Uint8Array([9, 8, 7]));
   });
+
+  it("packs Model payload with GLB source so importScale survives export", async () => {
+    const { decodePackedModelAsset } = await import("@babylonslate/assets");
+    const kinds: string[] = [];
+    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 9, 8]);
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Hero.model.babasset",
+          header: {
+            guid: "hero-model",
+            type: "Model",
+            name: "Hero",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: { importScale: 1, clipNames: [] },
+            chunks: [
+              {
+                id: "source",
+                kind: "geometry",
+                mime: "model/gltf-binary",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 6 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async (kind) => {
+        kinds.push(kind);
+        return {
+          importScale: 4,
+          clipNames: ["Walk"],
+          materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
+          skeletonGuid: "skel-1",
+        };
+      },
+      readAssetChunk: async (_path, chunkId) =>
+        chunkId === "source" ? glb : null,
+    });
+    expect(kinds).toEqual(["model"]);
+    const packed = loaded.bytesByGuid("hero-model");
+    expect(packed).toBeTruthy();
+    expect(decodePackedModelAsset(packed!)).toEqual({
+      payload: {
+        importScale: 4,
+        clipNames: ["Walk"],
+        materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
+        skeletonGuid: "skel-1",
+      },
+      source: glb,
+    });
+    expect(loaded.payloadByGuid("hero-model")).toMatchObject({ importScale: 4 });
+  });
 });

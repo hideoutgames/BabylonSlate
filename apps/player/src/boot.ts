@@ -99,6 +99,7 @@ export function startPlayer(options: {
     textureBytes: game.textureBytes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     modelBytes: game.modelBytes,
+    modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,
     retargetAnimationLoads: content.retargetAnimationLoads,
     audioBytes: game.audioBytes,
@@ -210,7 +211,11 @@ export function startPlayer(options: {
   let hudStats: PlayerHudStats | undefined;
 
   const emitHudStats = (next: PlayerHudStats) => {
-    hudStats = { ...next, draws: handle.drawCalls() };
+    hudStats = {
+      ...next,
+      draws: handle.drawCalls(),
+      geometryBytes: handle.accountedGeometryBytes(),
+    };
     options.onStats?.(hudStats);
   };
 

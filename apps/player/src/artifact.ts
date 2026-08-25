@@ -18,11 +18,13 @@ import {
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   extractPackedAudioClipBytes,
+  extractPackedModelAsset,
   peekPackedAudioPayload,
   audioClipCacheKey,
   AUDIO_DEFAULT_SOURCE_CHUNK,
   normalizeAudioPayload,
   type AudioPayload,
+  type ModelPayload,
 } from "@babylonslate/assets";
 
 const decoder = new TextDecoder();
@@ -33,6 +35,7 @@ export type LoadedGame = {
   scenes: Map<string, SerializedScene>;
   textureBytes: Map<string, Uint8Array>;
   modelBytes: Map<string, Uint8Array>;
+  modelPayloads: Map<string, ModelPayload>;
   fontBytes: Map<string, Uint8Array>;
   fontFacetypeBytes: Map<string, Uint8Array>;
   fontFamilies: Map<string, string>;
@@ -90,6 +93,7 @@ export async function loadGameFromFiles(
   const scenes = new Map<string, SerializedScene>();
   const textureBytes = new Map<string, Uint8Array>();
   const modelBytes = new Map<string, Uint8Array>();
+  const modelPayloads = new Map<string, ModelPayload>();
   const fontBytes = new Map<string, Uint8Array>();
   const fontFacetypeBytes = new Map<string, Uint8Array>();
   const fontFamilies = new Map<string, string>();
@@ -120,7 +124,9 @@ export async function loadGameFromFiles(
       continue;
     }
     if (entry.type === "Model") {
-      modelBytes.set(entry.guid, bytes);
+      const extracted = extractPackedModelAsset(bytes);
+      modelBytes.set(entry.guid, extracted.source);
+      modelPayloads.set(entry.guid, extracted.payload);
       continue;
     }
     if (entry.type === "Font") {
@@ -160,6 +166,7 @@ export async function loadGameFromFiles(
     scenes,
     textureBytes,
     modelBytes,
+    modelPayloads,
     fontBytes,
     fontFacetypeBytes,
     fontFamilies,

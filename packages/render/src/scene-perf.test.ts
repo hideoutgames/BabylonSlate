@@ -1,5 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { NodeMaterial, NodeMaterialModes, NullEngine, Scene } from "@babylonjs/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  Mesh,
+  NodeMaterial,
+  NodeMaterialModes,
+  NullEngine,
+  Scene,
+} from "@babylonjs/core";
 import {
   createActor,
   createDefaultScene,
@@ -9,6 +15,8 @@ import {
   applyEditorMaterialFreeze,
   isStructuralEditorChange,
   materialLibraryAssetGuid,
+  prewarmSceneMaterials,
+  SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
 
 describe("isStructuralEditorChange", () => {
@@ -93,5 +101,24 @@ describe("applyEditorMaterialFreeze", () => {
     expect(materialLibraryAssetGuid(particle)).toBe("fx-1");
     expect(materialLibraryAssetGuid(helper)).toBeNull();
     scene.dispose();
+  });
+});
+
+describe("prewarmSceneMaterials", () => {
+  it("gives up when forceCompilationAsync never settles", async () => {
+    vi.useFakeTimers();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const mesh = new Mesh("warm-mesh", scene);
+    mesh.material = scene.defaultMaterial;
+    vi.spyOn(scene.defaultMaterial, "forceCompilationAsync").mockReturnValue(
+      new Promise(() => undefined),
+    );
+    const done = prewarmSceneMaterials(scene);
+    await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
+    await expect(done).resolves.toBeUndefined();
+    scene.dispose();
+    engine.dispose();
+    vi.useRealTimers();
   });
 });
