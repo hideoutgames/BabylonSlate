@@ -601,12 +601,30 @@ test.describe("Editor density and IA", () => {
     );
     await sceneTile.click({ button: "right" });
     await expect(page.getByTestId("context-menu-item-duplicate")).toBeVisible();
+    await expect(page.getByTestId("context-menu-item-copy-asset-reference")).toBeVisible();
     await expect(page.getByTestId("context-menu-item-retry-encoding")).toHaveCount(
       0,
     );
   });
 
-  test("Content Browser empty-grid double-click opens New Asset", {
+  test("Content Browser Copy Asset Reference copies the asset guid", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await openTestProject(page);
+    const sceneTile = page.locator(
+      '[data-asset-path="assets/main.scene.babasset"]',
+    );
+    await expect(sceneTile).toBeVisible();
+    const guid = await sceneTile.getAttribute("data-asset-guid");
+    expect(guid).toBeTruthy();
+    await sceneTile.click({ button: "right" });
+    await page.getByTestId("context-menu-item-copy-asset-reference").click();
+    await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toBe(
+      guid,
+    );
+  });
     tag: IPAD_TEST_TAG,
   }, async ({ page }) => {
     await openTestProject(page);
@@ -648,6 +666,9 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
       0,
     );
+    await expect(
+      page.getByTestId("context-menu-item-copy-asset-reference"),
+    ).toHaveCount(0);
     await page.getByTestId("context-menu-item-duplicate").click();
     await expect(
       page.locator('[data-asset-path="assets/Alpha_1.babasset"]'),
@@ -674,6 +695,9 @@ test.describe("Editor density and IA", () => {
     await expect(page.getByTestId("context-menu-item-show-references")).toHaveCount(
       0,
     );
+    await expect(
+      page.getByTestId("context-menu-item-copy-asset-reference"),
+    ).toHaveCount(0);
   });
 
   test("Material Focus hides Preview and restores it on exit", async ({

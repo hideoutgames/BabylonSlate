@@ -934,6 +934,15 @@ export function ContentBrowserWorkspace({
         onSelect: () => openMoveForSnapshot("copy"),
       },
       {
+        id: "copy-asset-reference" as const,
+        label: "Copy Asset Reference",
+        onSelect: () => {
+          const guid = menuTargetGuidsRef.current[0];
+          if (!guid) return;
+          void navigator.clipboard.writeText(guid);
+        },
+      },
+      {
         id: "show-references" as const,
         label: "Show References",
         onSelect: () => {

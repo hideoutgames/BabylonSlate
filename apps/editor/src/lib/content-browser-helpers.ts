@@ -829,6 +829,7 @@ export type ContentBrowserContextAction =
   | "retarget"
   | "move"
   | "copy"
+  | "copy-asset-reference"
   | "show-references"
   | "delete";
 
@@ -860,7 +861,7 @@ export function contentBrowserContextActions(options: {
   }
   actions.push("move", "copy");
   if (options.assetCount === 1 && options.folderCount === 0) {
-    actions.push("show-references");
+    actions.push("copy-asset-reference", "show-references");
   }
   actions.push("delete");
   return actions;

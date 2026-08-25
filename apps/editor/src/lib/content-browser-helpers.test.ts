@@ -1685,6 +1685,7 @@ describe("content-browser-helpers", () => {
       "rename",
       "move",
       "copy",
+      "copy-asset-reference",
       "show-references",
       "delete",
     ]);
@@ -1720,6 +1721,7 @@ describe("content-browser-helpers", () => {
       "retarget",
       "move",
       "copy",
+      "copy-asset-reference",
       "show-references",
       "delete",
     ]);
