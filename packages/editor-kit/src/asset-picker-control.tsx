@@ -59,18 +59,19 @@ export function AssetPickerControl({
   const testId = triggerTestId(children);
 
   return (
-    <div className="flex min-w-0 items-stretch gap-1">
-      <div className="min-w-0 flex-1">{children}</div>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-stretch gap-1">
+      <div className="min-w-0">{children}</div>
       {showOpen && api ? (
-        <div className="aspect-square h-auto shrink-0 self-stretch">
+        <div className="relative aspect-square h-full w-auto shrink-0">
           <Tooltip>
             <TooltipTrigger
               render={
                 <Button
                   type="button"
                   variant="outline"
+                  size="icon"
                   aria-label="Open Asset"
-                  className="size-full p-0"
+                  className="h-full w-full p-0"
                   data-testid={testId ? `${testId}-open` : "asset-picker-open"}
                   onClick={() => {
                     api.openAsset(guid);
