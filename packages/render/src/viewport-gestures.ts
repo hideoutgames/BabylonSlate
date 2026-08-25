@@ -38,10 +38,11 @@ export interface ViewportGestureOptions {
    * has stolen `activeCamera`). Tap and marquee still run.
    */
   editorCameraActive?: () => boolean;
-  /**
-   * Prefab RTT blit canvas is not the Engine input element. Forward
-   * one-finger pointers so UtilityLayer gizmos can drag.
-   */
+      /**
+       * Scene `registerView` blit and Prefab RTT blit canvases are not the
+       * Engine input element. Forward one-finger pointers so UtilityLayer
+       * gizmos can drag.
+       */
   onPointer?: (
     type: "down" | "move" | "up",
     canvasX: number,

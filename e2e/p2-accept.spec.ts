@@ -48,9 +48,51 @@ test.describe("P2 acceptance proofs", () => {
     await expect(async () => {
       await expect(albedo.getByText("Encoding")).toHaveCount(0);
       await expect(albedo.getByText("Compress pending")).toHaveCount(0);
+      const readable = await page.evaluate(async () => {
+        const api = (
+          globalThis as {
+            __babylonslateTest?: {
+              textureEncodeState?: (path: string) => {
+                compressionState: string | null;
+                encodeError: string | null;
+                hasPixels: boolean;
+              } | null;
+              readAssetChunk?: (
+                path: string,
+                chunkId: string,
+              ) => Promise<Uint8Array | null>;
+            };
+          }
+        ).__babylonslateTest;
+        const pathName = "assets/albedo.babasset";
+        const state = api?.textureEncodeState?.(pathName);
+        if (!state?.hasPixels) return false;
+        if (
+          state.compressionState === "encoding" ||
+          state.compressionState === "pending"
+        ) {
+          return false;
+        }
+        const bytes = await api?.readAssetChunk?.(pathName, "pixels");
+        return Boolean(bytes && bytes.byteLength > 0);
+      });
+      expect(readable).toBe(true);
     }).toPass({ timeout: 60_000 });
-    await albedo.dblclick();
-    await expect(page.getByTestId("texture-preview")).toBeVisible();
+    const importErrors = page.getByTestId("import-errors-dialog");
+    if (await importErrors.isVisible()) {
+      await page.getByTestId("import-errors-dismiss").click();
+    }
+    await expect(async () => {
+      const openError = page.getByTestId("content-browser-open-error");
+      if (await openError.count()) {
+        await page.getByTestId("content-browser-open-error-dismiss").click();
+        await expect(openError).toHaveCount(0);
+      }
+      await albedo.dblclick();
+      await expect(page.getByTestId("texture-preview")).toBeVisible({
+        timeout: 5_000,
+      });
+    }).toPass({ timeout: 30_000 });
 
     await saveAllIfEnabled(page);
     await closeProjectViaSettings(page);

@@ -149,6 +149,8 @@ export interface EngineHandle {
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   setPaused: (paused: boolean) => void;
+  /** Enable or disable this canvas's `registerView` client (overlay Play). */
+  setRegisterViewEnabled: (enabled: boolean) => void;
   /** Live Babylon mesh/texture counts for Play leak assertions. */
   liveObjectCounts: () => { meshes: number; textures: number };
   /** Last rendered frame's Babylon draw-call count (`_drawCalls.current`). */
@@ -497,10 +499,15 @@ export function createEngine(
     typeof canvas.getContext === "function"
       ? canvas.getContext("2d")
       : null;
-  if (sharedViewBlit) {
-    // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
-    // clear, skipped render-on-demand frames composite additively.
-    engine.registerView(canvas, undefined, true);
+  // clearBeforeCopy: overlay is a 2D blit of the WebGL canvas; without a
+  // clear, skipped render-on-demand frames composite additively.
+  const registeredView = sharedViewBlit
+    ? engine.registerView(canvas, undefined, true)
+    : null;
+  if (registeredView && options.playMode) {
+    // Scene tabs stay mounted; Babylon _renderViews still setSize+blit every
+    // enabled view. Disable them so overlay Play owns the framebuffer.
+    setOtherEngineViewsEnabled(engine, canvas, false);
   }
 
   const scene = new Scene(engine, SCENE_LOOKUP_MAPS);
@@ -857,11 +864,15 @@ export function createEngine(
       blockLook: (x, y) =>
         gizmos.isDragging() || gizmos.hitTest(x, y, pointerCanvas()),
       dragSelectActive: () => options.dragSelectActive?.() === true,
-      onPointer: presentRtt
-        ? (type, x, y, pointerId) => {
-            gizmos.forwardPointer(type, x, y, { ...pointerCanvas(), pointerId });
-          }
-        : undefined,
+      onPointer:
+        options.sharedEngine || presentRtt
+          ? (type, x, y, pointerId) => {
+              gizmos.forwardPointer(type, x, y, {
+                ...pointerCanvas(),
+                pointerId,
+              });
+            }
+          : undefined,
       onTap: (x, y, tap) => {
         const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
         const hit = pickAtCanvas(scene, mapped.x, mapped.y);
@@ -1024,6 +1035,9 @@ export function createEngine(
   }
 
   const resize = () => {
+    if (registeredView && registeredView.enabled === false) {
+      return;
+    }
     if (presentRtt) {
       rttPresent?.clear();
     } else if (options.sharedEngine && !presentRtt) {
@@ -1173,8 +1187,11 @@ export function createEngine(
       scene.dispose();
       rttPresent?.dispose();
       cacheBinding.releaseHandleRetains();
-      if (sharedViewBlit) {
+      if (registeredView) {
         engine.unRegisterView(canvas);
+        if (options.playMode) {
+          setOtherEngineViewsEnabled(engine, canvas, true);
+        }
       }
       if (ownsEngine) {
         releaseResourceCacheForEngine(engine);
@@ -1285,6 +1302,9 @@ export function createEngine(
     setPaused: (paused: boolean) => {
       scheduler.setPaused(paused);
       audioService?.setPaused(paused);
+    },
+    setRegisterViewEnabled: (enabled: boolean) => {
+      if (registeredView) registeredView.enabled = enabled;
     },
     liveObjectCounts: () => ({
       meshes: scene.meshes.length,
@@ -1456,18 +1476,30 @@ export function createEngine(
 }
 
 /**
- * Pause the editor viewport while Play is open. On close, restore the
- * engine size (Play's registerView path may have called setSize) and
- * invalidate so render-on-demand redraws the docked view.
+ * Pause the editor viewport while Play is open. Disable this canvas's
+ * registerView so Babylon `_renderViews` cannot setSize from the dock while
+ * the overlay owns the framebuffer. On close, restore the view, engine size,
+ * and invalidate so render-on-demand redraws the docked view.
  */
 export function syncEditorPlayState(
   handle: EngineHandle,
   playing: boolean,
 ): void {
   handle.setPaused(playing);
+  handle.setRegisterViewEnabled(!playing);
   if (!playing) {
     handle.resize();
     handle.scheduler.invalidate("play");
+  }
+}
+
+function setOtherEngineViewsEnabled(
+  engine: Engine,
+  except: HTMLCanvasElement,
+  enabled: boolean,
+): void {
+  for (const view of engine.views ?? []) {
+    if (view.target !== except) view.enabled = enabled;
   }
 }
 

@@ -53,7 +53,7 @@ export interface GizmoHost {
   ) => boolean;
   /**
    * Drive PointerDragBehavior from a canvas that is not the Engine input
-   * element (Prefab RTT blit).
+   * element (Scene registerView blit or Prefab RTT blit).
    */
   forwardPointer: (
     type: "down" | "move" | "up",

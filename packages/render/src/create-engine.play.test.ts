@@ -504,6 +504,48 @@ describe("Play createEngine view", () => {
     expect(resize).toHaveBeenCalled();
   });
 
+  it("disables the Scene registerView while overlay Play owns the framebuffer", () => {
+    const engine = sharedEngine();
+    const { handle: editor, canvas: editorCanvas } = editorHandle(engine);
+    const playCanvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const play = createEngine(playCanvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+
+    const editorView = engine.views.find((view) => view.target === editorCanvas);
+    const playView = engine.views.find((view) => view.target === playCanvas);
+    expect(editorView?.enabled).toBe(false);
+    expect(playView?.enabled).toBe(true);
+
+    play.dispose();
+    syncEditorPlayState(editor, false);
+    expect(editorView?.enabled).toBe(true);
+  });
+
+  it("syncEditorPlayState disables the editor view while playing", () => {
+    const engine = sharedEngine();
+    const { handle, canvas } = editorHandle(engine);
+    expect(engine.views.find((view) => view.target === canvas)?.enabled).toBe(
+      true,
+    );
+
+    syncEditorPlayState(handle, true);
+    expect(engine.views.find((view) => view.target === canvas)?.enabled).toBe(
+      false,
+    );
+  });
+
+  it("does not setSize from a disabled Scene view while Play is open", () => {
+    const engine = sharedEngine();
+    const { handle, canvas } = editorHandle(engine);
+    Object.assign(canvas, { clientWidth: 640, clientHeight: 360 });
+    syncEditorPlayState(handle, true);
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(setSize).not.toHaveBeenCalled();
+  });
+
   it("keeps Play autoClear on after Intermediate so frames do not accumulate", () => {
     const { handle } = playHandle(sharedEngine());
     expect(handle.scene.autoClear).toBe(true);
@@ -1167,6 +1209,29 @@ describe("Play createEngine view", () => {
       sharedEngine: engine,
       editor: true,
       present: "rtt",
+    });
+    handles.push(handle);
+    const down = vi.spyOn(handle.scene, "simulatePointerDown");
+    canvas.emit("pointerdown", {
+      pointerId: 3,
+      clientX: 100,
+      clientY: 50,
+    });
+    expect(handle.scene.pointerX).toBeCloseTo(400);
+    expect(handle.scene.pointerY).toBeCloseTo(200);
+    expect(down).toHaveBeenCalled();
+  });
+
+  it("forwards Scene shared-view canvas pointers into the scene for gizmo drags", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(800);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(400);
+    const canvas = new FakeCanvas();
+    canvas.clientWidth = 200;
+    canvas.clientHeight = 100;
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
     });
     handles.push(handle);
     const down = vi.spyOn(handle.scene, "simulatePointerDown");

@@ -55,6 +55,10 @@ describe("transcoder unavailable / export-omitted smoke", () => {
       "msc_basis_transcoder.wasm",
       "uastc_astc.wasm",
       "uastc_bc7.wasm",
+      "uastc_rgba8_unorm_v2.wasm",
+      "uastc_rgba8_srgb_v2.wasm",
+      "uastc_r8_unorm.wasm",
+      "uastc_rg8_unorm.wasm",
       "zstddec.wasm",
     ]) {
       const fileBytes = readFileSync(join(editorKtx2, name));

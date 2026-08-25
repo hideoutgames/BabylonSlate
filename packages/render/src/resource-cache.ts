@@ -1,4 +1,4 @@
-import { sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
+import { isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@babylonslate/assets";
 import type { AbstractEngine, BaseTexture, Scene } from "@babylonjs/core";
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
@@ -73,6 +73,18 @@ function contentKey(bytes: Uint8Array | Blob): string {
 
 function asUint8Array(bytes: Uint8Array | Blob): Uint8Array | null {
   return bytes instanceof Uint8Array ? bytes : null;
+}
+
+function ktx2LoaderHints(bytes: Uint8Array | Blob): {
+  mimeType?: string;
+  forcedExtension?: string;
+} {
+  const isKtx2 =
+    bytes instanceof Blob
+      ? bytes.type === "image/ktx2"
+      : isKtx2Bytes(bytes);
+  if (!isKtx2) return {};
+  return { mimeType: "image/ktx2", forcedExtension: ".ktx2" };
 }
 
 function samplingKey(options: TextureSamplingOptions = {}): string {
@@ -203,7 +215,11 @@ export class ResourceCache {
                 bytes.byteOffset + bytes.byteLength,
               ) as ArrayBuffer,
             ],
-            { type: "application/octet-stream" },
+            {
+              type: isKtx2Bytes(bytes)
+                ? "image/ktx2"
+                : "application/octet-stream",
+            },
           );
     this.blobs.set(assetGuid, blob);
     const url =
@@ -250,16 +266,22 @@ export class ResourceCache {
       entry.texture = undefined;
     }
     // Canonical sampling flags are part of Babylon's InternalTexture cache key.
+    const ktx2 = ktx2LoaderHints(bytes);
+    const raw = asUint8Array(bytes);
+    const loaderUrl = ktx2.forcedExtension ? `${url}#.ktx2` : url;
     const texture = options.isCube
       ? new CubeTexture(url, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
         })
-      : new Texture(url, engine, {
+      : new Texture(loaderUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           invertY: options.invertY !== false,
           samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
+          mimeType: ktx2.mimeType,
+          forcedExtension: ktx2.forcedExtension,
+          buffer: raw ? raw.slice() : undefined,
         });
     entry.texture = texture;
     entry.samplingKey = key;

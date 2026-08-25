@@ -46,6 +46,8 @@ export type ExportDocumentLoaders = {
   assets: readonly IndexedAsset[];
   loadDocument: (kind: string, path: string) => Promise<unknown>;
   readAssetChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>;
+  /** When false, pack Texture `pixels` instead of KTX2. */
+  transcoderAvailable?: boolean;
 };
 
 export type LoadedExportDocuments = {
@@ -62,13 +64,14 @@ async function bytesForAsset(
   asset: IndexedAsset,
   document: unknown,
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
+  transcoderAvailable: boolean,
 ): Promise<Uint8Array | null> {
   if (JSON_TYPES.has(asset.header.type) && document) {
     return encoder.encode(JSON.stringify(document));
   }
   if (asset.header.type === "Texture") {
     try {
-      const selected = selectTextureChunk(asset.header);
+      const selected = selectTextureChunk(asset.header, { transcoderAvailable });
       return await readAssetChunk(asset.path, selected.chunk.id);
     } catch {
       return null;
@@ -159,7 +162,12 @@ export async function loadExportDocuments(
     ) {
       graphs.set(asset.header.guid, document as SerializedGraph);
     }
-    const payload = await bytesForAsset(asset, document, loaders.readAssetChunk);
+    const payload = await bytesForAsset(
+      asset,
+      document,
+      loaders.readAssetChunk,
+      loaders.transcoderAvailable !== false,
+    );
     if (payload) bytes.set(asset.header.guid, payload);
     const facetype = await fontFacetypeBytesForAsset(asset, loaders.readAssetChunk);
     if (facetype) fontFacetypes.set(asset.header.guid, facetype);
