@@ -69,6 +69,13 @@ describe("AssetPickerControl", () => {
     );
     const open = screen.getByTestId("property-texture-open");
     expect(open.getAttribute("aria-label")).toBe("Open Asset");
+    const square = open.closest(".aspect-square");
+    expect(square?.className).toContain("aspect-square");
+    expect(square?.className).toContain("shrink-0");
+    expect(square?.className).toContain("h-full");
+    expect(square?.className).not.toContain("min-w-0");
+    expect(open.className).toContain("h-full");
+    expect(open.className).toContain("w-full");
     open.click();
     expect(openAsset).toHaveBeenCalledWith("tex-1");
   });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedGraph } from "@babylonslate/core";
+import { AssetOpenProvider } from "@babylonslate/editor-kit";
 import { InspectorPanel } from "./inspector-panel";
 import { MyClassPanel } from "./my-class-panel";
 import { GraphEditingProvider } from "../context/graph-editing-context";
@@ -67,6 +68,13 @@ vi.mock("../context/document-context", () => ({
               name: "Stats",
               typeId: "struct",
               typeClassId: "struct-stats",
+            },
+            {
+              id: "var-enum",
+              kind: "variable",
+              name: "Team",
+              typeId: "enum",
+              typeClassId: "enum-colors",
             },
             {
               id: "var-actor",
@@ -138,14 +146,21 @@ vi.mock("../context/play-context", () => ({
 
 function renderMemberInspector(memberId: string, includeClassPanel = false) {
   return render(
-    <PrefabEditingProvider>
-      <GraphEditingProvider initialSelectedMemberId={memberId}>
-        {includeClassPanel ? (
-          <MyClassPanel {...({} as IDockviewPanelProps)} />
-        ) : null}
-        <InspectorPanel {...({} as IDockviewPanelProps)} />
-      </GraphEditingProvider>
-    </PrefabEditingProvider>,
+    <AssetOpenProvider
+      value={{
+        canOpen: (guid) => guid === "struct-stats" || guid === "enum-colors",
+        openAsset: () => {},
+      }}
+    >
+      <PrefabEditingProvider>
+        <GraphEditingProvider initialSelectedMemberId={memberId}>
+          {includeClassPanel ? (
+            <MyClassPanel {...({} as IDockviewPanelProps)} />
+          ) : null}
+          <InspectorPanel {...({} as IDockviewPanelProps)} />
+        </GraphEditingProvider>
+      </PrefabEditingProvider>
+    </AssetOpenProvider>,
   );
 }
 
@@ -205,6 +220,15 @@ describe("Inspector class member details", () => {
     expect(typeAsset).toHaveProperty("disabled", false);
     expect(typeAsset.textContent).toContain("struct-stats");
     expect(screen.getByText("Structure Type")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-type-asset-open")).toBeTruthy();
+  });
+
+  it("shows an Enum Type AssetPicker for enum variables", () => {
+    renderMemberInspector("var-enum");
+    const typeAsset = screen.getByTestId("inspector-member-type-asset");
+    expect(typeAsset.textContent).toContain("enum-colors");
+    expect(screen.getByText("Enum Type")).toBeTruthy();
+    expect(screen.getByTestId("inspector-member-type-asset-open")).toBeTruthy();
   });
 
   it("requires a Class Type for class variables and omits a Default", () => {
