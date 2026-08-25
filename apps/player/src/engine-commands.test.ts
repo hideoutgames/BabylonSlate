@@ -151,39 +151,6 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["setWireframe", "debugColliders", "setShowNav", "setShowAudioDebug"]);
   });
 
-  it("forwards world UserInterface commands onto the Engine handle", () => {
-    const applied: string[] = [];
-    const handle = {
-      applyCommand: (command: { type: string }) => {
-        applied.push(command.type);
-      },
-    };
-    expect(
-      applyPlayerEngineCommand(handle, {
-        type: "uiApply",
-        instanceId: "ui-1",
-        classId: "UserInterface:panel",
-        assetGuid: "panel",
-        target: { kind: "world", slotId: 0, componentId: "w" },
-      }),
-    ).toBe(true);
-    expect(
-      applyPlayerEngineCommand(handle, { type: "uiRemove", instanceId: "ui-1" }),
-    ).toBe(true);
-    expect(
-      applyPlayerEngineCommand(handle, {
-        type: "uiSetVisible",
-        instanceId: "ui-1",
-        widgetId: "title",
-        visible: false,
-      }),
-    ).toBe(true);
-    expect(
-      applyPlayerEngineCommand(handle, { type: "setInputMode", mode: "Game" }),
-    ).toBe(true);
-    expect(applied).toEqual(["uiApply", "uiRemove", "uiSetVisible", "setInputMode"]);
-  });
-
   it("forwards debugDraw onto the Engine handle without a debugger bundle", () => {
     const applied: string[] = [];
     const handle = {
@@ -215,6 +182,10 @@ describe("applyPlayerEngineCommand", () => {
     };
     expect(applyPlayerEngineCommand(handle, { type: "stats" })).toBe(false);
     expect(applyPlayerEngineCommand(handle, { type: "print" })).toBe(false);
+    expect(applyPlayerEngineCommand(handle, { type: "uiApply" })).toBe(false);
+    expect(applyPlayerEngineCommand(handle, { type: "uiRemove" })).toBe(false);
+    expect(applyPlayerEngineCommand(handle, { type: "uiSetVisible" })).toBe(false);
+    expect(applyPlayerEngineCommand(handle, { type: "setInputMode" })).toBe(false);
     expect(applied).toEqual([]);
   });
 });
@@ -235,9 +206,6 @@ describe("applyPlayerActiveScene", () => {
       resetParticleSession: () => {
         loaded.push("reset-particles");
       },
-      resetWidgetSession: () => {
-        loaded.push("reset-widgets");
-      },
     };
     const scene = { ...createDefaultScene(), name: "Level 2" };
     const scenes = new Map([["scene-2", scene]]);
@@ -252,7 +220,6 @@ describe("applyPlayerActiveScene", () => {
       "env:Level 2",
       "reset-audio",
       "reset-particles",
-      "reset-widgets",
     ]);
   });
 });

@@ -166,41 +166,6 @@ export function startPlayer(options: {
     handle.resize();
   }
 
-  const uiHost = createPlayerUiHost({
-    scene: handle.scene,
-    library: content.userInterfaces,
-    textureBytes: guiTextureBytesFromGame(game),
-    viewport: {
-      width: Math.max(1, canvas.width || canvas.clientWidth || 1),
-      height: Math.max(1, canvas.height || canvas.clientHeight || 1),
-    },
-    designerPresets: manifest.uiDesignerPresets,
-    uiSettings: manifest.ui,
-    fontEntries: packedFontEntries({
-      fontBytes: game.fontBytes,
-      fontFamilies: game.fontFamilies,
-    }),
-    resolveInterfaceMaterial: () => null,
-    materialFunctions: () => Object.fromEntries(content.materialFunctions),
-    resolveTexture: (guid) => {
-      const bytes = game.textureBytes.get(guid);
-      if (!bytes) return null;
-      return resolvePlayerInterfaceTexture(
-        handle.resourceCache,
-        handle.engine,
-        guid,
-        bytes,
-      );
-    },
-    onWidgetEvent: (event) => {
-      if (worker) worker.postControl(event);
-      else if (runtime) applyUiRuntimeControl(runtime, event);
-    },
-    onTouchAxis: (controlId, value) => {
-      input?.pushTouchAxis(controlId, value);
-    },
-  });
-
   // Without a locked framebuffer the canvas is CSS-sized, so the backing store
   // has to follow the element or the first frames draw at the wrong size.
   const resizeObserver =
@@ -209,10 +174,6 @@ export function startPlayer(options: {
       : new ResizeObserver(() => {
           if (canvas.clientWidth > 0 && canvas.clientHeight > 0) {
             handle.resize();
-            uiHost.resize(
-              Math.max(1, canvas.width || canvas.clientWidth),
-              Math.max(1, canvas.height || canvas.clientHeight),
-            );
           }
         });
   resizeObserver?.observe(canvas);

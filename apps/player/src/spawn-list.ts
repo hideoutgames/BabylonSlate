@@ -3,7 +3,7 @@ import { shouldSpawnScriptedActor } from "@babylonslate/runtime";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 
-/** Graph classes that Play may auto-spawn. UserInterface / Widget ids never spawn. */
+/** Graph classes that Play may auto-spawn. GameInstance, FunctionLibrary, and editor classes never spawn. */
 export function playerSpawnListForScripts(
   scripts: readonly Pick<ScriptBundleEntry, "classId" | "entryPoints">[],
 ): Array<{ classId: string }> {
