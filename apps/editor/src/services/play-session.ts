@@ -364,6 +364,8 @@ export interface PlaySession {
   lastMoveX: () => number | null;
   /** Latest snapshot actor positions for e2e collision / motion. */
   lastActorPositions: () => readonly PlayActorPosition[];
+  /** Latest sim tick (in-process World clock, else last published snapshot). */
+  lastTickIndex: () => number;
   /** Push a touch joystick sample into the Play input ring. */
   pushTouchAxis: (controlId: string, value: number) => void;
   /** Route a mounted HUD widget event to the worker or in-process runtime. */
@@ -991,6 +993,11 @@ export function startPlaySession(options: {
       return lastObservedMoveX;
     },
     lastActorPositions: () => handle.lastActorPositions(),
+    lastTickIndex: () =>
+      playInputStampTick(
+        runtime?.getWorld().clock.tickIndex,
+        lastWorkerTickIndex,
+      ),
     pushTouchAxis: (controlId: string, value: number) => {
       input?.pushTouchAxis(controlId, value);
     },

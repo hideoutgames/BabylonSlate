@@ -608,6 +608,7 @@ export function PlayOverlay({
         liveObjectCounts: () => { meshes: number; textures: number } | null;
         whenModelsReady: () => Promise<void>;
         modelLoadCount: () => number;
+        tickIndex: () => number;
       };
     };
     host.__babylonslatePlayTest = {
@@ -617,6 +618,7 @@ export function PlayOverlay({
       whenModelsReady: () =>
         sessionRef.current?.whenModelsReady() ?? Promise.resolve(),
       modelLoadCount: () => sessionRef.current?.modelLoadCount() ?? 0,
+      tickIndex: () => sessionRef.current?.lastTickIndex() ?? 0,
     };
     return () => {
       delete host.__babylonslatePlayTest;
