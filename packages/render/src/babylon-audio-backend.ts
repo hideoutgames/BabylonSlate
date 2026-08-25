@@ -241,6 +241,18 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     else this.resumeAudioContext();
   }
 
+  disposeBuffer(cacheKey: string): void {
+    const buffer = this.buffers.get(cacheKey);
+    if (!buffer) return;
+    this.buffers.delete(cacheKey);
+    const disposable = buffer as { dispose?: () => void };
+    try {
+      disposable.dispose?.();
+    } catch {
+      /* LRU must still drop the map entry */
+    }
+  }
+
   dispose(): void {
     for (const voiceId of [...this.voices.keys()]) {
       try {

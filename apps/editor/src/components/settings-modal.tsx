@@ -173,7 +173,7 @@ const ENGINE_CATEGORIES: Array<
   {
     id: "assets",
     label: "Assets",
-    keywords: "model import default scale glb gltf texture lod budget quality",
+    keywords: "model import default scale glb gltf texture lod budget quality audio pcm voices",
   },
   {
     id: "graph",
@@ -313,6 +313,9 @@ export function SettingsModal({
         editorTextureLodQuality: next.editorTextureLodQuality,
         textureBudgetEnabled: next.textureBudgetEnabled,
         textureByteCeiling: next.textureByteCeiling,
+        audioBudgetEnabled: next.audioBudgetEnabled,
+        audioByteCeiling: next.audioByteCeiling,
+        audioMaxVoices: next.audioMaxVoices,
         viewportFlySpeed: next.viewportFlySpeed,
         viewportGridSize: next.viewportGridSize,
         modelImportDefaultScale: next.modelImportDefaultScale,

@@ -239,4 +239,18 @@ describe("applyLiveEngineSettings", () => {
       true,
     );
   });
+
+  it("applies the audio PCM budget and voice cap without mutating a scene", () => {
+    const handle = {
+      setAudioBudget: vi.fn(),
+      setMaxVoices: vi.fn(),
+    };
+    applyLiveEngineSettings(handle, {
+      audioBudgetEnabled: true,
+      audioByteCeiling: 256 * 1024 * 1024,
+      audioMaxVoices: 48,
+    });
+    expect(handle.setAudioBudget).toHaveBeenCalledWith(256 * 1024 * 1024, true);
+    expect(handle.setMaxVoices).toHaveBeenCalledWith(48);
+  });
 });

@@ -25,6 +25,9 @@ export function dispatchEngineSettingsChanged(settings: {
   editorTextureLodQuality?: number;
   textureBudgetEnabled?: boolean;
   textureByteCeiling?: number;
+  audioBudgetEnabled?: boolean;
+  audioByteCeiling?: number;
+  audioMaxVoices?: number;
   viewportFlySpeed?: number;
   viewportGridSize?: number;
   modelImportDefaultScale?: number;
@@ -42,6 +45,8 @@ export type LiveEngineSettingsTarget = {
   scheduler?: { setFrameCap: (fps: number) => void };
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
+  setAudioBudget?: (bytes: number, enabled: boolean) => void;
+  setMaxVoices?: (maxVoices: number) => void;
 };
 
 export type LiveEngineSettings = {
@@ -52,6 +57,9 @@ export type LiveEngineSettings = {
   editorTextureLodQuality?: number;
   textureBudgetEnabled?: boolean;
   textureByteCeiling?: number;
+  audioBudgetEnabled?: boolean;
+  audioByteCeiling?: number;
+  audioMaxVoices?: number;
 };
 
 /** Apply local Engine Settings that must take effect without writing a scene. */
@@ -95,6 +103,23 @@ export function applyLiveEngineSettings(
         ? settings.textureBudgetEnabled
         : true;
     target.setTextureBudget?.(bytes, enabled);
+  }
+  if (
+    typeof settings.audioByteCeiling === "number" ||
+    typeof settings.audioBudgetEnabled === "boolean"
+  ) {
+    const bytes =
+      typeof settings.audioByteCeiling === "number"
+        ? settings.audioByteCeiling
+        : 256 * 1024 * 1024;
+    const enabled =
+      typeof settings.audioBudgetEnabled === "boolean"
+        ? settings.audioBudgetEnabled
+        : true;
+    target.setAudioBudget?.(bytes, enabled);
+  }
+  if (typeof settings.audioMaxVoices === "number") {
+    target.setMaxVoices?.(settings.audioMaxVoices);
   }
 }
 
@@ -164,6 +189,8 @@ export function attachViewportRenderGate(options: {
   };
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;
+  setAudioBudget?: (bytes: number, enabled: boolean) => void;
+  setMaxVoices?: (maxVoices: number) => void;
 }): () => void {
   const { canvas, scheduler } = options;
 
@@ -214,6 +241,8 @@ export function attachViewportRenderGate(options: {
         scaling: options.scaling,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
         setTextureBudget: options.setTextureBudget,
+        setAudioBudget: options.setAudioBudget,
+        setMaxVoices: options.setMaxVoices,
       },
       detail,
     );
@@ -235,6 +264,8 @@ export function attachViewportRenderGate(options: {
         scaling: options.scaling,
         setPostProcessingEnabled: options.setPostProcessingEnabled,
         setTextureBudget: options.setTextureBudget,
+        setAudioBudget: options.setAudioBudget,
+        setMaxVoices: options.setMaxVoices,
       },
       {
         viewportFrameCap: settings.viewportFrameCap,
@@ -242,6 +273,9 @@ export function attachViewportRenderGate(options: {
         postProcessingEnabled: settings.postProcessingEnabled,
         textureBudgetEnabled: settings.textureBudgetEnabled,
         textureByteCeiling: settings.textureByteCeiling,
+        audioBudgetEnabled: settings.audioBudgetEnabled,
+        audioByteCeiling: settings.audioByteCeiling,
+        audioMaxVoices: settings.audioMaxVoices,
       },
     );
   })();

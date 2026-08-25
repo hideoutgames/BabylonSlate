@@ -296,6 +296,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         handle.setPostProcessingEnabled(enabled),
       setTextureBudget: (bytes, enabled) =>
         handle.setTextureBudget(bytes, enabled),
+      setAudioBudget: (bytes, enabled) =>
+        handle.setAudioBudget(bytes, enabled),
+      setMaxVoices: (maxVoices) => handle.setMaxVoices(maxVoices),
     });
 
     const resizeIfSized = createCanvasResizeGuard(() => handle.resize(), {

@@ -84,7 +84,7 @@ Asset-document preview **prefetches** clip bytes when the tab opens and starts p
 
 Preview Build’s iframe uses `outline-none` / `focus-visible:outline-none`; the packaged player also sets `canvas:focus { outline: none }` so a click does not draw a browser focus ring. Packing already includes Audio (BSAU); `export-game-inputs` loads documents as kind `audio`.
 
-`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the texture `ResourceCache` (default 2 GB). Max concurrent voices: 32. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
+`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **256 MiB** LRU (Engine Settings `audioByteCeiling` / `audioBudgetEnabled`; 64 MiB is an iPad suggestion), separate from the texture `ResourceCache` (default 2 GB). Evicting a clip disposes its AudioV2 `StaticSoundBuffer` and the session encoded `sourceBytes` for that key. Max concurrent voices: Engine Settings `audioMaxVoices` (default 32, range 8–128). Overlay Play applies both live. The packaged player uses the code defaults. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
 
 ## Spatial
 
@@ -119,8 +119,8 @@ Named constants in `packages/assets/src/audio-payload.ts` (waveform bar count in
 | Comb / all-pass taps | 4 / 2 |
 | Crossfading profiles | 2 |
 | Pre-unlock command queue | 32 |
-| Decoded PCM LRU | 64 MiB |
-| Max concurrent voices | 32 |
+| Decoded PCM LRU | 256 MiB (Engine Settings; 64 MiB iPad suggestion) |
+| Max concurrent voices | 32 default (Engine Settings 8–128) |
 | Max clips per Audio | 8 |
 | Waveform preview bars | 128 |
 | Muffle lowpass | 700 Hz |

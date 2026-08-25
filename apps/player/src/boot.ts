@@ -267,7 +267,11 @@ export function startPlayer(options: {
   let hudStats: PlayerHudStats | undefined;
 
   const emitHudStats = (next: PlayerHudStats) => {
-    hudStats = { ...next, draws: handle.drawCalls() };
+    hudStats = {
+      ...next,
+      draws: handle.drawCalls(),
+      geometryBytes: handle.accountedGeometryBytes(),
+    };
     options.onStats?.(hudStats);
   };
 

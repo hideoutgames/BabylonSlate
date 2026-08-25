@@ -56,6 +56,9 @@ describe("app settings", () => {
     expect(settings.editorTextureLodQuality).toBe(0.5);
     expect(settings.textureBudgetEnabled).toBe(true);
     expect(settings.textureByteCeiling).toBe(2 * 1024 * 1024 * 1024);
+    expect(settings.audioBudgetEnabled).toBe(true);
+    expect(settings.audioByteCeiling).toBe(256 * 1024 * 1024);
+    expect(settings.audioMaxVoices).toBe(32);
     expect(settings.modelImportDefaultScale).toBe(1);
     expect(settings.viewportFlySpeed).toBe(8);
     expect(settings.viewportGridSize).toBe(1);
@@ -84,6 +87,20 @@ describe("app settings", () => {
       engineSettingsSchema.parse({ modelImportDefaultScale: -4 })
         .modelImportDefaultScale,
     ).toBeGreaterThan(0);
+  });
+
+  it("clamps audio PCM ceiling and max voices", () => {
+    expect(engineSettingsSchema.parse({ audioByteCeiling: 1 }).audioByteCeiling).toBe(
+      32 * 1024 * 1024,
+    );
+    expect(
+      engineSettingsSchema.parse({ audioByteCeiling: 9 * 1024 * 1024 * 1024 })
+        .audioByteCeiling,
+    ).toBe(2 * 1024 * 1024 * 1024);
+    expect(engineSettingsSchema.parse({ audioMaxVoices: 1 }).audioMaxVoices).toBe(8);
+    expect(engineSettingsSchema.parse({ audioMaxVoices: 400 }).audioMaxVoices).toBe(
+      128,
+    );
   });
 
   it("fills viewport fly speed and grid size when saved JSON omits them", () => {
