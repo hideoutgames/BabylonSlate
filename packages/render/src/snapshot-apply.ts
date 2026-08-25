@@ -342,14 +342,6 @@ export function applyAssignMesh(
     binding.meshParts.delete(command.slotId);
   }
   if (command.light) binding.lightProps.set(command.slotId, command.light);
-  if (command.skybox) {
-    binding.skyboxProps.set(command.slotId, command.skybox);
-  } else if (meshKind === "skybox") {
-    binding.skyboxProps.set(command.slotId, {
-      size: 1000,
-      faces: emptySkyboxFaces(),
-    });
-  }
   if (command.text3d) {
     binding.text3dProps.set(command.slotId, command.text3d);
   } else if (meshKind === "text3d") {
@@ -383,6 +375,14 @@ export function applyAssignMesh(
   const existing = binding.meshes.get(command.slotId);
   if (existing) {
     disposeSlotVisuals(scene, binding, command.slotId);
+  }
+  if (command.skybox) {
+    binding.skyboxProps.set(command.slotId, command.skybox);
+  } else if (meshKind === "skybox") {
+    binding.skyboxProps.set(command.slotId, {
+      size: 1000,
+      faces: emptySkyboxFaces(),
+    });
   }
   const rebuilt = createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);

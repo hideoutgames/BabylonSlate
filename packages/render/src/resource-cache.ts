@@ -159,8 +159,10 @@ export class ResourceCache {
   /**
    * Pin GPU textures still referenced by one EngineHandle (viewport, Play,
    * Prefab). Union across clients so a shared cache does not evict a guid
-   * another view still holds. When no client has registered, eviction uses
-   * `refCount` (tests and thumbnail paths).
+   * another view still holds. Live GPU wrappers with `refCount > 0` (skybox
+   * cubes, handle retains) stay referenced even when they are not in the pin
+   * set. Accounted entries with no wrapper still follow pins-only. When no
+   * client has registered, eviction uses `refCount` (tests and thumbnail paths).
    */
   setClientTextures(clientId: string, guids: Iterable<string>): void {
     this.clientTextures.set(clientId, new Set(guids));
@@ -173,6 +175,7 @@ export class ResourceCache {
   }
 
   private isUnreferenced(entry: CacheEntry): boolean {
+    if (entry.texture && entry.refCount > 0) return false;
     if (this.clientTextures.size === 0) return entry.refCount === 0;
     for (const guids of this.clientTextures.values()) {
       if (guids.has(entry.assetGuid)) return false;

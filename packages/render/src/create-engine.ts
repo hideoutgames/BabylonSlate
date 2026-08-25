@@ -57,7 +57,7 @@ import {
 import { applySceneToBabylonScene, unfreezeActorWorldMatrix, freezeStaticActorWorldMatrix } from "./scene-loader";
 import { accountedGeometryBytesForScene, isEditorModelPlaceholder } from "./glb-anim";
 import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
-import { isSkyboxMesh } from "./skybox";
+import { isSkyboxMesh, skyboxCubeCacheGuid, skyboxCubeCacheGuidsFromScene } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
   refreshAuthoredCameraLenses,
@@ -759,6 +759,19 @@ export function createEngine(
       })
     : null;
 
+  const pinClientTextures = () => {
+    const guids = new Set<string>(binding.textureBytes?.keys() ?? []);
+    for (const props of binding.skyboxProps.values()) {
+      guids.add(skyboxCubeCacheGuid(props.faces));
+    }
+    for (const guid of skyboxCubeCacheGuidsFromScene(
+      editorSync?.serializedScene() ?? null,
+    )) {
+      guids.add(guid);
+    }
+    resourceCache.setClientTextures(scene.uid, guids);
+  };
+
   const loadScene = (sceneData: SerializedScene) => {
     postProcessStack = normalizePostProcessStack(
       sceneData.settings.postProcessStack,
@@ -767,6 +780,7 @@ export function createEngine(
       editorSync.apply(sceneData);
       applyEditorMaterialFreeze(scene, editingMaterialGuids);
       rebuildPostProcessStack();
+      pinClientTextures();
       return;
     }
     if (options.playMode) {
@@ -780,11 +794,13 @@ export function createEngine(
       });
       rebuildPostProcessStack();
       scheduler.invalidate("asset");
+      pinClientTextures();
       return;
     }
     applySceneToBabylonScene(scene, sceneData, binding);
     rebuildPostProcessStack();
     scheduler.invalidate("asset");
+    pinClientTextures();
   };
 
   let editor: EditorTools | null = null;
@@ -1249,6 +1265,7 @@ export function createEngine(
       if (command.type === "assignMesh") {
         const previousCamera = scene.activeCamera;
         applyAssignMesh(scene, binding, command);
+        pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
           command.slotId,
@@ -1389,10 +1406,7 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
-      resourceCache.setClientTextures(
-        scene.uid,
-        assets.textureBytes?.keys() ?? [],
-      );
+      pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;

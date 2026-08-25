@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, NullEngine, UniversalCamera } from "@babylonjs/core";
+import { Camera, NullEngine, PBRMaterial, UniversalCamera } from "@babylonjs/core";
 import {
   snapshotFloatCount,
   writeActorSlot,
@@ -1154,6 +1154,46 @@ describe("Play createEngine view", () => {
     const second = editor.resourceCache.getTexture("tex-shared", engine, bytes);
     expect(second).toBe(first);
     expect(isDisposedGpuTexture(first)).toBe(false);
+  });
+
+  it("Play overlay dispose leaves the editor skybox cubemap live", () => {
+    const engine = sharedEngine();
+    const editor = createEngine(
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { sharedEngine: engine, editor: true },
+    );
+    handles.push(editor);
+    editor.setMeshAssets({
+      resourceCache: editor.resourceCache,
+      textureBytes: new Map([["tex-albedo", new Uint8Array([1, 2, 3, 4])]]),
+    });
+    const editorSky = editor.scene.getMeshByName(editorMeshName("actor-skybox"));
+    const cube = (editorSky?.material as PBRMaterial | null)?.reflectionTexture;
+    expect(cube).toBeTruthy();
+    const play = createEngine(
+      new FakeCanvas() as unknown as HTMLCanvasElement,
+      { sharedEngine: engine, playMode: true },
+    );
+    play.applyCommand({
+      type: "assignMesh",
+      slotId: 3,
+      meshAssetGuid: null,
+      meshKind: "skybox",
+      skybox: {
+        size: 1000,
+        faces: {
+          px: null,
+          py: null,
+          pz: null,
+          nx: null,
+          ny: null,
+          nz: null,
+        },
+      },
+    });
+    play.dispose();
+    expect(isDisposedGpuTexture(cube!)).toBe(false);
+    expect(cube!.getInternalTexture()).not.toBeNull();
   });
 
   it("does not dispose the shared Engine when Prefab rtt handle disposes", () => {

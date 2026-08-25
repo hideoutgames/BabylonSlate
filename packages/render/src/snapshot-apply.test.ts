@@ -9,6 +9,7 @@ import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
+import { RENDERING_GROUP } from "./sorting";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
 import {
@@ -1299,8 +1300,9 @@ describe("createPlayMesh", () => {
     expect(mesh).not.toBeNull();
     expect(mesh!.isVisible).toBe(false);
     expect(mesh!.isPickable).toBe(false);
-    expect(mesh!.infiniteDistance).toBe(true);
+    expect(mesh!.infiniteDistance).toBe(false);
     expect(mesh!.ignoreCameraMaxZ).toBe(true);
+    expect(mesh!.renderingGroupId).toBe(RENDERING_GROUP.background);
     expect(isPlayHelperMeshKind("skybox")).toBe(false);
     expect(isPlayHelperMeshKind("rigidbody")).toBe(true);
     binding.liveSlots.add(3);
@@ -1312,7 +1314,7 @@ describe("createPlayMesh", () => {
       actors: [
         {
           slotId: 3,
-          position: { x: 0, y: 0, z: 0 },
+          position: { x: 7, y: 2, z: -3 },
           rotation: { x: 0, y: 0, z: 0, w: 1 },
           scale: { x: 1, y: 1, z: 1 },
           flags: 1,
@@ -1321,7 +1323,39 @@ describe("createPlayMesh", () => {
     });
     expect(mesh!.isVisible).toBe(true);
     expect(mesh!.isWorldMatrixFrozen).toBe(false);
-    expect(mesh!.infiniteDistance).toBe(true);
+    expect(mesh!.infiniteDistance).toBe(false);
+    expect(mesh!.position.x).toBeCloseTo(7);
+    expect(mesh!.position.y).toBeCloseTo(2);
+    expect(mesh!.position.z).toBeCloseTo(-3);
+  });
+
+  it("keeps authored skybox size across a second assignMesh rebuild", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    const command = {
+      type: "assignMesh" as const,
+      slotId: 5,
+      meshAssetGuid: null,
+      meshKind: "skybox" as const,
+      skybox: {
+        size: 250,
+        faces: {
+          px: null,
+          py: null,
+          pz: null,
+          nx: null,
+          ny: null,
+          nz: null,
+        },
+      },
+    };
+    applyAssignMesh(scene, binding, command);
+    applyAssignMesh(scene, binding, command);
+    const rebuilt = scene.getMeshByName("actor-5") as Mesh;
+    const extent = rebuilt.getBoundingInfo().boundingBox.extendSize.x;
+    expect(extent).toBeCloseTo(125);
   });
 
   it("creates a 3D Text mesh for meshKind text3d", () => {
