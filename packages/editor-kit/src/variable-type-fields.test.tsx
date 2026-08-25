@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { VariableTypeFields } from "./variable-type-fields";
+import { AssetOpenProvider } from "./asset-picker-control";
 
 if (typeof window.PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -60,5 +61,32 @@ describe("VariableTypeFields", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ typeId: "rotator", container: "array" }),
     );
+  });
+
+  it("shows Open Asset beside a Map key Structure picker", () => {
+    const openAsset = vi.fn();
+    render(
+      <AssetOpenProvider
+        value={{
+          canOpen: (guid) => guid === "struct-stats",
+          openAsset,
+        }}
+      >
+        <VariableTypeFields
+          value={{
+            typeId: "float",
+            container: "map",
+            keyTypeId: "struct",
+            keyTypeClassId: "struct-stats",
+          }}
+          onChange={() => {}}
+          typeAssets={[
+            { guid: "struct-stats", name: "Stats", type: "Structure" },
+          ]}
+        />
+      </AssetOpenProvider>,
+    );
+    screen.getByTestId("inspector-member-key-type-asset-open").click();
+    expect(openAsset).toHaveBeenCalledWith("struct-stats");
   });
 });

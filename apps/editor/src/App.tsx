@@ -28,6 +28,7 @@ import { DocumentWorkspace } from "./components/document-workspace";
 import { ExternalChangeDialogs } from "./components/external-change-dialogs";
 import { Homepage } from "./components/homepage";
 import { DocumentProvider, useDocuments } from "./context/document-context";
+import { AssetOpenDocumentsProvider } from "./context/asset-open-provider";
 import { EditorThemeProvider } from "./context/theme-context";
 import { PlayProvider, usePlay } from "./context/play-context";
 import { ProjectSearchProvider } from "./context/project-search-context";
@@ -407,6 +408,7 @@ export default function App() {
     <TooltipProvider>
       <EditorThemeProvider>
         <DocumentProvider>
+          <AssetOpenDocumentsProvider>
           <ValidationProvider>
             <PlayProvider>
               <MaterialRenderControlProvider>
@@ -420,6 +422,7 @@ export default function App() {
               </MaterialRenderControlProvider>
             </PlayProvider>
           </ValidationProvider>
+          </AssetOpenDocumentsProvider>
         </DocumentProvider>
       </EditorThemeProvider>
     </TooltipProvider>

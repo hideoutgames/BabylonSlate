@@ -165,6 +165,12 @@ export {
   type AssetPickerProps,
 } from "./asset-picker";
 export {
+  AssetOpenProvider,
+  AssetPickerControl,
+  useAssetOpen,
+  type AssetOpenApi,
+} from "./asset-picker-control";
+export {
   ClassPicker,
   type ClassPickerEntry,
   type ClassPickerProps,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
+  AssetPickerControl,
   PanelFrame,
   PinTypePicker,
   PropertyGrid,
@@ -176,18 +177,20 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
               <div className="text-sm font-medium">
                 {isEnum ? "Enum Type" : "Structure Type"}
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-auto w-full justify-start"
-                data-testid="structure-field-type-asset"
-                onClick={() => setTypeAssetPickerOpen(true)}
-              >
-                {selectedPickerIdentity(
-                  typeAssetIdentity,
-                  typeClassId || "Pick type",
-                )}
-              </Button>
+              <AssetPickerControl value={typeClassId}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-auto w-full justify-start"
+                  data-testid="structure-field-type-asset"
+                  onClick={() => setTypeAssetPickerOpen(true)}
+                >
+                  {selectedPickerIdentity(
+                    typeAssetIdentity,
+                    typeClassId || "Pick type",
+                  )}
+                </Button>
+              </AssetPickerControl>
             </div>
           ) : null}
           <AssetPicker

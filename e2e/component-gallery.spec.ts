@@ -12,6 +12,9 @@ test("component gallery renders shadcn primitives in test mode", async ({
   await expect(page.getByTestId("gallery-touch-button")).toBeVisible();
   await expect(page.getByTestId("gallery-toggle-group")).toBeVisible();
   await expect(page.getByTestId("gallery-prefab-tab-note")).toBeVisible();
+  await expect(page.getByTestId("property-gallery-mesh-open")).toHaveCount(0);
+  await expect(page.getByTestId("property-gallery-texture-open")).toBeVisible();
+  await expect(page.getByTestId("gallery-texture-picker-open")).toBeVisible();
 });
 
 test("gallery danger dialog uses a solid destructive confirm", async ({

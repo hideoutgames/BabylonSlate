@@ -2,6 +2,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { useCallback, useMemo, useState } from "react";
 import {
   AssetPicker,
+  AssetPickerControl,
   NamedListEditor,
   PanelFrame,
   PropertyGrid,
@@ -476,21 +477,23 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   <FieldLabel htmlFor={`scene-post-process-${index}-material`}>
                     Material
                   </FieldLabel>
-                  <Button
-                    type="button"
-                    id={`scene-post-process-${index}-material`}
-                    variant="outline"
-                    className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
-                    data-testid={`scene-post-process-${index}-material`}
-                    onClick={() => setPostProcessPick(index)}
-                  >
-                    {selectedPickerIdentity(
-                      assetRowIdentity(
-                        pickerAssets.find((asset) => asset.guid === value),
-                      ),
-                      "Pick Material",
-                    )}
-                  </Button>
+                  <AssetPickerControl value={value}>
+                    <Button
+                      type="button"
+                      id={`scene-post-process-${index}-material`}
+                      variant="outline"
+                      className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                      data-testid={`scene-post-process-${index}-material`}
+                      onClick={() => setPostProcessPick(index)}
+                    >
+                      {selectedPickerIdentity(
+                        assetRowIdentity(
+                          pickerAssets.find((asset) => asset.guid === value),
+                        ),
+                        "Pick Material",
+                      )}
+                    </Button>
+                  </AssetPickerControl>
                 </Field>
                 <Field orientation="horizontal" className="w-auto">
                   <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>

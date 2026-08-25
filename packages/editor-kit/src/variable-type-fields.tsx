@@ -9,6 +9,7 @@ import {
 import { PinTypePicker } from "./pin-type-picker";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
+import { AssetPickerControl } from "./asset-picker-control";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   assetRowIdentity,
@@ -158,27 +159,29 @@ export function VariableTypeFields({
               <FieldLabel>
                 {keyTypeId === "enum" ? "Key Enum Type" : "Key Structure Type"}
               </FieldLabel>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-auto w-full justify-start"
-                data-testid="inspector-member-key-type-asset"
-                onClick={() => setKeyAssetOpen(true)}
-              >
-                {selectedPickerIdentity(
-                  assetRowIdentity(
-                    keyAsset
-                      ? { name: keyAsset.name, type: keyAsset.type }
-                      : keyClassId
-                        ? {
-                            name: keyClassId,
-                            type: keyTypeId === "enum" ? "Enum" : "Structure",
-                          }
-                        : undefined,
-                  ),
-                  keyClassId || "Pick type",
-                )}
-              </Button>
+              <AssetPickerControl value={keyClassId}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-auto w-full justify-start"
+                  data-testid="inspector-member-key-type-asset"
+                  onClick={() => setKeyAssetOpen(true)}
+                >
+                  {selectedPickerIdentity(
+                    assetRowIdentity(
+                      keyAsset
+                        ? { name: keyAsset.name, type: keyAsset.type }
+                        : keyClassId
+                          ? {
+                              name: keyClassId,
+                              type: keyTypeId === "enum" ? "Enum" : "Structure",
+                            }
+                          : undefined,
+                    ),
+                    keyClassId || "Pick type",
+                  )}
+                </Button>
+              </AssetPickerControl>
             </Field>
           ) : null}
           <ClassPicker
