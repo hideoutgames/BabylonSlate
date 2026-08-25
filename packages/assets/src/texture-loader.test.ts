@@ -58,6 +58,10 @@ describe("player KTX2 transcoder files", () => {
       "ktx2/msc_basis_transcoder.wasm",
       "ktx2/uastc_astc.wasm",
       "ktx2/uastc_bc7.wasm",
+      "ktx2/uastc_rgba8_unorm_v2.wasm",
+      "ktx2/uastc_rgba8_srgb_v2.wasm",
+      "ktx2/uastc_r8_unorm.wasm",
+      "ktx2/uastc_rg8_unorm.wasm",
       "ktx2/zstddec.wasm",
     ]);
     const files = new Map<string, Uint8Array>([
@@ -69,6 +73,11 @@ describe("player KTX2 transcoder files", () => {
     files.set("ktx2/uastc_astc.wasm", new Uint8Array([1]));
     files.set("ktx2/uastc_bc7.wasm", new Uint8Array([1]));
     files.set("ktx2/zstddec.wasm", new Uint8Array([1]));
+    expect(playerFilesHaveKtx2Transcoder(files)).toBe(false);
+    files.set("ktx2/uastc_rgba8_unorm_v2.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_rgba8_srgb_v2.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_r8_unorm.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1]));
     expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
   });
 });

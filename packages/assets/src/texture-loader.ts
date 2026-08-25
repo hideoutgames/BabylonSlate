@@ -129,6 +129,10 @@ export const KTX2_TRANSCODER_RELATIVE_FILES = [
   "ktx2/msc_basis_transcoder.wasm",
   "ktx2/uastc_astc.wasm",
   "ktx2/uastc_bc7.wasm",
+  "ktx2/uastc_rgba8_unorm_v2.wasm",
+  "ktx2/uastc_rgba8_srgb_v2.wasm",
+  "ktx2/uastc_r8_unorm.wasm",
+  "ktx2/uastc_rg8_unorm.wasm",
   "ktx2/zstddec.wasm",
 ] as const;
 

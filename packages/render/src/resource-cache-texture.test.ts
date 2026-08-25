@@ -100,6 +100,7 @@ describe("resource cache getTexture", () => {
     };
     expect(loaderHints.mimeType ?? loaderHints._mimeType).toBe("image/ktx2");
     expect(loaderHints._forcedExtension).toBe(".ktx2");
+    expect(texture.name || texture.url).toMatch(/#\.ktx2$/);
     cache.dispose();
     engine.dispose();
   });

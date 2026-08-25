@@ -267,18 +267,21 @@ export class ResourceCache {
     }
     // Canonical sampling flags are part of Babylon's InternalTexture cache key.
     const ktx2 = ktx2LoaderHints(bytes);
+    const raw = asUint8Array(bytes);
+    const loaderUrl = ktx2.forcedExtension ? `${url}#.ktx2` : url;
     const texture = options.isCube
       ? new CubeTexture(url, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
         })
-      : new Texture(url, engine, {
+      : new Texture(loaderUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           invertY: options.invertY !== false,
           samplingMode: options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
+          buffer: raw ? raw.slice() : undefined,
         });
     entry.texture = texture;
     entry.samplingKey = key;

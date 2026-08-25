@@ -39,6 +39,9 @@ describe("loadPlayerDistFiles", () => {
     expect(requested.some((url) => url.includes("ktx2/uastc_bc7.wasm"))).toBe(
       true,
     );
+    expect(requested.some((url) => url.includes("ktx2/uastc_rgba8_unorm_v2.wasm"))).toBe(
+      true,
+    );
     expect(requested.some((url) => url.includes("ktx2/zstddec.wasm"))).toBe(
       true,
     );

@@ -11,6 +11,7 @@ describe("ktx2 transcoder config", () => {
     const urls = ktx2TranscoderUrls("/ktx2/");
     expect(urls.jsDecoderModule).toBe("/ktx2/babylon.ktx2Decoder.js");
     expect(urls.wasmUASTCToASTC).toContain("uastc_astc.wasm");
+    expect(urls.wasmUASTCToRGBAUnorm).toContain("uastc_rgba8_unorm_v2.wasm");
     expect(urls.jsMSCTranscoder).toContain("msc_basis_transcoder.js");
   });
 
@@ -60,6 +61,11 @@ describe("ktx2 transcoder config", () => {
     files.set("ktx2/uastc_astc.wasm", new Uint8Array([1]));
     files.set("ktx2/uastc_bc7.wasm", new Uint8Array([1]));
     files.set("ktx2/zstddec.wasm", new Uint8Array([1]));
+    expect(playerFilesHaveKtx2Transcoder(files)).toBe(false);
+    files.set("ktx2/uastc_rgba8_unorm_v2.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_rgba8_srgb_v2.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_r8_unorm.wasm", new Uint8Array([1]));
+    files.set("ktx2/uastc_rg8_unorm.wasm", new Uint8Array([1]));
     expect(playerFilesHaveKtx2Transcoder(files)).toBe(true);
   });
 });
