@@ -59,3 +59,17 @@ export function applyPlayerActiveScene(
   handle.resetParticleSession?.();
   return true;
 }
+
+/** Preview Build / packaged player: warm shaders after the first mesh exists. */
+export function schedulePlayerMaterialPrewarm(
+  handle: {
+    whenEditorModelsReady: () => Promise<void>;
+    prewarmSceneMaterials: () => Promise<void>;
+  },
+  commandType: string,
+  scheduled: { current: boolean },
+): void {
+  if (commandType !== "assignMesh" || scheduled.current) return;
+  scheduled.current = true;
+  void handle.whenEditorModelsReady().then(() => handle.prewarmSceneMaterials());
+}
