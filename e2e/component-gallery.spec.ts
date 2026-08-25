@@ -137,6 +137,87 @@ test("gallery body scrolls on touch", { tag: IPAD_TEST_TAG }, async ({ page }) =
   expect(result.ok, JSON.stringify(result)).toBe(true);
 });
 
+test("gallery search dialog list scrolls on touch", { tag: IPAD_TEST_TAG }, async ({
+  page,
+}) => {
+  await page.goto("/?test=1&gallery=1");
+  await expect(page.getByTestId("component-gallery")).toBeVisible();
+  await page.getByRole("button", { name: "Open search dialog" }).click();
+  const dialog = page.getByTestId("gallery-search-dialog");
+  await expect(dialog).toBeVisible();
+  const body = page.getByTestId("gallery-search-dialog-body");
+  await expect(body).toBeVisible();
+
+  const result = await page.evaluate(() => {
+    const viewport = document.querySelector(
+      '[data-testid="gallery-search-dialog-body"]',
+    );
+    if (!(viewport instanceof HTMLElement)) {
+      return { ok: false, reason: "missing body" };
+    }
+
+    const scrollable = viewport.scrollHeight > viewport.clientHeight;
+    const overflowY = getComputedStyle(viewport).overflowY;
+    const overflowAllowsScroll = ["auto", "scroll", "overlay"].includes(overflowY);
+    if (!scrollable || !overflowAllowsScroll) {
+      return {
+        ok: false,
+        reason: "body not scrollable",
+        scrollHeight: viewport.scrollHeight,
+        clientHeight: viewport.clientHeight,
+        overflowY,
+      };
+    }
+
+    viewport.scrollTop = 0;
+    const rect = viewport.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const startY = rect.top + rect.height * 0.75;
+    const endY = rect.top + rect.height * 0.25;
+    const touchTarget =
+      viewport.querySelector("button") ?? viewport;
+
+    const makeTouch = (clientY: number) =>
+      new Touch({
+        identifier: 1,
+        target: touchTarget,
+        clientX: x,
+        clientY,
+      });
+
+    const startTouch = makeTouch(startY);
+    const moveTouch = makeTouch(endY);
+
+    touchTarget.dispatchEvent(
+      new TouchEvent("touchstart", {
+        bubbles: true,
+        cancelable: true,
+        touches: [startTouch],
+        targetTouches: [startTouch],
+        changedTouches: [startTouch],
+      }),
+    );
+    const moveEvent = new TouchEvent("touchmove", {
+      bubbles: true,
+      cancelable: true,
+      touches: [moveTouch],
+      targetTouches: [moveTouch],
+      changedTouches: [moveTouch],
+    });
+    const prevented = !touchTarget.dispatchEvent(moveEvent);
+
+    return {
+      ok: !prevented,
+      prevented,
+      scrollHeight: viewport.scrollHeight,
+      clientHeight: viewport.clientHeight,
+      overflowY,
+    };
+  });
+
+  expect(result.ok, JSON.stringify(result)).toBe(true);
+});
+
 test("gallery composites meet the minimum touch target size", {
   tag: IPAD_TEST_TAG,
 }, async ({

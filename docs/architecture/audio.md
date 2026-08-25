@@ -84,7 +84,7 @@ Asset-document preview **prefetches** clip bytes when the tab opens and starts p
 
 Preview Build’s iframe uses `outline-none` / `focus-visible:outline-none`; the packaged player also sets `canvas:focus { outline: none }` so a click does not draw a browser focus ring. Packing already includes Audio (BSAU); `export-game-inputs` loads documents as kind `audio`.
 
-`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the ~512 MB texture `ResourceCache`. Max concurrent voices: 32. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
+`AudioBufferCache` is guid-keyed PCM with active-voice pins and a **64 MiB** LRU, separate from the texture `ResourceCache` (default 2 GB). Max concurrent voices: 32. Overlay Play and the packaged player wire `backend.onVoiceEnded` through `AudioService`: a finished **non-looping** voice is unpinned and removed; looping voices ignore `onEnded`. Replaying the same `voiceId` calls `stopVoice` (unpin) before pin/play so pins cannot grow.
 
 ## Spatial
 

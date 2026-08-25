@@ -225,4 +225,18 @@ describe("applyLiveEngineSettings", () => {
     expect(scaling.setSettingsLevel).toHaveBeenCalledWith(1.5);
     expect(handle.setPostProcessingEnabled).toHaveBeenCalledWith(false);
   });
+
+  it("applies the texture memory budget without mutating a scene", () => {
+    const handle = {
+      setTextureBudget: vi.fn(),
+    };
+    applyLiveEngineSettings(handle, {
+      textureBudgetEnabled: true,
+      textureByteCeiling: 2 * 1024 * 1024 * 1024,
+    });
+    expect(handle.setTextureBudget).toHaveBeenCalledWith(
+      2 * 1024 * 1024 * 1024,
+      true,
+    );
+  });
 });

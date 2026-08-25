@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+  type SerializedComponent,
+} from "@babylonslate/core";
 import {
   ENGINE_PLACE_ACTORS,
   duplicateSceneActor,
@@ -204,6 +209,7 @@ describe("spawnPlacedActor", () => {
         classId: "SpriteComponent",
         properties: { assetGuid: "sprite-1" },
         parentId: null,
+        sourceId: "sprite",
         transform: {
           position: [0, 0, 0],
           rotation: [0, 0, 0, 1],
@@ -262,6 +268,23 @@ describe("duplicateSceneActor", () => {
     expect(copy.components).toEqual(source.components);
     expect(copy.transform).toEqual(source.transform);
     expect(copy).not.toBe(source);
+  });
+
+  it("keeps prefab sourceId and overrideKeys on the copy", () => {
+    const scene = createDefaultScene();
+    const source = createActor("actor-1", "Hero", {
+      classId: "Hero",
+      components: [
+        {
+          ...createMeshComponent("mesh-1", "box"),
+          sourceId: "prefab-mesh",
+          overrideKeys: ["meshKind"],
+        },
+      ],
+    });
+    const copy = duplicateSceneActor(scene, source);
+    expect(copy.components[0]?.sourceId).toBe("prefab-mesh");
+    expect(copy.components[0]?.overrideKeys).toEqual(["meshKind"]);
   });
 
   it("can drop the copy at a world position as a root actor", () => {
@@ -374,6 +397,51 @@ describe("projectPlaceActors", () => {
           classId: "SpriteComponent",
           properties: { assetGuid: "sprite-1" },
         },
+      ],
+    });
+  });
+
+  it("places a subclass with ancestor-merged prefab components", () => {
+    const assets = [
+      {
+        path: "assets/pawn.class.babasset",
+        header: {
+          guid: "pawn-guid",
+          name: "Pawn",
+          type: "Class",
+          parentClass: "Actor",
+        },
+      },
+      {
+        path: "assets/hero.class.babasset",
+        header: {
+          guid: "hero-guid",
+          name: "Hero",
+          type: "Class",
+          parentClass: "Pawn",
+        },
+      },
+    ];
+    const graphs: Record<string, { components?: SerializedComponent[] }> = {
+      "assets/pawn.class.babasset": {
+        components: [createMeshComponent("prefab-mesh", "box")],
+      },
+      "assets/hero.class.babasset": { components: [] },
+    };
+    const items = projectPlaceActors(assets, (guid) =>
+      prefabComponentsForGuid(guid, {
+        assets,
+        graphForPath: (path) => graphs[path],
+      }),
+    );
+    const hero = items.find((item) => item.title === "Hero");
+    expect(hero?.kind).toMatchObject({
+      type: "asset",
+      components: [
+        expect.objectContaining({
+          id: "prefab-mesh",
+          properties: expect.objectContaining({ meshKind: "box" }),
+        }),
       ],
     });
   });

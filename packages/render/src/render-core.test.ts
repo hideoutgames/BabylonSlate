@@ -27,10 +27,19 @@ describe("texture byte accounting", () => {
 describe("resource cache", () => {
   it("reuses stable blob URLs per asset guid", () => {
     const cache = new ResourceCache({ byteCeiling: 1024 * 1024 });
-    const a = cache.blobUrlFor("guid-1", new Uint8Array([1, 2, 3]));
-    const b = cache.blobUrlFor("guid-1", new Uint8Array([9, 9, 9]));
+    const bytes = new Uint8Array([1, 2, 3]);
+    const a = cache.blobUrlFor("guid-1", bytes);
+    const b = cache.blobUrlFor("guid-1", bytes);
     expect(a).toBe(b);
     cache.release("guid-1");
+    cache.dispose();
+  });
+
+  it("replaces the blob URL when texture bytes change", () => {
+    const cache = new ResourceCache({ byteCeiling: 1024 * 1024 });
+    const a = cache.blobUrlFor("guid-1", new Uint8Array([1, 2, 3]));
+    const b = cache.blobUrlFor("guid-1", new Uint8Array([9, 9, 9]));
+    expect(a).not.toBe(b);
     cache.dispose();
   });
 
@@ -45,6 +54,52 @@ describe("resource cache", () => {
     cache.release("a");
     cache.evictToCeiling();
     expect(evictions).toContain("a");
+    expect(cache.accountedBytes()).toBe(80);
+    cache.dispose();
+  });
+
+  it("trims unreferenced LRU toward 80% of the live ceiling", () => {
+    const evictions: string[] = [];
+    const cache = new ResourceCache({
+      byteCeiling: 100,
+      onEvict: (id) => evictions.push(id),
+    });
+    cache.account("a", 50);
+    cache.account("b", 50);
+    cache.account("c", 50);
+    cache.release("a");
+    cache.release("b");
+    cache.evictToCeiling();
+    expect(cache.accountedBytes()).toBeLessThanOrEqual(80);
+    expect(evictions).toContain("a");
+    cache.dispose();
+  });
+
+  it("skips eviction when the budget is disabled", () => {
+    const evictions: string[] = [];
+    const cache = new ResourceCache({
+      byteCeiling: 10,
+      onEvict: (id) => evictions.push(id),
+    });
+    cache.setBudgetEnabled(false);
+    cache.account("a", 80);
+    cache.release("a");
+    cache.evictToCeiling();
+    expect(evictions).toEqual([]);
+    expect(cache.accountedBytes()).toBe(80);
+    cache.dispose();
+  });
+
+  it("evicts textures no handle still pins even if getTexture left a refCount", () => {
+    const evictions: string[] = [];
+    const cache = new ResourceCache({
+      byteCeiling: 100,
+      onEvict: (id) => evictions.push(id),
+    });
+    cache.account("gone", 80);
+    cache.account("kept", 80);
+    cache.setClientTextures("viewport", ["kept"]);
+    expect(evictions).toContain("gone");
     expect(cache.accountedBytes()).toBe(80);
     cache.dispose();
   });

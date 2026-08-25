@@ -111,3 +111,58 @@ describe("selectGuiImageChunk", () => {
     expect(selectGuiImageChunk(ktx2Only)).toBeNull();
   });
 });
+
+describe("selectTextureChunk authored variant", () => {
+  it("picks the preferred ktx2 chunk instead of the first ktx2", () => {
+    const header = textureHeader([
+      {
+        id: "pixels",
+        kind: "pixels",
+        mime: "image/png",
+        sha256: "aa",
+        locator: { inline: { offset: 0, length: 1 } },
+      },
+      {
+        id: "ktx2:stale",
+        kind: "ktx2",
+        mime: "image/ktx2",
+        sha256: "old",
+        locator: { inline: { offset: 1, length: 1 } },
+      },
+      {
+        id: "ktx2:authored",
+        kind: "ktx2",
+        mime: "image/ktx2",
+        sha256: "new",
+        locator: { inline: { offset: 2, length: 1 } },
+      },
+    ]);
+    header.payload = { ktx2ChunkId: "ktx2:authored" };
+    expect(selectTextureChunk(header).chunk.id).toBe("ktx2:authored");
+    expect(
+      selectTextureChunk(header, { preferredChunkId: "ktx2:stale" }).chunk.id,
+    ).toBe("ktx2:stale");
+  });
+
+  it("falls back to another ktx2 when the preferred variant is missing", () => {
+    const header = textureHeader([
+      {
+        id: "pixels",
+        kind: "pixels",
+        mime: "image/png",
+        sha256: "aa",
+        locator: { inline: { offset: 0, length: 1 } },
+      },
+      {
+        id: "ktx2:other",
+        kind: "ktx2",
+        mime: "image/ktx2",
+        sha256: "bb",
+        locator: { inline: { offset: 1, length: 1 } },
+      },
+    ]);
+    expect(
+      selectTextureChunk(header, { preferredChunkId: "ktx2:missing" }).chunk.id,
+    ).toBe("ktx2:other");
+  });
+});

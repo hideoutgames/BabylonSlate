@@ -151,6 +151,17 @@ describe("resource cache getTexture", () => {
     );
     cache.dispose();
   });
+
+  it("trims unreferenced entries toward 80% of the ceiling", () => {
+    const cache = new ResourceCache({ byteCeiling: 1000 });
+    cache.account("old", 600);
+    cache.release("old");
+    cache.account("kept", 600);
+    cache.release("kept");
+    expect(cache.accountedBytes()).toBeLessThanOrEqual(800);
+    expect(cache.accountedBytes()).toBe(600);
+    cache.dispose();
+  });
 });
 
 describe("Play texture cache invariant with getTexture", () => {

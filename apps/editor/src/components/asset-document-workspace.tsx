@@ -15,12 +15,14 @@ import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
+import { shouldCompressTexture } from "@babylonslate/assets";
 import {
-  applyTextureMaxDimensionChange,
+  applyTextureCompressionQualityChange,
+  applyTextureDownsampleChange,
   patchTextureUsage,
-  textureMaxDimensionSelectValue,
+  textureDownsampleSelectValue,
   TEXTURE_USAGE_OPTIONS,
-  TEXTURE_MAX_DIMENSION_OPTIONS,
+  TEXTURE_DOWNSAMPLE_LABELS,
 } from "../lib/asset-settings";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -364,37 +366,50 @@ function AssetSettingsEditor({
         onChange: (value) => onChange(patchTextureUsage(payload, value)),
       },
       {
-        id: "maxDimension",
+        id: "downsample",
         kind: "enum",
-        label: "Max Dimension",
-        value: textureMaxDimensionSelectValue(payload),
-        options: TEXTURE_MAX_DIMENSION_OPTIONS.map((value) => ({
+        label: "Downsample",
+        value: textureDownsampleSelectValue(payload),
+        options: Object.entries(TEXTURE_DOWNSAMPLE_LABELS).map(([value, label]) => ({
           value,
-          label: value === "source" ? "Source" : value,
+          label,
         })),
         onChange: (value) => {
           const { payload: next, shouldRequeue } =
-            applyTextureMaxDimensionChange(payload, value);
+            applyTextureDownsampleChange(payload, value);
           onChange(next);
           if (!guid || !shouldRequeue) return;
-          void retryTextureEncoding(guid, {
-            force: true,
-            maxDimension:
-              typeof next.maxDimension === "number"
-                ? next.maxDimension
-                : undefined,
-          });
+          void retryTextureEncoding(guid, { force: true });
         },
       },
-      {
-        id: "compression",
-        kind: "text",
-        label: "Compression",
-        value: compression,
-        disabled: true,
-        onChange: () => undefined,
-      },
     );
+    if (shouldCompressTexture(usage)) {
+      const quality =
+        typeof payload.compressionQuality === "number"
+          ? payload.compressionQuality
+          : 2;
+      rows.push({
+        id: "compressionQuality",
+        kind: "number",
+        label: "Compression Quality",
+        value: quality,
+        onChange: (value) => {
+          const { payload: next, shouldRequeue } =
+            applyTextureCompressionQualityChange(payload, value);
+          onChange(next);
+          if (!guid || !shouldRequeue) return;
+          void retryTextureEncoding(guid, { force: true });
+        },
+      });
+    }
+    rows.push({
+      id: "compression",
+      kind: "text",
+      label: "Compression",
+      value: compression,
+      disabled: true,
+      onChange: () => undefined,
+    });
     if (encodeError) {
       rows.push({
         id: "encodeError",

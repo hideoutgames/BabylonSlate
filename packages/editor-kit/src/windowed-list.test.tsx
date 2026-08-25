@@ -44,6 +44,27 @@ function renderList(itemCount: number, rowHeight: number) {
   );
 }
 
+function stubNativeScrollerHeight(testId: string, height: number): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "clientHeight",
+  );
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      if ((this as HTMLElement).getAttribute?.("data-testid") === testId) {
+        return height;
+      }
+      return descriptor?.get?.call(this) ?? 0;
+    },
+  });
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", descriptor);
+    }
+  };
+}
+
 describe("WindowedList", () => {
   afterEach(() => {
     cleanup();
@@ -70,6 +91,33 @@ describe("WindowedList", () => {
       expect(mounted.length).toBeLessThanOrEqual(
         Math.ceil(280 / 28) + WINDOWED_SLICE_OVERSCAN * 2,
       );
+      expect(queryByTestId("windowed-row-0")).toBeTruthy();
+      expect(queryByTestId("windowed-row-499")).toBeNull();
+    } finally {
+      restore();
+    }
+  });
+
+  it("windows against a native overflow-y-auto ancestor when ScrollArea is absent", () => {
+    const restore = stubNativeScrollerHeight("native-scroller", 280);
+    try {
+      const { queryByTestId } = render(
+        <div
+          data-testid="native-scroller"
+          style={{ overflowY: "auto", height: 280 }}
+        >
+          <WindowedList itemCount={500} rowHeight={28}>
+            {(index) => (
+              <div data-testid={`windowed-row-${index}`}>{index}</div>
+            )}
+          </WindowedList>
+        </div>,
+      );
+      const mounted = document.querySelectorAll(
+        '[data-testid^="windowed-row-"]',
+      );
+      expect(mounted.length).toBeGreaterThan(0);
+      expect(mounted.length).toBeLessThan(40);
       expect(queryByTestId("windowed-row-0")).toBeTruthy();
       expect(queryByTestId("windowed-row-499")).toBeNull();
     } finally {

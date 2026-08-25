@@ -125,7 +125,7 @@ P4 adds multi-transport comparison: the same scenario must agree **in-process**,
 
 ## P14 perf smoke
 
-`packages/runtime/src/p14-perf-smoke.test.ts` ticks a tiny in-process scene and asserts `lastScriptMs`, `lastPhysicsMs`, and their sum stay under `TICK_BUDGET_MS` (8). `packages/render/src/perf-ceilings.test.ts` asserts accounted texture + geometry bytes for that fixture stay under committed ceilings (512 MB textures / 128 MB geometry) so byte-accounting drift fails CI. `RenderScheduler.setObstructed(true)` / hidden already asserts `shouldRender() === false`. Draw-call ceilings surface as HUD warnings (`DRAW_CALL_WARN_CEILING`). The fixture stays small so GitHub runners remain under 8 ms.
+`packages/runtime/src/p14-perf-smoke.test.ts` ticks a tiny in-process scene and asserts `lastScriptMs`, `lastPhysicsMs`, and their sum stay under `TICK_BUDGET_MS` (8). `packages/render/src/perf-ceilings.test.ts` asserts accounted texture + geometry bytes for that fixture stay under committed ceilings (2 GB textures / 128 MB geometry) so byte-accounting drift fails CI. `RenderScheduler.setObstructed(true)` / hidden already asserts `shouldRender() === false`. Draw-call ceilings surface as HUD warnings (`DRAW_CALL_WARN_CEILING`). The fixture stays small so GitHub runners remain under 8 ms.
 
 ## Property tests
 

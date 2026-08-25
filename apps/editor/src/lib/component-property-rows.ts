@@ -1314,3 +1314,18 @@ export function subclassClassEntries(
   }
   return entries;
 }
+
+/** Point Details Reset at the Class prefab value for a sourced instance row. */
+export function applyPrefabPropertyDefaults(
+  rows: PropertyRow[],
+  prefab: SerializedComponent | undefined,
+): PropertyRow[] {
+  if (!prefab) return rows;
+  return rows.map((row) => {
+    for (const key of Object.keys(prefab.properties)) {
+      if (!row.id.endsWith(`-${key}`)) continue;
+      return { ...row, defaultValue: prefab.properties[key] } as PropertyRow;
+    }
+    return row;
+  });
+}
