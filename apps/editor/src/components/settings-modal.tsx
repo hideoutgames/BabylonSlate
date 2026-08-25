@@ -688,9 +688,8 @@ export function SettingsModal({
                 )}
               </Button>
               <FieldDescription>
-                Font asset used when a widget omits a family. Empty means the
-                compiled stack starts from the widget family plus the global
-                fallback.
+                Font asset inserted after authored families. Empty means the
+                compiled stack is the source family plus the global fallback.
               </FieldDescription>
             </Field>
             <Field>
