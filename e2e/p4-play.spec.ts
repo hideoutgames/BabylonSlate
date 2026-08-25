@@ -110,39 +110,53 @@ test.describe("P4 Play overlay and session report", () => {
     const samples: Array<{ meshes: number; textures: number }> = [];
     for (let cycle = 0; cycle < 3; cycle += 1) {
       await clickPlayAndWaitForOverlay(page);
-      let previous = { meshes: -2, textures: -2 };
       await expect
         .poll(
-          async () => {
-            const current = await page.evaluate(() => {
+          async () =>
+            page.evaluate(async () => {
               const host = globalThis as unknown as {
                 __babylonslatePlayTest?: {
                   visuals: () => { slotId: number }[];
+                  whenModelsReady: () => Promise<void>;
+                  modelLoadCount: () => number;
                   liveObjectCounts: () => {
                     meshes: number;
                     textures: number;
                   } | null;
                 };
               };
-              const visuals = host.__babylonslatePlayTest?.visuals().length ?? 0;
-              const counts = host.__babylonslatePlayTest?.liveObjectCounts() ?? {
-                meshes: -1,
-                textures: -1,
-              };
-              return { visuals, ...counts };
-            });
-            const stable =
-              current.visuals >= 4 &&
-              current.meshes === previous.meshes &&
-              current.textures === previous.textures &&
-              current.meshes > 0;
-            previous = { meshes: current.meshes, textures: current.textures };
-            return stable;
-          },
+              const api = host.__babylonslatePlayTest;
+              if (!api || api.modelLoadCount() === 0) return false;
+              await api.whenModelsReady();
+              const visuals = api.visuals().length;
+              const counts = api.liveObjectCounts();
+              return (
+                visuals >= 4 &&
+                counts != null &&
+                counts.meshes > 0 &&
+                counts.textures > 0
+              );
+            }),
           { timeout: 15_000, intervals: [200, 200, 250] },
         )
         .toBe(true);
-      samples.push({ ...previous });
+      const sample = await page.evaluate(async () => {
+        const host = globalThis as unknown as {
+          __babylonslatePlayTest?: {
+            whenModelsReady: () => Promise<void>;
+            liveObjectCounts: () => {
+              meshes: number;
+              textures: number;
+            } | null;
+          };
+        };
+        await host.__babylonslatePlayTest?.whenModelsReady();
+        return host.__babylonslatePlayTest?.liveObjectCounts() ?? {
+          meshes: -1,
+          textures: -1,
+        };
+      });
+      samples.push(sample);
       await page.getByTestId("play-overlay-close").click();
       await expect(page.getByTestId("play-overlay")).toHaveCount(0);
     }

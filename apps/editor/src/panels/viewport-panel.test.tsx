@@ -42,6 +42,7 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     resourceCache: {},
   };
   const createEngineMock = vi.fn(() => handle);
+  const sharedEngine = { isDisposed: false };
   return {
     createEngineMock,
     documents: {
@@ -50,6 +51,8 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     play: {
       registerSharedEngine: vi.fn(),
       registerScheduler: vi.fn(() => () => {}),
+      ensureSharedEngine: vi.fn(() => sharedEngine),
+      sharedEngineGeneration: 1,
       playing: false,
     },
   };
@@ -59,7 +62,7 @@ vi.mock("@babylonslate/render", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@babylonslate/render")>();
   return {
     ...actual,
-    createEngine: () => createEngineMock(),
+    createEngine: createEngineMock,
     NavMeshDebugOverlay: class {
       clear(): void {}
       dispose(): void {}
@@ -166,5 +169,17 @@ describe("ViewportPanel engine", () => {
       </DocumentWorkspaceProvider>,
     );
     expect(createEngineMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates the viewport Scene on the project Engine", () => {
+    renderViewport();
+    expect(play.ensureSharedEngine).toHaveBeenCalled();
+    expect(createEngineMock).toHaveBeenCalledWith(
+      expect.any(HTMLCanvasElement),
+      expect.objectContaining({
+        editor: true,
+        sharedEngine: play.ensureSharedEngine(),
+      }),
+    );
   });
 });

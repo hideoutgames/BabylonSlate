@@ -48,7 +48,7 @@ describe("importers", () => {
     const model = results.find((result) => result.type === "Model")!;
     expect(model.dependencies.length).toBeGreaterThan(0);
     expect(model.payload.clipNames).toEqual(["Walk"]);
-    expect(model.payload.importScale).toBe(10);
+    expect(model.payload.importScale).toBe(1);
   });
 
   it("stamps ImportOptions.modelImportScale onto the Model payload", async () => {

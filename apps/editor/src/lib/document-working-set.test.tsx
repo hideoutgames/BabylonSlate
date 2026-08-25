@@ -6,7 +6,6 @@ import {
   MAX_WARM_DOCUMENT_WORKSPACES,
   advanceTestIdleClock,
   createIdleClock,
-  overlayPlayScenePinIds,
   selectMountedDocumentIds,
   useDocumentWorkingSet,
 } from "./document-working-set";
@@ -27,14 +26,17 @@ describe("document working set", () => {
     expect(MAX_WARM_DOCUMENT_WORKSPACES).toBe(3);
   });
 
+  const sceneDocs = [{ id: "scene:S", kind: "scene" as const }];
+
   it("always mounts Content Browser and the active tab", () => {
     const mounted = selectMountedDocumentIds({
       tabIds: ids(CB, "graph:A", "scene:S"),
       activeId: "graph:A",
       lastActiveAt: new Map(),
       now: 0,
+      documents: [...sceneDocs, { id: "graph:A", kind: "graph" }],
     });
-    expect(mounted).toEqual(new Set([CB, "graph:A"]));
+    expect(mounted).toEqual(new Set([CB, "graph:A", "scene:S"]));
   });
 
   it("keeps an inactive tab mounted inside the 2-minute grace", () => {
@@ -50,7 +52,7 @@ describe("document working set", () => {
     expect(mounted).toEqual(new Set([CB, "scene:S", "graph:A"]));
   });
 
-  it("unmounts an inactive tab once the 2-minute grace elapses", () => {
+  it("unmounts an inactive Class tab once the 2-minute grace elapses but keeps an open Scene", () => {
     const mounted = selectMountedDocumentIds({
       tabIds: ids(CB, "scene:S", "graph:A"),
       activeId: CB,
@@ -59,7 +61,20 @@ describe("document working set", () => {
         ["graph:A", 0],
       ]),
       now: DOCUMENT_IDLE_UNMOUNT_MS,
+      documents: [...sceneDocs, { id: "graph:A", kind: "graph" }],
     });
+    expect(mounted).toEqual(new Set([CB, "scene:S"]));
+  });
+
+  it("does not mount a Scene that is no longer an open tab", () => {
+    const mounted = selectMountedDocumentIds({
+      tabIds: ids(CB, "graph:A"),
+      activeId: CB,
+      lastActiveAt: new Map([["graph:A", 0]]),
+      now: DOCUMENT_IDLE_UNMOUNT_MS,
+      documents: [...sceneDocs, { id: "graph:A", kind: "graph" }],
+    });
+    expect(mounted.has("scene:S")).toBe(false);
     expect(mounted).toEqual(new Set([CB]));
   });
 
@@ -81,7 +96,7 @@ describe("document working set", () => {
     expect([...mounted].filter((id) => id !== CB)).toHaveLength(3);
   });
 
-  it("keeps a pinned inactive Scene after the 2-minute grace", () => {
+  it("keeps an open Scene after the 2-minute grace without Play pinning", () => {
     const mounted = selectMountedDocumentIds({
       tabIds: ids(CB, "scene:S", "graph:A"),
       activeId: CB,
@@ -90,12 +105,12 @@ describe("document working set", () => {
         ["graph:A", 0],
       ]),
       now: DOCUMENT_IDLE_UNMOUNT_MS,
-      pinIds: ["scene:S"],
+      documents: [...sceneDocs, { id: "graph:A", kind: "graph" }],
     });
     expect(mounted).toEqual(new Set([CB, "scene:S"]));
   });
 
-  it("keeps a pinned Scene even when the warm cap would evict it", () => {
+  it("keeps an open Scene even when the warm cap would evict it", () => {
     const lastActiveAt = new Map<string, number>([
       ["scene:S", 1],
       ["graph:2", 2],
@@ -108,10 +123,41 @@ describe("document working set", () => {
       activeId: "graph:5",
       lastActiveAt,
       now: 5,
-      pinIds: ["scene:S"],
+      documents: [
+        { id: "scene:S", kind: "scene" },
+        { id: "graph:2", kind: "graph" },
+        { id: "graph:3", kind: "graph" },
+        { id: "graph:4", kind: "graph" },
+        { id: "graph:5", kind: "graph" },
+      ],
     });
     expect(mounted.has("scene:S")).toBe(true);
     expect(mounted.has("graph:5")).toBe(true);
+    expect([...mounted].filter((id) => id !== CB)).toHaveLength(3);
+  });
+
+  it("with a Scene open, four Class tabs leave the Scene plus two Class workspaces", () => {
+    const lastActiveAt = new Map<string, number>([
+      ["scene:S", 1],
+      ["graph:1", 2],
+      ["graph:2", 3],
+      ["graph:3", 4],
+      ["graph:4", 5],
+    ]);
+    const mounted = selectMountedDocumentIds({
+      tabIds: ids(CB, "scene:S", "graph:1", "graph:2", "graph:3", "graph:4"),
+      activeId: "graph:4",
+      lastActiveAt,
+      now: 5,
+      documents: [
+        { id: "scene:S", kind: "scene" },
+        { id: "graph:1", kind: "graph" },
+        { id: "graph:2", kind: "graph" },
+        { id: "graph:3", kind: "graph" },
+        { id: "graph:4", kind: "graph" },
+      ],
+    });
+    expect(mounted).toEqual(new Set([CB, "scene:S", "graph:4", "graph:3"]));
   });
 
   it("keeps the three most recently active Class tabs when Content Browser is focused", () => {
@@ -128,30 +174,6 @@ describe("document working set", () => {
       now: 5,
     });
     expect(mounted).toEqual(new Set([CB, "graph:5", "graph:4", "graph:3"]));
-  });
-});
-
-describe("overlayPlayScenePinIds", () => {
-  it("pins open Scene tabs only while overlay Play is running", () => {
-    const documents = [
-      { id: "scene:S", kind: "scene" },
-      { id: "graph:A", kind: "graph" },
-      { id: "scene:closed", kind: "scene" },
-    ];
-    expect(
-      overlayPlayScenePinIds({
-        overlayPlaying: true,
-        tabIds: ["scene:S", "graph:A"],
-        documents,
-      }),
-    ).toEqual(["scene:S"]);
-    expect(
-      overlayPlayScenePinIds({
-        overlayPlaying: false,
-        tabIds: ["scene:S", "graph:A"],
-        documents,
-      }),
-    ).toEqual([]);
   });
 });
 
@@ -186,13 +208,13 @@ describe("createIdleClock", () => {
 function MountedProbe({
   tabIds,
   activeId,
-  pinIds,
+  documents = [],
 }: {
   tabIds: string[];
   activeId: string;
-  pinIds?: readonly string[];
+  documents?: readonly { id: string; kind: string }[];
 }) {
-  const mounted = useDocumentWorkingSet(tabIds, activeId, pinIds);
+  const mounted = useDocumentWorkingSet(tabIds, activeId, documents);
   return <div data-testid="mounted">{[...mounted].sort().join(",")}</div>;
 }
 
@@ -218,21 +240,29 @@ describe("useDocumentWorkingSet", () => {
     expect(screen.getByTestId("mounted").textContent).toContain("graph:A");
   });
 
-  it("unmounts inactive workspaces after two minutes on Content Browser", () => {
+  it("unmounts inactive Class workspaces after two minutes on Content Browser but keeps Scene", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const tabIds = [CB, "scene:S", "graph:A"];
+    const documents = [
+      { id: "scene:S", kind: "scene" },
+      { id: "graph:A", kind: "graph" },
+    ];
     const { rerender } = render(
-      <MountedProbe tabIds={tabIds} activeId="scene:S" />,
+      <MountedProbe tabIds={tabIds} activeId="scene:S" documents={documents} />,
     );
-    rerender(<MountedProbe tabIds={tabIds} activeId="graph:A" />);
-    rerender(<MountedProbe tabIds={tabIds} activeId={CB} />);
+    rerender(
+      <MountedProbe tabIds={tabIds} activeId="graph:A" documents={documents} />,
+    );
+    rerender(
+      <MountedProbe tabIds={tabIds} activeId={CB} documents={documents} />,
+    );
     expect(screen.getByTestId("mounted").textContent).toContain("graph:A");
     act(() => {
       vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);
     });
     expect(screen.getByTestId("mounted").textContent?.split(",").sort()).toEqual(
-      [CB].sort(),
+      [CB, "scene:S"].sort(),
     );
   });
 
@@ -286,15 +316,19 @@ describe("useDocumentWorkingSet", () => {
     expect(screen.getByTestId("mounted").textContent).not.toContain("graph:A");
   });
 
-  it("does not idle-unmount a pinned Scene after two minutes", () => {
+  it("does not idle-unmount an open Scene after two minutes", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const tabIds = [CB, "scene:S", "graph:A"];
+    const documents = [
+      { id: "scene:S", kind: "scene" },
+      { id: "graph:A", kind: "graph" },
+    ];
     const { rerender } = render(
-      <MountedProbe tabIds={tabIds} activeId="scene:S" pinIds={["scene:S"]} />,
+      <MountedProbe tabIds={tabIds} activeId="scene:S" documents={documents} />,
     );
     rerender(
-      <MountedProbe tabIds={tabIds} activeId={CB} pinIds={["scene:S"]} />,
+      <MountedProbe tabIds={tabIds} activeId={CB} documents={documents} />,
     );
     act(() => {
       vi.advanceTimersByTime(DOCUMENT_IDLE_UNMOUNT_MS);

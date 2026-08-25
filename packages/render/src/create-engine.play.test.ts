@@ -15,8 +15,9 @@ import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine, syncEditorPlayState } from "./create-engine";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { encodeTriangleGlb } from "./model-mesh";
-import { ResourceCache } from "./resource-cache";
+import { ResourceCache, resourceCacheForEngine } from "./resource-cache";
 import { editorMeshName } from "./scene-loader";
+import { visualMeshes } from "./visual-meshes";
 
 /**
  * The babylon Vitest project runs under Node. createEngine only needs a
@@ -57,6 +58,11 @@ class FakeCanvas {
       width: this.clientWidth,
       height: this.clientHeight,
     };
+  }
+
+  getContext(kind: string): unknown {
+    if (kind === "2d") return { clearRect() {}, drawImage() {} };
+    return null;
   }
 
   emit(type: string, event: Record<string, unknown>): void {
@@ -167,6 +173,66 @@ describe("Play createEngine view", () => {
     const registerView = vi.spyOn(engine, "registerView");
     const { canvas } = playHandle(engine);
     expect(registerView).toHaveBeenCalledWith(canvas, undefined, true);
+  });
+
+  it("takes a 2d blit context on the view canvas before registerView", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    const getContext = vi.spyOn(canvas, "getContext");
+    const registerView = vi.spyOn(engine, "registerView");
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    expect(getContext).toHaveBeenCalledWith("2d");
+    expect(registerView).toHaveBeenCalledWith(canvas, undefined, true);
+    expect(getContext.mock.invocationCallOrder[0]!).toBeLessThan(
+      registerView.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("skips registerView when the view canvas cannot host a 2d blit", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    canvas.getContext = () => null;
+    const registerView = vi.spyOn(engine, "registerView");
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    expect(registerView).not.toHaveBeenCalled();
+  });
+
+  it("whenEditorModelsReady waits for Play GLB instantiations", async () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.setMeshAssets({
+      modelBytes: new Map([["hero", encodeTriangleGlb()]]),
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "box",
+      meshAssetGuid: "hero",
+    });
+    expect(handle.modelLoadCount()).toBeGreaterThan(0);
+    const root = handle.scene.getMeshByName("actor-2");
+    await handle.whenEditorModelsReady();
+    expect(visualMeshes(root!).length).toBeGreaterThan(0);
+  });
+
+  it("does not throw when a shared view canvas has no getContext", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    canvas.getContext = undefined as unknown as typeof canvas.getContext;
+    const registerView = vi.spyOn(engine, "registerView");
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    expect(registerView).not.toHaveBeenCalled();
   });
 
   it("dispose stops the same render loop callback it registered", () => {
@@ -1012,8 +1078,12 @@ describe("Play createEngine view", () => {
     expect(prefab.scene).not.toBe(editor.scene);
     expect(prefab.scene).not.toBe(play.scene);
     expect(editor.scene).not.toBe(play.scene);
-    expect(editor.resourceCache).toBe(prefab.resourceCache);
-    expect(play.resourceCache).toBe(editor.resourceCache);
+    expect(resourceCacheForEngine(engine)).toBe(
+      resourceCacheForEngine(editor.engine),
+    );
+    expect(resourceCacheForEngine(play.engine)).toBe(
+      resourceCacheForEngine(editor.engine),
+    );
   });
 
   it("Play overlay dispose leaves the shared ResourceCache live for the editor", () => {
@@ -1027,8 +1097,11 @@ describe("Play createEngine view", () => {
       new FakeCanvas() as unknown as HTMLCanvasElement,
       { sharedEngine: engine, playMode: true },
     );
-    expect(play.resourceCache).toBe(editor.resourceCache);
+    expect(play.resourceCache).not.toBeNull();
     const bytes = new Uint8Array([1, 2, 3, 4]);
+    editor.setMeshAssets({
+      textureBytes: new Map([["tex-shared", bytes]]),
+    });
     const first = editor.resourceCache.getTexture("tex-shared", engine, bytes);
     const disposeCache = vi.spyOn(ResourceCache.prototype, "dispose");
     play.dispose();
@@ -1126,6 +1199,52 @@ describe("Play createEngine view", () => {
     handle.resize();
     expect(resize).not.toHaveBeenCalled();
     expect(setSize).toHaveBeenCalledWith(800, 450);
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(450);
+  });
+
+  it("sizes a shared editor framebuffer from the viewport canvas instead of engine.resize", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    Object.assign(canvas, {
+      clientWidth: 640,
+      clientHeight: 360,
+      width: 100,
+      height: 50,
+    });
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    const resize = vi.spyOn(engine, "resize");
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(resize).not.toHaveBeenCalled();
+    expect(setSize).toHaveBeenCalledWith(640, 360);
+  });
+
+  it("still sizes a shared view with setSize when the canvas cannot host a 2d blit", () => {
+    const engine = sharedEngine();
+    const canvas = new FakeCanvas();
+    canvas.getContext = () => null;
+    Object.assign(canvas, {
+      clientWidth: 512,
+      clientHeight: 288,
+      width: 64,
+      height: 32,
+    });
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      editor: true,
+    });
+    handles.push(handle);
+    const resize = vi.spyOn(engine, "resize");
+    const setSize = vi.spyOn(engine, "setSize");
+    handle.resize();
+    expect(resize).not.toHaveBeenCalled();
+    expect(setSize).toHaveBeenCalledWith(512, 288);
+    handle.setSize(800, 450);
     expect(canvas.width).toBe(800);
     expect(canvas.height).toBe(450);
   });

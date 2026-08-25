@@ -9,7 +9,7 @@ Target device: **11-inch A16 iPad**, 6 GB RAM, WebGL2, WKWebView. Desktop builds
 | Play / interaction | project `playFrameCap` (default 60) | Caps Play/Preview from Project Settings; overlay has no live cap field. P4 e2e does not prove A16 60fps — CI tick budget is `p14-perf-smoke`; device 60fps stays `p1-device-spikes` |
 | Visible editor viewport | Engine Settings frame cap (default 30) | Scene + Prefab Preview while on screen |
 | Hidden / modal / Play / background | **0 rendered frames** | Freeze the editor loop (§2.4) |
-| Warm non-CB document workspaces | **≤ 3** | Active chrome tab + 2 recent (`MAX_WARM_DOCUMENT_WORKSPACES`). Content Browser always mounted |
+| Warm non-CB document workspaces | **≤ 3** | Active + open Scene tabs + recent (`MAX_WARM_DOCUMENT_WORKSPACES`). Open Scenes always mount and count. Content Browser always mounted |
 | Idle inactive chrome tab | Unmount after **2 min** | `DOCUMENT_IDLE_UNMOUNT_MS`; pause clock while app backgrounded |
 | Game tick (combined) | &lt; 8 ms | ~5 ms scripts + ~3 ms physics in one worker |
 | Draw calls | Low hundreds | Prefer instancing; surface in stats HUD |
@@ -34,11 +34,11 @@ Bytes per texel (unit-tested): RGBA8 = 4, ASTC 4×4 = 1, plus ~⅓ for mipmaps.
 - Shadow maps default 1024. Authored post-process stacks default to empty. Engine Settings `postProcessingEnabled` defaults **on** and can skip attaching those stacks in the editor / Play preview without changing the scene or exported games.
 - Pause render loop, game worker, and encode queue on `visibilitychange` / app background.
 - Visible editor viewports always render at `viewportFrameCap` (default 30); freeze when hidden (zero-size or fully off-screen), obstructed, or a modal is open. IntersectionObserver plus an on-screen rect fallback; continuous-render leases stay refcounted.
-- Idle-unmount inactive chrome-tab workspaces after 2 minutes (`p18-inactive-documents`); cap 3 warm non-CB DockViews. P4 freeze is not a substitute for unmount. Remount restores layout / camera / graph viewport.
+- Idle-unmount inactive chrome-tab workspaces after 2 minutes (`p18-inactive-documents`); cap 3 warm non-CB DockViews. **Open Scene tabs always stay mounted** and count toward that cap. P4 freeze is not a substitute for unmount. Remount restores layout / camera / graph viewport.
 - Content Browser **grid** is window-virtualised (`p18-content-browser-virtualize`); TreeView already is. Revoke off-screen thumbnail blob URLs.
 - Add Node catalog **body** is window-virtualised (`p18-add-node-virtualize`); category sidebar stays unwindowed. Distinct from canvas `p18-graph-virtualize`.
 - Output Log and Compiler Results window-virtualise to viewport plus overscan (`p20-log-virtualize`; `WindowedList` / TreeView arithmetic). Ring buffer cap 500 stays. SearchDialog (AssetPicker / ClassPicker) uses the same helper. Place Actors catalogs stay unwindowed. Global Search **result** body is not virtualised.
-- One `Engine` for editor viewport, Play overlay, Material Preview, UI designer, **and Prefab Preview** (`p18-shared-prefab-engine`).
+- One `Engine` per **open project** (hidden constructor canvas). Scene viewport, Play overlay, Material Preview, UI designer, **and Prefab Preview** are `sharedEngine` clients (`p18-shared-prefab-engine`). Close project disposes Engine + ResourceCache.
 - Play/Preview renders at project `playFrameCap` (default 60), not the editor viewport cap.
 - Construct textures only through `ResourceCache` (stable blob URL + canonical sampling flags). **One cache per Engine lifetime** (`p20-shared-resource-cache`): Play / Prefab / Material / UI reuse the viewport cache even when `sharedEngine` is set. Each `createEngine` handle pins its `textureBytes` guids (`setClientTextures`); LRU eviction of **unreferenced** entries (not pinned by any handle) trims toward 80% of the Engine Settings ceiling (default 2 GB). `getTexture` accounts sniffed KTX2/PNG sizes. GUI `Image.source` blob URLs stay on the MIME-typed `resolveUiImages` path.
 - Editor idle `freezeActiveMeshes()` / static `freezeWorldMatrix()` / `material.freeze()` / unique-id maps / scene-load `forceCompilationAsync` are **Done** (`p20-editor-scene-freeze`). Visible editor stays at `viewportFrameCap` — do not dirty-skip an on-screen scene. Remount dialog: Collecting Assets → Loading Models → Warming Shaders.
