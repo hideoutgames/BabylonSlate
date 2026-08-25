@@ -101,6 +101,7 @@ export function compileMaterialPlan(
         : NodeMaterialModes.Material;
 
   const created: NodeMaterialBlock[] = [];
+  const pendingTextures: Texture[] = [];
   const diagnostics: MaterialDiagnostic[] = [];
   const realized = new Map<string, BlockRealization>();
   const plumbing: MaterialPlumbing = {};
@@ -241,7 +242,16 @@ export function compileMaterialPlan(
       operation.nodeType === "texture.sample" ||
       operation.nodeType === "texture.sampleLod"
     ) {
-      if (!bindTexture(operation, plan, realization, options, diagnostics)) {
+      if (
+        !bindTexture(
+          operation,
+          plan,
+          realization,
+          options,
+          diagnostics,
+          pendingTextures,
+        )
+      ) {
         return false;
       }
     }
@@ -385,13 +395,36 @@ export function compileMaterialPlan(
 
   applyAuthoredSurfaceBlend(material, plan);
 
+  const loadObservers: Array<() => void> = [];
   let disposed = false;
+  const rebuildWhenReady = (): void => {
+    if (disposed) return;
+    try {
+      material.build();
+    } catch {
+      // Packed KTX2 can become ready after the first build; a later build
+      // error must not throw into Texture.onLoadObservable.
+    }
+  };
+  for (const texture of pendingTextures) {
+    if (texture.isReady()) continue;
+    const observer = texture.onLoadObservable.addOnce(() => {
+      rebuildWhenReady();
+    });
+    if (observer) {
+      loadObservers.push(() => {
+        texture.onLoadObservable.remove(observer);
+      });
+    }
+  }
+
   return {
     ok: true,
     material,
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      for (const unsubscribe of loadObservers) unsubscribe();
       material.dispose();
     },
   };
@@ -436,6 +469,7 @@ function bindTexture(
   realization: BlockRealization,
   options: CompileMaterialOptions,
   diagnostics: MaterialDiagnostic[],
+  pendingTextures: Texture[],
 ): boolean {
   const operand = operation.inputs.texture;
   const producerId =
@@ -458,6 +492,7 @@ function bindTexture(
     texture?: Texture | null;
   };
   block.texture = texture;
+  if (!texture.isReady()) pendingTextures.push(texture);
   return true;
 }
 
