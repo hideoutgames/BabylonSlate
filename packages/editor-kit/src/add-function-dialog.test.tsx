@@ -141,6 +141,33 @@ describe("AddFunctionDialog", () => {
     expect(onCreateEmpty).toHaveBeenCalledWith("On Hit");
   });
 
+  it("uses non-button option rows so a finger pan can scroll the list", () => {
+    render(
+      <AddFunctionDialog
+        open
+        onOpenChange={() => {}}
+        items={[
+          {
+            id: "interface:g:Apply Damage",
+            name: "Apply Damage",
+            description: "Interface · Damageable",
+            overwritten: false,
+            kind: "interface",
+          },
+        ]}
+        onCreateEmpty={() => {}}
+        onPick={() => {}}
+      />,
+    );
+    const row = screen.getByTestId("add-function-item-interface:g:Apply Damage");
+    expect(row.tagName).not.toBe("BUTTON");
+    expect(row.getAttribute("role")).toBe("option");
+    expect(row.className).toMatch(/touch-pan-y/);
+    expect(screen.getByTestId("add-function-body").getAttribute("role")).toBe(
+      "listbox",
+    );
+  });
+
   it("keeps the override list in a bounded scroll region", () => {
     render(
       <AddFunctionDialog

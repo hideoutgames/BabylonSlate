@@ -101,7 +101,7 @@ export function WindowedList({
       {rows.map((index) => (
         <div
           key={index}
-          className="absolute right-0 left-0 overflow-hidden"
+          className="absolute right-0 left-0 overflow-hidden touch-pan-y"
           style={{ top: index * rowHeight, height: rowHeight }}
         >
           {children(index)}

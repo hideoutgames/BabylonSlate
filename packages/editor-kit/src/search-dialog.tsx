@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { Button } from "@babylonslate/ui/components/button";
+import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { buttonVariants } from "@babylonslate/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@babylonslate/ui/components/dialog";
+import { cn } from "@babylonslate/ui/lib/utils";
 import { SearchInput } from "./search-input";
 import { PickerIdentity } from "./picker-identity";
 import {
@@ -14,6 +15,16 @@ import {
   WINDOWED_LIST_TOUCH_ROW_HEIGHT,
   pickerListHeightPx,
 } from "./windowed-list";
+
+/** Enter/Space on a listbox option — native buttons are not used so touch can pan. */
+export function commitPickerOptionKeyDown(
+  event: KeyboardEvent,
+  commit: () => void,
+): void {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  event.preventDefault();
+  commit();
+}
 
 export interface SearchDialogItem {
   id: string;
@@ -117,6 +128,7 @@ export function SearchDialog({
               height: pickerListHeightPx(filtered.length),
               overflowY: "auto",
             }}
+            role="listbox"
             data-testid={testId ? `${testId}-body` : undefined}
           >
             {filtered.length === 0 ? (
@@ -128,17 +140,24 @@ export function SearchDialog({
               >
                 {(index) => {
                   const item = filtered[index]!;
+                  const commit = () => {
+                    onSelect(item.id);
+                    setQuery("");
+                    onOpenChange(false);
+                  };
                   return (
-                    <Button
+                    <div
                       key={item.id}
-                      variant="ghost"
-                      size="touch"
-                      className="h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left"
-                      onClick={() => {
-                        onSelect(item.id);
-                        setQuery("");
-                        onOpenChange(false);
-                      }}
+                      role="option"
+                      tabIndex={0}
+                      className={cn(
+                        buttonVariants({ variant: "ghost", size: "touch" }),
+                        "h-full w-full min-h-0 justify-between gap-2 overflow-hidden text-left touch-pan-y",
+                      )}
+                      onClick={commit}
+                      onKeyDown={(event) =>
+                        commitPickerOptionKeyDown(event, commit)
+                      }
                       data-testid={`search-item-${item.id}`}
                     >
                       <PickerIdentity
@@ -147,7 +166,7 @@ export function SearchDialog({
                         leading={item.leading}
                       />
                       {item.trailing}
-                    </Button>
+                    </div>
                   );
                 }}
               </WindowedList>

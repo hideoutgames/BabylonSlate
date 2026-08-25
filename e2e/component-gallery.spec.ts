@@ -177,8 +177,15 @@ test("gallery search dialog list scrolls on touch", { tag: IPAD_TEST_TAG }, asyn
     const x = rect.left + rect.width / 2;
     const startY = rect.top + rect.height * 0.75;
     const endY = rect.top + rect.height * 0.25;
-    const touchTarget =
-      viewport.querySelector("button") ?? viewport;
+    const row = viewport.querySelector('[data-testid^="search-item-"]');
+    if (!(row instanceof HTMLElement) || row.tagName === "BUTTON") {
+      return {
+        ok: false,
+        reason: "row is a native button or missing",
+        tagName: row instanceof HTMLElement ? row.tagName : null,
+      };
+    }
+    const touchTarget = row;
 
     const makeTouch = (clientY: number) =>
       new Touch({
