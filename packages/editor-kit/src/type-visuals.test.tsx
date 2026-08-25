@@ -4,6 +4,7 @@ import {
   ActivityIcon,
   CloudIcon,
   FilmIcon,
+  Layers2Icon,
   ListTreeIcon,
   PersonStandingIcon,
   PuzzleIcon,
@@ -109,6 +110,16 @@ describe("resolveTypeVisual", () => {
     expect(engineParentOf("ParticleComponent")).toBe("ActorComponent");
     expect(component.iconKey).toBe("ParticleComponent");
     expect(component.icon).toBe(system.icon);
+  });
+
+  it("uses Layers2Icon for SceneLayer assets", () => {
+    const layer = resolveTypeVisual({ assetType: "SceneLayer" });
+    const scene = resolveTypeVisual({ assetType: "Scene" });
+    expect(layer.family).toBe("scene");
+    expect(layer.colorVar).toBe(scene.colorVar);
+    expect(layer.iconKey).toBe("SceneLayer");
+    expect(layer.icon).toBe(Layers2Icon);
+    expect(layer.icon).not.toBe(scene.icon);
   });
 
   it("uses CloudIcon for Skybox Creator assets", () => {

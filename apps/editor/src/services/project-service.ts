@@ -14,6 +14,7 @@ import {
   normalizeProjectSettings,
   migrateGameInstanceClassFromScenes,
   normalizeScene,
+  normalizeSceneLayer,
   classHeaderMeta,
   documentId,
   documentKindForAssetType,
@@ -1116,6 +1117,9 @@ export class ProjectService {
     void _v;
     if (kind === "scene") {
       return normalizeScene(content);
+    }
+    if (kind === "scene-layer") {
+      return normalizeSceneLayer(content);
     }
     if (kind === "graph") {
       return hydrateClassDocumentPayload(

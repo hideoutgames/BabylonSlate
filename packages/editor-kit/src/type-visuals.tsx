@@ -15,6 +15,7 @@ import {
   HexagonIcon,
   ImageIcon,
   ImagesIcon,
+  Layers2Icon,
   LayersIcon,
   LayoutGridIcon,
   LightbulbIcon,
@@ -149,6 +150,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   RigidBodyComponent: CylinderIcon,
   ColliderComponent: CircleDashedIcon,
   Scene: LayersIcon,
+  SceneLayer: Layers2Icon,
   Graph: FileJsonIcon,
   Texture: ImageIcon,
   Material: PaintbrushIcon,
@@ -203,6 +205,7 @@ const COMPONENT_CLASS_IDS = new Set([
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {
   Scene: "scene",
+  SceneLayer: "scene",
   Graph: "graph",
   Texture: "texture",
   Material: "material",

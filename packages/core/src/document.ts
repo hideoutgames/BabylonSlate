@@ -3,6 +3,7 @@ import type { SerializedScene } from "./scene";
 
 export const ASSET_DOCUMENT_KINDS = [
   "scene",
+  "scene-layer",
   "graph",
   "font",
   "sprite",
@@ -62,6 +63,8 @@ export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
   switch (kind) {
     case "scene":
       return "Scene";
+    case "scene-layer":
+      return "SceneLayer";
     case "graph":
       return "Class";
     case "font":
@@ -144,6 +147,8 @@ export function documentKindForAssetType(type: string): AssetDocumentKind | null
   switch (type) {
     case "Scene":
       return "scene";
+    case "SceneLayer":
+      return "scene-layer";
     case "Graph":
     case "Class":
       return "graph";
@@ -214,6 +219,8 @@ export function documentKindLabel(kind: AssetDocumentKind): string {
   switch (kind) {
     case "scene":
       return "Scene";
+    case "scene-layer":
+      return "Scene Layer";
     case "graph":
       return "Class";
     case "font":
@@ -361,7 +368,7 @@ export function labelFromPath(path: string): string {
       .split("/")
       .pop()
       ?.replace(
-        /\.(scene|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
+        /\.(scene|scenelayer|graph|eui|ui|spriteanim|sprite|anim|shader|material|matfunc|class|tileset|tilemap|plugin|mixer|channel|atten|emitter|particles|skyboxcreator)\.(babasset|json)$/i,
         "",
       )
       .replace(/\.babasset$/i, "")

@@ -1325,6 +1325,7 @@ describe("content-browser-helpers", () => {
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
+      "SceneLayer",
       "Class",
       "Sprite",
       "SpriteAnimation",
@@ -1349,6 +1350,7 @@ describe("content-browser-helpers", () => {
 
   it("labels creatable types in Title Case with spaces", () => {
     expect(creatableAssetTypeLabel("Scene")).toBe("Scene");
+    expect(creatableAssetTypeLabel("SceneLayer")).toBe("Scene Layer");
     expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
     expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
@@ -1493,6 +1495,24 @@ describe("content-browser-helpers", () => {
       new TextDecoder().decode(scene.chunks[0]!.data),
     ) as { name?: string };
     expect(decoded.name).toBe("Arena");
+  });
+
+  it("writes new SceneLayer assets at the current migration schema version", () => {
+    const layer = buildNewAssetResult({
+      type: "SceneLayer",
+      name: "HUD",
+      guid: "layer-1",
+      parentClass: null,
+    });
+    expect(layer.type).toBe("SceneLayer");
+    expect(layer.version).toBe(
+      createDefaultMigrationRegistry().currentVersion("SceneLayer"),
+    );
+    expect(layer.payload.name).toBe("HUD");
+    expect(layer.payload.actors).toEqual([]);
+    expect(newAssetFileName("SceneLayer", "HUD")).toBe(
+      "HUD.scenelayer.babasset",
+    );
   });
 
   it("shows Prefab only for Actor-lineage classes", () => {

@@ -1,6 +1,7 @@
 export * from "./storage-port";
 export * from "./command-bus";
 export * from "./scene";
+export * from "./scene-layer";
 export * from "./skybox";
 export * from "./text3d";
 export * from "./project";

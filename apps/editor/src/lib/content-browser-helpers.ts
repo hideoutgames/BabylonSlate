@@ -24,6 +24,7 @@ import {
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
+  createDefaultSceneLayer,
   isLegacyMaterialAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
@@ -195,6 +196,7 @@ export function buildParentClassTreeRows(
 /** Asset types creatable from the Content Browser New Asset flow. */
 export const CREATABLE_ASSET_TYPES = [
   "Scene",
+  "SceneLayer",
   "Class",
   "Sprite",
   "SpriteAnimation",
@@ -227,7 +229,7 @@ export type CreatableAssetTypeGroup = {
 
 /** Catalog groups for the New Asset type-card grid. */
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
-  { id: "world", label: "World", types: ["Scene"] },
+  { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -264,6 +266,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
 
 const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Scene: "A 3D or 2D world document.",
+  SceneLayer: "An unlit 2D overlay that draws on top of world scenes.",
   Class: "A class with a parent and a logic graph.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
@@ -1425,6 +1428,31 @@ export function buildNewAssetResult(options: {
     };
   }
 
+  if (type === "SceneLayer") {
+    const payload = createDefaultSceneLayer() as unknown as Record<
+      string,
+      unknown
+    >;
+    payload.name = name;
+    return {
+      type: "SceneLayer",
+      name,
+      guid,
+      version: createDefaultMigrationRegistry().currentVersion("SceneLayer"),
+      dependencies: [],
+      parentClass: null,
+      payload,
+      chunks: [
+        {
+          id: DOCUMENT_CHUNK_ID,
+          kind: "document",
+          mime: "application/json",
+          data: new TextEncoder().encode(JSON.stringify(payload)),
+        },
+      ],
+    };
+  }
+
   if (type === "Class") {
     const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
       parentClass,
@@ -1617,6 +1645,7 @@ export function buildNewAssetResult(options: {
 
 const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Scene: ".scene.babasset",
+  SceneLayer: ".scenelayer.babasset",
   Class: ".class.babasset",
   Sprite: ".sprite.babasset",
   SpriteAnimation: ".spriteanim.babasset",

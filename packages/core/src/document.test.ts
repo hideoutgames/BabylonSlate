@@ -57,6 +57,19 @@ describe("P9 document kinds", () => {
     expect(ASSET_DOCUMENT_KINDS).not.toContain("ui");
   });
 
+  it("opens SceneLayer as its own 2D overlay document kind", () => {
+    expect(documentKindForAssetType("SceneLayer")).toBe("scene-layer");
+    expect(assetTypeForDocumentKind("scene-layer")).toBe("SceneLayer");
+    expect(documentKindLabel("scene-layer")).toBe("Scene Layer");
+    expect(isAssetDocumentKind("scene-layer")).toBe(true);
+    expect(labelFromPath("assets/hud.scenelayer.babasset")).toBe("Hud");
+    expect(
+      createDocumentRef("scene-layer", "assets/hud.scenelayer.babasset", {
+        name: "HUD",
+      }).label,
+    ).toBe("HUD Scene Layer");
+  });
+
   it("maps Sprite / AnimationGraph kinds", () => {
     expect(documentKindForAssetType("AnimationGraph")).toBe("anim-graph");
     expect(documentKindForAssetType("BehaviourTree")).toBe("behaviour-tree");
