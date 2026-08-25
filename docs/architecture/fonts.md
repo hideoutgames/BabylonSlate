@@ -47,7 +47,7 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 `FontRegistry` takes an injectable `FontFaceHost` so Node tests mock `document.fonts`:
 
 1. `new FontFace(family, bytes)` + `document.fonts.add`.
-2. **Await** `document.fonts.load` before the first UI draw (`register` / `registerAll`).
+2. **Await** `document.fonts.load` before the first 3D Text / Font sample paint (`register` / `registerAll`).
 3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`.
 4. Failed load → editor warning, never a silent substitution.
 
