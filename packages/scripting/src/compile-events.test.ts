@@ -115,6 +115,25 @@ describe("editor utility events", () => {
     );
   });
 
+  it("maps Game Instance lifecycle and scene events to ScriptHost exports", () => {
+    expect(EVENT_BY_TYPE_ID["flow.event.init"]).toBe("onInit");
+    expect(EVENT_BY_TYPE_ID["flow.event.end"]).toBe("onEnd");
+    expect(EVENT_BY_TYPE_ID["flow.event.firstSceneLoaded"]).toBe(
+      "onFirstSceneLoaded",
+    );
+    expect(EVENT_BY_TYPE_ID["flow.event.sceneStartLoading"]).toBe(
+      "onSceneStartLoading",
+    );
+    expect(EVENT_BY_TYPE_ID["flow.event.sceneFinishLoading"]).toBe(
+      "onSceneFinishLoading",
+    );
+    expect(EVENT_BY_TYPE_ID["flow.event.sceneExit"]).toBe("onSceneExit");
+    expect(eventNameForEntry(entry("flow.event.init"))).toBe("onInit");
+    expect(eventNameForEntry(entry("flow.event.sceneFinishLoading"))).toBe(
+      "onSceneFinishLoading",
+    );
+  });
+
   it("maps Animation Object lifecycle nodes to ScriptHost events", () => {
     expect(EVENT_BY_TYPE_ID["anim.event.initialize"]).toBe(
       "onInitializeAnimation",

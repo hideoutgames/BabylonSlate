@@ -62,6 +62,7 @@ import {
   isScriptCatalogNodeAllowed,
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
+  NATIVE_GAME_INSTANCE_EVENT_TYPES,
   SEEDED_NATIVE_EVENT_TYPES,
   COLLISION_EVENT_TYPE_IDS,
   type ClassEventOptions,
@@ -708,6 +709,7 @@ function withVisualMeta(
 const DEFAULT_EVENT_NODE_IDS: Record<string, string> = {
   "flow.event.beginPlay": "event-begin-play",
   "flow.event.tick": "event-tick",
+  "flow.event.init": "event-on-init",
 };
 
 function defaultEventNodeId(eventType: string): string {
@@ -734,6 +736,7 @@ export function createDefaultLogicGraphSerialized(
   const seedNatives = new Set<string>(SEEDED_NATIVE_EVENT_TYPES);
   const skipSeedNatives = new Set<string>([
     ...NATIVE_CLASS_EVENT_TYPES,
+    ...NATIVE_GAME_INSTANCE_EVENT_TYPES,
     ...COLLISION_EVENT_TYPE_IDS,
   ]);
   const stubs = nativeEventStubs(options).filter((stub) => {

@@ -25,10 +25,21 @@ export const NATIVE_CLASS_EVENT_TYPES = [
   "flow.event.destroyed",
 ] as const;
 
+export const NATIVE_GAME_INSTANCE_EVENT_TYPES = [
+  "flow.event.init",
+  "flow.event.tick",
+  "flow.event.end",
+  "flow.event.firstSceneLoaded",
+  "flow.event.sceneStartLoading",
+  "flow.event.sceneFinishLoading",
+  "flow.event.sceneExit",
+] as const;
+
 /** Default new graphs seed these Actor natives; Destroyed stays in Events +. */
 export const SEEDED_NATIVE_EVENT_TYPES = [
   "flow.event.beginPlay",
   "flow.event.tick",
+  "flow.event.init",
 ] as const;
 
 export const COLLISION_EVENT_TYPE_IDS = [
@@ -41,6 +52,12 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.beginPlay": "Event Begin Play",
   "flow.event.tick": "Event Tick",
   "flow.event.destroyed": "Event On Actor Destroyed",
+  "flow.event.init": "Event On Init",
+  "flow.event.end": "Event On End",
+  "flow.event.firstSceneLoaded": "Event On First Scene Loaded",
+  "flow.event.sceneStartLoading": "Event On Scene Start Loading",
+  "flow.event.sceneFinishLoading": "Event On Scene Finish Loading",
+  "flow.event.sceneExit": "Event On Scene Exit",
   "flow.event.hit": "Event On Hit",
   "flow.event.beginOverlap": "Event On Begin Overlap",
   "flow.event.endOverlap": "Event On End Overlap",
@@ -246,6 +263,9 @@ export function nativeEventStubs(
   if (chain.includes("Actor")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
   }
+  if (chain.includes("GameInstance")) {
+    types.push(...NATIVE_GAME_INSTANCE_EVENT_TYPES);
+  }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
   }
@@ -328,6 +348,15 @@ export function isScriptCatalogNodeAllowed(
   }
   const chain = ancestryChain(options);
   const isActorEvent = (ACTOR_EVENT_TYPE_IDS as readonly string[]).includes(nodeId);
+  const isGiOnlyEvent = (
+    NATIVE_GAME_INSTANCE_EVENT_TYPES as readonly string[]
+  ).includes(nodeId) && nodeId !== "flow.event.tick";
+  const isGiFunction =
+    nodeId === "gameInstance.getSceneLoadingProgress" ||
+    nodeId === "gameInstance.getSceneReference";
+  if (isGiOnlyEvent || isGiFunction) {
+    return chain.includes("GameInstance");
+  }
   const isBtLeafEvent = (BT_LEAF_EVENT_TYPE_IDS as readonly string[]).includes(
     nodeId,
   );
@@ -411,10 +440,12 @@ export function isScriptCatalogNodeAllowed(
   }
   if (
     nodeId === "flow.event.beginPlay" ||
-    nodeId === "flow.event.tick" ||
     nodeId === "flow.event.destroyed"
   ) {
     return chain.includes("Actor");
+  }
+  if (nodeId === "flow.event.tick") {
+    return chain.includes("Actor") || chain.includes("GameInstance");
   }
   if (nodeId === "flow.event.commandRun") {
     return chain.includes("Actor") || chain.includes("BDebugCommand");

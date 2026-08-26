@@ -566,6 +566,23 @@ describe("createDefaultLogicGraphSerialized", () => {
     expect(graph.nodes).toEqual([]);
   });
 
+  it("seeds On Init and Tick for a GameInstance class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "GameInstance",
+    });
+    expect(
+      graph.nodes
+        .filter((node) => node.type !== "flow.event.callParent")
+        .map((node) => node.type),
+    ).toEqual(["flow.event.init", "flow.event.tick"]);
+    expect(graph.nodes.some((node) => node.type === "flow.event.beginPlay")).toBe(
+      false,
+    );
+    expect(graph.nodes.some((node) => node.type === "flow.event.sceneExit")).toBe(
+      false,
+    );
+  });
+
   it("does not seed leftover EditorUtilityInterface as a logic host", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BObject",
@@ -900,6 +917,27 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(false);
+  });
+
+  it("shows Game Instance events and scene getters on GameInstance graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "GameInstance" });
+    expect(nodes.some((node) => node.id === "flow.event.init")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.end")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.sceneExit")).toBe(true);
+    expect(nodes.some((node) => node.id === "gameInstance.getSceneReference")).toBe(
+      true,
+    );
+    expect(
+      nodes.some((node) => node.id === "gameInstance.getSceneLoadingProgress"),
+    ).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(false);
+    const actor = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    expect(actor.some((node) => node.id === "flow.event.init")).toBe(false);
+    expect(actor.some((node) => node.id === "gameInstance.getSceneReference")).toBe(
+      false,
+    );
   });
 
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {

@@ -15,6 +15,7 @@ import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
 import { sceneNodes } from "./scene";
+import { gameInstanceNodes } from "./game-instance";
 import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
@@ -50,6 +51,7 @@ export * from "./input";
 export * from "./audio";
 export * from "./particles";
 export * from "./scene";
+export * from "./game-instance";
 export * from "./scene-layer";
 export * from "./render";
 export * from "./debug";
@@ -87,6 +89,7 @@ export const ALL_NODE_CATEGORIES = [
   "audio",
   "particles",
   "scene",
+  "game-instance",
   "scene-layer",
   "render",
   "debug",
@@ -125,6 +128,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...audioNodes,
     ...particleNodes,
     ...sceneNodes,
+    ...gameInstanceNodes,
     ...sceneLayerNodes,
     ...renderNodes,
     ...debugNodes,

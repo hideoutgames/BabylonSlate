@@ -75,6 +75,67 @@ describe("flow nodes", () => {
     expect(byId["flow.event.destroyed"]?.editorOnly).toBeFalsy();
   });
 
+  it("registers Game Instance lifecycle and scene events with a scene-name pin", () => {
+    const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
+    expect(byId["flow.event.init"]?.title).toBe("Event On Init");
+    expect(byId["flow.event.end"]?.title).toBe("Event On End");
+    expect(byId["flow.event.firstSceneLoaded"]?.title).toBe(
+      "Event On First Scene Loaded",
+    );
+    expect(byId["flow.event.sceneStartLoading"]?.title).toBe(
+      "Event On Scene Start Loading",
+    );
+    expect(byId["flow.event.sceneFinishLoading"]?.title).toBe(
+      "Event On Scene Finish Loading",
+    );
+    expect(byId["flow.event.sceneExit"]?.title).toBe("Event On Scene Exit");
+    for (const id of [
+      "flow.event.firstSceneLoaded",
+      "flow.event.sceneStartLoading",
+      "flow.event.sceneFinishLoading",
+      "flow.event.sceneExit",
+    ] as const) {
+      const pins = byId[id]?.pins({}) ?? [];
+      expect(
+        pins.some(
+          (pin) =>
+            pin.id === "sceneName" &&
+            pin.direction === "out" &&
+            pin.name === "Scene Name",
+        ),
+      ).toBe(true);
+    }
+    const registry = createDefaultNodeRegistry();
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node(registry, "loaded", "flow.event.sceneFinishLoading"),
+          node(registry, "log", "debug.log"),
+        ],
+        edges: [
+          {
+            id: "e1",
+            sourceNodeId: "loaded",
+            sourcePinId: "execOut",
+            targetNodeId: "log",
+            targetPinId: "execIn",
+          },
+          {
+            id: "e2",
+            sourceNodeId: "loaded",
+            sourcePinId: "sceneName",
+            targetNodeId: "log",
+            targetPinId: "message",
+          },
+        ],
+      },
+      { assetGuid: "a", registry },
+    );
+    expect(compiled.source).toContain("ctx.args.sceneName");
+  });
+
   it("registers On Text Changed as a catalog event", () => {
     const node = flowNodes.find((entry) => entry.id === "flow.event.textChanged");
     expect(node?.title).toBe("Event On Text Changed");

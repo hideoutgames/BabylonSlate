@@ -24,10 +24,56 @@ describe("nativeEventStubs", () => {
     ]);
   });
 
-  it("lists no Begin Play or Tick on BObject, GameInstance, or ActorComponent", () => {
+  it("lists no Begin Play or Tick on BObject or ActorComponent", () => {
     expect(nativeEventStubs({ parentClass: "BObject" })).toEqual([]);
-    expect(nativeEventStubs({ parentClass: "GameInstance" })).toEqual([]);
     expect(nativeEventStubs({ parentClass: "ActorComponent" })).toEqual([]);
+  });
+
+  it("lists Game Instance lifecycle and scene events, not Actor Begin Play or Destroyed", () => {
+    expect(
+      nativeEventStubs({ parentClass: "GameInstance" }).map((stub) => stub.eventType),
+    ).toEqual([
+      "flow.event.init",
+      "flow.event.tick",
+      "flow.event.end",
+      "flow.event.firstSceneLoaded",
+      "flow.event.sceneStartLoading",
+      "flow.event.sceneFinishLoading",
+      "flow.event.sceneExit",
+    ]);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.beginPlay", {
+        parentClass: "GameInstance",
+      }),
+    ).toBe(false);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.destroyed", {
+        parentClass: "GameInstance",
+      }),
+    ).toBe(false);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.tick", {
+        parentClass: "GameInstance",
+      }),
+    ).toBe(true);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.init", { parentClass: "Actor" }),
+    ).toBe(false);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.sceneExit", {
+        parentClass: "Actor",
+      }),
+    ).toBe(false);
+    expect(
+      isScriptCatalogNodeAllowed("gameInstance.getSceneReference", {
+        parentClass: "GameInstance",
+      }),
+    ).toBe(true);
+    expect(
+      isScriptCatalogNodeAllowed("gameInstance.getSceneLoadingProgress", {
+        parentClass: "Actor",
+      }),
+    ).toBe(false);
   });
 
   it("does not treat leftover EditorUtilityInterface as a logic host", () => {
