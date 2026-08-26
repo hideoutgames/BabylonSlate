@@ -4,7 +4,6 @@ import { createActor, createText2DComponent } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   actorVisualFingerprint,
-  applySceneToBabylonScene,
   createMeshForComponent,
   editorMeshName,
 } from "./scene-loader";

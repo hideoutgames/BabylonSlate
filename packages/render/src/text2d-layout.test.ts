@@ -1,21 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { RichTextStyle } from "@babylonslate/core";
 import {
   combineText2DEffects,
   layoutText2D,
   type GlyphMetricsProvider,
   type Text2DLayoutItem,
 } from "./text2d-layout";
-
-const STYLE: RichTextStyle = {
-  bold: false,
-  italic: false,
-  underline: false,
-  color: [1, 1, 1],
-  size: 32,
-  outline: 0,
-  outlineColor: [0, 0, 0],
-};
 
 function provider(
   overrides: Partial<Record<string, { width: number; height: number; advance: number; source?: "bitmap" | "msdf" }>> = {},
