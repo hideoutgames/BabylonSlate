@@ -95,7 +95,7 @@ import {
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
 import { patchClassMember } from "../lib/class-members";
-import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup } from "../lib/content-browser-helpers";
+import { classDocumentShowsPrefab, classIdFromClassAsset, classParentLookup, filterInspectorPinPickerAssets } from "../lib/content-browser-helpers";
 import { physicsWorldFromOpenDocuments } from "./add-component-catalog";
 import {
   commitLogicGraph,
@@ -1338,7 +1338,12 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         onOpenChange={(open) => {
           if (!open) setAssetPinPick(null);
         }}
-        assets={pickerAssets}
+        assets={filterInspectorPinPickerAssets(
+          pickerAssets,
+          assetRegistry?.list() ?? [],
+          openDocuments,
+          { nodeType: selectedNode.type },
+        )}
         allowedTypes={assetPinPick ? [assetPinPick.assetType] : undefined}
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}

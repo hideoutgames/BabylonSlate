@@ -21,7 +21,7 @@ import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
 import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classParentLookup, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
   classHierarchyFromParentOf,
@@ -259,6 +259,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           }),
           enums: typeSchemas.enums,
           structs: typeSchemas.structs,
+          materialDomains: materialDomainsFromAssets(
+            assetRegistry?.list() ?? [],
+            openDocuments,
+          ),
         }),
         ...physicsPairingDiagnostics(
           [
@@ -290,6 +294,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     setDiagnostics,
     typeSchemas,
     animEditorMode,
+    assetRegistry,
+    openDocuments,
   ]);
 
   const paletteInput = {

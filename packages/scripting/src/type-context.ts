@@ -90,6 +90,8 @@ export type TypeContext = {
   knownClassIds?: ReadonlySet<string>;
   /** Optional BehaviourTree document payload for `bt.structural` rules. */
   behaviourTree?: unknown;
+  /** Optional Material asset domains keyed by guid (`surface` / `postProcess` / …). */
+  materialDomains?: Readonly<Record<string, string>>;
   classId?: string;
   activeFunctionId?: string | null;
   members?: readonly ClassMemberSymbol[];

@@ -74,6 +74,7 @@ import {
   validateSerializedGraph,
 } from "../services/graph-validation";
 import { animClipCatalogFromAssets } from "../lib/anim-clip-catalog";
+import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { IconActionButton } from "./icon-action-button";
 
 const VARIABLE_TYPE_OPTIONS: Array<{ value: AnimVariableTypeId; label: string }> =
@@ -418,7 +419,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     closeTransitionRule,
   } = useAnimGraphEditing();
   const { setSelectedNodeIds } = useGraphEditing();
-  const { activeDocumentId, animEditorMode } = useDocuments();
+  const { activeDocumentId, animEditorMode, assetRegistry, openDocuments } =
+    useDocuments();
   const ruleSurface = openTransitionId
     ? `rule:${openTransitionId}`
     : animEditorMode;
@@ -506,6 +508,10 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
               classId: "AnimGraph",
               typeId: member.typeId ?? "bool",
             })),
+            materialDomains: materialDomainsFromAssets(
+              assetRegistry?.list() ?? [],
+              openDocuments,
+            ),
           })
         : [];
     setDiagnostics([...animRows, ...ruleRows]);
@@ -519,6 +525,8 @@ export function AnimGraphGraphPanel(_props: IDockviewPanelProps) {
     ruleGraph,
     ruleMembers,
     setDiagnostics,
+    assetRegistry,
+    openDocuments,
   ]);
 
   if (openTransition && ruleGraph) {

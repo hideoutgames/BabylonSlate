@@ -161,6 +161,7 @@ import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
+  materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
@@ -2372,6 +2373,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+        materialDomains: materialDomainsFromAssets(
+          projectService.registry?.list() ?? [],
+          [...documentService.getState().openDocuments.values()],
+        ),
       }),
     );
     const bundles = [

@@ -115,6 +115,34 @@ describe("nativeEventStubs", () => {
     ).toBe(false);
   });
 
+  it("lists overlay mouse events only on SceneLayerActor graphs", () => {
+    expect(
+      nativeEventStubs({ parentClass: "SceneLayerActor" }).map(
+        (stub) => stub.eventType,
+      ),
+    ).toEqual([
+      "flow.event.beginPlay",
+      "flow.event.tick",
+      "flow.event.destroyed",
+      "flow.event.hit",
+      "flow.event.beginOverlap",
+      "flow.event.endOverlap",
+      "flow.event.onMouseEnter",
+      "flow.event.onMouseLeave",
+      "flow.event.onClick",
+      "flow.event.onPressStart",
+      "flow.event.onPressEnd",
+    ]);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.onClick", {
+        parentClass: "SceneLayerActor",
+      }),
+    ).toBe(true);
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.onClick", { parentClass: "Actor" }),
+    ).toBe(false);
+  });
+
   it("lists no native events for FunctionLibrary and EditorFunctionLibrary", () => {
     expect(nativeEventStubs({ parentClass: "FunctionLibrary" })).toEqual([]);
     expect(

@@ -1793,6 +1793,60 @@ export function isParticleMaterialForPicker(
   return isParticleMaterialAsset(asset);
 }
 
+export function materialDomainsFromAssets(
+  assets: ReadonlyArray<{
+    path: string;
+    header: { guid: string; type: string; payload?: Record<string, unknown> };
+  }>,
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }> = [],
+): Record<string, string> {
+  const domains: Record<string, string> = {};
+  for (const asset of assets) {
+    if (asset.header.type !== "Material") continue;
+    const open = openDocuments.find(
+      (entry) =>
+        entry.ref.kind === "material" && entry.ref.path === asset.path,
+    );
+    const domain =
+      open && open.content && typeof open.content === "object"
+        ? (open.content as { domain?: unknown }).domain
+        : asset.header.payload?.domain;
+    if (typeof domain === "string" && domain.length > 0) {
+      domains[asset.header.guid] = domain;
+    }
+  }
+  return domains;
+}
+
+export function filterInspectorPinPickerAssets<
+  T extends { guid: string; type: string },
+>(
+  assets: readonly T[],
+  indexed: ReadonlyArray<{
+    path: string;
+    header: { guid: string; type: string; payload?: Record<string, unknown> };
+  }>,
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+  options: { nodeType: string },
+): T[] {
+  if (
+    options.nodeType !== "scene-layer.registerPostProcess" &&
+    options.nodeType !== "scene-layer.unregisterPostProcess"
+  ) {
+    return [...assets];
+  }
+  return assets.filter((entry) => {
+    const match = indexed.find((asset) => asset.header.guid === entry.guid);
+    return match ? isPostProcessMaterialForPicker(match, openDocuments) : false;
+  });
+}
+
 function documentAsset(
   type: string,
   name: string,

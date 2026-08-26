@@ -2653,3 +2653,61 @@ describe("flow switch hydrate", () => {
     ]);
   });
 });
+
+describe("validateSerializedGraph material domains", () => {
+  it("errors when Register Scene Layer Post-processing uses a surface Material", () => {
+    const pins = registry.get("scene-layer.registerPostProcess")!.pins({});
+    const diags = validateSerializedGraph(
+      {
+        id: "event-graph",
+        kind: "event",
+        nodes: [
+          {
+            id: "reg",
+            typeId: "scene-layer.registerPostProcess",
+            position: { x: 0, y: 0 },
+            pins,
+            properties: { "default:material": "bloom" },
+          },
+        ],
+        edges: [],
+      },
+      {
+        assetGuid: "g1",
+        graphId: "event-graph",
+        materialDomains: { bloom: "surface" },
+      },
+    );
+    expect(diags.some((d) => d.code === "scene-layer.postProcessDomain")).toBe(
+      true,
+    );
+  });
+
+  it("accepts a postProcess Material on Register Scene Layer Post-processing", () => {
+    const pins = registry.get("scene-layer.registerPostProcess")!.pins({});
+    const diags = validateSerializedGraph(
+      {
+        id: "event-graph",
+        kind: "event",
+        nodes: [
+          {
+            id: "reg",
+            typeId: "scene-layer.registerPostProcess",
+            position: { x: 0, y: 0 },
+            pins,
+            properties: { "default:material": "bloom" },
+          },
+        ],
+        edges: [],
+      },
+      {
+        assetGuid: "g1",
+        graphId: "event-graph",
+        materialDomains: { bloom: "postProcess" },
+      },
+    );
+    expect(
+      diags.filter((d) => d.code === "scene-layer.postProcessDomain"),
+    ).toEqual([]);
+  });
+});

@@ -44,6 +44,11 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.hit": "Event On Hit",
   "flow.event.beginOverlap": "Event On Begin Overlap",
   "flow.event.endOverlap": "Event On End Overlap",
+  "flow.event.onMouseEnter": "Event On Mouse Enter",
+  "flow.event.onMouseLeave": "Event On Mouse Leave",
+  "flow.event.onClick": "Event On Click",
+  "flow.event.onPressStart": "Event On Press Start",
+  "flow.event.onPressEnd": "Event On Press End",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
@@ -69,6 +74,14 @@ export function nativeEventTitle(eventType: string): string {
   return NATIVE_EVENT_TITLES[eventType] ?? formatEventTitle(eventType);
 }
 
+export const OVERLAY_MOUSE_EVENT_TYPE_IDS = [
+  "flow.event.onMouseEnter",
+  "flow.event.onMouseLeave",
+  "flow.event.onClick",
+  "flow.event.onPressStart",
+  "flow.event.onPressEnd",
+] as const;
+
 const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginPlay",
   "flow.event.tick",
@@ -77,6 +90,7 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.hit",
   "flow.event.beginOverlap",
   "flow.event.endOverlap",
+  ...OVERLAY_MOUSE_EVENT_TYPE_IDS,
 ] as const;
 
 const BT_LEAF_EVENT_TYPE_IDS = [
@@ -228,6 +242,9 @@ export function nativeEventStubs(
   if (chain.includes("Actor")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
     types.push(...COLLISION_EVENT_TYPE_IDS);
+  }
+  if (chain.includes("SceneLayerActor")) {
+    types.push(...OVERLAY_MOUSE_EVENT_TYPE_IDS);
   }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
@@ -388,6 +405,9 @@ export function isScriptCatalogNodeAllowed(
   }
   if ((COLLISION_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)) {
     return chain.includes("Actor");
+  }
+  if ((OVERLAY_MOUSE_EVENT_TYPE_IDS as readonly string[]).includes(nodeId)) {
+    return chain.includes("SceneLayerActor");
   }
   if (
     nodeId === "flow.event.beginPlay" ||
