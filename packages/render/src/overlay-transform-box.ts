@@ -273,7 +273,7 @@ export function overlayBoxLocalBounds(
   let maxY = Number.NEGATIVE_INFINITY;
   for (const visual of measured) {
     visual.computeWorldMatrix(true);
-    visual.refreshBoundingInfo();
+    visual.refreshBoundingInfo(false, false);
     for (const corner of visual.getBoundingInfo().boundingBox.vectorsWorld) {
       Vector3.TransformCoordinatesToRef(corner, scratchInv, scratchLocal);
       minX = Math.min(minX, scratchLocal.x);
