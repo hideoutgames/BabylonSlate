@@ -34,7 +34,10 @@ describe("rasterizeBitmapGlyph", () => {
     expect(opaque).toBeLessThan(total);
   });
 
-  it("falls back to the 5x7 bitmap when canvas paints a solid rectangle", () => {
+  function withMockCanvas(
+    getImageData: (w: number, h: number) => Uint8ClampedArray,
+    run: () => void,
+  ): void {
     const previous = (globalThis as { document?: unknown }).document;
     (globalThis as { document: unknown }).document = {
       createElement: () => ({
@@ -58,21 +61,15 @@ describe("rasterizeBitmapGlyph", () => {
             clearRect() {},
             fillText() {},
             strokeText() {},
-            getImageData: (_x: number, _y: number, w: number, h: number) => {
-              const data = new Uint8ClampedArray(w * h * 4);
-              data.fill(255);
-              return { data };
-            },
+            getImageData: (_x: number, _y: number, w: number, h: number) => ({
+              data: getImageData(w, h),
+            }),
           };
         },
       }),
     };
     try {
-      const cell = rasterizeBitmapGlyph("A", STYLE);
-      const opaque = opaqueCount(cell.pixels);
-      const total = cell.width * cell.height;
-      expect(opaque).toBeGreaterThan(0);
-      expect(opaque).toBeLessThan(total * 0.9);
+      run();
     } finally {
       if (previous === undefined) {
         Reflect.deleteProperty(globalThis, "document");
@@ -80,6 +77,42 @@ describe("rasterizeBitmapGlyph", () => {
         (globalThis as { document: unknown }).document = previous;
       }
     }
+  }
+
+  it("falls back to the 5x7 bitmap when canvas paints a solid rectangle", () => {
+    withMockCanvas((w, h) => {
+      const data = new Uint8ClampedArray(w * h * 4);
+      data.fill(255);
+      return data;
+    }, () => {
+      const cell = rasterizeBitmapGlyph("A", STYLE);
+      const opaque = opaqueCount(cell.pixels);
+      const total = cell.width * cell.height;
+      expect(opaque).toBeGreaterThan(0);
+      expect(opaque).toBeLessThan(total * 0.9);
+    });
+  });
+
+  it("falls back to the 5x7 bitmap when canvas paints a solid glyph box with padding", () => {
+    withMockCanvas((w, h) => {
+      const data = new Uint8ClampedArray(w * h * 4);
+      const inset = 2;
+      for (let y = inset; y < h - inset; y++) {
+        for (let x = inset; x < w - inset; x++) {
+          const i = (y * w + x) * 4;
+          data[i] = 255;
+          data[i + 1] = 255;
+          data[i + 2] = 255;
+          data[i + 3] = 255;
+        }
+      }
+      return data;
+    }, () => {
+      const cell = rasterizeBitmapGlyph("A", STYLE);
+      // 5×7 at size 32: scale 5, plus 1px pad each side.
+      expect(cell.width).toBe(5 * 5 + 2);
+      expect(cell.height).toBe(7 * 5 + 2);
+    });
   });
 
   it("keys unique cells by glyph, size, weight, and color", () => {

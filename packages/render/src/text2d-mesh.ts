@@ -23,7 +23,6 @@ import {
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import {
   bitmapGlyphKey,
-  cssFontForText2D,
   packBitmapGlyphAtlas,
   rasterizeBitmapGlyph,
   resolveText2DFontStack,
@@ -130,25 +129,34 @@ function defaultMetrics(pixelsPerUnit: number): GlyphMetricsProvider {
   };
 }
 
-function canvasMetrics(
+/** Quad size follows the raster cell so 5×7 fallback is not stretched to measureText. */
+function bitmapMetrics(
   pixelsPerUnit: number,
   fontStack: string,
-): GlyphMetricsProvider | null {
-  if (typeof document === "undefined" || typeof document.createElement !== "function") {
-    return null;
-  }
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return null;
+  cells: Map<string, ReturnType<typeof rasterizeBitmapGlyph>>,
+): GlyphMetricsProvider {
   const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
   return {
     measureGlyph(ch, style) {
-      ctx.font = cssFontForText2D(style, fontStack);
-      const measured = ctx.measureText(ch);
-      const pad = Math.max(0, style.outline);
-      const widthPx = (measured.width > 0 ? measured.width : style.size * 0.5) + pad * 2;
-      const worldW = widthPx / ppu;
-      const worldH = (style.size + pad * 2) / ppu;
+      if (!ch.trim()) {
+        const world = style.size / ppu;
+        return {
+          width: world * 0.4,
+          height: world,
+          bearingX: 0,
+          bearingY: 0,
+          advance: world * 0.4,
+          source: "bitmap",
+        };
+      }
+      const key = bitmapGlyphKey(ch, style, fontStack);
+      let cell = cells.get(key);
+      if (!cell) {
+        cell = rasterizeBitmapGlyph(ch, style, fontStack);
+        cells.set(key, cell);
+      }
+      const worldW = cell.width / ppu;
+      const worldH = cell.height / ppu;
       return {
         width: worldW,
         height: worldH,
@@ -417,7 +425,8 @@ export function createText2DMesh(
   if (parsed.renderer === "msdf" && !hasPair) warnMsdfFallback(fontGuid);
   const renderer = resolveText2DRenderer(parsed.renderer, hasPair);
   const fontStack = resolveText2DFontStack(fontGuid, assets);
-  const bitmap = options.metrics ?? canvasMetrics(ppu, fontStack) ?? defaultMetrics(ppu);
+  const bitmapCells = new Map<string, ReturnType<typeof rasterizeBitmapGlyph>>();
+  const bitmap = options.metrics ?? bitmapMetrics(ppu, fontStack, bitmapCells);
   const atlas = renderer === "msdf" && json ? parseMsdfAtlas(json) : null;
   const metrics = options.metrics ?? (atlas ? msdfMetrics(atlas, ppu, bitmap) : bitmap);
   const { layout } = layoutText2DFromProperties(properties, {
@@ -445,7 +454,7 @@ export function createText2DMesh(
       ? msdfAtlasTexture(scene, fontGuid, png, assets)
       : null;
 
-  const bitmapCells: ReturnType<typeof rasterizeBitmapGlyph>[] = [];
+  const packedCells: ReturnType<typeof rasterizeBitmapGlyph>[] = [];
   const bitmapKeys = new Set<string>();
   for (const item of layout.items) {
     if (item.kind !== "glyph" || item.source === "msdf") continue;
@@ -454,9 +463,11 @@ export function createText2DMesh(
     const key = bitmapGlyphKey(ch, item.style, fontStack);
     if (bitmapKeys.has(key)) continue;
     bitmapKeys.add(key);
-    bitmapCells.push(rasterizeBitmapGlyph(ch, item.style, fontStack));
+    packedCells.push(
+      bitmapCells.get(key) ?? rasterizeBitmapGlyph(ch, item.style, fontStack),
+    );
   }
-  const packedBitmap = packBitmapGlyphAtlas(bitmapCells);
+  const packedBitmap = packBitmapGlyphAtlas(packedCells);
   let bitmapAtlas: RawTexture | null = null;
   let sharedBitmapMaterial: StandardMaterial | null = null;
   if (packedBitmap) {
