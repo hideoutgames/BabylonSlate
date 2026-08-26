@@ -812,6 +812,7 @@ describe("scene-loader", () => {
     expect((banner!.material as StandardMaterial).disableLighting).toBe(true);
     const child = scene.getMeshByName(editorMeshName("child"));
     expect(child?.visibility).toBe(0);
+    expect(child?.isPickable).toBe(false);
   });
 });
 

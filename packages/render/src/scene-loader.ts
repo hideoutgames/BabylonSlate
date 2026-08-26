@@ -730,6 +730,11 @@ function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
 }
 
 function visualIsPickable(mesh: Mesh, locked: boolean): boolean {
+  if (
+    (mesh.metadata as { editorUnpickable?: boolean } | null)?.editorUnpickable
+  ) {
+    return false;
+  }
   if (isSkyboxMesh(mesh) || isColliderVisualMesh(mesh)) return false;
   if (isEditorVolumeMesh(mesh)) return !locked;
   return !locked;
@@ -881,6 +886,7 @@ export function createActorMesh(
     helperBillboardIconOf(actor, allActors) === null
   ) {
     const hidden = createOriginRootMesh(scene, actor);
+    hidden.metadata = { ...(hidden.metadata ?? {}), editorUnpickable: true };
     hidden.isPickable = false;
     return hidden;
   }

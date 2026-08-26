@@ -68,7 +68,7 @@ Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene
 
 **2D Panel** is a 9-slice unlit plane (`source` texture or material, pixel margins, Hit Test Ignore). Corners stay `marginPx / pixelsPerUnit` in world space as the actor scale changes (mesh is a unit quad; dest is `|scale.xy|`). Edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder.
 
-Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / solo `2DButton`. A button with a sibling or parent visual does not add an extra quad (same as Play).
+Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / solo `2DButton`. A button with a sibling or parent visual does not add an extra quad (same as Play). A nested button helper stays an unpickable origin so viewport picks hit the parent visual; select that actor in the Outliner to edit the button.
 
 `2DButton` uses the same graph events on mouse and touch. Play captures the pointer, `preventDefault`s `touchstart` / `touchmove`, and treats `pointercancel` like a release (click if still over the button). Engine Settings `touchMinTargetPx` (default 44) is a **screen-space pick floor** through the overlay frustum — it inflates the pick AABB, not the visual.
 

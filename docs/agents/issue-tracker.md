@@ -19,6 +19,7 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Nested `2DButton` editor origin was unpickable at create then `applyActorTransform` restored picks, stealing viewport hits from the parent visual | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Child `2DButton` click test used an unbound `onClick`; overlay pointer always invokes with the button id so the owner never logged after #453 | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | Child `2DButton` stamped parent visual with Hit Test Ignore so Play picks skipped nested buttons | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | Child `2DAnchor` still mapped independently when the parent already had `2DAnchor` | Resolved |
