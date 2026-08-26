@@ -19,8 +19,10 @@ import {
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import {
   emptySkyboxFaces,
+  parseText2DProperties,
   parseText3DProperties,
   type SkyboxFaces,
+  type Text2DProperties,
   type Text3DProperties,
 } from "@babylonslate/core";
 import type { ColliderShape } from "@babylonslate/physics";
@@ -58,6 +60,7 @@ import {
 import { snapToPixelGrid } from "./pixel-perfect";
 import { createSkyboxMesh, resolveSkyboxCubeTexture } from "./skybox";
 import { createText3DMesh } from "./text3d-mesh";
+import { createText2DMesh } from "./text2d-mesh";
 
 /** Scratch math objects — never allocate per actor per frame. */
 const scratchPos = new Vector3();
@@ -77,6 +80,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   cameraProps: Map<number, AuthoredCameraProperties>;
   skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
   text3dProps: Map<number, Text3DProperties>;
+  text2dProps: Map<number, Text2DProperties>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
@@ -135,6 +139,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     cameraProps: new Map(),
     skyboxProps: new Map(),
     text3dProps: new Map(),
+    text2dProps: new Map(),
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
@@ -351,6 +356,19 @@ export function applyAssignMesh(
   } else if (meshKind === "text3d") {
     binding.text3dProps.set(command.slotId, parseText3DProperties({}));
   }
+  if (command.text2d) {
+    binding.text2dProps.set(
+      command.slotId,
+      parseText2DProperties(command.text2d, {
+        rich: meshKind === "2drichtext",
+      }),
+    );
+  } else if (meshKind === "2dtext" || meshKind === "2drichtext") {
+    binding.text2dProps.set(
+      command.slotId,
+      parseText2DProperties({}, { rich: meshKind === "2drichtext" }),
+    );
+  }
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
     if (command.camera.isDefault) {
@@ -417,7 +435,13 @@ function stampOverlayPick(
     }
   };
   apply(mesh);
-  for (const child of mesh.getChildMeshes()) apply(child);
+  for (const child of mesh.getChildMeshes()) {
+    if ((child.metadata as { text2dGlyph?: boolean } | null)?.text2dGlyph) {
+      child.isPickable = false;
+      continue;
+    }
+    apply(child);
+  }
 }
 
 function playMeshMetadata(
@@ -536,6 +560,7 @@ function disposeSlotVisuals(
   binding.cameras.delete(slotId);
   binding.skyboxProps.delete(slotId);
   binding.text3dProps.delete(slotId);
+  binding.text2dProps.delete(slotId);
   if (binding.shadowOwnerSlot === slotId) {
     binding.shadow?.dispose();
     binding.shadow = null;
@@ -568,6 +593,7 @@ function createPlayVisual(
       binding,
       playComponentMeshName(slotId, part.componentId),
       part.text3d,
+      part.text2d,
     );
     applyPartTransform(child, part);
     meshes.set(part.componentId, child);
@@ -589,6 +615,7 @@ export function createPlayMesh(
   binding?: SnapshotSceneBinding,
   meshName?: string,
   partText3d?: Text3DProperties,
+  partText2d?: Text2DProperties | AssignMeshCommand["text2d"],
 ): Mesh {
   const name = meshName ?? `actor-${slotId}`;
   if (meshKind === "tilemap" && assetGuid && binding?.tilemaps) {
@@ -650,6 +677,19 @@ export function createPlayMesh(
       if (compiled) mesh.material = compiled;
     }
     return mesh;
+  }
+  if (meshKind === "2dtext" || meshKind === "2drichtext") {
+    const fromPart =
+      partText2d ??
+      binding?.meshParts
+        .get(slotId)
+        ?.find((part) => playComponentMeshName(slotId, part.componentId) === name)
+        ?.text2d;
+    const props = fromPart ?? binding?.text2dProps.get(slotId);
+    return createText2DMesh(scene, name, props ?? {}, binding, {
+      rich: meshKind === "2drichtext",
+      isPaused: () => binding?.paused === true,
+    });
   }
   if (assetGuid) {
     const root = createModelActorRoot(scene, name);
@@ -817,6 +857,7 @@ export function applySnapshotToScene(
         binding.cameraProps.delete(slotId);
         binding.skyboxProps.delete(slotId);
         binding.text3dProps.delete(slotId);
+        binding.text2dProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
         binding.lights.delete(slotId);
         binding.cameras.get(slotId)?.dispose();

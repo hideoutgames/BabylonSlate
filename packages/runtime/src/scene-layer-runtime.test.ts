@@ -4,6 +4,7 @@ import {
   createActor,
   createDefaultScene,
   createDefaultSceneLayer,
+  createText2DComponent,
   type SerializedScene,
   type SerializedSceneLayer,
 } from "@babylonslate/core";
@@ -450,6 +451,58 @@ describe("SceneLayer runtime compositor", () => {
     expect(
       assignPair && "parts" in assignPair
         ? assignPair.parts?.some((part) => part.meshKind === "2dbutton")
+        : false,
+    ).toBe(false);
+  });
+
+  it("uses 2D Text as the 2DButton sibling visual and stamps overlay HitTest", () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("caption", "Caption", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              ...createText2DComponent("label"),
+              properties: {
+                ...createText2DComponent("label").properties,
+                text: "Play",
+                hitTest: "ignore",
+              },
+            },
+            {
+              id: "btn",
+              classId: "2DButtonComponent",
+              properties: { hitTest: "block" },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    const assign = commands.find(
+      (command) => command.type === "assignMesh" && command.actorGuid === "caption",
+    );
+    expect(assign).toMatchObject({
+      type: "assignMesh",
+      meshKind: "2dtext",
+      hasButton: true,
+      hitTest: "block",
+      text2d: { text: "Play" },
+    });
+    expect(
+      assign && "parts" in assign
+        ? assign.parts?.some((part) => part.meshKind === "2dbutton")
         : false,
     ).toBe(false);
   });

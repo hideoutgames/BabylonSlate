@@ -30,6 +30,7 @@ import {
   parseSceneLayerHitTest,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText2DProperties,
   parseText3DProperties,
   sceneLayerAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT,
@@ -2339,6 +2340,11 @@ class InProcessRuntime implements RuntimeDriver {
       const text3dComp = renderables.find(
         (component) => component.classId === "Text3DComponent",
       );
+      const text2dComp = renderables.find(
+        (component) =>
+          component.classId === "2DTextComponent" ||
+          component.classId === "2DRichTextComponent",
+      );
       this.emit({
         type: "assignMesh",
         slotId,
@@ -2374,6 +2380,7 @@ class InProcessRuntime implements RuntimeDriver {
               }),
             }
           : {}),
+        ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp) } : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
@@ -3060,6 +3067,8 @@ class InProcessRuntime implements RuntimeDriver {
 const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
   "2DTextureComponent",
   "2DMaterialComponent",
+  "2DTextComponent",
+  "2DRichTextComponent",
   "SpriteComponent",
   "MeshComponent",
 ]);
@@ -3084,7 +3093,9 @@ function isPlayRenderable(
     component.classId === "SkyboxComponent" ||
     component.classId === "Text3DComponent" ||
     component.classId === "2DTextureComponent" ||
-    component.classId === "2DMaterialComponent"
+    component.classId === "2DMaterialComponent" ||
+    component.classId === "2DTextComponent" ||
+    component.classId === "2DRichTextComponent"
   ) {
     return true;
   }
@@ -3105,7 +3116,9 @@ function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {
   const visual = actor.components.find(
     (component) =>
       (component.classId === "2DTextureComponent" ||
-        component.classId === "2DMaterialComponent") &&
+        component.classId === "2DMaterialComponent" ||
+        component.classId === "2DTextComponent" ||
+        component.classId === "2DRichTextComponent") &&
       !component.destroyed,
   );
   if (visual) {
@@ -3119,6 +3132,8 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "Text3DComponent") return "text3d";
+  if (component.classId === "2DTextComponent") return "2dtext";
+  if (component.classId === "2DRichTextComponent") return "2drichtext";
   if (component.classId === "2DTextureComponent") return "2dtexture";
   if (component.classId === "2DMaterialComponent") return "2dmaterial";
   if (component.classId === "2DButtonComponent") return "2dbutton";
@@ -3161,6 +3176,43 @@ function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   );
 }
 
+function text2dAssignPayload(
+  component: ActorComponent,
+): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
+  const parsed = parseText2DProperties(
+    {
+      text: component.getVariable("text"),
+      fontAssetGuid:
+        component.getVariable("fontAssetGuid") ?? component.assetGuid,
+      size: component.getVariable("size"),
+      color: component.getVariable("color"),
+      renderer: component.getVariable("renderer"),
+      outline: component.getVariable("outline"),
+      outlineColor: component.getVariable("outlineColor"),
+      alignment: component.getVariable("alignment"),
+      bold: component.getVariable("bold"),
+      italic: component.getVariable("italic"),
+      underline: component.getVariable("underline"),
+      wrapWidth: component.getVariable("wrapWidth"),
+    },
+    { rich: component.classId === "2DRichTextComponent" },
+  );
+  return {
+    text: parsed.text,
+    fontAssetGuid: parsed.fontAssetGuid,
+    size: parsed.size,
+    color: parsed.color,
+    renderer: parsed.renderer,
+    outline: parsed.outline,
+    outlineColor: parsed.outlineColor,
+    alignment: parsed.alignment,
+    bold: parsed.bold,
+    italic: parsed.italic,
+    underline: parsed.underline,
+    wrapWidth: parsed.wrapWidth,
+  };
+}
+
 function playMeshPartOf(
   component: ActorComponent,
   parentId = component.parentId,
@@ -3185,6 +3237,10 @@ function playMeshPartOf(
             fontAssetGuid: component.getVariable("fontAssetGuid"),
           }),
         }
+      : {}),
+    ...(component.classId === "2DTextComponent" ||
+    component.classId === "2DRichTextComponent"
+      ? { text2d: text2dAssignPayload(component) }
       : {}),
   };
 }

@@ -29,6 +29,34 @@ describe("assignMesh visual payloads", () => {
     expect(command.text3d?.fontAssetGuid).toBe("font-1");
   });
 
+  it("assignMesh can carry a 2D Text payload", () => {
+    const command = {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: "font-1",
+      meshKind: "2dtext",
+      hitTest: "block",
+      hasButton: true,
+      text2d: {
+        text: "Hi",
+        size: 32,
+        color: [1, 1, 1],
+        fontAssetGuid: "font-1",
+        renderer: "bitmap",
+        outline: 0,
+        outlineColor: [0, 0, 0],
+        alignment: "left",
+        bold: false,
+        italic: false,
+        underline: false,
+        wrapWidth: 0,
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("assignMesh");
+    expect(command.text2d?.renderer).toBe("bitmap");
+    expect(command.text2d?.fontAssetGuid).toBe("font-1");
+  });
+
   it("assignMesh can carry a skybox payload", () => {
     const command = {
       type: "assignMesh",

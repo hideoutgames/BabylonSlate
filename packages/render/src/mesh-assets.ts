@@ -32,6 +32,12 @@ export interface MeshAssetContext {
   pixelsPerUnit?: number;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
+  /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
+  fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
+  /** MSDF atlas PNG keyed by Font asset guid. */
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  /** Play pause — overlay letter effects freeze while true. */
+  paused?: boolean;
 }
 
 function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
@@ -69,6 +75,7 @@ export function meshAssetFingerprint(
     `tilesets:${sortedMapKeys(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
+    `msdf:${byteMapFingerprint(assets.fontMsdfJson)}:${byteMapFingerprint(assets.fontMsdfPng)}`,
     `models:${byteMapFingerprint(assets.modelBytes)}`,
   ].join("|");
 }
@@ -83,6 +90,9 @@ export function meshAssetFingerprintWithoutModels(
     tilemaps: assets?.tilemaps,
     tilesets: assets?.tilesets,
     textureBytes: assets?.textureBytes,
+    fontFacetypeBytes: assets?.fontFacetypeBytes,
+    fontMsdfJson: assets?.fontMsdfJson,
+    fontMsdfPng: assets?.fontMsdfPng,
     modelBytes: undefined,
   });
 }
