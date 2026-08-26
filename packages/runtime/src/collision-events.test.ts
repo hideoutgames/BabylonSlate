@@ -65,7 +65,7 @@ function hitLogGraph(registry: NodeRegistry): LogicGraph {
     id: "event-graph",
     kind: "event",
     nodes: [
-      node(registry, "hit", "flow.event.hit"),
+      node(registry, "hit", "flow.event.hit", { componentId: "col" }),
       node(registry, "log", "debug.log", { category: "Hit" }),
     ],
     edges: [
@@ -80,8 +80,8 @@ function overlapLogGraph(registry: NodeRegistry): LogicGraph {
     id: "event-graph",
     kind: "event",
     nodes: [
-      node(registry, "begin", "flow.event.beginOverlap"),
-      node(registry, "end", "flow.event.endOverlap"),
+      node(registry, "begin", "flow.event.beginOverlap", { componentId: "col" }),
+      node(registry, "end", "flow.event.endOverlap", { componentId: "col" }),
       node(registry, "logBegin", "debug.log", { category: "OverlapBegin" }),
       node(registry, "logEnd", "debug.log", { category: "OverlapEnd" }),
     ],
@@ -114,6 +114,7 @@ function attachKinematicBox(
   actor.attachComponent(
     world.createComponent({
       ...(colliderGuid ? { guid: colliderGuid } : {}),
+      sourceId: colliderGuid ?? "col",
       classId: "ColliderComponent",
       variables: {
         shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },

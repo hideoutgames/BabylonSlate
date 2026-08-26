@@ -655,6 +655,75 @@ describe("script compiler service", () => {
     expect(spawnListForScripts([script!])).toEqual([]);
   });
 
+  it("binds leftover On Hit to the sole prefab collider at Play compile", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "hit",
+            type: "flow.event.hit",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+          {
+            id: "log",
+            type: "debug.log",
+            position: { x: 200, y: 0 },
+            data: { message: "hit" },
+          },
+        ],
+        edges: [
+          {
+            id: "e1",
+            source: "hit",
+            target: "log",
+            sourceHandle: "execOut",
+            targetHandle: "execIn",
+          },
+        ],
+        components: [
+          { id: "col-a", classId: "ColliderComponent", properties: {} },
+        ],
+      },
+      {
+        path: "assets/Hero.class.babasset",
+        classId: "Hero",
+        parentClassId: "Actor",
+      },
+    );
+    expect(script?.entryPoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event: "onHit", componentId: "col-a" }),
+      ]),
+    );
+  });
+
+  it("does not guess among duplicate colliders when compiling leftover On Hit", () => {
+    const script = compileGraphDocument(
+      {
+        nodes: [
+          {
+            id: "hit",
+            type: "flow.event.hit",
+            position: { x: 0, y: 0 },
+            data: {},
+          },
+        ],
+        edges: [],
+        components: [
+          { id: "col-a", classId: "ColliderComponent", properties: {} },
+          { id: "col-b", classId: "ColliderComponent", properties: {} },
+        ],
+      },
+      {
+        path: "assets/Hero.class.babasset",
+        classId: "Hero",
+        parentClassId: "Actor",
+      },
+    );
+    expect(script?.entryPoints.some((entry) => entry.componentId)).toBe(false);
+  });
+
   it("copies actorDefaults from the serialized graph onto the bundle", () => {
     const script = compileGraphDocument(
       {

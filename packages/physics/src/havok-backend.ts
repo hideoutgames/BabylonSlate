@@ -507,6 +507,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!kind) return;
     let a = actorAId;
     let b = actorBId;
+    // Havok collision events name PhysicsBody pairs, not child shapes, so
+    // collider ids fall back to the first collider on each actor.
     let colliderAId = this.firstColliderIdForActor(actorAId);
     let colliderBId = this.firstColliderIdForActor(actorBId);
     let normal = {

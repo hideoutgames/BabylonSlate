@@ -686,11 +686,7 @@ export class ScriptHost {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
         if (point.event !== event) continue;
-        if (
-          componentId &&
-          point.componentId &&
-          point.componentId !== componentId
-        ) {
+        if (!entryMatchesComponentInvoke(point.componentId, componentId, self)) {
           continue;
         }
         const fn = entry.exports[point.name];
@@ -1381,10 +1377,39 @@ function findComponentById(
   return (
     actor.components.find(
       (component) =>
-        !component.destroyed &&
-        (component.guid === componentId || component.sourceId === componentId),
+        !component.destroyed && componentMatchesId(component, componentId),
     ) ?? null
   );
+}
+
+function componentMatchesId(
+  component: ActorComponent,
+  componentId: string,
+): boolean {
+  return component.guid === componentId || component.sourceId === componentId;
+}
+
+/**
+ * Host invokes (Begin Play / Tick / Destroyed) run unbound entries.
+ * Component invokes run the entry whose compiled id matches the live guid or
+ * the prefab `sourceId` after instance remapping. Leftover unbound Hit/Click
+ * does not run for every component.
+ */
+function entryMatchesComponentInvoke(
+  entryComponentId: string | undefined,
+  invokeComponentId: string | undefined,
+  self: BObject | null,
+): boolean {
+  const bound =
+    typeof entryComponentId === "string" ? entryComponentId.trim() : "";
+  const invoked =
+    typeof invokeComponentId === "string" ? invokeComponentId.trim() : "";
+  if (!invoked) return !bound;
+  if (!bound) return false;
+  if (bound === invoked) return true;
+  if (!(self instanceof Actor)) return false;
+  const component = findComponentById(self, invoked);
+  return component ? componentMatchesId(component, bound) : false;
 }
 
 function isTextComponent(component: ActorComponent): boolean {
