@@ -70,11 +70,14 @@ Worker → main (ordered). Main thread resolves Audio / Mixer / Channel / Attenu
 | { type: "playSound"; assetGuid: string; volume: number; frameId: number;
     emitterActorGuid?: string | null; loop?: boolean; voiceId?: string }
 | { type: "stopSound"; voiceId: string }
+| { type: "setVoiceGain"; voiceId: string; volume: number }
 | { type: "setChannelVolume"; channelGuid: string; volume: number }
 | { type: "setGlobalVolume"; volume: number }
 ```
 
-`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits **once** (`voiceId` = component guid, `emitterActorGuid` = owning actor). Native `loop: true` is **one** Babylon voice — do not retrigger every tick. Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies). Missing Actor + attenuation → non-spatial + one diagnostic. Overlay Play does not log every `playSound` into the chrome log (retriggers must not paint the DOM).
+Main → worker when a **non-looping** voice ends: `{ type: "audioVoiceEnded"; voiceId: string }`. Overlay Play and the packaged player post that control from `AudioService.onVoiceEnded` (the service already skips `voice.loop`). `RuntimeDriver.applyAudioVoiceEnded` matches `voiceId` to an `AudioComponent` guid/`sourceId` and `invokeEvent(..., "onAudioFinished", actor, {}, component.guid)`. Catalog: **Event On Audio Finished** (`flow.event.audioFinished`). There is no per-voice Pause (AudioV2 `setPaused` is overlay-global).
+
+`AudioComponent` properties: `audioAssetGuid`, `playOnStart`, `loop`, `volume` (`playCallVolume`). Play-on-start emits **once** (`voiceId` = component guid, `emitterActorGuid` = owning actor). Native `loop: true` is **one** Babylon voice — do not retrigger every tick. Graph **Play** / **Stop** on the component pin use that same `voiceId`. Graph **Set Volume** emits `setVoiceGain` for the live voice (`AudioService.setVoiceGain` updates `playCallVolume` and refreshes backend gain). Graph **Play Sound** uses `self` as emitter and does not send `loop` (the Audio asset’s Loop flag applies). Missing Actor + attenuation → non-spatial + one diagnostic. Overlay Play does not log every `playSound` into the chrome log (retriggers must not paint the DOM).
 
 ## Unlock and cache
 
