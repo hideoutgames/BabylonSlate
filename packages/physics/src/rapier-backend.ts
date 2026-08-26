@@ -626,8 +626,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   ): { x: number; y: number; z: number } {
     const a = this.colliderTranslation(colliderAId);
     const b = this.colliderTranslation(colliderBId);
-    let x = b.x - a.x;
-    let y = b.y - a.y;
+    const x = b.x - a.x;
+    const y = b.y - a.y;
     const length = Math.hypot(x, y);
     if (length < 1e-8) return { x: 0, y: 1, z: 0 };
     return { x: x / length, y: y / length, z: 0 };
