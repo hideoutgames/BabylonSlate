@@ -80,6 +80,21 @@ describe("scene schema", () => {
     expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
     expect(scene.settings.editorJoystickEnabled).toBe(true);
     expect(scene.settings.showNavmesh).toBe(false);
+    expect(scene.settings.sceneLayers).toEqual([]);
+  });
+
+  it("normalizes world-scene SceneLayer spawn entries on settings", () => {
+    const scene = normalizeScene({
+      settings: {
+        sceneLayers: [
+          { assetGuid: "hud", zOrder: 4.2, enabled: true },
+          { assetGuid: "" },
+        ],
+      },
+    });
+    expect(scene.settings.sceneLayers).toEqual([
+      { assetGuid: "hud", zOrder: 4, enabled: true },
+    ]);
   });
 
   it("coerces malformed actors and components so Details can open old projects", () => {

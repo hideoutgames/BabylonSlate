@@ -20,7 +20,7 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene } from "@babylonslate/core";
+import { type SerializedScene, isSceneWorkspaceKind } from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -163,8 +163,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   });
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const scene =
-    doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
+  const scene = isSceneWorkspaceKind(doc?.ref.kind)
+    ? (doc.content as SerializedScene)
+    : null;
 
   useEffect(() => {
     sceneRef.current = scene;
@@ -186,7 +187,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
 
   useEffect(() => {
     const overlay = navDebugRef.current;
-    const path = doc?.ref.kind === "scene" ? doc.ref.path : null;
+    const path =
+      doc && isSceneWorkspaceKind(doc.ref.kind) ? doc.ref.path : null;
     const enabled = Boolean(
       scene && (navmeshVisible || navmeshOverlayEnabled(scene)),
     );
@@ -744,7 +746,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
           className="pointer-events-auto rounded-lg border border-border bg-popover p-1 shadow-md"
           data-testid="viewport-panel-frame"
         >
-          <ViewportToolbar />
+          <ViewportToolbar
+            showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
+          />
         </div>
       </div>
       <canvas

@@ -79,6 +79,41 @@ describe("createPlayMesh", () => {
     expect(model.isVisible).toBe(false);
   });
 
+  it("builds unlit overlay planes for 2DTexture, 2DMaterial, and 2DButton", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const texture = createPlayMesh(scene, 1, "2dtexture", "tex-1");
+    const material = createPlayMesh(scene, 2, "2dmaterial", "mat-1");
+    const button = createPlayMesh(scene, 3, "2dbutton", null);
+    expect(texture.getClassName()).toBe("Mesh");
+    expect((texture.material as StandardMaterial).disableLighting).toBe(true);
+    expect((material.material as StandardMaterial).disableLighting).toBe(true);
+    expect((button.material as StandardMaterial).disableLighting).toBe(true);
+    expect(button.isPickable).toBe(true);
+  });
+
+  it("honors overlay HitTest when stamping assignMesh metadata", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+      actorGuid: "banner",
+      hitTest: "block",
+      hasButton: true,
+    });
+    const mesh = binding.meshes.get(4);
+    expect(mesh?.isPickable).toBe(true);
+    expect(
+      (mesh?.metadata as { overlayActorGuid?: string }).overlayActorGuid,
+    ).toBe("banner");
+  });
+
   it("puts primitive and model Play meshes in the same world rendering group", async () => {
     const handle = createTestEngine();
     handles.push(handle);

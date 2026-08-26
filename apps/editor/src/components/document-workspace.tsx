@@ -1,4 +1,4 @@
-import { CONTENT_BROWSER_ID, isAssetDocumentKind, type SerializedScene } from "@babylonslate/core";
+import { CONTENT_BROWSER_ID, isAssetDocumentKind, isSceneWorkspaceKind, type SerializedScene } from "@babylonslate/core";
 import type { DockviewApi } from "dockview-react";
 import { useCallback, useEffect, useLayoutEffect } from "react";
 import { useDocuments } from "../context/document-context";
@@ -31,8 +31,10 @@ import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 import { DockviewShell } from "../shell/dockview-shell";
 import {
   classDocumentShowsPrefab,
+  classIdFromClassAsset,
   classParentLookup,
 } from "../lib/content-browser-helpers";
+import { walkAncestry } from "@babylonslate/editor-kit";
 import {
   isDockviewDocumentKind,
   type DockviewDocumentKind,
@@ -501,7 +503,7 @@ export function DocumentWorkspace() {
         }
 
         const sceneContent =
-          doc.ref.kind === "scene"
+          isSceneWorkspaceKind(doc.ref.kind)
             ? (doc.content as SerializedScene | null)
             : null;
         const parentOf = classParentLookup(assetRegistry?.list() ?? []);
@@ -514,6 +516,16 @@ export function DocumentWorkspace() {
           classDocumentShowsPrefab(indexed.header.parentClass, parentOf, {
             assetType: indexed.header.type,
           });
+        const overlayPrefab =
+          doc.ref.kind === "graph" &&
+          walkAncestry(
+            indexed
+              ? classIdFromClassAsset(indexed)
+              : (indexed?.header.parentClass ?? "Actor"),
+            parentOf,
+          ).includes("SceneLayerActor");
+        const overlayWorkspace =
+          doc.ref.kind === "scene-layer" || overlayPrefab;
 
         if (!shouldMount) return null;
 
@@ -522,8 +534,13 @@ export function DocumentWorkspace() {
             <DocumentWorkspaceProvider documentId={id}>
               <SceneEditingProvider
                 documentId={id}
-                initialViewportMode={sceneContent?.viewportMode ?? "3d"}
-                documentViewportMode={sceneContent?.viewportMode}
+                initialViewportMode={
+                  overlayWorkspace ? "2d" : (sceneContent?.viewportMode ?? "3d")
+                }
+                initialViewportShadingMode={overlayWorkspace ? "unlit" : "pbr"}
+                documentViewportMode={
+                  overlayWorkspace ? "2d" : sceneContent?.viewportMode
+                }
                 documentSnapEnabled={sceneContent?.settings?.grid?.snapEnabled}
                 documentJoystickEnabled={
                   sceneContent?.settings?.editorJoystickEnabled
@@ -545,7 +562,11 @@ export function DocumentWorkspace() {
                 <RegisteredDockviewShell
                   id={id}
                   documentKind={
-                    doc.ref.kind === "scene" ? "scene" : "graph"
+                    doc.ref.kind === "scene-layer"
+                      ? "scene-layer"
+                      : doc.ref.kind === "scene"
+                        ? "scene"
+                        : "graph"
                   }
                   initialLayout={doc.layout}
                   actorPrefab={actorPrefab}

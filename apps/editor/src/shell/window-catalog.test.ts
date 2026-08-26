@@ -95,6 +95,25 @@ describe("listDockWindows", () => {
     });
   });
 
+  it("lists scene-layer dock tabs with the same Viewport Outliner Details layout", () => {
+    const windows = listDockWindows("scene-layer");
+    expect(windows.map((entry) => entry.id)).toEqual([
+      "viewport",
+      "scene-outliner",
+      "scene-details",
+      "output-log",
+      "compiler-results",
+    ]);
+    expect(windows.map((entry) => entry.title)).toEqual([
+      "Viewport",
+      "Outliner",
+      "Details",
+      "Output Log",
+      "Compiler Results",
+    ]);
+    expect(primaryDockPanel("scene-layer")).toBe("viewport");
+  });
+
   it("lists graph dock tabs including Class stacked under Components", () => {
     const windows = listDockWindows("graph");
     expect(windows.map((entry) => entry.id)).toEqual([

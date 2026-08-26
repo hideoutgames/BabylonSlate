@@ -4,6 +4,7 @@ import type { AnimEditorMode } from "./anim-document-layout";
 export type { AnimEditorMode };
 export type DockviewDocumentKind =
   | "scene"
+  | "scene-layer"
   | "graph"
   | "enum"
   | "structure"
@@ -32,6 +33,7 @@ export type { DockWindowDirection };
 
 const DOCKVIEW_KINDS = new Set<DockviewDocumentKind>([
   "scene",
+  "scene-layer",
   "graph",
   "enum",
   "structure",
@@ -83,6 +85,7 @@ export const LOCKS_WINDOW_ID = "locks";
 
 const DOCK_PRIMARY_PANEL: Record<DockviewDocumentKind, string> = {
   scene: "viewport",
+  "scene-layer": "viewport",
   graph: "graph",
   enum: "enum-members",
   structure: "structure-members",
@@ -815,7 +818,9 @@ export function listDockWindows(
   kind: DockviewDocumentKind,
   options?: DockWindowOptions,
 ): DockWindowDefinition[] {
-  if (kind === "scene") return withOptionalLocks(kind, SCENE_WINDOWS, options);
+  if (kind === "scene" || kind === "scene-layer") {
+    return withOptionalLocks(kind, SCENE_WINDOWS, options);
+  }
   if (kind === "enum") return withOptionalLocks(kind, ENUM_WINDOWS, options);
   if (kind === "structure") {
     return withOptionalLocks(kind, STRUCTURE_WINDOWS, options);

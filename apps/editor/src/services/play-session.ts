@@ -13,7 +13,7 @@ import {
   type SessionReportEntry,
 } from "@babylonslate/runtime";
 import type { DebugInspectSnapshot } from "@babylonslate/object-model";
-import { DEFAULT_PLAY_FRAME_CAP, printHudCssColor, type AudioProjectSettings, type SerializedScene } from "@babylonslate/core";
+import { DEFAULT_PLAY_FRAME_CAP, printHudCssColor, type AudioProjectSettings, type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
 import type {
   SpriteAnimationPayload,
   SpritePayload,
@@ -398,6 +398,7 @@ export function startPlaySession(options: {
   scene?: SerializedScene;
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   onStats?: (stats: {
     fps: number;
     scriptMs: number;
@@ -529,6 +530,16 @@ export function startPlaySession(options: {
     },
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
+    },
+    onSceneLayerPointer: (event) => {
+      const control = { type: "sceneLayerPointer" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerPointer(control);
+    },
+    onSceneLayerResize: (size) => {
+      const control = { type: "sceneLayerResize" as const, ...size };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
     },
   });
   if (options.scene) {
@@ -665,6 +676,7 @@ export function startPlaySession(options: {
     gravity: physics.gravity,
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     audioAssetGuids: [...(options.audioLibrary?.audio.keys() ?? [])],

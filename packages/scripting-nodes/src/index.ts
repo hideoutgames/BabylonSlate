@@ -15,6 +15,7 @@ import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
 import { sceneNodes } from "./scene";
+import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
 import { renderNodes } from "./render";
 import { debugNodes } from "./debug";
 import { debugDrawNodes } from "./debug-draw";
@@ -49,6 +50,7 @@ export * from "./input";
 export * from "./audio";
 export * from "./particles";
 export * from "./scene";
+export * from "./scene-layer";
 export * from "./render";
 export * from "./debug";
 export * from "./debug-draw";
@@ -85,6 +87,7 @@ export const ALL_NODE_CATEGORIES = [
   "audio",
   "particles",
   "scene",
+  "scene-layer",
   "render",
   "debug",
   "interface",
@@ -122,6 +125,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...audioNodes,
     ...particleNodes,
     ...sceneNodes,
+    ...sceneLayerNodes,
     ...renderNodes,
     ...debugNodes,
     ...debugDrawNodes,
@@ -145,6 +149,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
 
 export function createDefaultNodeRegistry(): NodeRegistry {
   registerPhysicsValidationRules();
+  registerSceneLayerValidationRules();
   const registry = new NodeRegistry();
   registry.registerAll(allNodeDefinitions());
   return registry;

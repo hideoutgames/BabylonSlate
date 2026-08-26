@@ -5,6 +5,7 @@ import {
 } from "@babylonslate/core";
 import {
   ADDABLE_COMPONENT_CLASSES,
+  addableComponentsForHost,
   defaultPropertiesFor,
   physicsWorldFromOpenDocuments,
   prefabComponentLabel,
@@ -16,6 +17,10 @@ describe("Add Component catalog", () => {
     const ids = ADDABLE_COMPONENT_CLASSES.map((entry) => entry.id);
     expect(ids).toContain("SpriteComponent");
     expect(ids).toContain("TilemapComponent");
+    expect(ids).toContain("2DAnchorComponent");
+    expect(ids).toContain("2DButtonComponent");
+    expect(ids).toContain("2DMaterialComponent");
+    expect(ids).toContain("2DTextureComponent");
     expect(ids).toContain("AnimationGraphComponent");
     expect(ids).toContain("BehaviourTreeComponent");
     expect(ids).toContain("NavAgentComponent");
@@ -28,6 +33,19 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("SkyboxComponent");
     expect(ids).toContain("Text3DComponent");
     expect(ids).toContain("ParticleComponent");
+  });
+
+  it("hides Skybox, Camera, and Light on overlay actors and 2D overlay components on world actors", () => {
+    const overlay = addableComponentsForHost({ overlay: true }).map((e) => e.id);
+    expect(overlay).toContain("SpriteComponent");
+    expect(overlay).toContain("RigidBodyComponent");
+    expect(overlay).toContain("2DButtonComponent");
+    expect(overlay).not.toContain("SkyboxComponent");
+    expect(overlay).not.toContain("CameraComponent");
+    expect(overlay).not.toContain("LightComponent");
+    const world = addableComponentsForHost({ overlay: false }).map((e) => e.id);
+    expect(world).toContain("SkyboxComponent");
+    expect(world).not.toContain("2DButtonComponent");
   });
 
   it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
@@ -44,6 +62,7 @@ describe("Add Component catalog", () => {
       "Camera",
       "Audio",
       "Particles",
+      "Overlay",
       "Physics",
     ]);
     expect(byCategory.get("Rendering")).toEqual([

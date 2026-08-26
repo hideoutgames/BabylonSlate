@@ -11,6 +11,7 @@ import {
 import {
   resolveActorTypeVisual,
   resolveTypeVisual,
+  walkAncestry,
   type TypeVisual,
 } from "@babylonslate/editor-kit";
 import { defaultPropertiesFor } from "../panels/add-component-catalog";
@@ -122,6 +123,16 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   },
 ];
 
+export function placeActorsForHost(options: { overlay: boolean }): PlaceActorItem[] {
+  if (!options.overlay) return ENGINE_PLACE_ACTORS;
+  return ENGINE_PLACE_ACTORS.filter(
+    (item) =>
+      item.kind.type !== "light" &&
+      item.kind.type !== "camera" &&
+      item.kind.type !== "skybox",
+  );
+}
+
 export const PLACEABLE_PROJECT_TYPES = new Set([
   "Class",
   "Model",
@@ -173,12 +184,41 @@ export function prefabComponentsForGuid(
 export function projectPlaceActors(
   assets: Array<{
     path?: string;
-    header: { guid: string; name: string; type?: string };
+    header: {
+      guid: string;
+      name: string;
+      type?: string;
+      parentClass?: string | null;
+    };
   }>,
   prefabForGuid?: (guid: string) => SerializedComponent[] | undefined,
+  options?: { overlay?: boolean },
 ): PlaceActorItem[] {
+  const parentOf = classParentLookup(
+    assets.map((asset) => ({
+      path: asset.path,
+      header: {
+        type: asset.header.type ?? "",
+        name: asset.header.name,
+        parentClass: asset.header.parentClass,
+        guid: asset.header.guid,
+      },
+    })),
+  );
+  const overlay = options?.overlay === true;
   return assets
     .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? ""))
+    .filter((asset) => {
+      if (asset.header.type !== "Class") return true;
+      const classId = classIdFromClassAsset({
+        path: asset.path,
+        header: { type: "Class", name: asset.header.name },
+      });
+      const overlayClass = walkAncestry(classId, parentOf).includes(
+        "SceneLayerActor",
+      );
+      return overlay ? overlayClass : !overlayClass;
+    })
     .map((asset) => ({
       id: `asset-${asset.header.guid}`,
       title: asset.header.name,
@@ -264,14 +304,19 @@ export function spawnPlacedActor(
   item: PlaceActorItem,
   id: string,
   position: [number, number, number],
+  options?: { overlay?: boolean },
 ): SerializedActor {
   const kind = item.kind;
   const transform = placedTransform(position);
+  const stamp = (actor: SerializedActor): SerializedActor =>
+    options?.overlay && actor.classId === "Actor"
+      ? { ...actor, classId: "SceneLayerActor" }
+      : actor;
   if (kind.type === "shape") {
-    return createActor(id, kind.meshKind, {
+    return stamp(createActor(id, kind.meshKind, {
       transform,
       components: [createMeshComponent(`${id}-mesh`, kind.meshKind)],
-    });
+    }));
   }
   if (kind.type === "light") {
     return createActor(id, item.title, {
@@ -312,13 +357,13 @@ export function spawnPlacedActor(
     });
   }
   if (kind.type === "text3d") {
-    return createActor(id, "3D Text", {
+    return stamp(createActor(id, "3D Text", {
       transform,
       components: [createText3DComponent(`${id}-text3d`)],
-    });
+    }));
   }
   if (kind.type === "navmesh") {
-    return createActor(id, "NavMesh", {
+    return stamp(createActor(id, "NavMesh", {
       transform,
       components: [
         {
@@ -327,10 +372,10 @@ export function spawnPlacedActor(
           properties: defaultPropertiesFor("NavMeshComponent"),
         },
       ],
-    });
+    }));
   }
   if (kind.type === "navmesh-blocker") {
-    return createActor(id, "NavMesh Blocker", {
+    return stamp(createActor(id, "NavMesh Blocker", {
       transform,
       components: [
         {
@@ -339,10 +384,10 @@ export function spawnPlacedActor(
           properties: defaultPropertiesFor("NavMeshBlockerComponent"),
         },
       ],
-    });
+    }));
   }
   if (kind.type === "blocking-volume") {
-    return createActor(id, "Blocking Volume", {
+    return stamp(createActor(id, "Blocking Volume", {
       transform,
       components: [
         {
@@ -351,10 +396,10 @@ export function spawnPlacedActor(
           properties: defaultPropertiesFor("BlockingVolumeComponent"),
         },
       ],
-    });
+    }));
   }
   if (kind.type === "audio") {
-    return createActor(id, "Audio", {
+    return stamp(createActor(id, "Audio", {
       transform,
       components: [
         {
@@ -363,10 +408,10 @@ export function spawnPlacedActor(
           properties: defaultPropertiesFor("AudioComponent"),
         },
       ],
-    });
+    }));
   }
   if (kind.type === "particle") {
-    return createActor(id, "Particle", {
+    return stamp(createActor(id, "Particle", {
       transform,
       components: [
         {
@@ -375,21 +420,21 @@ export function spawnPlacedActor(
           properties: defaultPropertiesFor("ParticleComponent"),
         },
       ],
-    });
+    }));
   }
   if (kind.type === "asset") {
     if (kind.assetType === "Class") {
-      return createActor(id, kind.name, {
+      return stamp(createActor(id, kind.name, {
         classId: kind.classId ?? kind.name,
         transform,
         components: instantiatePrefabComponents(
           kind.components ?? defaultPrefabComponents(),
           id,
         ),
-      });
+      }));
     }
     if (kind.assetType === "Audio") {
-      return createActor(id, kind.name, {
+      return stamp(createActor(id, kind.name, {
         transform,
         components: [
           {
@@ -404,10 +449,10 @@ export function spawnPlacedActor(
             },
           },
         ],
-      });
+      }));
     }
     if (kind.assetType === "ParticleSystem") {
-      return createActor(id, kind.name, {
+      return stamp(createActor(id, kind.name, {
         transform,
         components: [
           {
@@ -420,13 +465,13 @@ export function spawnPlacedActor(
             },
           },
         ],
-      });
+      }));
     }
     const component = createMeshComponent(`${id}-mesh`, "box");
     component.properties.assetGuid = kind.guid;
-    return createActor(id, kind.name, { transform, components: [component] });
+    return stamp(createActor(id, kind.name, { transform, components: [component] }));
   }
-  return createActor(id, "Empty", { transform });
+  return stamp(createActor(id, "Empty", { transform }));
 }
 
 export function duplicateSceneActor(

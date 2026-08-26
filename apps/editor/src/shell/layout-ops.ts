@@ -56,6 +56,7 @@ export const GRAPH_FOCUS_CANDIDATES: readonly FocusKeepCandidate[] =
 
 export const FOCUS_PRIMARY_PANEL: Record<FocusDocumentKind, string> = {
   scene: primaryDockPanel("scene"),
+  "scene-layer": primaryDockPanel("scene-layer"),
   graph: primaryDockPanel("graph"),
   enum: primaryDockPanel("enum"),
   structure: primaryDockPanel("structure"),

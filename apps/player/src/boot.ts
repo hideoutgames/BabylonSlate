@@ -149,6 +149,16 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onSceneLayerPointer: (event) => {
+      const control = { type: "sceneLayerPointer" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerPointer(control);
+    },
+    onSceneLayerResize: (size) => {
+      const control = { type: "sceneLayerResize" as const, ...size };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");
@@ -184,6 +194,10 @@ export function startPlayer(options: {
     guid,
     scene: authored,
   }));
+  const sceneLayers = [...game.sceneLayers.entries()].map(([guid, layer]) => ({
+    guid,
+    layer,
+  }));
   const loadControl = {
     type: "load" as const,
     sceneAssetGuid: startup,
@@ -199,6 +213,7 @@ export function startPlayer(options: {
       scene.settings.gameInstanceClass ??
       undefined,
     scenes,
+    sceneLayers,
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     animClipCatalog: content.animClipCatalog,

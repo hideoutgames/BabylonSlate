@@ -16,6 +16,11 @@ describe("dirtyScenesBlockingOpen", () => {
             dirty: true,
             ref: { kind: "graph" },
           },
+          {
+            id: "scene-layer:hud",
+            dirty: true,
+            ref: { kind: "scene-layer" },
+          },
         ],
         "scene:c",
       ).map((doc) => doc.id),
@@ -26,6 +31,21 @@ describe("dirtyScenesBlockingOpen", () => {
     expect(
       dirtyScenesBlockingOpen(
         [{ id: "scene:a", dirty: true, ref: { kind: "scene" } }],
+        "scene:a",
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not treat SceneLayer tabs as exclusive world scenes", () => {
+    expect(
+      dirtyScenesBlockingOpen(
+        [
+          {
+            id: "scene-layer:hud",
+            dirty: true,
+            ref: { kind: "scene-layer" },
+          },
+        ],
         "scene:a",
       ),
     ).toEqual([]);

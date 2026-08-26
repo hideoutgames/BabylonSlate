@@ -68,6 +68,14 @@ describe("playLoadControl", () => {
     expect(msg.audioAssetGuids).toEqual(["audio-1"]);
   });
 
+  it("forwards SceneLayer documents onto the load message", () => {
+    const layer = { name: "HUD", actors: [] };
+    const msg = playLoadControl({
+      sceneLayers: [{ guid: "hud", layer: layer as never }],
+    });
+    expect(msg.sceneLayers).toEqual([{ guid: "hud", layer }]);
+  });
+
   it("forwards animClipCatalog onto the load message", () => {
     const catalog = [
       {

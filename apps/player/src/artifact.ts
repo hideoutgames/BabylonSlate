@@ -1,4 +1,4 @@
-import { normalizeScene, type SerializedScene } from "@babylonslate/core";
+import { normalizeScene, normalizeSceneLayer, type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
 import {
   createHttpPackSource,
   createMemoryPackSource,
@@ -33,6 +33,7 @@ export type LoadedGame = {
   manifest: GameManifest;
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
+  sceneLayers: Map<string, SerializedSceneLayer>;
   textureBytes: Map<string, Uint8Array>;
   modelBytes: Map<string, Uint8Array>;
   modelPayloads: Map<string, ModelPayload>;
@@ -91,6 +92,7 @@ export async function loadGameFromFiles(
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
   const scripts = parseScriptRegistry(textFromFiles(files, SCRIPTS_FILE));
   const scenes = new Map<string, SerializedScene>();
+  const sceneLayers = new Map<string, SerializedSceneLayer>();
   const textureBytes = new Map<string, Uint8Array>();
   const modelBytes = new Map<string, Uint8Array>();
   const modelPayloads = new Map<string, ModelPayload>();
@@ -117,6 +119,10 @@ export async function loadGameFromFiles(
     payloads.set(entry.guid, bytes);
     if (entry.type === "Scene") {
       scenes.set(entry.guid, normalizeScene(parseJsonAsset(bytes)));
+      continue;
+    }
+    if (entry.type === "SceneLayer") {
+      sceneLayers.set(entry.guid, normalizeSceneLayer(parseJsonAsset(bytes)));
       continue;
     }
     if (entry.type === "Texture") {
@@ -164,6 +170,7 @@ export async function loadGameFromFiles(
     manifest,
     scripts,
     scenes,
+    sceneLayers,
     textureBytes,
     modelBytes,
     modelPayloads,

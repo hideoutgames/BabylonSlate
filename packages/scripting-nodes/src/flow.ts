@@ -43,6 +43,11 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.sceneOpen": "onSceneOpen",
   "flow.event.sceneSaved": "onSceneSaved",
   "flow.event.editorShutdown": "onEditorShutdown",
+  "flow.event.onMouseEnter": "onMouseEnter",
+  "flow.event.onMouseLeave": "onMouseLeave",
+  "flow.event.onClick": "onClick",
+  "flow.event.onPressStart": "onPressStart",
+  "flow.event.onPressEnd": "onPressEnd",
   "bt.event.activate": "onActivate",
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",
@@ -121,6 +126,56 @@ export const flowNodes: NodeDefinition[] = [
       pin("instigator", "Instigator", "out", actorRef("Actor")),
     ],
     codegen: () => ({ instigator: "(ctx.args.instigator)" }),
+  },
+  {
+    id: "flow.event.onMouseEnter",
+    title: "Event On Mouse Enter",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.onMouseLeave",
+    title: "Event On Mouse Leave",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.onClick",
+    title: "Event On Click",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.onPressStart",
+    title: "Event On Press Start",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.onPressEnd",
+    title: "Event On Press End",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
   },
   {
     id: "flow.event.commandRun",

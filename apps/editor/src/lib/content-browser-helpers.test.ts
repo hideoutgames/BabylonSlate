@@ -53,6 +53,8 @@ import {
   isPostProcessMaterialForPicker,
   isParticleMaterialAsset,
   isParticleMaterialForPicker,
+  materialDomainsFromAssets,
+  filterInspectorPinPickerAssets,
   classIdFromClassAsset,
   classParentLookup,
   addSelectedAssetGuid,
@@ -1325,6 +1327,7 @@ describe("content-browser-helpers", () => {
   it("lists only authored types in New Asset", () => {
     expect([...CREATABLE_ASSET_TYPES]).toEqual([
       "Scene",
+      "SceneLayer",
       "Class",
       "Sprite",
       "SpriteAnimation",
@@ -1349,6 +1352,7 @@ describe("content-browser-helpers", () => {
 
   it("labels creatable types in Title Case with spaces", () => {
     expect(creatableAssetTypeLabel("Scene")).toBe("Scene");
+    expect(creatableAssetTypeLabel("SceneLayer")).toBe("Scene Layer");
     expect(creatableAssetTypeLabel("AnimationGraph")).toBe("Animation Graph");
     expect(creatableAssetTypeLabel("SpriteAnimation")).toBe("Sprite Animation");
     expect(creatableAssetTypeLabel("MaterialFunction")).toBe("Material Function");
@@ -1493,6 +1497,24 @@ describe("content-browser-helpers", () => {
       new TextDecoder().decode(scene.chunks[0]!.data),
     ) as { name?: string };
     expect(decoded.name).toBe("Arena");
+  });
+
+  it("writes new SceneLayer assets at the current migration schema version", () => {
+    const layer = buildNewAssetResult({
+      type: "SceneLayer",
+      name: "HUD",
+      guid: "layer-1",
+      parentClass: null,
+    });
+    expect(layer.type).toBe("SceneLayer");
+    expect(layer.version).toBe(
+      createDefaultMigrationRegistry().currentVersion("SceneLayer"),
+    );
+    expect(layer.payload.name).toBe("HUD");
+    expect(layer.payload.actors).toEqual([]);
+    expect(newAssetFileName("SceneLayer", "HUD")).toBe(
+      "HUD.scenelayer.babasset",
+    );
   });
 
   it("shows Prefab only for Actor-lineage classes", () => {
@@ -1988,6 +2010,62 @@ describe("content-browser-helpers", () => {
       ]),
     ).toBe(true);
     expect(isParticleMaterialForPicker(sparks, [])).toBe(false);
+  });
+
+  it("maps Material guids to domains from headers and open documents", () => {
+    const bloom = asset({
+      guid: "bloom",
+      type: "Material",
+      path: "assets/Bloom.material.babasset",
+      payload: { domain: "surface" },
+    });
+    const dirt = asset({
+      guid: "dirt",
+      type: "Texture",
+      path: "assets/Dirt.texture.babasset",
+    });
+    expect(materialDomainsFromAssets([bloom, dirt], [])).toEqual({
+      bloom: "surface",
+    });
+    expect(
+      materialDomainsFromAssets([bloom, dirt], [
+        {
+          ref: { kind: "material", path: "assets/Bloom.material.babasset" },
+          content: { domain: "postProcess" },
+        },
+      ]),
+    ).toEqual({ bloom: "postProcess" });
+  });
+
+  it("filters Inspector pin pickers to postProcess Materials on SceneLayer PP nodes", () => {
+    const bloom = asset({
+      guid: "bloom",
+      type: "Material",
+      name: "Bloom",
+      path: "assets/Bloom.material.babasset",
+      payload: { domain: "postProcess" },
+    });
+    const albedo = asset({
+      guid: "albedo",
+      type: "Material",
+      name: "Albedo",
+      path: "assets/Albedo.material.babasset",
+      payload: { domain: "surface" },
+    });
+    const picker = [
+      { guid: "bloom", name: "Bloom", type: "Material", path: bloom.path },
+      { guid: "albedo", name: "Albedo", type: "Material", path: albedo.path },
+    ];
+    expect(
+      filterInspectorPinPickerAssets(picker, [bloom, albedo], [], {
+        nodeType: "scene-layer.registerPostProcess",
+      }).map((entry) => entry.guid),
+    ).toEqual(["bloom"]);
+    expect(
+      filterInspectorPinPickerAssets(picker, [bloom, albedo], [], {
+        nodeType: "audio.play",
+      }),
+    ).toEqual(picker);
   });
 
   it("lists selected folders and assets for Delete confirm, not flattened contents", () => {

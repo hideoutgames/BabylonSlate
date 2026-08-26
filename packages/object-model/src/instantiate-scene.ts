@@ -2,6 +2,7 @@ import type {
   SerializedActor,
   SerializedComponent,
   SerializedScene,
+  SerializedSceneLayer,
   SerializedTransform,
   Transform,
 } from "@babylonslate/core";
@@ -53,7 +54,9 @@ function componentAssetGuid(component: SerializedComponent): string | null {
     stringProp(component.properties, "treeGuid") ??
     stringProp(component.properties, "audioAssetGuid") ??
     stringProp(component.properties, "particleSystemGuid") ??
-    stringProp(component.properties, "fontAssetGuid")
+    stringProp(component.properties, "fontAssetGuid") ??
+    stringProp(component.properties, "textureGuid") ??
+    stringProp(component.properties, "materialGuid")
   );
 }
 
@@ -73,10 +76,22 @@ export function createActorsFromSerializedScene(
   return actors;
 }
 
+export function createActorsFromSerializedSceneLayer(
+  world: World,
+  layer: SerializedSceneLayer,
+  sceneLayerId: string,
+  hooksFor?: SceneActorHooks,
+): Actor[] {
+  return layer.actors.map((serialized) =>
+    createActorFromSerialized(world, serialized, hooksFor, sceneLayerId),
+  );
+}
+
 function createActorFromSerialized(
   world: World,
   serialized: SerializedActor,
   hooksFor?: SceneActorHooks,
+  sceneLayerId?: string,
 ): Actor {
   const actor = world.createActor({
     guid: serialized.id,
@@ -89,6 +104,7 @@ function createActorFromSerialized(
     },
     transform: runtimeTransformFromSerialized(serialized.transform),
     hooks: hooksFor?.(serialized.classId),
+    sceneLayerId: sceneLayerId ?? null,
   });
   for (const component of serialized.components) {
     actor.attachComponent(

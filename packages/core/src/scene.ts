@@ -131,11 +131,23 @@ export interface SceneSettings {
    * default: a full-screen pass is the classic mobile fill-rate cost.
    */
   postProcessStack: ScenePostProcessEntry[];
+  /**
+   * SceneLayer overlays to spawn with this world scene and tear down when it
+   * unloads. Missing keys normalize to [].
+   */
+  sceneLayers: SceneLayerSpawnEntry[];
 }
 
 /** One entry of the scene's ordered post-process chain. */
 export interface ScenePostProcessEntry {
   materialGuid: string;
+  enabled: boolean;
+}
+
+/** World-scene default overlay to spawn with that scene. */
+export interface SceneLayerSpawnEntry {
+  assetGuid: string;
+  zOrder: number;
   enabled: boolean;
 }
 
@@ -188,6 +200,7 @@ export function createDefaultSceneSettings(
     editorJoystickEnabled: true,
     showNavmesh: false,
     postProcessStack: [],
+    sceneLayers: [],
   };
 }
 
@@ -478,6 +491,7 @@ export function normalizeSceneSettings(
     editorJoystickEnabled: source.editorJoystickEnabled !== false,
     showNavmesh: source.showNavmesh === true,
     postProcessStack: normalizeScenePostProcessStack(source.postProcessStack),
+    sceneLayers: normalizeSceneLayerSpawnList(source.sceneLayers),
   };
 }
 
@@ -492,6 +506,23 @@ export function normalizeScenePostProcessStack(
     const materialGuid = record.materialGuid;
     if (typeof materialGuid !== "string" || materialGuid === "") return [];
     return [{ materialGuid, enabled: record.enabled !== false }];
+  });
+}
+
+/** Authored order is the array order; entries default to enabled. */
+export function normalizeSceneLayerSpawnList(
+  value: unknown,
+): SceneLayerSpawnEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const record = entry as Record<string, unknown>;
+    const assetGuid = record.assetGuid;
+    if (typeof assetGuid !== "string" || assetGuid === "") return [];
+    const zRaw = record.zOrder;
+    const zOrder =
+      typeof zRaw === "number" && Number.isFinite(zRaw) ? Math.trunc(zRaw) : 0;
+    return [{ assetGuid, zOrder, enabled: record.enabled !== false }];
   });
 }
 

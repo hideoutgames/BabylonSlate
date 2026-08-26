@@ -18,8 +18,9 @@ import type {
   Result,
   SerializedGraph,
   SerializedScene,
+  SerializedSceneLayer,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, text3DFontGuidsFromScene } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, text3DFontGuidsFromScene } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -161,7 +162,12 @@ import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import {
   classDocumentShowsPrefab,
   classParentLookup,
+  materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
+import {
+  editorTabContentForKind,
+  persistableDocumentContent,
+} from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   copyInstanceLinkage,
@@ -223,6 +229,10 @@ import {
   modelGuidsForPlayRetarget,
   playMaterialGuidsFromSources,
   materialClosureFromGuids,
+  sceneLayerGuidsFromScenes,
+  sceneLayerGuidsFromGraphs,
+  sceneLayerMaterialGuidsFromGraphs,
+  overlayEditorScenesFromLayers,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
@@ -446,17 +456,21 @@ interface DocumentContextValue {
   /** AnimationGraphs referenced by the Play scene (plus any open graph tabs). */
   collectPlayAnimGraphs: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<PlayAnimGraphEntry[]>;
   collectPlayBehaviourTrees: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<PlayBehaviourTreeEntry[]>;
   collectPlayBlackboards: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<PlayBlackboardEntry[]>;
   /** Sprite payloads referenced by the Play scene for clip UV seeks. */
   collectPlaySpritePayloads: (
     scene?: SerializedScene | null,
     graphs?: readonly PlayAnimGraphEntry[],
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, SpritePayload>>;
   /** Sprite Animation clips referenced by loaded Animation Graphs and behaviour trees. */
   collectPlaySpriteAnimationPayloads: (
@@ -465,6 +479,7 @@ interface DocumentContextValue {
   ) => Promise<Map<string, SpriteAnimationPayload>>;
   collectPlayTilemapContent: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<{
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
@@ -484,10 +499,12 @@ interface DocumentContextValue {
   /** Model source bytes for scene MeshComponent `assetGuid`s. */
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, Uint8Array>>;
   /** Model material slots for Play and the editor viewport. */
   collectPlayModelPayloads: (
     scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, import("@babylonslate/assets").ModelPayload>>;
   /** Mixer/channel/attenuation/Audio metadata for Play; source bytes load on first playSound. */
   collectPlayAudio: () => Promise<{
@@ -511,6 +528,14 @@ interface DocumentContextValue {
   collectPlaySceneLibrary: () => Promise<
     Array<{ guid: string; scene: SerializedScene }>
   >;
+  /** SceneLayer documents referenced by Play-library scenes and graph pin defaults. */
+  collectPlaySceneLayers: (
+    scenes: readonly SerializedScene[],
+  ) => Promise<{
+    layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
+    overlayScenes: SerializedScene[];
+    graphMaterialGuids: string[];
+  }>;
   /** Class graph payload from an open tab or disk. */
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
   /** True when a compiled graph changed since the last successful compile (positions ignored). */
@@ -888,11 +913,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (!doc || doc.ref.kind === "content-browser") continue;
         try {
-          const content = await projectService.loadDocument(
+          const loaded = await projectService.loadDocument(
             doc.ref.kind,
             doc.ref.path,
           );
-          documentService.replaceLoadedContent(doc.id, content);
+          documentService.replaceLoadedContent(
+            doc.id,
+            editorTabContentForKind(doc.ref.kind, loaded) as typeof doc.content,
+          );
           editSessionRef.current.dropDocument(doc.id);
         } catch {
           // Deleted or unreadable on disk.
@@ -1278,7 +1306,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           await projectService.saveDocument(
             doc.ref.kind,
             doc.ref.path,
-            doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
+            persistableDocumentContent(doc.ref.kind, doc.content) as
+              | SerializedScene
+              | SerializedSceneLayer
+              | SerializedGraph
+              | Record<string, unknown>,
           );
         }
       }
@@ -1403,7 +1435,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
-          doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
+          persistableDocumentContent(doc.ref.kind, doc.content) as
+            | SerializedScene
+            | SerializedSceneLayer
+            | SerializedGraph
+            | Record<string, unknown>,
         );
       }
     }
@@ -1983,7 +2019,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       options?: { prefabSync?: boolean },
     ): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
-      if (!doc || doc.ref.kind !== "scene" || !doc.content) {
+      if (!doc || !isSceneWorkspaceKind(doc.ref.kind) || !doc.content) {
         return false;
       }
       if (isMutatingApplyBlocked(
@@ -2372,6 +2408,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
+        materialDomains: materialDomainsFromAssets(
+          projectService.registry?.list() ?? [],
+          [...documentService.getState().openDocuments.values()],
+        ),
       }),
     );
     const bundles = [
@@ -2416,6 +2456,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         | "skeleton"
         | "animation"
         | "audio"
+        | "scene-layer"
         | "asset-settings",
       path: string,
     ): Promise<unknown | null> => {
@@ -2434,7 +2475,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const collectPlayAnimGraphs = useCallback(
-    async (scene?: SerializedScene | null): Promise<PlayAnimGraphEntry[]> => {
+    async (
+      scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
+    ): Promise<PlayAnimGraphEntry[]> => {
       const assets = projectService.registry?.list() ?? [];
       const clipCatalog = animClipCatalogFromAssets(assets);
       const byGuid = new Map(
@@ -2450,6 +2494,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       const needed = new Set([
         ...animationGraphGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => animationGraphGuidsFromScene(entry)),
         ...openEntries.map((entry) => entry.guid),
       ]);
       const loaded = new Map<string, unknown>();
@@ -2472,7 +2517,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const collectPlayBehaviourTrees = useCallback(
-    async (scene?: SerializedScene | null): Promise<PlayBehaviourTreeEntry[]> => {
+    async (
+      scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
+    ): Promise<PlayBehaviourTreeEntry[]> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
         assets
@@ -2486,6 +2534,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       const needed = new Set([
         ...behaviourTreeGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => behaviourTreeGuidsFromScene(entry)),
         ...openEntries.map((entry) => entry.guid),
       ]);
       const loaded = new Map<string, unknown>();
@@ -2504,7 +2553,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const collectPlayBlackboards = useCallback(
-    async (scene?: SerializedScene | null): Promise<PlayBlackboardEntry[]> => {
+    async (
+      scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
+    ): Promise<PlayBlackboardEntry[]> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
         assets
@@ -2518,6 +2570,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       );
       const needed = new Set([
         ...blackboardGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => blackboardGuidsFromScene(entry)),
         ...openEntries.map((entry) => entry.guid),
       ]);
       const loaded = new Map<string, unknown>();
@@ -2539,6 +2592,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     async (
       scene?: SerializedScene | null,
       graphs: readonly PlayAnimGraphEntry[] = [],
+      extraScenes: readonly SerializedScene[] = [],
     ): Promise<Map<string, SpritePayload>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
@@ -2549,6 +2603,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       const loaded = new Map<string, unknown>();
       const needed = new Set([
         ...spriteAssetGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => spriteAssetGuidsFromScene(entry)),
         ...spriteAnimationGuidsFromAnimGraphs(graphs),
       ]);
       for (const guid of needed) {
@@ -2601,6 +2656,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayTilemapContent = useCallback(
     async (
       scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
     ): Promise<{
       tilemaps: Map<string, TilemapPayload>;
       tilesets: Map<string, TilesetPayload>;
@@ -2617,7 +2673,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           .map((asset) => [asset.header.guid, asset]),
       );
       const loadedMaps = new Map<string, unknown>();
-      for (const guid of tilemapAssetGuidsFromScene(scene)) {
+      for (const guid of [
+        ...tilemapAssetGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => tilemapAssetGuidsFromScene(entry)),
+      ]) {
         const asset = tilemapsByGuid.get(guid);
         if (!asset) continue;
         const content = await loadPlayAssetContent("tilemap", asset.path);
@@ -2703,7 +2762,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   const collectPlayModelBytes = useCallback(
-    async (scene?: SerializedScene | null): Promise<Map<string, Uint8Array>> => {
+    async (
+      scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
+    ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
         assets.map((asset) => [asset.header.guid, asset] as const),
@@ -2716,7 +2778,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           payload: asset.header.payload,
         }));
       for (const guid of modelGuidsForPlayRetarget(
-        modelAssetGuidsFromScene(scene),
+        [
+          ...modelAssetGuidsFromScene(scene),
+          ...extraScenes.flatMap((entry) => modelAssetGuidsFromScene(entry)),
+        ],
         animationRows,
       )) {
         const asset = byGuid.get(guid);
@@ -2732,6 +2797,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const collectPlayModelPayloads = useCallback(
     async (
       scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
     ): Promise<Map<string, ModelPayload>> => {
       const assets = projectService.registry?.list() ?? [];
       const byGuid = new Map(
@@ -2740,7 +2806,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           .map((asset) => [asset.header.guid, asset] as const),
       );
       const payloads = new Map<string, ModelPayload>();
-      for (const guid of modelAssetGuidsFromScene(scene)) {
+      for (const guid of [
+        ...modelAssetGuidsFromScene(scene),
+        ...extraScenes.flatMap((entry) => modelAssetGuidsFromScene(entry)),
+      ]) {
         const asset = byGuid.get(guid);
         if (!asset) continue;
         const content =
@@ -2930,6 +2999,59 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     }
     return scenes;
   }, [documentService, projectDocument, projectService]);
+
+  const collectPlaySceneLayers = useCallback(
+    async (
+      scenes: readonly SerializedScene[],
+    ): Promise<{
+      layers: Array<{ guid: string; layer: SerializedSceneLayer }>;
+      overlayScenes: SerializedScene[];
+      graphMaterialGuids: string[];
+    }> => {
+      const graphs = (await loadProjectGraphDocuments()).map(
+        (entry) => entry.content,
+      );
+      const needed = [
+        ...sceneLayerGuidsFromScenes(scenes),
+        ...sceneLayerGuidsFromGraphs(graphs),
+      ];
+      const assets = projectService.registry?.list() ?? [];
+      const byGuid = new Map(
+        assets
+          .filter((asset) => asset.header.type === "SceneLayer")
+          .map((asset) => [asset.header.guid, asset]),
+      );
+      const open = documentService.getState().openDocuments;
+      const layers: Array<{ guid: string; layer: SerializedSceneLayer }> = [];
+      for (const guid of needed) {
+        const asset = byGuid.get(guid);
+        if (!asset) continue;
+        const openDoc = open.get(
+          documentId({ kind: "scene-layer", path: asset.path }),
+        );
+        const raw =
+          openDoc?.content ??
+          (await loadPlayAssetContent("scene-layer", asset.path));
+        if (!raw) continue;
+        const layer = persistableDocumentContent(
+          "scene-layer",
+          raw,
+        ) as SerializedSceneLayer;
+        layers.push({ guid, layer });
+      }
+      return {
+        layers,
+        overlayScenes: overlayEditorScenesFromLayers(layers),
+        graphMaterialGuids: sceneLayerMaterialGuidsFromGraphs(graphs),
+      };
+    },
+    [
+      documentService,
+      loadPlayAssetContent,
+      loadProjectGraphDocuments,
+      projectService,
+    ],
+  );
 
   const loadAssetThumbnail = useCallback(
     async (assetGuid: string): Promise<Uint8Array | null> => {
@@ -3327,7 +3449,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      if (doc.ref.kind === "scene") {
+      if (doc.ref.kind === "scene" || doc.ref.kind === "scene-layer") {
         const stack =
           editSessionRef.current.getStack<SerializedScene>(activeDocumentId);
         const content = doc.content as SerializedScene;
@@ -3788,6 +3910,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
+      collectPlaySceneLayers,
       loadGraphDocument,
       graphsNeedCompile: compileSignatureIsStale(
         currentGraphSignature,
@@ -3839,6 +3962,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayParticles,
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
+      collectPlaySceneLayers,
       loadGraphDocument,
       lastCompiledSignature,
       markScriptsCurrent,

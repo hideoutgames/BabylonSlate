@@ -759,4 +759,29 @@ describe("PhysicsWorldSync blocking volume", () => {
     expect(backend.sphereOverlap({ x: 5, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
     sync.dispose();
   });
+
+  it("skips overlay-tagged actors when actorFilter excludes them", () => {
+    const world = createWorld();
+    spawnBoxActor(world, {
+      guid: "world-box",
+      motionType: "static",
+      position: { x: 0, y: 0, z: 0 },
+    });
+    const overlay = spawnBoxActor(world, {
+      guid: "overlay-box",
+      motionType: "static",
+      position: { x: 10, y: 0, z: 0 },
+    });
+    overlay.sceneLayerId = "hud";
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend, {
+      actorFilter: (actor) => actor.sceneLayerId == null,
+    });
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toContain(
+      "world-box",
+    );
+    expect(backend.sphereOverlap({ x: 10, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
+    sync.dispose();
+  });
 });

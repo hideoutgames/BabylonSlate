@@ -107,6 +107,15 @@ import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
+import { SceneLayerCompositor } from "./scene-layer-compositor";
+import {
+  applyOverlayPointer,
+  createOverlayPointerState,
+} from "./scene-layer-pointer";
+import {
+  sceneLayerFrustumSize,
+  walkOverlayPointerHits,
+} from "@babylonslate/core";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
@@ -186,6 +195,12 @@ export interface EngineHandle {
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
   applySceneEnvironment: (sceneData: SerializedScene) => void;
   setShadowQuality: (level: string) => void;
+  /** Overlay Play SceneLayer scenes, back to front. */
+  sceneLayerScenes: () => Array<{
+    layerId: string;
+    scene: Scene;
+    zOrder: number;
+  }>;
   /** Authored camera post-process passes currently attached. */
   postProcessPassCount: () => number;
   /** Unique Material guids currently assigned to Play meshes. */
@@ -352,6 +367,22 @@ export interface CreateEngineOptions {
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
   navBlockers?: readonly NavDebugBlockerPose[] | null;
+  /** Overlay 2DButton graph events (Play compositor). */
+  onSceneLayerPointer?: (event: {
+    layerId: string;
+    actorGuid: string;
+    event:
+      | "onMouseEnter"
+      | "onMouseLeave"
+      | "onClick"
+      | "onPressStart"
+      | "onPressEnd";
+  }) => void;
+  /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
+  onSceneLayerResize?: (size: {
+    frustumWidth: number;
+    frustumHeight: number;
+  }) => void;
 }
 
 export interface EditorTools {
@@ -742,6 +773,65 @@ export function createEngine(
     });
   };
 
+  const sceneLayerCompositor = options.playMode
+    ? new SceneLayerCompositor({
+        engine,
+        postProcessingEnabled: () => postProcessingEnabled,
+        attachLayerPostProcess: (layer, stack) => {
+          attachPostProcessStack({
+            scene: layer.scene,
+            camera: layer.camera,
+            library: materialLibrary,
+            stack: normalizePostProcessStack(stack),
+            documentFor: (guid) => materialDocuments.get(guid) ?? null,
+            deviceBuffers: probePostProcessDeviceBuffers(
+              layer.scene,
+              layer.camera,
+            ),
+            onDiagnostic: (diagnostic) => {
+              lastPostProcessDiagnostics.push(diagnostic);
+              options.onPostProcessDiagnostic?.(diagnostic);
+            },
+          });
+        },
+      })
+    : null;
+  binding.sceneForSlot = (slotId) =>
+    sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
+  const overlayPointerState = createOverlayPointerState();
+
+  const notifyOverlayResize = () => {
+    if (!sceneLayerCompositor) return;
+    const height = Math.max(1, engine.getRenderHeight());
+    const width = Math.max(1, engine.getRenderWidth());
+    const frustum = sceneLayerFrustumSize(width / height);
+    options.onSceneLayerResize?.({
+      frustumWidth: frustum.width,
+      frustumHeight: frustum.height,
+    });
+  };
+
+  const dispatchOverlayPointer = (
+    phase: "move" | "down" | "up",
+    canvasX: number,
+    canvasY: number,
+  ): boolean => {
+    if (!sceneLayerCompositor) return false;
+    const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
+    const walked = walkOverlayPointerHits(
+      sceneLayerCompositor.pickHits(mapped.x, mapped.y),
+    );
+    const events = applyOverlayPointer(
+      overlayPointerState,
+      phase,
+      walked.targets,
+    );
+    for (const event of events) {
+      options.onSceneLayerPointer?.(event);
+    }
+    return walked.blocked;
+  };
+
   const rebuildIfActiveCameraChanged = (
     previous: typeof scene.activeCamera,
   ) => {
@@ -1089,7 +1179,9 @@ export function createEngine(
       editor?.camera.setCanvasHeight(height);
       editor?.camera.updateOrthoBounds(width / height);
     }
+    sceneLayerCompositor?.resize();
     refreshAuthoredCameraLenses(scene);
+    notifyOverlayResize();
   };
 
   let interpAlpha = 1;
@@ -1136,6 +1228,7 @@ export function createEngine(
     beginEngineDrawCallFrame(engine);
     if (rttPresent) rttPresent.bind();
     scene.render();
+    sceneLayerCompositor?.render();
     if (rttPresent) rttPresent.blit();
     lastDrawCalls = readEngineDrawCalls(engine);
     scheduler.noteRendered();
@@ -1167,17 +1260,40 @@ export function createEngine(
   });
 
   // Tap-to-pick: continuous hover picking is off for touch.
+  const overlayPointerCanvasCoords = (event: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
   const onPointerDown = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    if (dispatchOverlayPointer("down", x, y)) {
+      scheduler.invalidate("selection");
+      return;
+    }
     const hit = pickAtCanvas(scene, x, y);
     if (hit) {
       scheduler.invalidate("selection");
     }
   };
+  const onPointerMove = (event: PointerEvent) => {
+    const { x, y } = overlayPointerCanvasCoords(event);
+    dispatchOverlayPointer("move", x, y);
+  };
+  const onPointerUp = (event: PointerEvent) => {
+    const { x, y } = overlayPointerCanvasCoords(event);
+    dispatchOverlayPointer("up", x, y);
+  };
   if (!options.editor) {
     canvas.addEventListener("pointerdown", onPointerDown);
+    if (options.playMode && sceneLayerCompositor) {
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerup", onPointerUp);
+    }
   }
 
   rebuildPostProcessStack();
@@ -1204,6 +1320,8 @@ export function createEngine(
       debugOverlay?.dispose();
       debugOverlay = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
@@ -1214,6 +1332,7 @@ export function createEngine(
       resourceCache.clearClientTextures(scene.uid);
       audioService?.dispose();
       particleService?.dispose();
+      sceneLayerCompositor?.dispose();
       scene.dispose();
       rttPresent?.dispose();
       cacheBinding.releaseHandleRetains();
@@ -1237,7 +1356,9 @@ export function createEngine(
         canvas.height = nextHeight;
       }
       engine.setSize(nextWidth, nextHeight);
+      sceneLayerCompositor?.resize();
       refreshAuthoredCameraLenses(scene);
+      notifyOverlayResize();
     },
     loadScene,
     pushSnapshot: (buffer: Float32Array) => {
@@ -1259,12 +1380,43 @@ export function createEngine(
       playDebugDraw?.applyCommand(command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
+        sceneLayerCompositor?.noteSpawn(
+          command.slotId,
+          command.sceneLayerId,
+          command.actorGuid,
+        );
+      }
+      if (command.type === "despawn") {
+        sceneLayerCompositor?.noteDespawn(command.slotId);
+      }
+      if (command.type === "sceneLayerCreate") {
+        sceneLayerCompositor?.create(command);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "sceneLayerRemove") {
+        sceneLayerCompositor?.remove(command.layerId);
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "sceneLayerClear") {
+        sceneLayerCompositor?.clear();
+        scheduler.invalidate("snapshot");
+      }
+      if (command.type === "sceneLayerPostProcess") {
+        sceneLayerCompositor?.setPostProcess(
+          command.layerId,
+          command.postProcessStack,
+        );
+        scheduler.invalidate("asset");
       }
       audioService?.handleCommand(command);
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         const previousCamera = scene.activeCamera;
-        applyAssignMesh(scene, binding, command);
+        applyAssignMesh(
+          sceneLayerCompositor?.sceneForSlot(command.slotId) ?? scene,
+          binding,
+          command,
+        );
         pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(
@@ -1345,6 +1497,10 @@ export function createEngine(
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
+      const overlayHit = sceneLayerCompositor?.pickAt(mapped.x, mapped.y);
+      if (overlayHit?.blocked || overlayHit?.actorGuid) {
+        return { meshName: overlayHit.meshName, slotId: overlayHit.slotId };
+      }
       const hit = pickAtCanvas(scene, mapped.x, mapped.y);
       return hit
         ? { meshName: hit.meshName, slotId: hit.slotId }
@@ -1445,11 +1601,18 @@ export function createEngine(
       scheduler.invalidate("asset");
     },
     postProcessPassCount: () => attachedStack?.passes.length ?? 0,
+    sceneLayerScenes: () =>
+      (sceneLayerCompositor?.sortedLayers() ?? []).map((layer) => ({
+        layerId: layer.layerId,
+        scene: layer.scene,
+        zOrder: layer.zOrder,
+      })),
     assignedMaterialGuids: () => listAssignedMaterialGuids(binding),
     postProcessDiagnostics: () => lastPostProcessDiagnostics,
     setPostProcessingEnabled: (enabled: boolean) => {
       postProcessingEnabled = enabled;
       rebuildPostProcessStack();
+      sceneLayerCompositor?.refreshPostProcess();
       scheduler.invalidate("asset");
     },
     setTextureBudget: (bytes: number, enabled: boolean) => {

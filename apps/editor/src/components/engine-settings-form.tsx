@@ -43,6 +43,7 @@ const FOCUS_KEEP_SETTING_ROWS: Array<{
   options?: DockWindowOptions;
 }> = [
   { kind: "scene", keepKey: "scene", label: "Scene" },
+  { kind: "scene-layer", keepKey: "scene-layer", label: "Scene Layer" },
   { kind: "graph", keepKey: "graph", label: "Class" },
   { kind: "enum", keepKey: "enum", label: "Enum" },
   { kind: "structure", keepKey: "structure", label: "Structure" },

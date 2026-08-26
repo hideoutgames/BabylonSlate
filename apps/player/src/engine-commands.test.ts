@@ -130,6 +130,42 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["setFreeCam"]);
   });
 
+  it("forwards SceneLayer compositor commands onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "sceneLayerCreate",
+        layerId: "hud",
+        assetGuid: "hud-asset",
+        zOrder: 1,
+        ownerSceneGuid: null,
+        postProcessStack: [],
+      }),
+    ).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, { type: "sceneLayerRemove", layerId: "hud" }),
+    ).toBe(true);
+    expect(applyPlayerEngineCommand(handle, { type: "sceneLayerClear" })).toBe(true);
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "sceneLayerPostProcess",
+        layerId: "hud",
+        postProcessStack: [],
+      }),
+    ).toBe(true);
+    expect(applied).toEqual([
+      "sceneLayerCreate",
+      "sceneLayerRemove",
+      "sceneLayerClear",
+      "sceneLayerPostProcess",
+    ]);
+  });
+
   it("forwards Play visualization commands onto the Engine handle", () => {
     const applied: string[] = [];
     const handle = {

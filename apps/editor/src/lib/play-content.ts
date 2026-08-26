@@ -26,9 +26,11 @@ import {
 import {
   isEditorOnlyAsset,
   parseSkyboxFaces,
+  sceneLayerToEditorScene,
   skyboxFaceGuids,
   type SerializedGraph,
   type SerializedScene,
+  type SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
   materialDependencies,
@@ -156,6 +158,114 @@ export function spriteAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
   return componentGuidsFromScene(scene, "SpriteComponent", ["assetGuid"]);
+}
+
+function pinDefaultFromNodeData(
+  data: Record<string, unknown> | undefined,
+  pinName: string,
+): string | null {
+  if (!data) return null;
+  const properties =
+    data.properties && typeof data.properties === "object"
+      ? (data.properties as Record<string, unknown>)
+      : data;
+  const raw = properties[`default:${pinName}`] ?? properties[pinName];
+  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+}
+
+function serializedGraphNodes(
+  graph: SerializedGraph,
+): SerializedGraph["nodes"] {
+  const nodes = [...graph.nodes];
+  for (const nested of Object.values(graph.functionGraphs ?? {})) {
+    nodes.push(...nested.nodes);
+  }
+  return nodes;
+}
+
+/** SceneLayer asset guids authored on world Scene Options. */
+export function sceneLayerGuidsFromScenes(
+  scenes: readonly (SerializedScene | null | undefined)[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const scene of scenes) {
+    for (const entry of scene?.settings.sceneLayers ?? []) {
+      if (!entry.assetGuid || seen.has(entry.assetGuid)) continue;
+      seen.add(entry.assetGuid);
+      guids.push(entry.assetGuid);
+    }
+  }
+  return guids;
+}
+
+/** SceneLayer asset guids on Create Scene Layer pin defaults. */
+export function sceneLayerGuidsFromGraphs(
+  graphs: readonly SerializedGraph[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const graph of graphs) {
+    for (const node of serializedGraphNodes(graph)) {
+      if (node.type !== "scene-layer.create") continue;
+      const guid = pinDefaultFromNodeData(node.data, "asset");
+      if (!guid || seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
+    }
+  }
+  return guids;
+}
+
+/** Post-process Material guids on SceneLayer Register/Unregister nodes. */
+export function sceneLayerMaterialGuidsFromGraphs(
+  graphs: readonly SerializedGraph[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const graph of graphs) {
+    for (const node of serializedGraphNodes(graph)) {
+      if (
+        node.type !== "scene-layer.registerPostProcess" &&
+        node.type !== "scene-layer.unregisterPostProcess"
+      ) {
+        continue;
+      }
+      const guid = pinDefaultFromNodeData(node.data, "material");
+      if (!guid || seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
+    }
+  }
+  return guids;
+}
+
+export function overlayEditorScenesFromLayers(
+  layers: ReadonlyArray<{ guid: string; layer: SerializedSceneLayer }>,
+): SerializedScene[] {
+  return layers.map((entry) => sceneLayerToEditorScene(entry.layer));
+}
+
+/** Texture guids on overlay 2DTexture components. */
+export function overlayTextureGuidsFromScene(
+  scene: SerializedScene | null | undefined,
+): string[] {
+  return componentGuidsFromScene(scene, "2DTextureComponent", ["textureGuid"]);
+}
+
+export function overlayTextureGuidsFromScenes(
+  scenes: readonly (SerializedScene | null | undefined)[],
+): string[] {
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const scene of scenes) {
+    for (const guid of overlayTextureGuidsFromScene(scene)) {
+      if (seen.has(guid)) continue;
+      seen.add(guid);
+      guids.push(guid);
+    }
+  }
+  return guids;
 }
 
 /** Tilemap asset guids referenced by scene TilemapComponents. */
@@ -420,11 +530,21 @@ export function textureGuidsFromPlayPayloads(
   return guids;
 }
 
-/** Material asset guids referenced by scene MeshComponents. */
+/** Material asset guids referenced by scene MeshComponents and overlay 2DMaterial. */
 export function materialAssetGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
-  return componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]);
+  const guids: string[] = [];
+  const seen = new Set<string>();
+  for (const guid of [
+    ...componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
+  ]) {
+    if (seen.has(guid)) continue;
+    seen.add(guid);
+    guids.push(guid);
+  }
+  return guids;
 }
 
 /** Post-process Material guids authored on the scene, in order. */

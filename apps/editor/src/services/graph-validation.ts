@@ -1782,6 +1782,7 @@ export type ValidateSerializedGraphOptions = {
   knownGuids?: ReadonlySet<string>;
   enums?: TypeSchemas["enums"];
   structs?: TypeSchemas["structs"];
+  materialDomains?: Readonly<Record<string, string>>;
 };
 
 export function validateSerializedGraph(
@@ -1807,6 +1808,7 @@ export function validateSerializedGraph(
         : undefined),
     enums: options.enums,
     structs: options.structs,
+    materialDomains: options.materialDomains,
   };
   if (isLogicGraphPayload(content)) {
     return [

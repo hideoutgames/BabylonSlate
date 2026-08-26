@@ -150,6 +150,7 @@ describe("p7-play-scene-load", () => {
       {
         type: "assignMesh",
         slotId: 0,
+        actorGuid: "actor-1",
         meshAssetGuid: null,
         meshKind: "sphere",
       },
@@ -1347,6 +1348,7 @@ describe("p7-play-scene-load", () => {
       {
         type: "assignMesh",
         slotId: 0,
+        actorGuid: "sky",
         meshAssetGuid: null,
         meshKind: "skybox",
         skybox: {
@@ -1399,6 +1401,7 @@ describe("p7-play-scene-load", () => {
       {
         type: "assignMesh",
         slotId: 0,
+        actorGuid: "label",
         meshAssetGuid: "font-1",
         meshKind: "text3d",
         text3d: {

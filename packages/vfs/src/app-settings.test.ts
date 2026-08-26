@@ -15,6 +15,7 @@ describe("app settings", () => {
     expect(settings.appearance.theme).toBe("system");
     expect(settings.focusKeepPanels).toEqual({
       scene: ["viewport"],
+      "scene-layer": ["viewport"],
       graph: ["graph"],
       enum: ["enum-members"],
       structure: ["structure-members"],
@@ -172,6 +173,7 @@ describe("app settings", () => {
       undoHistoryLength: 50,
     });
     expect(parsed.focusKeepPanels.scene).toEqual(["viewport"]);
+    expect(parsed.focusKeepPanels["scene-layer"]).toEqual(["viewport"]);
     expect(parsed.focusKeepPanels.graph).toEqual(["graph"]);
     expect(parsed.focusKeepPanels.material).toEqual(["material-graph"]);
     expect(parsed.focusKeepPanels["anim-graph"]).toEqual(["anim-graph-graph"]);

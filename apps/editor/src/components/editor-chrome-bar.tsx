@@ -58,7 +58,7 @@ import { useDocuments } from "../context/document-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import type { OpenDocument } from "../services/document-service";
-import { classParentLookup } from "../lib/content-browser-helpers";
+import { classParentLookup, materialDomainsFromAssets } from "../lib/content-browser-helpers";
 import { classIdForGraphPath } from "../services/script-compiler";
 import {
   classHierarchyFromParentOf,
@@ -500,6 +500,10 @@ export function EditorChromeBar({
                             ),
                             enums: typeSchemas.enums,
                             structs: typeSchemas.structs,
+                            materialDomains: materialDomainsFromAssets(
+                              assetRegistry?.list() ?? [],
+                              openDocuments,
+                            ),
                           },
                         ),
                         ...physicsPairingDiagnostics(

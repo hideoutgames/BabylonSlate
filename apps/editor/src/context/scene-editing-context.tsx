@@ -122,6 +122,7 @@ export function SceneEditingProvider({
   children,
   documentId,
   initialViewportMode = "3d",
+  initialViewportShadingMode = "pbr",
   documentViewportMode,
   documentSnapEnabled,
   documentJoystickEnabled,
@@ -132,6 +133,7 @@ export function SceneEditingProvider({
   /** When set, camera pose survives workspace unmount for this document. */
   documentId?: string;
   initialViewportMode?: ViewportMode;
+  initialViewportShadingMode?: ViewportShadingMode;
   /** When the scene document's viewportMode changes (undo/redo/load), sync live mode. */
   documentViewportMode?: ViewportMode;
   /** When the scene document's grid.snapEnabled changes, sync the toolbar toggle. */
@@ -164,7 +166,7 @@ export function SceneEditingProvider({
   const [previewGameCamera, setPreviewGameCamera] = useState(false);
   const [pivotAroundCenter, setPivotAroundCenter] = useState(false);
   const [viewportShadingMode, setViewportShadingMode] =
-    useState<ViewportShadingMode>("pbr");
+    useState<ViewportShadingMode>(initialViewportShadingMode);
   const frameActorHandlerRef = useRef<((actorId: string) => void) | null>(
     null,
   );

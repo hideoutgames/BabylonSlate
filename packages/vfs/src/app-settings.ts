@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const DEFAULT_FOCUS_KEEP_PANELS = {
   scene: ["viewport"],
+  "scene-layer": ["viewport"],
   graph: ["graph"],
   enum: ["enum-members"],
   structure: ["structure-members"],
@@ -134,6 +135,7 @@ export const engineSettingsSchema = z.object({
   focusKeepPanels: z
     .object({
       scene: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.scene),
+      "scene-layer": focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS["scene-layer"]),
       graph: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.graph),
       enum: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.enum),
       structure: focusKeepPanelList(DEFAULT_FOCUS_KEEP_PANELS.structure),

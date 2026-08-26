@@ -10,6 +10,7 @@ import {
   Actor,
   ActorComponent,
   GameInstance,
+  SceneLayer,
   type GameInstanceHooks,
   type LifecycleHooks,
   type TickContext,
@@ -56,6 +57,7 @@ export class World {
   gameInstance: GameInstance | null = null;
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
   private readonly actors: Actor[] = [];
+  private readonly sceneLayers: SceneLayer[] = [];
   private readonly pendingSpawn: Actor[] = [];
   private readonly pendingDestroy: Guid[] = [];
   private started = false;
@@ -123,6 +125,47 @@ export class World {
 
   getActors(): readonly Actor[] {
     return this.actors;
+  }
+
+  getSceneLayers(): readonly SceneLayer[] {
+    return this.sceneLayers;
+  }
+
+  findSceneLayer(guid: Guid): SceneLayer | undefined {
+    return this.sceneLayers.find((layer) => layer.guid === guid);
+  }
+
+  createSceneLayer(options: {
+    classId?: string;
+    guid?: Guid;
+    assetGuid: string;
+    zOrder: number;
+    ownerSceneGuid?: string | null;
+    postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    variables?: Record<string, unknown>;
+    hooks?: LifecycleHooks;
+  }): SceneLayer {
+    const layer = new SceneLayer({
+      ...options,
+      guidFactory: this.guidFactory,
+    });
+    this.sceneLayers.push(layer);
+    layer.callOnCreation();
+    return layer;
+  }
+
+  destroySceneLayer(guid: Guid): void {
+    const index = this.sceneLayers.findIndex((layer) => layer.guid === guid);
+    if (index < 0) return;
+    const layer = this.sceneLayers[index]!;
+    for (const actor of [...this.actors]) {
+      if (actor.sceneLayerId === guid) {
+        this.commitDestroy(actor.guid);
+      }
+    }
+    layer.destroyed = true;
+    layer.callOnDestroyed();
+    this.sceneLayers.splice(index, 1);
   }
 
   findActor(guid: Guid): Actor | undefined {
@@ -238,6 +281,7 @@ export class World {
     hooks?: LifecycleHooks<Actor>;
     implementedInterfaces?: string[];
     transform?: ConstructorParameters<typeof Actor>[0]["transform"];
+    sceneLayerId?: Guid | null;
   }): Actor {
     const defaults = this.classDefaults(options.classId, options);
     return new Actor({

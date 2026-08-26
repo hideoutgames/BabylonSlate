@@ -1,6 +1,7 @@
 import {
   createDefaultSceneSettings,
   identitySerializedTransform,
+  normalizeSceneLayer,
 } from "@babylonslate/core";
 import {
   migrateLegacyShaderPayload,
@@ -212,6 +213,10 @@ export function createDefaultMigrationRegistry(): MigrationRegistry {
   registry.register({
     type: "SkyboxCreator",
     migrations: [(payload) => asRecord(normalizeSkyboxCreatorPayload(payload))],
+  });
+  registry.register({
+    type: "SceneLayer",
+    migrations: [(payload) => asRecord(normalizeSceneLayer(payload))],
   });
   return registry;
 }

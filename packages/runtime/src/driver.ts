@@ -3,28 +3,39 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
   type CommandMessage,
+  type ControlMessage,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
   World,
   createActorsFromSerializedScene,
+  createActorsFromSerializedSceneLayer,
   createWorldSnapshot,
   createDebugInspectSnapshot,
   stringifyWorldSnapshot,
   Actor,
   ActorComponent,
   BObject,
+  SceneLayer,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickPhase,
 } from "@babylonslate/object-model";
 import {
+  createDefaultSceneSettings,
   eulerDegreesToQuaternion,
+  parseSceneLayerAnchor,
+  parseSceneLayerHitTest,
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText3DProperties,
+  sceneLayerAnchorWorldPosition,
+  SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT,
+  SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH,
   type Transform,
+  type SerializedActor,
   type SerializedScene,
+  type SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
   InputRingBuffer,
@@ -136,6 +147,8 @@ export interface RuntimeDriverOptions {
   sceneLibrary?: Readonly<Record<string, SerializedScene>>;
   /** Display name or library key → canonical scene asset guid. */
   sceneGuidByKey?: Readonly<Record<string, string>>;
+  /** Overlay documents the session compositor can instantiate by guid or name. */
+  sceneLayerLibrary?: Readonly<Record<string, SerializedSceneLayer>>;
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
   /** Editor Play / bundled debugger: abort scripts that exceed `loopCount`. */
@@ -198,6 +211,23 @@ export interface RuntimeDriver {
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
+  getOverlayPhysicsSync(): PhysicsWorldSync | null;
+  createSceneLayer(
+    assetGuid: string,
+    zOrder?: number,
+    ownerSceneGuid?: string | null,
+  ): SceneLayer | null;
+  removeSceneLayer(layerGuid: string): void;
+  clearSceneLayers(): void;
+  registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void;
+  unregisterSceneLayerPostProcess(
+    layerGuid: string,
+    materialGuid: string,
+  ): void;
+  applySceneLayerResize(frustumWidth: number, frustumHeight: number): void;
+  applySceneLayerPointer(
+    message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
+  ): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
@@ -291,11 +321,16 @@ class InProcessRuntime implements RuntimeDriver {
   private phasePhysicsMs = 0;
   private readonly scriptHost: ScriptHost;
   private physicsSync: PhysicsWorldSync;
+  private overlayPhysicsSync: PhysicsWorldSync;
+  private readonly overlayGravity: [number, number, number];
+  private overlayFrustumWidth = SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH;
+  private overlayFrustumHeight = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
   private playScene: SerializedScene | undefined;
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
   private readonly sceneLibrary = new Map<string, SerializedScene>();
   private readonly sceneGuidByKey = new Map<string, string>();
+  private readonly sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
   private playWorldRealized = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
@@ -366,6 +401,11 @@ class InProcessRuntime implements RuntimeDriver {
         this.sceneGuidByKey.set(key, guid);
       }
     }
+    if (options.sceneLayerLibrary) {
+      for (const [key, layer] of Object.entries(options.sceneLayerLibrary)) {
+        this.sceneLayerLibrary.set(key, layer);
+      }
+    }
     if (options.playScene) {
       this.sceneLibrary.set(this.playSceneGuid, options.playScene);
       this.sceneGuidByKey.set(this.playSceneGuid, this.playSceneGuid);
@@ -434,19 +474,30 @@ class InProcessRuntime implements RuntimeDriver {
     );
     this.resolver = new InputResolver(mappings);
 
+    this.overlayGravity = [...createDefaultSceneSettings("2d").gravity] as [
+      number,
+      number,
+      number,
+    ];
     this.physicsSync = new PhysicsWorldSync(
       createSoftwarePhysicsBackend(this.physicsWorldKind, {
         x: this.gravity[0],
         y: this.gravity[1],
         z: this.gravity[2],
       }),
+      { actorFilter: (actor) => actor.sceneLayerId == null },
+    );
+    this.overlayPhysicsSync = new PhysicsWorldSync(
+      createSoftwarePhysicsBackend("2d", {
+        x: this.overlayGravity[0],
+        y: this.overlayGravity[1],
+        z: this.overlayGravity[2],
+      }),
+      { actorFilter: (actor) => actor.sceneLayerId != null },
     );
     if (options.tilemaps || options.tilesets) {
-      this.physicsSync.setTileContent({
-        tilemaps: options.tilemaps ?? {},
-        tilesets: options.tilesets ?? {},
-        pixelsPerUnit: options.pixelsPerUnit,
-      });
+      this.bindPhysicsContent(this.physicsSync);
+      this.bindPhysicsContent(this.overlayPhysicsSync);
     }
     if (options.sprites || options.spriteAnimations) {
       this.registerSpriteContent({
@@ -465,6 +516,7 @@ class InProcessRuntime implements RuntimeDriver {
       onPhase: (phase) => this.markPhase(phase),
       onPhysics: (ctx) => {
         this.physicsSync.step(ctx.dt, this.world);
+        this.overlayPhysicsSync.step(ctx.dt, this.world);
         this.dispatchCollisionEvents();
       },
     });
@@ -658,6 +710,20 @@ class InProcessRuntime implements RuntimeDriver {
       changeScene: (scene) => {
         this.applyChangeScene(scene);
       },
+      createSceneLayer: (assetGuid, zOrder) =>
+        this.createSceneLayer(assetGuid, zOrder),
+      removeSceneLayer: (layerGuid) => {
+        this.removeSceneLayer(layerGuid);
+      },
+      clearSceneLayers: () => {
+        this.clearSceneLayers();
+      },
+      registerSceneLayerPostProcess: (layerGuid, materialGuid) => {
+        this.registerSceneLayerPostProcess(layerGuid, materialGuid);
+      },
+      unregisterSceneLayerPostProcess: (layerGuid, materialGuid) => {
+        this.unregisterSceneLayerPostProcess(layerGuid, materialGuid);
+      },
       setRenderResolution: (width, height) => {
         const nextWidth = Math.max(1, Math.round(Number(width) || 0));
         const nextHeight = Math.max(1, Math.round(Number(height) || 0));
@@ -753,17 +819,234 @@ class InProcessRuntime implements RuntimeDriver {
       havokWasmUrl: this.havokWasmUrl,
     });
     this.physicsSync.dispose();
-    this.physicsSync = new PhysicsWorldSync(backend);
-    this.physicsSync.setTileContent({
-      tilemaps: this.tilemaps,
-      tilesets: this.tilesets,
-      pixelsPerUnit: this.pixelsPerUnit,
+    this.physicsSync = new PhysicsWorldSync(backend, {
+      actorFilter: (actor) => actor.sceneLayerId == null,
     });
+    this.bindPhysicsContent(this.physicsSync);
     this.physicsSync.syncFromWorld(this.world);
+
+    const overlayBackend = await createPhysicsBackend({
+      kind: "2d",
+      gravity: {
+        x: this.overlayGravity[0],
+        y: this.overlayGravity[1],
+        z: this.overlayGravity[2],
+      },
+    });
+    this.overlayPhysicsSync.dispose();
+    this.overlayPhysicsSync = new PhysicsWorldSync(overlayBackend, {
+      actorFilter: (actor) => actor.sceneLayerId != null,
+    });
+    this.bindPhysicsContent(this.overlayPhysicsSync);
+    this.overlayPhysicsSync.syncFromWorld(this.world);
   }
 
   getPhysicsSync(): PhysicsWorldSync | null {
     return this.physicsSync;
+  }
+
+  getOverlayPhysicsSync(): PhysicsWorldSync | null {
+    return this.overlayPhysicsSync;
+  }
+
+  createSceneLayer(
+    assetGuid: string,
+    zOrder = 0,
+    ownerSceneGuid: string | null = null,
+  ): SceneLayer | null {
+    const guid = String(assetGuid ?? "").trim();
+    const document = this.sceneLayerLibrary.get(guid);
+    if (!document) {
+      this.emit({
+        type: "log",
+        severity: "warning",
+        category: "scene-layer",
+        message: `createSceneLayer: no SceneLayer asset loaded for ${guid}`,
+        frameId: this.frameId,
+      });
+      return null;
+    }
+    if (this.world.getSceneLayers().length === 0) {
+      this.overlayPhysicsSync.getBackend().setGravity({
+        x: document.settings.gravity[0],
+        y: document.settings.gravity[1],
+        z: document.settings.gravity[2],
+      });
+    }
+    const layer = this.world.createSceneLayer({
+      assetGuid: guid,
+      zOrder: Math.trunc(Number(zOrder) || 0),
+      ownerSceneGuid,
+      postProcessStack: document.settings.postProcessStack.map((entry) => ({
+        ...entry,
+      })),
+    });
+    this.emit({
+      type: "sceneLayerCreate",
+      layerId: layer.guid,
+      assetGuid: guid,
+      zOrder: layer.zOrder,
+      ownerSceneGuid: layer.ownerSceneGuid,
+      postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
+    });
+    const remapped = remapOverlaySerializedActors(
+      document.actors,
+      layer.guid,
+      (id) => this.world.findActor(id) != null,
+    );
+    const actors = createActorsFromSerializedSceneLayer(
+      this.world,
+      { ...document, actors: remapped },
+      layer.guid,
+      (classId) => {
+        const hooks = this.scriptHost.hooksFor(classId);
+        if (!hooks) return undefined;
+        return {
+          onCreation: (self) => this.guardScript(() => hooks.onCreation?.(self)),
+          onTick: (self, ctx) =>
+            this.guardScript(() => hooks.onTick?.(self, ctx)),
+          onDestroyed: (self) =>
+            this.guardScript(() => hooks.onDestroyed?.(self)),
+        };
+      },
+    );
+    for (const actor of actors) {
+      this.scriptHost.bindInterfaceHandlers(actor);
+      this.applyOverlayAnchor(actor);
+      this.realizeActor(actor);
+    }
+    return layer;
+  }
+
+  removeSceneLayer(layerGuid: string): void {
+    const layer = this.world.findSceneLayer(layerGuid);
+    if (!layer) return;
+    for (const actor of [...this.world.getActors()]) {
+      if (actor.sceneLayerId !== layer.guid) continue;
+      this.emitAudioStops(actor);
+      this.emitParticleStops(actor);
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId !== undefined) {
+        this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
+        this.slotByGuid.delete(actor.guid);
+      }
+    }
+    this.world.destroySceneLayer(layer.guid);
+    this.emit({ type: "sceneLayerRemove", layerId: layer.guid });
+  }
+
+  clearSceneLayers(): void {
+    for (const layer of [...this.world.getSceneLayers()]) {
+      this.removeSceneLayer(layer.guid);
+    }
+    this.emit({ type: "sceneLayerClear" });
+  }
+
+  registerSceneLayerPostProcess(layerGuid: string, materialGuid: string): void {
+    const layer = this.world.findSceneLayer(layerGuid);
+    const guid = String(materialGuid ?? "").trim();
+    if (!layer || !guid) return;
+    layer.postProcessStack.push({ materialGuid: guid, enabled: true });
+    this.emitSceneLayerPostProcess(layer);
+  }
+
+  unregisterSceneLayerPostProcess(
+    layerGuid: string,
+    materialGuid: string,
+  ): void {
+    const layer = this.world.findSceneLayer(layerGuid);
+    const guid = String(materialGuid ?? "").trim();
+    if (!layer || !guid) return;
+    const index = layer.postProcessStack.findIndex(
+      (entry) => entry.materialGuid === guid,
+    );
+    if (index < 0) {
+      this.emit({
+        type: "log",
+        severity: "error",
+        category: "scene-layer",
+        message: `SceneLayer post-process ${guid} is not registered on layer ${layer.guid}`,
+        frameId: this.frameId,
+      });
+      return;
+    }
+    layer.postProcessStack.splice(index, 1);
+    this.emitSceneLayerPostProcess(layer);
+  }
+
+  applySceneLayerResize(frustumWidth: number, frustumHeight: number): void {
+    const width = Number(frustumWidth);
+    const height = Number(frustumHeight);
+    if (!Number.isFinite(width) || width <= 0) return;
+    if (!Number.isFinite(height) || height <= 0) return;
+    this.overlayFrustumWidth = width;
+    this.overlayFrustumHeight = height;
+    for (const actor of this.world.getActors()) {
+      this.applyOverlayAnchor(actor);
+    }
+    this.overlayPhysicsSync.syncFromWorld(this.world);
+  }
+
+  applySceneLayerPointer(
+    message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
+  ): void {
+    const actor = this.world.findActor(message.actorGuid);
+    if (!actor || actor.destroyed || !actor.sceneLayerId) return;
+    if (
+      !actor.components.some(
+        (component) =>
+          component.classId === "2DButtonComponent" && !component.destroyed,
+      )
+    ) {
+      return;
+    }
+    this.scriptHost.invokeEvent(actor.classId, message.event, actor);
+  }
+
+  private applyOverlayAnchor(actor: Actor): void {
+    if (!actor.sceneLayerId) return;
+    const anchorComp = actor.components.find(
+      (component) =>
+        component.classId === "2DAnchorComponent" && !component.destroyed,
+    );
+    if (!anchorComp) return;
+    const pos = sceneLayerAnchorWorldPosition(
+      parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
+      Number(anchorComp.getVariable("offsetX")) || 0,
+      Number(anchorComp.getVariable("offsetY")) || 0,
+      this.overlayFrustumWidth,
+      this.overlayFrustumHeight,
+    );
+    actor.transform.position.x = pos.x;
+    actor.transform.position.y = pos.y;
+  }
+
+  private emitSceneLayerPostProcess(layer: SceneLayer): void {
+    this.emit({
+      type: "sceneLayerPostProcess",
+      layerId: layer.guid,
+      postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
+    });
+  }
+
+  private spawnOwnedSceneLayers(): void {
+    for (const entry of this.playScene?.settings.sceneLayers ?? []) {
+      if (!entry.enabled) continue;
+      this.createSceneLayer(entry.assetGuid, entry.zOrder, this.playSceneGuid);
+    }
+  }
+
+  private bindPhysicsContent(sync: PhysicsWorldSync): void {
+    sync.setTileContent({
+      tilemaps: this.tilemaps,
+      tilesets: this.tilesets,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
+    sync.setSpriteContent({
+      sprites: this.sprites,
+      spriteAnimations: this.spriteAnimations,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -871,6 +1154,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.registerNavObstacles();
       this.attemptPossessViewTarget();
       this.world.loadScene(this.playSceneGuid);
+      this.spawnOwnedSceneLayers();
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
     }
@@ -911,7 +1195,14 @@ class InProcessRuntime implements RuntimeDriver {
       this.world.loadScene(key);
       return;
     }
+    const departingSceneGuid = this.playSceneGuid;
+    for (const layer of [...this.world.getSceneLayers()]) {
+      if (layer.ownerSceneGuid === departingSceneGuid) {
+        this.removeSceneLayer(layer.guid);
+      }
+    }
     for (const actor of [...this.world.getActors()]) {
+      if (actor.sceneLayerId) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       this.emitAudioStops(actor);
       this.emitParticleStops(actor);
@@ -1039,6 +1330,11 @@ class InProcessRuntime implements RuntimeDriver {
       tilesets: this.tilesets,
       pixelsPerUnit: this.pixelsPerUnit,
     });
+    this.overlayPhysicsSync.setTileContent({
+      tilemaps: this.tilemaps,
+      tilesets: this.tilesets,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
   }
 
   registerSpriteContent(options: {
@@ -1060,6 +1356,11 @@ class InProcessRuntime implements RuntimeDriver {
       this.pixelsPerUnit = options.pixelsPerUnit;
     }
     this.physicsSync.setSpriteContent({
+      sprites: this.sprites,
+      spriteAnimations: this.spriteAnimations,
+      pixelsPerUnit: this.pixelsPerUnit,
+    });
+    this.overlayPhysicsSync.setSpriteContent({
       sprites: this.sprites,
       spriteAnimations: this.spriteAnimations,
       pixelsPerUnit: this.pixelsPerUnit,
@@ -2007,13 +2308,20 @@ class InProcessRuntime implements RuntimeDriver {
           component.classId === "TilemapComponent" ||
           component.classId === "SkyboxComponent" ||
           component.classId === "Text3DComponent" ||
+          component.classId === "2DTextureComponent" ||
+          component.classId === "2DMaterialComponent" ||
+          component.classId === "2DButtonComponent" ||
           (component.classId === "ColliderComponent" &&
             component.getVariable("renderInGame") === true)),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
       const meshKind = playMeshKindOf(primary);
-      const assetGuid = primary.assetGuid ?? primary.getVariable("assetGuid");
+      const assetGuid =
+        primary.assetGuid ??
+        primary.getVariable("assetGuid") ??
+        primary.getVariable("textureGuid") ??
+        primary.getVariable("materialGuid");
       const renderableIds = new Set(renderables.map((component) => component.guid));
       const componentsByGuid = new Map(
         actor.components.map((component) => [component.guid, component]),
@@ -2041,6 +2349,17 @@ class InProcessRuntime implements RuntimeDriver {
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
+        actorGuid: actor.guid,
+        ...(actor.sceneLayerId
+          ? {
+              hitTest: overlayHitTestOf(actor),
+              hasButton: actor.components.some(
+                (component) =>
+                  component.classId === "2DButtonComponent" &&
+                  !component.destroyed,
+              ),
+            }
+          : {}),
         ...(skyboxComp
           ? {
               skybox: {
@@ -2175,7 +2494,12 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private dispatchCollisionEvents(): void {
-    const events = this.physicsSync.getBackend().pollContacts();
+    this.dispatchPhysicsContacts(this.physicsSync);
+    this.dispatchPhysicsContacts(this.overlayPhysicsSync);
+  }
+
+  private dispatchPhysicsContacts(sync: PhysicsWorldSync): void {
+    const events = sync.getBackend().pollContacts();
     for (const event of events) {
       const actorA = this.world.findActor(event.actorAId);
       const actorB = this.world.findActor(event.actorBId);
@@ -2425,6 +2749,7 @@ class InProcessRuntime implements RuntimeDriver {
       slotId,
       actorGuid: actor.guid,
       classId: actor.classId,
+      ...(actor.sceneLayerId ? { sceneLayerId: actor.sceneLayerId } : {}),
     });
     return slotId;
   }
@@ -2465,6 +2790,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.finalizeTrace();
     this.world.end();
     this.physicsSync.dispose();
+    this.overlayPhysicsSync.dispose();
   }
 
   pause(): void {
@@ -2735,11 +3061,34 @@ class InProcessRuntime implements RuntimeDriver {
   }
 }
 
+function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {
+  const button = actor.components.find(
+    (component) =>
+      component.classId === "2DButtonComponent" && !component.destroyed,
+  );
+  if (button) {
+    return parseSceneLayerHitTest(button.getVariable("hitTest"), "block");
+  }
+  const visual = actor.components.find(
+    (component) =>
+      (component.classId === "2DTextureComponent" ||
+        component.classId === "2DMaterialComponent") &&
+      !component.destroyed,
+  );
+  if (visual) {
+    return parseSceneLayerHitTest(visual.getVariable("hitTest"), "ignore");
+  }
+  return "ignore";
+}
+
 function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
   if (component.classId === "SkyboxComponent") return "skybox";
   if (component.classId === "Text3DComponent") return "text3d";
+  if (component.classId === "2DTextureComponent") return "2dtexture";
+  if (component.classId === "2DMaterialComponent") return "2dmaterial";
+  if (component.classId === "2DButtonComponent") return "2dbutton";
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");
     return `collider:${JSON.stringify(shape ?? {})}`;
@@ -2896,5 +3245,29 @@ function navPointFromUnknown(value: unknown): NavPoint | null {
     y: typeof row.y === "number" && Number.isFinite(row.y) ? row.y : 0,
     z: typeof row.z === "number" && Number.isFinite(row.z) ? row.z : 0,
   };
+}
+
+function remapOverlaySerializedActors(
+  actors: readonly SerializedActor[],
+  layerId: string,
+  isTaken: (id: string) => boolean,
+): SerializedActor[] {
+  const idMap = new Map<string, string>();
+  const used = new Set<string>();
+  for (const actor of actors) {
+    let id = actor.id;
+    if (isTaken(id) || used.has(id)) {
+      id = `${layerId}:${actor.id}`;
+    }
+    idMap.set(actor.id, id);
+    used.add(id);
+  }
+  return actors.map((actor) => ({
+    ...actor,
+    id: idMap.get(actor.id) ?? actor.id,
+    parentId: actor.parentId
+      ? (idMap.get(actor.parentId) ?? actor.parentId)
+      : null,
+  }));
 }
 

@@ -47,7 +47,12 @@ vi.mock("../context/graph-editing-context", () => ({
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     assetRegistry: { list: () => [] },
+    openDocuments: [],
   }),
+}));
+
+vi.mock("../context/document-workspace-context", () => ({
+  useDocumentWorkspace: () => ({ documentId: "graph:assets/Hero.class.babasset" }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({

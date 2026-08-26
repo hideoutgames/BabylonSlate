@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDefaultScene } from "@babylonslate/core";
+import { createDefaultScene, createDefaultSceneLayer } from "@babylonslate/core";
 import type { IndexedAsset } from "@babylonslate/assets";
 import { loadExportDocuments } from "./export-game-inputs";
 
@@ -527,5 +527,40 @@ describe("loadExportDocuments", () => {
       source: glb,
     });
     expect(loaded.payloadByGuid("hero-model")).toMatchObject({ importScale: 4 });
+  });
+
+  it("serializes SceneLayer documents as JSON payloads", async () => {
+    const layer = createDefaultSceneLayer();
+    layer.name = "HUD";
+    const kinds: string[] = [];
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Hud.scenelayer.babasset",
+          header: {
+            guid: "hud",
+            type: "SceneLayer",
+            name: "HUD",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: {},
+            chunks: [],
+          },
+        },
+      ],
+      loadDocument: async (kind) => {
+        kinds.push(kind);
+        return layer;
+      },
+      readAssetChunk: async () => null,
+    });
+    expect(kinds).toEqual(["scene-layer"]);
+    expect(loaded.payloadByGuid("hud")).toMatchObject({ name: "HUD" });
+    expect(
+      JSON.parse(new TextDecoder().decode(loaded.bytesByGuid("hud")!)).name,
+    ).toBe("HUD");
   });
 });

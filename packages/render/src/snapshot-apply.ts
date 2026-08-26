@@ -1,4 +1,5 @@
 import {
+  Color3,
   DirectionalLight,
   Mesh,
   MeshBuilder,
@@ -6,6 +7,7 @@ import {
   Quaternion,
   Scene,
   SpotLight,
+  StandardMaterial,
   UniversalCamera,
   Vector3,
   type AbstractMesh,
@@ -120,6 +122,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   componentMaterialGuids: Map<string, string | null>;
   /** Resolves an assigned Material guid to a scene-local compiled material. */
   resolveMaterial?: (assetGuid: string) => Material | null;
+  /** Overlay Play: create missing visuals in the SceneLayer scene for this slot. */
+  sceneForSlot?: (slotId: number) => Scene | null;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
@@ -386,11 +390,34 @@ export function applyAssignMesh(
   }
   const rebuilt = createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
+  stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   syncPlayFillLight(scene, binding);
+}
+
+function stampOverlayPick(
+  mesh: Mesh,
+  command: AssignMeshCommand,
+): void {
+  if (!command.hitTest && !command.actorGuid) return;
+  const apply = (target: AbstractMesh) => {
+    target.metadata = {
+      ...(typeof target.metadata === "object" && target.metadata
+        ? target.metadata
+        : {}),
+      overlayHitTest: command.hitTest,
+      overlayActorGuid: command.actorGuid,
+      overlayHasButton: command.hasButton === true,
+    };
+    if (command.hitTest) {
+      target.isPickable = command.hitTest !== "ignore";
+    }
+  };
+  apply(mesh);
+  for (const child of mesh.getChildMeshes()) apply(child);
 }
 
 function playMeshMetadata(
@@ -603,6 +630,27 @@ export function createPlayMesh(
     }
     return mesh;
   }
+  if (
+    meshKind === "2dtexture" ||
+    meshKind === "2dmaterial" ||
+    meshKind === "2dbutton"
+  ) {
+    const mesh = MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+    const material = new StandardMaterial(`${name}-unlit`, scene);
+    material.disableLighting = true;
+    material.emissiveColor = Color3.White();
+    material.diffuseColor = Color3.White();
+    material.backFaceCulling = false;
+    mesh.material = material;
+    mesh.isPickable = meshKind === "2dbutton";
+    if (meshKind === "2dtexture") {
+      applyAlbedoTexture(mesh, scene, assetGuid, binding);
+    } else if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
+      const compiled = binding.resolveMaterial(assetGuid);
+      if (compiled) mesh.material = compiled;
+    }
+    return mesh;
+  }
   if (assetGuid) {
     const root = createModelActorRoot(scene, name);
     const bytes = binding?.modelBytes?.get(assetGuid);
@@ -722,7 +770,11 @@ export function applySnapshotToScene(
       live.add(actor.slotId);
       let mesh = binding.meshes.get(actor.slotId);
       if (!mesh) {
-        mesh = createPlayVisual(scene, actor.slotId, binding);
+        mesh = createPlayVisual(
+          binding.sceneForSlot?.(actor.slotId) ?? scene,
+          actor.slotId,
+          binding,
+        );
         binding.meshes.set(actor.slotId, mesh);
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
       }

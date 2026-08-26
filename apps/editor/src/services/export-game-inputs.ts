@@ -38,6 +38,7 @@ const JSON_TYPES = new Set([
   "ParticleEmitter",
   "ParticleSystem",
   "Animation",
+  "SceneLayer",
 ]);
 
 const encoder = new TextEncoder();

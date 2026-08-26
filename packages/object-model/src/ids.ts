@@ -2,6 +2,8 @@
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
   "Actor",
+  "SceneLayer",
+  "SceneLayerActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -35,10 +37,40 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "NavMeshComponent",
   "NavMeshBlockerComponent",
   "BlockingVolumeComponent",
+  "2DAnchorComponent",
+  "2DButtonComponent",
+  "2DMaterialComponent",
+  "2DTextureComponent",
 ] as const;
 
 export type EngineComponentClassId =
   (typeof ENGINE_COMPONENT_CLASS_IDS)[number];
+
+export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
+  "2DAnchorComponent",
+  "2DButtonComponent",
+  "2DMaterialComponent",
+  "2DTextureComponent",
+] as const;
+
+export type SceneLayerExclusiveComponentClassId =
+  (typeof SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS)[number];
+
+const SCENE_LAYER_DENIED_COMPONENTS = new Set([
+  "SkyboxComponent",
+  "CameraComponent",
+  "LightComponent",
+]);
+
+export function isSceneLayerAllowedComponent(classId: string): boolean {
+  return !SCENE_LAYER_DENIED_COMPONENTS.has(classId);
+}
+
+export function isSceneLayerExclusiveComponent(classId: string): boolean {
+  return (SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS as readonly string[]).includes(
+    classId,
+  );
+}
 
 /** Engine types that must not be reparented (bases, components, BT builtins). */
 export function isLockedEngineClassId(classId: string): boolean {

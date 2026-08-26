@@ -4,6 +4,9 @@ import { createDefaultBehaviourTree } from "@babylonslate/behaviour-tree";
 import {
   createActor,
   createDefaultScene,
+  createDefaultSceneLayer,
+  sceneLayerToEditorScene,
+  type SerializedGraph,
 } from "@babylonslate/core";
 import {
   createDefaultSpriteAnimationPayload,
@@ -43,6 +46,11 @@ import {
   playMaterialGuidsFromSources,
   playSceneByGuid,
   materialClosureFromGuids,
+  overlayEditorScenesFromLayers,
+  overlayTextureGuidsFromScene,
+  sceneLayerGuidsFromGraphs,
+  sceneLayerGuidsFromScenes,
+  sceneLayerMaterialGuidsFromGraphs,
 } from "./play-content";
 
 describe("collectPlayScriptDocuments", () => {
@@ -632,6 +640,105 @@ describe("readPlayNavmeshBytes", () => {
     expect(
       await readPlayNavmeshBytes("assets/Main.scene.babasset", async () => null),
     ).toBeNull();
+  });
+});
+
+describe("SceneLayer Play collection", () => {
+  it("collects SceneLayer guids from every Play-library scene spawn list", () => {
+    const main = createDefaultScene();
+    main.settings.sceneLayers = [
+      { assetGuid: "hud", zOrder: 0, enabled: true },
+      { assetGuid: "pause", zOrder: 1, enabled: false },
+    ];
+    const other = createDefaultScene();
+    other.settings.sceneLayers = [
+      { assetGuid: "hud", zOrder: 2, enabled: true },
+      { assetGuid: "minimap", zOrder: 3, enabled: true },
+    ];
+    expect(sceneLayerGuidsFromScenes([main, other])).toEqual([
+      "hud",
+      "pause",
+      "minimap",
+    ]);
+  });
+
+  it("collects SceneLayer guids from Create Scene Layer pin defaults, including function graphs", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "create",
+          type: "scene-layer.create",
+          position: { x: 0, y: 0 },
+          data: { properties: { "default:asset": "pause-menu" } },
+        },
+      ],
+      edges: [],
+      functionGraphs: {
+        fn1: {
+          nodes: [
+            {
+              id: "create-fn",
+              type: "scene-layer.create",
+              position: { x: 0, y: 0 },
+              data: { "default:asset": "inventory" },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    expect(sceneLayerGuidsFromGraphs([graph])).toEqual([
+      "pause-menu",
+      "inventory",
+    ]);
+  });
+
+  it("collects overlay 2DTexture and 2DMaterial guids from converted layer scenes", () => {
+    const layer = createDefaultSceneLayer();
+    layer.actors.push(
+      createActor("banner", "Banner", {
+        classId: "SceneLayerActor",
+        components: [
+          {
+            id: "tex",
+            classId: "2DTextureComponent",
+            properties: { textureGuid: "tex-banner" },
+          },
+          {
+            id: "mat",
+            classId: "2DMaterialComponent",
+            properties: { materialGuid: "mat-unlit" },
+          },
+          {
+            id: "sprite",
+            classId: "SpriteComponent",
+            properties: { assetGuid: "sprite-hud" },
+          },
+        ],
+      }),
+    );
+    const scenes = overlayEditorScenesFromLayers([
+      { guid: "hud", layer },
+    ]);
+    expect(scenes).toEqual([sceneLayerToEditorScene(layer)]);
+    expect(overlayTextureGuidsFromScene(scenes[0])).toEqual(["tex-banner"]);
+    expect(materialAssetGuidsFromScene(scenes[0])).toEqual(["mat-unlit"]);
+    expect(spriteAssetGuidsFromScene(scenes[0])).toEqual(["sprite-hud"]);
+  });
+
+  it("collects Register Scene Layer Post-processing material pin defaults", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "pp",
+          type: "scene-layer.registerPostProcess",
+          position: { x: 0, y: 0 },
+          data: { properties: { "default:material": "pp-blur" } },
+        },
+      ],
+      edges: [],
+    };
+    expect(sceneLayerMaterialGuidsFromGraphs([graph])).toEqual(["pp-blur"]);
   });
 });
 

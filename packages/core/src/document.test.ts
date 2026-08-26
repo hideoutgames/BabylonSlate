@@ -12,6 +12,7 @@ import {
   documentKindLabel,
   isAssetDocumentKind,
   isClosableDocumentKind,
+  isSceneWorkspaceKind,
   isContentBrowserId,
   isLogicGraphAssetType,
   labelFromPath,
@@ -55,6 +56,22 @@ describe("P9 document kinds", () => {
     expect(isAssetDocumentKind("ui")).toBe(false);
     expect(parseDocumentId("ui:assets/hud.ui.babasset")).toBeNull();
     expect(ASSET_DOCUMENT_KINDS).not.toContain("ui");
+  });
+
+  it("opens SceneLayer as its own 2D overlay document kind", () => {
+    expect(documentKindForAssetType("SceneLayer")).toBe("scene-layer");
+    expect(assetTypeForDocumentKind("scene-layer")).toBe("SceneLayer");
+    expect(documentKindLabel("scene-layer")).toBe("Scene Layer");
+    expect(isAssetDocumentKind("scene-layer")).toBe(true);
+    expect(isSceneWorkspaceKind("scene")).toBe(true);
+    expect(isSceneWorkspaceKind("scene-layer")).toBe(true);
+    expect(isSceneWorkspaceKind("graph")).toBe(false);
+    expect(labelFromPath("assets/hud.scenelayer.babasset")).toBe("Hud");
+    expect(
+      createDocumentRef("scene-layer", "assets/hud.scenelayer.babasset", {
+        name: "HUD",
+      }).label,
+    ).toBe("HUD Scene Layer");
   });
 
   it("maps Sprite / AnimationGraph kinds", () => {

@@ -8,6 +8,8 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | --- | --- |
 | `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed` |
 | `Actor` | World-placed object with transform and ordered component list |
+| `SceneLayer` | Session overlay instance (`BObject`); not an Actor |
+| `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
 | `ActorComponent` | Attached to an Actor; own tick |
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
 | `World` | Owns GameInstance, actors in spawn order, RNG, deferred destroy, snapshot. `createActor` / `createComponent` / `createGameInstance` apply inherited variable defaults and interface guids from `ClassRegistry` (caller overrides win). |
@@ -18,6 +20,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
+| `createActorsFromSerializedSceneLayer` | Overlay actors from a `SerializedSceneLayer` (stamped `sceneLayerId`) |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
 

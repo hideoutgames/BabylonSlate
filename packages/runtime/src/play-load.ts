@@ -1,5 +1,5 @@
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
-import { type SerializedScene } from "@babylonslate/core";
+import { type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
 import {
   createInProcessRuntime,
   type RuntimeDriver,
@@ -26,6 +26,7 @@ export function runtimeOptionsFromLoadControl(
   | "gameInstanceClass"
   | "sceneLibrary"
   | "sceneGuidByKey"
+  | "sceneLayerLibrary"
   | "includeDebugCommands"
   | "infiniteLoopDetection"
   | "loopCount"
@@ -34,12 +35,19 @@ export function runtimeOptionsFromLoadControl(
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
+  const sceneLayerLibrary: Record<string, SerializedSceneLayer> = {};
   for (const entry of msg.scenes ?? []) {
     sceneLibrary[entry.guid] = entry.scene;
     sceneGuidByKey[entry.guid] = entry.guid;
     if (entry.scene.name) {
       sceneLibrary[entry.scene.name] = entry.scene;
       sceneGuidByKey[entry.scene.name] = entry.guid;
+    }
+  }
+  for (const entry of msg.sceneLayers ?? []) {
+    sceneLayerLibrary[entry.guid] = entry.layer;
+    if (entry.layer.name) {
+      sceneLayerLibrary[entry.layer.name] = entry.layer;
     }
   }
   return {
@@ -54,6 +62,8 @@ export function runtimeOptionsFromLoadControl(
     sceneLibrary: Object.keys(sceneLibrary).length > 0 ? sceneLibrary : undefined,
     sceneGuidByKey:
       Object.keys(sceneGuidByKey).length > 0 ? sceneGuidByKey : undefined,
+    sceneLayerLibrary:
+      Object.keys(sceneLayerLibrary).length > 0 ? sceneLayerLibrary : undefined,
     includeDebugCommands: msg.includeDebugCommands,
     infiniteLoopDetection: msg.infiniteLoopDetection,
     loopCount: msg.loopCount,
@@ -82,6 +92,7 @@ const NON_ACTOR_SCRIPT_CLASS_IDS = new Set([
   "FunctionLibrary",
   "EditorUtilityObject",
   "EditorFunctionLibrary",
+  "SceneLayer",
 ]);
 
 /** GameInstance, FunctionLibrary, and editor classes are never spawned as Actors. */

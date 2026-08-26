@@ -20,6 +20,10 @@ export const SEARCH_CATALOG_CLASS_IDS: readonly string[] = [
   "NavAgentComponent",
   "AudioComponent",
   "ParticleComponent",
+  "2DAnchorComponent",
+  "2DButtonComponent",
+  "2DMaterialComponent",
+  "2DTextureComponent",
 ];
 
 const nodeRegistry = createDefaultNodeRegistry();

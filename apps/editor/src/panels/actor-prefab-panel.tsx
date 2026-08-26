@@ -5,6 +5,7 @@ import {
   TreeView,
   TypeVisualIcon,
   resolveTypeVisual,
+  walkAncestry,
   type TreeViewNode,
 } from "@babylonslate/editor-kit";
 import { Badge } from "@babylonslate/ui/components/badge";
@@ -25,6 +26,11 @@ import {
   projectAddComponentItems,
 } from "./add-component-catalog";
 import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
+import {
+  classIdFromClassAsset,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 
 export function flattenPrefabComponents(
   components: readonly PrefabComponentView[],
@@ -90,12 +96,22 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
     removeSelected,
     reparentComponent,
   } = usePrefabEditing();
-  const { assetRegistry } = useDocuments();
+  const { assetRegistry, openDocuments } = useDocuments();
+  const { documentId } = useDocumentWorkspace();
   const { setSelectedMemberId, setSelectedNodeIds } = useGraphEditing();
   const { frameActor } = useSceneEditing();
   const [addOpen, setAddOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const listedAssets = assetRegistry?.list() ?? [];
+  const overlay = useMemo(() => {
+    const doc = openDocuments.find((entry) => entry.id === documentId);
+    const indexed = listedAssets.find((asset) => asset.path === doc?.ref.path);
+    if (!indexed) return false;
+    return walkAncestry(
+      classIdFromClassAsset(indexed),
+      classParentLookup(listedAssets),
+    ).includes("SceneLayerActor");
+  }, [documentId, listedAssets, openDocuments]);
 
   const nodes = useMemo(
     () =>
@@ -183,6 +199,7 @@ export function ActorPrefabPanel(_props: IDockviewPanelProps) {
         onOpenChange={setAddOpen}
         onSelect={addComponent}
         projectItems={projectItems}
+        overlay={overlay}
         data-testid="prefab-add-component-catalog"
       />
     </PanelFrame>

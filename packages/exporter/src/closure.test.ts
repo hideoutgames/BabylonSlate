@@ -782,4 +782,82 @@ describe("collectExportClosure", () => {
     expect(result.value).not.toContain("mat-1");
     expect(result.value).not.toContain("unused-mat");
   });
+
+  it("includes SceneLayer documents from scene spawn lists, graphs, and overlay actor assets", () => {
+    const scene: SerializedScene = {
+      ...createDefaultScene(),
+      settings: {
+        ...createDefaultScene().settings,
+        sceneLayers: [{ assetGuid: "hud", zOrder: 0, enabled: true }],
+      },
+    };
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "create",
+          type: "scene-layer.create",
+          position: { x: 0, y: 0 },
+          data: { properties: { "default:asset": "pause" } },
+        },
+      ],
+      edges: [],
+    };
+    const result = collectExportClosure({
+      startupSceneGuid: "scene-1",
+      gameInstanceClass: "MyGame",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "hud", type: "SceneLayer", name: "HUD" }),
+        asset({ guid: "pause", type: "SceneLayer", name: "Pause" }),
+        asset({
+          guid: "class-game",
+          type: "Class",
+          name: "MyGame",
+          parentClass: "GameInstance",
+        }),
+        asset({ guid: "sprite-1", type: "Sprite", name: "Banner" }),
+        asset({ guid: "tex-1", type: "Texture", name: "BannerTex" }),
+        asset({ guid: "unused-layer", type: "SceneLayer", name: "Unused" }),
+      ],
+      pluginEnabledGuids: new Set(),
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: (guid) => (guid === "class-game" ? graph : null),
+      payloadByGuid: (guid) => {
+        if (guid === "hud") {
+          return {
+            name: "HUD",
+            actors: [
+              {
+                id: "banner",
+                components: [
+                  {
+                    classId: "SpriteComponent",
+                    properties: { assetGuid: "sprite-1" },
+                  },
+                  {
+                    classId: "2DTextureComponent",
+                    properties: { textureGuid: "tex-1" },
+                  },
+                ],
+              },
+            ],
+          };
+        }
+        return null;
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual(
+      expect.arrayContaining([
+        "scene-1",
+        "hud",
+        "pause",
+        "sprite-1",
+        "tex-1",
+      ]),
+    );
+    expect(result.value).not.toContain("unused-layer");
+  });
 });

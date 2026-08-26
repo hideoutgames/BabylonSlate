@@ -40,7 +40,7 @@ Rejected alternative for 2D: constraining Havok (companion anchor + 6DOF per bod
 
 ## Scene declaration
 
-`SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Collider shape variants that do not apply to the active world are coerced to that world's default box at parse time (`parseColliderProperties`); a mixed-shape diagnostic is a named P7 polish follow-up, not current behaviour.
+`SceneSettings.physicsWorld: "3d" | "2d"` (defaults from `viewportMode` on create). A scene never mixes worlds. Overlay **SceneLayer** actors always simulate in a dedicated Rapier 2D world on the Play session, independent of that world setting — overlay and world bodies do not collide. See [scene-layers.md](scene-layers.md). Collider shape variants that do not apply to the active world are coerced to that world's default box at parse time (`parseColliderProperties`); a mixed-shape diagnostic is a named P7 polish follow-up, not current behaviour.
 
 ## Tick integration
 

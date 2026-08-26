@@ -4,6 +4,7 @@ import type {
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
+  SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
   assetTypeForDocumentKind,
@@ -14,6 +15,7 @@ import {
   normalizeProjectSettings,
   migrateGameInstanceClassFromScenes,
   normalizeScene,
+  normalizeSceneLayer,
   classHeaderMeta,
   documentId,
   documentKindForAssetType,
@@ -105,7 +107,11 @@ import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "
 
 function headerMetaForSave(
   type: string,
-  content: SerializedScene | SerializedGraph | Record<string, unknown>,
+  content:
+    | SerializedScene
+    | SerializedSceneLayer
+    | SerializedGraph
+    | Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   const materialMeta = materialHeaderMeta(
     type,
@@ -934,7 +940,11 @@ export class ProjectService {
       const kind = documentKindForAssetType(asset.header.type);
       if (!kind) continue;
 
-      let content: SerializedScene | SerializedGraph | Record<string, unknown>;
+      let content:
+        | SerializedScene
+        | SerializedSceneLayer
+        | SerializedGraph
+        | Record<string, unknown>;
       try {
         content = await this.loadDocument(kind, asset.path);
       } catch {
@@ -1082,7 +1092,12 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-  ): Promise<SerializedScene | SerializedGraph | Record<string, unknown>> {
+  ): Promise<
+    | SerializedScene
+    | SerializedSceneLayer
+    | SerializedGraph
+    | Record<string, unknown>
+  > {
     if (kind === "trace" || isTracePath(path)) {
       if (!this.derivedStorage) {
         throw new Error("Derived storage is not available for traces");
@@ -1116,6 +1131,9 @@ export class ProjectService {
     void _v;
     if (kind === "scene") {
       return normalizeScene(content);
+    }
+    if (kind === "scene-layer") {
+      return normalizeSceneLayer(content);
     }
     if (kind === "graph") {
       return hydrateClassDocumentPayload(
@@ -1174,7 +1192,11 @@ export class ProjectService {
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-    content: SerializedScene | SerializedGraph | Record<string, unknown>,
+    content:
+      | SerializedScene
+      | SerializedSceneLayer
+      | SerializedGraph
+      | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<void> {
     if (kind === "trace" || isTracePath(path)) {

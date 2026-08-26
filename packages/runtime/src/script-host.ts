@@ -23,6 +23,7 @@ import {
   Actor,
   ActorComponent,
   BObject,
+  SceneLayer,
   dispatchInterface,
   interfaceHandlerKey,
   type ClassRegistry,
@@ -113,6 +114,20 @@ export interface ScriptHostServices {
     offset?: number,
   ): void;
   changeScene?(scene: string): void;
+  createSceneLayer?(
+    assetGuid: string,
+    zOrder?: number,
+  ): SceneLayer | null;
+  removeSceneLayer?(layerGuid: string): void;
+  clearSceneLayers?(): void;
+  registerSceneLayerPostProcess?(
+    layerGuid: string,
+    materialGuid: string,
+  ): void;
+  unregisterSceneLayerPostProcess?(
+    layerGuid: string,
+    materialGuid: string,
+  ): void;
   playSound?(
     asset: string,
     volume?: number,
@@ -364,6 +379,17 @@ export interface ScriptContext {
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;
+  createSceneLayer(assetGuid: string, zOrder?: number): SceneLayer | null;
+  removeSceneLayer(layer: BObject | string | null | undefined): void;
+  clearSceneLayers(): void;
+  registerSceneLayerPostProcess(
+    layer: BObject | string | null | undefined,
+    materialGuid: string,
+  ): void;
+  unregisterSceneLayerPostProcess(
+    layer: BObject | string | null | undefined,
+    materialGuid: string,
+  ): void;
   setRenderResolution(width: number, height: number): void;
   possessCamera(target: unknown): void;
   getCameraFieldOfView(target: unknown): number;
@@ -1091,6 +1117,34 @@ export class ScriptHost {
       changeScene: (scene) => {
         services.changeScene?.(scene);
       },
+      createSceneLayer: (assetGuid, zOrder) =>
+        services.createSceneLayer?.(String(assetGuid ?? ""), Number(zOrder) || 0) ??
+        null,
+      removeSceneLayer: (layer) => {
+        const guid = sceneLayerGuidOf(layer);
+        if (guid) services.removeSceneLayer?.(guid);
+      },
+      clearSceneLayers: () => {
+        services.clearSceneLayers?.();
+      },
+      registerSceneLayerPostProcess: (layer, materialGuid) => {
+        const guid = sceneLayerGuidOf(layer);
+        if (guid) {
+          services.registerSceneLayerPostProcess?.(
+            guid,
+            String(materialGuid ?? ""),
+          );
+        }
+      },
+      unregisterSceneLayerPostProcess: (layer, materialGuid) => {
+        const guid = sceneLayerGuidOf(layer);
+        if (guid) {
+          services.unregisterSceneLayerPostProcess?.(
+            guid,
+            String(materialGuid ?? ""),
+          );
+        }
+      },
       setRenderResolution: (width, height) => {
         services.setRenderResolution?.(Number(width), Number(height));
       },
@@ -1248,4 +1302,14 @@ function lightComponentOf(target: unknown): ActorComponent | null {
       (component) => component.classId === "LightComponent" && !component.destroyed,
     ) ?? null
   );
+}
+
+function sceneLayerGuidOf(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value instanceof SceneLayer && !value.destroyed) return value.guid;
+  if (value && typeof value === "object" && "guid" in value) {
+    const guid = (value as { guid?: unknown }).guid;
+    return typeof guid === "string" && guid.trim() ? guid.trim() : null;
+  }
+  return null;
 }

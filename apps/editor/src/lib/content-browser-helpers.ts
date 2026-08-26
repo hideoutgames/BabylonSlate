@@ -24,6 +24,7 @@ import {
 } from "@babylonslate/assets";
 import {
   createDefaultScene,
+  createDefaultSceneLayer,
   isLegacyMaterialAssetType,
 } from "@babylonslate/core";
 import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
@@ -80,6 +81,8 @@ export const TEXTURE_COMPRESSION_STATES: TextureCompressionState[] = [
 export const ENGINE_BASE_CLASSES = [
   "BObject",
   "Actor",
+  "SceneLayer",
+  "SceneLayerActor",
   "ActorComponent",
   "GameInstance",
   "FunctionLibrary",
@@ -195,6 +198,7 @@ export function buildParentClassTreeRows(
 /** Asset types creatable from the Content Browser New Asset flow. */
 export const CREATABLE_ASSET_TYPES = [
   "Scene",
+  "SceneLayer",
   "Class",
   "Sprite",
   "SpriteAnimation",
@@ -227,7 +231,7 @@ export type CreatableAssetTypeGroup = {
 
 /** Catalog groups for the New Asset type-card grid. */
 export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
-  { id: "world", label: "World", types: ["Scene"] },
+  { id: "world", label: "World", types: ["Scene", "SceneLayer"] },
   {
     id: "scripting",
     label: "Scripting",
@@ -264,6 +268,7 @@ export const CREATABLE_ASSET_TYPE_GROUPS: readonly CreatableAssetTypeGroup[] = [
 
 const CREATABLE_ASSET_TYPE_DESCRIPTIONS: Record<CreatableAssetType, string> = {
   Scene: "A 3D or 2D world document.",
+  SceneLayer: "An unlit 2D overlay that draws on top of world scenes.",
   Class: "A class with a parent and a logic graph.",
   Sprite: "A 2D sprite sheet with named frames and pivots.",
   SpriteAnimation: "A pickable 2D clip of Texture frames for Animation Graph.",
@@ -1425,6 +1430,31 @@ export function buildNewAssetResult(options: {
     };
   }
 
+  if (type === "SceneLayer") {
+    const payload = createDefaultSceneLayer() as unknown as Record<
+      string,
+      unknown
+    >;
+    payload.name = name;
+    return {
+      type: "SceneLayer",
+      name,
+      guid,
+      version: createDefaultMigrationRegistry().currentVersion("SceneLayer"),
+      dependencies: [],
+      parentClass: null,
+      payload,
+      chunks: [
+        {
+          id: DOCUMENT_CHUNK_ID,
+          kind: "document",
+          mime: "application/json",
+          data: new TextEncoder().encode(JSON.stringify(payload)),
+        },
+      ],
+    };
+  }
+
   if (type === "Class") {
     const payload = createDefaultLogicGraphSerialized(defaultNodeRegistry, {
       parentClass,
@@ -1617,6 +1647,7 @@ export function buildNewAssetResult(options: {
 
 const ASSET_FILE_SUFFIX: Partial<Record<CreatableAssetType, string>> = {
   Scene: ".scene.babasset",
+  SceneLayer: ".scenelayer.babasset",
   Class: ".class.babasset",
   Sprite: ".sprite.babasset",
   SpriteAnimation: ".spriteanim.babasset",
@@ -1760,6 +1791,60 @@ export function isParticleMaterialForPicker(
     return (open.content as { domain?: unknown }).domain === "particle";
   }
   return isParticleMaterialAsset(asset);
+}
+
+export function materialDomainsFromAssets(
+  assets: ReadonlyArray<{
+    path: string;
+    header: { guid: string; type: string; payload?: Record<string, unknown> };
+  }>,
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }> = [],
+): Record<string, string> {
+  const domains: Record<string, string> = {};
+  for (const asset of assets) {
+    if (asset.header.type !== "Material") continue;
+    const open = openDocuments.find(
+      (entry) =>
+        entry.ref.kind === "material" && entry.ref.path === asset.path,
+    );
+    const domain =
+      open && open.content && typeof open.content === "object"
+        ? (open.content as { domain?: unknown }).domain
+        : asset.header.payload?.domain;
+    if (typeof domain === "string" && domain.length > 0) {
+      domains[asset.header.guid] = domain;
+    }
+  }
+  return domains;
+}
+
+export function filterInspectorPinPickerAssets<
+  T extends { guid: string; type: string },
+>(
+  assets: readonly T[],
+  indexed: ReadonlyArray<{
+    path: string;
+    header: { guid: string; type: string; payload?: Record<string, unknown> };
+  }>,
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>,
+  options: { nodeType: string },
+): T[] {
+  if (
+    options.nodeType !== "scene-layer.registerPostProcess" &&
+    options.nodeType !== "scene-layer.unregisterPostProcess"
+  ) {
+    return [...assets];
+  }
+  return assets.filter((entry) => {
+    const match = indexed.find((asset) => asset.header.guid === entry.guid);
+    return match ? isPostProcessMaterialForPicker(match, openDocuments) : false;
+  });
 }
 
 function documentAsset(

@@ -25,6 +25,7 @@ When adding a new `docs/**/*.md` file, add a sidebar entry in [`apps/docs/src/si
 | [architecture/render.md](architecture/render.md) | Snapshot sync, visibility-gated editor loop, resource cache |
 | [architecture/scripting.md](architecture/scripting.md) | Visual scripting compile and runtime |
 | [architecture/scene-editing.md](architecture/scene-editing.md) | Viewport, outliner, gizmos |
+| [architecture/scene-layers.md](architecture/scene-layers.md) | SceneLayer 2D overlay compositor |
 | [architecture/input.md](architecture/input.md) | Action/axis mappings |
 | [architecture/physics.md](architecture/physics.md) | Havok 3D and Rapier 2D |
 | [architecture/debugger.md](architecture/debugger.md) | Command registry, console, stats HUD |
