@@ -557,6 +557,14 @@ describe("EditorSceneSync", () => {
     sync.apply({
       ...createDefaultScene(),
       viewportMode: "2d",
+      actors: [],
+    });
+    expect(scene.clearColor.r).toBeCloseTo(gray.r);
+    expect(scene.clearColor.g).toBeCloseTo(gray.g);
+    expect(scene.clearColor.b).toBeCloseTo(gray.b);
+    sync.apply({
+      ...createDefaultScene(),
+      viewportMode: "2d",
       overlayEditor: true,
       settings: {
         ...createDefaultScene().settings,
