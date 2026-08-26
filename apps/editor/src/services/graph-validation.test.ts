@@ -1399,6 +1399,12 @@ describe("scriptPaletteNodes", () => {
         (node) => node.id === "functions.call:NavAgentComponent:Move To",
       ),
     ).toBe(true);
+    expect(
+      nodes.some(
+        (node) =>
+          node.id === "functions.call:NavAgentComponent:Stop Movement",
+      ),
+    ).toBe(true);
   });
 
   it("injects function-local Get/Set only when that function graph is open", () => {

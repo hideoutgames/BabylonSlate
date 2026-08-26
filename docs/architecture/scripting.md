@@ -335,6 +335,7 @@ Compiled Get/Set of catalog variables uses `ctx.getVariableFrom` / `ctx.setVaria
 - `2DAnchorComponent`: `applyOverlayAnchor` (same path as frustum resize).
 - `AudioComponent` Volume: `{ type: "setVoiceGain"; voiceId: component.guid }` for the live voice. Loop applies on the next Play.
 - `RigidBodyComponent` / `ColliderComponent`: `PhysicsWorldSync.applyComponent` → `updateBody` / `updateCollider` (see [physics.md](physics.md)).
+- `NavAgentComponent`: `updateAgent` on the live Recast crowd (radius / height / max speed / max acceleration). Call **Move To** / actor `navigation.moveTo` adds the crowd agent if Begin Play ran before the batch register.
 
 `setVariableOn` / Set Text on a text component also fires `onTextChanged` for entries bound to that component id.
 

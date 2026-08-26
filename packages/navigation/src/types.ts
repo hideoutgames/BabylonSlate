@@ -26,6 +26,8 @@ export type NavigationBackend = {
   removeObstacle(id: string): void;
   applyCostVolume(volume: NavCostVolume): void;
   addAgent(position: NavPoint, params?: NavAgentParams): string;
+  /** Apply live radius / height / maxSpeed / maxAcceleration to a crowd agent. */
+  updateAgent(id: string, params: NavAgentParams): void;
   /** Clears the crowd agent's current move target. */
   stopAgent(id: string): void;
   removeAgent(id: string): void;

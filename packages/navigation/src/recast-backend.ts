@@ -271,6 +271,34 @@ class RecastNavigationBackend implements NavigationBackend {
     return id;
   }
 
+  updateAgent(id: string, params: NavAgentParams): void {
+    const agent = this.agents.get(id);
+    if (!agent) return;
+    const next: {
+      radius?: number;
+      height?: number;
+      maxSpeed?: number;
+      maxAcceleration?: number;
+    } = {};
+    if (typeof params.radius === "number" && Number.isFinite(params.radius)) {
+      next.radius = params.radius;
+    }
+    if (typeof params.height === "number" && Number.isFinite(params.height)) {
+      next.height = params.height;
+    }
+    if (typeof params.maxSpeed === "number" && Number.isFinite(params.maxSpeed)) {
+      next.maxSpeed = params.maxSpeed;
+    }
+    if (
+      typeof params.maxAcceleration === "number" &&
+      Number.isFinite(params.maxAcceleration)
+    ) {
+      next.maxAcceleration = params.maxAcceleration;
+    }
+    if (Object.keys(next).length === 0) return;
+    agent.updateParameters(next);
+  }
+
   stopAgent(id: string): void {
     this.agents.get(id)?.resetMoveTarget();
   }

@@ -129,6 +129,194 @@ describe("runtime navmesh import and crowd", () => {
     runtime.stop();
   });
 
+  it("Set NavAgent maxSpeed retunes the live crowd after the agent is registered", async () => {
+    const walk = async (setMaxSpeed?: number) => {
+      const runtime = createInProcessRuntime({
+        seed: 1,
+        maxActors: 8,
+        seedDemoActors: false,
+        playScene: {
+          name: "Nav",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [
+            createActor("agent", "Agent", {
+              classId: "Hero",
+              transform: {
+                position: [-4, 0, -4],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+              },
+              components: [
+                {
+                  id: "nav",
+                  classId: "NavAgentComponent",
+                  properties: { radius: 0.5, height: 2, maxSpeed: 0.5 },
+                },
+              ],
+            }),
+          ],
+        },
+      });
+      if (setMaxSpeed !== undefined) {
+        await runtime.loadScripts([
+          {
+            assetGuid: "hero-script",
+            classId: "Hero",
+            parentClassId: "Actor",
+            source: [
+              "export function onTick(ctx) {",
+              "  if (ctx.tickIndex !== 1) return;",
+              '  const c = ctx.getComponentById(ctx.self, "nav");',
+              `  ctx.setVariableOn(c, "maxSpeed", ${setMaxSpeed});`,
+              "}",
+            ].join("\n"),
+            anchors: [],
+            entryPoints: [
+              { name: "onTick", event: "onTick", isAsync: false },
+            ],
+          },
+        ]);
+      }
+      await runtime.loadNavMesh(bytes);
+      runtime.start();
+      runtime.realizePlayWorld();
+      expect(runtime.setNavAgentTarget("agent", { x: 4, y: 0, z: 4 })).toBe(true);
+      for (let i = 0; i < 60; i += 1) runtime.tick();
+      const x = runtime.getWorld().findActor("agent")?.transform.position.x ?? -4;
+      runtime.stop();
+      return x;
+    };
+    expect(await walk(8)).toBeGreaterThan((await walk()) + 0.5);
+  });
+
+  it("Call Move To on Begin Play registers the crowd agent and walks", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      playScene: {
+        name: "Nav",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("agent", "Agent", {
+            classId: "Hero",
+            transform: {
+              position: [-4, 0, -4],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              {
+                id: "nav",
+                classId: "NavAgentComponent",
+                properties: { radius: 0.5, height: 2, maxSpeed: 3.5 },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hero-script",
+        classId: "Hero",
+        parentClassId: "Actor",
+        source: [
+          "export function onBeginPlay(ctx) {",
+          '  const c = ctx.getComponentById(ctx.self, "nav");',
+          '  ctx.callComponentFunction(c, "moveTo", {',
+          "    destination: { x: 4, y: 0, z: 4 },",
+          "  });",
+          "}",
+        ].join("\n"),
+        anchors: [],
+        entryPoints: [
+          { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+        ],
+      },
+    ]);
+    await runtime.loadNavMesh(bytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    for (let i = 0; i < 90; i += 1) runtime.tick();
+    expect(
+      runtime.getWorld().findActor("agent")?.transform.position.x ?? -4,
+    ).toBeGreaterThan(-3.5);
+    runtime.stop();
+  });
+
+  it("Call Stop Movement holds the crowd agent after Move To", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      playScene: {
+        name: "Nav",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("agent", "Agent", {
+            classId: "Hero",
+            transform: {
+              position: [-4, 0, -4],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              {
+                id: "nav",
+                classId: "NavAgentComponent",
+                properties: { radius: 0.5, height: 2, maxSpeed: 3.5 },
+              },
+            ],
+          }),
+        ],
+      },
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hero-script",
+        classId: "Hero",
+        parentClassId: "Actor",
+        source: [
+          "export function onBeginPlay(ctx) {",
+          '  const c = ctx.getComponentById(ctx.self, "nav");',
+          '  ctx.callComponentFunction(c, "moveTo", {',
+          "    destination: { x: 4, y: 0, z: 4 },",
+          "  });",
+          "}",
+          "export function onTick(ctx) {",
+          "  if (ctx.tickIndex !== 12) return;",
+          '  const c = ctx.getComponentById(ctx.self, "nav");',
+          '  ctx.callComponentFunction(c, "stopMovement", {});',
+          "}",
+        ].join("\n"),
+        anchors: [],
+        entryPoints: [
+          { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+          { name: "onTick", event: "onTick", isAsync: false },
+        ],
+      },
+    ]);
+    await runtime.loadNavMesh(bytes);
+    runtime.start();
+    runtime.realizePlayWorld();
+    for (let i = 0; i < 12; i += 1) runtime.tick();
+    const stoppedAt =
+      runtime.getWorld().findActor("agent")?.transform.position.x ?? -4;
+    expect(stoppedAt).toBeGreaterThan(-4);
+    for (let i = 0; i < 60; i += 1) runtime.tick();
+    const later =
+      runtime.getWorld().findActor("agent")?.transform.position.x ?? -4;
+    expect(later).toBeLessThan(stoppedAt + 0.35);
+    runtime.stop();
+  });
+
   it("ticks BT MoveTo through the crowd until the destination", async () => {
     const tree = {
       name: "Patrol",

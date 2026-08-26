@@ -85,6 +85,19 @@ describe("recast generate / import round-trip", () => {
     expect(nav.agentVelocity(id)).toBeNull();
   });
 
+  it("updateAgent maxSpeed changes how far the crowd walks in the same steps", () => {
+    const walk = (maxSpeed: number, updateTo?: number) => {
+      const nav = createNavigationBackend();
+      nav.importNavMesh(bytes);
+      const id = nav.addAgent({ x: -4, y: 0, z: -4 }, { maxSpeed });
+      if (updateTo !== undefined) nav.updateAgent(id, { maxSpeed: updateTo });
+      nav.setAgentTarget(id, { x: 4, y: 0, z: 4 });
+      for (let i = 0; i < 60; i += 1) nav.stepCrowd(1 / 60);
+      return nav.agentPosition(id)!.x;
+    };
+    expect(walk(0.5, 8)).toBeGreaterThan(walk(0.5) + 0.5);
+  });
+
   it("records whether crowd steps are byte-identical across two backends", () => {
     const run = () => {
       const nav = createNavigationBackend();
