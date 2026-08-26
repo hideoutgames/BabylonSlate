@@ -99,6 +99,8 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     textureBytes: game.textureBytes,
     fontFacetypeBytes: game.fontFacetypeBytes,
+    fontMsdfJson: game.fontMsdfJson,
+    fontMsdfPng: game.fontMsdfPng,
     modelBytes: game.modelBytes,
     modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,

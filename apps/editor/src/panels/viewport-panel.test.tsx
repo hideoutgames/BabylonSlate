@@ -41,6 +41,9 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     resize: vi.fn(),
     dispose: vi.fn(),
     resourceCache: {},
+    registerFonts: vi.fn(async () => {}),
+    setMeshAssets: vi.fn(),
+    setMaterialDocuments: vi.fn(),
   };
   const createEngineMock = vi.fn(() => handle);
   const sharedEngine = { isDisposed: false };
@@ -86,6 +89,8 @@ vi.mock("../context/document-context", () => ({
     collectPlayTilemapContent: vi.fn(),
     collectPlayTextureBytes: vi.fn(),
     collectPlayFontFacetypeBytes: vi.fn(),
+    collectPlayFontMsdfPair: vi.fn(async () => new Map()),
+    collectPlayFontFaceEntries: vi.fn(async () => []),
     collectPlayModelBytes: vi.fn(),
     collectPlayModelPayloads: vi.fn(),
     collectPlayMaterialLibrary: vi.fn(),

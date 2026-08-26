@@ -35,8 +35,10 @@ import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
+  overlayTextureGuidsFromScene,
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
+import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 
 /**
  * Full-size Prefab viewport for class documents. Sibling of Graph in the
@@ -60,6 +62,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayFontFacetypeBytes,
+    collectPlayFontMsdfPair,
+    collectPlayFontFaceEntries,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
@@ -216,14 +220,21 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
-          [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
+          [
+            ...materials.textureGuids,
+            ...skyboxFaceGuidsFromScene(scene),
+            ...overlayTextureGuidsFromScene(scene),
+          ],
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
+        const fontFaceEntries = await collectPlayFontFaceEntries();
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(
           materials.documents,
           materials.functions,
         );
+        void handle.registerFonts(fontFaceEntries);
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -231,6 +242,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilesets: tileContent.tilesets,
           textureBytes,
           fontFacetypeBytes,
+          fontMsdfJson: msdf.json,
+          fontMsdfPng: msdf.png,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -252,6 +265,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayFontFacetypeBytes,
+    collectPlayFontMsdfPair,
+    collectPlayFontFaceEntries,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
@@ -282,11 +297,18 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const textureBytes = await collectPlayTextureBytes(
           sprites,
           tileContent.tilesets,
-          [...materials.textureGuids, ...skyboxFaceGuidsFromScene(scene)],
+          [
+            ...materials.textureGuids,
+            ...skyboxFaceGuidsFromScene(scene),
+            ...overlayTextureGuidsFromScene(scene),
+          ],
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
+        const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
+        const fontFaceEntries = await collectPlayFontFaceEntries();
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
+        void handle.registerFonts(fontFaceEntries);
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -294,6 +316,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilesets: tileContent.tilesets,
           textureBytes,
           fontFacetypeBytes,
+          fontMsdfJson: msdf.json,
+          fontMsdfPng: msdf.png,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -311,6 +335,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayFontFacetypeBytes,
+    collectPlayFontMsdfPair,
+    collectPlayFontFaceEntries,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,

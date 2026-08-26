@@ -62,6 +62,7 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import {
   audioDebugOverlayText,
   audioStats,
+  type FontAssetEntry,
 } from "@babylonslate/render";
 import { useInspectWorldPoll } from "../lib/use-inspect-world-poll";
 import { usePlay } from "../context/play-context";
@@ -93,6 +94,9 @@ export interface PlayOverlayProps {
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  fontFaceEntries?: readonly FontAssetEntry[];
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -159,6 +163,9 @@ export function PlayOverlay({
   tilesetPayloads,
   textureBytes,
   fontFacetypeBytes,
+  fontMsdfJson,
+  fontMsdfPng,
+  fontFaceEntries,
   modelBytes,
   modelPayloads,
   modelClipAnimationGuids,
@@ -252,6 +259,12 @@ export function PlayOverlay({
   textureBytesRef.current = textureBytes;
   const fontFacetypeBytesRef = useRef(fontFacetypeBytes);
   fontFacetypeBytesRef.current = fontFacetypeBytes;
+  const fontMsdfJsonRef = useRef(fontMsdfJson);
+  fontMsdfJsonRef.current = fontMsdfJson;
+  const fontMsdfPngRef = useRef(fontMsdfPng);
+  fontMsdfPngRef.current = fontMsdfPng;
+  const fontFaceEntriesRef = useRef(fontFaceEntries);
+  fontFaceEntriesRef.current = fontFaceEntries;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
@@ -390,6 +403,9 @@ export function PlayOverlay({
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
       fontFacetypeBytes: fontFacetypeBytesRef.current,
+      fontMsdfJson: fontMsdfJsonRef.current,
+      fontMsdfPng: fontMsdfPngRef.current,
+      fontFaceEntries: fontFaceEntriesRef.current,
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,

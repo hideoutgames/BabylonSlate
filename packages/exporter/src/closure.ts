@@ -2,6 +2,7 @@ import {
   err,
   isEditorOnlyAsset,
   ok,
+  text2dImageGuidsFromScene,
   type Result,
   type SerializedGraph,
   type SerializedScene,
@@ -148,6 +149,13 @@ export function collectExportClosure(
       const scene: SerializedScene | null = input.sceneByGuid(guid);
       if (scene) {
         enqueueRefs(scene, byGuid, byClassName, pending, seen);
+        enqueueRefs(
+          text2dImageGuidsFromScene(scene),
+          byGuid,
+          byClassName,
+          pending,
+          seen,
+        );
       }
     }
 
@@ -162,6 +170,15 @@ export function collectExportClosure(
     const payload = input.payloadByGuid?.(guid);
     if (payload) {
       enqueueRefs(payload, byGuid, byClassName, pending, seen);
+      if (payload && typeof payload === "object" && "actors" in payload) {
+        enqueueRefs(
+          text2dImageGuidsFromScene(payload as SerializedScene),
+          byGuid,
+          byClassName,
+          pending,
+          seen,
+        );
+      }
     }
   }
 

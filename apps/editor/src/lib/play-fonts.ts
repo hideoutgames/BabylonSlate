@@ -93,3 +93,15 @@ export async function collectFontMsdfPair(
   }
   return pairs;
 }
+
+export function fontMsdfMapsFromPairs(
+  pairs: ReadonlyMap<string, FontMsdfPair>,
+): { json: Map<string, Uint8Array>; png: Map<string, Uint8Array> } {
+  const json = new Map<string, Uint8Array>();
+  const png = new Map<string, Uint8Array>();
+  for (const [guid, pair] of pairs) {
+    json.set(guid, pair.json);
+    png.set(guid, pair.png);
+  }
+  return { json, png };
+}

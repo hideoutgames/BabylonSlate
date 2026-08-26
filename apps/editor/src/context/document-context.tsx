@@ -20,7 +20,7 @@ import type {
   SerializedScene,
   SerializedSceneLayer,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, text3DFontGuidsFromScene } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -118,7 +118,7 @@ import {
   zipGameArtifact,
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
-import { collectFontFacetypeBytes } from "../lib/play-fonts";
+import { collectFontAssetEntries, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
@@ -233,6 +233,7 @@ import {
   sceneLayerGuidsFromGraphs,
   sceneLayerMaterialGuidsFromGraphs,
   overlayEditorScenesFromLayers,
+  playFontGuidsFromScenes,
   type PlayAnimGraphEntry,
   type PlayBehaviourTreeEntry,
   type PlayBlackboardEntry,
@@ -496,6 +497,15 @@ interface DocumentContextValue {
     scene?: SerializedScene | null,
     extraScenes?: readonly SerializedScene[],
   ) => Promise<Map<string, Uint8Array>>;
+  /** MSDF JSON + PNG pairs for overlay 2D Text. */
+  collectPlayFontMsdfPair: (
+    scene?: SerializedScene | null,
+    extraScenes?: readonly SerializedScene[],
+  ) => Promise<Map<string, { json: Uint8Array; png: Uint8Array }>>;
+  /** FontFace source bytes for Bitmap 2D Text. */
+  collectPlayFontFaceEntries: () => Promise<
+    import("@babylonslate/render").FontAssetEntry[]
+  >;
   /** Model source bytes for scene MeshComponent `assetGuid`s. */
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
@@ -2746,22 +2756,52 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       extraScenes: readonly SerializedScene[] = [],
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
-      const guids = [
-        ...text3DFontGuidsFromScene(scene),
-        ...extraScenes.flatMap((entry) => text3DFontGuidsFromScene(entry)),
-      ];
+      const sources = assets.map((asset) => ({
+        guid: asset.header.guid,
+        path: asset.path,
+        type: asset.header.type,
+        payload: asset.header.payload,
+      }));
       return collectFontFacetypeBytes(
-        assets.map((asset) => ({
-          guid: asset.header.guid,
-          path: asset.path,
-          type: asset.header.type,
-        })),
-        guids,
+        sources,
+        playFontGuidsFromScenes([scene, ...extraScenes]),
         (path, chunkId) => projectService.readAssetChunk(path, chunkId),
       );
     },
     [projectService],
   );
+
+  const collectPlayFontMsdfPair = useCallback(
+    async (
+      scene?: SerializedScene | null,
+      extraScenes: readonly SerializedScene[] = [],
+    ) => {
+      const assets = projectService.registry?.list() ?? [];
+      return collectFontMsdfPair(
+        assets.map((asset) => ({
+          guid: asset.header.guid,
+          path: asset.path,
+          type: asset.header.type,
+        })),
+        playFontGuidsFromScenes([scene, ...extraScenes]),
+        (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+      );
+    },
+    [projectService],
+  );
+
+  const collectPlayFontFaceEntries = useCallback(async () => {
+    const assets = projectService.registry?.list() ?? [];
+    return collectFontAssetEntries(
+      assets.map((asset) => ({
+        guid: asset.header.guid,
+        path: asset.path,
+        type: asset.header.type,
+        payload: asset.header.payload,
+      })),
+      (path, chunkId) => projectService.readAssetChunk(path, chunkId),
+    );
+  }, [projectService]);
 
   const collectPlayModelBytes = useCallback(
     async (
@@ -3906,6 +3946,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayFontFacetypeBytes,
+      collectPlayFontMsdfPair,
+      collectPlayFontFaceEntries,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
@@ -3958,6 +4000,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayFontFacetypeBytes,
+      collectPlayFontMsdfPair,
+      collectPlayFontFaceEntries,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
