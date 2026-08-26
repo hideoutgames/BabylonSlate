@@ -652,6 +652,69 @@ describe("@babylonslate/physics", () => {
     );
     backend.dispose();
   });
+
+  it("Rapier pollContacts includes collider ids for blocking and trigger pairs", async () => {
+    const backend = await createPhysicsBackend({
+      kind: "2d",
+      gravity: { x: 0, y: 0, z: 0 },
+    });
+    placeBox2d(backend, "a", "actor-a", { x: 0, y: 0 }, false);
+    placeBox2d(backend, "b", "actor-b", { x: 0.4, y: 0 }, false);
+    backend.step(1 / 60);
+    const hits = backend.pollContacts();
+    expect(hits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "hit",
+          actorAId: "actor-a",
+          actorBId: "actor-b",
+          colliderAId: "a-col",
+          colliderBId: "b-col",
+        }),
+      ]),
+    );
+    expect(hits.some((event) => event.kind.startsWith("overlap"))).toBe(false);
+
+    backend.dispose();
+    const triggerBackend = await createPhysicsBackend({
+      kind: "2d",
+      gravity: { x: 0, y: 0, z: 0 },
+    });
+    placeBox2d(triggerBackend, "a", "actor-a", { x: 0, y: 0 }, false);
+    placeBox2d(triggerBackend, "b", "actor-b", { x: 0.4, y: 0 }, true);
+    triggerBackend.step(1 / 60);
+    const begun = triggerBackend.pollContacts();
+    expect(begun).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "overlapBegin",
+          actorAId: "actor-a",
+          actorBId: "actor-b",
+          colliderAId: "a-col",
+          colliderBId: "b-col",
+        }),
+      ]),
+    );
+    expect(begun.some((event) => event.kind === "hit")).toBe(false);
+    triggerBackend.setBodyTransform("b", {
+      position: { x: 10, y: 0, z: 0 },
+      rotation: identityRotation(),
+    });
+    triggerBackend.step(1 / 60);
+    const ended = triggerBackend.pollContacts();
+    expect(ended).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "overlapEnd",
+          actorAId: "actor-a",
+          actorBId: "actor-b",
+          colliderAId: "a-col",
+          colliderBId: "b-col",
+        }),
+      ]),
+    );
+    triggerBackend.dispose();
+  });
 });
 
 function identityRotation() {
@@ -679,6 +742,38 @@ function placeBox(
     id: `${bodyId}-col`,
     bodyId,
     shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+    friction: 0.5,
+    restitution: 0,
+    isTrigger,
+    layer: 1,
+    mask: 0xffffffff,
+  });
+}
+
+function placeBox2d(
+  backend: PhysicsBackend,
+  bodyId: string,
+  actorId: string,
+  position: { x: number; y: number },
+  isTrigger: boolean,
+) {
+  backend.createBody({
+    id: bodyId,
+    actorId,
+    motionType: "dynamic",
+    mass: 1,
+    linearDamping: 0,
+    angularDamping: 0,
+    gravityScale: 0,
+    transform: {
+      position: { x: position.x, y: position.y, z: 0 },
+      rotation: identityRotation(),
+    },
+  });
+  backend.createCollider({
+    id: `${bodyId}-col`,
+    bodyId,
+    shape: { kind: "box2d", halfExtents: { x: 0.5, y: 0.5 } },
     friction: 0.5,
     restitution: 0,
     isTrigger,

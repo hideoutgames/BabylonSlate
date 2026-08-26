@@ -428,7 +428,7 @@ export type HydrateGraphOptions = {
   functionGraphs?: SerializedGraph["functionGraphs"];
 };
 
-function bindUnboundComponentEvents(
+export function bindUnboundComponentEvents(
   graph: SerializedGraph,
   options?: HydrateGraphOptions,
 ): SerializedGraph {

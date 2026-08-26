@@ -25,7 +25,12 @@ import {
   type LogicGraph,
 } from "@babylonslate/scripting";
 import { localVariablePreamble } from "@babylonslate/scripting-nodes";
-import { defaultNodeRegistry, materializeLogicGraph, type HydrateGraphOptions } from "./graph-validation";
+import {
+  bindUnboundComponentEvents,
+  defaultNodeRegistry,
+  materializeLogicGraph,
+  type HydrateGraphOptions,
+} from "./graph-validation";
 
 const ACTOR_LIFECYCLE_EVENTS = new Set(["onBeginPlay", "onTick"]);
 const PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
@@ -122,6 +127,7 @@ export function compileGraphDocument(
     structs?: HydrateGraphOptions["structs"];
     latentFunctions?: ReadonlySet<string>;
     parentOf?: (classId: string) => string | null | undefined;
+    otherClassGraphs?: Record<string, SerializedGraph>;
   },
 ): ScriptBundleEntry | null {
   const graphId = options.graphId ?? "event-graph";
@@ -135,6 +141,13 @@ export function compileGraphDocument(
     options.parentOf ??
     ((id: string) =>
       id === classId ? (options.parentClassId ?? null) : null);
+  const bound = serialized
+    ? bindUnboundComponentEvents(serialized, {
+        classId,
+        parentOf,
+        otherClassGraphs: options.otherClassGraphs,
+      })
+    : null;
   const latentFunctions =
     options.latentFunctions ??
     collectLatentFunctions(
@@ -151,7 +164,12 @@ export function compileGraphDocument(
       latentFunctions,
       parentOf,
     );
-  const logic = materializeLogicGraph(content, graphId, "event", typeOptions);
+  const logic = materializeLogicGraph(
+    bound ?? content,
+    graphId,
+    "event",
+    typeOptions,
+  );
   const instrumentInfiniteLoops =
     options.instrumentInfiniteLoops ?? options.stripDevelopmentOnly !== true;
   const compiledPieces = [];
@@ -457,6 +475,7 @@ function compileGraphDocumentCached(
     latentFunctions?: ReadonlySet<string>;
     latentFingerprint?: string;
     parentOf?: (classId: string) => string | null | undefined;
+    otherClassGraphs?: Record<string, SerializedGraph>;
   },
 ): ScriptBundleEntry | null {
   const cache = options.cache;
@@ -475,6 +494,7 @@ function compileGraphDocumentCached(
       structs: options.structs,
       latentFunctions: options.latentFunctions,
       parentOf: options.parentOf,
+      otherClassGraphs: options.otherClassGraphs,
     });
     if (cache && key) cache.graphs.set(key, script);
     return script;
@@ -484,6 +504,22 @@ function compileGraphDocumentCached(
     console.error(`[play] failed to compile ${doc.path}`, error);
     return null;
   }
+}
+
+function serializedGraphsByClassId(
+  documents: ReadonlyArray<{
+    path: string;
+    content: SerializedGraph | LogicGraph;
+    classId?: string;
+    parentClassId?: string | null;
+  }>,
+): Record<string, SerializedGraph> {
+  const graphs: Record<string, SerializedGraph> = {};
+  for (const doc of documents) {
+    if (isLogicGraphPayload(doc.content)) continue;
+    graphs[documentClassId(doc)] = doc.content;
+  }
+  return graphs;
 }
 
 function documentClassId(doc: {
@@ -541,6 +577,7 @@ export function compileGraphDocuments(
     options.structs,
   );
   const project = projectLatentFunctions(documents);
+  const otherClassGraphs = serializedGraphsByClassId(documents);
   const scripts: ScriptBundleEntry[] = [];
   for (const doc of documents) {
     const script = compileGraphDocumentCached(doc, {
@@ -549,6 +586,7 @@ export function compileGraphDocuments(
       latentFunctions: project.latentFunctions,
       latentFingerprint: project.fingerprint,
       parentOf: project.parentOf,
+      otherClassGraphs,
     });
     if (script) scripts.push(script);
   }
