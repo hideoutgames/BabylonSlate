@@ -56,7 +56,7 @@ Extra unlit ortho `Scene`s on the shared Engine:
 - Layer with no PP: `autoClear = false` on color; clear depth so 2D quads sort.
 - Layer with PP: render to an RTT, run that camera stack, alpha-composite onto the framebuffer (Babylon camera PP would otherwise replace the world). Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.
 
-The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the Play compositor. Its clear is **opaque black** (`environmentColor [0,0,0]`). Play / player overlay scenes stay transparent `(0,0,0,0)` over the world. Overlay cameras are independent orthographic views — they are **not** parented to the world camera, so translating the 3D view does not move overlay NDC.
+The SceneLayer editor tab is a locked 2D viewport (one Babylon scene), not the Play compositor. Its clear is **opaque black** (`environmentColor [0,0,0]`). Play / player overlay scenes stay transparent `(0,0,0,0)` over the world. Overlay cameras are independent orthographic views — they are **not** parented to the world camera, so translating the 3D view does not move overlay NDC. Selection uses a **2D transform box** on the gizmo utility layer (eight resize handles ~44 CSS px, interior drag to move, rotation knob just above the box for Z only) instead of Position/Rotation/Scale gizmos. Gestures still write actor XY position, Z rotation, and XY scale through `commitGizmoTransform`. World Scene 2D viewports keep axis gizmos. The toolbar hides Move / Rotate / Scale (Drag Select and Viewport Settings stay). SceneLayerActor prefabs use the same box.
 
 ## Hit test and 2DAnchor
 

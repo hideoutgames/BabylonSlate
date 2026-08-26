@@ -364,6 +364,45 @@ describe("Play createEngine view", () => {
     expect(selected!.isDisposed()).toBe(true);
   });
 
+  it("uses an overlay transform box instead of TRS gizmos when requested", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      overlayTransformBox: true,
+    });
+    handles.push(handle);
+    handle.loadScene({
+      ...createDefaultScene("2d"),
+      actors: [createActor("banner", "Banner")],
+    });
+    handle.editor!.setSelectedActors(["banner"]);
+    expect(handle.editor!.gizmos.attachedMesh()).not.toBeNull();
+    expect(handle.editor!.gizmos.positionGizmo.attachedMesh).toBeNull();
+    expect(handle.editor!.gizmos.rotationGizmo.attachedMesh).toBeNull();
+    expect(handle.editor!.gizmos.scaleGizmo.attachedMesh).toBeNull();
+  });
+
+  it("keeps world 2D on axis gizmos when overlayTransformBox is off", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      viewportMode: "2d",
+    });
+    handles.push(handle);
+    handle.loadScene({
+      ...createDefaultScene("2d"),
+      actors: [createActor("sprite", "Sprite")],
+    });
+    handle.editor!.gizmos.setTool("translate");
+    handle.editor!.setSelectedActors(["sprite"]);
+    expect(handle.editor!.gizmos.positionGizmo.attachedMesh).toBe(
+      handle.editor!.gizmos.attachedMesh(),
+    );
+    expect(handle.editor!.gizmos.positionGizmo.zGizmo.isEnabled).toBe(false);
+  });
+
   it("attaches the gizmo to a Model actor whose placeholder is unpickable", async () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

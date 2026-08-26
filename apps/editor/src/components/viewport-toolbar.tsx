@@ -43,10 +43,12 @@ export function ViewportToolbar({
   testIdPrefix = "",
   showDragSelect = true,
   showViewportModeToggle = true,
+  showGizmoTools = true,
 }: {
   testIdPrefix?: string;
   showDragSelect?: boolean;
   showViewportModeToggle?: boolean;
+  showGizmoTools?: boolean;
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
@@ -259,42 +261,44 @@ export function ViewportToolbar({
       className="flex flex-wrap items-center gap-2"
       data-testid={`${testIdPrefix}viewport-toolbar`}
     >
-      <ToggleGroup
-        variant="outline"
-        size="sm"
-        spacing={1}
-        value={[gizmoTool]}
-        onValueChange={(value) => {
-          const next = value[0] as GizmoTool | undefined;
-          if (next) setGizmoTool(next);
-        }}
-        aria-label="Gizmo tool"
-      >
-        {TOOLS.map((tool) => {
-          const Icon = tool.icon;
-          const active = gizmoTool === tool.id;
-          return (
-            <ToggleGroupItem
-              key={tool.id}
-              value={tool.id}
-              aria-label={tool.label}
-              data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
-            >
-              <Icon />
-              <span
-                data-testid="gizmo-tool-label"
-                className="grid min-w-0 overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
-                style={{ gridTemplateColumns: active ? "1fr" : "0fr" }}
-                aria-hidden={!active}
+      {showGizmoTools ? (
+        <ToggleGroup
+          variant="outline"
+          size="sm"
+          spacing={1}
+          value={[gizmoTool]}
+          onValueChange={(value) => {
+            const next = value[0] as GizmoTool | undefined;
+            if (next) setGizmoTool(next);
+          }}
+          aria-label="Gizmo tool"
+        >
+          {TOOLS.map((tool) => {
+            const Icon = tool.icon;
+            const active = gizmoTool === tool.id;
+            return (
+              <ToggleGroupItem
+                key={tool.id}
+                value={tool.id}
+                aria-label={tool.label}
+                data-testid={`${testIdPrefix}gizmo-tool-${tool.id}`}
               >
-                <span className="min-w-0 overflow-hidden whitespace-nowrap">
-                  {tool.label}
+                <Icon />
+                <span
+                  data-testid="gizmo-tool-label"
+                  className="grid min-w-0 overflow-hidden transition-[grid-template-columns] duration-200 ease-out"
+                  style={{ gridTemplateColumns: active ? "1fr" : "0fr" }}
+                  aria-hidden={!active}
+                >
+                  <span className="min-w-0 overflow-hidden whitespace-nowrap">
+                    {tool.label}
+                  </span>
                 </span>
-              </span>
-            </ToggleGroupItem>
-          );
-        })}
-      </ToggleGroup>
+              </ToggleGroupItem>
+            );
+          })}
+        </ToggleGroup>
+      ) : null}
       {showDragSelect ? (
         <Tooltip>
           <TooltipTrigger
