@@ -17,6 +17,14 @@ export {
   FONT_FACETYPE_EXPORT_GUID_PREFIX,
   fontFacetypeExportGuid,
   fontGuidFromFontFacetypeExport,
+  FONT_MSDF_EXPORT_TYPE,
+  FONT_MSDF_EXPORT_GUID_PREFIX,
+  FONT_MSDF_ATLAS_EXPORT_TYPE,
+  FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX,
+  fontMsdfExportGuid,
+  fontMsdfAtlasExportGuid,
+  fontGuidFromFontMsdfExport,
+  fontGuidFromFontMsdfAtlasExport,
 } from "./constants";
 export { collectExportClosure } from "./closure";
 export { selectPlayerRuntimeFiles } from "./player-files";

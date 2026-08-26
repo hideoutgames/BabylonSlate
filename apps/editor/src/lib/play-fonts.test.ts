@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectFontAssetEntries,
   collectFontFacetypeBytes,
+  collectFontMsdfPair,
   fontAssetHasMsdfJson,
   fontAssetHasMsdfPair,
   fontAssetHasMsdfPng,
@@ -80,6 +81,41 @@ describe("collectFontAssetEntries", () => {
     );
     expect([...bytes.keys()]).toEqual(["font-1"]);
     expect(bytes.get("font-1")).toEqual(new Uint8Array([9, 8, 7]));
+  });
+});
+
+describe("collectFontMsdfPair", () => {
+  it("loads JSON and PNG chunks only when both exist", async () => {
+    const pairs = await collectFontMsdfPair(
+      [
+        {
+          guid: "font-1",
+          path: "assets/Display.font.babasset",
+          type: "Font",
+        },
+        {
+          guid: "font-2",
+          path: "assets/Body.font.babasset",
+          type: "Font",
+        },
+      ],
+      ["font-1", "font-2"],
+      async (path, chunkId) => {
+        if (path.includes("Display") && chunkId === "msdf-atlas") {
+          return new Uint8Array([1, 2]);
+        }
+        if (path.includes("Display") && chunkId === "msdf-atlas-png") {
+          return new Uint8Array([3, 4]);
+        }
+        if (path.includes("Body") && chunkId === "msdf-atlas") {
+          return new Uint8Array([9]);
+        }
+        return null;
+      },
+    );
+    expect([...pairs.keys()]).toEqual(["font-1"]);
+    expect(pairs.get("font-1")?.json).toEqual(new Uint8Array([1, 2]));
+    expect(pairs.get("font-1")?.png).toEqual(new Uint8Array([3, 4]));
   });
 });
 

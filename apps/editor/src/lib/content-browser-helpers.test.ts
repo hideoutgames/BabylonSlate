@@ -1716,6 +1716,13 @@ describe("content-browser-helpers", () => {
         canRetarget: true,
       }),
     ).toEqual(["duplicate", "move", "copy", "delete"]);
+    expect(
+      contentBrowserContextActions({
+        assetCount: 1,
+        folderCount: 0,
+        singleAssetType: "Font",
+      }),
+    ).toContain("import-msdf-atlas");
   });
 
   it("allows Retarget only when every selected asset is an Animation with a skeleton", () => {

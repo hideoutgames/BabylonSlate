@@ -472,6 +472,59 @@ describe("loadExportDocuments", () => {
     expect(loaded.fontFacetypeBytesByGuid("font-1")).toEqual(new Uint8Array([9, 8, 7]));
   });
 
+  it("exposes Font MSDF JSON and atlas PNG chunks separately from Font source bytes", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          rootId: "project",
+          path: "assets/Display.font.babasset",
+          header: {
+            guid: "font-1",
+            type: "Font",
+            name: "Display",
+            engineVersion: "0.0.0",
+            version: 1,
+            mode: "thin",
+            dependencies: [],
+            payload: { family: "Display" },
+            chunks: [
+              {
+                id: "source",
+                kind: "font",
+                mime: "font/woff2",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 2 } },
+              },
+              {
+                id: "msdf-atlas",
+                kind: "font-msdf",
+                mime: "application/json",
+                sha256: "cc",
+                locator: { inline: { offset: 2, length: 1 } },
+              },
+              {
+                id: "msdf-atlas-png",
+                kind: "font-msdf-png",
+                mime: "image/png",
+                sha256: "dd",
+                locator: { inline: { offset: 3, length: 1 } },
+              },
+            ],
+          },
+        },
+      ],
+      loadDocument: async () => ({ family: "Display" }),
+      readAssetChunk: async (_path, chunkId) => {
+        if (chunkId === "source") return new Uint8Array([1, 2]);
+        if (chunkId === "msdf-atlas") return new Uint8Array([9]);
+        if (chunkId === "msdf-atlas-png") return new Uint8Array([8]);
+        return null;
+      },
+    });
+    expect(loaded.fontMsdfJsonByGuid("font-1")).toEqual(new Uint8Array([9]));
+    expect(loaded.fontMsdfPngByGuid("font-1")).toEqual(new Uint8Array([8]));
+  });
+
   it("packs Model payload with GLB source so importScale survives export", async () => {
     const { decodePackedModelAsset } = await import("@babylonslate/assets");
     const kinds: string[] = [];

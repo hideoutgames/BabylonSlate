@@ -1565,6 +1565,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         payloadByGuid: loaded.payloadByGuid,
         bytesByGuid: loaded.bytesByGuid,
         fontFacetypeBytesByGuid: loaded.fontFacetypeBytesByGuid,
+        fontMsdfJsonByGuid: loaded.fontMsdfJsonByGuid,
+        fontMsdfPngByGuid: loaded.fontMsdfPngByGuid,
         navmeshByGuid: loaded.navmeshByGuid,
         audioReverbByGuid: loaded.audioReverbByGuid,
         customResolution:

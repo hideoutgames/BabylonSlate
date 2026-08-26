@@ -87,6 +87,54 @@ describe("loadGameFromFiles", () => {
     expect(loaded.fontFacetypeBytes.get("font-1")).toEqual(new Uint8Array([9, 8, 7]));
   });
 
+  it("maps FontMsdf sidecar bytes onto fontMsdfJson and fontMsdfPng by Font guid", async () => {
+    const scene = { ...createDefaultScene(), name: "Arena" };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode(JSON.stringify(scene)),
+        },
+        {
+          guid: "font-1",
+          type: "Font",
+          sceneGuid: "scene-1",
+          name: "Display",
+          bytes: new Uint8Array([1, 2]),
+        },
+        {
+          guid: "font-msdf:font-1",
+          type: "FontMsdf",
+          sceneGuid: "scene-1",
+          name: "Display MSDF",
+          bytes: new Uint8Array([9]),
+        },
+        {
+          guid: "font-msdf-png:font-1",
+          type: "FontMsdfAtlas",
+          sceneGuid: "scene-1",
+          name: "Display MSDF Atlas",
+          bytes: new Uint8Array([8]),
+        },
+      ],
+      playerFiles: new Map([
+        ["index.html", new TextEncoder().encode("<html></html>")],
+        ["player.js", new TextEncoder().encode("void 0")],
+      ]),
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const loaded = await loadGameFromFiles(packed.value.files);
+    expect(loaded.fontMsdfJson.get("font-1")).toEqual(new Uint8Array([9]));
+    expect(loaded.fontMsdfPng.get("font-1")).toEqual(new Uint8Array([8]));
+  });
+
   it("peels packed Model payload so importScale reaches the player", async () => {
     const { encodePackedModelAsset } = await import("@babylonslate/assets");
     const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3]);

@@ -11,12 +11,35 @@ import {
 } from "@babylonslate/editor-kit";
 import type { PropertyRow } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
-import { glyphsFallingToFallback, normalizeFontPayload } from "@babylonslate/assets";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@babylonslate/ui/components/field";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@babylonslate/ui/components/alert-dialog";
+import {
+  fontFamilyFromRepresentationFileName,
+  glyphsFallingToFallback,
+  groupMsdfImportBatch,
+  msdfAtlasPickError,
+  normalizeFontPayload,
+  shouldCompressTexture,
+} from "@babylonslate/assets";
 import { BlackboardEditor } from "./blackboard-editor";
 import { useDocuments } from "../context/document-context";
 import { FontRegistry } from "@babylonslate/render";
 import { familyFromAssetPayload, fontEditorStack } from "../lib/font-preview";
-import { shouldCompressTexture } from "@babylonslate/assets";
+import { pickImportFiles } from "@babylonslate/vfs";
 import {
   applyTextureCompressionQualityChange,
   applyTextureDownsampleChange,
@@ -88,6 +111,48 @@ function FontEditor({
   const [sample, setSample] = useState("The quick brown fox");
   const [fontsReady, setFontsReady] = useState(false);
   const [fallbackPick, setFallbackPick] = useState<number | "new" | null>(null);
+  const [msdfError, setMsdfError] = useState<string | null>(null);
+  const [msdfConfirm, setMsdfConfirm] = useState<{
+    files: Array<{ name: string; bytes: Uint8Array }>;
+    family: string;
+  } | null>(null);
+  const indexedFont = assetRegistry
+    ?.list()
+    .find((asset) => asset.path === path);
+
+  const attachMsdfFiles = async (
+    files: Array<{ name: string; bytes: Uint8Array }>,
+  ) => {
+    if (!assetRegistry || !indexedFont) return;
+    const prepared = groupMsdfImportBatch(files);
+    const folder = indexedFont.path.includes("/")
+      ? indexedFont.path.slice(0, indexedFont.path.lastIndexOf("/")).replace(
+          /^assets\//,
+          "",
+        )
+      : "";
+    for (const file of prepared) {
+      await assetRegistry.importFile(
+        indexedFont.rootId,
+        folder,
+        file.name,
+        file.bytes,
+        {
+          sidecars: file.sidecars,
+          attachToGuid: indexedFont.header.guid,
+        },
+      );
+    }
+    const updated = assetRegistry.getByGuid(indexedFont.header.guid);
+    if (updated) {
+      onChange(
+        normalizeFontPayload(updated.header.payload, font.family) as unknown as Record<
+          string,
+          unknown
+        >,
+      );
+    }
+  };
   const fontAssets = (assetRegistry?.list() ?? [])
     .filter((asset) => asset.header.type === "Font" && asset.path !== path)
     .map((asset) => ({
@@ -225,6 +290,74 @@ function FontEditor({
             )}
           />
         </div>
+        <div className="flex flex-col gap-2 p-3" data-testid="font-representations">
+          <div className="text-sm font-medium">Representations</div>
+          {(
+            [
+              ["font-rep-source", "Source Font", font.representations.source],
+              ["font-rep-typeface", "Typeface", font.representations.facetype],
+              ["font-rep-msdf-json", "MSDF JSON", font.representations.msdfJson],
+              ["font-rep-msdf-atlas", "MSDF Atlas", font.representations.msdfPng],
+            ] as const
+          ).map(([id, label, present]) => (
+            <p key={id} className="text-sm" data-testid={id}>
+              {label}: {present ? "Yes" : "Missing"}
+            </p>
+          ))}
+          {!font.representations.msdf ? (
+            <FieldDescription>
+              MSDF needs a JSON glyph map and an atlas PNG (msdf-bmfont). Import both
+              here or via Content Browser Import.
+            </FieldDescription>
+          ) : null}
+          <Field>
+            <FieldLabel htmlFor="font-import-msdf">MSDF Atlas</FieldLabel>
+            <Button
+              type="button"
+              id="font-import-msdf"
+              variant="outline"
+              data-testid="font-import-msdf"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const files = await pickImportFiles({
+                      multiple: true,
+                      accept: ".json,.png",
+                    });
+                    if (!files.length) return;
+                    const error = msdfAtlasPickError(files);
+                    if (error) {
+                      setMsdfError(error);
+                      return;
+                    }
+                    setMsdfError(null);
+                    const json = files.find((file) =>
+                      file.name.toLowerCase().endsWith(".json"),
+                    );
+                    const family = json
+                      ? fontFamilyFromRepresentationFileName(json.name)
+                      : "";
+                    if (
+                      family &&
+                      family.toLowerCase() !== font.family.toLowerCase()
+                    ) {
+                      setMsdfConfirm({ files, family });
+                      return;
+                    }
+                    await attachMsdfFiles(files);
+                  } catch (err) {
+                    setMsdfError(
+                      err instanceof Error ? err.message : String(err),
+                    );
+                  }
+                })();
+              }}
+            >
+              Import MSDF Atlas…
+            </Button>
+            {msdfError ? <FieldError>{msdfError}</FieldError> : null}
+          </Field>
+        </div>
         <AssetPicker
           open={fallbackPick !== null}
           onOpenChange={(open) => {
@@ -252,6 +385,35 @@ function FontEditor({
           }}
           data-testid="font-fallback-picker"
         />
+        <AlertDialog
+          open={msdfConfirm !== null}
+          onOpenChange={(open) => {
+            if (!open) setMsdfConfirm(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Attach MSDF Atlas</AlertDialogTitle>
+              <AlertDialogDescription>
+                {msdfConfirm
+                  ? `This atlas is named ${msdfConfirm.family}. Attach it to ${font.family} anyway?`
+                  : ""}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const pending = msdfConfirm;
+                  setMsdfConfirm(null);
+                  if (pending) void attachMsdfFiles(pending.files);
+                }}
+              >
+                Attach
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </PanelFrame>
   );

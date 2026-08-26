@@ -1,4 +1,9 @@
-import { FONT_FACETYPE_CHUNK_ID, normalizeFontPayload } from "@babylonslate/assets";
+import {
+  FONT_FACETYPE_CHUNK_ID,
+  FONT_MSDF_CHUNK_ID,
+  FONT_MSDF_PNG_CHUNK_ID,
+  normalizeFontPayload,
+} from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
 
 export interface FontAssetSource {
@@ -36,25 +41,15 @@ export function fontAssetHasFacetype(payload: unknown): boolean {
 }
 
 export function fontAssetHasMsdfJson(payload: unknown): boolean {
-  const representations =
-    payload && typeof payload === "object"
-      ? ((payload as { representations?: Record<string, unknown> }).representations ??
-        {})
-      : {};
-  return representations.msdfJson === true;
+  return normalizeFontPayload(payload, "").representations.msdfJson === true;
 }
 
 export function fontAssetHasMsdfPng(payload: unknown): boolean {
-  const representations =
-    payload && typeof payload === "object"
-      ? ((payload as { representations?: Record<string, unknown> }).representations ??
-        {})
-      : {};
-  return representations.msdfPng === true;
+  return normalizeFontPayload(payload, "").representations.msdfPng === true;
 }
 
 export function fontAssetHasMsdfPair(payload: unknown): boolean {
-  return fontAssetHasMsdfJson(payload) && fontAssetHasMsdfPng(payload);
+  return normalizeFontPayload(payload, "").representations.msdf === true;
 }
 
 /** Load facetype JSON for 3D Text, keyed by Font asset guid. */
@@ -73,4 +68,28 @@ export async function collectFontFacetypeBytes(
     bytes.set(asset.guid, chunk);
   }
   return bytes;
+}
+
+export type FontMsdfPair = {
+  json: Uint8Array;
+  png: Uint8Array;
+};
+
+/** Load MSDF JSON + atlas PNG only when both chunks exist. */
+export async function collectFontMsdfPair(
+  assets: readonly FontAssetSource[],
+  fontGuids: readonly string[],
+  readChunk: (path: string, chunkId: string) => Promise<Uint8Array | null>,
+): Promise<Map<string, FontMsdfPair>> {
+  const wanted = new Set(fontGuids.filter((guid) => guid.trim()));
+  const pairs = new Map<string, FontMsdfPair>();
+  if (wanted.size === 0) return pairs;
+  for (const asset of assets) {
+    if (asset.type !== "Font" || !wanted.has(asset.guid)) continue;
+    const json = await readChunk(asset.path, FONT_MSDF_CHUNK_ID);
+    const png = await readChunk(asset.path, FONT_MSDF_PNG_CHUNK_ID);
+    if (!json || json.byteLength === 0 || !png || png.byteLength === 0) continue;
+    pairs.set(asset.guid, { json, png });
+  }
+  return pairs;
 }

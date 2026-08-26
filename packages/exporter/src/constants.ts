@@ -19,6 +19,10 @@ export const AUDIO_REVERB_EXPORT_TYPE = "AudioReverb";
 export const AUDIO_REVERB_EXPORT_GUID_PREFIX = "audioReverb:";
 export const FONT_FACETYPE_EXPORT_TYPE = "FontFacetype";
 export const FONT_FACETYPE_EXPORT_GUID_PREFIX = "font-facetype:";
+export const FONT_MSDF_EXPORT_TYPE = "FontMsdf";
+export const FONT_MSDF_EXPORT_GUID_PREFIX = "font-msdf:";
+export const FONT_MSDF_ATLAS_EXPORT_TYPE = "FontMsdfAtlas";
+export const FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX = "font-msdf-png:";
 
 export function navmeshExportGuid(sceneGuid: string): string {
   return `${NAVMESH_EXPORT_GUID_PREFIX}${sceneGuid}`;
@@ -47,5 +51,25 @@ export function fontFacetypeExportGuid(fontGuid: string): string {
 export function fontGuidFromFontFacetypeExport(guid: string): string | null {
   return guid.startsWith(FONT_FACETYPE_EXPORT_GUID_PREFIX)
     ? guid.slice(FONT_FACETYPE_EXPORT_GUID_PREFIX.length)
+    : null;
+}
+
+export function fontMsdfExportGuid(fontGuid: string): string {
+  return `${FONT_MSDF_EXPORT_GUID_PREFIX}${fontGuid}`;
+}
+
+export function fontGuidFromFontMsdfExport(guid: string): string | null {
+  return guid.startsWith(FONT_MSDF_EXPORT_GUID_PREFIX)
+    ? guid.slice(FONT_MSDF_EXPORT_GUID_PREFIX.length)
+    : null;
+}
+
+export function fontMsdfAtlasExportGuid(fontGuid: string): string {
+  return `${FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX}${fontGuid}`;
+}
+
+export function fontGuidFromFontMsdfAtlasExport(guid: string): string | null {
+  return guid.startsWith(FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX)
+    ? guid.slice(FONT_MSDF_ATLAS_EXPORT_GUID_PREFIX.length)
     : null;
 }

@@ -11,7 +11,11 @@ import {
   AUDIO_REVERB_EXPORT_TYPE,
   sceneGuidFromAudioReverbExport,
   FONT_FACETYPE_EXPORT_TYPE,
+  FONT_MSDF_ATLAS_EXPORT_TYPE,
+  FONT_MSDF_EXPORT_TYPE,
   fontGuidFromFontFacetypeExport,
+  fontGuidFromFontMsdfAtlasExport,
+  fontGuidFromFontMsdfExport,
   type GameManifest,
   type PackSource,
 } from "@babylonslate/exporter";
@@ -39,6 +43,8 @@ export type LoadedGame = {
   modelPayloads: Map<string, ModelPayload>;
   fontBytes: Map<string, Uint8Array>;
   fontFacetypeBytes: Map<string, Uint8Array>;
+  fontMsdfJson: Map<string, Uint8Array>;
+  fontMsdfPng: Map<string, Uint8Array>;
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
   audioPayloads: Map<string, AudioPayload>;
@@ -98,6 +104,8 @@ export async function loadGameFromFiles(
   const modelPayloads = new Map<string, ModelPayload>();
   const fontBytes = new Map<string, Uint8Array>();
   const fontFacetypeBytes = new Map<string, Uint8Array>();
+  const fontMsdfJson = new Map<string, Uint8Array>();
+  const fontMsdfPng = new Map<string, Uint8Array>();
   const fontFamilies = new Map<string, string>();
   const audioBytes = new Map<string, Uint8Array>();
   const audioPayloads = new Map<string, AudioPayload>();
@@ -145,6 +153,16 @@ export async function loadGameFromFiles(
       fontFacetypeBytes.set(fontGuid, bytes);
       continue;
     }
+    if (entry.type === FONT_MSDF_EXPORT_TYPE) {
+      const fontGuid = fontGuidFromFontMsdfExport(entry.guid) ?? entry.guid;
+      fontMsdfJson.set(fontGuid, bytes);
+      continue;
+    }
+    if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) {
+      const fontGuid = fontGuidFromFontMsdfAtlasExport(entry.guid) ?? entry.guid;
+      fontMsdfPng.set(fontGuid, bytes);
+      continue;
+    }
     if (entry.type === "Audio") {
       const payload = peekPackedAudioPayload(bytes);
       if (payload) {
@@ -176,6 +194,8 @@ export async function loadGameFromFiles(
     modelPayloads,
     fontBytes,
     fontFacetypeBytes,
+    fontMsdfJson,
+    fontMsdfPng,
     fontFamilies,
     audioBytes,
     audioPayloads,
