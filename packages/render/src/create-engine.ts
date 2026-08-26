@@ -973,6 +973,7 @@ export function createEngine(
       mode,
       scheduler,
       manipulator: options.overlayTransformBox ? "overlay-box" : "trs",
+      canvasCssHeight: () => pointerCanvas().height,
       onDragStart: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);

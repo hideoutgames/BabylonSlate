@@ -51,6 +51,11 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     createEngineMock,
     documents: {
       applySceneChange: vi.fn(async () => true),
+      openDocuments: [] as Array<{
+        id: string;
+        ref: { kind: string; path: string; label: string };
+        content: unknown;
+      }>,
     },
     play: {
       registerSharedEngine: vi.fn(),
@@ -82,7 +87,7 @@ vi.mock("../context/play-context", () => ({
 
 vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
-    openDocuments: [],
+    openDocuments: documents.openDocuments,
     applySceneChange: documents.applySceneChange,
     projectDocument: null,
     collectPlaySpritePayloads: vi.fn(),
@@ -170,6 +175,7 @@ describe("ViewportPanel engine", () => {
     play.registerSharedEngine.mockClear();
     play.playing = false;
     play.preparing = false;
+    documents.openDocuments = [];
   });
 
   it("does not recreate the Engine when applySceneChange identity changes", () => {
@@ -193,6 +199,52 @@ describe("ViewportPanel engine", () => {
         editor: true,
         sharedEngine: play.ensureSharedEngine(),
       }),
+    );
+  });
+
+  it("requests the overlay transform box for SceneLayer documents", () => {
+    documents.openDocuments = [
+      {
+        id: "scene:S",
+        ref: {
+          kind: "scene-layer",
+          path: "assets/HUD.overlay.babasset",
+          label: "HUD",
+        },
+        content: null,
+      },
+    ];
+    renderViewport();
+    expect(createEngineMock).toHaveBeenCalledWith(
+      expect.any(HTMLCanvasElement),
+      expect.objectContaining({ overlayTransformBox: true }),
+    );
+  });
+
+  it("remounts the engine when a SceneLayer document appears", () => {
+    const { rerender } = renderViewport();
+    expect(createEngineMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ overlayTransformBox: false }),
+    );
+    documents.openDocuments = [
+      {
+        id: "scene:S",
+        ref: {
+          kind: "scene-layer",
+          path: "assets/HUD.overlay.babasset",
+          label: "HUD",
+        },
+        content: null,
+      },
+    ];
+    rerender(
+      <DocumentWorkspaceProvider documentId="scene:S">
+        <ViewportPanel {...({} as IDockviewPanelProps)} />
+      </DocumentWorkspaceProvider>,
+    );
+    expect(createEngineMock).toHaveBeenCalledTimes(2);
+    expect(createEngineMock.mock.calls.at(-1)?.[1]).toEqual(
+      expect.objectContaining({ overlayTransformBox: true }),
     );
   });
 

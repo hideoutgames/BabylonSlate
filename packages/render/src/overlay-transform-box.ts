@@ -16,8 +16,10 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { LinesMesh } from "@babylonjs/core/Meshes/linesMesh";
 import type { Scene } from "@babylonjs/core/scene";
 import type { UtilityLayerRenderer } from "@babylonjs/core/Rendering/utilityLayerRenderer";
+/** Same RGB as `SELECTION_COLOR` in gizmo-host; imported here to avoid a cycle. */
 import { SELECTION_OUTLINE_COLOR } from "./selection-outline";
 import type { RenderScheduler } from "./render-scheduler";
+import { overlayMinTargetWorldSize } from "./overlay-touch-target";
 
 export const OVERLAY_BOX_HANDLES = [
   "n",
@@ -264,14 +266,16 @@ export function overlayBoxLocalBounds(
 ): OverlayBoxLocalBounds {
   const candidates = visuals.length > 0 ? visuals : [origin];
   const sources = candidates.filter((mesh) => !skipOverlayBoxVisual(mesh));
-  const measured = sources.length > 0 ? sources : [origin];
+  if (sources.length === 0) {
+    return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
+  }
   origin.computeWorldMatrix(true);
   origin.getWorldMatrix().invertToRef(scratchInv);
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
-  for (const visual of measured) {
+  for (const visual of sources) {
     visual.computeWorldMatrix(true);
     visual.refreshBoundingInfo(false, false);
     for (const corner of visual.getBoundingInfo().boundingBox.vectorsWorld) {
@@ -310,15 +314,17 @@ export function writeOverlayBoxTransform(
   mesh.scaling.set(next.scale[0], next.scale[1], next.scale[2]);
 }
 
-function overlayHandleWorldSize(scene: Scene): number {
+function overlayHandleWorldSize(scene: Scene, cssHeight?: number): number {
   const camera = scene.activeCamera;
-  const height = scene.getEngine().getRenderHeight();
-  if (!camera || height <= 0) return FALLBACK_HANDLE_WORLD;
-  const top = camera.orthoTop ?? 0;
-  const bottom = camera.orthoBottom ?? 0;
+  const canvasHeight =
+    (cssHeight != null && cssHeight > 0
+      ? cssHeight
+      : scene.getEngine().getRenderingCanvas()?.clientHeight) ?? 0;
+  const top = camera?.orthoTop ?? 0;
+  const bottom = camera?.orthoBottom ?? 0;
   const worldH = Math.abs(top - bottom);
-  if (!(worldH > 0)) return FALLBACK_HANDLE_WORLD;
-  return (TOUCH_HANDLE_PX / height) * worldH;
+  const sized = overlayMinTargetWorldSize(TOUCH_HANDLE_PX, canvasHeight, worldH);
+  return sized > 0 ? sized : FALLBACK_HANDLE_WORLD;
 }
 
 function unlitMaterial(
@@ -364,10 +370,12 @@ function stemPoints(length: number): Vector3[] {
 }
 
 export interface OverlayTransformBoxOptions {
-  scheduler?: Pick<RenderScheduler, "invalidate" | "acquireContinuous">;
+  scheduler?: Pick<RenderScheduler, "invalidate">;
   onDragStart?: () => void;
   onDrag?: () => void;
   onDragEnd?: () => void;
+  /** View-canvas CSS height; 44px handles use this, not the drawing buffer. */
+  canvasCssHeight?: () => number;
 }
 
 export interface OverlayTransformBox {
@@ -484,7 +492,10 @@ export function createOverlayTransformBox(
     const halfH = Math.max(worldHeight / 2, 1e-4);
     boxScale.scaling.set(worldWidth || 1e-4, worldHeight || 1e-4, 1);
 
-    const handleSize = overlayHandleWorldSize(originalScene);
+    const handleSize = overlayHandleWorldSize(
+      originalScene,
+      options.canvasCssHeight?.(),
+    );
     const stemLen = handleSize * ROTATE_STEM_HANDLES;
     for (const [id, handle] of handles) {
       const offset = HANDLE_OFFSET[id];
@@ -497,7 +508,7 @@ export function createOverlayTransformBox(
       { points: stemPoints(stemLen), instance: stem },
       util,
     );
-    knob.position.set(0, halfH + stemLen, -handleSize);
+    knob.position.set(0, halfH + stemLen, -handleSize * 1.5);
     knob.scaling.set(handleSize, handleSize, handleSize);
   };
 

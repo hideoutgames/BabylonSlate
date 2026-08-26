@@ -38,6 +38,8 @@ export interface GizmoHostOptions {
    * on Babylon Position/Rotation/Scale gizmos (`trs`).
    */
   manipulator?: GizmoManipulator;
+  /** View-canvas CSS height for overlay-box 44px handles. */
+  canvasCssHeight?: () => number;
 }
 
 export interface GizmoHost {
@@ -440,6 +442,7 @@ export function createGizmoHost(
     manipulator === "overlay-box"
       ? createOverlayTransformBox(layer, scene, {
           scheduler: options.scheduler,
+          canvasCssHeight: options.canvasCssHeight,
           onDragStart: startDrag,
           onDrag: drag,
           onDragEnd: endDrag,

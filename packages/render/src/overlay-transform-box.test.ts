@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  Camera,
+  FreeCamera,
   MeshBuilder,
   PointerDragBehavior,
   Scene,
@@ -141,6 +143,19 @@ describe("applyOverlayBoxDrag resize", () => {
     );
     expect(next.scale[0]).toBeCloseTo(1.5);
   });
+
+  it("keeps the opposite local edge fixed when the box is already rotated", () => {
+    const next = applyOverlayBoxDrag(
+      start("e", { x: 0, y: 0.5 }, { rotationZ: Math.PI / 2 }),
+      { x: 0, y: 1.5 },
+    );
+    expect(next.rotationZ).toBeCloseTo(Math.PI / 2);
+    expect(next.scale[0]).toBeCloseTo(2);
+    expect(next.scale[1]).toBeCloseTo(1);
+    expect(next.position[0]).toBeCloseTo(0);
+    expect(next.position[1]).toBeCloseTo(0.5);
+    expect(next.position[2]).toBe(5);
+  });
 });
 
 describe("applyOverlayBoxDrag rotate", () => {
@@ -241,6 +256,36 @@ describe("createOverlayTransformBox", () => {
     expect(rotate.getAbsolutePosition().y).toBeGreaterThan(
       interior.getAbsolutePosition().y + interior.getBoundingInfo().boundingBox.extendSizeWorld.y,
     );
+    expect(interior.visibility).toBe(0);
+    expect(interior.isVisible).toBe(true);
+    expect(interior.isPickable).toBe(true);
+    const north = util.getMeshByName("overlay-box-handle-n")!;
+    north.computeWorldMatrix(true);
+    expect(rotate.getAbsolutePosition().z).toBeLessThan(
+      north.getAbsolutePosition().z,
+    );
+    box.dispose();
+    layer.dispose();
+  });
+
+  it("sizes handles from canvas CSS height so they stay 44px", () => {
+    const { scene, engine } = createHandle();
+    const camera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
+    camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    camera.orthoTop = 4.5;
+    camera.orthoBottom = -4.5;
+    scene.activeCamera = camera;
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(400);
+    vi.spyOn(engine, "getRenderingCanvas").mockReturnValue({
+      clientHeight: 100,
+    } as HTMLCanvasElement);
+    const layer = new UtilityLayerRenderer(scene);
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const box = createOverlayTransformBox(layer, scene);
+    box.attachTo(mesh);
+    const handle = layer.utilityLayerScene.getMeshByName("overlay-box-handle-e")!;
+    expect(handle.scaling.x).toBeCloseTo((44 / 100) * 9);
+    expect(handle.scaling.x).not.toBeCloseTo((44 / 400) * 9);
     box.dispose();
     layer.dispose();
   });
@@ -373,6 +418,30 @@ describe("overlayBoxLocalBounds", () => {
     expect(bounds.maxX).toBeCloseTo(0.5);
     expect(bounds.minY).toBeCloseTo(-0.5);
     expect(bounds.maxY).toBeCloseTo(0.5);
+  });
+
+  it("keeps local visual AABB when the origin is rotated", () => {
+    const { scene } = createHandle();
+    const origin = MeshBuilder.CreateBox("origin", { size: 10 }, scene);
+    origin.metadata = { editorPickProxy: true };
+    origin.rotation.z = Math.PI / 4;
+    const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, scene);
+    visual.parent = origin;
+    origin.computeWorldMatrix(true);
+    visual.computeWorldMatrix(true);
+    const bounds = overlayBoxLocalBounds(origin, [origin, visual]);
+    expect(bounds.minX).toBeCloseTo(-0.5);
+    expect(bounds.maxX).toBeCloseTo(0.5);
+    expect(bounds.minY).toBeCloseTo(-0.5);
+    expect(bounds.maxY).toBeCloseTo(0.5);
+  });
+
+  it("falls back to a unit box when every candidate is a pick proxy", () => {
+    const { scene } = createHandle();
+    const origin = MeshBuilder.CreateBox("origin", { size: 10 }, scene);
+    origin.metadata = { editorPickProxy: true };
+    const bounds = overlayBoxLocalBounds(origin, [origin]);
+    expect(bounds).toEqual({ minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 });
   });
 });
 

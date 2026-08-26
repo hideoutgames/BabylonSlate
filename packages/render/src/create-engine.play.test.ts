@@ -400,6 +400,7 @@ describe("Play createEngine view", () => {
     expect(handle.editor!.gizmos.positionGizmo.attachedMesh).toBe(
       handle.editor!.gizmos.attachedMesh(),
     );
+    expect(handle.editor!.gizmos.positionGizmo.zGizmo.isEnabled).toBe(false);
   });
 
   it("attaches the gizmo to a Model actor whose placeholder is unpickable", async () => {
