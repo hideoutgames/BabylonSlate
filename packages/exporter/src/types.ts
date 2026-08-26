@@ -60,6 +60,7 @@ export type GameManifest = {
   mode: ExportMode;
   render: RenderProjectSettings;
   playFrameCap: number;
+  touchMinTargetPx?: number;
   pixelsPerUnit: number;
   pixelPerfect: boolean;
   packs: string[];
@@ -84,6 +85,7 @@ export type ExportGameOptions = {
   reverbDampingScale?: number;
   customResolution: RenderProjectSettings;
   playFrameCap?: number;
+  touchMinTargetPx?: number;
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   physicsWorld?: "2d" | "3d";

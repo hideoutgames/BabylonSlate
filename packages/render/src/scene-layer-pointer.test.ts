@@ -92,4 +92,30 @@ describe("applyOverlayPointer", () => {
       { layerId: "hud", actorGuid: "ok", event: "onPressEnd" },
     ]);
   });
+
+  it("treats cancel over the pressed button as click, and cancel off-target as press end only", () => {
+    const state = createOverlayPointerState();
+    const button = {
+      layerId: "hud",
+      actorGuid: "ok",
+      hitTest: "block" as const,
+      hasButton: true,
+    };
+
+    expect(applyOverlayPointer(state, "down", [button])).toEqual([
+      { layerId: "hud", actorGuid: "ok", event: "onMouseEnter" },
+      { layerId: "hud", actorGuid: "ok", event: "onPressStart" },
+    ]);
+    expect(applyOverlayPointer(state, "cancel", [button])).toEqual([
+      { layerId: "hud", actorGuid: "ok", event: "onPressEnd" },
+      { layerId: "hud", actorGuid: "ok", event: "onClick" },
+    ]);
+
+    expect(applyOverlayPointer(state, "down", [button])).toEqual([
+      { layerId: "hud", actorGuid: "ok", event: "onPressStart" },
+    ]);
+    expect(applyOverlayPointer(state, "cancel", [])).toEqual([
+      { layerId: "hud", actorGuid: "ok", event: "onPressEnd" },
+    ]);
+  });
 });

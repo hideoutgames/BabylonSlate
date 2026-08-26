@@ -24,6 +24,8 @@ export type WorldInputProvider = Pick<
   | "wasActionReleased"
   | "getAxis"
   | "getAxis2D"
+  | "getCursorPosition"
+  | "setCursorVisible"
   | "setGamepadRumble"
   | "gamepadConnections"
 >;

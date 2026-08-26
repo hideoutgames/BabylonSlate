@@ -35,6 +35,7 @@ import {
   sceneLayerAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT,
   SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH,
+  deprojectCursorRay,
   type Transform,
   type SerializedActor,
   type SerializedScene,
@@ -227,7 +228,12 @@ export interface RuntimeDriver {
     layerGuid: string,
     materialGuid: string,
   ): void;
-  applySceneLayerResize(frustumWidth: number, frustumHeight: number): void;
+  applySceneLayerResize(
+    frustumWidth: number,
+    frustumHeight: number,
+    canvasWidth?: number,
+    canvasHeight?: number,
+  ): void;
   applySceneLayerPointer(
     message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
   ): void;
@@ -290,6 +296,7 @@ class InProcessRuntime implements RuntimeDriver {
     axes: {},
     axes2D: {},
     gamepadConnections: [],
+    cursor: { x: 0, y: 0, pressed: false },
   };
   /** Mutable box so TickContext can read connections without aliasing `this`. */
   private readonly connectionBox: {
@@ -328,6 +335,8 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly overlayGravity: [number, number, number];
   private overlayFrustumWidth = SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH;
   private overlayFrustumHeight = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
+  private playCanvasWidth = 1;
+  private playCanvasHeight = 1;
   private playScene: SerializedScene | undefined;
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
@@ -337,6 +346,7 @@ class InProcessRuntime implements RuntimeDriver {
   private playWorldRealized = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
+  private possessedCameraSlotId: number | null = null;
   private readonly commands: CommandRegistry;
   private readonly loopGuard: InfiniteLoopGuard;
   private readonly trace = new TraceRecorder();
@@ -533,6 +543,14 @@ class InProcessRuntime implements RuntimeDriver {
         resolved().actions[action]?.released ?? false,
       getAxis: (axis) => resolved().axes[axis] ?? 0,
       getAxis2D: (axis) => resolved().axes2D[axis] ?? { x: 0, y: 0 },
+      getCursorPosition: () => resolved().cursor,
+      setCursorVisible: (visible) => {
+        this.emit({
+          type: "setCursorVisible",
+          visible: visible === true,
+          frameId: this.frameId,
+        });
+      },
       get gamepadConnections() {
         return connections.current;
       },
@@ -613,6 +631,13 @@ class InProcessRuntime implements RuntimeDriver {
           ...(payload as Record<string, unknown>),
           frameId: this.frameId,
         } as CommandMessage);
+      },
+      setCursorVisible: (visible) => {
+        this.emit({
+          type: "setCursorVisible",
+          visible: visible === true,
+          frameId: this.frameId,
+        });
       },
       destroyActor: (actor) => {
         if (!actor) return;
@@ -695,6 +720,8 @@ class InProcessRuntime implements RuntimeDriver {
         return actor;
       },
       lineTrace: (start, end) => this.physicsSync.lineTrace(start, end),
+      projectCursorToScene: (channel, options) =>
+        this.projectCursorToScene(channel, options),
       sphereOverlap: (center, radius) =>
         this.physicsSync.sphereOverlap(center, radius),
       shapeSweep: (shape, start, end) =>
@@ -987,13 +1014,24 @@ class InProcessRuntime implements RuntimeDriver {
     this.emitSceneLayerPostProcess(layer);
   }
 
-  applySceneLayerResize(frustumWidth: number, frustumHeight: number): void {
+  applySceneLayerResize(
+    frustumWidth: number,
+    frustumHeight: number,
+    canvasWidth?: number,
+    canvasHeight?: number,
+  ): void {
     const width = Number(frustumWidth);
     const height = Number(frustumHeight);
     if (!Number.isFinite(width) || width <= 0) return;
     if (!Number.isFinite(height) || height <= 0) return;
     this.overlayFrustumWidth = width;
     this.overlayFrustumHeight = height;
+    if (typeof canvasWidth === "number" && canvasWidth > 0) {
+      this.playCanvasWidth = canvasWidth;
+    }
+    if (typeof canvasHeight === "number" && canvasHeight > 0) {
+      this.playCanvasHeight = canvasHeight;
+    }
     for (const actor of this.world.getActors()) {
       this.applyOverlayAnchor(actor);
     }
@@ -1201,6 +1239,7 @@ class InProcessRuntime implements RuntimeDriver {
       const slotId = this.slotByGuid.get(actor.id);
       if (slotId === undefined) continue;
       this.emit({ type: "possessCamera", slotId });
+      this.possessedCameraSlotId = slotId;
       return;
     }
   }
@@ -1248,6 +1287,7 @@ class InProcessRuntime implements RuntimeDriver {
     this.playWorldRealized = false;
     // The new scene owns its own camera choice.
     this.cameraPossessedByScript = false;
+    this.possessedCameraSlotId = null;
     this.emit({ type: "activeScene", sceneAssetGuid: this.playSceneGuid });
     this.realizePlayWorld();
   }
@@ -2700,7 +2740,113 @@ class InProcessRuntime implements RuntimeDriver {
     const slotId = this.slotByGuid.get(actor.guid);
     if (slotId === undefined) return;
     this.cameraPossessedByScript = true;
+    this.possessedCameraSlotId = slotId;
     this.emit({ type: "possessCamera", slotId });
+  }
+
+  private playCameraActor(): Actor | null {
+    if (this.possessedCameraSlotId != null) {
+      for (const actor of this.world.getActors()) {
+        if (actor.destroyed) continue;
+        if (this.slotByGuid.get(actor.guid) === this.possessedCameraSlotId) {
+          return actor;
+        }
+      }
+    }
+    const mainId = this.playScene?.settings.mainCameraActorId;
+    if (mainId) {
+      const actor = this.world.findActor(mainId);
+      if (actor && !actor.destroyed) return actor;
+    }
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed || actor.sceneLayerId) continue;
+      if (
+        actor.components.some(
+          (component) =>
+            component.classId === "CameraComponent" && !component.destroyed,
+        )
+      ) {
+        return actor;
+      }
+    }
+    return null;
+  }
+
+  private projectCursorToScene(
+    _channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+  ) {
+    const miss = {
+      hit: false,
+      location: null,
+      normal: null,
+      distance: 0,
+      actorId: null,
+      bodyId: null,
+      worldOrigin: { x: 0, y: 0, z: 0 },
+      worldDirection: { x: 0, y: 0, z: 1 },
+    };
+    const camera = this.playCameraActor();
+    const component = camera?.components.find(
+      (entry) => entry.classId === "CameraComponent" && !entry.destroyed,
+    );
+    if (!camera || !component) return miss;
+    const projection = component.getVariable("projectionMode");
+    const ray = deprojectCursorRay(
+      this.resolvedInput.cursor,
+      { width: this.playCanvasWidth, height: this.playCanvasHeight },
+      {
+        position: camera.transform.position,
+        rotation: camera.transform.rotation,
+        lens: {
+          projectionMode:
+            projection === "orthographic" ? "orthographic" : "perspective",
+          fieldOfView: Number(component.getVariable("fieldOfView") ?? 60),
+          orthographicSize: Number(
+            component.getVariable("orthographicSize") ?? 5,
+          ),
+          nearClip: Number(component.getVariable("nearClip") ?? 0.1),
+          farClip: Number(component.getVariable("farClip") ?? 1000),
+        },
+      },
+    );
+    this.physicsSync.syncFromWorld(this.world);
+    const hit = this.physicsSync.lineTrace(ray.origin, ray.end);
+    const drawDebug = options?.drawDebug !== false;
+    if (drawDebug) {
+      const duration =
+        typeof options?.duration === "number" && Number.isFinite(options.duration)
+          ? options.duration
+          : 0;
+      const end =
+        hit.hit === true && hit.location ? hit.location : ray.end;
+      this.emit({
+        type: "debugDraw",
+        kind: "line",
+        start: ray.origin,
+        end,
+        thickness: 1,
+        color: { x: 1, y: 0, z: 0, w: 1 },
+        duration,
+        frameId: this.frameId,
+      });
+      if (hit.hit === true && hit.location) {
+        this.emit({
+          type: "debugDraw",
+          kind: "square",
+          center: hit.location,
+          size: 0.16,
+          color: { x: 0, y: 1, z: 0, w: 1 },
+          duration,
+          frameId: this.frameId,
+        });
+      }
+    }
+    return {
+      ...hit,
+      worldOrigin: ray.origin,
+      worldDirection: ray.direction,
+    };
   }
 
   private reemitIllumination(target: unknown): void {

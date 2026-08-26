@@ -11,6 +11,7 @@ import { createTestEngine } from "./create-null-engine";
 import {
   actorIdFromMeshName,
   applySceneToBabylonScene,
+  actorVisualFingerprint,
   clearSceneMeshes,
   countSceneMeshes,
   createPrimitiveMesh,
@@ -675,4 +676,48 @@ describe("scene-loader", () => {
     clearSceneMeshes(scene);
     expect(countSceneMeshes(scene)).toBe(0);
   });
+
+  it("builds a native-sized 2DTexture overlay plane in the editor viewport", () => {
+    const { scene } = createHandle();
+    const png = pngIhdr(64, 32);
+    const component: SerializedComponent = {
+      id: "tex",
+      classId: "2DTextureComponent",
+      properties: { textureGuid: "tex-64x32", hitTest: "ignore" },
+    };
+    const actor = createActor("banner", "Banner", { components: [component] });
+    const assets = {
+      pixelsPerUnit: 100,
+      textureBytes: new Map([["tex-64x32", png]]),
+    };
+    applySceneToBabylonScene(scene, sceneWithActors([actor]), assets);
+    const mesh = scene.getMeshByName(editorMeshName("banner"));
+    expect(mesh).not.toBeNull();
+    expect((mesh!.material as StandardMaterial).disableLighting).toBe(true);
+    mesh!.refreshBoundingInfo(false, false);
+    const extent = mesh!.getBoundingInfo().boundingBox.extendSize;
+    expect(extent.x * 2).toBeCloseTo(0.64);
+    expect(extent.y * 2).toBeCloseTo(0.32);
+    expect(actorVisualFingerprint(actor, assets)).toContain("tex-64x32");
+    expect(actorVisualFingerprint(actor, assets)).toContain("0.64x0.32");
+    const taller = {
+      ...assets,
+      textureBytes: new Map([["tex-64x32", pngIhdr(64, 64)]]),
+    };
+    expect(actorVisualFingerprint(actor, taller)).not.toBe(
+      actorVisualFingerprint(actor, assets),
+    );
+  });
 });
+
+/** PNG signature + IHDR width/height — CRC omitted. */
+function pngIhdr(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  bytes.set([0, 0, 0, 13], 8);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}

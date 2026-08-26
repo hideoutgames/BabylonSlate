@@ -23,6 +23,18 @@ import {
 } from "./snapshot-apply";
 import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
 
+/** PNG signature + IHDR width/height — CRC omitted. */
+function pngIhdr(width: number, height: number): Uint8Array {
+  const bytes = new Uint8Array(24);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  bytes.set([0, 0, 0, 13], 8);
+  bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  return bytes;
+}
+
 function kenneyMannequinGlb(): Uint8Array {
   const dir = join(
     dirname(fileURLToPath(import.meta.url)),
@@ -91,6 +103,40 @@ describe("createPlayMesh", () => {
     expect((material.material as StandardMaterial).disableLighting).toBe(true);
     expect((button.material as StandardMaterial).disableLighting).toBe(true);
     expect(button.isPickable).toBe(true);
+  });
+
+  it("sizes a 2DTexture plane to sniffed PNG pixels / pixelsPerUnit", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const binding = createSnapshotSceneBinding();
+    binding.pixelsPerUnit = 100;
+    binding.textureBytes = new Map([["tex-64x32", pngIhdr(64, 32)]]);
+    const mesh = createPlayMesh(handle.scene, 1, "2dtexture", "tex-64x32", binding);
+    mesh.refreshBoundingInfo(false, false);
+    const extent = mesh.getBoundingInfo().boundingBox.extendSize;
+    expect(extent.x * 2).toBeCloseTo(0.64);
+    expect(extent.y * 2).toBeCloseTo(0.32);
+  });
+
+  it("keeps a 1x1 2DTexture plane when the guid or bytes are missing", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const binding = createSnapshotSceneBinding();
+    binding.pixelsPerUnit = 100;
+    const missingGuid = createPlayMesh(handle.scene, 1, "2dtexture", null, binding);
+    const missingBytes = createPlayMesh(
+      handle.scene,
+      2,
+      "2dtexture",
+      "gone",
+      binding,
+    );
+    for (const mesh of [missingGuid, missingBytes]) {
+      mesh.refreshBoundingInfo(false, false);
+      const extent = mesh.getBoundingInfo().boundingBox.extendSize;
+      expect(extent.x * 2).toBeCloseTo(1);
+      expect(extent.y * 2).toBeCloseTo(1);
+    }
   });
 
   it("honors overlay HitTest when stamping assignMesh metadata", () => {

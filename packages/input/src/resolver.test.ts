@@ -304,4 +304,70 @@ describe("InputResolver", () => {
       released: false,
     });
   });
+
+  it("keeps primary pointer XY and pressed; extra fingers do not steal the cursor", () => {
+    const resolver = new InputResolver(mappings);
+    const down = resolver.resolve([
+      {
+        kind: "pointer",
+        tick: 1,
+        pointerId: 7,
+        phase: "down",
+        x: 120,
+        y: 40,
+        button: 0,
+      },
+    ]);
+    expect(down.cursor).toEqual({ x: 120, y: 40, pressed: true });
+
+    const extra = resolver.resolve([
+      {
+        kind: "pointer",
+        tick: 2,
+        pointerId: 8,
+        phase: "down",
+        x: 0,
+        y: 0,
+        button: 0,
+      },
+      {
+        kind: "pointer",
+        tick: 2,
+        pointerId: 7,
+        phase: "move",
+        x: 130,
+        y: 50,
+        button: 0,
+      },
+    ]);
+    expect(extra.cursor).toEqual({ x: 130, y: 50, pressed: true });
+
+    const up = resolver.resolve([
+      {
+        kind: "pointer",
+        tick: 3,
+        pointerId: 7,
+        phase: "up",
+        x: 131,
+        y: 51,
+        button: 0,
+      },
+    ]);
+    expect(up.cursor).toEqual({ x: 131, y: 51, pressed: false });
+
+    const idle = resolver.resolve([]);
+    expect(idle.cursor).toEqual({ x: 131, y: 51, pressed: false });
+  });
+
+  it("treats mouse samples as the cursor when no pointer is primary", () => {
+    const resolver = new InputResolver(mappings);
+    const tick = resolver.resolve([
+      { kind: "mouse", tick: 1, phase: "move", x: 10, y: 20, button: 0 },
+    ]);
+    expect(tick.cursor).toEqual({ x: 10, y: 20, pressed: false });
+    const down = resolver.resolve([
+      { kind: "mouse", tick: 2, phase: "down", x: 11, y: 21, button: 0 },
+    ]);
+    expect(down.cursor).toEqual({ x: 11, y: 21, pressed: true });
+  });
 });

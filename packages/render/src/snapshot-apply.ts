@@ -28,6 +28,7 @@ import {
 import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
+import { createOverlayTextureQuad } from "./overlay-texture-quad";
 import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import {
@@ -663,7 +664,16 @@ export function createPlayMesh(
     meshKind === "2dmaterial" ||
     meshKind === "2dbutton"
   ) {
-    const mesh = MeshBuilder.CreatePlane(name, { size: 1 }, scene);
+    if (meshKind === "2dtexture") {
+      const mesh = createOverlayTextureQuad(scene, name, assetGuid, binding);
+      mesh.isPickable = false;
+      return mesh;
+    }
+    const mesh = MeshBuilder.CreatePlane(
+      name,
+      { width: 1, height: 1 },
+      scene,
+    );
     const material = new StandardMaterial(`${name}-unlit`, scene);
     material.disableLighting = true;
     material.emissiveColor = Color3.White();
@@ -671,9 +681,7 @@ export function createPlayMesh(
     material.backFaceCulling = false;
     mesh.material = material;
     mesh.isPickable = meshKind === "2dbutton";
-    if (meshKind === "2dtexture") {
-      applyAlbedoTexture(mesh, scene, assetGuid, binding);
-    } else if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
+    if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
       const compiled = binding.resolveMaterial(assetGuid);
       if (compiled) mesh.material = compiled;
     }

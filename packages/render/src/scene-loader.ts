@@ -10,6 +10,10 @@ import {
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import {
+  createOverlayTextureQuad,
+  overlayTextureVisualKind,
+} from "./overlay-texture-quad";
+import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
   hideModelPlaceholder,
@@ -198,6 +202,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "Text3DComponent",
   "2DTextComponent",
   "2DRichTextComponent",
+  "2DTextureComponent",
   "ParticleComponent",
   "ColliderComponent",
   "NavMeshComponent",
@@ -213,6 +218,7 @@ const SURFACE_COMPONENT_CLASS_IDS = new Set([
   "Text3DComponent",
   "2DTextComponent",
   "2DRichTextComponent",
+  "2DTextureComponent",
 ]);
 
 export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
@@ -298,7 +304,10 @@ export function needsOriginRoot(actor: SerializedActor): boolean {
   );
 }
 
-function componentVisualKind(component: SerializedComponent): string {
+function componentVisualKind(
+  component: SerializedComponent,
+  assets?: MeshAssetContext,
+): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "MeshComponent") {
     const kind =
@@ -332,6 +341,14 @@ function componentVisualKind(component: SerializedComponent): string {
     });
     return `2dtext:${component.classId}:${parsed.text}:${parsed.size}:${parsed.renderer}:${parsed.fontAssetGuid ?? ""}:${parsed.color.join(",")}:${parsed.alignment}:${parsed.bold}:${parsed.italic}:${parsed.underline}:${parsed.outline}:${parsed.wrapWidth}:${parsed.hitTest}`;
   }
+  if (component.classId === "2DTextureComponent") {
+    return overlayTextureVisualKind(
+      stringProp(component.properties.textureGuid),
+      component.properties.hitTest,
+      assets?.textureBytes,
+      assets?.pixelsPerUnit,
+    );
+  }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
   }
@@ -353,7 +370,10 @@ function componentVisualKind(component: SerializedComponent): string {
 }
 
 /** Fingerprint so EditorSceneSync rebuilds when visual parts change. */
-export function actorVisualFingerprint(actor: SerializedActor): string {
+export function actorVisualFingerprint(
+  actor: SerializedActor,
+  assets?: MeshAssetContext,
+): string {
   const visuals = visualComponentsOf(actor);
   if (visuals.length === 0) {
     const mode = needsOriginRoot(actor) ? "origin" : "single";
@@ -361,7 +381,7 @@ export function actorVisualFingerprint(actor: SerializedActor): string {
   }
   const mode = needsOriginRoot(actor) ? "origin" : "single";
   return `${mode}:${visuals
-    .map((component) => `${component.id}:${componentVisualKind(component)}`)
+    .map((component) => `${component.id}:${componentVisualKind(component, assets)}`)
     .join(";")}`;
 }
 
@@ -453,6 +473,10 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
       component.classId === "2DRichTextComponent",
   );
   if (text2dComponent) return componentVisualKind(text2dComponent);
+  const texture2dComponent = actor.components.find(
+    (component) => component.classId === "2DTextureComponent",
+  );
+  if (texture2dComponent) return componentVisualKind(texture2dComponent);
   if (
     actor.components.some((component) => component.classId === "ParticleComponent")
   ) {
@@ -512,6 +536,14 @@ export function createMeshForComponent(
     return createText2DMesh(scene, name, component.properties, assets, {
       rich: component.classId === "2DRichTextComponent",
     });
+  }
+  if (component.classId === "2DTextureComponent") {
+    return createOverlayTextureQuad(
+      scene,
+      name,
+      stringProp(component.properties.textureGuid),
+      assets,
+    );
   }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
@@ -662,6 +694,9 @@ export function createActorMesh(
       component.classId === "2DTextComponent" ||
       component.classId === "2DRichTextComponent",
   );
+  const texture2dComponent = actor.components.find(
+    (component) => component.classId === "2DTextureComponent",
+  );
   if (!meshComponent && spriteComponent) {
     return createSpriteComponentMesh(scene, name, spriteComponent, assets);
   }
@@ -689,6 +724,17 @@ export function createActorMesh(
     text2dComponent
   ) {
     return createMeshForComponent(scene, name, actor, text2dComponent, assets);
+  }
+  if (
+    !meshComponent &&
+    !spriteComponent &&
+    !tilemapComponent &&
+    !skyboxComponent &&
+    !text3dComponent &&
+    !text2dComponent &&
+    texture2dComponent
+  ) {
+    return createMeshForComponent(scene, name, actor, texture2dComponent, assets);
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
   if (assetGuid) {

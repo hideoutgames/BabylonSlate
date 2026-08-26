@@ -41,6 +41,7 @@ interface ResolvedInputTick {
 
 - **`resolve(events)`** — apply one tick's events; derive `pressed` / `released` from edge detection vs previous held actions.
 - **`kind: "2d"`** axes fold x/y bindings into `axes2D[name]`; magnitude also exposed on `axes[name]` for 1D callers.
+- **Cursor.** Primary `kind: "pointer"` (mouse or first `pointerId`; extra fingers ignored) keeps `{ x, y, pressed }` in canvas CSS pixels. XY sticks after up/cancel. `kind: "mouse"` updates the cursor when no pointer is primary. Touch uses the same cursor sample as mouse.
 
 Pure with respect to the browser — feed synthetic streams from the deterministic harness.
 
@@ -82,5 +83,10 @@ Per engineplan §11.1: input is tested through **synthetic event streams** repla
 | `OnAction` | exec on pressed / released |
 | `OnGamepadConnected` / `OnGamepadDisconnected` | exec on pad transitions |
 | `SetGamepadRumble` | `ctx.setGamepadRumble(...)` |
+| `GetCursorPosition` | `ctx.getCursorPosition()` → `{ x, y, pressed }` (VEC2 + Pressed). Touch emulates the cursor. |
+| `ProjectCursorToScene` | Deproject the Play camera (no Babylon) + world `lineTrace`. Channel, Draw Debug **default on** (red line, green square at hit, Duration 0), Hit Result plus World Origin / World Direction. |
+| `ShowCursor` / `HideCursor` | `{ type: "setCursorVisible", visible }`. Play CSS cursor starts **hidden**. Touch Show draws a geometric ring (no artwork). |
 
-See [bridge.md](bridge.md) for the raw input ring buffer wire format.
+Canvas CSS size rides `sceneLayerResize` (`canvasWidth` / `canvasHeight`) so Project Cursor can convert pixels to NDC.
+
+See [bridge.md](bridge.md) for the raw input ring buffer wire format. Overlay 2DButton clicks (including touch / `pointercancel`) are [scene-layers.md](scene-layers.md), not extra input nodes.

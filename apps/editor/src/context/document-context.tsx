@@ -1588,6 +1588,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           projectDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
         playFrameCap:
           projectDocument?.settings.playFrameCap ?? DEFAULT_PLAY_FRAME_CAP,
+        touchMinTargetPx:
+          projectDocument?.settings.touchMinTargetPx ?? 44,
         pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit ?? 100,
         pixelPerfect: projectDocument?.settings.twoD.pixelPerfect === true,
         physicsWorld:

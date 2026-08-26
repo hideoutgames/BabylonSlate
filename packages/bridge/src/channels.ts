@@ -151,6 +151,8 @@ export type ControlMessage =
       type: "sceneLayerResize";
       frustumWidth: number;
       frustumHeight: number;
+      canvasWidth?: number;
+      canvasHeight?: number;
     };
 
 export type DebugColliderPrimitive = {
@@ -371,6 +373,11 @@ export type CommandMessage =
       frameId: number;
     }
   | DebugDrawCommand
+  | {
+      type: "setCursorVisible";
+      visible: boolean;
+      frameId: number;
+    }
   | {
       type: "consoleResult";
       success: boolean;

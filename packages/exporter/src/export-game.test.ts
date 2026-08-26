@@ -427,6 +427,7 @@ describe("exportGame", () => {
       customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
       pixelsPerUnit: 64,
       pixelPerfect: true,
+      touchMinTargetPx: 48,
       scripts: [],
       assets: [
         {
@@ -449,6 +450,7 @@ describe("exportGame", () => {
     if (!result.ok) return;
     expect(result.value.manifest.pixelsPerUnit).toBe(64);
     expect(result.value.manifest.pixelPerfect).toBe(true);
+    expect(result.value.manifest.touchMinTargetPx).toBe(48);
     expect(
       result.value.manifest.assets.find((entry) => entry.guid === "font-1")?.name,
     ).toBe("Display");
@@ -483,6 +485,7 @@ describe("exportGame", () => {
     );
     expect(manifest.pixelsPerUnit).toBe(100);
     expect(manifest.pixelPerfect).toBe(false);
+    expect(manifest.touchMinTargetPx).toBe(44);
     expect(manifest.infiniteLoopDetection).toBeUndefined();
     expect(manifest.loopCount).toBeUndefined();
     expect(manifest.occlusionEnabled).toBe(true);
