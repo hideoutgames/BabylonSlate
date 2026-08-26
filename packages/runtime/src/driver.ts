@@ -1534,8 +1534,13 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean {
+    if (!this.nav) return false;
+    if (!this.navAgentByActor.has(actorGuid)) {
+      const actor = this.world.findActor(actorGuid);
+      if (actor) this.registerNavAgent(actor);
+    }
     const agentId = this.navAgentByActor.get(actorGuid);
-    if (!agentId || !this.nav) return false;
+    if (!agentId) return false;
     return this.nav.setAgentTarget(agentId, this.toNav(target));
   }
 
@@ -1603,25 +1608,30 @@ class InProcessRuntime implements RuntimeDriver {
   private registerNavAgents(): void {
     if (!this.nav) return;
     for (const actor of this.world.getActors()) {
-      if (actor.destroyed) continue;
-      const component = actor.components.find(
-        (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
-      );
-      if (!component || this.navAgentByActor.has(actor.guid)) continue;
-      const params = parseNavAgentParams(
-        Object.fromEntries(component.variables),
-      );
-      const id = this.nav.addAgent(
-        this.toNav({
-          x: actor.transform.position.x,
-          y: actor.transform.position.y,
-          z: actor.transform.position.z,
-        }),
-        params,
-      );
-      if (!id) continue;
-      this.navAgentByActor.set(actor.guid, id);
+      this.registerNavAgent(actor);
     }
+  }
+
+  private registerNavAgent(actor: Actor): void {
+    if (!this.nav || actor.destroyed) return;
+    if (this.navAgentByActor.has(actor.guid)) return;
+    const component = actor.components.find(
+      (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
+    );
+    if (!component) return;
+    const params = parseNavAgentParams(
+      Object.fromEntries(component.variables),
+    );
+    const id = this.nav.addAgent(
+      this.toNav({
+        x: actor.transform.position.x,
+        y: actor.transform.position.y,
+        z: actor.transform.position.z,
+      }),
+      params,
+    );
+    if (!id) return;
+    this.navAgentByActor.set(actor.guid, id);
   }
 
   private updateNavAgentParams(actor: Actor): void {
