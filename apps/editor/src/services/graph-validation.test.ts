@@ -1378,6 +1378,27 @@ describe("scriptPaletteNodes", () => {
       classId: "Text3DComponent",
       implicitSelf: false,
     });
+    const getMesh = nodes.find(
+      (node) => node.id === "variables.get:MeshComponent:Mesh",
+    );
+    expect(getMesh?.defaultData).toMatchObject({
+      propertyKey: "assetGuid",
+      typeClassId: "Model",
+      typeClassIds: ["Mesh", "Model"],
+    });
+    expect(
+      nodes.some((node) => node.id === "functions.call:CameraComponent:Possess"),
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) => node.id === "functions.call:RigidBodyComponent:Add Impulse",
+      ),
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) => node.id === "functions.call:NavAgentComponent:Move To",
+      ),
+    ).toBe(true);
   });
 
   it("injects function-local Get/Set only when that function graph is open", () => {

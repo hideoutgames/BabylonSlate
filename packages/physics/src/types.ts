@@ -40,6 +40,15 @@ export type RigidBodyDesc = {
   transform: PhysicsTransform;
 };
 
+/** Mid-Play rigid-body knobs (mass, damping, gravity, motion type). */
+export type RigidBodyTuning = {
+  motionType?: MotionType;
+  mass?: number;
+  linearDamping?: number;
+  angularDamping?: number;
+  gravityScale?: number;
+};
+
 export type ColliderDesc = {
   id: string;
   bodyId: string;
@@ -53,6 +62,15 @@ export type ColliderDesc = {
   translation?: Vec3;
   /** Local rotation relative to the rigid body (component transform rotation). */
   rotation?: Quat;
+};
+
+/** Mid-Play collider knobs (trigger, material, filters). */
+export type ColliderTuning = {
+  isTrigger?: boolean;
+  friction?: number;
+  restitution?: number;
+  layer?: number;
+  mask?: number;
 };
 
 export type HitResult = {

@@ -50,6 +50,7 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.onPressStart": "Event On Press Start",
   "flow.event.onPressEnd": "Event On Press End",
   "flow.event.textChanged": "Event On Text Changed",
+  "flow.event.audioFinished": "Event On Audio Finished",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
@@ -92,6 +93,7 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.beginOverlap",
   "flow.event.endOverlap",
   "flow.event.textChanged",
+  "flow.event.audioFinished",
   ...OVERLAY_MOUSE_EVENT_TYPE_IDS,
 ] as const;
 

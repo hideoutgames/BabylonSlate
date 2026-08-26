@@ -48,6 +48,13 @@ describe("editor utility events", () => {
     );
   });
 
+  it("maps On Audio Finished to onAudioFinished", () => {
+    expect(EVENT_BY_TYPE_ID["flow.event.audioFinished"]).toBe("onAudioFinished");
+    expect(eventNameForEntry(entry("flow.event.audioFinished"))).toBe(
+      "onAudioFinished",
+    );
+  });
+
   it("stamps componentId on compiled entry points", () => {
     const registry = new NodeRegistry();
     registry.register({

@@ -4,7 +4,7 @@ import {
   parseRigidBodyProperties,
   bakeColliderLocal,
 } from "@babylonslate/physics";
-import type { Actor, World } from "@babylonslate/object-model";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import {
   decodeTileGid,
   spriteAnimationFrameAt,
@@ -206,6 +206,38 @@ export class PhysicsWorldSync {
     const bodyId = this.bodyByActor.get(actorId);
     if (!bodyId) return;
     this.backend.addImpulse(bodyId, impulse, strength);
+  }
+
+  /** Apply mid-Play RigidBody / Collider inspector knobs to the live backend. */
+  applyComponent(component: ActorComponent): void {
+    const owner = component.owner;
+    if (!owner || owner.destroyed || component.destroyed) return;
+    if (!this.actorFilter(owner)) return;
+    const bodyId = this.bodyByActor.get(owner.guid);
+    if (!bodyId) return;
+    if (component.classId === "RigidBodyComponent") {
+      const props = parseRigidBodyProperties(mapToRecord(component.variables));
+      this.backend.updateBody(bodyId, {
+        motionType: props.motionType,
+        mass: props.mass,
+        linearDamping: props.linearDamping,
+        angularDamping: props.angularDamping,
+        gravityScale: props.gravityScale,
+      });
+      return;
+    }
+    if (component.classId !== "ColliderComponent") return;
+    const collider = parseColliderProperties(
+      mapToRecord(component.variables),
+      this.backend.kind,
+    );
+    this.backend.updateCollider(`collider:${component.guid}`, {
+      isTrigger: collider.isTrigger,
+      friction: collider.friction,
+      restitution: collider.restitution,
+      layer: collider.layer,
+      mask: collider.mask,
+    });
   }
 
   /**

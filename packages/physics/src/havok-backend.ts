@@ -30,6 +30,7 @@ import type {
   CharacterControllerDesc,
   ColliderDesc,
   ColliderShape,
+  ColliderTuning,
   HitResult,
   MotionType,
   OverlapResult,
@@ -37,6 +38,7 @@ import type {
   PhysicsTransform,
   Quat,
   RigidBodyDesc,
+  RigidBodyTuning,
   Vec3,
   PhysicsContactEvent,
 } from "./types";
@@ -262,6 +264,35 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     body.applyImpulse(this.tmpImpulse, this.tmpLocation);
   }
 
+  updateBody(bodyId: string, tuning: RigidBodyTuning): void {
+    const record = this.bodies.get(bodyId);
+    if (!record) return;
+    if (tuning.motionType) record.desc.motionType = tuning.motionType;
+    if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
+      record.desc.mass = tuning.mass;
+    }
+    if (
+      typeof tuning.linearDamping === "number" &&
+      Number.isFinite(tuning.linearDamping)
+    ) {
+      record.desc.linearDamping = tuning.linearDamping;
+    }
+    if (
+      typeof tuning.angularDamping === "number" &&
+      Number.isFinite(tuning.angularDamping)
+    ) {
+      record.desc.angularDamping = tuning.angularDamping;
+    }
+    if (
+      typeof tuning.gravityScale === "number" &&
+      Number.isFinite(tuning.gravityScale)
+    ) {
+      record.desc.gravityScale = tuning.gravityScale;
+    }
+    if (tuning.motionType) this.applyMotionType(record);
+    this.applyBodyTuning(record);
+  }
+
   createCollider(desc: ColliderDesc): void {
     this.assertLive();
     if (!isShape3D(desc.shape)) return;
@@ -303,6 +334,38 @@ export class HavokPhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     this.colliders.delete(colliderId);
+  }
+
+  updateCollider(colliderId: string, tuning: ColliderTuning): void {
+    const record = this.colliders.get(colliderId);
+    if (!record) return;
+    if (typeof tuning.isTrigger === "boolean") {
+      record.desc.isTrigger = tuning.isTrigger;
+    }
+    if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+      record.desc.friction = tuning.friction;
+    }
+    if (
+      typeof tuning.restitution === "number" &&
+      Number.isFinite(tuning.restitution)
+    ) {
+      record.desc.restitution = tuning.restitution;
+    }
+    if (typeof tuning.layer === "number" && Number.isFinite(tuning.layer)) {
+      record.desc.layer = tuning.layer;
+    }
+    if (typeof tuning.mask === "number" && Number.isFinite(tuning.mask)) {
+      record.desc.mask = tuning.mask;
+    }
+    const shape = record.shape;
+    if (!shape) return;
+    shape.isTrigger = record.desc.isTrigger;
+    shape.material = {
+      friction: record.desc.friction,
+      restitution: record.desc.restitution,
+    };
+    shape.filterMembershipMask = record.desc.layer;
+    shape.filterCollideMask = record.desc.mask;
   }
 
   listDebugColliders() {

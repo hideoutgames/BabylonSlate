@@ -1507,4 +1507,72 @@ describe("AudioService", () => {
     });
     service.dispose();
   });
+
+  it("setVoiceGain updates play-call volume on a live voice", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(
+      library({
+        audio: { jump: { ...createDefaultAudioPayload(), volume: 1 } },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1, 2, 3, 4]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "audio-1",
+    });
+    await service.flush();
+    service.handleCommand({
+      type: "setVoiceGain",
+      voiceId: "audio-1",
+      volume: 0.25,
+    });
+    await service.flush();
+    expect(backend.gains.get("audio-1")).toBe(0.25);
+    service.dispose();
+  });
+
+  it("notifies onVoiceEnded for finished non-looping voices", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const ended: string[] = [];
+    const service = new AudioService({
+      backend,
+      onVoiceEnded: (voiceId) => ended.push(voiceId),
+    });
+    service.setLibrary(
+      library({
+        audio: {
+          jump: createDefaultAudioPayload(),
+          bed: { ...createDefaultAudioPayload(), loop: true },
+        },
+      }),
+    );
+    service.setSourceBytes("jump", new Uint8Array([1]));
+    service.setSourceBytes("bed", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "jump",
+      volume: 1,
+      frameId: 1,
+      voiceId: "one-shot",
+    });
+    service.handleCommand({
+      type: "playSound",
+      assetGuid: "bed",
+      volume: 1,
+      frameId: 1,
+      voiceId: "looping",
+      loop: true,
+    });
+    await service.flush();
+    backend.finish("one-shot");
+    backend.finish("looping");
+    expect(ended).toEqual(["one-shot"]);
+    service.dispose();
+  });
 });

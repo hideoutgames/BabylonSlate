@@ -60,7 +60,7 @@ The SceneLayer editor tab is a locked 2D viewport (one Babylon scene), not the P
 
 ## Hit test and 2DAnchor
 
-`HitTest` on `2DButton`, `2DMaterial`, `2DTexture`, `2DPanel`, `2DText`, and `2DRichText`: Ignore (default on texture/material/text/panel), Block (default on button), Pass Through. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / `2DPanel` / `2DText` / `2DRichText` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad. A **child** `2DButton` under a visual actor skips that default quad and picks the **parent** visual; graph events still fire on the actor that owns `2DButtonComponent`.
+`HitTest` on `2DButton`, `2DMaterial`, `2DTexture`, `2DPanel`, `2DText`, and `2DRichText`: Ignore (default on texture/material/text/panel), Block (default on button), Pass Through. Hit Test is a catalog Get/Set variable on those components (`propertyKey` `hitTest`); 2D Text / Rich Text also expose Renderer, Outline, Outline Color, Alignment, Bold, Italic, Underline, and Wrap Width. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / `2DPanel` / `2DText` / `2DRichText` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad. A **child** `2DButton` under a visual actor skips that default quad and picks the **parent** visual; graph events still fire on the actor that owns `2DButtonComponent`.
 
 Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene, honors HitTest, then optionally the world. Overlay scenes participate in pointer-move picks for hover; world scenes keep `skipPointerMovePicking: true`. Hits still walk sibling visual Hit Test (`Ignore` / `Block` / `Pass Through`); the **button** is what opts the Actor into clickable overlay interaction.
 

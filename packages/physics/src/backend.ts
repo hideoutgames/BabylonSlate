@@ -1,6 +1,7 @@
 import type {
   CharacterControllerDesc,
   ColliderDesc,
+  ColliderTuning,
   HitResult,
   OverlapResult,
   PhysicsBackendOptions,
@@ -8,6 +9,7 @@ import type {
   PhysicsTransform,
   PhysicsWorldKind,
   RigidBodyDesc,
+  RigidBodyTuning,
   Vec3,
 } from "./types";
 import type { DebugColliderPrimitive } from "./debug-colliders";
@@ -32,9 +34,11 @@ export interface PhysicsBackend {
     motionType: RigidBodyDesc["motionType"],
   ): void;
   addImpulse(bodyId: string, impulse: Vec3, strength?: number): void;
+  updateBody(bodyId: string, tuning: RigidBodyTuning): void;
 
   createCollider(desc: ColliderDesc): void;
   destroyCollider(colliderId: string): void;
+  updateCollider(colliderId: string, tuning: ColliderTuning): void;
 
   /** Debug draw primitives for `showcollision` (boxes/spheres/circles/polylines). */
   listDebugColliders(): readonly DebugColliderPrimitive[];

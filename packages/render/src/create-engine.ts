@@ -408,6 +408,8 @@ export interface CreateEngineOptions {
     canvasWidth: number;
     canvasHeight: number;
   }) => void;
+  /** Finished non-looping AudioComponent voice (Play graph On Audio Finished). */
+  onAudioVoiceEnded?: (voiceId: string) => void;
 }
 
 export interface EditorTools {
@@ -643,6 +645,7 @@ export function createEngine(
     ? new AudioService({
         backend: createPlayAudioBackend(options.audioBackend),
         onDiagnostic: options.onAudioDiagnostic,
+        onVoiceEnded: options.onAudioVoiceEnded,
         loadSourceBytes: options.loadAudioSourceBytes,
         maxVoices: options.audioMaxVoices,
       })

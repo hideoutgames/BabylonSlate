@@ -497,6 +497,85 @@ describe("@babylonslate/physics", () => {
     backend.dispose();
   });
 
+  it("updateCollider flips a blocking overlap to a trigger begin", () => {
+    const backend = createSoftwarePhysicsBackend("3d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    for (const [id, actorId, x] of [
+      ["a", "actor-a", 0],
+      ["b", "actor-b", 0.25],
+    ] as const) {
+      backend.createBody({
+        id,
+        actorId,
+        motionType: "static",
+        mass: 0,
+        linearDamping: 0,
+        angularDamping: 0,
+        gravityScale: 0,
+        transform: {
+          position: { x, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+        },
+      });
+      backend.createCollider({
+        id: `${id}-col`,
+        bodyId: id,
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+        friction: 0.5,
+        restitution: 0,
+        isTrigger: false,
+        layer: 1,
+        mask: 0xffffffff,
+      });
+    }
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual(["hit"]);
+    backend.updateCollider("a-col", { isTrigger: true });
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual([
+      "overlapBegin",
+    ]);
+    backend.dispose();
+  });
+
+  it("updateBody mass changes how far an impulse moves the body", () => {
+    const backend = createSoftwarePhysicsBackend("3d", {
+      x: 0,
+      y: 0,
+      z: 0,
+    });
+    backend.createBody({
+      id: "a",
+      actorId: "actor",
+      motionType: "dynamic",
+      mass: 1,
+      linearDamping: 0,
+      angularDamping: 0,
+      gravityScale: 0,
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+      },
+    });
+    backend.createCollider({
+      id: "c",
+      bodyId: "a",
+      shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+      friction: 0,
+      restitution: 0,
+      isTrigger: false,
+      layer: 1,
+      mask: 0xffffffff,
+    });
+    backend.updateBody("a", { mass: 10 });
+    backend.addImpulse("a", { x: 10, y: 0, z: 0 }, 1);
+    backend.step(1 / 60);
+    const t = backend.getBodyTransform("a");
+    expect(t!.position.x).toBeCloseTo(1 / 60, 5);
+    backend.dispose();
+  });
+
   it("offsets software collider AABBs by ColliderDesc translation", () => {
     const backend = createSoftwarePhysicsBackend("3d", {
       x: 0,

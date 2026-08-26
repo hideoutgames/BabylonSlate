@@ -4,12 +4,13 @@ import { fileURLToPath } from "node:url";
 import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
+import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { createTestEngine } from "./create-null-engine";
 import { encodeAnimatedTriangleGlb, encodeParentedAnimatedTriangleGlb, encodeTriangleGlb, encodeUvHierarchyGlb, glbClipNames } from "./model-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
-import { RENDERING_GROUP } from "./sorting";
+import { RENDERING_GROUP, resolveSortingLayer } from "./sorting";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
 import {
@@ -1525,5 +1526,28 @@ describe("createPlayMesh", () => {
       (mesh!.metadata as { editorColliderVisual?: boolean }).editorColliderVisual,
     ).toBe(true);
     expect(mesh!.getChildMeshes().length).toBeGreaterThan(0);
+  });
+
+  it("applies sprite sortingLayer and orderInLayer from assignMesh", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "sprite",
+      sortingLayer: "UI",
+      orderInLayer: 3,
+    });
+    const mesh = binding.meshes.get(2);
+    const expected = resolveSortingLayer(
+      [...DEFAULT_SORTING_LAYERS],
+      "UI",
+      3,
+    );
+    expect(mesh?.renderingGroupId).toBe(expected.renderingGroupId);
+    expect(mesh?.alphaIndex).toBe(expected.sortKey);
   });
 });

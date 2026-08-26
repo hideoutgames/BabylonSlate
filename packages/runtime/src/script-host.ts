@@ -145,7 +145,11 @@ export interface ScriptHostServices {
       voiceId?: string;
     },
   ): void;
-  setParticlePlaying?(actorGuid: string, playing: boolean): void;
+  setParticlePlaying?(
+    actorGuid: string,
+    playing: boolean,
+    componentId?: string,
+  ): void;
   setChannelVolume?(channelGuid: string, volume: number): void;
   setGlobalVolume?(volume: number): void;
   setRenderResolution?(width: number, height: number): void;
@@ -1340,11 +1344,40 @@ export class ScriptHost {
       return {};
     }
     if (name === "playParticles" && component.owner) {
-      this.services.setParticlePlaying?.(component.owner.guid, true);
+      this.services.setParticlePlaying?.(
+        component.owner.guid,
+        true,
+        component.guid,
+      );
       return {};
     }
     if (name === "stopParticles" && component.owner) {
-      this.services.setParticlePlaying?.(component.owner.guid, false);
+      this.services.setParticlePlaying?.(
+        component.owner.guid,
+        false,
+        component.guid,
+      );
+      return {};
+    }
+    if (name === "possessCamera" && component.owner) {
+      this.services.possessCamera?.(component.owner);
+      return {};
+    }
+    if (name === "addImpulse" && component.owner) {
+      const impulse = vec3Arg(args.impulse);
+      this.services.addImpulse?.(
+        component.owner,
+        impulse,
+        Number(args.strength ?? 1),
+      );
+      return {};
+    }
+    if (name === "moveTo" && component.owner) {
+      this.services.moveTo?.(component.owner, vec3Arg(args.destination));
+      return {};
+    }
+    if (name === "stopMovement" && component.owner) {
+      this.services.stopMovement?.(component.owner);
       return {};
     }
     return {};
@@ -1469,6 +1502,15 @@ function resolveLiveActors(
     if (actor) actors.push(actor);
   }
   return actors;
+}
+
+function vec3Arg(value: unknown): Vec3 {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    x: Number(record.x ?? 0) || 0,
+    y: Number(record.y ?? 0) || 0,
+    z: Number(record.z ?? 0) || 0,
+  };
 }
 
 function actorOf(target: unknown): Actor | null {

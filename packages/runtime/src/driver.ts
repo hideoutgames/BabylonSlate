@@ -240,6 +240,9 @@ export interface RuntimeDriver {
   applySceneLayerPointer(
     message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
   ): void;
+  applyAudioVoiceEnded(
+    message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
+  ): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
@@ -779,9 +782,26 @@ class InProcessRuntime implements RuntimeDriver {
       refreshComponent: (component) => {
         const owner = component.owner;
         if (!owner || owner.destroyed) return;
+        this.applyOverlayAnchor(owner);
         const slotId = this.slotByGuid.get(owner.guid);
-        if (slotId === undefined) return;
-        this.emitMeshAssignment(owner, slotId);
+        if (slotId !== undefined) {
+          this.emitMeshAssignment(owner, slotId);
+        }
+        if (component.classId === "ParticleComponent") {
+          this.emitParticleComponents(owner);
+        }
+        if (component.classId === "AudioComponent") {
+          const volume = Number(component.getVariable("volume") ?? 1);
+          this.emit({
+            type: "setVoiceGain",
+            voiceId: component.guid,
+            volume: Number.isFinite(volume) ? volume : 1,
+          });
+        }
+        const sync = owner.sceneLayerId
+          ? this.overlayPhysicsSync
+          : this.physicsSync;
+        sync.applyComponent(component);
       },
       playSound: (asset, volume, options) => {
         this.emit({
@@ -794,11 +814,12 @@ class InProcessRuntime implements RuntimeDriver {
           voiceId: options?.voiceId,
         });
       },
-      setParticlePlaying: (actorGuid, playing) => {
+      setParticlePlaying: (actorGuid, playing, componentId) => {
         this.emit({
           type: "setParticlePlaying",
           actorGuid: String(actorGuid ?? ""),
           playing: Boolean(playing),
+          ...(componentId ? { componentId: String(componentId) } : {}),
         });
       },
       setChannelVolume: (channelGuid, volume) => {
@@ -1076,6 +1097,31 @@ class InProcessRuntime implements RuntimeDriver {
       {},
       resolved.button?.guid,
     );
+  }
+
+  applyAudioVoiceEnded(
+    message: Extract<ControlMessage, { type: "audioVoiceEnded" }>,
+  ): void {
+    const voiceId = String(message.voiceId ?? "").trim();
+    if (!voiceId) return;
+    for (const actor of this.world.getActors()) {
+      if (actor.destroyed) continue;
+      const component = actor.components.find(
+        (entry) =>
+          !entry.destroyed &&
+          entry.classId === "AudioComponent" &&
+          (entry.guid === voiceId || entry.sourceId === voiceId),
+      );
+      if (!component) continue;
+      this.scriptHost.invokeEvent(
+        actor.classId,
+        "onAudioFinished",
+        actor,
+        {},
+        component.guid,
+      );
+      return;
+    }
   }
 
   private ensureOverlayDesignPose(actor: Actor): void {
@@ -2463,6 +2509,9 @@ class InProcessRuntime implements RuntimeDriver {
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
         actorGuid: actor.guid,
+        ...(meshKind === "sprite" || meshKind === "tilemap"
+          ? playSortingOf(primary)
+          : {}),
         ...(actor.sceneLayerId
           ? {
               hitTest: overlayHitTestOf(actor),
@@ -3483,6 +3532,20 @@ function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {
   return "ignore";
 }
 
+function playSortingOf(component: ActorComponent): {
+  sortingLayer: string;
+  orderInLayer: number;
+} {
+  const layer = component.getVariable("sortingLayer");
+  const order = component.getVariable("orderInLayer");
+  return {
+    sortingLayer:
+      typeof layer === "string" && layer.trim() !== "" ? layer : "Default",
+    orderInLayer:
+      typeof order === "number" && Number.isFinite(order) ? Math.round(order) : 0,
+  };
+}
+
 function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "SpriteComponent") return "sprite";
   if (component.classId === "TilemapComponent") return "tilemap";
@@ -3598,6 +3661,10 @@ function playMeshPartOf(
     ...(component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
       ? { text2d: text2dAssignPayload(component) }
+      : {}),
+    ...(component.classId === "SpriteComponent" ||
+    component.classId === "TilemapComponent"
+      ? playSortingOf(component)
       : {}),
   };
 }

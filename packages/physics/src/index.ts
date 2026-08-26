@@ -18,6 +18,8 @@ export type {
   CharacterControllerDesc,
   PhysicsContactEvent,
   PhysicsBackendOptions,
+  RigidBodyTuning,
+  ColliderTuning,
 } from "./types";
 export type {
   DebugColliderPrimitive,
