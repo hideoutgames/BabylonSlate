@@ -56,6 +56,49 @@ export function compileFontStack(options: {
   return parts.join(", ");
 }
 
+export type Text2DFontStackSource = {
+  guid: string;
+  family: string;
+  fallbackGuids?: readonly string[];
+};
+
+/** Project default + per-Font CSS stacks for Bitmap overlay 2D Text. */
+export function compileText2DFontStacks(options: {
+  fonts: readonly Text2DFontStackSource[];
+  defaultFontGuid?: string | null;
+  globalFallback?: string;
+}): { defaultStack: string; byGuid: Map<string, string> } {
+  const familyByGuid = new Map(
+    options.fonts.map((font) => [font.guid, font.family] as const),
+  );
+  const familyForGuid = (guid: string): string | null =>
+    familyByGuid.get(guid) ?? null;
+  const globalFallback = options.globalFallback ?? "sans-serif";
+  const projectDefaultFamily = options.defaultFontGuid
+    ? familyForGuid(options.defaultFontGuid)
+    : null;
+  const defaultStack = compileFontStack({
+    family: projectDefaultFamily ?? "",
+    globalFallback,
+  });
+  const byGuid = new Map<string, string>();
+  for (const font of options.fonts) {
+    const fallbackFamilies = (font.fallbackGuids ?? [])
+      .map((guid) => familyForGuid(guid))
+      .filter((family): family is string => family !== null);
+    byGuid.set(
+      font.guid,
+      compileFontStack({
+        family: font.family,
+        fallbackFamilies,
+        projectDefaultFamily,
+        globalFallback,
+      }),
+    );
+  }
+  return { defaultStack, byGuid };
+}
+
 /** Characters whose advance matches the generic-only stack (likely fallback). */
 export function glyphsFallingToFallback(
   sample: string,

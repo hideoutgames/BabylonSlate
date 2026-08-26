@@ -17,6 +17,7 @@ const {
   collectPlayFontFacetypeBytes,
   collectPlayFontMsdfPair,
   collectPlayFontFaceEntries,
+  collectPlayFontCssStacks,
   collectPlayModelBytes,
   collectPlayModelPayloads,
 } = vi.hoisted(() => {
@@ -80,6 +81,10 @@ const {
     collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
     collectPlayFontMsdfPair: vi.fn(async () => new Map()),
     collectPlayFontFaceEntries: vi.fn(async () => []),
+    collectPlayFontCssStacks: vi.fn(() => ({
+      fontCssStack: "sans-serif",
+      fontCssStackByGuid: new Map(),
+    })),
     collectPlayModelBytes: vi.fn(async () => new Map()),
     collectPlayModelPayloads: vi.fn(async () => new Map()),
     prefabState: {
@@ -140,6 +145,7 @@ vi.mock("../context/document-context", () => ({
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
+    collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,

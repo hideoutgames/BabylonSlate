@@ -92,7 +92,7 @@ Overlay-only `2DTextComponent` / `2DRichTextComponent`. Shared per-glyph quads (
 
 | Renderer | When | How |
 | --- | --- | --- |
-| Bitmap | Always | FontFace / canvas glyph quads, tinted. Missing Font uses the project default stack. |
+| Bitmap | Always | Canvas `FontFace` glyphs packed onto an RGBA atlas when the paint is letter-shaped. A blank or solid canvas fill (Node / NullEngine, broken headless 2D) uses the bundled 5×7 bitmap. Missing Font uses the project default CSS stack. |
 | MSDF | Font has a complete JSON + PNG pair | Same quads, atlas UVs + distance-field shader (crisp at any scale, shader stroke). Details greys out MSDF until the pair exists and writes `renderer` back to `bitmap` if the Font becomes incomplete. Missing atlas glyphs fall back to Bitmap cells. |
 
 Size is px / Project Settings `pixelsPerUnit` (default 100). Overlay frustum stays height 9. Parent pick plane is the layout AABB; glyph and inline-image children are not pickable. RichText `[img]` is always a textured quad.

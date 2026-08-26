@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   collectFontAssetEntries,
+  collectFontCssStacks,
   collectFontFacetypeBytes,
   collectFontMsdfPair,
   fontAssetHasMsdfJson,
@@ -116,6 +117,39 @@ describe("collectFontMsdfPair", () => {
     expect([...pairs.keys()]).toEqual(["font-1"]);
     expect(pairs.get("font-1")?.json).toEqual(new Uint8Array([1, 2]));
     expect(pairs.get("font-1")?.png).toEqual(new Uint8Array([3, 4]));
+  });
+});
+
+describe("collectFontCssStacks", () => {
+  it("compiles the project default stack and per-Font stacks from payloads", () => {
+    const stacks = collectFontCssStacks(
+      [
+        {
+          guid: "display",
+          path: "assets/Display.font.babasset",
+          type: "Font",
+          payload: { family: "Display", fallbackGuids: ["body"] },
+        },
+        {
+          guid: "body",
+          path: "assets/Body.font.babasset",
+          type: "Font",
+          payload: { family: "Body" },
+        },
+        {
+          guid: "tex-1",
+          path: "assets/Icon.texture.babasset",
+          type: "Texture",
+          payload: {},
+        },
+      ],
+      { defaultFontGuid: "body", globalFallback: "sans-serif" },
+    );
+    expect(stacks.fontCssStack).toBe('"Body", sans-serif');
+    expect(stacks.fontCssStackByGuid.get("display")).toBe(
+      '"Display", "Body", sans-serif',
+    );
+    expect(stacks.fontCssStackByGuid.has("tex-1")).toBe(false);
   });
 });
 

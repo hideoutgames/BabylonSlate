@@ -305,6 +305,10 @@ export interface CreateEngineOptions {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   /** MSDF atlas PNG keyed by Font asset guid. */
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  /** CSS font stack when no Font is picked. */
+  fontCssStack?: string;
+  /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
+  fontCssStackByGuid?: ReadonlyMap<string, string>;
   /** FontFace source bytes for Bitmap 2D Text. */
   fontFaceEntries?: readonly FontAssetEntry[];
   /** Model source bytes keyed by Model asset guid. */
@@ -678,6 +682,8 @@ export function createEngine(
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
   binding.fontMsdfJson = options.fontMsdfJson;
   binding.fontMsdfPng = options.fontMsdfPng;
+  binding.fontCssStack = options.fontCssStack;
+  binding.fontCssStackByGuid = options.fontCssStackByGuid;
   const fontRegistry = new FontRegistry();
   if (options.fontFaceEntries && options.fontFaceEntries.length > 0) {
     void fontRegistry.registerAll(options.fontFaceEntries);
@@ -1586,6 +1592,8 @@ export function createEngine(
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;
       binding.fontMsdfPng = assets.fontMsdfPng;
+      binding.fontCssStack = assets.fontCssStack;
+      binding.fontCssStackByGuid = assets.fontCssStackByGuid;
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;

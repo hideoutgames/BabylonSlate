@@ -2,6 +2,7 @@ import {
   FONT_FACETYPE_CHUNK_ID,
   FONT_MSDF_CHUNK_ID,
   FONT_MSDF_PNG_CHUNK_ID,
+  compileText2DFontStacks,
   normalizeFontPayload,
 } from "@babylonslate/assets";
 import type { FontAssetEntry } from "@babylonslate/render";
@@ -34,6 +35,30 @@ export async function collectFontAssetEntries(
     });
   }
   return entries;
+}
+
+export function collectFontCssStacks(
+  assets: readonly FontAssetSource[],
+  settings?: { defaultFontGuid?: string | null; globalFallback?: string },
+): { fontCssStack: string; fontCssStackByGuid: Map<string, string> } {
+  const compiled = compileText2DFontStacks({
+    fonts: assets
+      .filter((asset) => asset.type === "Font")
+      .map((asset) => {
+        const payload = normalizeFontPayload(asset.payload, "Custom Font");
+        return {
+          guid: asset.guid,
+          family: payload.family,
+          fallbackGuids: payload.fallbackGuids,
+        };
+      }),
+    defaultFontGuid: settings?.defaultFontGuid,
+    globalFallback: settings?.globalFallback,
+  });
+  return {
+    fontCssStack: compiled.defaultStack,
+    fontCssStackByGuid: compiled.byGuid,
+  };
 }
 
 export function fontAssetHasFacetype(payload: unknown): boolean {

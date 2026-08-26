@@ -64,6 +64,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
+    collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
@@ -229,12 +230,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
         const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
         const fontFaceEntries = await collectPlayFontFaceEntries();
+        const fontCss = collectPlayFontCssStacks();
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(
           materials.documents,
           materials.functions,
         );
-        void handle.registerFonts(fontFaceEntries);
+        await handle.registerFonts(fontFaceEntries);
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -244,6 +246,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           fontFacetypeBytes,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
+          fontCssStack: fontCss.fontCssStack,
+          fontCssStackByGuid: fontCss.fontCssStackByGuid,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -267,6 +271,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
+    collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
@@ -306,9 +311,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
         const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
         const fontFaceEntries = await collectPlayFontFaceEntries();
+        const fontCss = collectPlayFontCssStacks();
         if (cancelled || engineRef.current !== handle) return;
         handle.setMaterialDocuments(materials.documents, materials.functions);
-        void handle.registerFonts(fontFaceEntries);
+        await handle.registerFonts(fontFaceEntries);
         handle.setMeshAssets({
           resourceCache: handle.resourceCache,
           spritePayloads: sprites,
@@ -318,6 +324,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           fontFacetypeBytes,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
+          fontCssStack: fontCss.fontCssStack,
+          fontCssStackByGuid: fontCss.fontCssStackByGuid,
           modelBytes,
           modelPayloads,
           pixelsPerUnit: projectDocument?.settings.twoD.pixelsPerUnit,
@@ -337,6 +345,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
+    collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,

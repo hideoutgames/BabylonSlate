@@ -1,6 +1,10 @@
 import { Mesh, StandardMaterial } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createActor, createText2DComponent } from "@babylonslate/core";
+import {
+  createActor,
+  createRichText2DComponent,
+  createText2DComponent,
+} from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
 import {
   actorVisualFingerprint,
@@ -47,6 +51,52 @@ describe("createText2DMesh", () => {
     }
   });
 
+  it("samples a glyph atlas on bitmap letter quads instead of a solid fill", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "letters",
+      { text: "Hi", size: 32, color: [0, 1, 0] },
+      undefined,
+      { metrics: fixedMetrics() },
+    );
+    const children = mesh.getChildMeshes();
+    expect(children.length).toBeGreaterThanOrEqual(2);
+    for (const child of children) {
+      const material = child.material as StandardMaterial;
+      expect(
+        material.diffuseTexture ?? material.opacityTexture ?? material.emissiveTexture,
+      ).toBeTruthy();
+      const uvs = child.getVerticesData("uv");
+      expect(uvs?.length).toBe(8);
+      expect(uvs?.[0]).not.toBe(uvs?.[2]);
+    }
+  });
+
+  it("samples a glyph atlas for rich text color spans instead of a solid fill", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "rich",
+      { text: "[color=green]Hi", size: 32 },
+      undefined,
+      { rich: true, metrics: fixedMetrics() },
+    );
+    const children = mesh.getChildMeshes();
+    expect(children.length).toBe(2);
+    expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
+    for (const child of children) {
+      const material = child.material as StandardMaterial;
+      expect(material.emissiveTexture).toBeTruthy();
+      expect(material.diffuseTexture).toBeTruthy();
+      expect(material.transparencyMode).toBe(1);
+      const uvs = child.getVerticesData("uv");
+      expect(uvs?.[0]).not.toBe(uvs?.[2]);
+    }
+  });
+
   it("parents glyph quads under an AABB pick plane", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -67,6 +117,23 @@ describe("createText2DMesh", () => {
       children.every((child) => (child.metadata as { text2dGlyph?: boolean }).text2dGlyph),
     ).toBe(true);
     expect((mesh.material as StandardMaterial).disableLighting).toBe(true);
+  });
+
+  it("records the compiled CSS stack used to rasterize bitmap glyphs", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "stacked",
+      { text: "Hi", size: 32, fontAssetGuid: "font-1" },
+      {
+        fontCssStackByGuid: new Map([["font-1", '"Display", sans-serif']]),
+      },
+      { metrics: fixedMetrics() },
+    );
+    expect((mesh.metadata as { text2dFontStack?: string }).text2dFontStack).toBe(
+      '"Display", sans-serif',
+    );
   });
 
   it("uses an MSDF material branch when the pair exists and falls back per glyph", () => {
@@ -146,6 +213,26 @@ describe("2D text editor and Play wiring", () => {
     );
     expect((mesh.metadata as { text2d?: boolean }).text2d).toBe(true);
     expect(actorVisualFingerprint(actor)).toContain("2dtext");
+  });
+
+  it("builds editor visuals for 2DRichTextComponent with atlas-sampled glyphs", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const component = createRichText2DComponent("rich-1");
+    component.properties.text = "[color=green]Hi";
+    const actor = createActor("hud", "Banner", { components: [component] });
+    const mesh = createMeshForComponent(
+      handle.scene,
+      editorMeshName(actor.id),
+      actor,
+      component,
+      { pixelsPerUnit: 100 },
+    );
+    expect((mesh.metadata as { text2dRich?: boolean }).text2dRich).toBe(true);
+    expect(mesh.getChildMeshes().length).toBeGreaterThanOrEqual(2);
+    const material = mesh.getChildMeshes()[0]?.material as StandardMaterial;
+    expect(material.emissiveTexture).toBeTruthy();
+    expect(actorVisualFingerprint(actor)).toContain("2DRichTextComponent");
   });
 
   it("builds Play overlay meshes for 2dtext and stamps HitTest on the pick plane only", () => {

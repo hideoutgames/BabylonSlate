@@ -91,6 +91,10 @@ vi.mock("../context/document-context", () => ({
     collectPlayFontFacetypeBytes: vi.fn(),
     collectPlayFontMsdfPair: vi.fn(async () => new Map()),
     collectPlayFontFaceEntries: vi.fn(async () => []),
+    collectPlayFontCssStacks: vi.fn(() => ({
+      fontCssStack: "sans-serif",
+      fontCssStackByGuid: new Map(),
+    })),
     collectPlayModelBytes: vi.fn(),
     collectPlayModelPayloads: vi.fn(),
     collectPlayMaterialLibrary: vi.fn(),

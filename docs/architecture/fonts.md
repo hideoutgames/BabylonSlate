@@ -31,7 +31,7 @@ See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
 
 ## Overlay 2D Text (optional MSDF)
 
-`2DTextComponent` / `2DRichTextComponent` default to **Bitmap** (FontFace raster quads). **MSDF** is enabled in Details only when the Font has both JSON and PNG. Three equivalent import paths, all using the platform picker (`pickImportFiles`, multi-select `.json,.png`):
+`2DTextComponent` / `2DRichTextComponent` default to **Bitmap**. Each non-whitespace glyph is rasterized (canvas `fillText` after `FontFace` load when the alpha is letter-shaped, else the bundled 5×7) and packed onto a shared RGBA atlas; letter quads sample that atlas instead of a solid unlit fill. **MSDF** is enabled in Details only when the Font has both JSON and PNG. Three equivalent import paths, all using the platform picker (`pickImportFiles`, multi-select `.json,.png`):
 
 1. Content Browser **Import** — JSON + PNG together create a Font when the family is new, or attach to an existing Font.
 2. Font document **Import MSDF Atlas…** (`data-testid="font-import-msdf"`) — always attaches to the open Font.
@@ -48,7 +48,7 @@ Incomplete picks leave `representations.msdf` false until the pair is complete. 
 3. Project default font (Project Settings).
 4. Global generic fallback (`sans-serif` unless overridden).
 
-Duplicates are dropped. The stack always terminates in a generic family so a failed load is never silent Arial.
+Duplicates are dropped. The stack always terminates in a generic family so a failed load is never silent Arial. `compileText2DFontStacks` builds the project default stack plus a per-Font map; editor viewport / Play / player pass those as `fontCssStack` / `fontCssStackByGuid`.
 
 Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `globalFallback` (generic CSS family).
 
@@ -61,7 +61,7 @@ Project Settings (`packages/core` `ProjectSettings.fonts`): `defaultFontGuid`, `
 3. Late resolve → `consumeDirty()` so a host can `markAsDirty()`.
 4. Failed load → editor warning, never a silent substitution.
 
-The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
+The Font document workspace calls `register` when the asset has a `source` chunk (imported woff/ttf/otf). New Asset fonts have payload only — the sample still compiles a CSS stack that terminates in the Project Settings generic fallback. Editor viewports **await** `registerFonts` before `setMeshAssets` so Bitmap 2D Text rasterize sees loaded faces. Imported fonts store payload on the babasset **header** (no `document` chunk); `decodeAssetDocument` falls back to `header.payload` so they open. Saving a Font keeps extra chunks (`source`, facetype, msdf) beside the rewritten document body.
 
 ## Editor
 

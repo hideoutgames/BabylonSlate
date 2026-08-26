@@ -277,6 +277,10 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playFontFaceEntries, setPlayFontFaceEntries] = useState<
     import("@babylonslate/render").FontAssetEntry[]
   >([]);
+  const [playFontCssStack, setPlayFontCssStack] = useState("sans-serif");
+  const [playFontCssStackByGuid, setPlayFontCssStackByGuid] = useState<
+    Map<string, string>
+  >(() => new Map());
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
@@ -331,6 +335,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
+    collectPlayFontCssStacks,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayAudio,
@@ -1070,6 +1075,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayFontMsdfJson(msdf.json);
           setPlayFontMsdfPng(msdf.png);
           setPlayFontFaceEntries(await collectPlayFontFaceEntries());
+          const fontCss = collectPlayFontCssStacks();
+          setPlayFontCssStack(fontCss.fontCssStack);
+          setPlayFontCssStackByGuid(fontCss.fontCssStackByGuid);
         } catch (error) {
           appendLog(
             `3D Text font load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1078,6 +1086,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           setPlayFontMsdfJson(new Map());
           setPlayFontMsdfPng(new Map());
           setPlayFontFaceEntries([]);
+          setPlayFontCssStack("sans-serif");
+          setPlayFontCssStackByGuid(new Map());
         }
 
         try {
@@ -1149,6 +1159,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayFontFacetypeBytes,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
+      collectPlayFontCssStacks,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
@@ -1382,6 +1393,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             fontMsdfJson={playFontMsdfJson}
             fontMsdfPng={playFontMsdfPng}
             fontFaceEntries={playFontFaceEntries}
+            fontCssStack={playFontCssStack}
+            fontCssStackByGuid={playFontCssStackByGuid}
             modelBytes={playModelBytes}
             modelPayloads={playModelPayloads}
             modelClipAnimationGuids={playModelClipAnimationGuids}
