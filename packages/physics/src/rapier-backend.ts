@@ -2,11 +2,13 @@ import type { PhysicsBackend } from "./backend";
 import type {
   CharacterControllerDesc,
   ColliderDesc,
+  ColliderTuning,
   HitResult,
   OverlapResult,
   PhysicsBackendOptions,
   PhysicsTransform,
   RigidBodyDesc,
+  RigidBodyTuning,
   Vec3,
   PhysicsContactEvent,
 } from "./types";
@@ -101,12 +103,19 @@ type RapierRigidBody = {
   setBodyType(type: number, wakeUp: boolean): void;
   applyImpulse(impulse: { x: number; y: number }, wakeUp: boolean): void;
   setNextKinematicTranslation(t: { x: number; y: number }): void;
+  setGravityScale(scale: number, wakeUp: boolean): void;
+  setLinearDamping(damping: number): void;
+  setAngularDamping(damping: number): void;
+  setAdditionalMass(mass: number, wakeUp: boolean): void;
 };
 
 type RapierCollider = {
   handle: number;
   parent(): RapierRigidBody | null;
   translation(): { x: number; y: number };
+  setSensor(isSensor: boolean): void;
+  setFriction(friction: number): void;
+  setRestitution(restitution: number): void;
 };
 
 type RapierCharacterController = {
@@ -290,6 +299,40 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     );
   }
 
+  updateBody(bodyId: string, tuning: RigidBodyTuning): void {
+    const record = this.bodies.get(bodyId);
+    if (!record) return;
+    if (tuning.motionType) {
+      record.desc.motionType = tuning.motionType;
+      this.setBodyMotionType(bodyId, tuning.motionType);
+    }
+    if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
+      record.desc.mass = tuning.mass;
+      record.body.setAdditionalMass(Math.max(tuning.mass, 1e-6), true);
+    }
+    if (
+      typeof tuning.linearDamping === "number" &&
+      Number.isFinite(tuning.linearDamping)
+    ) {
+      record.desc.linearDamping = tuning.linearDamping;
+      record.body.setLinearDamping(tuning.linearDamping);
+    }
+    if (
+      typeof tuning.angularDamping === "number" &&
+      Number.isFinite(tuning.angularDamping)
+    ) {
+      record.desc.angularDamping = tuning.angularDamping;
+      record.body.setAngularDamping(tuning.angularDamping);
+    }
+    if (
+      typeof tuning.gravityScale === "number" &&
+      Number.isFinite(tuning.gravityScale)
+    ) {
+      record.desc.gravityScale = tuning.gravityScale;
+      record.body.setGravityScale(tuning.gravityScale, true);
+    }
+  }
+
   createCollider(desc: ColliderDesc): void {
     const body = this.bodies.get(desc.bodyId);
     if (!body) return;
@@ -328,6 +371,45 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.world.removeCollider(record.collider, true);
     if (record.extra) this.world.removeCollider(record.extra, true);
     this.colliders.delete(colliderId);
+  }
+
+  updateCollider(colliderId: string, tuning: ColliderTuning): void {
+    const record = this.colliders.get(colliderId);
+    if (!record) return;
+    const apply = (collider: RapierCollider) => {
+      if (typeof tuning.isTrigger === "boolean") {
+        collider.setSensor(tuning.isTrigger);
+      }
+      if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+        collider.setFriction(tuning.friction);
+      }
+      if (
+        typeof tuning.restitution === "number" &&
+        Number.isFinite(tuning.restitution)
+      ) {
+        collider.setRestitution(tuning.restitution);
+      }
+    };
+    apply(record.collider);
+    if (record.extra) apply(record.extra);
+    if (typeof tuning.isTrigger === "boolean") {
+      record.desc.isTrigger = tuning.isTrigger;
+    }
+    if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+      record.desc.friction = tuning.friction;
+    }
+    if (
+      typeof tuning.restitution === "number" &&
+      Number.isFinite(tuning.restitution)
+    ) {
+      record.desc.restitution = tuning.restitution;
+    }
+    if (typeof tuning.layer === "number" && Number.isFinite(tuning.layer)) {
+      record.desc.layer = tuning.layer;
+    }
+    if (typeof tuning.mask === "number" && Number.isFinite(tuning.mask)) {
+      record.desc.mask = tuning.mask;
+    }
   }
 
   listDebugColliders() {
