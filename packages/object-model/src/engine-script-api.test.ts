@@ -4,7 +4,6 @@ import {
   engineScriptApiFor,
   engineScriptEventsFor,
   engineScriptFunctionsFor,
-  engineScriptVariablesFor,
   ENGINE_CLASS_SCRIPT_APIS,
 } from "./engine-script-api";
 

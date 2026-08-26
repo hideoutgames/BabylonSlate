@@ -993,7 +993,7 @@ function entryExportName(entry: GraphNode, fallback: string): string {
   return eventNameForEntry(entry) ?? fallback;
 }
 
-function entryComponentId(entry: GraphNode): { componentId: string } | {} {
+function entryComponentId(entry: GraphNode): { componentId?: string } {
   const id = entry.properties.componentId;
   if (typeof id !== "string" || !id.trim()) return {};
   return { componentId: id.trim() };
