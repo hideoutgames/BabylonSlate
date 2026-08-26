@@ -806,7 +806,10 @@ export function createEngine(
     const height = Math.max(1, engine.getRenderHeight());
     const width = Math.max(1, engine.getRenderWidth());
     const frustum = sceneLayerFrustumSize(width / height);
-    options.onSceneLayerResize?.(frustum);
+    options.onSceneLayerResize?.({
+      frustumWidth: frustum.width,
+      frustumHeight: frustum.height,
+    });
   };
 
   const dispatchOverlayPointer = (
