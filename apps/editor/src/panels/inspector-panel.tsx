@@ -78,6 +78,7 @@ import { JsBodyEditor } from "../components/js-body-editor";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
+  assetPickerAllowedTypes,
   collectEnumMemberNames,
   commandParameterRows,
   commandParametersFromRows,
@@ -700,6 +701,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     pinId: string;
     name: string;
     assetType: string;
+    allowedTypes: string[];
   } | null>(null);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -1125,7 +1127,15 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
         const name =
           pinsFromNodeData(selectedNode.data).find((pin) => pin.id === pinId)
             ?.name ?? pinId;
-        setAssetPinPick({ pinId, name, assetType });
+        setAssetPinPick({
+          pinId,
+          name,
+          assetType,
+          allowedTypes: assetPickerAllowedTypes(
+            assetType,
+            selectedNode.data.typeClassIds,
+          ),
+        });
       },
       schemas: typeSchemas,
     },
@@ -1396,7 +1406,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           openDocuments,
           { nodeType: selectedNode.type },
         )}
-        allowedTypes={assetPinPick ? [assetPinPick.assetType] : undefined}
+        allowedTypes={assetPinPick?.allowedTypes}
         allowNone
         title={assetPinPick ? `Pick ${assetPinPick.assetType}` : "Pick Asset"}
         onPick={(guid) => {

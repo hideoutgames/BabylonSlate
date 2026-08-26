@@ -1172,6 +1172,7 @@ type VariableRow = {
   name: string;
   typeId: string;
   typeClassId?: string;
+  typeClassIds?: readonly string[];
   container?: "single" | "array" | "map";
   keyTypeId?: string;
   keyTypeClassId?: string;
@@ -1287,6 +1288,7 @@ function variableAccessPaletteNodes(
           name: variable.name,
           typeId: variable.typeId,
           typeClassId: variable.typeClassId,
+          typeClassIds: variable.typeClassIds,
           scope: "member",
           propertyKey: variable.propertyKey,
         },
@@ -1356,6 +1358,9 @@ function variableAccessPaletteNodes(
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
+      if (variable.typeClassIds && variable.typeClassIds.length > 0) {
+        defaultData.typeClassIds = [...variable.typeClassIds];
+      }
       if (variable.componentId) defaultData.componentId = variable.componentId;
       if (variable.propertyKey) defaultData.propertyKey = variable.propertyKey;
       if (variable.container === "array" || variable.container === "map") {
