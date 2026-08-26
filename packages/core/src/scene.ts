@@ -159,6 +159,11 @@ export interface SerializedScene {
   actors: SerializedActor[];
   /** Outliner folders; missing on older documents and normalized to []. */
   folders: SerializedOutlinerFolder[];
+  /**
+   * Editor-only SceneLayer tab flag. Opaque black clear; not persisted on
+   * SceneLayer or world Scene documents.
+   */
+  overlayEditor?: boolean;
 }
 
 export const SCENE_SCHEMA_VERSION = 3;

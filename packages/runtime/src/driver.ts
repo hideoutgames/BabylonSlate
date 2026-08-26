@@ -29,6 +29,7 @@ import {
   parseSceneLayerAnchor,
   parseSceneLayerHitTest,
   parseOverlayPanelProperties,
+  overlayPanelDestFromScale,
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText2DProperties,
@@ -1092,8 +1093,10 @@ class InProcessRuntime implements RuntimeDriver {
     const ownAnchor = liveOverlayAnchor(actor);
     const parentId = actorParentGuid(actor);
     const parent = parentId ? this.world.findActor(parentId) : undefined;
-    if (ownAnchor && parent?.sceneLayerId && !liveOverlayAnchor(parent)) {
-      this.applyRelativeOverlayAnchor(parent, ownAnchor);
+    if (ownAnchor && parent?.sceneLayerId) {
+      if (!liveOverlayAnchor(parent)) {
+        this.applyRelativeOverlayAnchor(parent, ownAnchor);
+      }
       actor.transform.position.x = 0;
       actor.transform.position.y = 0;
       return;
@@ -2419,7 +2422,13 @@ class InProcessRuntime implements RuntimeDriver {
         (component) => component.classId === "2DPanelComponent",
       );
       const overlayPanel = panelComp
-        ? parseOverlayPanelProperties(overlayPanelVariables(panelComp))
+        ? {
+            ...parseOverlayPanelProperties(overlayPanelVariables(panelComp)),
+            ...overlayPanelDestFromScale(
+              actor.transform.scale.x,
+              actor.transform.scale.y,
+            ),
+          }
         : null;
       const assetGuid =
         overlayPanel
@@ -2465,7 +2474,7 @@ class InProcessRuntime implements RuntimeDriver {
         actorGuid: actor.guid,
         ...(actor.sceneLayerId
           ? {
-              hitTest: overlayHitTestOf(actor),
+              hitTest: overlayHitTestOf(actor, this.world),
               hasButton: overlayActorOrChildHasButton(actor, this.world),
               ...(overlayButtonComponentId(actor, this.world)
                 ? { buttonComponentId: overlayButtonComponentId(actor, this.world) }
@@ -3460,13 +3469,25 @@ function isPlayRenderable(
   );
 }
 
-function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {
-  const button = actor.components.find(
-    (component) =>
-      component.classId === "2DButtonComponent" && !component.destroyed,
-  );
+function overlayHitTestOf(
+  actor: Actor,
+  world?: World,
+): "ignore" | "block" | "passThrough" {
+  const button = liveOverlayButtons(actor)[0];
   if (button) {
     return parseSceneLayerHitTest(button.getVariable("hitTest"), "block");
+  }
+  if (world) {
+    const childButtons = world
+      .getActors()
+      .filter((child) => actorParentGuid(child) === actor.guid)
+      .flatMap((child) => liveOverlayButtons(child));
+    if (childButtons.length > 0) {
+      return parseSceneLayerHitTest(
+        childButtons[0]!.getVariable("hitTest"),
+        "block",
+      );
+    }
   }
   const visual = actor.components.find(
     (component) =>

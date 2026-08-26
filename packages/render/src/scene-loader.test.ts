@@ -727,6 +727,11 @@ describe("scene-loader", () => {
           components: [{ id: "b", classId: "2DButtonComponent", properties: {} }],
         }),
         createActor("panel", "Panel", {
+          transform: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [4, 2, 1],
+          },
           components: [
             {
               id: "p",
@@ -751,6 +756,35 @@ describe("scene-loader", () => {
     expect((button!.material as StandardMaterial).disableLighting).toBe(true);
     expect((panel!.material as StandardMaterial).disableLighting).toBe(true);
     expect(panel!.getTotalVertices()).toBeGreaterThan(8);
+  });
+
+  it("fingerprints 2DPanel dest from actor scale so 9-slice rebuilds on resize", () => {
+    const actor = createActor("panel", "Panel", {
+      transform: {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [4, 2, 1],
+      },
+      components: [
+        {
+          id: "p",
+          classId: "2DPanelComponent",
+          properties: { source: "texture", textureGuid: "tex-1" },
+        },
+      ],
+    });
+    const scaled = actorVisualFingerprint(actor);
+    const unit = actorVisualFingerprint({
+      ...actor,
+      transform: {
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+      },
+    });
+    expect(scaled).not.toBe(unit);
+    expect(scaled).toContain("4");
+    expect(scaled).toContain("2");
   });
 
   it("does not add a 2DButton quad when a sibling or parent overlay visual exists", () => {
