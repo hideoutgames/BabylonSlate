@@ -304,6 +304,69 @@ describe("addClassMember", () => {
     });
   });
 
+  it("stamps componentId on Get for a virtual prefab component ref", () => {
+    const member = {
+      id: "component:text-1",
+      kind: "variable" as const,
+      name: "3D Text",
+      typeId: "object",
+      typeClassId: "Text3DComponent",
+      componentId: "text-1",
+    };
+    const graph = addVariableAccessNode(emptyGraph(), member, "get", {
+      classId: "Hero",
+      idFactory: () => "n-get",
+    });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      title: "Get 3D Text",
+      variableName: "3D Text",
+      variableId: "component:text-1",
+      typeId: "object",
+      typeClassId: "Text3DComponent",
+      componentId: "text-1",
+      implicitSelf: true,
+    });
+  });
+
+  it("stamps propertyKey and runtime on engine Get and Call nodes", () => {
+    const variable = {
+      id: "engine:Text3DComponent:var:text",
+      kind: "variable" as const,
+      name: "Text",
+      typeId: "string",
+      propertyKey: "text",
+    };
+    const fn = {
+      id: "engine:Text3DComponent:fn:setText",
+      kind: "function" as const,
+      name: "Set Text",
+      runtime: "setText",
+      pins: [
+        { name: "exec", typeId: "exec", direction: "in" as const },
+        { name: "then", typeId: "exec", direction: "out" as const },
+        { name: "text", typeId: "string", direction: "in" as const },
+      ],
+    };
+    let graph = addVariableAccessNode(emptyGraph(), variable, "get", {
+      classId: "Text3DComponent",
+      implicitSelf: false,
+      idFactory: () => "n-get",
+    });
+    graph = addCallFunctionNode(graph, fn, {
+      classId: "Text3DComponent",
+      implicitSelf: false,
+      idFactory: () => "n-call",
+    });
+    expect(graph.nodes[0]?.data).toMatchObject({
+      propertyKey: "text",
+      variableName: "Text",
+    });
+    expect(graph.nodes[1]?.data).toMatchObject({
+      functionName: "Set Text",
+      runtime: "setText",
+    });
+  });
+
   it("treats single object and actor variables as Validated Get types", () => {
     expect(isObjectInstanceVariableType("object")).toBe(true);
     expect(isObjectInstanceVariableType("actor")).toBe(true);

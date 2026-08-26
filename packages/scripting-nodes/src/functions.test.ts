@@ -337,4 +337,41 @@ describe("functions.call", () => {
     expect(compiled.entryPoints[0]?.isAsync).toBe(false);
     expect(compiled.source).toContain("export function onBeginPlay");
   });
+
+  it("compiles engine Call Function to callComponentFunction using the runtime key", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "call", "functions.call", {
+          functionName: "Set Text",
+          runtime: "setText",
+          classId: "Text3DComponent",
+          implicitSelf: false,
+          pins: [
+            { name: "exec", typeId: "exec", direction: "in" },
+            { name: "then", typeId: "exec", direction: "out" },
+            { name: "text", typeId: "string", direction: "in" },
+          ],
+          "default:text": "Hi",
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "call",
+          targetPinId: "exec",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("ctx.callComponentFunction(");
+    expect(compiled.source).toContain('"setText"');
+    expect(compiled.source).not.toContain("ctx.invokeFunction");
+    expect(compiled.source).not.toContain("Set_Text");
+  });
 });

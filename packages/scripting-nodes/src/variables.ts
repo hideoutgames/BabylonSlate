@@ -68,13 +68,25 @@ function usesImplicitSelf(
   return !hasTarget || (!targetConnected(ctx) && ctx.node.properties.implicitSelf === true);
 }
 
+function storeKeyOf(properties: Record<string, unknown>, name: string): string {
+  const propertyKey = properties.propertyKey;
+  return typeof propertyKey === "string" && propertyKey.length > 0
+    ? propertyKey
+    : name;
+}
+
 function memberGetExpr(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
   name: string,
 ): string {
-  const quoted = JSON.stringify(name);
+  const componentId = ctx.node.properties.componentId;
+  const target = usesImplicitSelf(ctx) ? "ctx.self" : ctx.input("target");
+  if (typeof componentId === "string" && componentId.length > 0) {
+    return `ctx.getComponentById(${target}, ${JSON.stringify(componentId)})`;
+  }
+  const quoted = JSON.stringify(storeKeyOf(ctx.node.properties, name));
   if (usesImplicitSelf(ctx)) return `ctx.getVariable(${quoted})`;
-  return `ctx.getVariableFrom(${ctx.input("target")}, ${quoted})`;
+  return `ctx.getVariableFrom(${target}, ${quoted})`;
 }
 
 export const variableNodes: NodeDefinition[] = [
@@ -129,7 +141,7 @@ export const variableNodes: NodeDefinition[] = [
         ctx.emit(`${out} = ${ident};`);
         return;
       }
-      const quoted = JSON.stringify(name);
+      const quoted = JSON.stringify(storeKeyOf(ctx.node.properties, name));
       if (usesImplicitSelf(ctx)) {
         ctx.emit(`ctx.setVariable(${quoted}, ${value});`);
       } else {

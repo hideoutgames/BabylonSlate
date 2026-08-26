@@ -21,6 +21,9 @@ export type ClassMemberSymbol = {
   }>;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };
+  componentId?: string;
+  propertyKey?: string;
+  runtime?: string;
 };
 
 export type InterfaceMethodContext = {
@@ -99,6 +102,12 @@ export type TypeContext = {
   parentFunctionSignatures?: readonly ParentFunctionSignature[];
   /** True when the graph being validated is an interface method implementation. */
   interfaceImplementation?: boolean;
+  /** Prefab components currently on this class (local + inherited). */
+  attachedComponents?: ReadonlyArray<{ id: string; classId: string }>;
+  /** Event node type ids mapped to the engine/user class ids that expose them. */
+  eventTypeClassIds?: Readonly<Record<string, readonly string[]>>;
+  /** Custom event names declared on parent ancestry (body names, no `Event` prefix). */
+  parentEventNames?: ReadonlySet<string>;
 };
 
 export type ValidationRule = {

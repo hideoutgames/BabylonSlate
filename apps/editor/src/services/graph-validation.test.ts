@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
+import { createText3DComponent } from "@babylonslate/core";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
 import {
   classHierarchyFromParentOf,
@@ -1312,6 +1313,71 @@ describe("scriptPaletteNodes", () => {
     });
     expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
     expect(nodes.some((node) => node.id.includes("Temp"))).toBe(false);
+  });
+
+  it("injects Get and Validated Get (not Set) for prefab component refs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [createText3DComponent("text-1")],
+      },
+    });
+    const get = nodes.find((node) => node.title === "Get 3D Text");
+    expect(get?.nodeType).toBe("variables.get");
+    expect(get?.defaultData).toMatchObject({
+      variableName: "3D Text",
+      typeId: "object",
+      typeClassId: "Text3DComponent",
+      componentId: "text-1",
+      implicitSelf: true,
+    });
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.set" &&
+          node.defaultData?.componentId === "text-1",
+      ),
+    ).toBe(false);
+    const validated = nodes.find(
+      (node) => node.title === "Validated Get 3D Text",
+    );
+    expect(validated?.nodeType).toBe("variables.getValidated");
+    expect(validated?.defaultData).toMatchObject({ componentId: "text-1" });
+  });
+
+  it("injects engine component Get/Set and Call Function from the script API catalog", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+    });
+    const getText = nodes.find(
+      (node) => node.id === "variables.get:Text3DComponent:Text",
+    );
+    expect(getText?.title).toBe("Get Text");
+    expect(getText?.defaultData).toMatchObject({
+      variableName: "Text",
+      propertyKey: "text",
+      classId: "Text3DComponent",
+      implicitSelf: false,
+    });
+    expect(getText?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    const setTextVar = nodes.find(
+      (node) => node.id === "variables.set:Text3DComponent:Text",
+    );
+    expect(setTextVar?.defaultData).toMatchObject({ propertyKey: "text" });
+    const callSetText = nodes.find(
+      (node) => node.id === "functions.call:Text3DComponent:Set Text",
+    );
+    expect(callSetText?.title).toBe("Call Set Text");
+    expect(callSetText?.defaultData).toMatchObject({
+      functionName: "Set Text",
+      runtime: "setText",
+      classId: "Text3DComponent",
+      implicitSelf: false,
+    });
   });
 
   it("injects function-local Get/Set only when that function graph is open", () => {
@@ -2709,5 +2775,102 @@ describe("validateSerializedGraph material domains", () => {
     expect(
       diags.filter((d) => d.code === "scene-layer.postProcessDomain"),
     ).toEqual([]);
+  });
+});
+
+describe("hydrate component event bindings", () => {
+  it("binds leftover On Click to the sole 2D Button", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "click",
+          type: "flow.event.onClick",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+      components: [
+        { id: "btn-1", classId: "2DButtonComponent", properties: {} },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      classId: "Hud",
+    });
+    expect(hydrated.nodes[0]?.data).toMatchObject({
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    expect(String(hydrated.nodes[0]?.data.title)).toContain("(2D Button)");
+  });
+
+  it("does not guess On Click among two 2D Buttons", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "click",
+          type: "flow.event.onClick",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+      components: [
+        { id: "btn-1", classId: "2DButtonComponent", properties: {} },
+        { id: "btn-2", classId: "2DButtonComponent", properties: {} },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      classId: "Hud",
+    });
+    expect(hydrated.nodes[0]?.data.componentId).toBeUndefined();
+    expect(hydrated.nodes[0]?.data.eventQualifier).toBeUndefined();
+  });
+
+  it("errors event.missing_component when the bound 2D Button is gone", () => {
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "click",
+            type: "flow.event.onClick",
+            position: { x: 0, y: 0 },
+            data: { componentId: "btn-1" },
+          },
+        ],
+        edges: [],
+        components: [],
+      },
+      { assetGuid: "hud", graphId: "hud", classId: "Hud" },
+    );
+    expect(diags.some((d) => d.code === "event.missing_component")).toBe(true);
+  });
+
+  it("errors event.missing_inherited when the parent custom event is gone", () => {
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "inherited",
+            type: "flow.event.custom",
+            position: { x: 0, y: 0 },
+            data: {
+              name: "On Foo",
+              eventQualifier: "Inherited",
+              parentClassId: "Pawn",
+            },
+          },
+        ],
+        edges: [],
+      },
+      {
+        assetGuid: "hero",
+        graphId: "hero",
+        classId: "Hero",
+        otherClassGraphs: { Pawn: { nodes: [], edges: [], members: [] } },
+        parentOf: (id) => (id === "Hero" ? "Pawn" : id === "Pawn" ? "Actor" : null),
+      },
+    );
+    expect(diags.some((d) => d.code === "event.missing_inherited")).toBe(true);
   });
 });

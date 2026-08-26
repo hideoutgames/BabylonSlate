@@ -151,6 +151,7 @@ export interface ScriptHostServices {
   setRenderResolution?(width: number, height: number): void;
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
+  refreshComponent?(component: ActorComponent): void;
   findPathTo?(
     from: Vec3,
     to: Vec3,
@@ -299,6 +300,15 @@ export interface ScriptContext {
     args?: Record<string, unknown>,
   ): unknown;
   getComponent(actor: BObject | null | undefined, classId: string): unknown;
+  getComponentById(
+    actor: BObject | null | undefined,
+    componentId: string,
+  ): unknown;
+  callComponentFunction(
+    target: BObject | null | undefined,
+    name: string,
+    args?: Record<string, unknown>,
+  ): Record<string, unknown>;
   addComponent(
     actor: BObject | null | undefined,
     classId: string,
@@ -549,10 +559,11 @@ export class ScriptHost {
     event: string,
     self: BObject | null = null,
     args: Record<string, unknown> = {},
+    componentId?: string,
   ): void {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return;
-    this.dispatchEvent(loaded, event, self, 0, 0, args);
+    this.dispatchEvent(loaded, event, self, 0, 0, args, undefined, undefined, componentId);
   }
 
   hasClass(classId: string): boolean {
@@ -670,10 +681,18 @@ export class ScriptHost {
     commandArgs: Record<string, unknown> = {},
     tick?: TickContext,
     extras?: ScriptExtras,
+    componentId?: string,
   ): void {
     for (const entry of loaded) {
       for (const point of entry.script.entryPoints) {
         if (point.event !== event) continue;
+        if (
+          componentId &&
+          point.componentId &&
+          point.componentId !== componentId
+        ) {
+          continue;
+        }
         const fn = entry.exports[point.name];
         if (typeof fn !== "function") continue;
         const key = `${entry.script.assetGuid}:${point.name}`;
@@ -792,7 +811,11 @@ export class ScriptHost {
       getVariableFrom: (target, name) =>
         (target ?? self)?.getVariable(name),
       setVariableOn: (target, name, value) => {
-        (target ?? self)?.setVariable(name, value);
+        const object = target ?? self;
+        object?.setVariable(name, value);
+        if (object instanceof ActorComponent) {
+          this.applyComponentVariable(object, String(name ?? ""), value);
+        }
       },
       destroyActor: (actor) => {
         const target = asActor(actor ?? self);
@@ -927,6 +950,10 @@ export class ScriptHost {
       getComponent: (actor, classId) =>
         asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
         null,
+      getComponentById: (actor, componentId) =>
+        findComponentById(asActor(actor ?? self), componentId),
+      callComponentFunction: (target, name, args) =>
+        this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {}),
       addComponent: (actor, classId, transform) => {
         const target = asActor(actor ?? self);
         if (!target) return null;
@@ -959,15 +986,25 @@ export class ScriptHost {
         const receiver = (target ?? self) as BObject | null;
         if (!receiver || typeof eventName !== "string" || !eventName) return;
         const loaded = this.byClassId.get(receiver.classId);
-        if (!loaded || loaded.length === 0) return;
-        this.dispatchEvent(
-          loaded,
-          eventName,
-          receiver,
-          0,
-          0,
-          eventArgs ?? {},
-        );
+        if (loaded && loaded.length > 0) {
+          this.dispatchEvent(
+            loaded,
+            eventName,
+            receiver,
+            0,
+            0,
+            eventArgs ?? {},
+          );
+        }
+        if (receiver instanceof ActorComponent && receiver.owner) {
+          this.invokeEvent(
+            receiver.owner.classId,
+            eventName,
+            receiver.owner,
+            eventArgs ?? {},
+            receiver.guid,
+          );
+        }
       },
       invokeEvent: (classId, eventName, eventArgs) => {
         if (typeof classId !== "string" || !classId.trim()) return;
@@ -1260,10 +1297,102 @@ export class ScriptHost {
       setBlackboard: extras?.setBlackboard ?? (() => undefined),
     };
   }
+
+  private applyComponentVariable(
+    component: ActorComponent,
+    name: string,
+    value: unknown,
+  ): void {
+    this.services.refreshComponent?.(component);
+    if (name === "text" && isTextComponent(component)) {
+      this.fireComponentOwnerEvent(component, "onTextChanged", {
+        text: value,
+      });
+    }
+  }
+
+  private callNativeComponentFunction(
+    target: BObject | null | undefined,
+    name: string,
+    args: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const component = asActorComponent(target);
+    if (!component || !name) return {};
+    if (name === "setText") {
+      const text = String(args.text ?? "");
+      component.setVariable("text", text);
+      this.applyComponentVariable(component, "text", text);
+      return {};
+    }
+    if (name === "playAudio") {
+      const owner = component.owner;
+      const assetGuid =
+        (typeof component.getVariable("audioAssetGuid") === "string"
+          ? component.getVariable("audioAssetGuid")
+          : null) ?? component.assetGuid;
+      if (typeof assetGuid === "string" && assetGuid && owner) {
+        this.services.playSound?.(assetGuid, Number(component.getVariable("volume") ?? 1), {
+          emitterActorGuid: owner.guid,
+          loop: component.getVariable("loop") === true,
+          voiceId: component.guid,
+        });
+      }
+      return {};
+    }
+    if (name === "stopAudio") {
+      this.services.playSound?.("", 0, { voiceId: component.guid });
+      return {};
+    }
+    if (name === "playParticles" && component.owner) {
+      this.services.setParticlePlaying?.(component.owner.guid, true);
+      return {};
+    }
+    if (name === "stopParticles" && component.owner) {
+      this.services.setParticlePlaying?.(component.owner.guid, false);
+      return {};
+    }
+    return {};
+  }
+
+  private fireComponentOwnerEvent(
+    component: ActorComponent,
+    event: string,
+    args: Record<string, unknown>,
+  ): void {
+    const owner = component.owner;
+    if (!owner) return;
+    this.invokeEvent(owner.classId, event, owner, args, component.guid);
+  }
 }
 
 function asActor(target: unknown): Actor | null {
   return target instanceof Actor ? target : null;
+}
+
+function asActorComponent(target: unknown): ActorComponent | null {
+  return target instanceof ActorComponent ? target : null;
+}
+
+function findComponentById(
+  actor: Actor | null,
+  componentId: string,
+): ActorComponent | null {
+  if (!actor || typeof componentId !== "string" || !componentId) return null;
+  return (
+    actor.components.find(
+      (component) =>
+        !component.destroyed &&
+        (component.guid === componentId || component.sourceId === componentId),
+    ) ?? null
+  );
+}
+
+function isTextComponent(component: ActorComponent): boolean {
+  return (
+    component.classId === "Text3DComponent" ||
+    component.classId === "2DTextComponent" ||
+    component.classId === "2DRichTextComponent"
+  );
 }
 
 function setActorLink(

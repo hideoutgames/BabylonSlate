@@ -165,6 +165,179 @@ describe("collectOverridableEventRows", () => {
     expect(rows.some((row) => row.name === "On Hit")).toBe(false);
   });
 
+  it("does not list overlay mouse events until a 2D Button is attached", () => {
+    const empty = collectOverridableEventRows({
+      classId: "Hud",
+      parentClass: "SceneLayerActor",
+      graph: { nodes: [], edges: [], components: [] },
+    });
+    expect(empty.some((row) => row.eventType === "flow.event.onClick")).toBe(
+      false,
+    );
+    expect(
+      empty.find((row) => row.eventType === "flow.event.beginPlay")
+        ?.eventQualifier,
+    ).toBeUndefined();
+
+    const withButton = collectOverridableEventRows({
+      classId: "Hud",
+      parentClass: "SceneLayerActor",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [
+          {
+            id: "btn-1",
+            classId: "2DButtonComponent",
+            properties: {},
+          },
+        ],
+      },
+    });
+    const click = withButton.find(
+      (row) =>
+        row.eventType === "flow.event.onClick" && row.componentId === "btn-1",
+    );
+    expect(click).toMatchObject({
+      kind: "component",
+      name: "Event On Click",
+      eventQualifier: "2D Button",
+      overwritten: false,
+    });
+  });
+
+  it("lists one On Click row per attached 2D Button", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hud",
+      parentClass: "SceneLayerActor",
+      graph: {
+        nodes: [
+          {
+            id: "click-1",
+            type: "flow.event.onClick",
+            position: { x: 0, y: 0 },
+            data: { componentId: "btn-1" },
+          },
+        ],
+        edges: [],
+        components: [
+          { id: "btn-1", classId: "2DButtonComponent", properties: {} },
+          { id: "btn-2", classId: "2DButtonComponent", properties: {} },
+        ],
+      },
+    });
+    const clicks = rows.filter((row) => row.eventType === "flow.event.onClick");
+    expect(clicks).toEqual([
+      expect.objectContaining({
+        componentId: "btn-1",
+        eventQualifier: "2D Button",
+        overwritten: true,
+      }),
+      expect.objectContaining({
+        componentId: "btn-2",
+        eventQualifier: "2D Button 2",
+        overwritten: false,
+      }),
+    ]);
+  });
+
+  it("lists overlap events only when a collider is attached", () => {
+    const without = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: { nodes: [], edges: [], components: [] },
+    });
+    expect(
+      without.some((row) => row.eventType === "flow.event.beginOverlap"),
+    ).toBe(false);
+
+    const withCollider = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [
+          { id: "col-1", classId: "ColliderComponent", properties: {} },
+        ],
+      },
+    });
+    expect(
+      withCollider.find(
+        (row) =>
+          row.eventType === "flow.event.beginOverlap" &&
+          row.componentId === "col-1",
+      ),
+    ).toMatchObject({
+      kind: "component",
+      eventQualifier: "Collider",
+    });
+  });
+
+  it("lists On Text Changed once per attached 3D Text", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [
+          { id: "text-a", classId: "Text3DComponent", properties: {} },
+          { id: "text-b", classId: "Text3DComponent", properties: {} },
+        ],
+      },
+    });
+    const changed = rows.filter(
+      (row) => row.eventType === "flow.event.textChanged",
+    );
+    expect(changed).toEqual([
+      expect.objectContaining({
+        componentId: "text-a",
+        eventQualifier: "3D Text",
+      }),
+      expect.objectContaining({
+        componentId: "text-b",
+        eventQualifier: "3D Text 2",
+      }),
+    ]);
+  });
+
+  it("lists custom events from an attached user component class", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [
+          { id: "comp-1", classId: "HealthComponent", properties: {} },
+        ],
+      },
+      parentGraphs: {
+        HealthComponent: {
+          nodes: [
+            {
+              id: "e",
+              type: "flow.event.custom",
+              position: { x: 0, y: 0 },
+              data: { name: "On Damaged" },
+            },
+          ],
+          edges: [],
+        },
+      },
+    });
+    expect(
+      rows.find(
+        (row) => row.name === "On Damaged" && row.componentId === "comp-1",
+      ),
+    ).toMatchObject({
+      kind: "component",
+      eventType: "flow.event.custom",
+      eventQualifier: "Health Component",
+    });
+  });
+
   it("still lists a parent custom event after the child deletes its override node", () => {
     const rows = collectOverridableEventRows({
       classId: "Hero",

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { EVENT_BY_TYPE_ID, eventNameForEntry } from "./compile";
+import { compileGraph, EVENT_BY_TYPE_ID, eventNameForEntry } from "./compile";
 import type { GraphNode } from "./ir";
+import { NodeRegistry, pin } from "./node-registry";
+import { EXEC } from "./types";
 
 function entry(typeId: string): GraphNode {
   return {
@@ -37,6 +39,60 @@ describe("editor utility events", () => {
     expect(eventNameForEntry(entry("flow.event.widgetClick"))).toBeUndefined();
     expect(EVENT_BY_TYPE_ID["flow.event.destroyed"]).toBe("onDestroyed");
     expect(eventNameForEntry(entry("flow.event.destroyed"))).toBe("onDestroyed");
+  });
+
+  it("maps On Text Changed to onTextChanged", () => {
+    expect(EVENT_BY_TYPE_ID["flow.event.textChanged"]).toBe("onTextChanged");
+    expect(eventNameForEntry(entry("flow.event.textChanged"))).toBe(
+      "onTextChanged",
+    );
+  });
+
+  it("stamps componentId on compiled entry points", () => {
+    const registry = new NodeRegistry();
+    registry.register({
+      id: "flow.event.onClick",
+      title: "Event On Click",
+      category: "flow",
+      pure: true,
+      pins: () => [pin("execOut", "then", "out", EXEC)],
+      codegen: () => {},
+    });
+    const pins = registry.get("flow.event.onClick")!.pins({});
+    const compiled = compileGraph(
+      {
+        id: "g",
+        kind: "event",
+        nodes: [
+          {
+            id: "a",
+            typeId: "flow.event.onClick",
+            position: { x: 0, y: 0 },
+            pins,
+            properties: { componentId: "btn-1" },
+          },
+          {
+            id: "b",
+            typeId: "flow.event.onClick",
+            position: { x: 0, y: 80 },
+            pins,
+            properties: { componentId: "btn-2" },
+          },
+        ],
+        edges: [],
+      },
+      { assetGuid: "a", registry },
+    );
+    expect(compiled.entryPoints).toEqual([
+      expect.objectContaining({
+        event: "onClick",
+        componentId: "btn-1",
+      }),
+      expect.objectContaining({
+        event: "onClick",
+        componentId: "btn-2",
+      }),
+    ]);
   });
 
   it("maps Actor collision event nodes to ScriptHost events", () => {

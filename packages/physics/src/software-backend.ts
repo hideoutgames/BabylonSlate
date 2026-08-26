@@ -366,6 +366,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
         const centerB = aabbCenter(boxB);
         let actorAId = bodyA.desc.actorId;
         let actorBId = bodyB.desc.actorId;
+        let colliderAId = colliderA.desc.id;
+        let colliderBId = colliderB.desc.id;
         const location = {
           x: (centerA.x + centerB.x) * 0.5,
           y: (centerA.y + centerB.y) * 0.5,
@@ -390,9 +392,12 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
           const swapId = actorAId;
           actorAId = actorBId;
           actorBId = swapId;
+          const swapCollider = colliderAId;
+          colliderAId = colliderBId;
+          colliderBId = swapCollider;
           normal = { x: -normal.x, y: -normal.y, z: -normal.z };
         }
-        const key = `${actorAId}|${actorBId}`;
+        const key = `${actorAId}\t${colliderAId}\t${actorBId}\t${colliderBId}`;
         const isTrigger =
           colliderA.desc.isTrigger || colliderB.desc.isTrigger;
         if (isTrigger) {
@@ -402,6 +407,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
               kind: "overlapBegin",
               actorAId,
               actorBId,
+              colliderAId,
+              colliderBId,
               location,
               normal,
             });
@@ -412,6 +419,8 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
             kind: "hit",
             actorAId,
             actorBId,
+            colliderAId,
+            colliderBId,
             location,
             normal,
           });
@@ -420,12 +429,14 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     }
     for (const key of this.previousOverlapKeys) {
       if (currentOverlap.has(key)) continue;
-      const [actorAId, actorBId] = key.split("|");
+      const [actorAId, colliderAId, actorBId, colliderBId] = key.split("\t");
       if (!actorAId || !actorBId) continue;
       events.push({
         kind: "overlapEnd",
         actorAId,
         actorBId,
+        colliderAId,
+        colliderBId,
         location: { x: 0, y: 0, z: 0 },
         normal: { x: 0, y: 1, z: 0 },
       });

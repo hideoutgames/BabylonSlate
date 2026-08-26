@@ -295,6 +295,12 @@ export interface GraphClassMember {
   implementsInterface?: GraphClassMemberImplementsInterface;
   /** Function that overrides a parent-class function. */
   overrides?: GraphClassMemberOverrides;
+  /** Prefab component id when this is a virtual object-ref for that component. */
+  componentId?: string;
+  /** Runtime variable store key when it differs from the display `name` (engine APIs). */
+  propertyKey?: string;
+  /** Native runtime function id when it differs from the display `name` (engine APIs). */
+  runtime?: string;
 }
 
 export interface SerializedGraph {

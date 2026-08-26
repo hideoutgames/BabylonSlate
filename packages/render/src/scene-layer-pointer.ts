@@ -11,6 +11,7 @@ export type OverlayPointerDispatch = {
     | "onClick"
     | "onPressStart"
     | "onPressEnd";
+  componentId?: string;
 };
 
 export type OverlayPointerState = {
@@ -32,7 +33,21 @@ function buttonHits(
 }
 
 function keyOf(hit: OverlayPointerHit): string {
-  return hit.actorGuid;
+  return hit.componentId
+    ? `${hit.actorGuid}:${hit.componentId}`
+    : hit.actorGuid;
+}
+
+function dispatchOf(
+  hit: OverlayPointerHit,
+  event: OverlayPointerDispatch["event"],
+): OverlayPointerDispatch {
+  return {
+    layerId: hit.layerId,
+    actorGuid: hit.actorGuid,
+    event,
+    ...(hit.componentId ? { componentId: hit.componentId } : {}),
+  };
 }
 
 /** Hover / press state machine for overlay 2DButton actors. */
@@ -49,20 +64,12 @@ export function applyOverlayPointer(
   if (phase === "move") {
     for (const [guid, hit] of state.hovered) {
       if (!nextHovered.has(guid)) {
-        out.push({
-          layerId: hit.layerId,
-          actorGuid: hit.actorGuid,
-          event: "onMouseLeave",
-        });
+        out.push(dispatchOf(hit, "onMouseLeave"));
       }
     }
     for (const [guid, hit] of nextHovered) {
       if (!state.hovered.has(guid)) {
-        out.push({
-          layerId: hit.layerId,
-          actorGuid: hit.actorGuid,
-          event: "onMouseEnter",
-        });
+        out.push(dispatchOf(hit, "onMouseEnter"));
       }
     }
     state.hovered = nextHovered;
@@ -72,49 +79,29 @@ export function applyOverlayPointer(
   if (phase === "down") {
     for (const [guid, hit] of state.hovered) {
       if (!nextHovered.has(guid)) {
-        out.push({
-          layerId: hit.layerId,
-          actorGuid: hit.actorGuid,
-          event: "onMouseLeave",
-        });
+        out.push(dispatchOf(hit, "onMouseLeave"));
       }
     }
     for (const [guid, hit] of nextHovered) {
       if (!state.hovered.has(guid)) {
-        out.push({
-          layerId: hit.layerId,
-          actorGuid: hit.actorGuid,
-          event: "onMouseEnter",
-        });
+        out.push(dispatchOf(hit, "onMouseEnter"));
       }
     }
     state.hovered = nextHovered;
     for (const hit of buttons) {
-      out.push({
-        layerId: hit.layerId,
-        actorGuid: hit.actorGuid,
-        event: "onPressStart",
-      });
+      out.push(dispatchOf(hit, "onPressStart"));
       state.pressed.set(keyOf(hit), hit);
     }
     return out;
   }
 
   for (const hit of state.pressed.values()) {
-    out.push({
-      layerId: hit.layerId,
-      actorGuid: hit.actorGuid,
-      event: "onPressEnd",
-    });
+    out.push(dispatchOf(hit, "onPressEnd"));
   }
   const pressed = new Set(state.pressed.keys());
   for (const hit of buttons) {
     if (pressed.has(keyOf(hit))) {
-      out.push({
-        layerId: hit.layerId,
-        actorGuid: hit.actorGuid,
-        event: "onClick",
-      });
+      out.push(dispatchOf(hit, "onClick"));
     }
   }
   state.pressed.clear();

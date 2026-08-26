@@ -29,6 +29,46 @@ describe("applyOverlayPointer", () => {
     ]);
   });
 
+  it("keys hover per button so two buttons on one actor do not share enter/leave", () => {
+    const state = createOverlayPointerState();
+    const first = {
+      layerId: "hud",
+      actorGuid: "ok",
+      hitTest: "block" as const,
+      hasButton: true,
+      componentId: "btn-1",
+    };
+    const second = {
+      layerId: "hud",
+      actorGuid: "ok",
+      hitTest: "block" as const,
+      hasButton: true,
+      componentId: "btn-2",
+    };
+    expect(applyOverlayPointer(state, "move", [first])).toEqual([
+      {
+        layerId: "hud",
+        actorGuid: "ok",
+        event: "onMouseEnter",
+        componentId: "btn-1",
+      },
+    ]);
+    expect(applyOverlayPointer(state, "move", [second])).toEqual([
+      {
+        layerId: "hud",
+        actorGuid: "ok",
+        event: "onMouseLeave",
+        componentId: "btn-1",
+      },
+      {
+        layerId: "hud",
+        actorGuid: "ok",
+        event: "onMouseEnter",
+        componentId: "btn-2",
+      },
+    ]);
+  });
+
   it("does not click when release misses, and skips non-button hits", () => {
     const state = createOverlayPointerState();
     const button = {

@@ -245,10 +245,18 @@ export class SceneLayerCompositor {
       actorGuid: string,
       hitTest: SceneLayerHitTest,
       hasButton: boolean,
+      componentId?: string,
     ) => {
-      if (!actorGuid || seen.has(actorGuid)) return;
-      seen.add(actorGuid);
-      hits.push({ layerId, actorGuid, hitTest, hasButton });
+      const key = componentId ? `${actorGuid}:${componentId}` : actorGuid;
+      if (!actorGuid || seen.has(key)) return;
+      seen.add(key);
+      hits.push({
+        layerId,
+        actorGuid,
+        hitTest,
+        hasButton,
+        ...(componentId ? { componentId } : {}),
+      });
     };
 
     for (const layer of [...this.sortedLayers()].reverse()) {
@@ -283,6 +291,10 @@ export class SceneLayerCompositor {
             actorGuid,
             parseSceneLayerHitTest(metadata?.overlayHitTest, "ignore"),
             metadata?.overlayHasButton === true,
+            typeof metadata?.overlayButtonComponentId === "string" &&
+              metadata.overlayButtonComponentId
+              ? metadata.overlayButtonComponentId
+              : undefined,
           );
         }
       }
@@ -298,7 +310,7 @@ export class SceneLayerCompositor {
           metadata.overlayActorGuid ??
           (slotMatch ? this.slotActor.get(Number(slotMatch[1])) : undefined) ??
           "";
-        if (!actorGuid || seen.has(actorGuid)) continue;
+        if (!actorGuid) continue;
         mesh.computeWorldMatrix(true);
         const box = mesh.getBoundingInfo().boundingBox;
         if (
@@ -314,7 +326,16 @@ export class SceneLayerCompositor {
         ) {
           continue;
         }
-        pushHit(layer.layerId, actorGuid, hitTest, true);
+        pushHit(
+          layer.layerId,
+          actorGuid,
+          hitTest,
+          true,
+          typeof metadata.overlayButtonComponentId === "string" &&
+            metadata.overlayButtonComponentId
+            ? metadata.overlayButtonComponentId
+            : undefined,
+        );
       }
     }
     return hits;
@@ -461,6 +482,7 @@ type OverlayMeshMetadata = {
   overlayHitTest?: SceneLayerHitTest;
   overlayActorGuid?: string;
   overlayHasButton?: boolean;
+  overlayButtonComponentId?: string;
 };
 
 function overlayMetadataOf(

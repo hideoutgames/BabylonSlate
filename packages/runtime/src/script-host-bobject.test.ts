@@ -50,4 +50,18 @@ describe("ScriptHost BObject receivers", () => {
     expect(first.getVariable("flag")).toBe("a");
     expect(second.getVariable("flag")).toBe("wired");
   });
+
+  it("resolves getComponentById by live guid and remapped sourceId", () => {
+    const actor = new Actor({ classId: "Hero" });
+    const text = new ActorComponent({
+      classId: "Text3DComponent",
+      guid: "live-id",
+      sourceId: "text-1",
+    });
+    actor.attachComponent(text);
+    const ctx = new ScriptHost(stubServices()).createContext(actor, 0, 0);
+    expect(ctx.getComponentById(actor, "live-id")).toBe(text);
+    expect(ctx.getComponentById(actor, "text-1")).toBe(text);
+    expect(ctx.getComponentById(actor, "missing")).toBeNull();
+  });
 });

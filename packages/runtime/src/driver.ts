@@ -772,6 +772,13 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
+      refreshComponent: (component) => {
+        const owner = component.owner;
+        if (!owner || owner.destroyed) return;
+        const slotId = this.slotByGuid.get(owner.guid);
+        if (slotId === undefined) return;
+        this.emitMeshAssignment(owner, slotId);
+      },
       playSound: (asset, volume, options) => {
         this.emit({
           type: "playSound",
@@ -1036,15 +1043,26 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     const actor = this.world.findActor(message.actorGuid);
     if (!actor || actor.destroyed || !actor.sceneLayerId) return;
-    if (
-      !actor.components.some(
-        (component) =>
-          component.classId === "2DButtonComponent" && !component.destroyed,
-      )
-    ) {
-      return;
-    }
-    this.scriptHost.invokeEvent(actor.classId, message.event, actor);
+    const buttons = liveOverlayButtons(actor);
+    if (buttons.length === 0) return;
+    const requested =
+      typeof message.componentId === "string" ? message.componentId.trim() : "";
+    const button = requested
+      ? buttons.find(
+          (component) =>
+            component.guid === requested || component.sourceId === requested,
+        )
+      : buttons.length === 1
+        ? buttons[0]
+        : undefined;
+    if (requested && !button) return;
+    this.scriptHost.invokeEvent(
+      actor.classId,
+      message.event,
+      actor,
+      {},
+      button?.guid,
+    );
   }
 
   private applyOverlayAnchor(actor: Actor): void {
@@ -2394,11 +2412,10 @@ class InProcessRuntime implements RuntimeDriver {
         ...(actor.sceneLayerId
           ? {
               hitTest: overlayHitTestOf(actor),
-              hasButton: actor.components.some(
-                (component) =>
-                  component.classId === "2DButtonComponent" &&
-                  !component.destroyed,
-              ),
+              hasButton: liveOverlayButtons(actor).length > 0,
+              ...(overlayButtonComponentId(actor)
+                ? { buttonComponentId: overlayButtonComponentId(actor) }
+                : {}),
             }
           : {}),
         ...(skyboxComp
@@ -2547,18 +2564,24 @@ class InProcessRuntime implements RuntimeDriver {
       const actorB = this.world.findActor(event.actorBId);
       if (!actorA || !actorB || actorA.destroyed || actorB.destroyed) continue;
       if (event.kind === "hit") {
-        this.dispatchHit(actorA, actorB, event.location, event.normal);
+        this.dispatchHit(
+          actorA,
+          actorB,
+          event.location,
+          event.normal,
+          event.colliderAId,
+        );
         this.dispatchHit(actorB, actorA, event.location, {
           x: -event.normal.x,
           y: -event.normal.y,
           z: -event.normal.z,
-        });
+        }, event.colliderBId);
       } else if (event.kind === "overlapBegin") {
-        this.dispatchOverlap(actorA, actorB, "onBeginOverlap");
-        this.dispatchOverlap(actorB, actorA, "onBeginOverlap");
+        this.dispatchOverlap(actorA, actorB, "onBeginOverlap", event.colliderAId);
+        this.dispatchOverlap(actorB, actorA, "onBeginOverlap", event.colliderBId);
       } else if (event.kind === "overlapEnd") {
-        this.dispatchOverlap(actorA, actorB, "onEndOverlap");
-        this.dispatchOverlap(actorB, actorA, "onEndOverlap");
+        this.dispatchOverlap(actorA, actorB, "onEndOverlap", event.colliderAId);
+        this.dispatchOverlap(actorB, actorA, "onEndOverlap", event.colliderBId);
       }
     }
   }
@@ -2568,31 +2591,45 @@ class InProcessRuntime implements RuntimeDriver {
     other: Actor,
     location: { x: number; y: number; z: number },
     normal: { x: number; y: number; z: number },
+    colliderId?: string,
   ): void {
     if (!self.generateHitEvents) return;
-    this.scriptHost.invokeEvent(self.classId, "onHit", self, {
-      hitResult: {
-        Hit: true,
-        Location: location,
-        Normal: normal,
-        Actor: other,
-        Distance: 0,
+    this.scriptHost.invokeEvent(
+      self.classId,
+      "onHit",
+      self,
+      {
+        hitResult: {
+          Hit: true,
+          Location: location,
+          Normal: normal,
+          Actor: other,
+          Distance: 0,
+        },
+        otherActor: other,
+        location: location,
+        normal: normal,
       },
-      otherActor: other,
-      location: location,
-      normal: normal,
-    });
+      componentIdFromColliderPhysicsId(colliderId),
+    );
   }
 
   private dispatchOverlap(
     self: Actor,
     other: Actor,
     event: "onBeginOverlap" | "onEndOverlap",
+    colliderId?: string,
   ): void {
     if (!self.generateOverlapEvents) return;
-    this.scriptHost.invokeEvent(self.classId, event, self, {
-      instigator: other,
-    });
+    this.scriptHost.invokeEvent(
+      self.classId,
+      event,
+      self,
+      {
+        instigator: other,
+      },
+      componentIdFromColliderPhysicsId(colliderId),
+    );
   }
 
   private realizeActor(actor: Actor): void {
@@ -3224,6 +3261,27 @@ function overlayButtonHasSiblingVisual(actor: Actor): boolean {
     (component) =>
       !component.destroyed && OVERLAY_BUTTON_VISUAL_CLASS_IDS.has(component.classId),
   );
+}
+
+function liveOverlayButtons(actor: Actor): ActorComponent[] {
+  return actor.components.filter(
+    (component) =>
+      component.classId === "2DButtonComponent" && !component.destroyed,
+  );
+}
+
+function overlayButtonComponentId(actor: Actor): string | undefined {
+  const buttons = liveOverlayButtons(actor);
+  return buttons.length === 1 ? buttons[0]!.guid : undefined;
+}
+
+function componentIdFromColliderPhysicsId(
+  colliderId: string | undefined,
+): string | undefined {
+  if (!colliderId) return undefined;
+  return colliderId.startsWith("collider:")
+    ? colliderId.slice("collider:".length)
+    : colliderId;
 }
 
 function isPlayRenderable(

@@ -101,6 +101,22 @@ describe("displayNodeTitle", () => {
     ).toBe("Call Begin Play Parent");
     expect(displayNodeTitle("flow.event.callParent")).toBe("Call Parent Event");
   });
+
+  it("appends a qualifier for component and inherited event titles", () => {
+    expect(
+      displayNodeTitle(
+        "flow.event.beginOverlap",
+        "Event On Begin Overlap",
+        "Collider",
+      ),
+    ).toBe("Event On Begin Overlap (Collider)");
+    expect(displayNodeTitle("flow.event.custom", "On Foo", "Inherited")).toBe(
+      "Event On Foo (Inherited)",
+    );
+    expect(displayNodeTitle("flow.event.beginPlay", "Event Begin Play")).toBe(
+      "Event Begin Play",
+    );
+  });
 });
 
 describe("pinsAreCompatible", () => {

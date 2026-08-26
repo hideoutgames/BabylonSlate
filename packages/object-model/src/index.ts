@@ -10,6 +10,21 @@ export {
   type EngineComponentClassId,
 } from "./ids";
 export {
+  BUTTON_MOUSE_EVENTS,
+  COLLIDER_EVENTS,
+  ENGINE_CLASS_SCRIPT_APIS,
+  engineEventTypeClassIds,
+  engineScriptApiFor,
+  engineScriptEventsFor,
+  engineScriptFunctionsFor,
+  engineScriptVariablesFor,
+  type EngineClassScriptApi,
+  type EngineScriptEvent,
+  type EngineScriptFunction,
+  type EngineScriptPin,
+  type EngineScriptVariable,
+} from "./engine-script-api";
+export {
   ClassRegistry,
   MAX_CLASS_INHERITANCE_DEPTH,
   hydrateClassVariableValue,

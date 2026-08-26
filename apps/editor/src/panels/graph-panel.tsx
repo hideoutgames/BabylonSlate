@@ -161,8 +161,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
     if (classId && graphContent) graphs[classId] = graphContent;
-    return classMemberSymbolsFromGraphs(graphs);
-  }, [classId, graphContent, otherClassGraphs]);
+    return classMemberSymbolsFromGraphs(graphs, { parentOf });
+  }, [classId, graphContent, otherClassGraphs, parentOf]);
   const knownClassIds = useMemo(
     () => knownClassIdSet(parentOf, Object.keys(otherClassGraphs)),
     [otherClassGraphs, parentOf],
@@ -263,6 +263,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
             assetRegistry?.list() ?? [],
             openDocuments,
           ),
+          parentOf,
+          otherClassGraphs,
         }),
         ...physicsPairingDiagnostics(
           [

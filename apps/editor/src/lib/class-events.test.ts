@@ -13,9 +13,6 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
-      "flow.event.hit",
-      "flow.event.beginOverlap",
-      "flow.event.endOverlap",
     ]);
   });
 
@@ -24,9 +21,6 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
-      "flow.event.hit",
-      "flow.event.beginOverlap",
-      "flow.event.endOverlap",
     ]);
   });
 
@@ -115,7 +109,7 @@ describe("nativeEventStubs", () => {
     ).toBe(false);
   });
 
-  it("lists overlay mouse events only on SceneLayerActor graphs", () => {
+  it("does not list overlay mouse events as SceneLayerActor natives", () => {
     expect(
       nativeEventStubs({ parentClass: "SceneLayerActor" }).map(
         (stub) => stub.eventType,
@@ -124,14 +118,6 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
-      "flow.event.hit",
-      "flow.event.beginOverlap",
-      "flow.event.endOverlap",
-      "flow.event.onMouseEnter",
-      "flow.event.onMouseLeave",
-      "flow.event.onClick",
-      "flow.event.onPressStart",
-      "flow.event.onPressEnd",
     ]);
     expect(
       isScriptCatalogNodeAllowed("flow.event.onClick", {
@@ -190,5 +176,64 @@ describe("ensureEventNodeOnGraph", () => {
     const next = ensureEventNodeOnGraph(graph, "flow.event.beginPlay");
     expect(next).toBe(graph);
     expect(next.nodes[0]?.id).toBe("begin");
+  });
+
+  it("allows two On Click nodes bound to different 2D Buttons", () => {
+    let graph: SerializedGraph = { nodes: [], edges: [] };
+    graph = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    graph = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-2",
+      eventQualifier: "2D Button 2",
+    });
+    expect(graph.nodes).toHaveLength(2);
+    expect(graph.nodes.map((node) => node.data.componentId)).toEqual([
+      "btn-1",
+      "btn-2",
+    ]);
+    expect(graph.nodes[0]?.data.title).toBe("Event On Click (2D Button)");
+    expect(graph.nodes[1]?.data.title).toBe("Event On Click (2D Button 2)");
+  });
+
+  it("does not insert a second node for the same component event binding", () => {
+    let graph: SerializedGraph = { nodes: [], edges: [] };
+    graph = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    const firstId = graph.nodes[0]?.id;
+    const next = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0]?.id).toBe(firstId);
+  });
+
+  it("stamps Inherited on parent custom event overrides", () => {
+    const next = ensureEventNodeOnGraph(
+      { nodes: [], edges: [] },
+      "flow.event.custom",
+      {
+        name: "On Foo",
+        parentClassId: "Pawn",
+        eventQualifier: "Inherited",
+      },
+    );
+    expect(next.nodes[0]?.data).toMatchObject({
+      name: "On Foo",
+      title: "Event On Foo (Inherited)",
+      eventQualifier: "Inherited",
+    });
+  });
+
+  it("allows leftover text-changed catalog nodes on Actor graphs", () => {
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.textChanged", {
+        parentClass: "Actor",
+      }),
+    ).toBe(true);
   });
 });

@@ -49,6 +49,7 @@ const NATIVE_EVENT_TITLES: Record<string, string> = {
   "flow.event.onClick": "Event On Click",
   "flow.event.onPressStart": "Event On Press Start",
   "flow.event.onPressEnd": "Event On Press End",
+  "flow.event.textChanged": "Event On Text Changed",
   "flow.event.commandRun": "Event On Command Run",
   "flow.event.editorBeginPlay": "Event Editor On Begin Play",
   "flow.event.editorStartup": "Event On Editor Startup",
@@ -90,6 +91,7 @@ const ACTOR_EVENT_TYPE_IDS = [
   "flow.event.hit",
   "flow.event.beginOverlap",
   "flow.event.endOverlap",
+  "flow.event.textChanged",
   ...OVERLAY_MOUSE_EVENT_TYPE_IDS,
 ] as const;
 
@@ -241,10 +243,6 @@ export function nativeEventStubs(
   const types: string[] = [];
   if (chain.includes("Actor")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
-    types.push(...COLLISION_EVENT_TYPE_IDS);
-  }
-  if (chain.includes("SceneLayerActor")) {
-    types.push(...OVERLAY_MOUSE_EVENT_TYPE_IDS);
   }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
@@ -531,6 +529,12 @@ function seedFunctionGraph(
   };
 }
 
+function nodeComponentId(
+  node: SerializedGraph["nodes"][number],
+): string {
+  return typeof node.data.componentId === "string" ? node.data.componentId : "";
+}
+
 export function ensureEventNodeOnGraph(
   graph: SerializedGraph,
   eventType: string,
@@ -540,10 +544,14 @@ export function ensureEventNodeOnGraph(
     idFactory?: () => string;
     parentClassId?: string | null;
     pins?: GraphClassMemberPin[];
+    componentId?: string;
+    eventQualifier?: string;
   },
 ): SerializedGraph {
+  const wantedComponentId = extras?.componentId ?? "";
   const existing = graph.nodes.find((node) => {
     if (node.type !== eventType) return false;
+    if (nodeComponentId(node) !== wantedComponentId) return false;
     if (eventType !== "flow.event.custom") return true;
     const named = node.data.name;
     return extras?.name ? named === extras.name : true;
@@ -553,10 +561,13 @@ export function ensureEventNodeOnGraph(
   if (!existing) {
     const id = nextId(extras?.idFactory);
     eventId = id;
-    const title =
+    const title = formatEventTitle(
       extras?.title ??
-      NATIVE_EVENT_TITLES[eventType] ??
-      formatEventTitle(extras?.name ?? eventType);
+        extras?.name ??
+        NATIVE_EVENT_TITLES[eventType] ??
+        eventType,
+      extras?.eventQualifier,
+    );
     const pins = extras?.pins;
     next = {
       ...next,
@@ -573,6 +584,10 @@ export function ensureEventNodeOnGraph(
             title,
             ...(extras?.name ? { name: extras.name } : {}),
             ...(pins ? { pins } : {}),
+            ...(wantedComponentId ? { componentId: wantedComponentId } : {}),
+            ...(extras?.eventQualifier
+              ? { eventQualifier: extras.eventQualifier }
+              : {}),
             __nodeType: eventType,
           },
         },
@@ -1083,6 +1098,8 @@ export function addVariableAccessNode(
   stampVariableTypeOnData(data, member);
   if (options?.classId) data.classId = options.classId;
   if (member.functionId) data.functionId = member.functionId;
+  if (member.componentId) data.componentId = member.componentId;
+  if (member.propertyKey) data.propertyKey = member.propertyKey;
   return appendGraphNode(
     graph,
     {
@@ -1126,7 +1143,7 @@ export function addCallEventNode(
 /** Spawn a Call Function node bound to a class function. */
 export function addCallFunctionNode(
   graph: SerializedGraph,
-  member: Pick<GraphClassMember, "name" | "pins">,
+  member: Pick<GraphClassMember, "name" | "pins" | "runtime">,
   options?: GraphSpawnOptions,
 ): SerializedGraph {
   const type = "functions.call";
@@ -1138,6 +1155,7 @@ export function addCallFunctionNode(
     __nodeType: type,
   };
   if (options?.classId) data.classId = options.classId;
+  if (member.runtime) data.runtime = member.runtime;
   return appendGraphNode(
     graph,
     {

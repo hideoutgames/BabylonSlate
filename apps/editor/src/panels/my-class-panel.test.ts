@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
+import {
+  createMeshComponent,
+  createText3DComponent,
+} from "@babylonslate/core";
 import { ensureEventNodeOnGraph } from "../lib/class-members";
 import {
   blueprintTreeNodes,
@@ -462,5 +466,81 @@ describe("My Class members", () => {
       (row) => row.id === "section-local-variables",
     );
     expect(functionRows[localIndex]?.label).toBe("Local Variables");
+  });
+
+  it("lists Get-only prefab component refs in Variables, including inherited rows", () => {
+    const members = membersForGraph(
+      {
+        nodes: [],
+        edges: [],
+        components: [createText3DComponent("text-1")],
+      },
+      {
+        classId: "Hero",
+        parentClass: "HeroBase",
+        parentOf: (id) => (id === "Hero" ? "HeroBase" : id === "HeroBase" ? "Actor" : null),
+        parentGraphs: {
+          HeroBase: {
+            nodes: [],
+            edges: [],
+            components: [createMeshComponent("prefab-mesh", "box")],
+          },
+        },
+      },
+    );
+    const variables = membersForSection(members, "variable");
+    expect(variables).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "variable",
+          name: "Mesh",
+          detail: "component:prefab-mesh",
+          typeId: "object",
+          typeClassId: "MeshComponent",
+          componentId: "prefab-mesh",
+          inherited: true,
+          inheritedFrom: "HeroBase",
+        }),
+        expect.objectContaining({
+          kind: "variable",
+          name: "3D Text",
+          detail: "component:text-1",
+          typeId: "object",
+          typeClassId: "Text3DComponent",
+          componentId: "text-1",
+        }),
+      ]),
+    );
+  });
+
+  it("titles bound component events with a qualifier in the Events tree", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "click",
+          type: "flow.event.onClick",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Event On Click (2D Button)",
+            eventQualifier: "2D Button",
+            componentId: "btn-1",
+          },
+        },
+        {
+          id: "begin",
+          type: "flow.event.beginPlay",
+          position: { x: 0, y: 80 },
+          data: { title: "Event Begin Play" },
+        },
+      ],
+      edges: [],
+    };
+    const events = membersForSection(membersForGraph(graph), "event");
+    expect(events.find((row) => row.detail === "click")?.name).toBe(
+      "Event On Click (2D Button)",
+    );
+    expect(events.find((row) => row.detail === "begin")?.name).toBe(
+      "Event Begin Play",
+    );
   });
 });
