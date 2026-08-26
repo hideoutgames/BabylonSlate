@@ -15,6 +15,8 @@ import type {
   PhysicsTransform,
   PhysicsWorldKind,
   RigidBodyDesc,
+  RigidBodyTuning,
+  ColliderTuning,
   Vec3,
 } from "./types";
 
@@ -320,6 +322,33 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
     body.linearVelocity.z += this.kind === "2d" ? 0 : impulse.z * s;
   }
 
+  updateBody(bodyId: string, tuning: RigidBodyTuning): void {
+    const body = this.bodies.get(bodyId);
+    if (!body) return;
+    if (tuning.motionType) body.desc.motionType = tuning.motionType;
+    if (typeof tuning.mass === "number" && Number.isFinite(tuning.mass)) {
+      body.desc.mass = tuning.mass;
+    }
+    if (
+      typeof tuning.linearDamping === "number" &&
+      Number.isFinite(tuning.linearDamping)
+    ) {
+      body.desc.linearDamping = tuning.linearDamping;
+    }
+    if (
+      typeof tuning.angularDamping === "number" &&
+      Number.isFinite(tuning.angularDamping)
+    ) {
+      body.desc.angularDamping = tuning.angularDamping;
+    }
+    if (
+      typeof tuning.gravityScale === "number" &&
+      Number.isFinite(tuning.gravityScale)
+    ) {
+      body.desc.gravityScale = tuning.gravityScale;
+    }
+  }
+
   createCollider(desc: ColliderDesc): void {
     this.assertLive();
     if (this.kind === "2d" && isShape3D(desc.shape)) return;
@@ -329,6 +358,29 @@ export class SoftwarePhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     this.colliders.delete(colliderId);
+  }
+
+  updateCollider(colliderId: string, tuning: ColliderTuning): void {
+    const collider = this.colliders.get(colliderId);
+    if (!collider) return;
+    if (typeof tuning.isTrigger === "boolean") {
+      collider.desc.isTrigger = tuning.isTrigger;
+    }
+    if (typeof tuning.friction === "number" && Number.isFinite(tuning.friction)) {
+      collider.desc.friction = tuning.friction;
+    }
+    if (
+      typeof tuning.restitution === "number" &&
+      Number.isFinite(tuning.restitution)
+    ) {
+      collider.desc.restitution = tuning.restitution;
+    }
+    if (typeof tuning.layer === "number" && Number.isFinite(tuning.layer)) {
+      collider.desc.layer = tuning.layer;
+    }
+    if (typeof tuning.mask === "number" && Number.isFinite(tuning.mask)) {
+      collider.desc.mask = tuning.mask;
+    }
   }
 
   listDebugColliders() {

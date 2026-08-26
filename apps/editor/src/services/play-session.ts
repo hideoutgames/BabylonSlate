@@ -561,6 +561,11 @@ export function startPlaySession(options: {
           size.canvasHeight,
         );
     },
+    onAudioVoiceEnded: (voiceId) => {
+      const control = { type: "audioVoiceEnded" as const, voiceId };
+      if (worker) worker.postControl(control);
+      else runtime?.applyAudioVoiceEnded(control);
+    },
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);

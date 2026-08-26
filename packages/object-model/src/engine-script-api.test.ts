@@ -87,13 +87,170 @@ describe("engine script API catalog", () => {
     ]);
   });
 
-  it("does not invent APIs for every engine component", () => {
+  it("does not invent APIs for bake-only and graph-document hosts", () => {
     expect(engineScriptApiFor("BlockingVolumeComponent")).toBeUndefined();
-    expect(engineScriptApiFor("MeshComponent")).toBeUndefined();
+    expect(engineScriptApiFor("NavMeshComponent")).toBeUndefined();
+    expect(engineScriptApiFor("NavMeshBlockerComponent")).toBeUndefined();
+    expect(engineScriptApiFor("AnimationGraphComponent")).toBeUndefined();
+    expect(engineScriptApiFor("BehaviourTreeComponent")).toBeUndefined();
     expect(engineScriptEventsFor("CameraComponent")).toEqual([]);
     expect(ENGINE_CLASS_SCRIPT_APIS.every((api) => api.classId !== "Actor")).toBe(
       true,
     );
+  });
+
+  it("exposes Mesh Kind, Mesh (Mesh+Model), and Material on MeshComponent", () => {
+    const api = engineScriptApiFor("MeshComponent");
+    expect(
+      api?.variables?.map((entry) => [entry.name, entry.propertyKey]),
+    ).toEqual([
+      ["Mesh Kind", "meshKind"],
+      ["Mesh", "assetGuid"],
+      ["Material", "materialGuid"],
+    ]);
+    const mesh = api?.variables?.find((entry) => entry.propertyKey === "assetGuid");
+    expect(mesh?.typeId).toBe("asset");
+    expect(mesh?.typeClassId).toBe("Model");
+    expect(mesh?.typeClassIds).toEqual(["Mesh", "Model"]);
+    expect(
+      api?.variables?.find((entry) => entry.propertyKey === "materialGuid"),
+    ).toMatchObject({ typeId: "asset", typeClassId: "Material" });
+  });
+
+  it("exposes Sprite and Tilemap assets plus sorting", () => {
+    expect(
+      engineScriptApiFor("SpriteComponent")?.variables?.map((entry) => [
+        entry.name,
+        entry.propertyKey,
+      ]),
+    ).toEqual([
+      ["Sprite", "assetGuid"],
+      ["Sorting Layer", "sortingLayer"],
+      ["Order In Layer", "orderInLayer"],
+    ]);
+    expect(
+      engineScriptApiFor("TilemapComponent")?.variables?.map((entry) => [
+        entry.name,
+        entry.propertyKey,
+      ]),
+    ).toEqual([
+      ["Tilemap", "assetGuid"],
+      ["Sorting Layer", "sortingLayer"],
+      ["Order In Layer", "orderInLayer"],
+    ]);
+    expect(engineScriptApiFor("SkyboxComponent")?.variables).toEqual([
+      { name: "Size", typeId: "float", propertyKey: "size" },
+    ]);
+  });
+
+  it("exposes Camera lens knobs and Possess, Light extras, and Nav Agent Move To", () => {
+    expect(
+      engineScriptApiFor("CameraComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual([
+      "fieldOfView",
+      "orthographicSize",
+      "projectionMode",
+      "nearClip",
+      "farClip",
+    ]);
+    expect(engineScriptFunctionsFor("CameraComponent")).toEqual([
+      expect.objectContaining({ name: "Possess", runtime: "possessCamera" }),
+    ]);
+    expect(
+      engineScriptApiFor("LightComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual([
+      "enabled",
+      "color",
+      "intensity",
+      "lightKind",
+      "range",
+      "innerAngle",
+      "outerAngle",
+      "castShadows",
+    ]);
+    expect(
+      engineScriptApiFor("NavAgentComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual(["radius", "height", "maxSpeed", "maxAcceleration"]);
+    expect(
+      engineScriptFunctionsFor("NavAgentComponent").map((entry) => [
+        entry.name,
+        entry.runtime,
+      ]),
+    ).toEqual([
+      ["Move To", "moveTo"],
+      ["Stop Movement", "stopMovement"],
+    ]);
+  });
+
+  it("exposes 2D text overlay knobs, Audio clip and On Audio Finished, particle and physics extras", () => {
+    expect(
+      engineScriptApiFor("2DTextComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual([
+      "text",
+      "size",
+      "color",
+      "fontAssetGuid",
+      "hitTest",
+      "renderer",
+      "outline",
+      "outlineColor",
+      "alignment",
+      "bold",
+      "italic",
+      "underline",
+      "wrapWidth",
+    ]);
+    expect(
+      engineScriptApiFor("AudioComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual(["volume", "loop", "audioAssetGuid"]);
+    expect(engineScriptEventsFor("AudioComponent")).toEqual([
+      expect.objectContaining({
+        name: "On Audio Finished",
+        eventType: "flow.event.audioFinished",
+        exportName: "onAudioFinished",
+      }),
+    ]);
+    expect(
+      engineScriptApiFor("ParticleComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual(["particleSystemGuid", "sortingLayer", "orderInLayer"]);
+    expect(
+      engineScriptApiFor("RigidBodyComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual([
+      "mass",
+      "gravityScale",
+      "motionType",
+      "linearDamping",
+      "angularDamping",
+    ]);
+    expect(engineScriptFunctionsFor("RigidBodyComponent")).toEqual([
+      expect.objectContaining({ name: "Add Impulse", runtime: "addImpulse" }),
+    ]);
+    expect(
+      engineScriptApiFor("ColliderComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual([
+      "isTrigger",
+      "friction",
+      "restitution",
+      "layer",
+      "mask",
+      "renderInGame",
+    ]);
   });
 
   it("maps event types onto the classes that expose them", () => {
@@ -105,6 +262,7 @@ describe("engine script API catalog", () => {
       "2DTextComponent",
       "2DRichTextComponent",
     ]);
+    expect(types["flow.event.audioFinished"]).toEqual(["AudioComponent"]);
     expect(types["flow.event.beginPlay"]).toBeUndefined();
   });
 });

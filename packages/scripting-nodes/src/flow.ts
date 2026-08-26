@@ -49,6 +49,7 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.onPressStart": "onPressStart",
   "flow.event.onPressEnd": "onPressEnd",
   "flow.event.textChanged": "onTextChanged",
+  "flow.event.audioFinished": "onAudioFinished",
   "bt.event.activate": "onActivate",
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",
@@ -188,6 +189,16 @@ export const flowNodes: NodeDefinition[] = [
       pin("text", "Text", "out", STRING),
     ],
     codegen: () => ({ text: "(ctx.args.text)" }),
+  },
+  {
+    id: "flow.event.audioFinished",
+    title: "Event On Audio Finished",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
   },
   {
     id: "flow.event.commandRun",

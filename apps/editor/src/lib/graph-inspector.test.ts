@@ -18,8 +18,22 @@ import {
   pinListFromParameterRows,
   pinTypeFromParameterType,
   pinsFromNodeData,
+  assetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
+
+describe("assetPickerAllowedTypes", () => {
+  it("uses catalog typeClassIds so Mesh Get/Set can pick Mesh or Model", () => {
+    expect(assetPickerAllowedTypes("Model", ["Mesh", "Model"])).toEqual([
+      "Mesh",
+      "Model",
+    ]);
+  });
+
+  it("falls back to the pin asset type when typeClassIds is missing", () => {
+    expect(assetPickerAllowedTypes("Material", undefined)).toEqual(["Material"]);
+  });
+});
 
 describe("containerConstructorPropertyRows", () => {
   it.each(["array.make", "map.make"])("edits the dynamic pin count for %s", (typeId) => {

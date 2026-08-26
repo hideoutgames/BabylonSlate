@@ -17,7 +17,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids cannot be reparented |
-| `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` | Per-class script catalog: optional variables, functions, events (Get/Set/Call and Add Event). Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
+| `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` | Per-class script catalog: optional variables (incl. `typeClassIds`), functions, events (Get/Set/Call and Add Event). Overlay 2D classes are in the catalog; Animation Graph / BT / nav bake helpers stay ref-only. Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play. Skips `SceneLayerActor` (and subclasses); those belong on overlay documents. |
@@ -65,7 +65,7 @@ See [physics.md](physics.md) for RigidBody / Collider property schemas, pairing 
 
 ### Engine script API
 
-`ENGINE_CLASS_SCRIPT_APIS` in `@babylonslate/object-model` is the Get/Set/Call/Add Event catalog (no React/Babylon). Each class id may list `variables` (`propertyKey` on `component.variables`), `functions` (`runtime` name for `ctx.callComponentFunction`), and `events` (`eventType` / `exportName`). Overlay pointer events are on `2DButtonComponent` only; SceneLayerActor has no native mouse stubs. Collision events are on `ColliderComponent`. Text components expose Set Text and On Text Changed. See [scripting.md](scripting.md).
+`ENGINE_CLASS_SCRIPT_APIS` in `@babylonslate/object-model` is the Get/Set/Call/Add Event catalog (no React/Babylon). Each class id may list `variables` (`propertyKey` on `component.variables`, optional `typeClassIds` when a pin picker accepts more than one Content Browser type — Mesh `assetGuid` is Mesh **and** Model), `functions` (`runtime` name for `ctx.callComponentFunction`), and `events` (`eventType` / `exportName`). Overlay pointer events are on `2DButtonComponent` only; SceneLayerActor has no native mouse stubs. Collision events are on `ColliderComponent`. Text components (3D + overlay 2D) expose Set Text and On Text Changed. Audio exposes Play/Stop and On Audio Finished. Camera Possess, RigidBody Add Impulse, and Nav Agent Move To / Stop Movement are Calls off the component pin. Animation Graph, Behaviour Tree, NavMesh, NavMesh Blocker, and Blocking Volume stay **ref-only**. Catalog completeness and Play apply paths: [scripting.md](scripting.md).
 
 `createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon. Overlay classes (`SceneLayerActor` and subclasses) are skipped here; `createActorsFromSerializedSceneLayer` stamps `sceneLayerId` and strips the overlay denylist (Skybox / Camera / Light).
 

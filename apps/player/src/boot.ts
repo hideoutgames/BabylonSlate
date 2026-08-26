@@ -172,6 +172,11 @@ export function startPlayer(options: {
           size.canvasHeight,
         );
     },
+    onAudioVoiceEnded: (voiceId) => {
+      const control = { type: "audioVoiceEnded" as const, voiceId };
+      if (worker) worker.postControl(control);
+      else runtime?.applyAudioVoiceEnded(control);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");

@@ -374,4 +374,44 @@ describe("functions.call", () => {
     expect(compiled.source).not.toContain("ctx.invokeFunction");
     expect(compiled.source).not.toContain("Set_Text");
   });
+
+  it("compiles engine Call Function runtimes for component Calls", () => {
+    const registry = createDefaultNodeRegistry();
+    for (const runtime of [
+      "possessCamera",
+      "addImpulse",
+      "moveTo",
+      "stopMovement",
+    ]) {
+      const graph: LogicGraph = {
+        id: "g",
+        kind: "event",
+        nodes: [
+          node(registry, "begin", "flow.event.beginPlay"),
+          node(registry, "call", "functions.call", {
+            functionName: runtime,
+            runtime,
+            classId: "ActorComponent",
+            implicitSelf: false,
+            pins: [
+              { name: "exec", typeId: "exec", direction: "in" },
+              { name: "then", typeId: "exec", direction: "out" },
+            ],
+          }),
+        ],
+        edges: [
+          {
+            id: "e1",
+            sourceNodeId: "begin",
+            sourcePinId: "execOut",
+            targetNodeId: "call",
+            targetPinId: "exec",
+          },
+        ],
+      };
+      const compiled = compileGraph(graph, { assetGuid: "a", registry });
+      expect(compiled.source).toContain("ctx.callComponentFunction(");
+      expect(compiled.source).toContain(`"${runtime}"`);
+    }
+  });
 });

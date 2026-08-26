@@ -18,6 +18,7 @@ import {
 } from "@babylonjs/core";
 import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import {
+  DEFAULT_SORTING_LAYERS,
   emptySkyboxFaces,
   parseOverlayPanelProperties,
   parseText2DProperties,
@@ -40,7 +41,7 @@ import {
   unfreezeActorWorldMatrix,
 } from "./scene-loader";
 import { createColliderVisualMesh } from "./collider-visual";
-import { applyWorldVisualGroup } from "./sorting";
+import { applySortingToMesh, applyWorldVisualGroup, resolveSortingLayer } from "./sorting";
 import {
   AUTHORED_CAMERA_PREFIX,
   AUTHORED_LIGHT_PREFIX,
@@ -429,11 +430,44 @@ export function applyAssignMesh(
   const rebuilt = createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
   stampOverlayPick(rebuilt, command);
+  applyAssignMeshSorting(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   syncPlayFillLight(scene, binding);
+}
+
+function applyAssignMeshSorting(mesh: Mesh, command: AssignMeshCommand): void {
+  const apply = (
+    target: { alphaIndex: number; renderingGroupId: number },
+    layer: string | undefined,
+    order: number | undefined,
+  ) => {
+    applySortingToMesh(
+      target,
+      resolveSortingLayer(
+        DEFAULT_SORTING_LAYERS,
+        layer?.trim() || "Default",
+        typeof order === "number" ? order : 0,
+      ),
+    );
+  };
+  for (const part of command.parts ?? []) {
+    if (part.sortingLayer == null && part.orderInLayer == null) continue;
+    const name = playComponentMeshName(command.slotId, part.componentId);
+    const child =
+      mesh.name === name
+        ? mesh
+        : mesh.getChildMeshes().find((entry) => entry.name === name);
+    if (child) apply(child, part.sortingLayer, part.orderInLayer);
+  }
+  if (command.sortingLayer == null && command.orderInLayer == null) return;
+  apply(mesh, command.sortingLayer, command.orderInLayer);
+  for (const child of mesh.getChildMeshes()) {
+    if (playMeshMetadata(child as Mesh)?.playHelperVisual) continue;
+    apply(child, command.sortingLayer, command.orderInLayer);
+  }
 }
 
 function stampOverlayPick(

@@ -189,6 +189,9 @@ function handleControl(msg: ControlMessage): void {
         msg.canvasHeight,
       );
       return;
+    case "audioVoiceEnded":
+      ensureRuntime().applyAudioVoiceEnded(msg);
+      return;
   }
 }
 

@@ -9,6 +9,8 @@ export type EngineScriptVariable = {
   name: string;
   typeId: string;
   typeClassId?: string;
+  /** Extra Content Browser types the pin picker accepts (e.g. Mesh + Model). */
+  typeClassIds?: readonly string[];
   propertyKey: string;
 };
 
@@ -48,11 +50,35 @@ const SET_TEXT: EngineScriptFunction = {
   pins: [EXEC_IN, EXEC_OUT, { name: "text", typeId: "string", direction: "in" }],
 };
 
+const HIT_TEST: EngineScriptVariable = {
+  name: "Hit Test",
+  typeId: "string",
+  propertyKey: "hitTest",
+};
+
+const SORTING_VARIABLES: readonly EngineScriptVariable[] = [
+  { name: "Sorting Layer", typeId: "string", propertyKey: "sortingLayer" },
+  { name: "Order In Layer", typeId: "int", propertyKey: "orderInLayer" },
+];
+
 const TEXT_VARIABLES: readonly EngineScriptVariable[] = [
   { name: "Text", typeId: "string", propertyKey: "text" },
   { name: "Size", typeId: "float", propertyKey: "size" },
   { name: "Color", typeId: "color", propertyKey: "color" },
   { name: "Font", typeId: "asset", typeClassId: "Font", propertyKey: "fontAssetGuid" },
+];
+
+const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
+  ...TEXT_VARIABLES,
+  HIT_TEST,
+  { name: "Renderer", typeId: "string", propertyKey: "renderer" },
+  { name: "Outline", typeId: "float", propertyKey: "outline" },
+  { name: "Outline Color", typeId: "color", propertyKey: "outlineColor" },
+  { name: "Alignment", typeId: "string", propertyKey: "alignment" },
+  { name: "Bold", typeId: "bool", propertyKey: "bold" },
+  { name: "Italic", typeId: "bool", propertyKey: "italic" },
+  { name: "Underline", typeId: "bool", propertyKey: "underline" },
+  { name: "Wrap Width", typeId: "float", propertyKey: "wrapWidth" },
 ];
 
 const TEXT_CHANGED: EngineScriptEvent = {
@@ -61,10 +87,10 @@ const TEXT_CHANGED: EngineScriptEvent = {
   exportName: "onTextChanged",
 };
 
-const HIT_TEST: EngineScriptVariable = {
-  name: "Hit Test",
-  typeId: "string",
-  propertyKey: "hitTest",
+const AUDIO_FINISHED: EngineScriptEvent = {
+  name: "On Audio Finished",
+  eventType: "flow.event.audioFinished",
+  exportName: "onAudioFinished",
 };
 
 export const BUTTON_MOUSE_EVENTS: readonly EngineScriptEvent[] = [
@@ -118,15 +144,62 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "2DTextComponent",
-    variables: TEXT_VARIABLES,
+    variables: TEXT2D_VARIABLES,
     functions: [SET_TEXT],
     events: [TEXT_CHANGED],
   },
   {
     classId: "2DRichTextComponent",
-    variables: TEXT_VARIABLES,
+    variables: TEXT2D_VARIABLES,
     functions: [SET_TEXT],
     events: [TEXT_CHANGED],
+  },
+  {
+    classId: "MeshComponent",
+    variables: [
+      { name: "Mesh Kind", typeId: "string", propertyKey: "meshKind" },
+      {
+        name: "Mesh",
+        typeId: "asset",
+        typeClassId: "Model",
+        typeClassIds: ["Mesh", "Model"],
+        propertyKey: "assetGuid",
+      },
+      {
+        name: "Material",
+        typeId: "asset",
+        typeClassId: "Material",
+        propertyKey: "materialGuid",
+      },
+    ],
+  },
+  {
+    classId: "SpriteComponent",
+    variables: [
+      {
+        name: "Sprite",
+        typeId: "asset",
+        typeClassId: "Sprite",
+        propertyKey: "assetGuid",
+      },
+      ...SORTING_VARIABLES,
+    ],
+  },
+  {
+    classId: "TilemapComponent",
+    variables: [
+      {
+        name: "Tilemap",
+        typeId: "asset",
+        typeClassId: "Tilemap",
+        propertyKey: "assetGuid",
+      },
+      ...SORTING_VARIABLES,
+    ],
+  },
+  {
+    classId: "SkyboxComponent",
+    variables: [{ name: "Size", typeId: "float", propertyKey: "size" }],
   },
   {
     classId: "CameraComponent",
@@ -137,6 +210,12 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         typeId: "float",
         propertyKey: "orthographicSize",
       },
+      { name: "Projection Mode", typeId: "string", propertyKey: "projectionMode" },
+      { name: "Near Clip", typeId: "float", propertyKey: "nearClip" },
+      { name: "Far Clip", typeId: "float", propertyKey: "farClip" },
+    ],
+    functions: [
+      { name: "Possess", runtime: "possessCamera", pins: [EXEC_IN, EXEC_OUT] },
     ],
   },
   {
@@ -145,6 +224,11 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
       { name: "Color", typeId: "color", propertyKey: "color" },
       { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+      { name: "Kind", typeId: "string", propertyKey: "lightKind" },
+      { name: "Range", typeId: "float", propertyKey: "range" },
+      { name: "Inner Angle", typeId: "float", propertyKey: "innerAngle" },
+      { name: "Outer Angle", typeId: "float", propertyKey: "outerAngle" },
+      { name: "Cast Shadows", typeId: "bool", propertyKey: "castShadows" },
     ],
   },
   {
@@ -152,14 +236,30 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     variables: [
       { name: "Volume", typeId: "float", propertyKey: "volume" },
       { name: "Loop", typeId: "bool", propertyKey: "loop" },
+      {
+        name: "Audio",
+        typeId: "asset",
+        typeClassId: "Audio",
+        propertyKey: "audioAssetGuid",
+      },
     ],
     functions: [
       { name: "Play", runtime: "playAudio", pins: [EXEC_IN, EXEC_OUT] },
       { name: "Stop", runtime: "stopAudio", pins: [EXEC_IN, EXEC_OUT] },
     ],
+    events: [AUDIO_FINISHED],
   },
   {
     classId: "ParticleComponent",
+    variables: [
+      {
+        name: "Particle System",
+        typeId: "asset",
+        typeClassId: "ParticleSystem",
+        propertyKey: "particleSystemGuid",
+      },
+      ...SORTING_VARIABLES,
+    ],
     functions: [
       { name: "Play", runtime: "playParticles", pins: [EXEC_IN, EXEC_OUT] },
       { name: "Stop", runtime: "stopParticles", pins: [EXEC_IN, EXEC_OUT] },
@@ -167,7 +267,14 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "ColliderComponent",
-    variables: [{ name: "Is Trigger", typeId: "bool", propertyKey: "isTrigger" }],
+    variables: [
+      { name: "Is Trigger", typeId: "bool", propertyKey: "isTrigger" },
+      { name: "Friction", typeId: "float", propertyKey: "friction" },
+      { name: "Restitution", typeId: "float", propertyKey: "restitution" },
+      { name: "Layer", typeId: "int", propertyKey: "layer" },
+      { name: "Mask", typeId: "int", propertyKey: "mask" },
+      { name: "Render In Game", typeId: "bool", propertyKey: "renderInGame" },
+    ],
     events: COLLIDER_EVENTS,
   },
   {
@@ -176,13 +283,45 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       { name: "Mass", typeId: "float", propertyKey: "mass" },
       { name: "Gravity Scale", typeId: "float", propertyKey: "gravityScale" },
       { name: "Motion Type", typeId: "string", propertyKey: "motionType" },
+      { name: "Linear Damping", typeId: "float", propertyKey: "linearDamping" },
+      { name: "Angular Damping", typeId: "float", propertyKey: "angularDamping" },
+    ],
+    functions: [
+      {
+        name: "Add Impulse",
+        runtime: "addImpulse",
+        pins: [
+          EXEC_IN,
+          EXEC_OUT,
+          { name: "impulse", typeId: "vec3", direction: "in" },
+          { name: "strength", typeId: "float", direction: "in" },
+        ],
+      },
     ],
   },
   {
-    classId: "SpriteComponent",
+    classId: "NavAgentComponent",
     variables: [
-      { name: "Sorting Layer", typeId: "string", propertyKey: "sortingLayer" },
-      { name: "Order In Layer", typeId: "int", propertyKey: "orderInLayer" },
+      { name: "Radius", typeId: "float", propertyKey: "radius" },
+      { name: "Height", typeId: "float", propertyKey: "height" },
+      { name: "Max Speed", typeId: "float", propertyKey: "maxSpeed" },
+      { name: "Max Acceleration", typeId: "float", propertyKey: "maxAcceleration" },
+    ],
+    functions: [
+      {
+        name: "Move To",
+        runtime: "moveTo",
+        pins: [
+          EXEC_IN,
+          EXEC_OUT,
+          { name: "destination", typeId: "vec3", direction: "in" },
+        ],
+      },
+      {
+        name: "Stop Movement",
+        runtime: "stopMovement",
+        pins: [EXEC_IN, EXEC_OUT],
+      },
     ],
   },
   {

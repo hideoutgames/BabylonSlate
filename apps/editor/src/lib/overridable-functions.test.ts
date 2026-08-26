@@ -302,6 +302,29 @@ describe("collectOverridableEventRows", () => {
     ]);
   });
 
+  it("lists On Audio Finished once per attached AudioComponent", () => {
+    const rows = collectOverridableEventRows({
+      classId: "Hero",
+      parentClass: "Actor",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [
+          { id: "audio-a", classId: "AudioComponent", properties: {} },
+        ],
+      },
+    });
+    const finished = rows.filter(
+      (row) => row.eventType === "flow.event.audioFinished",
+    );
+    expect(finished).toEqual([
+      expect.objectContaining({
+        componentId: "audio-a",
+        eventQualifier: "Audio",
+      }),
+    ]);
+  });
+
   it("lists custom events from an attached user component class", () => {
     const rows = collectOverridableEventRows({
       classId: "Hero",

@@ -84,6 +84,13 @@ describe("flow nodes", () => {
     );
   });
 
+  it("registers On Audio Finished as a catalog event", () => {
+    const node = flowNodes.find((entry) => entry.id === "flow.event.audioFinished");
+    expect(node?.title).toBe("Event On Audio Finished");
+    const pins = node?.pins({}) ?? [];
+    expect(pins.some((pin) => pin.id === "execOut")).toBe(true);
+  });
+
   it("registers Actor collision events with Hit Result and Instigator pins", () => {
     const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
     expect(byId["flow.event.hit"]?.title).toBe("Event On Hit");

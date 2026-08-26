@@ -25,6 +25,11 @@ When the code-review skill reports Standards or Spec findings:
 | 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | Child `2DAnchor` still mapped independently when the parent already had `2DAnchor` | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | 9-slice dest ignored actor scale so corners scaled with the quad | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | SceneLayer editor black clear used RGB `[0,0,0]` and would also fire on a world 2D scene | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | Overlay handles used `getRenderHeight()` (drawing buffer) instead of view-canvas CSS height, so 44px targets shrank on HiDPI / Prefab RTT | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | `overlayBoxLocalBounds` fell back to the pick-proxy origin collider when every visual was skipped | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | Rotation knob shared Z with resize handles, so hit priority knob → handles was undefined | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | ViewportPanel `createEngine` omitted `overlayTransformBox` from effect deps, so a late SceneLayer document lookup kept TRS gizmos | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Standards | Overlay 44px size duplicated `overlayMinTargetWorldSize` instead of calling it | Resolved |
 | 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents / p20-shared-resource-cache | Spec | Shared-view `resize` used `engine.resize()` when the view canvas had no 2D blit context | Resolved |
 | 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents / p20-shared-resource-cache | Spec | Shared-view `setSize` skipped the view canvas bitmap unless `registerView` had a 2D blit | Resolved |
 | 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents | Standards | `perf-budget.md` dropped still-true CB / Add Node / log virtualisation bullets while editing Engine lifetime | Resolved |

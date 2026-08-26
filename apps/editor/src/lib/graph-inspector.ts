@@ -178,6 +178,21 @@ function flattenStructFieldRows(
   return rows;
 }
 
+/** Prefer catalog `typeClassIds` (Mesh+Model) over the pin's single asset type. */
+export function assetPickerAllowedTypes(
+  pinAssetType: string,
+  typeClassIds: unknown,
+): string[] {
+  if (!Array.isArray(typeClassIds) || typeClassIds.length === 0) {
+    return [pinAssetType];
+  }
+  const ids = typeClassIds
+    .filter((id): id is string => typeof id === "string")
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return ids.length > 0 ? ids : [pinAssetType];
+}
+
 export function pinDefaultPropertyRows(
   entries: readonly LiteralPinDefault[],
   onPatch: (patch: Record<string, unknown>) => void,
