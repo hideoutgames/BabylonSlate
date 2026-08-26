@@ -134,7 +134,7 @@ export const inputNodes: NodeDefinition[] = [
       pin("out", "Position", "out", VEC2),
       pin("pressed", "Pressed", "out", BOOL, "data", true),
     ],
-    codegen: (ctx) => ({
+    codegen: () => ({
       out: `(ctx.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false })`,
       pressed: `(ctx.getCursorPosition?.()?.pressed ?? false)`,
     }),
