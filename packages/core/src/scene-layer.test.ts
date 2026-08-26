@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultSceneLayer,
+  editorSceneToSceneLayer,
   normalizeSceneLayer,
   normalizeSceneLayerSpawnList,
+  parseSceneLayerAnchor,
+  sceneLayerAnchorWorldPosition,
+  sceneLayerFrustumSize,
   sceneLayerToEditorScene,
+  walkOverlayPointerHits,
   SCENE_LAYER_DENIED_COMPONENT_CLASS_IDS,
   SCENE_LAYER_HIT_TESTS,
   SCENE_LAYER_SCHEMA_VERSION,
@@ -96,5 +101,69 @@ describe("SceneLayer schema", () => {
       { materialGuid: "pp", enabled: true },
     ]);
     expect(scene.actors).toHaveLength(1);
+  });
+
+  it("round-trips an editor scene back to a SceneLayer payload", () => {
+    const layer = normalizeSceneLayer({
+      name: "HUD",
+      settings: { gravity: [0, -4, 0], postProcessStack: [{ materialGuid: "pp" }] },
+      actors: [createActor("a", "A", { classId: "SceneLayerActor" })],
+    });
+    const restored = editorSceneToSceneLayer(sceneLayerToEditorScene(layer));
+    expect(restored.name).toBe("HUD");
+    expect(restored.settings.gravity).toEqual([0, -4, 0]);
+    expect(restored.settings.postProcessStack).toEqual([
+      { materialGuid: "pp", enabled: true },
+    ]);
+    expect(restored.actors).toHaveLength(1);
+  });
+});
+
+describe("SceneLayer anchors and hit tests", () => {
+  it("places 16x9 overlay anchors at screen-space origins with XY offsets", () => {
+    const frustum = sceneLayerFrustumSize(16 / 9);
+    expect(frustum).toEqual({ width: 16, height: 9 });
+    expect(
+      sceneLayerAnchorWorldPosition("topLeft", 0, 0, frustum.width, frustum.height),
+    ).toEqual({ x: -8, y: 4.5 });
+    expect(
+      sceneLayerAnchorWorldPosition("center", 1, -2, frustum.width, frustum.height),
+    ).toEqual({ x: 1, y: -2 });
+    expect(
+      sceneLayerAnchorWorldPosition(
+        "bottomRight",
+        0.5,
+        0.25,
+        frustum.width,
+        frustum.height,
+      ),
+    ).toEqual({ x: 8.5, y: -4.25 });
+    expect(parseSceneLayerAnchor("nope")).toBe("center");
+  });
+
+  it("walks overlay hits high-to-low, skipping Ignore and stopping on Block", () => {
+    expect(
+      walkOverlayPointerHits([
+        { layerId: "hi", actorGuid: "a", hitTest: "ignore" },
+        { layerId: "mid", actorGuid: "b", hitTest: "passThrough" },
+        { layerId: "lo", actorGuid: "c", hitTest: "block" },
+        { layerId: "worldish", actorGuid: "d", hitTest: "block" },
+      ]),
+    ).toEqual({
+      targets: [
+        { layerId: "mid", actorGuid: "b", hitTest: "passThrough" },
+        { layerId: "lo", actorGuid: "c", hitTest: "block" },
+      ],
+      blocked: true,
+    });
+    expect(
+      walkOverlayPointerHits([
+        { layerId: "hi", actorGuid: "a", hitTest: "ignore" },
+        { layerId: "mid", actorGuid: "b", hitTest: "passThrough" },
+      ]),
+    ).toEqual({
+      targets: [{ layerId: "mid", actorGuid: "b", hitTest: "passThrough" }],
+      blocked: false,
+    });
   });
 });

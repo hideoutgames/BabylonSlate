@@ -390,11 +390,34 @@ export function applyAssignMesh(
   }
   const rebuilt = createPlayVisual(scene, command.slotId, binding);
   binding.meshes.set(command.slotId, rebuilt);
+  stampOverlayPick(rebuilt, command);
   // A rebuilt mesh loses its material, so re-apply the recorded assignment.
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   syncPlayFillLight(scene, binding);
+}
+
+function stampOverlayPick(
+  mesh: Mesh,
+  command: AssignMeshCommand,
+): void {
+  if (!command.hitTest && !command.actorGuid) return;
+  const apply = (target: AbstractMesh) => {
+    target.metadata = {
+      ...(typeof target.metadata === "object" && target.metadata
+        ? target.metadata
+        : {}),
+      overlayHitTest: command.hitTest,
+      overlayActorGuid: command.actorGuid,
+      overlayHasButton: command.hasButton === true,
+    };
+    if (command.hitTest) {
+      target.isPickable = command.hitTest !== "ignore";
+    }
+  };
+  apply(mesh);
+  for (const child of mesh.getChildMeshes()) apply(child);
 }
 
 function playMeshMetadata(

@@ -144,6 +144,11 @@ export type ControlMessage =
         | "onClick"
         | "onPressStart"
         | "onPressEnd";
+    }
+  | {
+      type: "sceneLayerResize";
+      frustumWidth: number;
+      frustumHeight: number;
     };
 
 export type DebugColliderPrimitive = {
@@ -218,6 +223,12 @@ export type CommandMessage =
       type: "assignMesh";
       slotId: number;
       meshAssetGuid: string | null;
+      /** Overlay actor guid for HitTest / pointer events. */
+      actorGuid?: string | null;
+      /** Overlay HitTest for the actor visual (`ignore` is not pickable). */
+      hitTest?: "ignore" | "block" | "passThrough";
+      /** Overlay actor has a `2DButtonComponent`. */
+      hasButton?: boolean;
       /** Primitive mesh kind from MeshComponent (`box`, `sphere`, …). */
       meshKind?: string | null;
       light?: {
@@ -246,6 +257,7 @@ export type CommandMessage =
         position: [number, number, number];
         rotation: [number, number, number, number];
         scale: [number, number, number];
+        hitTest?: "ignore" | "block" | "passThrough";
         text3d?: {
           text: string;
           size: number;

@@ -3,6 +3,7 @@ import {
   writeActorSlot,
   writeSnapshotHeader,
   type CommandMessage,
+  type ControlMessage,
 } from "@babylonslate/bridge";
 import {
   ClassRegistry,
@@ -23,9 +24,14 @@ import {
 import {
   createDefaultSceneSettings,
   eulerDegreesToQuaternion,
+  parseSceneLayerAnchor,
+  parseSceneLayerHitTest,
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText3DProperties,
+  sceneLayerAnchorWorldPosition,
+  SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT,
+  SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH,
   type Transform,
   type SerializedActor,
   type SerializedScene,
@@ -218,6 +224,10 @@ export interface RuntimeDriver {
     layerGuid: string,
     materialGuid: string,
   ): void;
+  applySceneLayerResize(frustumWidth: number, frustumHeight: number): void;
+  applySceneLayerPointer(
+    message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
+  ): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   inspectWorld(): DebugInspectSnapshot;
   invokeScriptEvent(
@@ -313,6 +323,8 @@ class InProcessRuntime implements RuntimeDriver {
   private physicsSync: PhysicsWorldSync;
   private overlayPhysicsSync: PhysicsWorldSync;
   private readonly overlayGravity: [number, number, number];
+  private overlayFrustumWidth = SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH;
+  private overlayFrustumHeight = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
   private playScene: SerializedScene | undefined;
   private playSceneGuid: string;
   private readonly gameInstanceClass: string;
@@ -900,6 +912,7 @@ class InProcessRuntime implements RuntimeDriver {
     );
     for (const actor of actors) {
       this.scriptHost.bindInterfaceHandlers(actor);
+      this.applyOverlayAnchor(actor);
       this.realizeActor(actor);
     }
     return layer;
@@ -959,6 +972,53 @@ class InProcessRuntime implements RuntimeDriver {
     }
     layer.postProcessStack.splice(index, 1);
     this.emitSceneLayerPostProcess(layer);
+  }
+
+  applySceneLayerResize(frustumWidth: number, frustumHeight: number): void {
+    const width = Number(frustumWidth);
+    const height = Number(frustumHeight);
+    if (!Number.isFinite(width) || width <= 0) return;
+    if (!Number.isFinite(height) || height <= 0) return;
+    this.overlayFrustumWidth = width;
+    this.overlayFrustumHeight = height;
+    for (const actor of this.world.getActors()) {
+      this.applyOverlayAnchor(actor);
+    }
+    this.overlayPhysicsSync.syncFromWorld(this.world);
+  }
+
+  applySceneLayerPointer(
+    message: Extract<ControlMessage, { type: "sceneLayerPointer" }>,
+  ): void {
+    const actor = this.world.findActor(message.actorGuid);
+    if (!actor || actor.destroyed || !actor.sceneLayerId) return;
+    if (
+      !actor.components.some(
+        (component) =>
+          component.classId === "2DButtonComponent" && !component.destroyed,
+      )
+    ) {
+      return;
+    }
+    this.scriptHost.invokeEvent(actor.classId, message.event, actor);
+  }
+
+  private applyOverlayAnchor(actor: Actor): void {
+    if (!actor.sceneLayerId) return;
+    const anchorComp = actor.components.find(
+      (component) =>
+        component.classId === "2DAnchorComponent" && !component.destroyed,
+    );
+    if (!anchorComp) return;
+    const pos = sceneLayerAnchorWorldPosition(
+      parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
+      Number(anchorComp.getVariable("offsetX")) || 0,
+      Number(anchorComp.getVariable("offsetY")) || 0,
+      this.overlayFrustumWidth,
+      this.overlayFrustumHeight,
+    );
+    actor.transform.position.x = pos.x;
+    actor.transform.position.y = pos.y;
   }
 
   private emitSceneLayerPostProcess(layer: SceneLayer): void {
@@ -2289,6 +2349,17 @@ class InProcessRuntime implements RuntimeDriver {
         slotId,
         meshAssetGuid: typeof assetGuid === "string" ? assetGuid : null,
         meshKind,
+        actorGuid: actor.guid,
+        ...(actor.sceneLayerId
+          ? {
+              hitTest: overlayHitTestOf(actor),
+              hasButton: actor.components.some(
+                (component) =>
+                  component.classId === "2DButtonComponent" &&
+                  !component.destroyed,
+              ),
+            }
+          : {}),
         ...(skyboxComp
           ? {
               skybox: {
@@ -2988,6 +3059,26 @@ class InProcessRuntime implements RuntimeDriver {
     const kind = this.world.classRegistry.get(classId)?.kind;
     return kind !== "object" && kind !== "gameInstance";
   }
+}
+
+function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {
+  const button = actor.components.find(
+    (component) =>
+      component.classId === "2DButtonComponent" && !component.destroyed,
+  );
+  if (button) {
+    return parseSceneLayerHitTest(button.getVariable("hitTest"), "block");
+  }
+  const visual = actor.components.find(
+    (component) =>
+      (component.classId === "2DTextureComponent" ||
+        component.classId === "2DMaterialComponent") &&
+      !component.destroyed,
+  );
+  if (visual) {
+    return parseSceneLayerHitTest(visual.getVariable("hitTest"), "ignore");
+  }
+  return "ignore";
 }
 
 function playMeshKindOf(component: ActorComponent): string | null {

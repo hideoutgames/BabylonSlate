@@ -267,4 +267,88 @@ describe("SceneLayer runtime compositor", () => {
     expect(world.findActor("chip")?.transform.position.y).toBeLessThan(3);
     runtime.stop();
   });
+
+  it("applies 2DAnchor positions on spawn and again on resize", () => {
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("badge", "Badge", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "anchor",
+              classId: "2DAnchorComponent",
+              properties: { anchor: "topLeft", offsetX: 1, offsetY: -0.5 },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    const actor = runtime.getWorld().findActor("badge");
+    expect(actor?.transform.position.x).toBe(-7);
+    expect(actor?.transform.position.y).toBe(4);
+    runtime.applySceneLayerResize(32, 18);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-15);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(8.5);
+  });
+
+  it("invokes overlay button events on the actor class and ignores missing buttons", async () => {
+    const commands: CommandMessage[] = [];
+    const hud = overlayLayer();
+    hud.actors[0] = createActor("banner", "Banner", {
+      classId: "SceneLayerActor",
+      components: [{ id: "btn", classId: "2DButtonComponent", properties: {} }],
+    });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hud-script",
+        classId: "SceneLayerActor",
+        parentClassId: "Actor",
+        source:
+          'export function onClick(ctx) { ctx.log("log", "Click", String(ctx.self?.guid ?? "")); }',
+        anchors: [],
+        entryPoints: [{ name: "onClick", event: "onClick", isAsync: false }],
+      },
+    ]);
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    runtime.applySceneLayerPointer({
+      type: "sceneLayerPointer",
+      layerId: "any",
+      actorGuid: "banner",
+      event: "onClick",
+    });
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "log" &&
+          command.category === "Click" &&
+          command.message === "banner",
+      ),
+    ).toBe(true);
+    const before = commands.length;
+    runtime.applySceneLayerPointer({
+      type: "sceneLayerPointer",
+      layerId: "gone",
+      actorGuid: "missing",
+      event: "onClick",
+    });
+    expect(commands).toHaveLength(before);
+  });
 });

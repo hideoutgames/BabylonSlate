@@ -530,6 +530,16 @@ export function startPlaySession(options: {
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },
+    onSceneLayerPointer: (event) => {
+      const control = { type: "sceneLayerPointer" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerPointer(control);
+    },
+    onSceneLayerResize: (size) => {
+      const control = { type: "sceneLayerResize" as const, ...size };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
+    },
   });
   if (options.scene) {
     handle.applySceneEnvironment(options.scene);

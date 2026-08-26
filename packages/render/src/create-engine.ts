@@ -108,6 +108,14 @@ import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
+import {
+  applyOverlayPointer,
+  createOverlayPointerState,
+} from "./scene-layer-pointer";
+import {
+  sceneLayerFrustumSize,
+  walkOverlayPointerHits,
+} from "@babylonslate/core";
 import { meshNamesInCanvasRect } from "./two-d";
 import { applyPixelArtSamplingToScene } from "./pixel-perfect";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
@@ -359,6 +367,22 @@ export interface CreateEngineOptions {
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
   navBlockers?: readonly NavDebugBlockerPose[] | null;
+  /** Overlay 2DButton graph events (Play compositor). */
+  onSceneLayerPointer?: (event: {
+    layerId: string;
+    actorGuid: string;
+    event:
+      | "onMouseEnter"
+      | "onMouseLeave"
+      | "onClick"
+      | "onPressStart"
+      | "onPressEnd";
+  }) => void;
+  /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
+  onSceneLayerResize?: (size: {
+    frustumWidth: number;
+    frustumHeight: number;
+  }) => void;
 }
 
 export interface EditorTools {
@@ -775,6 +799,36 @@ export function createEngine(
     : null;
   binding.sceneForSlot = (slotId) =>
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
+  const overlayPointerState = createOverlayPointerState();
+
+  const notifyOverlayResize = () => {
+    if (!sceneLayerCompositor) return;
+    const height = Math.max(1, engine.getRenderHeight());
+    const width = Math.max(1, engine.getRenderWidth());
+    const frustum = sceneLayerFrustumSize(width / height);
+    options.onSceneLayerResize?.(frustum);
+  };
+
+  const dispatchOverlayPointer = (
+    phase: "move" | "down" | "up",
+    canvasX: number,
+    canvasY: number,
+  ): boolean => {
+    if (!sceneLayerCompositor) return false;
+    const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
+    const walked = walkOverlayPointerHits(
+      sceneLayerCompositor.pickHits(mapped.x, mapped.y),
+    );
+    const events = applyOverlayPointer(
+      overlayPointerState,
+      phase,
+      walked.targets,
+    );
+    for (const event of events) {
+      options.onSceneLayerPointer?.(event);
+    }
+    return walked.blocked;
+  };
 
   const rebuildIfActiveCameraChanged = (
     previous: typeof scene.activeCamera,
@@ -1125,6 +1179,7 @@ export function createEngine(
     }
     sceneLayerCompositor?.resize();
     refreshAuthoredCameraLenses(scene);
+    notifyOverlayResize();
   };
 
   let interpAlpha = 1;
@@ -1203,17 +1258,40 @@ export function createEngine(
   });
 
   // Tap-to-pick: continuous hover picking is off for touch.
+  const overlayPointerCanvasCoords = (event: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  };
   const onPointerDown = (event: PointerEvent) => {
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    if (dispatchOverlayPointer("down", x, y)) {
+      scheduler.invalidate("selection");
+      return;
+    }
     const hit = pickAtCanvas(scene, x, y);
     if (hit) {
       scheduler.invalidate("selection");
     }
   };
+  const onPointerMove = (event: PointerEvent) => {
+    const { x, y } = overlayPointerCanvasCoords(event);
+    dispatchOverlayPointer("move", x, y);
+  };
+  const onPointerUp = (event: PointerEvent) => {
+    const { x, y } = overlayPointerCanvasCoords(event);
+    dispatchOverlayPointer("up", x, y);
+  };
   if (!options.editor) {
     canvas.addEventListener("pointerdown", onPointerDown);
+    if (options.playMode && sceneLayerCompositor) {
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerup", onPointerUp);
+    }
   }
 
   rebuildPostProcessStack();
@@ -1240,6 +1318,8 @@ export function createEngine(
       debugOverlay?.dispose();
       debugOverlay = null;
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
@@ -1276,6 +1356,7 @@ export function createEngine(
       engine.setSize(nextWidth, nextHeight);
       sceneLayerCompositor?.resize();
       refreshAuthoredCameraLenses(scene);
+      notifyOverlayResize();
     },
     loadScene,
     pushSnapshot: (buffer: Float32Array) => {
@@ -1297,7 +1378,11 @@ export function createEngine(
       playDebugDraw?.applyCommand(command);
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
-        sceneLayerCompositor?.noteSpawn(command.slotId, command.sceneLayerId);
+        sceneLayerCompositor?.noteSpawn(
+          command.slotId,
+          command.sceneLayerId,
+          command.actorGuid,
+        );
       }
       if (command.type === "despawn") {
         sceneLayerCompositor?.noteDespawn(command.slotId);
@@ -1411,7 +1496,7 @@ export function createEngine(
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
       const overlayHit = sceneLayerCompositor?.pickAt(mapped.x, mapped.y);
-      if (overlayHit) {
+      if (overlayHit?.blocked || overlayHit?.actorGuid) {
         return { meshName: overlayHit.meshName, slotId: overlayHit.slotId };
       }
       const hit = pickAtCanvas(scene, mapped.x, mapped.y);

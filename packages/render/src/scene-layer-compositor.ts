@@ -11,6 +11,12 @@ import {
   type Engine,
 } from "@babylonjs/core";
 import type { CommandMessage } from "@babylonslate/bridge";
+import {
+  parseSceneLayerHitTest,
+  walkOverlayPointerHits,
+  type OverlayPointerHit,
+  type SceneLayerHitTest,
+} from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
 
 export type SceneLayerCreateCommand = Extract<
@@ -60,6 +66,7 @@ export class SceneLayerCompositor {
   private readonly orthoHalfHeight: number;
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
+  private readonly slotActor = new Map<number, string>();
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
@@ -136,16 +143,23 @@ export class SceneLayerCompositor {
     }
   }
 
-  noteSpawn(slotId: number, sceneLayerId: string | null | undefined): void {
+  noteSpawn(
+    slotId: number,
+    sceneLayerId: string | null | undefined,
+    actorGuid?: string | null,
+  ): void {
     if (!sceneLayerId) {
       this.slotLayer.delete(slotId);
+      this.slotActor.delete(slotId);
       return;
     }
     this.slotLayer.set(slotId, sceneLayerId);
+    if (actorGuid) this.slotActor.set(slotId, actorGuid);
   }
 
   noteDespawn(slotId: number): void {
     this.slotLayer.delete(slotId);
+    this.slotActor.delete(slotId);
   }
 
   sceneForSlot(slotId: number): Scene | null {
@@ -195,32 +209,81 @@ export class SceneLayerCompositor {
     }
   }
 
-  pickAt(
-    canvasX: number,
-    canvasY: number,
-  ): { layerId: string; meshName: string; slotId: number | null } | null {
+  pickHits(canvasX: number, canvasY: number): OverlayPointerHit[] {
+    const hits: OverlayPointerHit[] = [];
     for (const layer of [...this.sortedLayers()].reverse()) {
       const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
       if (!pick?.hit || !pick.pickedMesh) continue;
-      let mesh: { name: string; parent: unknown } | null = pick.pickedMesh;
+      let mesh: {
+        name: string;
+        parent: unknown;
+        metadata?: unknown;
+        isPickable?: boolean;
+      } | null = pick.pickedMesh;
+      let slotId: number | null = null;
+      let metadata: OverlayMeshMetadata | null = overlayMetadataOf(mesh);
       while (mesh) {
         const match = /^actor-(\d+)$/.exec(mesh.name);
         if (match) {
-          return {
-            layerId: layer.layerId,
-            meshName: mesh.name,
-            slotId: Number(match[1]),
-          };
+          slotId = Number(match[1]);
+          metadata = overlayMetadataOf(mesh) ?? metadata;
+          break;
         }
-        mesh = (mesh.parent as { name: string; parent: unknown } | null) ?? null;
+        metadata = overlayMetadataOf(mesh) ?? metadata;
+        mesh = (mesh.parent as typeof mesh) ?? null;
       }
-      return {
+      const actorGuid =
+        metadata?.overlayActorGuid ??
+        (slotId != null ? this.slotActor.get(slotId) : undefined) ??
+        "";
+      if (!actorGuid) continue;
+      hits.push({
         layerId: layer.layerId,
-        meshName: pick.pickedMesh.name,
-        slotId: null,
-      };
+        actorGuid,
+        hitTest: parseSceneLayerHitTest(metadata?.overlayHitTest, "ignore"),
+        hasButton: metadata?.overlayHasButton === true,
+      });
     }
-    return null;
+    return hits;
+  }
+
+  pickAt(
+    canvasX: number,
+    canvasY: number,
+  ): {
+    layerId: string;
+    meshName: string;
+    slotId: number | null;
+    actorGuid: string | null;
+    hitTest: SceneLayerHitTest;
+    blocked: boolean;
+    targets: OverlayPointerHit[];
+  } | null {
+    const hits = this.pickHits(canvasX, canvasY);
+    const walked = walkOverlayPointerHits(hits);
+    const first = walked.targets[0];
+    if (!first) {
+      return walked.blocked
+        ? {
+            layerId: "",
+            meshName: "",
+            slotId: null,
+            actorGuid: null,
+            hitTest: "block",
+            blocked: true,
+            targets: walked.targets,
+          }
+        : null;
+    }
+    return {
+      layerId: first.layerId,
+      meshName: first.actorGuid,
+      slotId: null,
+      actorGuid: first.actorGuid,
+      hitTest: first.hitTest,
+      blocked: walked.blocked,
+      targets: walked.targets,
+    };
   }
 
   dispose(): void {
@@ -315,4 +378,17 @@ export class SceneLayerCompositor {
     }
     layer.blitScene.render();
   }
+}
+
+type OverlayMeshMetadata = {
+  overlayHitTest?: SceneLayerHitTest;
+  overlayActorGuid?: string;
+  overlayHasButton?: boolean;
+};
+
+function overlayMetadataOf(
+  mesh: { metadata?: unknown } | null,
+): OverlayMeshMetadata | null {
+  if (!mesh?.metadata || typeof mesh.metadata !== "object") return null;
+  return mesh.metadata as OverlayMeshMetadata;
 }

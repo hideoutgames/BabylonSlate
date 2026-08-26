@@ -147,6 +147,15 @@ describe("Play session commands", () => {
     expect(controlType(control)).toBe("sceneLayerPointer");
   });
 
+  it("sceneLayerResize is a ControlMessage variant", () => {
+    const control = {
+      type: "sceneLayerResize",
+      frustumWidth: 16,
+      frustumHeight: 9,
+    } satisfies ControlMessage;
+    expect(controlType(control)).toBe("sceneLayerResize");
+  });
+
   it("visualization console commands are CommandMessage variants", () => {
     const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
     const stat = {

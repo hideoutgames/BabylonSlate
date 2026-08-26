@@ -129,6 +129,109 @@ export function parseSceneLayerHitTest(
     : fallback;
 }
 
+/** Ortho half-height used by Play overlay cameras (frustum height 9). */
+export const SCENE_LAYER_ORTHO_HALF_HEIGHT = 4.5;
+export const SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT =
+  SCENE_LAYER_ORTHO_HALF_HEIGHT * 2;
+export const SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH = 16;
+
+const ANCHOR_ORIGIN: Record<SceneLayerAnchor, readonly [number, number]> = {
+  topLeft: [-1, 1],
+  topCenter: [0, 1],
+  topRight: [1, 1],
+  centerLeft: [-1, 0],
+  center: [0, 0],
+  centerRight: [1, 0],
+  bottomLeft: [-1, -1],
+  bottomCenter: [0, -1],
+  bottomRight: [1, -1],
+};
+
+export const SCENE_LAYER_ANCHOR_LABELS: Record<SceneLayerAnchor, string> = {
+  topLeft: "Top Left",
+  topCenter: "Top Center",
+  topRight: "Top Right",
+  centerLeft: "Center Left",
+  center: "Center",
+  centerRight: "Center Right",
+  bottomLeft: "Bottom Left",
+  bottomCenter: "Bottom Center",
+  bottomRight: "Bottom Right",
+};
+
+export const SCENE_LAYER_HIT_TEST_LABELS: Record<SceneLayerHitTest, string> = {
+  ignore: "Ignore",
+  block: "Block",
+  passThrough: "Pass Through",
+};
+
+export function sceneLayerFrustumSize(aspect: number): {
+  width: number;
+  height: number;
+} {
+  const height = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
+  const safeAspect =
+    Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
+  return { width: height * safeAspect, height };
+}
+
+export function sceneLayerAnchorWorldPosition(
+  anchor: SceneLayerAnchor,
+  offsetX: number,
+  offsetY: number,
+  frustumWidth: number,
+  frustumHeight: number,
+): { x: number; y: number } {
+  const origin = ANCHOR_ORIGIN[anchor] ?? ANCHOR_ORIGIN.center;
+  return {
+    x: origin[0] * (frustumWidth / 2) + offsetX,
+    y: origin[1] * (frustumHeight / 2) + offsetY,
+  };
+}
+
+export type OverlayPointerHit = {
+  layerId: string;
+  actorGuid: string;
+  hitTest: SceneLayerHitTest;
+  hasButton?: boolean;
+};
+
+export type OverlayPointerWalkResult = {
+  targets: OverlayPointerHit[];
+  blocked: boolean;
+};
+
+/** Walk overlay picks from high z-order to low. Ignore skips; Block stops. */
+export function walkOverlayPointerHits(
+  hitsHighToLow: readonly OverlayPointerHit[],
+): OverlayPointerWalkResult {
+  const targets: OverlayPointerHit[] = [];
+  for (const hit of hitsHighToLow) {
+    if (hit.hitTest === "ignore") continue;
+    targets.push(hit);
+    if (hit.hitTest === "block") {
+      return { targets, blocked: true };
+    }
+  }
+  return { targets, blocked: false };
+}
+
+/** Persist an editor 2D scene back to a SceneLayer document. */
+export function editorSceneToSceneLayer(
+  scene: SerializedScene,
+): SerializedSceneLayer {
+  return normalizeSceneLayer({
+    name: scene.name,
+    settings: {
+      gravity: scene.settings.gravity,
+      fixedTimestepMs: scene.settings.fixedTimestepMs,
+      postProcessStack: scene.settings.postProcessStack,
+    },
+    actors: scene.actors,
+    folders: scene.folders,
+  });
+}
+
 /** Editor / Play viewport host a SceneLayer as a locked 2D SerializedScene. */
 export function sceneLayerToEditorScene(
   layer: SerializedSceneLayer,

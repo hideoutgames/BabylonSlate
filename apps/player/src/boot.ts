@@ -149,6 +149,16 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onSceneLayerPointer: (event) => {
+      const control = { type: "sceneLayerPointer" as const, ...event };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerPointer(control);
+    },
+    onSceneLayerResize: (size) => {
+      const control = { type: "sceneLayerResize" as const, ...size };
+      if (worker) worker.postControl(control);
+      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
+    },
   });
   handle.applySceneEnvironment(scene);
   handle.scheduler.invalidate("play");

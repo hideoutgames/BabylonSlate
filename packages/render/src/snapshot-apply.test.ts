@@ -93,6 +93,27 @@ describe("createPlayMesh", () => {
     expect(button.isPickable).toBe(true);
   });
 
+  it("honors overlay HitTest when stamping assignMesh metadata", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+      actorGuid: "banner",
+      hitTest: "block",
+      hasButton: true,
+    });
+    const mesh = binding.meshes.get(4);
+    expect(mesh?.isPickable).toBe(true);
+    expect(
+      (mesh?.metadata as { overlayActorGuid?: string }).overlayActorGuid,
+    ).toBe("banner");
+  });
+
   it("puts primitive and model Play meshes in the same world rendering group", async () => {
     const handle = createTestEngine();
     handles.push(handle);

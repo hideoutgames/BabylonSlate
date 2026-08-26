@@ -178,6 +178,12 @@ function handleControl(msg: ControlMessage): void {
     case "inspect":
       applyInspectControl(ensureRuntime(), msg, onCommand);
       return;
+    case "sceneLayerPointer":
+      ensureRuntime().applySceneLayerPointer(msg);
+      return;
+    case "sceneLayerResize":
+      ensureRuntime().applySceneLayerResize(msg.frustumWidth, msg.frustumHeight);
+      return;
   }
 }
 
