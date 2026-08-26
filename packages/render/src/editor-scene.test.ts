@@ -550,6 +550,33 @@ describe("editor camera controller", () => {
 });
 
 describe("EditorSceneSync", () => {
+  it("clears a SceneLayer editor viewport to opaque black and leaves other 2D scenes chrome gray", () => {
+    const { scene } = createHandle();
+    const gray = scene.clearColor.clone();
+    const sync = new EditorSceneSync(scene);
+    sync.apply({
+      ...createDefaultScene(),
+      viewportMode: "2d",
+      actors: [],
+    });
+    expect(scene.clearColor.r).toBeCloseTo(gray.r);
+    expect(scene.clearColor.g).toBeCloseTo(gray.g);
+    expect(scene.clearColor.b).toBeCloseTo(gray.b);
+    sync.apply({
+      ...createDefaultScene(),
+      viewportMode: "2d",
+      settings: {
+        ...createDefaultScene().settings,
+        environmentColor: [0, 0, 0],
+      },
+      actors: [],
+    });
+    expect(scene.clearColor.r).toBe(0);
+    expect(scene.clearColor.g).toBe(0);
+    expect(scene.clearColor.b).toBe(0);
+    expect(scene.clearColor.a).toBe(1);
+  });
+
   it("creates, updates and removes meshes incrementally", () => {
     const { scene } = createHandle();
     const sync = new EditorSceneSync(scene);
