@@ -32,6 +32,7 @@ import {
  */
 export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
+  private readonly actorFilter: (actor: Actor) => boolean;
   private readonly bodyByActor = new Map<string, string>();
   private readonly characterByActor = new Map<string, string>();
   private synced = false;
@@ -48,8 +49,12 @@ export class PhysicsWorldSync {
   private spriteColliderKeyByActor = new Map<string, Map<string, string>>();
   private pixelsPerUnit = 100;
 
-  constructor(backend: PhysicsBackend) {
+  constructor(
+    backend: PhysicsBackend,
+    options?: { actorFilter?: (actor: Actor) => boolean },
+  ) {
     this.backend = backend;
+    this.actorFilter = options?.actorFilter ?? (() => true);
   }
 
   getBackend(): PhysicsBackend {
@@ -113,6 +118,7 @@ export class PhysicsWorldSync {
     const live = new Set<string>();
     for (const actor of this.actors) {
       if (actor.destroyed) continue;
+      if (!this.actorFilter(actor)) continue;
       const rigid = actor.components.find(
         (c) => c.classId === "RigidBodyComponent" && !c.destroyed,
       );

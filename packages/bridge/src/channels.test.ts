@@ -112,6 +112,41 @@ describe("Play session commands", () => {
     expect(command.enabled).toBe(true);
   });
 
+  it("SceneLayer compositor commands are CommandMessage variants", () => {
+    const created = {
+      type: "sceneLayerCreate",
+      layerId: "layer-1",
+      assetGuid: "hud",
+      zOrder: 2,
+      ownerSceneGuid: "level-a",
+      postProcessStack: [{ materialGuid: "bloom", enabled: true }],
+    } satisfies CommandMessage;
+    const removed = {
+      type: "sceneLayerRemove",
+      layerId: "layer-1",
+    } satisfies CommandMessage;
+    const cleared = { type: "sceneLayerClear" } satisfies CommandMessage;
+    const stack = {
+      type: "sceneLayerPostProcess",
+      layerId: "layer-1",
+      postProcessStack: [],
+    } satisfies CommandMessage;
+    expect(commandType(created)).toBe("sceneLayerCreate");
+    expect(commandType(removed)).toBe("sceneLayerRemove");
+    expect(commandType(cleared)).toBe("sceneLayerClear");
+    expect(commandType(stack)).toBe("sceneLayerPostProcess");
+  });
+
+  it("sceneLayerPointer is a ControlMessage variant", () => {
+    const control = {
+      type: "sceneLayerPointer",
+      layerId: "layer-1",
+      actorGuid: "banner",
+      event: "onClick",
+    } satisfies ControlMessage;
+    expect(controlType(control)).toBe("sceneLayerPointer");
+  });
+
   it("visualization console commands are CommandMessage variants", () => {
     const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
     const stat = {

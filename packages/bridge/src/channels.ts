@@ -1,6 +1,6 @@
 /** Reliable ordered channel message types (never through the snapshot buffer). */
 
-import type { SerializedScene } from "@babylonslate/core";
+import type { SerializedScene, SerializedSceneLayer } from "@babylonslate/core";
 
 /** Source anchor mapping a generated line back to a graph node. */
 export type ScriptAnchorPayload = {
@@ -80,6 +80,8 @@ export type ControlMessage =
       gameInstanceClass?: string;
       /** Extra authored scenes `changescene` can instantiate by guid or name. */
       scenes?: Array<{ guid: string; scene: SerializedScene }>;
+      /** Overlay documents the session compositor can instantiate by guid or name. */
+      sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** When false, debug-tier console commands are stripped in the player. */
       includeDebugCommands?: boolean;
       infiniteLoopDetection?: boolean;
@@ -131,7 +133,18 @@ export type ControlMessage =
   | { type: "stop" }
   | { type: "setPaused"; paused: boolean }
   | { type: "console"; line: string }
-  | { type: "inspect" };
+  | { type: "inspect" }
+  | {
+      type: "sceneLayerPointer";
+      layerId: string;
+      actorGuid: string;
+      event:
+        | "onMouseEnter"
+        | "onMouseLeave"
+        | "onClick"
+        | "onPressStart"
+        | "onPressEnd";
+    };
 
 export type DebugColliderPrimitive = {
   id: string;
@@ -197,6 +210,8 @@ export type CommandMessage =
       slotId: number;
       actorGuid: string;
       classId: string;
+      /** Live overlay instance id when this actor belongs to a SceneLayer. */
+      sceneLayerId?: string | null;
     }
   | { type: "despawn"; slotId: number; actorGuid: string }
   | {
@@ -418,6 +433,21 @@ export type CommandMessage =
   | {
       type: "debugColliders";
       colliders: readonly DebugColliderPrimitive[];
+    }
+  | {
+      type: "sceneLayerCreate";
+      layerId: string;
+      assetGuid: string;
+      zOrder: number;
+      ownerSceneGuid: string | null;
+      postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+    }
+  | { type: "sceneLayerRemove"; layerId: string }
+  | { type: "sceneLayerClear" }
+  | {
+      type: "sceneLayerPostProcess";
+      layerId: string;
+      postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
     };
 
 export type BridgeHostMessage =

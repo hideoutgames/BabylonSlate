@@ -32,6 +32,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       gameInstanceClass: undefined,
       sceneLibrary: undefined,
       sceneGuidByKey: undefined,
+      sceneLayerLibrary: undefined,
       includeDebugCommands: undefined,
       infiniteLoopDetection: undefined,
       loopCount: undefined,
@@ -110,6 +111,19 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("forwards SceneLayer documents onto the runtime compositor library", () => {
+    const layer = { name: "HUD", actors: [] };
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        sceneLayers: [{ guid: "hud", layer: layer as never }],
+      }),
+    ).toMatchObject({
+      sceneLayerLibrary: { hud: layer, HUD: layer },
+    });
+  });
+
   it("maps a scene display name back to the asset guid", () => {
     const scene = { name: "Level 2", actors: [] };
     expect(
@@ -141,6 +155,7 @@ describe("runtimeOptionsFromLoadControl", () => {
       gameInstanceClass: undefined,
       sceneLibrary: undefined,
       sceneGuidByKey: undefined,
+      sceneLayerLibrary: undefined,
       includeDebugCommands: undefined,
       infiniteLoopDetection: undefined,
       loopCount: undefined,
@@ -167,8 +182,11 @@ describe("createRuntimeFromLoad", () => {
     expect(runtime.getPhysicsSync()!.getBackend().constructor.name).toBe(
       "HavokPhysicsBackend",
     );
+    expect(runtime.getOverlayPhysicsSync()!.getBackend().constructor.name).toBe(
+      "Rapier2DPhysicsBackend",
+    );
     expect(loadedBackendModules.havok).toBe(true);
-    expect(loadedBackendModules.rapier).toBe(false);
+    expect(loadedBackendModules.rapier).toBe(true);
     runtime.stop();
   });
 
@@ -243,6 +261,7 @@ describe("unmatchedScriptSpawns", () => {
           { classId: "FunctionLibrary" },
           { classId: "EditorUtilityObject" },
           { classId: "EditorFunctionLibrary" },
+          { classId: "SceneLayer" },
         ],
         new Set(),
       ),

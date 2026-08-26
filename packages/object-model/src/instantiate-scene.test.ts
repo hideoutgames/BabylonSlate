@@ -49,7 +49,16 @@ describe("createActorsFromSerializedSceneLayer", () => {
         },
         folders: [],
         actors: [
-          createActor("banner", "Banner", { classId: "SceneLayerActor" }),
+          createActor("banner", "Banner", {
+            classId: "SceneLayerActor",
+            components: [
+              {
+                id: "tex",
+                classId: "2DTextureComponent",
+                properties: { textureGuid: "albedo-1" },
+              },
+            ],
+          }),
         ],
       },
       layer.guid,
@@ -57,6 +66,7 @@ describe("createActorsFromSerializedSceneLayer", () => {
     expect(actors).toHaveLength(1);
     expect(actors[0]?.classId).toBe("SceneLayerActor");
     expect(actors[0]?.sceneLayerId).toBe(layer.guid);
+    expect(actors[0]?.components[0]?.assetGuid).toBe("albedo-1");
   });
 });
 
