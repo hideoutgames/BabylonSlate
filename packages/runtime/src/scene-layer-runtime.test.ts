@@ -707,12 +707,7 @@ describe("SceneLayer runtime compositor", () => {
           'export function onClick(ctx) { ctx.log("log", "Click", String(ctx.self?.guid ?? "")); }',
         anchors: [],
         entryPoints: [
-          {
-            name: "onClick",
-            event: "onClick",
-            isAsync: false,
-            componentId: "btn",
-          },
+          { name: "onClick", event: "onClick", isAsync: false, componentId: "btn" },
         ],
       },
     ]);

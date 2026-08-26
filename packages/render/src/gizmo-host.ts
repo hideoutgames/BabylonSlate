@@ -11,8 +11,11 @@ import {
 import type { ViewportMode } from "@babylonslate/core";
 import { mapCanvasPointer, type PointerCanvasSize } from "./pick-coords";
 import type { RenderScheduler } from "./render-scheduler";
+import { createOverlayTransformBox } from "./overlay-transform-box";
 
 export type GizmoTool = "none" | "translate" | "rotate" | "scale";
+
+export type GizmoManipulator = "trs" | "overlay-box";
 
 export interface GizmoSnapSettings {
   enabled: boolean;
@@ -30,6 +33,13 @@ export interface GizmoHostOptions {
   onDragEnd?: () => void;
   /** Screen-space handle scale; touch needs larger handles than a mouse. */
   handleScale?: number;
+  /**
+   * `overlay-box` is the SceneLayer 2D transform widget. World scenes stay
+   * on Babylon Position/Rotation/Scale gizmos (`trs`).
+   */
+  manipulator?: GizmoManipulator;
+  /** View-canvas CSS height for overlay-box 44px handles. */
+  canvasCssHeight?: () => number;
 }
 
 export interface GizmoHost {
@@ -41,7 +51,7 @@ export interface GizmoHost {
   setTool: (tool: GizmoTool) => void;
   setMode: (mode: ViewportMode) => void;
   setSnap: (snap: GizmoSnapSettings) => void;
-  attachTo: (mesh: AbstractMesh | null) => void;
+  attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => void;
   attachedMesh: () => AbstractMesh | null;
   /** True while a gizmo handle drag is in progress. */
   isDragging: () => boolean;
@@ -334,7 +344,9 @@ export function createGizmoHost(
 
   let tool: GizmoTool = options.tool ?? "translate";
   let mode: ViewportMode = options.mode ?? "3d";
+  const manipulator = options.manipulator ?? "trs";
   let attached: AbstractMesh | null = null;
+  let overlayVisuals: AbstractMesh[] = [];
   let releaseLease: (() => void) | null = null;
   let dragging = false;
 
@@ -394,6 +406,22 @@ export function createGizmoHost(
   );
 
   const applyAxisVisibility = () => {
+    if (manipulator === "overlay-box") {
+      position.xGizmo.isEnabled = false;
+      position.yGizmo.isEnabled = false;
+      position.zGizmo.isEnabled = false;
+      position.xPlaneGizmo.isEnabled = false;
+      position.yPlaneGizmo.isEnabled = false;
+      position.zPlaneGizmo.isEnabled = false;
+      rotation.xGizmo.isEnabled = false;
+      rotation.yGizmo.isEnabled = false;
+      rotation.zGizmo.isEnabled = false;
+      scale.xGizmo.isEnabled = false;
+      scale.yGizmo.isEnabled = false;
+      scale.zGizmo.isEnabled = false;
+      scale.uniformScaleGizmo.isEnabled = false;
+      return;
+    }
     const flags = gizmoAxisEnabledFlags(mode, tool);
     position.xGizmo.isEnabled = flags.position.x;
     position.yGizmo.isEnabled = flags.position.y;
@@ -410,10 +438,29 @@ export function createGizmoHost(
     scale.uniformScaleGizmo.isEnabled = flags.scale.uniform;
   };
 
+  const overlayBox =
+    manipulator === "overlay-box"
+      ? createOverlayTransformBox(layer, scene, {
+          scheduler: options.scheduler,
+          canvasCssHeight: options.canvasCssHeight,
+          onDragStart: startDrag,
+          onDrag: drag,
+          onDragEnd: endDrag,
+        })
+      : null;
+
   const applyAttachment = () => {
-    position.attachedMesh = tool === "translate" ? attached : null;
-    rotation.attachedMesh = tool === "rotate" ? attached : null;
-    scale.attachedMesh = tool === "scale" ? attached : null;
+    if (manipulator === "overlay-box") {
+      position.attachedMesh = null;
+      rotation.attachedMesh = null;
+      scale.attachedMesh = null;
+      overlayBox?.attachTo(attached, overlayVisuals);
+    } else {
+      position.attachedMesh = tool === "translate" ? attached : null;
+      rotation.attachedMesh = tool === "rotate" ? attached : null;
+      scale.attachedMesh = tool === "scale" ? attached : null;
+      overlayBox?.attachTo(null);
+    }
     applyAxisVisibility();
     options.scheduler?.invalidate("gizmo");
   };
@@ -446,13 +493,15 @@ export function createGizmoHost(
         ? (snap.rotateDeg * Math.PI) / 180
         : 0;
       scale.snapDistance = snap.enabled ? snap.scale : 0;
+      overlayBox?.setSnap(snap);
     },
-    attachTo: (mesh: AbstractMesh | null) => {
+    attachTo: (mesh: AbstractMesh | null, visuals?: AbstractMesh[]) => {
       attached = mesh;
+      overlayVisuals = visuals ? [...visuals] : [];
       applyAttachment();
     },
     attachedMesh: () => attached,
-    isDragging: () => dragging,
+    isDragging: () => dragging || overlayBox?.isDragging() === true,
     hitTest: (canvasX, canvasY, canvasSize) => {
       const mapped = mapCanvasPointer(scene, canvasX, canvasY, canvasSize);
       const pick = layer.utilityLayerScene.pick(mapped.x, mapped.y);
@@ -483,6 +532,7 @@ export function createGizmoHost(
     dispose: () => {
       releaseLease?.();
       releaseLease = null;
+      overlayBox?.dispose();
       if (scaleObserver) {
         layer.utilityLayerScene.onBeforeRenderObservable.remove(scaleObserver);
       }

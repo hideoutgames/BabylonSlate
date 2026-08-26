@@ -20,6 +20,7 @@ const {
   collectPlayFontCssStacks,
   collectPlayModelBytes,
   collectPlayModelPayloads,
+  prefabDocs,
 } = vi.hoisted(() => {
   const disposeFn = vi.fn();
   const handle = {
@@ -102,6 +103,18 @@ const {
         },
       ],
     } as { components: import("@babylonslate/core").SerializedComponent[] },
+    prefabDocs: {
+      openDocuments: [] as Array<{
+        id: string;
+        ref: { kind: string; path: string; label: string };
+      }>,
+      assetRegistry: null as {
+        list: () => Array<{
+          path: string;
+          header: { type: string; name: string; parentClass?: string | null };
+        }>;
+      } | null,
+    },
     play: {
       ensureSharedEngine: vi.fn(() => ({ id: "shared-engine" })),
       sharedEngineGeneration: 1,
@@ -150,8 +163,8 @@ vi.mock("../context/document-context", () => ({
     collectPlayModelPayloads,
     collectPlayMaterialLibrary,
     projectDocument: null,
-    openDocuments: [],
-    assetRegistry: null,
+    openDocuments: prefabDocs.openDocuments,
+    assetRegistry: prefabDocs.assetRegistry,
   }),
 }));
 
@@ -196,6 +209,8 @@ describe("PrefabViewportPanel engine", () => {
     handle.setMaterialDocuments.mockClear();
     collectPlayMaterialLibrary.mockClear();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
+    prefabDocs.openDocuments = [];
+    prefabDocs.assetRegistry = null;
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
@@ -212,6 +227,36 @@ describe("PrefabViewportPanel engine", () => {
     };
     expect(options.sharedEngine).toBe(engine);
     expect(options.present).toBe("rtt");
+  });
+
+  it("requests the overlay transform box for SceneLayerActor prefabs", () => {
+    prefabDocs.openDocuments = [
+      {
+        id: "graph:assets/Hero.class.babasset",
+        ref: {
+          kind: "class",
+          path: "assets/Hero.class.babasset",
+          label: "Hero",
+        },
+      },
+    ];
+    prefabDocs.assetRegistry = {
+      list: () => [
+        {
+          path: "assets/Hero.class.babasset",
+          header: {
+            type: "Class",
+            name: "Hero",
+            parentClass: "SceneLayerActor",
+          },
+        },
+      ],
+    };
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    expect(createEngineMock).toHaveBeenCalledWith(
+      expect.any(HTMLCanvasElement),
+      expect.objectContaining({ overlayTransformBox: true }),
+    );
   });
 
   it("rebinds Prefab when the shared Engine generation changes", () => {

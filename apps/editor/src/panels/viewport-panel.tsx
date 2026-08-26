@@ -168,6 +168,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   });
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
+  const overlayTransformBox = doc?.ref.kind === "scene-layer";
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
@@ -264,6 +265,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       sharedEngine,
       viewportMode,
+      overlayTransformBox,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
       onPickActor: (actorId, pick) =>
@@ -351,8 +353,9 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       engineRef.current = null;
     };
     // Mode, selection and tool changes are pushed by effects below.
+    // Remount when overlay vs world manipulator kind is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registerSharedEngine, registerScheduler, sharedEngine]);
+  }, [registerSharedEngine, registerScheduler, sharedEngine, overlayTransformBox]);
 
   useEffect(() => {
     setFrameActorHandler((actorId) => {
@@ -787,6 +790,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         >
           <ViewportToolbar
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
+            showGizmoTools={!overlayTransformBox}
           />
         </div>
       </div>

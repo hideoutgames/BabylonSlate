@@ -118,7 +118,11 @@ afterEach(() => {
 });
 
 function renderToolbar(
-  props: { showDragSelect?: boolean; showViewportModeToggle?: boolean } = {},
+  props: {
+    showDragSelect?: boolean;
+    showViewportModeToggle?: boolean;
+    showGizmoTools?: boolean;
+  } = {},
 ) {
   return render(
     <TooltipProvider>
@@ -277,6 +281,15 @@ describe("ViewportToolbar", () => {
   it("hides the 3D / 2D toggle on SceneLayer viewports", () => {
     renderToolbar({ showViewportModeToggle: false });
     expect(screen.queryByTestId("viewport-mode-toggle")).toBeNull();
+    expect(screen.getByTestId("viewport-settings")).toBeTruthy();
+  });
+
+  it("hides Move / Rotate / Scale when showGizmoTools is false", () => {
+    renderToolbar({ showGizmoTools: false });
+    expect(screen.queryByTestId("gizmo-tool-translate")).toBeNull();
+    expect(screen.queryByTestId("gizmo-tool-rotate")).toBeNull();
+    expect(screen.queryByTestId("gizmo-tool-scale")).toBeNull();
+    expect(screen.getByTestId("viewport-drag-select")).toBeTruthy();
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 

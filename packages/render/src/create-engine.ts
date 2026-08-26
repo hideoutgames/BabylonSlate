@@ -280,6 +280,11 @@ export interface CreateEngineOptions {
   onGizmoDragStart?: () => void;
   onGizmoDrag?: () => void;
   onGizmoDragEnd?: () => void;
+  /**
+   * SceneLayer / overlay-prefab viewports: 2D transform box instead of
+   * Position/Rotation/Scale gizmos. World 2D scenes stay on axis gizmos.
+   */
+  overlayTransformBox?: boolean;
   /** When false, WASD does not fly the editor camera (Play overlay). */
   editorFlyEnabled?: () => boolean;
   /** World units/s for WASD. Read each tick so Engine Settings apply live. */
@@ -970,6 +975,8 @@ export function createEngine(
     const gizmos = createGizmoHost(scene, {
       mode,
       scheduler,
+      manipulator: options.overlayTransformBox ? "overlay-box" : "trs",
+      canvasCssHeight: () => pointerCanvas().height,
       onDragStart: () => {
         const attached = gizmosRef.host?.attachedMesh() ?? null;
         const roots = selectionGizmoRoots(lastSelectedActorIds, parentIdOf);
@@ -1135,6 +1142,7 @@ export function createEngine(
         );
         gizmos.attachTo(
           attachId ? editorSync.meshForActor(attachId) : null,
+          attachId ? editorSync.visualMeshesForActor(attachId) : [],
         );
         scheduler.invalidate("selection");
       },

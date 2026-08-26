@@ -19,6 +19,11 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | Overlay handles used `getRenderHeight()` (drawing buffer) instead of view-canvas CSS height, so 44px targets shrank on HiDPI / Prefab RTT | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | `overlayBoxLocalBounds` fell back to the pick-proxy origin collider when every visual was skipped | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | Rotation knob shared Z with resize handles, so hit priority knob → handles was undefined | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | ViewportPanel `createEngine` omitted `overlayTransformBox` from effect deps, so a late SceneLayer document lookup kept TRS gizmos | Resolved |
+| 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Standards | Overlay 44px size duplicated `overlayMinTargetWorldSize` instead of calling it | Resolved |
 | 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents / p20-shared-resource-cache | Spec | Shared-view `resize` used `engine.resize()` when the view canvas had no 2D blit context | Resolved |
 | 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents / p20-shared-resource-cache | Spec | Shared-view `setSize` skipped the view canvas bitmap unless `registerView` had a 2D blit | Resolved |
 | 2026-08-24 | cursor/scene-mount-project-engine-2711 | p18-inactive-documents | Standards | `perf-budget.md` dropped still-true CB / Add Node / log virtualisation bullets while editing Engine lifetime | Resolved |
