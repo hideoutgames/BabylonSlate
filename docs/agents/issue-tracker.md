@@ -19,6 +19,12 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Nested `2DButton` editor origin was unpickable at create then `applyActorTransform` restored picks, stealing viewport hits from the parent visual | Resolved |
+| 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Child `2DButton` click test used an unbound `onClick`; overlay pointer always invokes with the button id so the owner never logged after #453 | Resolved |
+| 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | Child `2DButton` stamped parent visual with Hit Test Ignore so Play picks skipped nested buttons | Resolved |
+| 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | Child `2DAnchor` still mapped independently when the parent already had `2DAnchor` | Resolved |
+| 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | 9-slice dest ignored actor scale so corners scaled with the quad | Resolved |
+| 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | SceneLayer editor black clear used RGB `[0,0,0]` and would also fire on a world 2D scene | Resolved |
 | 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | Overlay handles used `getRenderHeight()` (drawing buffer) instead of view-canvas CSS height, so 44px targets shrank on HiDPI / Prefab RTT | Resolved |
 | 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | `overlayBoxLocalBounds` fell back to the pick-proxy origin collider when every visual was skipped | Resolved |
 | 2026-08-26 | cursor/overlay-transform-box-3801 | Overlay transform box | Spec | Rotation knob shared Z with resize handles, so hit priority knob → handles was undefined | Resolved |

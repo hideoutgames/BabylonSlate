@@ -414,6 +414,7 @@ export function sceneLayerToEditorScene(
   return {
     name: layer.name,
     viewportMode: "2d",
+    overlayEditor: true,
     settings: {
       ...settings,
       environmentColor: [0, 0, 0],

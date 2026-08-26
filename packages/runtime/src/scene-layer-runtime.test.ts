@@ -387,6 +387,64 @@ describe("SceneLayer runtime compositor", () => {
     expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
   });
 
+  it("keeps a child 2DAnchor helper at local origin when the parent already has 2DAnchor", () => {
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          transform: {
+            position: [8, -4.5, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "tex",
+              classId: "2DTextureComponent",
+              properties: { textureGuid: "tex-1" },
+            },
+            {
+              id: "anchor",
+              classId: "2DAnchorComponent",
+              properties: { anchor: "bottomLeft" },
+            },
+          ],
+        }),
+        createActor("pin", "Pin", {
+          classId: "SceneLayerActor",
+          parentId: "banner",
+          transform: {
+            position: [2, 3, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "anchor",
+              classId: "2DAnchorComponent",
+              properties: { anchor: "topLeft" },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    runtime.applySceneLayerResize(32, 18);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(16);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-9);
+    expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
+    expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
+  });
+
   it("invokes overlay button events on the actor class and ignores missing buttons", async () => {
     const commands: CommandMessage[] = [];
     const hud = overlayLayer();
@@ -707,7 +765,12 @@ describe("SceneLayer runtime compositor", () => {
           'export function onClick(ctx) { ctx.log("log", "Click", String(ctx.self?.guid ?? "")); }',
         anchors: [],
         entryPoints: [
-          { name: "onClick", event: "onClick", isAsync: false, componentId: "btn" },
+          {
+            name: "onClick",
+            event: "onClick",
+            isAsync: false,
+            componentId: "btn",
+          },
         ],
       },
     ]);
@@ -723,6 +786,7 @@ describe("SceneLayer runtime compositor", () => {
       type: "assignMesh",
       meshKind: "2dtexture",
       hasButton: true,
+      hitTest: "block",
       buttonComponentId: "btn",
     });
     expect(assignPin).toBeUndefined();

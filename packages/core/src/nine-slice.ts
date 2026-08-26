@@ -26,6 +26,16 @@ function clampMargin(value: number, max: number): number {
   return Math.min(value, Math.max(0, max));
 }
 
+export function overlayPanelDestFromScale(
+  scaleX: number,
+  scaleY: number,
+): { destWidth: number; destHeight: number } {
+  return {
+    destWidth: Number.isFinite(scaleX) && Math.abs(scaleX) > 0 ? Math.abs(scaleX) : 1,
+    destHeight: Number.isFinite(scaleY) && Math.abs(scaleY) > 0 ? Math.abs(scaleY) : 1,
+  };
+}
+
 /** 9 cells in row-major order from bottom-left, matching CreatePlane UV space. */
 export function overlayNineSliceCells(
   options: OverlayNineSliceOptions,

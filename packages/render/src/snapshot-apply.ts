@@ -23,7 +23,6 @@ import {
   parseOverlayPanelProperties,
   parseText2DProperties,
   parseText3DProperties,
-  type OverlayPanelProperties,
   type SkyboxFaces,
   type Text2DProperties,
   type Text3DProperties,
@@ -32,7 +31,7 @@ import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
-import { createOverlayPanelMesh } from "./overlay-panel-mesh";
+import { createOverlayPanelMesh, type OverlayPanelMeshOptions } from "./overlay-panel-mesh";
 import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import {
@@ -86,7 +85,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
   text3dProps: Map<number, Text3DProperties>;
   text2dProps: Map<number, Text2DProperties>;
-  overlayPanelProps: Map<number, OverlayPanelProperties>;
+  overlayPanelProps: Map<number, OverlayPanelMeshOptions>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
@@ -377,10 +376,11 @@ export function applyAssignMesh(
     );
   }
   if (command.overlayPanel) {
-    binding.overlayPanelProps.set(
-      command.slotId,
-      parseOverlayPanelProperties(command.overlayPanel),
-    );
+    binding.overlayPanelProps.set(command.slotId, {
+      ...parseOverlayPanelProperties(command.overlayPanel),
+      destWidth: command.overlayPanel.destWidth,
+      destHeight: command.overlayPanel.destHeight,
+    });
   } else if (meshKind === "2dpanel") {
     binding.overlayPanelProps.set(
       command.slotId,

@@ -7,6 +7,7 @@ import {
 } from "@babylonjs/core";
 import {
   overlayNineSliceCells,
+  overlayPanelDestFromScale,
   parseOverlayPanelProperties,
   type OverlayPanelProperties,
 } from "@babylonslate/core";
@@ -53,25 +54,21 @@ export function createOverlayPanelMesh(
   assets?: MeshAssetContext,
 ): Mesh {
   const parsed = parseOverlayPanelProperties(properties);
-  const destWidth =
-    typeof properties.destWidth === "number" && properties.destWidth > 0
-      ? properties.destWidth
-      : 1;
-  const destHeight =
-    typeof properties.destHeight === "number" && properties.destHeight > 0
-      ? properties.destHeight
-      : 1;
+  const dest = overlayPanelDestFromScale(
+    typeof properties.destWidth === "number" ? properties.destWidth : 1,
+    typeof properties.destHeight === "number" ? properties.destHeight : 1,
+  );
   const ppu = assets?.pixelsPerUnit && assets.pixelsPerUnit > 0 ? assets.pixelsPerUnit : 100;
-  const src = sourceSizePx(parsed, destWidth, destHeight, assets);
+  const src = sourceSizePx(parsed, dest.destWidth, dest.destHeight, assets);
   const cells = overlayNineSliceCells({
-    destWidth,
-    destHeight,
+    destWidth: 1,
+    destHeight: 1,
     srcWidthPx: src.width,
     srcHeightPx: src.height,
-    marginLeft: parsed.marginLeft,
-    marginRight: parsed.marginRight,
-    marginTop: parsed.marginTop,
-    marginBottom: parsed.marginBottom,
+    marginLeft: parsed.marginLeft / dest.destWidth,
+    marginRight: parsed.marginRight / dest.destWidth,
+    marginTop: parsed.marginTop / dest.destHeight,
+    marginBottom: parsed.marginBottom / dest.destHeight,
     pixelsPerUnit: ppu,
   });
   const positions: number[] = [];
@@ -119,6 +116,10 @@ export function overlayPanelVisualKind(
   assets?: MeshAssetContext,
 ): string {
   const parsed = parseOverlayPanelProperties(properties);
+  const dest = overlayPanelDestFromScale(
+    typeof properties.destWidth === "number" ? properties.destWidth : 1,
+    typeof properties.destHeight === "number" ? properties.destHeight : 1,
+  );
   return [
     "2dpanel",
     parsed.source,
@@ -130,5 +131,7 @@ export function overlayPanelVisualKind(
     parsed.marginBottom,
     parsed.hitTest,
     assets?.pixelsPerUnit ?? 100,
+    dest.destWidth,
+    dest.destHeight,
   ].join(":");
 }

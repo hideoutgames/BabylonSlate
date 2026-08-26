@@ -248,6 +248,30 @@ describe("SceneLayerCompositor", () => {
     expect(layer.camera.parent).toBeNull();
     expect(after.x).toBeCloseTo(before.x);
     expect(after.y).toBeCloseTo(before.y);
+    const worldMesh = MeshBuilder.CreatePlane("world-quad", { size: 1 }, scene);
+    worldMesh.position.set(2, 1, 0);
+    worldMesh.computeWorldMatrix(true);
+    const worldViewport = worldCam.viewport.toGlobal(
+      engine.getRenderWidth(),
+      engine.getRenderHeight(),
+    );
+    scene.updateTransformMatrix();
+    const worldBefore = Vector3.Project(
+      worldMesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      scene.getTransformMatrix(),
+      worldViewport,
+    );
+    worldCam.position.x += 12;
+    worldCam.position.y -= 4;
+    scene.updateTransformMatrix();
+    const worldAfter = Vector3.Project(
+      worldMesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      scene.getTransformMatrix(),
+      worldViewport,
+    );
+    expect(worldAfter.x).not.toBeCloseTo(worldBefore.x);
     expect(compositor.layers().map((entry) => entry.layerId).sort()).toEqual([
       "hud",
       "pause",

@@ -2,6 +2,7 @@ import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import {
   identitySerializedTransform,
+  overlayPanelDestFromScale,
   parseOverlayPanelProperties,
   parseSkyboxFaces,
   parseSkyboxSize,
@@ -357,6 +358,7 @@ export function needsOriginRoot(
 function componentVisualKind(
   component: SerializedComponent,
   assets?: MeshAssetContext,
+  actor?: SerializedActor,
 ): string {
   const asset = stringProp(component.properties.assetGuid) ?? "";
   if (component.classId === "MeshComponent") {
@@ -403,8 +405,16 @@ function componentVisualKind(
     return `2dmaterial:${stringProp(component.properties.materialGuid) ?? ""}:${String(component.properties.hitTest ?? "ignore")}`;
   }
   if (component.classId === "2DPanelComponent") {
+    const dest = overlayPanelDestFromScale(
+      actor?.transform.scale[0] ?? 1,
+      actor?.transform.scale[1] ?? 1,
+    );
     return overlayPanelVisualKind(
-      parseOverlayPanelProperties(component.properties),
+      {
+        ...parseOverlayPanelProperties(component.properties),
+        destWidth: dest.destWidth,
+        destHeight: dest.destHeight,
+      },
       assets,
     );
   }
@@ -444,7 +454,7 @@ export function actorVisualFingerprint(
   }
   const mode = needsOriginRoot(actor, allActors) ? "origin" : "single";
   return `${mode}:${visuals
-    .map((component) => `${component.id}:${componentVisualKind(component, assets)}`)
+    .map((component) => `${component.id}:${componentVisualKind(component, assets, actor)}`)
     .join(";")}`;
 }
 
@@ -551,7 +561,7 @@ export function editorMeshKindOf(
   const panel2dComponent = actor.components.find(
     (component) => component.classId === "2DPanelComponent",
   );
-  if (panel2dComponent) return componentVisualKind(panel2dComponent, assets);
+  if (panel2dComponent) return componentVisualKind(panel2dComponent, assets, actor);
   const button2dComponent = actor.components.find(
     (component) => component.classId === "2DButtonComponent",
   );
@@ -643,10 +653,18 @@ export function createMeshForComponent(
     return mesh;
   }
   if (component.classId === "2DPanelComponent") {
+    const dest = overlayPanelDestFromScale(
+      actor.transform.scale[0],
+      actor.transform.scale[1],
+    );
     return createOverlayPanelMesh(
       scene,
       name,
-      parseOverlayPanelProperties(component.properties),
+      {
+        ...parseOverlayPanelProperties(component.properties),
+        destWidth: dest.destWidth,
+        destHeight: dest.destHeight,
+      },
       assets,
     );
   }
@@ -712,6 +730,11 @@ function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
 }
 
 function visualIsPickable(mesh: Mesh, locked: boolean): boolean {
+  if (
+    (mesh.metadata as { editorUnpickable?: boolean } | null)?.editorUnpickable
+  ) {
+    return false;
+  }
   if (isSkyboxMesh(mesh) || isColliderVisualMesh(mesh)) return false;
   if (isEditorVolumeMesh(mesh)) return !locked;
   return !locked;
@@ -863,6 +886,7 @@ export function createActorMesh(
     helperBillboardIconOf(actor, allActors) === null
   ) {
     const hidden = createOriginRootMesh(scene, actor);
+    hidden.metadata = { ...(hidden.metadata ?? {}), editorUnpickable: true };
     hidden.isPickable = false;
     return hidden;
   }
