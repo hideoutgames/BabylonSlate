@@ -4,6 +4,8 @@ export * from "./scene";
 export * from "./scene-layer";
 export * from "./skybox";
 export * from "./text3d";
+export * from "./text2d";
+export * from "./rich-text";
 export * from "./project";
 export * from "./document";
 export * from "./editor-only";
