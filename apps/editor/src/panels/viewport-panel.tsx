@@ -264,6 +264,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       editor: true,
       sharedEngine,
       viewportMode,
+      overlayTransformBox: doc?.ref.kind === "scene-layer",
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
       onPickActor: (actorId, pick) =>
@@ -787,6 +788,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
         >
           <ViewportToolbar
             showViewportModeToggle={doc?.ref.kind !== "scene-layer"}
+            showGizmoTools={doc?.ref.kind !== "scene-layer"}
           />
         </div>
       </div>

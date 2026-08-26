@@ -125,6 +125,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       sharedEngine,
       present: "rtt",
       viewportMode,
+      overlayTransformBox: overlayPrefab,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
       onPickActor: (actorId) => {
@@ -186,9 +187,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       handle.dispose();
       engineRef.current = null;
     };
-    // Mode/tool changes are pushed below; remount when the app Engine swaps.
+    // Mode/tool changes are pushed below; remount when the app Engine swaps
+    // or when overlay vs world manipulator kind is known.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sharedEngine]);
+  }, [sharedEngine, overlayPrefab]);
 
   useEffect(() => {
     if (engineRef.current) {
@@ -470,6 +472,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
             testIdPrefix="prefab-"
             showDragSelect={false}
             showViewportModeToggle={!overlayPrefab}
+            showGizmoTools={!overlayPrefab}
           />
         </div>
       </div>
