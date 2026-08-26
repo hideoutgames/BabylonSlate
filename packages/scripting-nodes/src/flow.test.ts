@@ -75,6 +75,15 @@ describe("flow nodes", () => {
     expect(byId["flow.event.destroyed"]?.editorOnly).toBeFalsy();
   });
 
+  it("registers On Text Changed as a catalog event", () => {
+    const node = flowNodes.find((entry) => entry.id === "flow.event.textChanged");
+    expect(node?.title).toBe("Event On Text Changed");
+    const pins = node?.pins({}) ?? [];
+    expect(pins.some((pin) => pin.id === "text" && pin.direction === "out")).toBe(
+      true,
+    );
+  });
+
   it("registers Actor collision events with Hit Result and Instigator pins", () => {
     const byId = Object.fromEntries(flowNodes.map((node) => [node.id, node]));
     expect(byId["flow.event.hit"]?.title).toBe("Event On Hit");

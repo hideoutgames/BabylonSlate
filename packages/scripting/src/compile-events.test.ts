@@ -39,6 +39,13 @@ describe("editor utility events", () => {
     expect(eventNameForEntry(entry("flow.event.destroyed"))).toBe("onDestroyed");
   });
 
+  it("maps On Text Changed to onTextChanged", () => {
+    expect(EVENT_BY_TYPE_ID["flow.event.textChanged"]).toBe("onTextChanged");
+    expect(eventNameForEntry(entry("flow.event.textChanged"))).toBe(
+      "onTextChanged",
+    );
+  });
+
   it("maps Actor collision event nodes to ScriptHost events", () => {
     expect(EVENT_BY_TYPE_ID["flow.event.hit"]).toBe("onHit");
     expect(EVENT_BY_TYPE_ID["flow.event.beginOverlap"]).toBe("onBeginOverlap");

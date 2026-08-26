@@ -177,4 +177,63 @@ describe("ensureEventNodeOnGraph", () => {
     expect(next).toBe(graph);
     expect(next.nodes[0]?.id).toBe("begin");
   });
+
+  it("allows two On Click nodes bound to different 2D Buttons", () => {
+    let graph: SerializedGraph = { nodes: [], edges: [] };
+    graph = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    graph = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-2",
+      eventQualifier: "2D Button 2",
+    });
+    expect(graph.nodes).toHaveLength(2);
+    expect(graph.nodes.map((node) => node.data.componentId)).toEqual([
+      "btn-1",
+      "btn-2",
+    ]);
+    expect(graph.nodes[0]?.data.title).toBe("Event On Click (2D Button)");
+    expect(graph.nodes[1]?.data.title).toBe("Event On Click (2D Button 2)");
+  });
+
+  it("does not insert a second node for the same component event binding", () => {
+    let graph: SerializedGraph = { nodes: [], edges: [] };
+    graph = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    const firstId = graph.nodes[0]?.id;
+    const next = ensureEventNodeOnGraph(graph, "flow.event.onClick", {
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0]?.id).toBe(firstId);
+  });
+
+  it("stamps Inherited on parent custom event overrides", () => {
+    const next = ensureEventNodeOnGraph(
+      { nodes: [], edges: [] },
+      "flow.event.custom",
+      {
+        name: "On Foo",
+        parentClassId: "Pawn",
+        eventQualifier: "Inherited",
+      },
+    );
+    expect(next.nodes[0]?.data).toMatchObject({
+      name: "On Foo",
+      title: "Event On Foo (Inherited)",
+      eventQualifier: "Inherited",
+    });
+  });
+
+  it("allows leftover text-changed catalog nodes on Actor graphs", () => {
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.textChanged", {
+        parentClass: "Actor",
+      }),
+    ).toBe(true);
+  });
 });

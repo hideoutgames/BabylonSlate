@@ -296,6 +296,13 @@ describe("PropertyGrid", () => {
     expect(formatEventTitle("on hit")).toBe("Event On Hit");
     expect(formatEventTitle("Event Begin Play")).toBe("Event Begin Play");
     expect(formatEventTitle("camera2D")).toBe("Event Camera 2D");
+    expect(formatEventTitle("On Begin Overlap", "Collider")).toBe(
+      "Event On Begin Overlap (Collider)",
+    );
+    expect(formatEventTitle("On Foo", "Inherited")).toBe(
+      "Event On Foo (Inherited)",
+    );
+    expect(formatEventTitle("Begin Play")).toBe("Event Begin Play");
   });
 
   it("uses a compact icon reset instead of the word Reset", () => {

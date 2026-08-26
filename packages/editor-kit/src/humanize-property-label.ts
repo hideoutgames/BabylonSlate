@@ -72,8 +72,13 @@ export function formatEventMemberName(raw: string): string {
     .trim();
 }
 
-/** Graph node title: `Event Begin Play`, `Event On Hit`. */
-export function formatEventTitle(raw: string): string {
-  const body = formatEventMemberName(raw);
+/** Graph node title: `Event Begin Play`, `Event On Hit (Collider)`. */
+export function formatEventTitle(raw: string, qualifier?: string): string {
+  let body = formatEventMemberName(raw);
+  const label = qualifier?.trim();
+  if (label) {
+    body = body.replace(/\s*\([^)]+\)\s*$/, "").trim();
+    return body ? `Event ${body} (${label})` : `Event (${label})`;
+  }
   return body ? `Event ${body}` : "Event";
 }

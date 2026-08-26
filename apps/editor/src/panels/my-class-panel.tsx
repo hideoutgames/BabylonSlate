@@ -795,7 +795,7 @@ export function ClassMembersView({
         open={eventDialogOpen}
         onOpenChange={setEventDialogOpen}
         title="Add Event"
-        description="Create an empty custom event or override a native, inherited, or nested one."
+        description="Create an empty custom event or override a native, inherited, or attached-component one."
         emptyLabel="New Empty Event"
         nameLabel="Event Name"
         items={overridableEventRows}
@@ -821,14 +821,26 @@ export function ClassMembersView({
           const next =
             row.kind === "native"
               ? ensureEventNodeOnGraph(graph, row.eventType)
-              : ensureEventNodeOnGraph(graph, "flow.event.custom", {
-                  name: row.name,
-                  pins: row.pins,
-                  parentClassId: row.parentClassId,
-                });
+              : row.kind === "component"
+                ? ensureEventNodeOnGraph(graph, row.eventType, {
+                    name:
+                      row.eventType === "flow.event.custom" ? row.name : undefined,
+                    pins: row.pins,
+                    componentId: row.componentId,
+                    eventQualifier: row.eventQualifier,
+                  })
+                : ensureEventNodeOnGraph(graph, "flow.event.custom", {
+                    name: row.name,
+                    pins: row.pins,
+                    parentClassId: row.parentClassId,
+                    eventQualifier: row.eventQualifier ?? "Inherited",
+                  });
           onGraphChange(next);
           const node = next.nodes.find((entry) => {
             if (entry.type !== row.eventType) return false;
+            if (row.componentId) {
+              return entry.data.componentId === row.componentId;
+            }
             if (row.eventType !== "flow.event.custom") return true;
             return entry.data.name === row.name;
           });

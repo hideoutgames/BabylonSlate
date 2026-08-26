@@ -46,6 +46,7 @@ export const EVENT_BY_TYPE_ID: Record<string, ScriptEventName> = {
   "flow.event.onClick": "onClick",
   "flow.event.onPressStart": "onPressStart",
   "flow.event.onPressEnd": "onPressEnd",
+  "flow.event.textChanged": "onTextChanged",
   "bt.event.activate": "onActivate",
   "bt.event.tick": "onBtTick",
   "bt.event.abort": "onAbort",

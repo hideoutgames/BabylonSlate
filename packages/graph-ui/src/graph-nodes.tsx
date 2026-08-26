@@ -41,6 +41,7 @@ function visualFromData(
   const title = displayNodeTitle(
     nodeType,
     typeof data.title === "string" ? data.title : undefined,
+    typeof data.eventQualifier === "string" ? data.eventQualifier : undefined,
   );
   return {
     title,

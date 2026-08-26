@@ -3,11 +3,16 @@ import type {
   GraphClassMemberPin,
   SerializedGraph,
 } from "@babylonslate/core";
-import { engineParentOf, formatEventMemberName, walkAncestry } from "@babylonslate/editor-kit";
+import { engineParentOf, formatEventMemberName, formatEventTitle, walkAncestry } from "@babylonslate/editor-kit";
+import { engineScriptEventsFor } from "@babylonslate/object-model";
 import {
   DEFAULT_FUNCTION_PINS,
   nativeEventStubs,
 } from "./class-members";
+import {
+  componentGraphMembers,
+  mergedPrefabViewsForGraph,
+} from "./component-graph-members";
 
 export type OverridableFunctionKind = "interface" | "function";
 
@@ -210,7 +215,7 @@ export function collectParentFunctionSignatures(options: {
   return rows;
 }
 
-export type OverridableEventKind = "native" | "parent";
+export type OverridableEventKind = "native" | "parent" | "component";
 
 export type OverridableEventRow = {
   id: string;
@@ -221,6 +226,8 @@ export type OverridableEventRow = {
   eventType: string;
   pins: GraphClassMemberPin[];
   parentClassId?: string;
+  componentId?: string;
+  eventQualifier?: string;
 };
 
 function localCustomEventNames(graph?: SerializedGraph): Set<string> {
@@ -289,6 +296,35 @@ function customEventsFromGraph(
   return rows;
 }
 
+function nodeComponentId(
+  node: NonNullable<SerializedGraph["nodes"]>[number],
+): string {
+  return typeof node.data.componentId === "string" ? node.data.componentId : "";
+}
+
+function graphHasEventBinding(
+  graph: SerializedGraph | undefined,
+  eventType: string,
+  componentId = "",
+  customName?: string,
+): boolean {
+  for (const node of graph?.nodes ?? []) {
+    if (node.type !== eventType) continue;
+    if (nodeComponentId(node) !== componentId) continue;
+    if (eventType === "flow.event.custom" && customName) {
+      const raw =
+        typeof node.data.name === "string"
+          ? node.data.name
+          : typeof node.data.title === "string"
+            ? node.data.title
+            : "";
+      if (formatEventMemberName(raw) !== customName) continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 export function collectOverridableEventRows(options: {
   graph?: SerializedGraph;
   classId?: string;
@@ -324,6 +360,61 @@ export function collectOverridableEventRows(options: {
     });
   }
 
+  const members = componentGraphMembers({
+    components: mergedPrefabViewsForGraph({
+      graph: options.graph,
+      classId: options.classId,
+      parentClass: options.parentClass,
+      parentOf: options.parentOf,
+      parentGraphs: options.parentGraphs,
+    }),
+  });
+  for (const member of members) {
+    const classId = member.typeClassId ?? "";
+    for (const event of engineScriptEventsFor(classId)) {
+      const id = `component:${member.componentId}:${event.eventType}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      rows.push({
+        id,
+        kind: "component",
+        name: formatEventTitle(event.name),
+        description: `Component · ${member.name}`,
+        overwritten: graphHasEventBinding(
+          options.graph,
+          event.eventType,
+          member.componentId,
+        ),
+        eventType: event.eventType,
+        pins: [],
+        componentId: member.componentId,
+        eventQualifier: member.name,
+      });
+    }
+    const componentGraph = options.parentGraphs?.[classId];
+    for (const event of customEventsFromGraph(componentGraph)) {
+      const id = `component:${member.componentId}:custom:${event.name}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      rows.push({
+        id,
+        kind: "component",
+        name: event.name,
+        description: `Component · ${member.name}`,
+        overwritten: graphHasEventBinding(
+          options.graph,
+          "flow.event.custom",
+          member.componentId,
+          event.name,
+        ),
+        eventType: "flow.event.custom",
+        pins: event.pins,
+        componentId: member.componentId,
+        eventQualifier: member.name,
+      });
+    }
+  }
+
   const parentOf = parentLookup(options.parentOf);
   if (options.classId || options.parentClass) {
     const start = options.parentClass ?? options.classId;
@@ -344,6 +435,7 @@ export function collectOverridableEventRows(options: {
           eventType: "flow.event.custom",
           pins: event.pins,
           parentClassId: ancestor,
+          eventQualifier: "Inherited",
         });
       }
     }
