@@ -318,6 +318,16 @@ export type CommandMessage =
         underline: boolean;
         wrapWidth: number;
       };
+      overlayPanel?: {
+        source: "texture" | "material";
+        textureGuid: string | null;
+        materialGuid: string | null;
+        marginLeft: number;
+        marginRight: number;
+        marginTop: number;
+        marginBottom: number;
+        hitTest?: "ignore" | "block" | "passThrough";
+      };
     }
   | { type: "possessCamera"; slotId: number }
   | { type: "setShadowQuality"; level: string }
