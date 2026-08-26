@@ -21,6 +21,7 @@ export type MarkupAutocompleteTextareaProps = Omit<
 > & {
   value: string;
   onChange: (value: string, caret?: number) => void;
+  "data-testid"?: string;
 };
 
 type TagKind = "wrapper" | "value" | "void";
@@ -152,14 +153,14 @@ function tagSuggestions(prefix: string): MarkupSuggestion[] {
 
 function colorSuggestions(prefix: string): MarkupSuggestion[] {
   const needle = prefix.toLowerCase();
-  const named = NAMED_COLORS.filter((name) => name.startsWith(needle)).map(
-    (name) => ({
-      id: `color:${name}`,
-      label: name,
-      description: `[color=${name}]`,
-      group: "Colors",
-    }),
-  );
+  const named: MarkupSuggestion[] = NAMED_COLORS.filter((name) =>
+    name.startsWith(needle),
+  ).map((name) => ({
+    id: `color:${name}`,
+    label: name,
+    description: `[color=${name}]`,
+    group: "Colors",
+  }));
   if (needle === "" || needle.startsWith("#")) {
     named.push({
       id: "color-hex",

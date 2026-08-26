@@ -1311,7 +1311,7 @@ export function componentPropertyRows(
         update,
         context,
         "Pick Font",
-      );
+      ) as Extract<PropertyRow, { kind: "asset" }>;
       const coerceRendererOnFontChange = (next: string | null) => {
         update("fontAssetGuid", next);
         const guid = typeof next === "string" && next.trim() ? next.trim() : null;
