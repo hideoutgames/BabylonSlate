@@ -764,7 +764,14 @@ describe("SceneLayer runtime compositor", () => {
         source:
           'export function onClick(ctx) { ctx.log("log", "Click", String(ctx.self?.guid ?? "")); }',
         anchors: [],
-        entryPoints: [{ name: "onClick", event: "onClick", isAsync: false }],
+        entryPoints: [
+          {
+            name: "onClick",
+            event: "onClick",
+            isAsync: false,
+            componentId: "btn",
+          },
+        ],
       },
     ]);
     runtime.realizePlayWorld();
