@@ -431,6 +431,8 @@ export function startPlaySession(options: {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
   fontFaceEntries?: readonly import("@babylonslate/render").FontAssetEntry[];
+  fontCssStack?: string;
+  fontCssStackByGuid?: ReadonlyMap<string, string>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -504,6 +506,8 @@ export function startPlaySession(options: {
     fontMsdfJson: options.fontMsdfJson,
     fontMsdfPng: options.fontMsdfPng,
     fontFaceEntries: options.fontFaceEntries,
+    fontCssStack: options.fontCssStack,
+    fontCssStackByGuid: options.fontCssStackByGuid,
     modelBytes: options.modelBytes,
     modelPayloads: options.modelPayloads,
     modelClipAnimationGuids: options.modelClipAnimationGuids,

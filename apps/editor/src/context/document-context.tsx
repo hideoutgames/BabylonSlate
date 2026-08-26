@@ -118,7 +118,7 @@ import {
   zipGameArtifact,
 } from "../services/export-game";
 import { loadExportDocuments } from "../services/export-game-inputs";
-import { collectFontAssetEntries, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
+import { collectFontAssetEntries, collectFontCssStacks, collectFontFacetypeBytes, collectFontMsdfPair } from "../lib/play-fonts";
 import { loadPlayerDistFiles } from "../services/load-player-files";
 import { flushAudioReverbForSave } from "../lib/audio-reverb-bake";
 import {
@@ -506,6 +506,11 @@ interface DocumentContextValue {
   collectPlayFontFaceEntries: () => Promise<
     import("@babylonslate/render").FontAssetEntry[]
   >;
+  /** Compiled CSS stacks for Bitmap overlay 2D Text. */
+  collectPlayFontCssStacks: () => {
+    fontCssStack: string;
+    fontCssStackByGuid: Map<string, string>;
+  };
   /** Model source bytes for scene MeshComponent `assetGuid`s. */
   collectPlayModelBytes: (
     scene?: SerializedScene | null,
@@ -2803,6 +2808,19 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     );
   }, [projectService]);
 
+  const collectPlayFontCssStacks = useCallback(() => {
+    const assets = projectService.registry?.list() ?? [];
+    return collectFontCssStacks(
+      assets.map((asset) => ({
+        guid: asset.header.guid,
+        path: asset.path,
+        type: asset.header.type,
+        payload: asset.header.payload,
+      })),
+      projectDocumentRef.current?.settings.fonts,
+    );
+  }, [projectService]);
+
   const collectPlayModelBytes = useCallback(
     async (
       scene?: SerializedScene | null,
@@ -3948,6 +3966,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayFontFacetypeBytes,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
+      collectPlayFontCssStacks,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
@@ -4002,6 +4021,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlayFontFacetypeBytes,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
+      collectPlayFontCssStacks,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,

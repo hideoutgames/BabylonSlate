@@ -1,3 +1,5 @@
+import { compileText2DFontStacks } from "@babylonslate/assets";
+
 export function packedFontEntries(options: {
   fontBytes: ReadonlyMap<string, Uint8Array>;
   fontFamilies?: ReadonlyMap<string, string>;
@@ -7,6 +9,20 @@ export function packedFontEntries(options: {
     family: options.fontFamilies?.get(guid)?.trim() || guid,
     bytes,
   }));
+}
+
+export function packedFontCssStacks(
+  fontFamilies: ReadonlyMap<string, string>,
+  globalFallback = "sans-serif",
+): { fontCssStack: string; fontCssStackByGuid: Map<string, string> } {
+  const compiled = compileText2DFontStacks({
+    fonts: [...fontFamilies.entries()].map(([guid, family]) => ({ guid, family })),
+    globalFallback,
+  });
+  return {
+    fontCssStack: compiled.defaultStack,
+    fontCssStackByGuid: compiled.byGuid,
+  };
 }
 
 /**

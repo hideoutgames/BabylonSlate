@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { packedFontEntries, registerPackedFonts } from "./fonts";
+import { packedFontCssStacks, packedFontEntries, registerPackedFonts } from "./fonts";
 
 describe("registerPackedFonts", () => {
   it("constructs FontFace from packed bytes, not a blob URL", async () => {
@@ -37,6 +37,15 @@ describe("registerPackedFonts", () => {
         bytes: new Uint8Array([1, 2]),
       },
     ]);
+  });
+
+  it("compiles Bitmap 2D Text CSS stacks from packed family names", () => {
+    expect(
+      packedFontCssStacks(new Map([["font-1", "Display Face"]])),
+    ).toEqual({
+      fontCssStack: "sans-serif",
+      fontCssStackByGuid: new Map([["font-1", '"Display Face", sans-serif']]),
+    });
   });
 
   it("registers FontFace with the authored family name when provided", async () => {

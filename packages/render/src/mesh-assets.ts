@@ -36,6 +36,10 @@ export interface MeshAssetContext {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   /** MSDF atlas PNG keyed by Font asset guid. */
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  /** CSS font stack when no Font is picked (project default + generic). */
+  fontCssStack?: string;
+  /** Per-Font compiled CSS stacks for Bitmap 2D Text. */
+  fontCssStackByGuid?: ReadonlyMap<string, string>;
   /** Play pause — overlay letter effects freeze while true. */
   paused?: boolean;
 }
@@ -59,6 +63,16 @@ function byteMapFingerprint(
     .join(",");
 }
 
+function sortedStringMapFingerprint(
+  map: ReadonlyMap<string, string> | undefined,
+): string {
+  if (!map || map.size === 0) return "";
+  return [...map.entries()]
+    .map(([guid, value]) => `${guid}:${value}`)
+    .sort()
+    .join(",");
+}
+
 /**
  * Stable key for editor mesh rebuilds. Transform-only scene commits reuse the
  * same payloads (new Map instances), so identity of the maps must not matter.
@@ -76,6 +90,7 @@ export function meshAssetFingerprint(
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
     `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
     `msdf:${byteMapFingerprint(assets.fontMsdfJson)}:${byteMapFingerprint(assets.fontMsdfPng)}`,
+    `fontCss:${assets.fontCssStack ?? ""}:${sortedStringMapFingerprint(assets.fontCssStackByGuid)}`,
     `models:${byteMapFingerprint(assets.modelBytes)}`,
   ].join("|");
 }
@@ -93,6 +108,8 @@ export function meshAssetFingerprintWithoutModels(
     fontFacetypeBytes: assets?.fontFacetypeBytes,
     fontMsdfJson: assets?.fontMsdfJson,
     fontMsdfPng: assets?.fontMsdfPng,
+    fontCssStack: assets?.fontCssStack,
+    fontCssStackByGuid: assets?.fontCssStackByGuid,
     modelBytes: undefined,
   });
 }

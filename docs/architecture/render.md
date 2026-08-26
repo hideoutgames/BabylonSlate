@@ -88,6 +88,17 @@ Meshes with no authored surface Material (`MeshComponent.materialGuid` empty, no
 
 See [fonts.md](fonts.md).
 
+## Overlay 2D Text mesh
+
+`createText2DMesh` (SceneLayer editor viewport and Play `assignMesh` `2dtext` / `2drichtext`) is **not** GUI `TextBlock`, not a `DynamicTexture` plane, and not a solid unlit letter box:
+
+- Invisible AABB pick plane; glyph / `[img]` children are not pickable
+- Bitmap: canvas `FontFace` (or bundled 5×7) cells packed onto one `RawTexture` atlas; quads sample `emissiveTexture` + `opacityTexture`. `setMeshAssets` supplies `fontCssStack` / `fontCssStackByGuid` from `compileText2DFontStacks`
+- MSDF: imported JSON + PNG through `ResourceCache`; missing glyphs fall back to Bitmap cells
+- Fingerprint includes compiled CSS stack **values** so a fallback change rebuilds meshes
+
+See [scene-layers.md](scene-layers.md) and [fonts.md](fonts.md).
+
 ## Play debug draw
 
 `play-debug-draw.ts` applies `{ type: "debugDraw" }` in Play (editor overlay and packed player). World-space wireframes, not editor gizmos:

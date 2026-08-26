@@ -47,6 +47,7 @@ export * from "./skybox";
 export * from "./text3d-mesh";
 export * from "./text2d-layout";
 export * from "./text2d-mesh";
+export * from "./text2d-bitmap";
 export * from "./default-typeface";
 export * from "./default-material";
 export * from "./material-block-registry";

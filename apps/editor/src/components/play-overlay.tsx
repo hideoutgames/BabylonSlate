@@ -97,6 +97,8 @@ export interface PlayOverlayProps {
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
   fontFaceEntries?: readonly FontAssetEntry[];
+  fontCssStack?: string;
+  fontCssStackByGuid?: ReadonlyMap<string, string>;
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
@@ -166,6 +168,8 @@ export function PlayOverlay({
   fontMsdfJson,
   fontMsdfPng,
   fontFaceEntries,
+  fontCssStack,
+  fontCssStackByGuid,
   modelBytes,
   modelPayloads,
   modelClipAnimationGuids,
@@ -265,6 +269,10 @@ export function PlayOverlay({
   fontMsdfPngRef.current = fontMsdfPng;
   const fontFaceEntriesRef = useRef(fontFaceEntries);
   fontFaceEntriesRef.current = fontFaceEntries;
+  const fontCssStackRef = useRef(fontCssStack);
+  fontCssStackRef.current = fontCssStack;
+  const fontCssStackByGuidRef = useRef(fontCssStackByGuid);
+  fontCssStackByGuidRef.current = fontCssStackByGuid;
   const modelBytesRef = useRef(modelBytes);
   modelBytesRef.current = modelBytes;
   const modelPayloadsRef = useRef(modelPayloads);
@@ -406,6 +414,8 @@ export function PlayOverlay({
       fontMsdfJson: fontMsdfJsonRef.current,
       fontMsdfPng: fontMsdfPngRef.current,
       fontFaceEntries: fontFaceEntriesRef.current,
+      fontCssStack: fontCssStackRef.current,
+      fontCssStackByGuid: fontCssStackByGuidRef.current,
       modelBytes: modelBytesRef.current,
       modelPayloads: modelPayloadsRef.current,
       modelClipAnimationGuids: modelClipAnimationGuidsRef.current,

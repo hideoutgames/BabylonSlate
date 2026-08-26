@@ -34,6 +34,7 @@ import {
 } from "./hud";
 import { loopGuardLoadFields, shouldHaltPlayerOnDiagnostic } from "./debug-load";
 import { playerSpawnListForScripts } from "./spawn-list";
+import { packedFontCssStacks } from "./fonts";
 
 function havokWasmUrl(): string {
   return new URL("./havok/HavokPhysics.wasm", document.baseURI).href;
@@ -82,6 +83,7 @@ export function startPlayer(options: {
   }
   const content = packedContentFromGame(game);
   const diagnostics: PlayerDiagnostic[] = [];
+  const fontCss = packedFontCssStacks(game.fontFamilies);
 
   let worker: PlayerWorkerHost | null = null;
   let runtime: RuntimeDriver | null = null;
@@ -101,6 +103,8 @@ export function startPlayer(options: {
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
     fontMsdfPng: game.fontMsdfPng,
+    fontCssStack: fontCss.fontCssStack,
+    fontCssStackByGuid: fontCss.fontCssStackByGuid,
     modelBytes: game.modelBytes,
     modelPayloads: game.modelPayloads,
     modelClipAnimationGuids: content.modelClipAnimationGuids,

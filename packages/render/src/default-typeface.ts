@@ -1,7 +1,9 @@
 import type { IFontData } from "@babylonjs/core/Meshes/Builders/textBuilder";
 
-const COLS = 5;
-const ROWS = 7;
+export const ASCII_BITMAP_COLS = 5;
+export const ASCII_BITMAP_ROWS = 7;
+const COLS = ASCII_BITMAP_COLS;
+const ROWS = ASCII_BITMAP_ROWS;
 const PIXEL = 100;
 
 /** 5×7 bitmaps (MSB = left). Public-domain block glyphs for ASCII labels. */
@@ -159,6 +161,11 @@ function buildBundledAsciiTypeFace(): IFontData {
     boundingBox: { yMin: 0, yMax: ROWS * PIXEL },
     glyphs,
   };
+}
+
+/** 5×7 rows for Bitmap 2D Text when canvas FontFace rasterize is unavailable. */
+export function asciiBitmapRows(ch: string): readonly number[] {
+  return BITMAPS[ch] ?? BITMAPS["?"] ?? [0, 0, 0, 0, 0, 0, 0];
 }
 
 /** Engine TypeFace used when a Font has no facetype chunk. */

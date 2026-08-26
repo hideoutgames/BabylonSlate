@@ -47,6 +47,29 @@ describe("createText2DMesh", () => {
     }
   });
 
+  it("samples a glyph atlas on bitmap letter quads instead of a solid fill", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "letters",
+      { text: "Hi", size: 32, color: [0, 1, 0] },
+      undefined,
+      { metrics: fixedMetrics() },
+    );
+    const children = mesh.getChildMeshes();
+    expect(children.length).toBeGreaterThanOrEqual(2);
+    for (const child of children) {
+      const material = child.material as StandardMaterial;
+      expect(
+        material.opacityTexture ?? material.emissiveTexture ?? material.diffuseTexture,
+      ).toBeTruthy();
+      const uvs = child.getVerticesData("uv");
+      expect(uvs?.length).toBe(8);
+      expect(uvs?.[0]).not.toBe(uvs?.[2]);
+    }
+  });
+
   it("parents glyph quads under an AABB pick plane", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -67,6 +90,23 @@ describe("createText2DMesh", () => {
       children.every((child) => (child.metadata as { text2dGlyph?: boolean }).text2dGlyph),
     ).toBe(true);
     expect((mesh.material as StandardMaterial).disableLighting).toBe(true);
+  });
+
+  it("records the compiled CSS stack used to rasterize bitmap glyphs", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "stacked",
+      { text: "Hi", size: 32, fontAssetGuid: "font-1" },
+      {
+        fontCssStackByGuid: new Map([["font-1", '"Display", sans-serif']]),
+      },
+      { metrics: fixedMetrics() },
+    );
+    expect((mesh.metadata as { text2dFontStack?: string }).text2dFontStack).toBe(
+      '"Display", sans-serif',
+    );
   });
 
   it("uses an MSDF material branch when the pair exists and falls back per glyph", () => {
