@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createActor,
   createDefaultScene,
+  createDefaultSceneLayerSettings,
   createDefaultSceneSettings,
   createMeshComponent,
   type SerializedScene,
@@ -42,11 +43,7 @@ describe("createActorsFromSerializedSceneLayer", () => {
       world,
       {
         name: "HUD",
-        settings: {
-          gravity: [0, -9.81, 0],
-          fixedTimestepMs: 16.6667,
-          postProcessStack: [],
-        },
+        settings: createDefaultSceneLayerSettings(),
         folders: [],
         actors: [
           createActor("banner", "Banner", {
@@ -76,11 +73,7 @@ describe("createActorsFromSerializedSceneLayer", () => {
       world,
       {
         name: "HUD",
-        settings: {
-          gravity: [0, -9.81, 0],
-          fixedTimestepMs: 16.6667,
-          postProcessStack: [],
-        },
+        settings: createDefaultSceneLayerSettings(),
         folders: [],
         actors: [
           createActor("banner", "Banner", {

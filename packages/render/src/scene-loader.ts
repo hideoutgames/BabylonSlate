@@ -2,6 +2,7 @@ import { Color3, Mesh, MeshBuilder, Quaternion, Scene, Vector3, StandardMaterial
 import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@babylonslate/core";
 import {
   identitySerializedTransform,
+  parseOverlayPanelProperties,
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText2DProperties,
@@ -13,6 +14,10 @@ import {
   createOverlayTextureQuad,
   overlayTextureVisualKind,
 } from "./overlay-texture-quad";
+import {
+  createOverlayPanelMesh,
+  overlayPanelVisualKind,
+} from "./overlay-panel-mesh";
 import {
   beginSlotModelAnimLoad,
   createModelActorRoot,
@@ -203,6 +208,9 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "2DTextComponent",
   "2DRichTextComponent",
   "2DTextureComponent",
+  "2DMaterialComponent",
+  "2DPanelComponent",
+  "2DButtonComponent",
   "ParticleComponent",
   "ColliderComponent",
   "NavMeshComponent",
@@ -219,14 +227,51 @@ const SURFACE_COMPONENT_CLASS_IDS = new Set([
   "2DTextComponent",
   "2DRichTextComponent",
   "2DTextureComponent",
+  "2DMaterialComponent",
+  "2DPanelComponent",
+  "2DButtonComponent",
 ]);
 
 export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
 
-function visualComponentsOf(actor: SerializedActor): SerializedComponent[] {
-  return actor.components.filter((component) =>
-    VISUAL_COMPONENT_CLASS_IDS.has(component.classId),
+function overlayActorHasSurfaceVisual(actor: SerializedActor): boolean {
+  return actor.components.some(
+    (component) =>
+      component.classId === "2DTextureComponent" ||
+      component.classId === "2DMaterialComponent" ||
+      component.classId === "2DPanelComponent" ||
+      component.classId === "2DTextComponent" ||
+      component.classId === "2DRichTextComponent" ||
+      component.classId === "SpriteComponent" ||
+      component.classId === "MeshComponent",
   );
+}
+
+function skipOverlayButtonVisual(
+  actor: SerializedActor,
+  allActors?: readonly SerializedActor[],
+): boolean {
+  if (overlayActorHasSurfaceVisual(actor)) return true;
+  const parent = actor.parentId
+    ? allActors?.find((entry) => entry.id === actor.parentId)
+    : undefined;
+  return parent ? overlayActorHasSurfaceVisual(parent) : false;
+}
+
+function visualComponentsOf(
+  actor: SerializedActor,
+  allActors?: readonly SerializedActor[],
+): SerializedComponent[] {
+  return actor.components.filter((component) => {
+    if (!VISUAL_COMPONENT_CLASS_IDS.has(component.classId)) return false;
+    if (
+      component.classId === "2DButtonComponent" &&
+      skipOverlayButtonVisual(actor, allActors)
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 export function isIdentitySerializedTransform(
@@ -265,8 +310,10 @@ function hasSurfaceVisual(actor: SerializedActor): boolean {
 
 export function helperBillboardIconOf(
   actor: SerializedActor,
+  allActors?: readonly SerializedActor[],
 ): EditorBillboardIcon | null {
   if (hasSurfaceVisual(actor)) return null;
+  if (skipOverlayButtonVisual(actor, allActors)) return null;
   const light = actor.components.find(
     (component) => component.classId === "LightComponent",
   );
@@ -288,10 +335,13 @@ export function helperBillboardIconOf(
   return "default";
 }
 
-export function needsOriginRoot(actor: SerializedActor): boolean {
-  const visuals = visualComponentsOf(actor);
+export function needsOriginRoot(
+  actor: SerializedActor,
+  allActors?: readonly SerializedActor[],
+): boolean {
+  const visuals = visualComponentsOf(actor, allActors);
   return (
-    helperBillboardIconOf(actor) !== null ||
+    helperBillboardIconOf(actor, allActors) !== null ||
     visuals.length > 1 ||
     visuals.some((component) => !isIdentitySerializedTransform(component.transform)) ||
     visuals.some(isBillboardComponent) ||
@@ -349,6 +399,18 @@ function componentVisualKind(
       assets?.pixelsPerUnit,
     );
   }
+  if (component.classId === "2DMaterialComponent") {
+    return `2dmaterial:${stringProp(component.properties.materialGuid) ?? ""}:${String(component.properties.hitTest ?? "ignore")}`;
+  }
+  if (component.classId === "2DPanelComponent") {
+    return overlayPanelVisualKind(
+      parseOverlayPanelProperties(component.properties),
+      assets,
+    );
+  }
+  if (component.classId === "2DButtonComponent") {
+    return `2dbutton:${String(component.properties.hitTest ?? "block")}`;
+  }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
   }
@@ -373,13 +435,14 @@ function componentVisualKind(
 export function actorVisualFingerprint(
   actor: SerializedActor,
   assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
 ): string {
-  const visuals = visualComponentsOf(actor);
+  const visuals = visualComponentsOf(actor, allActors);
   if (visuals.length === 0) {
-    const mode = needsOriginRoot(actor) ? "origin" : "single";
-    return `${mode}:${editorMeshKindOf(actor) ?? ""}`;
+    const mode = needsOriginRoot(actor, allActors) ? "origin" : "single";
+    return `${mode}:${editorMeshKindOf(actor, assets, allActors) ?? ""}`;
   }
-  const mode = needsOriginRoot(actor) ? "origin" : "single";
+  const mode = needsOriginRoot(actor, allActors) ? "origin" : "single";
   return `${mode}:${visuals
     .map((component) => `${component.id}:${componentVisualKind(component, assets)}`)
     .join(";")}`;
@@ -427,7 +490,11 @@ function createTilemapComponentMesh(
 }
 
 /** Resolve the editor mesh kind, including billboard helpers for location-only components. */
-export function editorMeshKindOf(actor: SerializedActor): string | null {
+export function editorMeshKindOf(
+  actor: SerializedActor,
+  assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
+): string | null {
   const meshComponent = actor.components.find(
     (component) => component.classId === "MeshComponent",
   );
@@ -476,7 +543,21 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   const texture2dComponent = actor.components.find(
     (component) => component.classId === "2DTextureComponent",
   );
-  if (texture2dComponent) return componentVisualKind(texture2dComponent);
+  if (texture2dComponent) return componentVisualKind(texture2dComponent, assets);
+  const material2dComponent = actor.components.find(
+    (component) => component.classId === "2DMaterialComponent",
+  );
+  if (material2dComponent) return componentVisualKind(material2dComponent, assets);
+  const panel2dComponent = actor.components.find(
+    (component) => component.classId === "2DPanelComponent",
+  );
+  if (panel2dComponent) return componentVisualKind(panel2dComponent, assets);
+  const button2dComponent = actor.components.find(
+    (component) => component.classId === "2DButtonComponent",
+  );
+  if (button2dComponent && !skipOverlayButtonVisual(actor, allActors)) {
+    return componentVisualKind(button2dComponent, assets);
+  }
   if (
     actor.components.some((component) => component.classId === "ParticleComponent")
   ) {
@@ -485,7 +566,8 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
   if (actor.components.some((component) => component.classId === "NavMeshComponent")) {
     return editorBillboardKind("navmesh");
   }
-  return editorBillboardKind(helperBillboardIconOf(actor) ?? "default");
+  const helper = helperBillboardIconOf(actor, allActors);
+  return helper ? editorBillboardKind(helper) : null;
 }
 
 /** Build a Babylon mesh for one visual component. */
@@ -544,6 +626,39 @@ export function createMeshForComponent(
       stringProp(component.properties.textureGuid),
       assets,
     );
+  }
+  if (component.classId === "2DMaterialComponent") {
+    const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
+    const material = new StandardMaterial(`${name}-unlit`, scene);
+    material.disableLighting = true;
+    material.emissiveColor = Color3.White();
+    material.diffuseColor = Color3.White();
+    material.backFaceCulling = false;
+    mesh.material = material;
+    const guid = stringProp(component.properties.materialGuid);
+    if (guid && assets?.resolveMaterial) {
+      const compiled = assets.resolveMaterial(guid);
+      if (compiled) mesh.material = compiled;
+    }
+    return mesh;
+  }
+  if (component.classId === "2DPanelComponent") {
+    return createOverlayPanelMesh(
+      scene,
+      name,
+      parseOverlayPanelProperties(component.properties),
+      assets,
+    );
+  }
+  if (component.classId === "2DButtonComponent") {
+    const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
+    const material = new StandardMaterial(`${name}-unlit`, scene);
+    material.disableLighting = true;
+    material.emissiveColor = Color3.White();
+    material.diffuseColor = Color3.White();
+    material.backFaceCulling = false;
+    mesh.material = material;
+    return mesh;
   }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
@@ -619,9 +734,10 @@ function createActorOriginHierarchy(
   scene: Scene,
   actor: SerializedActor,
   assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
 ): Mesh {
   const root = createOriginRootMesh(scene, actor);
-  const visuals = visualComponentsOf(actor);
+  const visuals = visualComponentsOf(actor, allActors);
   const componentsById = new Map(
     actor.components.map((component) => [component.id, component]),
   );
@@ -648,7 +764,7 @@ function createActorOriginHierarchy(
     const parentId = parentVisualMeshId(component, meshes, componentsById);
     mesh.parent = parentId ? (meshes.get(parentId) ?? root) : root;
   }
-  const helperIcon = helperBillboardIconOf(actor);
+  const helperIcon = helperBillboardIconOf(actor, allActors);
   if (helperIcon && !visuals.some(isBillboardComponent)) {
     const billboard = createEditorBillboard(
       scene,
@@ -669,9 +785,10 @@ export function createActorMesh(
   scene: Scene,
   actor: SerializedActor,
   assets?: MeshAssetContext,
+  allActors?: readonly SerializedActor[],
 ): Mesh {
-  if (needsOriginRoot(actor)) {
-    return createActorOriginHierarchy(scene, actor, assets);
+  if (needsOriginRoot(actor, allActors)) {
+    return createActorOriginHierarchy(scene, actor, assets, allActors);
   }
   const name = editorMeshName(actor.id);
   const meshComponent = actor.components.find(
@@ -694,8 +811,12 @@ export function createActorMesh(
       component.classId === "2DTextComponent" ||
       component.classId === "2DRichTextComponent",
   );
-  const texture2dComponent = actor.components.find(
-    (component) => component.classId === "2DTextureComponent",
+  const overlayPlane = visualComponentsOf(actor, allActors).find(
+    (component) =>
+      component.classId === "2DTextureComponent" ||
+      component.classId === "2DMaterialComponent" ||
+      component.classId === "2DPanelComponent" ||
+      component.classId === "2DButtonComponent",
   );
   if (!meshComponent && spriteComponent) {
     return createSpriteComponentMesh(scene, name, spriteComponent, assets);
@@ -732,15 +853,24 @@ export function createActorMesh(
     !skyboxComponent &&
     !text3dComponent &&
     !text2dComponent &&
-    texture2dComponent
+    overlayPlane
   ) {
-    return createMeshForComponent(scene, name, actor, texture2dComponent, assets);
+    return createMeshForComponent(scene, name, actor, overlayPlane, assets);
+  }
+  if (
+    skipOverlayButtonVisual(actor, allActors) &&
+    visualComponentsOf(actor, allActors).length === 0 &&
+    helperBillboardIconOf(actor, allActors) === null
+  ) {
+    const hidden = createOriginRootMesh(scene, actor);
+    hidden.isPickable = false;
+    return hidden;
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
   if (assetGuid) {
     return createModelActorRoot(scene, name);
   }
-  const icon = parseEditorBillboardIcon(editorMeshKindOf(actor));
+  const icon = parseEditorBillboardIcon(editorMeshKindOf(actor, assets, allActors));
   if (icon) {
     const mesh = createEditorBillboard(scene, name, icon);
     applyEditorBillboardFromActor(mesh, actor);
@@ -922,7 +1052,7 @@ export function applySceneToBabylonScene(
   };
   let loadSlot = 0;
   for (const actor of sceneData.actors) {
-    const mesh = createActorMesh(scene, actor, assets);
+    const mesh = createActorMesh(scene, actor, assets, sceneData.actors);
     applyActorTransform(mesh, actor);
     meshes.set(actor.id, mesh);
     const guid = actor.components.find(

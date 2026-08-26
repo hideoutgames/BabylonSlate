@@ -127,6 +127,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   "2DTextureComponent": "ActorComponent",
   "2DTextComponent": "ActorComponent",
   "2DRichTextComponent": "ActorComponent",
+  "2DPanelComponent": "ActorComponent",
 };
 
 const ICON_BY_ID: Record<string, LucideIcon> = {
@@ -156,6 +157,7 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   "2DTextureComponent": ImageIcon,
   "2DTextComponent": TypeIcon,
   "2DRichTextComponent": SparklesIcon,
+  "2DPanelComponent": LayoutGridIcon,
   MeshComponent: BoxIcon,
   SpriteComponent: ImagesIcon,
   TilemapComponent: Grid3x3Icon,
@@ -224,6 +226,7 @@ const COMPONENT_CLASS_IDS = new Set([
   "2DTextureComponent",
   "2DTextComponent",
   "2DRichTextComponent",
+  "2DPanelComponent",
 ]);
 
 const FAMILY_BY_ASSET_TYPE: Record<string, AssetVisualFamily> = {

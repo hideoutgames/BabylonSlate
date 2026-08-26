@@ -41,6 +41,7 @@ describe("ClassRegistry", () => {
     expect(registry.isA("2DTextureComponent", "ActorComponent")).toBe(true);
     expect(registry.isA("2DTextComponent", "ActorComponent")).toBe(true);
     expect(registry.isA("2DRichTextComponent", "ActorComponent")).toBe(true);
+    expect(registry.isA("2DPanelComponent", "ActorComponent")).toBe(true);
     expect(isLockedEngineClassId("SceneLayer")).toBe(true);
     expect(isLockedEngineClassId("SceneLayerActor")).toBe(true);
     expect(isLockedEngineClassId("2DButtonComponent")).toBe(true);

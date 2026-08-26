@@ -37,6 +37,7 @@ export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./sprite-quad";
 export * from "./overlay-texture-quad";
+export * from "./overlay-panel-mesh";
 export * from "./tilemap-mesh";
 export * from "./mesh-assets";
 export * from "./glb-anim";

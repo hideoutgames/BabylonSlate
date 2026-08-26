@@ -57,6 +57,27 @@ describe("assignMesh visual payloads", () => {
     expect(command.text2d?.fontAssetGuid).toBe("font-1");
   });
 
+  it("assignMesh can carry a 2D Panel 9-slice payload", () => {
+    const command = {
+      type: "assignMesh",
+      slotId: 5,
+      meshAssetGuid: "tex-panel",
+      meshKind: "2dpanel",
+      overlayPanel: {
+        source: "texture",
+        textureGuid: "tex-panel",
+        materialGuid: null,
+        marginLeft: 8,
+        marginRight: 8,
+        marginTop: 4,
+        marginBottom: 4,
+        hitTest: "ignore",
+      },
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("assignMesh");
+    expect(command.overlayPanel?.marginLeft).toBe(8);
+  });
+
   it("assignMesh can carry a skybox payload", () => {
     const command = {
       type: "assignMesh",

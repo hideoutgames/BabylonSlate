@@ -162,14 +162,14 @@ export class EditorSceneSync {
 
     for (const actor of sceneData.actors) {
       this.liveIds.add(actor.id);
-      const kind = actorVisualFingerprint(actor, this.assets);
+      const kind = actorVisualFingerprint(actor, this.assets, sceneData.actors);
       let mesh = this.meshes.get(actor.id);
       if (mesh && this.meshKinds.get(actor.id) !== kind) {
         mesh.dispose();
         mesh = undefined;
       }
       if (!mesh) {
-        mesh = createActorMesh(this.scene, actor, this.assets);
+        mesh = createActorMesh(this.scene, actor, this.assets, sceneData.actors);
         this.meshes.set(actor.id, mesh);
         this.meshKinds.set(actor.id, kind);
       }
@@ -221,7 +221,11 @@ export class EditorSceneSync {
     syncAuthoredIllumination(this.scene, sceneData, {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
-      applyClearColor: sceneData.viewportMode !== "2d",
+      applyClearColor:
+        sceneData.viewportMode !== "2d" ||
+        (sceneData.settings.environmentColor[0] === 0 &&
+          sceneData.settings.environmentColor[1] === 0 &&
+          sceneData.settings.environmentColor[2] === 0),
       shadowQuality: this.shadowQuality,
       assets: this.assets,
     });

@@ -708,6 +708,77 @@ describe("scene-loader", () => {
       actorVisualFingerprint(actor, assets),
     );
   });
+
+  it("builds unlit editor planes for 2DMaterial, 2DButton, and 2DPanel", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("mat", "Mat", {
+          components: [
+            {
+              id: "m",
+              classId: "2DMaterialComponent",
+              properties: { materialGuid: "mat-1" },
+            },
+          ],
+        }),
+        createActor("btn", "Btn", {
+          components: [{ id: "b", classId: "2DButtonComponent", properties: {} }],
+        }),
+        createActor("panel", "Panel", {
+          components: [
+            {
+              id: "p",
+              classId: "2DPanelComponent",
+              properties: {
+                source: "texture",
+                textureGuid: "tex-1",
+                marginLeft: 10,
+                marginRight: 10,
+                marginTop: 10,
+                marginBottom: 10,
+              },
+            },
+          ],
+        }),
+      ]),
+    );
+    const material = scene.getMeshByName(editorMeshName("mat"));
+    const button = scene.getMeshByName(editorMeshName("btn"));
+    const panel = scene.getMeshByName(editorMeshName("panel"));
+    expect((material!.material as StandardMaterial).disableLighting).toBe(true);
+    expect((button!.material as StandardMaterial).disableLighting).toBe(true);
+    expect((panel!.material as StandardMaterial).disableLighting).toBe(true);
+    expect(panel!.getTotalVertices()).toBeGreaterThan(8);
+  });
+
+  it("does not add a 2DButton quad when a sibling or parent overlay visual exists", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("banner", "Banner", {
+          components: [
+            {
+              id: "tex",
+              classId: "2DTextureComponent",
+              properties: { textureGuid: "tex-1" },
+            },
+            { id: "btn", classId: "2DButtonComponent", properties: {} },
+          ],
+        }),
+        createActor("child", "Child", {
+          parentId: "banner",
+          components: [{ id: "btn", classId: "2DButtonComponent", properties: {} }],
+        }),
+      ]),
+    );
+    const banner = scene.getMeshByName(editorMeshName("banner"));
+    expect((banner!.material as StandardMaterial).disableLighting).toBe(true);
+    const child = scene.getMeshByName(editorMeshName("child"));
+    expect(child?.visibility).toBe(0);
+  });
 });
 
 /** PNG signature + IHDR width/height — CRC omitted. */
