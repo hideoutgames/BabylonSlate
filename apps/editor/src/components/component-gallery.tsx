@@ -24,6 +24,7 @@ import {
   PropertyGrid,
   SearchDialog,
   SearchDropdown,
+  MarkupAutocompleteTextarea,
   SelectableText,
   ToolbarStrip,
   TreeView,
@@ -206,6 +207,7 @@ function GalleryComposites() {
     },
   ]);
   const [selectedPinId, setSelectedPinId] = useState<string | null>("gallery-target");
+  const [markup, setMarkup] = useState("[color=green]Hello[/color]");
 
   const rows: PropertyRow[] = [
     {
@@ -514,6 +516,17 @@ function GalleryComposites() {
         >
           <Button variant="outline">Open search dropdown</Button>
         </SearchDropdown>
+        <div className="w-full max-w-md">
+          <Field>
+            <FieldLabel htmlFor="gallery-markup-autocomplete">Markup</FieldLabel>
+            <MarkupAutocompleteTextarea
+              id="gallery-markup-autocomplete"
+              value={markup}
+              onChange={setMarkup}
+              data-testid="gallery-markup-autocomplete"
+            />
+          </Field>
+        </div>
         <Button variant="outline" className="h-auto" onClick={() => setPickerOpen(true)}>
           {selectedPickerIdentity(
             assetRowIdentity({ name: "Rock", type: "Mesh" }),

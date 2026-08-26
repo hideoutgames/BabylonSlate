@@ -3,6 +3,7 @@ import {
   AssetPicker,
   AssetPickerControl,
   ClassPicker,
+  MarkupAutocompleteTextarea,
   FUNCTION_PIN_PICKER_TYPES,
   PIN_PICKER_TYPES,
   PanelFrame,
@@ -615,16 +616,23 @@ function PrefabComponentDetails({
       component.classId === "2DRichTextComponent" ? (
         <Field>
           <FieldLabel htmlFor={`text2d-text-${component.id}`}>Text</FieldLabel>
-          <Textarea
-            id={`text2d-text-${component.id}`}
-            value={
-              parseText2DProperties(component.properties, {
-                rich: component.classId === "2DRichTextComponent",
-              }).text
-            }
-            onChange={(event) => onUpdate("text", event.target.value)}
-            data-testid={`text2d-text-${component.id}`}
-          />
+          {component.classId === "2DRichTextComponent" ? (
+            <MarkupAutocompleteTextarea
+              id={`text2d-text-${component.id}`}
+              value={
+                parseText2DProperties(component.properties, { rich: true }).text
+              }
+              onChange={(value) => onUpdate("text", value)}
+              data-testid={`text2d-text-${component.id}`}
+            />
+          ) : (
+            <Textarea
+              id={`text2d-text-${component.id}`}
+              value={parseText2DProperties(component.properties).text}
+              onChange={(event) => onUpdate("text", event.target.value)}
+              data-testid={`text2d-text-${component.id}`}
+            />
+          )}
         </Field>
       ) : null}
       <AssetPicker

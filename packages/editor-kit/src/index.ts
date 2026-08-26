@@ -160,6 +160,14 @@ export {
   type SearchDropdownProps,
 } from "./search-dropdown";
 export {
+  MarkupAutocompleteTextarea,
+  applyMarkupSuggestion,
+  markupAutocompleteAt,
+  type MarkupAutocompleteSession,
+  type MarkupAutocompleteTextareaProps,
+  type MarkupSuggestion,
+} from "./markup-autocomplete";
+export {
   AssetPicker,
   type AssetPickerEntry,
   type AssetPickerProps,

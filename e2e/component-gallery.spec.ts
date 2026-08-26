@@ -67,6 +67,8 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("gallery-search-dropdown")).toBeVisible();
   await page.keyboard.press("Escape");
 
+  await expect(page.getByTestId("gallery-markup-autocomplete")).toBeVisible();
+
   await page.getByRole("button", { name: "Open search dialog" }).click();
   await expect(page.getByTestId("gallery-search-dialog")).toBeVisible();
   await page.keyboard.press("Escape");

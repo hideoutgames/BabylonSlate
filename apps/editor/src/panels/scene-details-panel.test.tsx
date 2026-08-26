@@ -410,4 +410,20 @@ describe("SceneDetailsPanel authoring", () => {
     const field = screen.getByTestId("text2d-text-rich") as HTMLTextAreaElement;
     expect(field.value).toContain("[color=green]");
   });
+
+  it("opens markup tag suggestions for 2D Rich Text", () => {
+    scene().actors = [
+      createActor("hud", "Rich", {
+        components: [createRichText2DComponent("rich")],
+      }),
+    ];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const field = screen.getByTestId("text2d-text-rich") as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "[" } });
+    field.setSelectionRange(1, 1);
+    fireEvent.select(field);
+    expect(screen.getByTestId("text2d-text-rich-suggestions")).toBeTruthy();
+    expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
+  });
 });
