@@ -149,7 +149,7 @@ describe("createText2DMesh", () => {
         { pixelsPerUnit: 100 },
       );
       const child = mesh.getChildMeshes()[0]!;
-      child.refreshBoundingInfo();
+      child.refreshBoundingInfo(false, false);
       const size = child.getBoundingInfo().boundingBox.extendSize;
       expect((size.x * 2) / (size.y * 2)).toBeCloseTo((5 * 5 + 2) / (7 * 5 + 2), 2);
     } finally {
