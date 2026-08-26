@@ -52,6 +52,7 @@ export * from "./material-compiler";
 export * from "./material-library";
 export * from "./material-preview";
 export * from "./post-process-material";
+export * from "./scene-layer-compositor";
 export * from "./anim-apply";
 export * from "./collider-visual";
 export * from "./editor-debug-overlay";

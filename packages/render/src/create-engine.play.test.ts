@@ -650,6 +650,92 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBeGreaterThan(0);
   });
 
+  it("keeps world post-process on the world camera when a SceneLayer is created", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      postProcessingEnabled: true,
+      postProcessStack: [{ materialGuid: "pp", enabled: true, order: 0 }],
+      materialDocuments: new Map([
+        ["pp", createDefaultMaterialDocument("Blur", "postProcess")],
+      ]),
+    });
+    handles.push(handle);
+    const worldPasses = handle.postProcessPassCount();
+    expect(worldPasses).toBeGreaterThan(0);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 1,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    expect(handle.postProcessPassCount()).toBe(worldPasses);
+    const overlay = handle.sceneLayerScenes()[0];
+    expect(overlay?.scene).not.toBe(handle.scene);
+    expect(overlay?.scene.autoClear).toBe(false);
+    expect(overlay?.scene.lightsEnabled).toBe(false);
+    expect(livePassCount(overlay?.scene.activeCamera)).toBe(0);
+  });
+
+  it("parents overlay spawn meshes into the SceneLayer scene and draws by z-order", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "back",
+      assetGuid: "hud",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "front",
+      assetGuid: "hud",
+      zOrder: 3,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 4,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "front",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
+    expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+
+    const order: string[] = [];
+    const worldRender = vi.spyOn(handle.scene, "render").mockImplementation(() => {
+      order.push("world");
+    });
+    for (const layer of handle.sceneLayerScenes()) {
+      vi.spyOn(layer.scene, "render").mockImplementation(() => {
+        order.push(layer.layerId);
+      });
+    }
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    expect(order).toEqual(["world", "back", "front"]);
+    worldRender.mockRestore();
+  });
+
   it("attaches the authored stack when postProcessingEnabled is omitted", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

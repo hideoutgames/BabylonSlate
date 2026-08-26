@@ -25,6 +25,10 @@ const ENGINE_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "debugDraw",
   "assignParticle",
   "setParticlePlaying",
+  "sceneLayerCreate",
+  "sceneLayerRemove",
+  "sceneLayerClear",
+  "sceneLayerPostProcess",
 ]);
 
 export function applyPlayerEngineCommand(
