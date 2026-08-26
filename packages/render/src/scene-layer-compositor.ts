@@ -44,7 +44,7 @@ export interface SceneLayerCompositorOptions {
   attachLayerPostProcess?: (
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
-  ) => { dispose: () => void } | void;
+  ) => { dispose: () => void } | null;
   orthoHalfHeight?: number;
 }
 
