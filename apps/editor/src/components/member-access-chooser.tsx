@@ -13,6 +13,7 @@ export type MemberAccessChooserProps = {
   open: boolean;
   memberName: string;
   showValidatedGet?: boolean;
+  showSet?: boolean;
   onOpenChange: (open: boolean) => void;
   onChoose: (access: VariableAccessKind) => void;
 };
@@ -22,6 +23,7 @@ export function MemberAccessChooser({
   open,
   memberName,
   showValidatedGet = false,
+  showSet = true,
   onOpenChange,
   onChoose,
 }: MemberAccessChooserProps) {
@@ -31,9 +33,13 @@ export function MemberAccessChooser({
         <DialogHeader>
           <DialogTitle>{memberName}</DialogTitle>
           <DialogDescription>
-            {showValidatedGet
-              ? "Add a Get, Validated Get, or Set node to the graph."
-              : "Add a Get or Set node to the graph."}
+            {showSet
+              ? showValidatedGet
+                ? "Add a Get, Validated Get, or Set node to the graph."
+                : "Add a Get or Set node to the graph."
+              : showValidatedGet
+                ? "Add a Get or Validated Get node to the graph."
+                : "Add a Get node to the graph."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter showCloseButton={false}>
@@ -55,14 +61,16 @@ export function MemberAccessChooser({
               Validated Get
             </Button>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            data-testid="member-access-set"
-            onClick={() => onChoose("set")}
-          >
-            Set
-          </Button>
+          {showSet ? (
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="member-access-set"
+              onClick={() => onChoose("set")}
+            >
+              Set
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1079,6 +1079,8 @@ export function addVariableAccessNode(
   stampVariableTypeOnData(data, member);
   if (options?.classId) data.classId = options.classId;
   if (member.functionId) data.functionId = member.functionId;
+  if (member.componentId) data.componentId = member.componentId;
+  if (member.propertyKey) data.propertyKey = member.propertyKey;
   return appendGraphNode(
     graph,
     {
@@ -1122,7 +1124,7 @@ export function addCallEventNode(
 /** Spawn a Call Function node bound to a class function. */
 export function addCallFunctionNode(
   graph: SerializedGraph,
-  member: Pick<GraphClassMember, "name" | "pins">,
+  member: Pick<GraphClassMember, "name" | "pins" | "runtime">,
   options?: GraphSpawnOptions,
 ): SerializedGraph {
   const type = "functions.call";
@@ -1134,6 +1136,7 @@ export function addCallFunctionNode(
     __nodeType: type,
   };
   if (options?.classId) data.classId = options.classId;
+  if (member.runtime) data.runtime = member.runtime;
   return appendGraphNode(
     graph,
     {

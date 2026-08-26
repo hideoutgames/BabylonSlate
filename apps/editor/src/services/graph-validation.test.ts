@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
+import { createText3DComponent } from "@babylonslate/core";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
 import {
   classHierarchyFromParentOf,
@@ -1312,6 +1313,71 @@ describe("scriptPaletteNodes", () => {
     });
     expect(other?.pins?.some((pin) => pin.id === "target")).toBe(true);
     expect(nodes.some((node) => node.id.includes("Temp"))).toBe(false);
+  });
+
+  it("injects Get and Validated Get (not Set) for prefab component refs", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+      graph: {
+        nodes: [],
+        edges: [],
+        components: [createText3DComponent("text-1")],
+      },
+    });
+    const get = nodes.find((node) => node.title === "Get 3D Text");
+    expect(get?.nodeType).toBe("variables.get");
+    expect(get?.defaultData).toMatchObject({
+      variableName: "3D Text",
+      typeId: "object",
+      typeClassId: "Text3DComponent",
+      componentId: "text-1",
+      implicitSelf: true,
+    });
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.set" &&
+          node.defaultData?.componentId === "text-1",
+      ),
+    ).toBe(false);
+    const validated = nodes.find(
+      (node) => node.title === "Validated Get 3D Text",
+    );
+    expect(validated?.nodeType).toBe("variables.getValidated");
+    expect(validated?.defaultData).toMatchObject({ componentId: "text-1" });
+  });
+
+  it("injects engine component Get/Set and Call Function from the script API catalog", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "Actor",
+      classId: "Hero",
+    });
+    const getText = nodes.find(
+      (node) => node.id === "variables.get:Text3DComponent:Text",
+    );
+    expect(getText?.title).toBe("Get Text");
+    expect(getText?.defaultData).toMatchObject({
+      variableName: "Text",
+      propertyKey: "text",
+      classId: "Text3DComponent",
+      implicitSelf: false,
+    });
+    expect(getText?.pins?.some((pin) => pin.id === "target")).toBe(true);
+    const setTextVar = nodes.find(
+      (node) => node.id === "variables.set:Text3DComponent:Text",
+    );
+    expect(setTextVar?.defaultData).toMatchObject({ propertyKey: "text" });
+    const callSetText = nodes.find(
+      (node) => node.id === "functions.call:Text3DComponent:Set Text",
+    );
+    expect(callSetText?.title).toBe("Call Set Text");
+    expect(callSetText?.defaultData).toMatchObject({
+      functionName: "Set Text",
+      runtime: "setText",
+      classId: "Text3DComponent",
+      implicitSelf: false,
+    });
   });
 
   it("injects function-local Get/Set only when that function graph is open", () => {

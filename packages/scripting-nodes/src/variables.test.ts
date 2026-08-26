@@ -173,6 +173,142 @@ describe("variables.get / variables.set", () => {
     expect(compiled.source).not.toContain("ctx.input(\"name\")");
   });
 
+  it("compiles a component-ref Get to ctx.getComponentById", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "get", "variables.get", {
+          variableName: "3D Text",
+          typeId: "object",
+          typeClassId: "Text3DComponent",
+          implicitSelf: true,
+          componentId: "text-1",
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "get",
+          sourcePinId: "value",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain(
+      'ctx.getComponentById(ctx.self, "text-1")',
+    );
+    expect(compiled.source).not.toContain('ctx.getVariable("3D Text")');
+  });
+
+  it("compiles a wired Target component-ref Get to getComponentById on that actor", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "get", "variables.get", {
+          variableName: "3D Text",
+          typeId: "object",
+          typeClassId: "Text3DComponent",
+          implicitSelf: false,
+          classId: "Actor",
+          componentId: "text-1",
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "get",
+          sourcePinId: "value",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toMatch(
+      /ctx\.getComponentById\([^,]+,\s*"text-1"\)/,
+    );
+    expect(compiled.source).not.toContain("ctx.getVariableFrom");
+  });
+
+  it("compiles engine property Get/Set with propertyKey, not the display name", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "get", "variables.get", {
+          variableName: "Text",
+          typeId: "string",
+          implicitSelf: false,
+          classId: "Text3DComponent",
+          propertyKey: "text",
+        }),
+        node(registry, "set", "variables.set", {
+          variableName: "Text",
+          typeId: "string",
+          implicitSelf: false,
+          classId: "Text3DComponent",
+          propertyKey: "text",
+          "default:Text": "Hi",
+        }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "begin",
+          sourcePinId: "execOut",
+          targetNodeId: "set",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "set",
+          sourcePinId: "execOut",
+          targetNodeId: "log",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e3",
+          sourceNodeId: "get",
+          sourcePinId: "value",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toMatch(/ctx\.getVariableFrom\([^,]+,\s*"text"\)/);
+    expect(compiled.source).toMatch(/ctx\.setVariableOn\([^,]+,\s*"text"/);
+    expect(compiled.source).not.toContain('ctx.getVariableFrom(ctx.input("target"), "Text")');
+    expect(compiled.source).not.toContain('ctx.setVariableOn(ctx.input("target"), "Text"');
+  });
+
   it("compiles local Get/Set to a function-scoped ident", () => {
     const registry = createDefaultNodeRegistry();
     expect(localVariableIdent("Temp")).toBe("__lv_Temp");

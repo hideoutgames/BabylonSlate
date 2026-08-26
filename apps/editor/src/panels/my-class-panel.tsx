@@ -56,6 +56,7 @@ import {
   collectOverridableEventRows,
   collectOverridableFunctionRows,
 } from "../lib/overridable-functions";
+import { componentGraphMembersForClass } from "../lib/component-graph-members";
 
 export type MyClassMember = {
   kind: "variable" | "function" | "event" | "interface";
@@ -71,6 +72,7 @@ export type MyClassMember = {
   assetGuid?: string;
   pins?: import("@babylonslate/core").GraphClassMemberPin[];
   hasError?: boolean;
+  componentId?: string;
 };
 
 export type MyClassPanelProps = IDockviewPanelProps;
@@ -79,7 +81,13 @@ function variableForAccessDrop(
   graph: SerializedGraph | undefined,
   members: MyClassMember[],
   memberId: string | undefined,
-): { name?: string; typeId?: string; container?: string } | undefined {
+): {
+  name?: string;
+  typeId?: string;
+  container?: string;
+  componentId?: string;
+  propertyKey?: string;
+} | undefined {
   if (!memberId) return undefined;
   const declared = (graph?.members ?? []).find(
     (entry) => entry.id === memberId && entry.kind === "variable",
@@ -107,6 +115,7 @@ export type MembersForGraphOptions = {
   parentOf?: (id: string) => string | null | undefined;
   parentGraphs?: Record<string, SerializedGraph>;
   assetType?: string | null;
+  classId?: string;
   scriptInterfaces?: Array<{
     guid: string;
     name: string;
@@ -273,7 +282,24 @@ export function membersForGraph(
   const inherited = inheritedMembers(options).filter(
     (row) => !declaredKeys.has(`${row.kind}:${row.name}`),
   );
-  return [...declared, ...events, ...inherited];
+  const componentRefs: MyClassMember[] = componentGraphMembersForClass({
+    graph,
+    classId: options?.classId,
+    parentClass: options?.parentClass,
+    parentOf: options?.parentOf,
+    parentGraphs: options?.parentGraphs,
+  }).map((member) => ({
+    kind: "variable",
+    name: member.name,
+    detail: member.id,
+    typeId: member.typeId,
+    typeClassId: member.typeClassId,
+    componentId: member.componentId,
+    ...(member.inheritedFrom
+      ? { inherited: true, inheritedFrom: member.inheritedFrom }
+      : {}),
+  }));
+  return [...declared, ...componentRefs, ...events, ...inherited];
 }
 
 export function membersForSection(
@@ -449,6 +475,7 @@ export function ClassMembersView({
             name: row.name,
             typeId: row.typeId ?? "float",
             ...(row.typeClassId ? { typeClassId: row.typeClassId } : {}),
+            ...(row.componentId ? { componentId: row.componentId } : {}),
           }
         : null);
     if (!binding) return;
@@ -599,14 +626,21 @@ export function ClassMembersView({
                     label: "Get",
                     onSelect: () => spawnAccess("get", id),
                   },
-                  {
-                    id: "set",
-                    label: "Set",
-                    onSelect: () => spawnAccess("set", id),
-                  },
+                  ...(member.componentId
+                    ? []
+                    : [
+                        {
+                          id: "set",
+                          label: "Set",
+                          onSelect: () => spawnAccess("set", id),
+                        },
+                      ]),
                 ]
               : []),
-            ...(member && !member.inherited && member.kind !== "event"
+            ...(member &&
+            !member.inherited &&
+            member.kind !== "event" &&
+            !member.componentId
               ? [
                   {
                     id: "rename",
@@ -615,7 +649,7 @@ export function ClassMembersView({
                   },
                 ]
               : []),
-            ...(member && !member.inherited
+            ...(member && !member.inherited && !member.componentId
               ? [
                   {
                     id: "delete",
@@ -670,6 +704,7 @@ export function ClassMembersView({
           accessVariable?.typeId,
           accessVariable?.container,
         )}
+        showSet={!accessVariable?.componentId}
         onOpenChange={(open) => {
           if (!open) setAccessDrop(null);
         }}
@@ -900,6 +935,7 @@ export function MyClassPanel(_props: MyClassPanelProps) {
     classIdForPath: classIdForGraphPath,
   });
   const membersOptions = {
+    classId: className ?? undefined,
     parentClass: indexed?.header.parentClass ?? null,
     parentOf,
     parentGraphs,

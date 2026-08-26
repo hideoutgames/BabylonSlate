@@ -51,4 +51,20 @@ describe("MemberAccessChooser", () => {
     );
     expect(screen.queryByTestId("member-access-validated-get")).toBeNull();
   });
+
+  it("hides Set for Get-only component refs", () => {
+    render(
+      <MemberAccessChooser
+        open
+        memberName="3D Text"
+        showValidatedGet
+        showSet={false}
+        onOpenChange={() => {}}
+        onChoose={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("member-access-get")).toBeTruthy();
+    expect(screen.getByTestId("member-access-validated-get")).toBeTruthy();
+    expect(screen.queryByTestId("member-access-set")).toBeNull();
+  });
 });

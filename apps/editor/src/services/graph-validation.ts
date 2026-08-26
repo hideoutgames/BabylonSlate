@@ -36,8 +36,10 @@ import {
 import {
   ENGINE_BASE_CLASS_IDS,
   ENGINE_BT_BUILTIN_CLASSES,
+  ENGINE_CLASS_SCRIPT_APIS,
   ENGINE_COMPONENT_CLASS_IDS,
 } from "@babylonslate/object-model";
+import { componentGraphMembersForClass } from "../lib/component-graph-members";
 import {
   createDefaultNodeRegistry,
   castDefaultClassId,
@@ -915,6 +917,7 @@ function callCustomEventPaletteNodes(
 type FunctionRow = {
   name: string;
   pins: GraphClassMemberPin[];
+  runtime?: string;
 };
 
 function functionRows(graph?: SerializedGraph): FunctionRow[] {
@@ -1014,6 +1017,27 @@ function callFunctionPaletteNodes(
       pushRow(classId, fn, implicitSelf, library);
     }
   }
+  for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    if (api.classId === localClassId) continue;
+    if (!otherClassAllowedOnHost(api.classId, options)) continue;
+    for (const fn of api.functions ?? []) {
+      pushRow(
+        api.classId,
+        {
+          name: fn.name,
+          pins: fn.pins.map((pin) => ({
+            name: pin.name,
+            typeId: pin.typeId,
+            direction: pin.direction,
+            ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+          })),
+          runtime: fn.runtime,
+        },
+        false,
+        false,
+      );
+    }
+  }
   for (const library of options?.functionLibraries ?? []) {
     if (skipEditorOnlyLibrary(library.classId, library.parentClass, options)) {
       continue;
@@ -1041,6 +1065,7 @@ function callFunctionPaletteNodes(
       pins: fn.pins,
     };
     if (staticCall) defaultData.static = true;
+    if (fn.runtime) defaultData.runtime = fn.runtime;
     return {
       id: `functions.call:${classId}:${fn.name}`,
       nodeType: "functions.call",
@@ -1103,6 +1128,8 @@ type VariableRow = {
   keyTypeClassId?: string;
   scope: "member" | "local";
   functionId?: string;
+  componentId?: string;
+  propertyKey?: string;
 };
 
 function classVariableRows(graph?: SerializedGraph): VariableRow[] {
@@ -1173,11 +1200,51 @@ function variableAccessPaletteNodes(
     classId: string;
     variable: VariableRow;
     implicitSelf: boolean;
+    getOnly?: boolean;
   }> = classVars.map((variable) => ({
     classId: localClassId,
     variable,
     implicitSelf: true,
   }));
+  for (const member of componentGraphMembersForClass({
+    graph: options?.graph,
+    classId: options?.classId,
+    parentClass: options?.parentClass,
+    parentOf: options?.parentOf,
+    parentGraphs: options?.parentGraphs,
+  })) {
+    rows.push({
+      classId: localClassId,
+      variable: {
+        id: member.id,
+        name: member.name,
+        typeId: member.typeId ?? "object",
+        typeClassId: member.typeClassId,
+        scope: "member",
+        componentId: member.componentId,
+      },
+      implicitSelf: true,
+      getOnly: true,
+    });
+  }
+  for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    if (api.classId === localClassId) continue;
+    if (!otherClassAllowedOnHost(api.classId, options)) continue;
+    for (const variable of api.variables ?? []) {
+      rows.push({
+        classId: api.classId,
+        variable: {
+          id: `engine:${api.classId}:var:${variable.propertyKey}`,
+          name: variable.name,
+          typeId: variable.typeId,
+          typeClassId: variable.typeClassId,
+          scope: "member",
+          propertyKey: variable.propertyKey,
+        },
+        implicitSelf: false,
+      });
+    }
+  }
   for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
     if (classId === localClassId) continue;
     if (!otherClassAllowedOnHost(classId, options)) continue;
@@ -1205,8 +1272,10 @@ function variableAccessPaletteNodes(
           ["get", getDef],
           ["set", setDef],
         ];
-  for (const { classId, variable, implicitSelf } of rows) {
-    const kinds = [...accessKinds];
+  for (const { classId, variable, implicitSelf, getOnly } of rows) {
+    const kinds = [...accessKinds].filter(
+      ([access]) => !(getOnly && access === "set"),
+    );
     if (
       validatedDef &&
       options?.animationGraphHost !== "rule" &&
@@ -1238,6 +1307,8 @@ function variableAccessPaletteNodes(
       };
       if (variable.functionId) defaultData.functionId = variable.functionId;
       if (variable.typeClassId) defaultData.typeClassId = variable.typeClassId;
+      if (variable.componentId) defaultData.componentId = variable.componentId;
+      if (variable.propertyKey) defaultData.propertyKey = variable.propertyKey;
       if (variable.container === "array" || variable.container === "map") {
         defaultData.container = variable.container;
       }
@@ -1461,6 +1532,7 @@ export class ScriptPaletteCache {
 function graphPaletteMemberFingerprint(graph?: SerializedGraph): unknown {
   return {
     members: graph?.members ?? [],
+    components: graph?.components ?? [],
     events: customEventRows(graph),
     functions: functionRows(graph),
     functionGraphs: Object.fromEntries(
@@ -1737,8 +1809,53 @@ export function classMemberSymbolsFromGraphs(
           symbol.implementsInterface = member.implementsInterface;
         }
         if (member.overrides) symbol.overrides = member.overrides;
+        if (member.runtime) symbol.runtime = member.runtime;
       }
+      if (member.componentId) symbol.componentId = member.componentId;
+      if (member.propertyKey) symbol.propertyKey = member.propertyKey;
       symbols.push(symbol);
+    }
+    for (const member of componentGraphMembersForClass({
+      graph,
+      classId,
+    })) {
+      symbols.push({
+        id: member.id,
+        name: member.name,
+        kind: "variable",
+        classId,
+        typeId: member.typeId,
+        typeClassId: member.typeClassId,
+        componentId: member.componentId,
+      });
+    }
+  }
+  for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    for (const variable of api.variables ?? []) {
+      symbols.push({
+        id: `engine:${api.classId}:var:${variable.propertyKey}`,
+        name: variable.name,
+        kind: "variable",
+        classId: api.classId,
+        typeId: variable.typeId,
+        typeClassId: variable.typeClassId,
+        propertyKey: variable.propertyKey,
+      });
+    }
+    for (const fn of api.functions ?? []) {
+      symbols.push({
+        id: `engine:${api.classId}:fn:${fn.runtime}`,
+        name: fn.name,
+        kind: "function",
+        classId: api.classId,
+        runtime: fn.runtime,
+        pins: fn.pins.map((pin) => ({
+          name: pin.name,
+          typeId: pin.typeId,
+          direction: pin.direction,
+          ...(pin.typeClassId ? { typeClassId: pin.typeClassId } : {}),
+        })),
+      });
     }
   }
   return symbols;

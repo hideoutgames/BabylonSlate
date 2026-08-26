@@ -21,6 +21,9 @@ export type ClassMemberSymbol = {
   }>;
   implementsInterface?: { assetGuid: string; methodName: string };
   overrides?: { classId: string; name: string };
+  componentId?: string;
+  propertyKey?: string;
+  runtime?: string;
 };
 
 export type InterfaceMethodContext = {

@@ -66,7 +66,12 @@ export const functionCallNodes: NodeDefinition[] = [
         typeof ctx.node.properties.functionName === "string"
           ? ctx.node.properties.functionName
           : "fn";
-      const functionName = jsIdent(raw);
+      const runtime =
+        typeof ctx.node.properties.runtime === "string" &&
+        ctx.node.properties.runtime.trim()
+          ? ctx.node.properties.runtime.trim()
+          : "";
+      const functionName = runtime || jsIdent(raw);
       const targetPin = ctx.node.pins.find(
         (entry) => entry.name === "target" && entry.direction === "in",
       );
@@ -101,9 +106,11 @@ export const functionCallNodes: NodeDefinition[] = [
         args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.name)}`);
       }
       const latent =
-        ctx.isLatentFunction?.(classId, functionName) === true;
+        !runtime && ctx.isLatentFunction?.(classId, functionName) === true;
       if (latent) ctx.requestAsync();
-      const invoked = `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
+      const invoked = runtime
+        ? `ctx.callComponentFunction(${targetExpr}, ${JSON.stringify(runtime)}, { ${args.join(", ")} })`
+        : `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
       const call = latent ? `await ${invoked}` : invoked;
       const outPins = ctx.node.pins.filter(
         (pinDef) => pinDef.direction === "out" && pinDef.kind === "data",
