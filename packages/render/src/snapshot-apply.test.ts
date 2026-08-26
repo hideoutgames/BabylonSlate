@@ -106,12 +106,17 @@ describe("createPlayMesh", () => {
       actorGuid: "banner",
       hitTest: "block",
       hasButton: true,
+      buttonComponentId: "btn-1",
     });
     const mesh = binding.meshes.get(4);
     expect(mesh?.isPickable).toBe(true);
     expect(
       (mesh?.metadata as { overlayActorGuid?: string }).overlayActorGuid,
     ).toBe("banner");
+    expect(
+      (mesh?.metadata as { overlayButtonComponentId?: string })
+        .overlayButtonComponentId,
+    ).toBe("btn-1");
   });
 
   it("puts primitive and model Play meshes in the same world rendering group", async () => {

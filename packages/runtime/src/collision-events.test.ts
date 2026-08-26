@@ -98,6 +98,7 @@ function attachKinematicBox(
   runtime: ReturnType<typeof createInProcessRuntime>,
   actor: Actor,
   isTrigger = false,
+  colliderGuid?: string,
 ) {
   const world = runtime.getWorld();
   actor.attachComponent(
@@ -112,6 +113,7 @@ function attachKinematicBox(
   );
   actor.attachComponent(
     world.createComponent({
+      ...(colliderGuid ? { guid: colliderGuid } : {}),
       classId: "ColliderComponent",
       variables: {
         shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
@@ -330,6 +332,69 @@ describe("runtime collision events", () => {
     expect(placed?.classId).toBe("PlacedHero");
     expect(placed?.generateHitEvents).toBe(false);
     expect(placed?.generateOverlapEvents).toBe(false);
+    runtime.stop();
+  });
+
+  it("dispatches overlap only to the entry bound to that collider id", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 6,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      dt: 1 / 60,
+      onCommand: (command) => commands.push(command),
+    });
+    const overlap = overlapLogGraph(registry);
+    overlap.nodes = overlap.nodes.map((entry) =>
+      entry.typeId === "flow.event.beginOverlap" ||
+      entry.typeId === "flow.event.endOverlap"
+        ? { ...entry, properties: { ...entry.properties, componentId: "col-a" } }
+        : entry,
+    );
+    overlap.nodes.push(
+      node(registry, "beginB", "flow.event.beginOverlap", {
+        componentId: "col-b",
+      }),
+      node(registry, "logB", "debug.log", { category: "OverlapB" }),
+    );
+    overlap.edges.push(
+      edge("eb1", "beginB", "execOut", "logB", "execIn"),
+      edge("eb2", "beginB", "instigator", "logB", "message"),
+    );
+    await runtime.loadScripts([
+      toScript(overlap, registry, "Sensor", "sensor-asset"),
+    ]);
+    const a = runtime.spawnScriptedActor({
+      classId: "Sensor",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    const b = runtime.spawnScriptedActor({
+      classId: "Sensor",
+      transform: {
+        position: { x: 0.4, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    attachKinematicBox(runtime, a!, true, "col-a");
+    attachKinematicBox(runtime, b!, true, "col-b");
+    runtime.start();
+    runtime.tick();
+    const begins = commands.filter(
+      (command) =>
+        command.type === "log" && command.category === "OverlapBegin",
+    );
+    const other = commands.filter(
+      (command) => command.type === "log" && command.category === "OverlapB",
+    );
+    expect(begins).toHaveLength(1);
+    expect(other).toHaveLength(1);
     runtime.stop();
   });
 });

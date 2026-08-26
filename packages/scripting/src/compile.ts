@@ -78,6 +78,8 @@ export type CompiledEntryPoint = {
   nodeId?: string;
   /** True when the entry point awaits a latent node and must be awaited. */
   isAsync: boolean;
+  /** Prefab component id when this entry is bound to an attached component. */
+  componentId?: string;
 };
 
 export type CompileResult = {
@@ -923,6 +925,7 @@ export function compileGraph(
         event: entry ? eventNameForEntry(entry) : undefined,
         nodeId: entry?.id,
         isAsync,
+        ...(entry ? entryComponentId(entry) : {}),
       },
       declLines: [...outputDecls.values()],
       bodyLines: [...body],
@@ -988,6 +991,12 @@ function uniqueName(base: string, used: Set<string>): string {
 
 function entryExportName(entry: GraphNode, fallback: string): string {
   return eventNameForEntry(entry) ?? fallback;
+}
+
+function entryComponentId(entry: GraphNode): { componentId: string } | {} {
+  const id = entry.properties.componentId;
+  if (typeof id !== "string" || !id.trim()) return {};
+  return { componentId: id.trim() };
 }
 
 const ANIM_RULE_SINKS = [

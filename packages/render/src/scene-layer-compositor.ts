@@ -243,6 +243,10 @@ export class SceneLayerCompositor {
         actorGuid,
         hitTest: parseSceneLayerHitTest(metadata?.overlayHitTest, "ignore"),
         hasButton: metadata?.overlayHasButton === true,
+        ...(typeof metadata?.overlayButtonComponentId === "string" &&
+        metadata.overlayButtonComponentId
+          ? { componentId: metadata.overlayButtonComponentId }
+          : {}),
       });
     }
     return hits;
@@ -388,6 +392,7 @@ type OverlayMeshMetadata = {
   overlayHitTest?: SceneLayerHitTest;
   overlayActorGuid?: string;
   overlayHasButton?: boolean;
+  overlayButtonComponentId?: string;
 };
 
 function overlayMetadataOf(

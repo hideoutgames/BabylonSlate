@@ -599,6 +599,8 @@ describe("@babylonslate/physics", () => {
           kind: "hit",
           actorAId: "actor-a",
           actorBId: "actor-b",
+          colliderAId: "a-col",
+          colliderBId: "b-col",
         }),
       ]),
     );
@@ -623,6 +625,8 @@ describe("@babylonslate/physics", () => {
           kind: "overlapBegin",
           actorAId: "actor-a",
           actorBId: "actor-b",
+          colliderAId: "a-col",
+          colliderBId: "b-col",
         }),
       ]),
     );
@@ -641,6 +645,8 @@ describe("@babylonslate/physics", () => {
           kind: "overlapEnd",
           actorAId: "actor-a",
           actorBId: "actor-b",
+          colliderAId: "a-col",
+          colliderBId: "b-col",
         }),
       ]),
     );

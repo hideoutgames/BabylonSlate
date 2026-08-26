@@ -353,6 +353,70 @@ describe("SceneLayer runtime compositor", () => {
     expect(commands).toHaveLength(before);
   });
 
+  it("invokes overlay click only on the entry bound to that 2D Button", async () => {
+    const commands: CommandMessage[] = [];
+    const hud = overlayLayer();
+    hud.actors[0] = createActor("banner", "Banner", {
+      classId: "SceneLayerActor",
+      components: [
+        { id: "btn-1", classId: "2DButtonComponent", properties: {} },
+        { id: "btn-2", classId: "2DButtonComponent", properties: {} },
+      ],
+    });
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hud-script",
+        classId: "SceneLayerActor",
+        parentClassId: "Actor",
+        source: [
+          'export function onClick(ctx) { ctx.log("log", "One", "a"); }',
+          'export function onClick_2(ctx) { ctx.log("log", "Two", "b"); }',
+        ].join("\n"),
+        anchors: [],
+        entryPoints: [
+          {
+            name: "onClick",
+            event: "onClick",
+            isAsync: false,
+            componentId: "btn-1",
+          },
+          {
+            name: "onClick_2",
+            event: "onClick",
+            isAsync: false,
+            componentId: "btn-2",
+          },
+        ],
+      },
+    ]);
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    runtime.applySceneLayerPointer({
+      type: "sceneLayerPointer",
+      layerId: "any",
+      actorGuid: "banner",
+      event: "onClick",
+      componentId: "btn-1",
+    });
+    expect(
+      commands.filter(
+        (command) => command.type === "log" && command.category === "One",
+      ),
+    ).toHaveLength(1);
+    expect(
+      commands.filter(
+        (command) => command.type === "log" && command.category === "Two",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("does not spawn SceneLayerActor into the world via Spawn Actor", async () => {
     const runtime = createInProcessRuntime({
       seed: 1,
@@ -442,11 +506,13 @@ describe("SceneLayer runtime compositor", () => {
       type: "assignMesh",
       meshKind: "2dbutton",
       hasButton: true,
+      buttonComponentId: "btn",
     });
     expect(assignPair).toMatchObject({
       type: "assignMesh",
       meshKind: "2dtexture",
       hasButton: true,
+      buttonComponentId: "btn",
     });
     expect(
       assignPair && "parts" in assignPair
@@ -498,6 +564,7 @@ describe("SceneLayer runtime compositor", () => {
       meshKind: "2dtext",
       hasButton: true,
       hitTest: "block",
+      buttonComponentId: "btn",
       text2d: { text: "Play" },
     });
     expect(

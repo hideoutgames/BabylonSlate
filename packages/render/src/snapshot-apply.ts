@@ -429,6 +429,7 @@ function stampOverlayPick(
       overlayHitTest: command.hitTest,
       overlayActorGuid: command.actorGuid,
       overlayHasButton: command.hasButton === true,
+      overlayButtonComponentId: command.buttonComponentId,
     };
     if (command.hitTest) {
       target.isPickable = command.hitTest !== "ignore";

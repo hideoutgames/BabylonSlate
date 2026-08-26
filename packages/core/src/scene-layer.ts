@@ -194,6 +194,7 @@ export type OverlayPointerHit = {
   actorGuid: string;
   hitTest: SceneLayerHitTest;
   hasButton?: boolean;
+  componentId?: string;
 };
 
 export type OverlayPointerWalkResult = {

@@ -145,6 +145,7 @@ export type ControlMessage =
         | "onClick"
         | "onPressStart"
         | "onPressEnd";
+      componentId?: string;
     }
   | {
       type: "sceneLayerResize";
@@ -230,6 +231,8 @@ export type CommandMessage =
       hitTest?: "ignore" | "block" | "passThrough";
       /** Overlay actor has a `2DButtonComponent`. */
       hasButton?: boolean;
+      /** Prefab / live guid of the sole `2DButtonComponent` when there is one. */
+      buttonComponentId?: string;
       /** Primitive mesh kind from MeshComponent (`box`, `sphere`, …). */
       meshKind?: string | null;
       light?: {

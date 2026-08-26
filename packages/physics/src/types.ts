@@ -79,6 +79,8 @@ export type PhysicsContactEvent = {
   kind: "hit" | "overlapBegin" | "overlapEnd";
   actorAId: string;
   actorBId: string;
+  colliderAId?: string;
+  colliderBId?: string;
   location: Vec3;
   normal: Vec3;
 };

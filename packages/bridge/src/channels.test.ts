@@ -171,6 +171,7 @@ describe("Play session commands", () => {
       layerId: "layer-1",
       actorGuid: "banner",
       event: "onClick",
+      componentId: "btn-1",
     } satisfies ControlMessage;
     expect(controlType(control)).toBe("sceneLayerPointer");
   });

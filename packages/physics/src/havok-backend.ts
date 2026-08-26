@@ -507,6 +507,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     if (!kind) return;
     let a = actorAId;
     let b = actorBId;
+    let colliderAId = this.firstColliderIdForActor(actorAId);
+    let colliderBId = this.firstColliderIdForActor(actorBId);
     let normal = {
       x: event.normal?.x ?? 0,
       y: event.normal?.y ?? 1,
@@ -516,6 +518,9 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       const swap = a;
       a = b;
       b = swap;
+      const swapCollider = colliderAId;
+      colliderAId = colliderBId;
+      colliderBId = swapCollider;
       normal = { x: -normal.x, y: -normal.y, z: -normal.z };
     }
     const key = `${kind}|${a}|${b}`;
@@ -530,6 +535,8 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       kind,
       actorAId: a,
       actorBId: b,
+      ...(colliderAId ? { colliderAId } : {}),
+      ...(colliderBId ? { colliderBId } : {}),
       location: {
         x: event.point?.x ?? 0,
         y: event.point?.y ?? 0,
@@ -537,6 +544,14 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       },
       normal,
     });
+  }
+
+  private firstColliderIdForActor(actorId: string): string | undefined {
+    for (const [id, collider] of this.colliders) {
+      const body = this.bodies.get(collider.desc.bodyId);
+      if (body?.desc.actorId === actorId) return id;
+    }
+    return undefined;
   }
 
   private actorIdForPhysicsBody(body: PhysicsBody | undefined): string | null {

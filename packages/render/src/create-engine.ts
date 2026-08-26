@@ -390,6 +390,7 @@ export interface CreateEngineOptions {
       | "onClick"
       | "onPressStart"
       | "onPressEnd";
+    componentId?: string;
   }) => void;
   /** Overlay 2DAnchor frustum in world units (height 9, width 9 * aspect). */
   onSceneLayerResize?: (size: {
