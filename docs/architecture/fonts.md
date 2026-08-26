@@ -31,7 +31,7 @@ See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
 
 ## Overlay 2D Text (optional MSDF)
 
-`2DTextComponent` / `2DRichTextComponent` default to **Bitmap**. Each non-whitespace glyph is rasterized (canvas `fillText` after `FontFace` load, else the bundled 5×7) and packed onto a shared RGBA atlas; letter quads sample that atlas instead of a solid unlit fill. **MSDF** is enabled in Details only when the Font has both JSON and PNG. Three equivalent import paths, all using the platform picker (`pickImportFiles`, multi-select `.json,.png`):
+`2DTextComponent` / `2DRichTextComponent` default to **Bitmap**. Each non-whitespace glyph is rasterized (canvas `fillText` after `FontFace` load when the alpha is letter-shaped, else the bundled 5×7) and packed onto a shared RGBA atlas; letter quads sample that atlas instead of a solid unlit fill. **MSDF** is enabled in Details only when the Font has both JSON and PNG. Three equivalent import paths, all using the platform picker (`pickImportFiles`, multi-select `.json,.png`):
 
 1. Content Browser **Import** — JSON + PNG together create a Font when the family is new, or attach to an existing Font.
 2. Font document **Import MSDF Atlas…** (`data-testid="font-import-msdf"`) — always attaches to the open Font.

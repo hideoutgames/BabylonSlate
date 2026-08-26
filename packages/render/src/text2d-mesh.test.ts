@@ -62,7 +62,7 @@ describe("createText2DMesh", () => {
     for (const child of children) {
       const material = child.material as StandardMaterial;
       expect(
-        material.opacityTexture ?? material.emissiveTexture ?? material.diffuseTexture,
+        material.diffuseTexture ?? material.opacityTexture ?? material.emissiveTexture,
       ).toBeTruthy();
       const uvs = child.getVerticesData("uv");
       expect(uvs?.length).toBe(8);

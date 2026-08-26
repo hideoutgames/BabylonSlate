@@ -34,6 +34,54 @@ describe("rasterizeBitmapGlyph", () => {
     expect(opaque).toBeLessThan(total);
   });
 
+  it("falls back to the 5x7 bitmap when canvas paints a solid rectangle", () => {
+    const previous = (globalThis as { document?: unknown }).document;
+    (globalThis as { document: unknown }).document = {
+      createElement: () => ({
+        width: 1,
+        height: 1,
+        getContext() {
+          return {
+            font: "",
+            textBaseline: "top",
+            textAlign: "left",
+            fillStyle: "",
+            strokeStyle: "",
+            lineJoin: "",
+            miterLimit: 0,
+            lineWidth: 0,
+            measureText: () => ({
+              width: 16,
+              actualBoundingBoxAscent: 16,
+              actualBoundingBoxDescent: 4,
+            }),
+            clearRect() {},
+            fillText() {},
+            strokeText() {},
+            getImageData: (_x: number, _y: number, w: number, h: number) => {
+              const data = new Uint8ClampedArray(w * h * 4);
+              data.fill(255);
+              return { data };
+            },
+          };
+        },
+      }),
+    };
+    try {
+      const cell = rasterizeBitmapGlyph("A", STYLE);
+      const opaque = opaqueCount(cell.pixels);
+      const total = cell.width * cell.height;
+      expect(opaque).toBeGreaterThan(0);
+      expect(opaque).toBeLessThan(total * 0.9);
+    } finally {
+      if (previous === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        (globalThis as { document: unknown }).document = previous;
+      }
+    }
+  });
+
   it("keys unique cells by glyph, size, weight, and color", () => {
     expect(bitmapGlyphKey("A", STYLE, "sans-serif")).not.toBe(
       bitmapGlyphKey("B", STYLE, "sans-serif"),

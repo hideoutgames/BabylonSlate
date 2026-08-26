@@ -54,11 +54,14 @@ function channel(color: [number, number, number], index: number): number {
   return Math.max(0, Math.min(255, Math.round(color[index]! * 255)));
 }
 
-function hasOpaquePixel(pixels: Uint8ClampedArray): boolean {
+function isLetterShapedAlpha(pixels: Uint8ClampedArray, width: number, height: number): boolean {
+  const total = width * height;
+  if (total <= 0) return false;
+  let opaque = 0;
   for (let i = 3; i < pixels.length; i += 4) {
-    if ((pixels[i] ?? 0) > 8) return true;
+    if ((pixels[i] ?? 0) > 8) opaque += 1;
   }
-  return false;
+  return opaque > 0 && opaque < total * 0.9;
 }
 
 function nextPowerOfTwo(value: number): number {
@@ -174,7 +177,7 @@ function tryCanvasRasterize(
   ctx.fillStyle = cssRgb(style.color);
   ctx.fillText(ch, x, y);
   const image = ctx.getImageData(0, 0, width, height);
-  if (!hasOpaquePixel(image.data)) return null;
+  if (!isLetterShapedAlpha(image.data, width, height)) return null;
   return { key, width, height, pixels: image.data };
 }
 

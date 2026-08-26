@@ -203,9 +203,11 @@ function bitmapGlyphMaterial(scene: Scene, name: string, atlas: Texture): Standa
   material.diffuseColor = Color3.Black();
   material.specularColor = Color3.Black();
   material.emissiveTexture = atlas;
-  material.opacityTexture = atlas;
+  material.diffuseTexture = atlas;
   atlas.hasAlpha = true;
-  material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+  material.useAlphaFromDiffuseTexture = true;
+  material.transparencyMode = Material.MATERIAL_ALPHATEST;
+  material.alphaCutOff = 0.4;
   material.metadata = { ...(material.metadata ?? {}), bitmapAtlas: true };
   return material;
 }
