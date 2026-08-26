@@ -75,6 +75,7 @@ type QueuedCommand = Extract<
   CommandMessage,
   | { type: "playSound" }
   | { type: "stopSound" }
+  | { type: "setVoiceGain" }
   | { type: "setChannelVolume" }
   | { type: "setGlobalVolume" }
 >;
@@ -109,6 +110,7 @@ function isAudioCommand(command: CommandMessage): command is QueuedCommand {
   return (
     command.type === "playSound" ||
     command.type === "stopSound" ||
+    command.type === "setVoiceGain" ||
     command.type === "setChannelVolume" ||
     command.type === "setGlobalVolume"
   );
@@ -138,6 +140,7 @@ export class AudioService {
   private readonly cache: AudioBufferCache;
   private readonly ownedCache: boolean;
   private readonly onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
+  private readonly onVoiceEnded?: (voiceId: string) => void;
   private readonly loadSourceBytes?: AudioSourceBytesLoader;
   private maxVoices: number;
   private library: AudioLibrary = emptyLibrary();
@@ -173,6 +176,7 @@ export class AudioService {
     backend: AudioPlaybackBackend;
     cache?: AudioBufferCache;
     onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
+    onVoiceEnded?: (voiceId: string) => void;
     loadSourceBytes?: AudioSourceBytesLoader;
     now?: () => number;
     random?: () => number;
@@ -184,6 +188,7 @@ export class AudioService {
     this.maxVoices = Math.max(1, options.maxVoices ?? AUDIO_MAX_CONCURRENT_VOICES);
     this.cache.addEvictListener((guid) => this.releaseEvictedClip(guid));
     this.onDiagnostic = options.onDiagnostic;
+    this.onVoiceEnded = options.onVoiceEnded;
     this.loadSourceBytes = options.loadSourceBytes;
     this.now = options.now ?? (() => performance.now());
     this.random = options.random ?? Math.random;
@@ -191,6 +196,7 @@ export class AudioService {
       const voice = this.voices.get(voiceId);
       if (!voice || voice.loop) return;
       this.stopVoice(voiceId);
+      this.onVoiceEnded?.(voiceId);
     };
     this.publishStats();
     void this.backend.warmAsync().catch(() => undefined);
@@ -438,6 +444,13 @@ export class AudioService {
     }
     if (command.type === "stopSound") {
       this.stopVoice(command.voiceId);
+      return;
+    }
+    if (command.type === "setVoiceGain") {
+      const voice = this.voices.get(command.voiceId);
+      if (!voice) return;
+      voice.playCallVolume = clampAudioGain(command.volume);
+      this.refreshVoiceGains();
       return;
     }
     await this.play(command);

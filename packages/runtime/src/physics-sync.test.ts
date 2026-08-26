@@ -785,3 +785,50 @@ describe("PhysicsWorldSync blocking volume", () => {
     sync.dispose();
   });
 });
+
+describe("PhysicsWorldSync live component updates", () => {
+  it("applyComponent mass changes how far an impulse moves the body", () => {
+    const world = createWorld();
+    const actor = spawnBoxActor(world, {
+      guid: "hero",
+      motionType: "dynamic",
+    });
+    const rigid = actor.components.find(
+      (component) => component.classId === "RigidBodyComponent",
+    )!;
+    rigid.setVariable("gravityScale", 0);
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+    rigid.setVariable("mass", 10);
+    sync.applyComponent(rigid);
+    sync.addImpulse("hero", { x: 10, y: 0, z: 0 }, 1);
+    backend.step(1 / 60);
+    const transform = backend.getBodyTransform("body:hero");
+    expect(transform!.position.x).toBeCloseTo(1 / 60, 5);
+    sync.dispose();
+  });
+
+  it("applyComponent isTrigger flips a blocking overlap to a trigger begin", () => {
+    const world = createWorld();
+    spawnBoxActor(world, { guid: "a", motionType: "static" });
+    const other = spawnBoxActor(world, {
+      guid: "b",
+      motionType: "static",
+      position: { x: 0.25, y: 0, z: 0 },
+    });
+    const collider = other.components.find(
+      (component) => component.classId === "ColliderComponent",
+    )!;
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual(["hit"]);
+    collider.setVariable("isTrigger", true);
+    sync.applyComponent(collider);
+    expect(backend.pollContacts().map((event) => event.kind)).toEqual([
+      "overlapBegin",
+    ]);
+    sync.dispose();
+  });
+});

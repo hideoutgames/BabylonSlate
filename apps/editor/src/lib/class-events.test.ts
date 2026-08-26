@@ -236,4 +236,12 @@ describe("ensureEventNodeOnGraph", () => {
       }),
     ).toBe(true);
   });
+
+  it("allows leftover audio-finished catalog nodes on Actor graphs", () => {
+    expect(
+      isScriptCatalogNodeAllowed("flow.event.audioFinished", {
+        parentClass: "Actor",
+      }),
+    ).toBe(true);
+  });
 });

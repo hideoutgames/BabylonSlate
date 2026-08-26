@@ -153,7 +153,8 @@ export type ControlMessage =
       frustumHeight: number;
       canvasWidth?: number;
       canvasHeight?: number;
-    };
+    }
+  | { type: "audioVoiceEnded"; voiceId: string };
 
 export type DebugColliderPrimitive = {
   id: string;
@@ -237,6 +238,10 @@ export type CommandMessage =
       buttonComponentId?: string;
       /** Primitive mesh kind from MeshComponent (`box`, `sphere`, …). */
       meshKind?: string | null;
+      /** Sprite / tilemap sorting layer name (project `twoD.sortingLayers`). */
+      sortingLayer?: string;
+      /** Sprite / tilemap order within that sorting layer. */
+      orderInLayer?: number;
       light?: {
         color: [number, number, number];
         intensity: number;
@@ -285,6 +290,8 @@ export type CommandMessage =
           underline: boolean;
           wrapWidth: number;
         };
+        sortingLayer?: string;
+        orderInLayer?: number;
       }>;
       skybox?: {
         size: number;
@@ -446,6 +453,7 @@ export type CommandMessage =
       voiceId?: string;
     }
   | { type: "stopSound"; voiceId: string }
+  | { type: "setVoiceGain"; voiceId: string; volume: number }
   | { type: "setChannelVolume"; channelGuid: string; volume: number }
   | { type: "setGlobalVolume"; volume: number }
   | {

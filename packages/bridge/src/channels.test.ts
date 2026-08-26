@@ -245,3 +245,22 @@ describe("Particle commands", () => {
     expect(stop.playing).toBe(false);
   });
 });
+
+describe("Audio live commands", () => {
+  it("setVoiceGain is a CommandMessage variant", () => {
+    const command = {
+      type: "setVoiceGain",
+      voiceId: "audio-1",
+      volume: 0.25,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setVoiceGain");
+  });
+
+  it("audioVoiceEnded is a ControlMessage variant", () => {
+    const control = {
+      type: "audioVoiceEnded",
+      voiceId: "audio-1",
+    } satisfies ControlMessage;
+    expect(controlType(control)).toBe("audioVoiceEnded");
+  });
+});
