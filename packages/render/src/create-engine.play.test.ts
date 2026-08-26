@@ -34,8 +34,10 @@ class FakeCanvas {
   height = 256;
   clientWidth = 256;
   clientHeight = 256;
+  readonly style = { cursor: "", touchAction: "" };
   readonly listeners = new Map<string, Set<EventListener>>();
   capturedPointers: number[] = [];
+  prevented = 0;
 
   addEventListener(type: string, listener: EventListener): void {
     const set = this.listeners.get(type) ?? new Set<EventListener>();
@@ -66,11 +68,61 @@ class FakeCanvas {
   }
 
   emit(type: string, event: Record<string, unknown>): void {
-    const payload = { preventDefault: () => {}, ...event } as unknown as Event;
+    const payload = {
+      ...event,
+      preventDefault: () => {
+        this.prevented += 1;
+      },
+    } as unknown as Event;
     for (const listener of this.listeners.get(type) ?? []) {
       listener(payload);
     }
   }
+}
+
+function spawnOverlayButton(
+  handle: ReturnType<typeof createEngine>,
+  layerId = "hud",
+): void {
+  handle.applyCommand({
+    type: "sceneLayerCreate",
+    layerId,
+    assetGuid: "hud-asset",
+    zOrder: 0,
+    ownerSceneGuid: null,
+    postProcessStack: [],
+  });
+  handle.applyCommand({
+    type: "spawn",
+    slotId: 1,
+    actorGuid: "btn",
+    classId: "SceneLayerActor",
+    sceneLayerId: layerId,
+  });
+  handle.applyCommand({
+    type: "assignMesh",
+    slotId: 1,
+    meshAssetGuid: null,
+    meshKind: "2dbutton",
+    actorGuid: "btn",
+    hitTest: "block",
+    hasButton: true,
+  });
+}
+
+function pointerAt(
+  x: number,
+  y: number,
+  extras: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    pointerId: 1,
+    clientX: x,
+    clientY: y,
+    button: 0,
+    pointerType: "touch",
+    ...extras,
+  };
 }
 
 describe("Play createEngine view", () => {
@@ -1538,5 +1590,76 @@ describe("Play createEngine view", () => {
     expect(camera.orthoLeft).toBeCloseTo(-5 * (4 / 3));
     expect(camera.orthoRight).toBeCloseTo(5 * (4 / 3));
     expect(handle.scene.activeCamera).toBe(camera);
+  });
+
+  it("emits 2DButton onClick from touch down/up and from pointercancel over the button", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const canvas = new FakeCanvas();
+    const events: Array<{ event: string; actorGuid: string }> = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      playMode: true,
+      onSceneLayerPointer: (event) => {
+        events.push({ event: event.event, actorGuid: event.actorGuid });
+      },
+    });
+    handles.push(handle);
+    spawnOverlayButton(handle);
+
+    canvas.emit("pointerdown", pointerAt(128, 128));
+    expect(canvas.capturedPointers).toEqual([1]);
+    expect(canvas.prevented).toBeGreaterThan(0);
+    canvas.emit("pointerup", pointerAt(128, 128));
+    expect(events).toEqual(
+      expect.arrayContaining([
+        { event: "onPressStart", actorGuid: "btn" },
+        { event: "onClick", actorGuid: "btn" },
+      ]),
+    );
+
+    events.length = 0;
+    canvas.emit("pointerdown", pointerAt(128, 128, { pointerId: 2 }));
+    canvas.emit("pointercancel", pointerAt(128, 128, { pointerId: 2 }));
+    expect(events).toEqual(
+      expect.arrayContaining([
+        { event: "onPressEnd", actorGuid: "btn" },
+        { event: "onClick", actorGuid: "btn" },
+      ]),
+    );
+
+    const beforeTouch = canvas.prevented;
+    canvas.emit("touchstart", {});
+    canvas.emit("touchmove", {});
+    expect(canvas.prevented).toBe(beforeTouch + 2);
+  });
+
+  it("clicks a 2DButton through the touchMinTargetPx floor without growing the mesh", () => {
+    const engine = sharedEngine();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    const canvas = new FakeCanvas();
+    const events: string[] = [];
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: engine,
+      playMode: true,
+      touchMinTargetPx: 44,
+      onSceneLayerPointer: (event) => {
+        events.push(event.event);
+      },
+    });
+    handles.push(handle);
+    spawnOverlayButton(handle);
+    const mesh = handle.sceneLayerScenes()[0]?.scene.getMeshByName("actor-1");
+    mesh?.refreshBoundingInfo(false, false);
+    const extent = mesh?.getBoundingInfo().boundingBox.extendSize;
+    expect(extent?.x).toBeCloseTo(0.5);
+
+    // 1×1 plane is ~14 CSS px from center; 16 px misses the visual but sits
+    // inside the 44 px screen-space floor.
+    canvas.emit("pointerdown", pointerAt(128 + 16, 128));
+    canvas.emit("pointerup", pointerAt(128 + 16, 128));
+    expect(events).toContain("onClick");
   });
 });

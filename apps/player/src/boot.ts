@@ -99,6 +99,7 @@ export function startPlayer(options: {
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
     pixelPerfect: content.pixelPerfect,
+    touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     textureBytes: game.textureBytes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,

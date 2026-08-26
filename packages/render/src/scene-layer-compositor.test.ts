@@ -1,5 +1,5 @@
-import { Camera, NullEngine, Scene } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { Camera, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 
 describe("SceneLayerCompositor", () => {
@@ -147,5 +147,53 @@ describe("SceneLayerCompositor", () => {
     compositor.setPostProcess("hud", []);
     expect(layer.camera.outputRenderTarget).toBeNull();
     expect(layer.scene.autoClear).toBe(false);
+  });
+
+  it("inflates 2DButton picks to touchMinTargetPx without changing the visual", () => {
+    const { engine, compositor } = world();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(256);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(256);
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const layer = compositor.layers()[0]!;
+    const mesh = MeshBuilder.CreatePlane(
+      "actor-1",
+      { width: 0.32, height: 0.32 },
+      layer.scene,
+    );
+    mesh.isPickable = true;
+    mesh.metadata = {
+      overlayActorGuid: "btn",
+      overlayHitTest: "block",
+      overlayHasButton: true,
+    };
+    mesh.computeWorldMatrix(true);
+    mesh.refreshBoundingInfo(false, false);
+
+    const missX = 128 + 20;
+    const exact = compositor.pickHits(missX, 128);
+    expect(exact.some((hit) => hit.actorGuid === "btn")).toBe(false);
+
+    const inflated = compositor.pickHits(missX, 128, {
+      minTargetPx: 44,
+      canvasCssHeight: 256,
+    });
+    expect(inflated).toEqual([
+      {
+        layerId: "hud",
+        actorGuid: "btn",
+        hitTest: "block",
+        hasButton: true,
+      },
+    ]);
+    mesh.refreshBoundingInfo(false, false);
+    const extent = mesh.getBoundingInfo().boundingBox.extendSize;
+    expect(extent.x * 2).toBeCloseTo(0.32);
   });
 });

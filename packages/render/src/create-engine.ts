@@ -112,6 +112,7 @@ import { SceneLayerCompositor } from "./scene-layer-compositor";
 import {
   applyOverlayPointer,
   createOverlayPointerState,
+  type OverlayPointerPhase,
 } from "./scene-layer-pointer";
 import {
   sceneLayerFrustumSize,
@@ -295,6 +296,8 @@ export interface CreateEngineOptions {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   pixelsPerUnit?: number;
+  /** Overlay 2DButton pick floor in CSS pixels (Engine Settings `touchMinTargetPx`). */
+  touchMinTargetPx?: number;
   /** Project `twoD.pixelPerfect` — snap the Play camera, not the editor camera. */
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
@@ -833,14 +836,18 @@ export function createEngine(
   };
 
   const dispatchOverlayPointer = (
-    phase: "move" | "down" | "up",
+    phase: OverlayPointerPhase,
     canvasX: number,
     canvasY: number,
   ): boolean => {
     if (!sceneLayerCompositor) return false;
     const mapped = mapCanvasPointer(scene, canvasX, canvasY, pointerCanvas());
+    const canvasSize = pointerCanvas();
     const walked = walkOverlayPointerHits(
-      sceneLayerCompositor.pickHits(mapped.x, mapped.y),
+      sceneLayerCompositor.pickHits(mapped.x, mapped.y, {
+        minTargetPx: options.touchMinTargetPx ?? 44,
+        canvasCssHeight: canvasSize.height,
+      }),
     );
     const events = applyOverlayPointer(
       overlayPointerState,
@@ -1289,6 +1296,8 @@ export function createEngine(
     };
   };
   const onPointerDown = (event: PointerEvent) => {
+    event.preventDefault();
+    canvas.setPointerCapture?.(event.pointerId);
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -1309,11 +1318,21 @@ export function createEngine(
     const { x, y } = overlayPointerCanvasCoords(event);
     dispatchOverlayPointer("up", x, y);
   };
+  const onPointerCancel = (event: PointerEvent) => {
+    const { x, y } = overlayPointerCanvasCoords(event);
+    dispatchOverlayPointer("cancel", x, y);
+  };
+  const onOverlayTouch = (event: TouchEvent) => {
+    event.preventDefault();
+  };
   if (!options.editor) {
     canvas.addEventListener("pointerdown", onPointerDown);
     if (options.playMode && sceneLayerCompositor) {
       canvas.addEventListener("pointermove", onPointerMove);
       canvas.addEventListener("pointerup", onPointerUp);
+      canvas.addEventListener("pointercancel", onPointerCancel);
+      canvas.addEventListener("touchstart", onOverlayTouch, { passive: false });
+      canvas.addEventListener("touchmove", onOverlayTouch, { passive: false });
     }
   }
 
@@ -1343,6 +1362,9 @@ export function createEngine(
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerCancel);
+      canvas.removeEventListener("touchstart", onOverlayTouch);
+      canvas.removeEventListener("touchmove", onOverlayTouch);
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisibility);
       }
@@ -1519,7 +1541,11 @@ export function createEngine(
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
     pickAt: (x, y) => {
       const mapped = mapCanvasPointer(scene, x, y, pointerCanvas());
-      const overlayHit = sceneLayerCompositor?.pickAt(mapped.x, mapped.y);
+      const canvasSize = pointerCanvas();
+      const overlayHit = sceneLayerCompositor?.pickAt(mapped.x, mapped.y, {
+        minTargetPx: options.touchMinTargetPx ?? 44,
+        canvasCssHeight: canvasSize.height,
+      });
       if (overlayHit?.blocked || overlayHit?.actorGuid) {
         return { meshName: overlayHit.meshName, slotId: overlayHit.slotId };
       }
