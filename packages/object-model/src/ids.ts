@@ -43,6 +43,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "2DTextureComponent",
   "2DTextComponent",
   "2DRichTextComponent",
+  "2DPanelComponent",
 ] as const;
 
 export type EngineComponentClassId =
@@ -55,6 +56,7 @@ export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DTextureComponent",
   "2DTextComponent",
   "2DRichTextComponent",
+  "2DPanelComponent",
 ] as const;
 
 export type SceneLayerExclusiveComponentClassId =

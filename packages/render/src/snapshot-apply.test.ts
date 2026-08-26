@@ -106,6 +106,26 @@ describe("createPlayMesh", () => {
     expect(button.isPickable).toBe(true);
   });
 
+  it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const binding = createSnapshotSceneBinding();
+    binding.pixelsPerUnit = 100;
+    binding.overlayPanelProps.set(4, {
+      source: "texture",
+      textureGuid: "tex-1",
+      materialGuid: null,
+      marginLeft: 10,
+      marginRight: 10,
+      marginTop: 10,
+      marginBottom: 10,
+      hitTest: "ignore",
+    });
+    const mesh = createPlayMesh(handle.scene, 4, "2dpanel", "tex-1", binding);
+    expect((mesh.material as StandardMaterial).disableLighting).toBe(true);
+    expect(mesh.getTotalVertices()).toBe(36);
+  });
+
   it("sizes a 2DTexture plane to sniffed PNG pixels / pixelsPerUnit", () => {
     const handle = createTestEngine();
     handles.push(handle);

@@ -257,6 +257,7 @@ export function overlayTextureGuidsFromScene(
   const seen = new Set<string>();
   for (const guid of [
     ...componentGuidsFromScene(scene, "2DTextureComponent", ["textureGuid"]),
+    ...componentGuidsFromScene(scene, "2DPanelComponent", ["textureGuid"]),
     ...text2dImageGuidsFromScene(scene),
   ]) {
     if (seen.has(guid)) continue;
@@ -571,6 +572,7 @@ export function materialAssetGuidsFromScene(
   for (const guid of [
     ...componentGuidsFromScene(scene, "MeshComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
+    ...componentGuidsFromScene(scene, "2DPanelComponent", ["materialGuid"]),
   ]) {
     if (seen.has(guid)) continue;
     seen.add(guid);

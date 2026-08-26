@@ -144,6 +144,7 @@ export class World {
     zOrder: number;
     ownerSceneGuid?: string | null;
     postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    layerBounds?: { width: number; height: number };
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }): SceneLayer {

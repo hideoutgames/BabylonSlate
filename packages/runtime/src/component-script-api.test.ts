@@ -450,7 +450,9 @@ describe("component script API", () => {
     runtime.realizePlayWorld();
     runtime.createSceneLayer("hud", 0);
     const actor = runtime.getWorld().findActor("badge");
-    expect(actor?.transform.position.x).toBe(-5);
+    // normalizeSceneLayer bakes offset 1 into (-7, 4) and zeros offsets.
+    // Set offsetX 3 must re-apply; a store-only write would leave x at -7.
+    expect(actor?.transform.position.x).toBe(-4);
     expect(actor?.transform.position.y).toBe(4);
     runtime.stop();
   });

@@ -1,4 +1,4 @@
-import { Camera, MeshBuilder, NullEngine, Scene } from "@babylonjs/core";
+import { Camera, MeshBuilder, Matrix, NullEngine, Scene, UniversalCamera, Vector3 } from "@babylonjs/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 
@@ -195,5 +195,62 @@ describe("SceneLayerCompositor", () => {
     mesh.refreshBoundingInfo(false, false);
     const extent = mesh.getBoundingInfo().boundingBox.extendSize;
     expect(extent.x * 2).toBeCloseTo(0.32);
+  });
+
+  it("keeps overlay NDC stable when the world camera translates", () => {
+    const { scene, compositor, engine } = world();
+    const worldCam = new UniversalCamera("world", new Vector3(0, 0, -10), scene);
+    scene.activeCamera = worldCam;
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: "level",
+      postProcessStack: [],
+    });
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "pause",
+      assetGuid: "pause-asset",
+      zOrder: 1,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    expect(compositor.layers()).toHaveLength(2);
+    const layer = compositor.layers()[0]!;
+    expect(layer.scene.clearColor.a).toBe(0);
+    const mesh = MeshBuilder.CreatePlane("overlay-quad", { size: 1 }, layer.scene);
+    mesh.position.set(2, 1, 0);
+    mesh.computeWorldMatrix(true);
+    layer.scene.updateTransformMatrix();
+    const viewport = layer.camera.viewport.toGlobal(
+      engine.getRenderWidth(),
+      engine.getRenderHeight(),
+    );
+    const before = Vector3.Project(
+      mesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      layer.scene.getTransformMatrix(),
+      viewport,
+    );
+    worldCam.position.x += 12;
+    worldCam.position.y -= 4;
+    scene.updateTransformMatrix();
+    layer.scene.updateTransformMatrix();
+    const after = Vector3.Project(
+      mesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      layer.scene.getTransformMatrix(),
+      viewport,
+    );
+    expect(mesh.parent).toBeNull();
+    expect(layer.camera.parent).toBeNull();
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
+    expect(compositor.layers().map((entry) => entry.layerId).sort()).toEqual([
+      "hud",
+      "pause",
+    ]);
   });
 });

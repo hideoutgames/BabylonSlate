@@ -32,15 +32,15 @@ Content Browser type `SceneLayer` → document kind `scene-layer`. Payload is a 
 
 Editor tabs convert to a locked 2D `SerializedScene` (`sceneLayerToEditorScene`) so Viewport / Outliner / Details reuse the scene shell. Save writes `SerializedSceneLayer` (`editorSceneToSceneLayer`).
 
-DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle; lock Unlit shading. Overlay Details (nothing selected): Name, Gravity, Timestep, Post Process. No Default Camera, fog/IBL, lights, or 3D/2D physics-world picker.
+DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle; lock Unlit shading. Overlay Details (nothing selected): Name, Gravity, Timestep, Post Process, **Layer Width**, **Layer Height**. No Default Camera, fog/IBL, lights, or 3D/2D physics-world picker. Layer Width/Height are the orange 2D camera outline (`cameraBounds2D` in the editor scene, `settings.layerBounds` on the SceneLayer document; default **16×9**). That rectangle is the design canvas; Play / Preview Build / export stretch it to the full viewport.
 
 ## Object model
 
 `SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId`. `applyChangeScene` must not destroy them.
 
-**Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`, `2DText`, `2DRichText`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
+**Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`, `2DText`, `2DRichText`, `2DPanel`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
 
-Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses. World Scene Place Actors excludes them.
+Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses, plus overlay stamps **2D Anchor**, **2D Texture**, **2D Material**, **2D Button**, **2D Panel** (each a `SceneLayerActor` with that component). Those Overlay stamps are hidden on world Scenes via `placeActorsForHost({ overlay: true })`. 2D Text / Rich Text stay Add Component only. World Scene Place Actors excludes overlay stamps and `SceneLayerActor` classes.
 
 ## Overlay 2D physics
 
@@ -56,19 +56,27 @@ Extra unlit ortho `Scene`s on the shared Engine:
 - Layer with no PP: `autoClear = false` on color; clear depth so 2D quads sort.
 - Layer with PP: render to an RTT, run that camera stack, alpha-composite onto the framebuffer (Babylon camera PP would otherwise replace the world). Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.
 
-The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the Play compositor.
+The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the Play compositor. Its clear is **opaque black** (`environmentColor [0,0,0]`). Play / player overlay scenes stay transparent `(0,0,0,0)` over the world. Overlay cameras are independent orthographic views — they are **not** parented to the world camera, so translating the 3D view does not move overlay NDC.
 
 ## Hit test and 2DAnchor
 
-`HitTest` on `2DButton`, `2DMaterial`, `2DTexture`, `2DText`, and `2DRichText`: Ignore (default on texture/material/text), Block (default on button), Pass Through. Hit Test is a catalog Get/Set variable on those components (`propertyKey` `hitTest`); 2D Text / Rich Text also expose Renderer, Outline, Outline Color, Alignment, Bold, Italic, Underline, and Wrap Width. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / `2DText` / `2DRichText` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad.
+`HitTest` on `2DButton`, `2DMaterial`, `2DTexture`, `2DPanel`, `2DText`, and `2DRichText`: Ignore (default on texture/material/text/panel), Block (default on button), Pass Through. Hit Test is a catalog Get/Set variable on those components (`propertyKey` `hitTest`); 2D Text / Rich Text also expose Renderer, Outline, Outline Color, Alignment, Bold, Italic, Underline, and Wrap Width. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / `2DPanel` / `2DText` / `2DRichText` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad. A **child** `2DButton` under a visual actor skips that default quad and picks the **parent** visual; graph events still fire on the actor that owns `2DButtonComponent`.
 
 Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene, honors HitTest, then optionally the world. Overlay scenes participate in pointer-move picks for hover; world scenes keep `skipPointerMovePicking: true`. Hits still walk sibling visual Hit Test (`Ignore` / `Block` / `Pass Through`); the **button** is what opts the Actor into clickable overlay interaction.
 
 `2DTexture` planes size to sniffed GPU bytes (KTX2, then PNG/JPEG) divided by Project Settings `pixelsPerUnit`. Missing guid or bytes stays **1×1**. `2DMaterial` and the default `2DButton` quad stay 1×1. Details has no Size field and Play does not write actor scale.
 
+**2D Panel** is a 9-slice unlit plane (`source` texture or material, pixel margins, Hit Test Ignore). Corners stay `marginPx / pixelsPerUnit`; edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder.
+
+Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / solo `2DButton`. A button with a sibling or parent visual does not add an extra quad (same as Play).
+
 `2DButton` uses the same graph events on mouse and touch. Play captures the pointer, `preventDefault`s `touchstart` / `touchmove`, and treats `pointercancel` like a release (click if still over the button). Engine Settings `touchMinTargetPx` (default 44) is a **screen-space pick floor** through the overlay frustum — it inflates the pick AABB, not the visual.
 
-`2DAnchor` pins actor XY to a 9-point layer/screen origin plus offset. On canvas / resolution change the worker reapplies XY so Get Actor Location matches the visual.
+`2DAnchor` maps authored XY from the orange layer bounds onto the Play frustum. Origin is the 9-point on the orange rect (and the matching point on screen); `relative = (authoredXY + offset − origin) / layerBounds`; `runtimeXY = screenOrigin + relative × frustumSize`. Offsets are an extra design-space inset (default 0). Authoring is WYSIWYG inside the orange box; Play no longer ignores authored XY.
+
+Outliner parent/child: a `2DAnchor` on actor A, or on a **direct child** of A, pins **A** (the visual parent). The child helper stays at local origin.
+
+On canvas / resolution change the worker reapplies XY from a cached design pose so Get Actor Location matches the visual. `normalizeSceneLayer` bakes legacy identity-transform + non-zero `offsetX`/`offsetY` into actor XY (old “1 world unit from the corner”) so existing 16×9 layouts do not jump; later resizes use relative mapping.
 
 Pointer / click / press graph events come from adding a `2DButtonComponent` (same attach-gated pattern as Collider overlap). Add Event is empty of On Mouse Enter / Leave / Click / Press Start / Press End until a 2D Button is on the Actor; world Actors never see those rows (`2DButton` is overlay-exclusive). Multiple buttons → one override per event per instance (`Event On Click (2D Button 2)`). Dispatch keys hover/press by `actorGuid:componentId`. Overlay actors with only `2DText` / `2DTexture` still render; they do not get click/hover graph events until a 2D Button is added. Hit Test is a **variable** on the button (and sibling visuals for the pick walk), not an Add Event row. Old HUD event ids stay unmapped. SceneLayerActor has no native mouse stubs. There are no `onTouch*` nodes.
 
@@ -88,7 +96,7 @@ Register/Unregister pickers require `domain === "postProcess"`.
 
 ## Play / export / player
 
-Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, fonts, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid`, `2DMaterial.materialGuid`, overlay `fontAssetGuid`, and RichText `[img]` texture guids (those guids live inside the markup string, so export does not see them via a naive string walk). Player `activeScene` still swaps **world** only; compositor commands follow the worker.
+Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, fonts, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid`, `2DMaterial.materialGuid`, `2DPanel` texture/material guids, overlay `fontAssetGuid`, and RichText `[img]` texture guids (those guids live inside the markup string, so export does not see them via a naive string walk). Player `activeScene` still swaps **world** only; compositor commands follow the worker.
 
 ## 2D Text and 2D Rich Text
 

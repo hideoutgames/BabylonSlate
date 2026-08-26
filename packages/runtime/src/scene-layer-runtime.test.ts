@@ -298,8 +298,93 @@ describe("SceneLayer runtime compositor", () => {
     expect(actor?.transform.position.x).toBe(-7);
     expect(actor?.transform.position.y).toBe(4);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-15);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(8.5);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-14);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(8);
+  });
+
+  it("maps a 2DAnchor at the orange bottom-right with Bottom Left onto the screen bottom-right", () => {
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("badge", "Badge", {
+          classId: "SceneLayerActor",
+          transform: {
+            position: [8, -4.5, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "anchor",
+              classId: "2DAnchorComponent",
+              properties: { anchor: "bottomLeft", offsetX: 0, offsetY: 0 },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(8);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-4.5);
+    runtime.applySceneLayerResize(32, 18);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(16);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-9);
+  });
+
+  it("pins a parent actor when a child 2DAnchor is nested under it", () => {
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          transform: {
+            position: [8, -4.5, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "tex",
+              classId: "2DTextureComponent",
+              properties: { textureGuid: "tex-1" },
+            },
+          ],
+        }),
+        createActor("pin", "Pin", {
+          classId: "SceneLayerActor",
+          parentId: "banner",
+          components: [
+            {
+              id: "anchor",
+              classId: "2DAnchorComponent",
+              properties: { anchor: "bottomLeft" },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    runtime.applySceneLayerResize(32, 18);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(16);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-9);
+    expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
+    expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
   });
 
   it("invokes overlay button events on the actor class and ignores missing buttons", async () => {
@@ -579,5 +664,139 @@ describe("SceneLayer runtime compositor", () => {
         ? assign.parts?.some((part) => part.meshKind === "2dbutton")
         : false,
     ).toBe(false);
+  });
+
+  it("skips a child 2DButton quad, stamps the parent visual, and fires events on the button owner", async () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "tex",
+              classId: "2DTextureComponent",
+              properties: { textureGuid: "albedo-1" },
+            },
+          ],
+        }),
+        createActor("pin", "Pin", {
+          classId: "SceneLayerActor",
+          parentId: "banner",
+          components: [
+            { id: "btn", classId: "2DButtonComponent", properties: {} },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hud-script",
+        classId: "SceneLayerActor",
+        parentClassId: "Actor",
+        source:
+          'export function onClick(ctx) { ctx.log("log", "Click", String(ctx.self?.guid ?? "")); }',
+        anchors: [],
+        entryPoints: [
+          {
+            name: "onClick",
+            event: "onClick",
+            isAsync: false,
+            componentId: "btn",
+          },
+        ],
+      },
+    ]);
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    const assignBanner = commands.find(
+      (command) => command.type === "assignMesh" && command.actorGuid === "banner",
+    );
+    const assignPin = commands.find(
+      (command) => command.type === "assignMesh" && command.actorGuid === "pin",
+    );
+    expect(assignBanner).toMatchObject({
+      type: "assignMesh",
+      meshKind: "2dtexture",
+      hasButton: true,
+      buttonComponentId: "btn",
+    });
+    expect(assignPin).toBeUndefined();
+    runtime.applySceneLayerPointer({
+      type: "sceneLayerPointer",
+      layerId: "any",
+      actorGuid: "banner",
+      event: "onClick",
+    });
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "log" &&
+          command.category === "Click" &&
+          command.message === "pin",
+      ),
+    ).toBe(true);
+  });
+
+  it("emits a 2DPanel mesh with 9-slice margins", () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("frame", "Frame", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "panel",
+              classId: "2DPanelComponent",
+              properties: {
+                source: "texture",
+                textureGuid: "tex-panel",
+                marginLeft: 8,
+                marginRight: 8,
+                marginTop: 4,
+                marginBottom: 4,
+              },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    expect(
+      commands.find(
+        (command) => command.type === "assignMesh" && command.actorGuid === "frame",
+      ),
+    ).toMatchObject({
+      type: "assignMesh",
+      meshKind: "2dpanel",
+      meshAssetGuid: "tex-panel",
+      overlayPanel: {
+        source: "texture",
+        textureGuid: "tex-panel",
+        marginLeft: 8,
+        marginRight: 8,
+        marginTop: 4,
+        marginBottom: 4,
+      },
+    });
   });
 });

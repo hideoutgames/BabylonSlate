@@ -28,6 +28,20 @@ describe("engine script API catalog", () => {
     ]);
   });
 
+  it("exposes 2DPanel source, guids, margins, and Hit Test", () => {
+    const panel = engineScriptApiFor("2DPanelComponent");
+    expect(names(panel?.variables)).toEqual([
+      "Source",
+      "Texture",
+      "Material",
+      "Margin Left",
+      "Margin Right",
+      "Margin Top",
+      "Margin Bottom",
+      "Hit Test",
+    ]);
+  });
+
   it("exposes 2DButton mouse events and Hit Test, not SceneLayerActor natives", () => {
     expect(engineScriptApiFor("SceneLayerActor")).toBeUndefined();
     const button = engineScriptApiFor("2DButtonComponent");

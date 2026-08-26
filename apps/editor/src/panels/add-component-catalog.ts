@@ -144,6 +144,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Overlay",
   ),
   engineComponent(
+    "2DPanelComponent",
+    "2D Panel",
+    "Scalable 9-slice plane from a Texture or Material",
+    "Overlay",
+  ),
+  engineComponent(
     "RigidBodyComponent",
     "Rigid Body",
     "Physics body",
@@ -227,6 +233,17 @@ export function defaultPropertiesFor(
       return { materialGuid: null, hitTest: "ignore" };
     case "2DTextureComponent":
       return { textureGuid: null, hitTest: "ignore" };
+    case "2DPanelComponent":
+      return {
+        source: "texture",
+        textureGuid: null,
+        materialGuid: null,
+        marginLeft: 0,
+        marginRight: 0,
+        marginTop: 0,
+        marginBottom: 0,
+        hitTest: "ignore",
+      };
     case "2DTextComponent":
       return { ...parseText2DProperties({}) };
     case "2DRichTextComponent":

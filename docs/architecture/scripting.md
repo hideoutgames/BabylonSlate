@@ -322,6 +322,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `2DAnchorComponent` | Anchor, Offset X, Offset Y | — | — |
 | `2DButtonComponent` | Hit Test | — | mouse enter/leave/click/press |
 | `2DTextureComponent` / `2DMaterialComponent` | asset guid + Hit Test | — | — |
+| `2DPanelComponent` | Source, Texture, Material, margins, Hit Test | — | — |
 
 **Ref-only** (Get component pin, no catalog knobs): `AnimationGraphComponent` (use `anim.actor.*` nodes), `BehaviourTreeComponent` (BT graphs own activate/tick), `NavMeshComponent`, `NavMeshBlockerComponent`, `BlockingVolumeComponent` (bake/place-only).
 

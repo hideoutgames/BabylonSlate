@@ -20,8 +20,10 @@ import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
 import {
   DEFAULT_SORTING_LAYERS,
   emptySkyboxFaces,
+  parseOverlayPanelProperties,
   parseText2DProperties,
   parseText3DProperties,
+  type OverlayPanelProperties,
   type SkyboxFaces,
   type Text2DProperties,
   type Text3DProperties,
@@ -30,6 +32,7 @@ import type { ColliderShape } from "@babylonslate/physics";
 import type { SampledSnapshot } from "./snapshot-sync";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import { createOverlayTextureQuad } from "./overlay-texture-quad";
+import { createOverlayPanelMesh } from "./overlay-panel-mesh";
 import { applyModelMaterialSlots } from "./model-preview";
 import { beginSlotModelAnimLoad, createModelActorRoot, invalidateSlotAnimLoad } from "./glb-anim";
 import {
@@ -83,6 +86,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   skyboxProps: Map<number, { size: number; faces: SkyboxFaces }>;
   text3dProps: Map<number, Text3DProperties>;
   text2dProps: Map<number, Text2DProperties>;
+  overlayPanelProps: Map<number, OverlayPanelProperties>;
   /** Snap the Play camera to the pixel grid (project `twoD.pixelPerfect`). */
   pixelPerfect?: boolean;
   /** Reused each apply — no per-frame Set allocation. */
@@ -142,6 +146,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     skyboxProps: new Map(),
     text3dProps: new Map(),
     text2dProps: new Map(),
+    overlayPanelProps: new Map(),
     liveSlots: new Set(),
     meshKinds: new Map(),
     meshAssetGuids: new Map(),
@@ -371,6 +376,20 @@ export function applyAssignMesh(
       parseText2DProperties({}, { rich: meshKind === "2drichtext" }),
     );
   }
+  if (command.overlayPanel) {
+    binding.overlayPanelProps.set(
+      command.slotId,
+      parseOverlayPanelProperties(command.overlayPanel),
+    );
+  } else if (meshKind === "2dpanel") {
+    binding.overlayPanelProps.set(
+      command.slotId,
+      parseOverlayPanelProperties({
+        source: "texture",
+        textureGuid: command.meshAssetGuid,
+      }),
+    );
+  }
   if (command.camera) {
     binding.cameraProps.set(command.slotId, command.camera);
     if (command.camera.isDefault) {
@@ -597,6 +616,7 @@ function disposeSlotVisuals(
   binding.skyboxProps.delete(slotId);
   binding.text3dProps.delete(slotId);
   binding.text2dProps.delete(slotId);
+  binding.overlayPanelProps.delete(slotId);
   if (binding.shadowOwnerSlot === slotId) {
     binding.shadow?.dispose();
     binding.shadow = null;
@@ -691,6 +711,17 @@ export function createPlayMesh(
       applyAlbedoTexture(overlay, scene, payload?.textureGuid, binding);
       binding.spriteOverlays.set(slotId, overlay);
     }
+    return mesh;
+  }
+  if (meshKind === "2dpanel") {
+    const props =
+      binding?.overlayPanelProps.get(slotId) ??
+      parseOverlayPanelProperties({
+        source: "texture",
+        textureGuid: assetGuid,
+      });
+    const mesh = createOverlayPanelMesh(scene, name, props, binding);
+    mesh.isPickable = false;
     return mesh;
   }
   if (
@@ -901,6 +932,7 @@ export function applySnapshotToScene(
         binding.skyboxProps.delete(slotId);
         binding.text3dProps.delete(slotId);
         binding.text2dProps.delete(slotId);
+        binding.overlayPanelProps.delete(slotId);
         binding.lights.get(slotId)?.dispose();
         binding.lights.delete(slotId);
         binding.cameras.get(slotId)?.dispose();
