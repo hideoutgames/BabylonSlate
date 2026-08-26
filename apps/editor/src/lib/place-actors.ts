@@ -37,6 +37,15 @@ export type PlaceActorKind =
   | { type: "particle" }
   | { type: "empty" }
   | {
+      type: "overlay-2d";
+      classId:
+        | "2DAnchorComponent"
+        | "2DTextureComponent"
+        | "2DMaterialComponent"
+        | "2DButtonComponent"
+        | "2DPanelComponent";
+    }
+  | {
       type: "asset";
       name: string;
       guid: string;
@@ -124,14 +133,50 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
   },
 ];
 
+const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
+  {
+    id: "2d-anchor",
+    title: "2D Anchor",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DAnchorComponent" },
+  },
+  {
+    id: "2d-texture",
+    title: "2D Texture",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DTextureComponent" },
+  },
+  {
+    id: "2d-material",
+    title: "2D Material",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DMaterialComponent" },
+  },
+  {
+    id: "2d-button",
+    title: "2D Button",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DButtonComponent" },
+  },
+  {
+    id: "2d-panel",
+    title: "2D Panel",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DPanelComponent" },
+  },
+];
+
 export function placeActorsForHost(options: { overlay: boolean }): PlaceActorItem[] {
   if (!options.overlay) return ENGINE_PLACE_ACTORS;
-  return ENGINE_PLACE_ACTORS.filter(
-    (item) =>
-      item.kind.type !== "light" &&
-      item.kind.type !== "camera" &&
-      item.kind.type !== "skybox",
-  );
+  return [
+    ...ENGINE_PLACE_ACTORS.filter(
+      (item) =>
+        item.kind.type !== "light" &&
+        item.kind.type !== "camera" &&
+        item.kind.type !== "skybox",
+    ),
+    ...OVERLAY_PLACE_ACTORS,
+  ];
 }
 
 export const PLACEABLE_PROJECT_TYPES = new Set([
@@ -279,6 +324,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "particle") {
     return resolveTypeVisual({ classId: "ParticleComponent", family: "class" });
   }
+  if (kind.type === "overlay-2d") {
+    return resolveTypeVisual({ classId: kind.classId, family: "class" });
+  }
   if (kind.type === "asset") {
     return resolveTypeVisual({ assetType: kind.assetType });
   }
@@ -417,6 +465,18 @@ export function spawnPlacedActor(
           id: `${id}-particle`,
           classId: "ParticleComponent",
           properties: defaultPropertiesFor("ParticleComponent"),
+        },
+      ],
+    }));
+  }
+  if (kind.type === "overlay-2d") {
+    return finish(createActor(id, item.title, {
+      transform,
+      components: [
+        {
+          id: `${id}-overlay`,
+          classId: kind.classId,
+          properties: defaultPropertiesFor(kind.classId, "2d", "2d"),
         },
       ],
     }));

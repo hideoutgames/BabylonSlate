@@ -23,6 +23,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("2DTextureComponent");
     expect(ids).toContain("2DTextComponent");
     expect(ids).toContain("2DRichTextComponent");
+    expect(ids).toContain("2DPanelComponent");
     expect(ids).toContain("AnimationGraphComponent");
     expect(ids).toContain("BehaviourTreeComponent");
     expect(ids).toContain("NavAgentComponent");
@@ -44,6 +45,7 @@ describe("Add Component catalog", () => {
     expect(overlay).toContain("2DButtonComponent");
     expect(overlay).toContain("2DTextComponent");
     expect(overlay).toContain("2DRichTextComponent");
+    expect(overlay).toContain("2DPanelComponent");
     expect(overlay).not.toContain("SkyboxComponent");
     expect(overlay).not.toContain("CameraComponent");
     expect(overlay).not.toContain("LightComponent");
@@ -52,6 +54,7 @@ describe("Add Component catalog", () => {
     expect(world).not.toContain("2DButtonComponent");
     expect(world).not.toContain("2DTextComponent");
     expect(world).not.toContain("2DRichTextComponent");
+    expect(world).not.toContain("2DPanelComponent");
   });
 
   it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {

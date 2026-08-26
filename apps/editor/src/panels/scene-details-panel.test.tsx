@@ -379,6 +379,9 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
     expect(screen.queryByTestId("scene-layers-stack")).toBeNull();
     expect(screen.queryByTestId("property-scene-game-instance-class")).toBeNull();
+    expect(screen.getByTestId("property-row-scene-camera-bounds-width")).toBeTruthy();
+    expect(screen.getByText("Layer Width")).toBeTruthy();
+    expect(screen.getByText("Layer Height")).toBeTruthy();
   });
 
   it("hosts 2D Text in a sibling textarea instead of a PropertyGrid text row", () => {

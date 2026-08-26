@@ -18,12 +18,14 @@ describe("SceneLayer object model", () => {
       assetGuid: "hud",
       zOrder: 3,
       ownerSceneGuid: "level-1",
+      layerBounds: { width: 20, height: 10 },
     });
     expect(layer).toBeInstanceOf(SceneLayer);
     expect(layer.classId).toBe("SceneLayer");
     expect(layer.assetGuid).toBe("hud");
     expect(layer.zOrder).toBe(3);
     expect(layer.ownerSceneGuid).toBe("level-1");
+    expect(layer.layerBounds).toEqual({ width: 20, height: 10 });
     expect(world.getSceneLayers()).toEqual([layer]);
 
     const actor = world.createActor({
@@ -50,6 +52,7 @@ describe("SceneLayer object model", () => {
       "2DTextureComponent",
       "2DTextComponent",
       "2DRichTextComponent",
+      "2DPanelComponent",
     ]);
   });
 

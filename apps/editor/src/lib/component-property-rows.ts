@@ -23,6 +23,9 @@ import {
   SCENE_LAYER_ANCHORS,
   SCENE_LAYER_HIT_TEST_LABELS,
   SCENE_LAYER_HIT_TESTS,
+  SCENE_LAYER_PANEL_SOURCE_LABELS,
+  SCENE_LAYER_PANEL_SOURCES,
+  parseOverlayPanelProperties,
   SKYBOX_FACE_KEYS,
   type SerializedComponent,
   type SkyboxFaceKey,
@@ -1531,6 +1534,92 @@ export function componentPropertyRows(
           new Set([
             "hitTest",
             ...(assetProperty ? [assetProperty] : []),
+          ]),
+        ),
+      ];
+    }
+    case "2DPanelComponent": {
+      const parsed = parseOverlayPanelProperties(component.properties);
+      const assetProperty =
+        parsed.source === "material" ? "materialGuid" : "textureGuid";
+      return [
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "source"),
+          label: "Source",
+          value: parsed.source,
+          options: SCENE_LAYER_PANEL_SOURCES.map((value) => ({
+            value,
+            label: SCENE_LAYER_PANEL_SOURCE_LABELS[value],
+          })),
+          onChange: (next) => update("source", next),
+        },
+        assetRow(
+          actorId,
+          component,
+          assetProperty,
+          parsed.source === "material" ? "Material" : "Texture",
+          parsed.source === "material" ? ["Material"] : ["Texture"],
+          update,
+          context,
+          parsed.source === "material" ? "Pick Material" : "Pick Texture",
+        ),
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "marginLeft"),
+          label: "Margin Left",
+          value: parsed.marginLeft,
+          min: 0,
+          onChange: (next) => update("marginLeft", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "marginRight"),
+          label: "Margin Right",
+          value: parsed.marginRight,
+          min: 0,
+          onChange: (next) => update("marginRight", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "marginTop"),
+          label: "Margin Top",
+          value: parsed.marginTop,
+          min: 0,
+          onChange: (next) => update("marginTop", next),
+        },
+        {
+          kind: "number",
+          id: rowId(actorId, component.id, "marginBottom"),
+          label: "Margin Bottom",
+          value: parsed.marginBottom,
+          min: 0,
+          onChange: (next) => update("marginBottom", next),
+        },
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "hitTest"),
+          label: "Hit Test",
+          value: parsed.hitTest,
+          options: SCENE_LAYER_HIT_TESTS.map((value) => ({
+            value,
+            label: SCENE_LAYER_HIT_TEST_LABELS[value],
+          })),
+          onChange: (next) => update("hitTest", next),
+        },
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set([
+            "source",
+            "textureGuid",
+            "materialGuid",
+            "marginLeft",
+            "marginRight",
+            "marginTop",
+            "marginBottom",
+            "hitTest",
           ]),
         ),
       ];
