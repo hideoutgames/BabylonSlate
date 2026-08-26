@@ -317,4 +317,26 @@ describe("createActorsFromSerializedScene", () => {
     });
     expect(actors.map((actor) => actor.guid)).toEqual(["hero"]);
   });
+
+  it("copies serialized component sourceId onto the live ActorComponent", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Level",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [
+        createActor("hero", "Hero", {
+          components: [
+            {
+              ...createMeshComponent("live-mesh", "box"),
+              sourceId: "prefab-mesh",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(actors[0]!.components[0]!.guid).toBe("live-mesh");
+    expect(actors[0]!.components[0]!.sourceId).toBe("prefab-mesh");
+  });
 });

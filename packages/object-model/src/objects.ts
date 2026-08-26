@@ -140,6 +140,8 @@ export class ActorComponent extends BObject {
   owner: Actor | null = null;
   /** Optional asset reference stub for engine components. */
   assetGuid: Guid | null = null;
+  /** Prefab component id when Place Actors remapped `guid`. */
+  sourceId: string | null = null;
   transform: Transform;
   parentId: string | null;
 
@@ -152,6 +154,7 @@ export class ActorComponent extends BObject {
       hooks?: LifecycleHooks<ActorComponent>;
       implementedInterfaces?: string[];
       assetGuid?: Guid | null;
+      sourceId?: string | null;
       transform?: Transform;
       parentId?: string | null;
     },
@@ -161,6 +164,10 @@ export class ActorComponent extends BObject {
       hooks: options.hooks as LifecycleHooks | undefined,
     });
     this.assetGuid = options.assetGuid ?? null;
+    this.sourceId =
+      typeof options.sourceId === "string" && options.sourceId.trim()
+        ? options.sourceId.trim()
+        : null;
     this.parentId = options.parentId ?? null;
     this.transform = options.transform
       ? {

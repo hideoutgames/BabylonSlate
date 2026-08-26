@@ -745,6 +745,13 @@ class InProcessRuntime implements RuntimeDriver {
       updateIllumination: (target) => {
         this.reemitIllumination(target);
       },
+      refreshComponent: (component) => {
+        const owner = component.owner;
+        if (!owner || owner.destroyed) return;
+        const slotId = this.slotByGuid.get(owner.guid);
+        if (slotId === undefined) return;
+        this.emitMeshAssignment(owner, slotId);
+      },
       playSound: (asset, volume, options) => {
         this.emit({
           type: "playSound",

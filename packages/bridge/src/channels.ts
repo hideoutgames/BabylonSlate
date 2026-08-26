@@ -35,6 +35,7 @@ export type ScriptBundleEntry = {
     name: string;
     event?: string;
     isAsync: boolean;
+    componentId?: string;
   }>;
   /** Present when the graph is a BDebugCommand OnCommandRun handler. */
   command?: ScriptConsoleCommand;

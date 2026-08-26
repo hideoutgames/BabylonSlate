@@ -299,6 +299,7 @@ export class World {
     hooks?: LifecycleHooks<ActorComponent>;
     implementedInterfaces?: string[];
     assetGuid?: Guid | null;
+    sourceId?: string | null;
     transform?: ConstructorParameters<typeof ActorComponent>[0]["transform"];
     parentId?: string | null;
   }): ActorComponent {

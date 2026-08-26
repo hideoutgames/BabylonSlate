@@ -132,6 +132,7 @@ function createActorFromSerialized(
         classId: component.classId,
         variables: { ...component.properties },
         assetGuid: componentAssetGuid(component),
+        sourceId: component.sourceId ?? null,
         parentId: component.parentId ?? null,
         transform: runtimeTransformFromSerialized(
           component.transform ?? identitySerializedTransform(),
