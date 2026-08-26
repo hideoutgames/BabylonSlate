@@ -278,6 +278,7 @@ describe("shouldForwardPlayEngineCommand", () => {
     expect(shouldForwardPlayEngineCommand("setRenderQuality")).toBe(true);
     expect(shouldForwardPlayEngineCommand("setShowAudioDebug")).toBe(true);
     expect(shouldForwardPlayEngineCommand("debugDraw")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("setCursorVisible")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });
 });

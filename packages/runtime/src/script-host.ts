@@ -83,6 +83,7 @@ export interface ScriptHostServices {
     color: ScriptColor,
   ): void;
   drawDebug?(payload: Record<string, unknown>): void;
+  setCursorVisible?(visible: boolean): void;
   destroyActor(actor: Actor | null | undefined): void;
   executeConsoleCommand(command: string): { success: boolean; output: string };
   delay(seconds: number): Promise<void>;
@@ -96,6 +97,13 @@ export interface ScriptHostServices {
    */
   findActor?(actorId: string): Actor | undefined;
   lineTrace?(start: Vec3, end: Vec3): HitResult;
+  projectCursorToScene?(
+    channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+  ): HitResult & {
+    worldOrigin: Vec3;
+    worldDirection: Vec3;
+  };
   sphereOverlap?(center: Vec3, radius: number): OverlapResult;
   shapeSweep?(
     shape: ColliderShape,
@@ -326,6 +334,8 @@ export interface ScriptContext {
   wasActionReleased?(action: string): boolean;
   getAxis(axis: string): number;
   getAxis2D(axis: string): { x: number; y: number };
+  getCursorPosition(): { x: number; y: number; pressed: boolean };
+  setCursorVisible(visible: boolean): void;
   setGamepadRumble?(
     gamepadIndex: number,
     intensity: number,
@@ -345,6 +355,18 @@ export interface ScriptContext {
     normal: Vec3 | null;
     distance: number;
     actor: Actor | null;
+  };
+  projectCursorToScene(
+    channel?: string,
+    options?: { drawDebug?: boolean; duration?: number },
+  ): {
+    hit: boolean;
+    location: Vec3 | null;
+    normal: Vec3 | null;
+    distance: number;
+    actor: Actor | null;
+    worldOrigin: Vec3;
+    worldDirection: Vec3;
   };
   sphereOverlap(
     center: Vec3,
@@ -1026,6 +1048,15 @@ export class ScriptHost {
         tick?.wasActionReleased?.(action) ?? false,
       getAxis: (axis) => tick?.getAxis?.(axis) ?? 0,
       getAxis2D: (axis) => tick?.getAxis2D?.(axis) ?? { x: 0, y: 0 },
+      getCursorPosition: () =>
+        tick?.getCursorPosition?.() ?? { x: 0, y: 0, pressed: false },
+      setCursorVisible: (visible) => {
+        if (services.setCursorVisible) {
+          services.setCursorVisible(visible === true);
+        } else {
+          tick?.setCursorVisible?.(visible === true);
+        }
+      },
       setGamepadRumble: (gamepadIndex, intensity, durationMs) => {
         tick?.setGamepadRumble?.(gamepadIndex, intensity, durationMs);
       },
@@ -1045,6 +1076,27 @@ export class ScriptHost {
           normal: hit.normal ?? null,
           distance: hit.distance ?? 0,
           actor: resolveLiveActor(services, hit.actorId),
+        };
+      },
+      projectCursorToScene: (channel, options) => {
+        const hit = services.projectCursorToScene?.(channel, options) ?? {
+          hit: false,
+          location: null,
+          normal: null,
+          distance: 0,
+          actorId: null,
+          bodyId: null,
+          worldOrigin: { x: 0, y: 0, z: 0 },
+          worldDirection: { x: 0, y: 0, z: 0 },
+        };
+        return {
+          hit: hit.hit === true,
+          location: hit.location ?? null,
+          normal: hit.normal ?? null,
+          distance: hit.distance ?? 0,
+          actor: resolveLiveActor(services, hit.actorId),
+          worldOrigin: hit.worldOrigin ?? { x: 0, y: 0, z: 0 },
+          worldDirection: hit.worldDirection ?? { x: 0, y: 0, z: 0 },
         };
       },
       sphereOverlap: (center, radius) => {

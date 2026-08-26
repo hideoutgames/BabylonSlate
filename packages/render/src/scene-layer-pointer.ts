@@ -1,6 +1,6 @@
 import type { OverlayPointerHit } from "@babylonslate/core";
 
-export type OverlayPointerPhase = "move" | "down" | "up";
+export type OverlayPointerPhase = "move" | "down" | "up" | "cancel";
 
 export type OverlayPointerDispatch = {
   layerId: string;

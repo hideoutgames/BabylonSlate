@@ -27,6 +27,8 @@ export interface ResolvedInputTick {
   axes: Record<string, number>;
   axes2D: Record<string, Axis2DValue>;
   gamepadConnections: GamepadConnectionEvent[];
+  /** Primary pointer / mouse in canvas CSS pixels. XY sticks after release. */
+  cursor: { x: number; y: number; pressed: boolean };
 }
 
 interface ModifierState {
@@ -46,6 +48,8 @@ interface ResolverInternals {
   connectedPads: Set<number>;
   modifiers: ModifierState;
   previousHeldActions: Set<string>;
+  cursor: { x: number; y: number; pressed: boolean };
+  primaryPointerId: number | null;
 }
 
 function modifiersMatch(
@@ -177,6 +181,8 @@ export class InputResolver {
     connectedPads: new Set(),
     modifiers: { shift: false, ctrl: false, alt: false, meta: false },
     previousHeldActions: new Set(),
+    cursor: { x: 0, y: 0, pressed: false },
+    primaryPointerId: null,
   };
 
   private mappings: InputMappings;
@@ -203,6 +209,14 @@ export class InputResolver {
           break;
         }
         case "mouse": {
+          if (this.state.primaryPointerId == null) {
+            this.state.cursor.x = event.x;
+            this.state.cursor.y = event.y;
+            if (event.phase === "down") this.state.cursor.pressed = true;
+            else if (event.phase === "up" || event.phase === "cancel") {
+              this.state.cursor.pressed = false;
+            }
+          }
           if (event.phase === "down") {
             this.state.heldMouseButtons.add(event.button);
           } else if (event.phase === "up" || event.phase === "cancel") {
@@ -211,6 +225,18 @@ export class InputResolver {
           break;
         }
         case "pointer": {
+          if (this.state.primaryPointerId == null) {
+            this.state.primaryPointerId = event.pointerId;
+          }
+          if (event.pointerId === this.state.primaryPointerId) {
+            this.state.cursor.x = event.x;
+            this.state.cursor.y = event.y;
+            if (event.phase === "down") this.state.cursor.pressed = true;
+            else if (event.phase === "up" || event.phase === "cancel") {
+              this.state.cursor.pressed = false;
+              this.state.primaryPointerId = null;
+            }
+          }
           if (event.phase === "down") {
             this.state.heldPointerButtons.add(event.button);
           } else if (event.phase === "up" || event.phase === "cancel") {
@@ -320,6 +346,7 @@ export class InputResolver {
       axes,
       axes2D,
       gamepadConnections: connections,
+      cursor: { ...this.state.cursor },
     };
   }
 
@@ -336,6 +363,8 @@ export class InputResolver {
     this.state.touchAxes.clear();
     this.state.connectedPads.clear();
     this.state.previousHeldActions.clear();
+    this.state.cursor = { x: 0, y: 0, pressed: false };
+    this.state.primaryPointerId = null;
     this.state.modifiers = { shift: false, ctrl: false, alt: false, meta: false };
   }
 }

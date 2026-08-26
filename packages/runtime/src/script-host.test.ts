@@ -1753,6 +1753,146 @@ describe("script host runs compiled graphs", () => {
     runtime.stop();
   });
 
+  it("Project Cursor To Scene hits a box through the Play camera and draws debug", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "project", "input.projectCursorToScene", {
+          drawDebug: true,
+          duration: 0,
+        }),
+        node(registry, "print", "debug.print", {
+          key: "hit",
+          duration: 1,
+        }),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "project", "execIn"),
+        edge("e2", "project", "execOut", "print", "execIn"),
+        edge("e3", "project", "hit", "print", "value"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 11,
+      maxActors: 8,
+      preferSoftwarePhysics: true,
+      physicsWorld: "3d",
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    const world = runtime.getWorld();
+    const camera = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 0, z: -10 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    camera.attachComponent(
+      world.createComponent({
+        classId: "CameraComponent",
+        variables: {
+          projectionMode: "perspective",
+          fieldOfView: 60,
+          orthographicSize: 5,
+          nearClip: 0.1,
+          farClip: 1000,
+        },
+      }),
+    );
+    world.spawnActorNow(camera);
+    const ground = world.createActor({
+      classId: "Actor",
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        scale: { x: 1, y: 1, z: 1 },
+      },
+    });
+    ground.attachComponent(
+      world.createComponent({
+        classId: "RigidBodyComponent",
+        variables: { motionType: "static", mass: 0, gravityScale: 0 },
+      }),
+    );
+    ground.attachComponent(
+      world.createComponent({
+        classId: "ColliderComponent",
+        variables: {
+          shape: { kind: "box", halfExtents: { x: 2, y: 2, z: 2 } },
+        },
+      }),
+    );
+    world.spawnActorNow(ground);
+    await runtime.loadScripts([
+      toScript(graph, registry, "Aim", "aim-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "Aim" });
+    runtime.applySceneLayerResize(16, 9, 800, 600);
+    runtime.start();
+    runtime.pushInput([
+      {
+        kind: "pointer",
+        tick: 0,
+        pointerId: 1,
+        phase: "move",
+        x: 400,
+        y: 300,
+        button: 0,
+      },
+    ]);
+    runtime.tick();
+    runtime.tick();
+    const prints = commands.filter((c) => c.type === "print");
+    expect(
+      prints.some((c) => String((c as { message: string }).message) === "true"),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (c) => c.type === "debugDraw" && (c as { kind?: string }).kind === "line",
+      ),
+    ).toBe(true);
+    runtime.stop();
+  });
+
+  it("Show Cursor and Hide Cursor emit setCursorVisible commands", async () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "show", "input.showCursor"),
+        node(registry, "hide", "input.hideCursor"),
+      ],
+      edges: [
+        edge("e1", "begin", "execOut", "show", "execIn"),
+        edge("e2", "show", "execOut", "hide", "execIn"),
+      ],
+    };
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(graph, registry, "CursorHud", "cursor-asset"),
+    ]);
+    runtime.spawnScriptedActor({ classId: "CursorHud" });
+    const vis = commands.filter((c) => c.type === "setCursorVisible");
+    expect(vis).toEqual([
+      expect.objectContaining({ type: "setCursorVisible", visible: true }),
+      expect.objectContaining({ type: "setCursorVisible", visible: false }),
+    ]);
+    runtime.stop();
+  });
+
   it("runs GameInstance subclass Begin Play when gameInstanceClass is set", async () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {

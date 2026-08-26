@@ -162,7 +162,7 @@ export class EditorSceneSync {
 
     for (const actor of sceneData.actors) {
       this.liveIds.add(actor.id);
-      const kind = actorVisualFingerprint(actor);
+      const kind = actorVisualFingerprint(actor, this.assets);
       let mesh = this.meshes.get(actor.id);
       if (mesh && this.meshKinds.get(actor.id) !== kind) {
         mesh.dispose();

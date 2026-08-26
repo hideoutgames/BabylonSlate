@@ -83,6 +83,7 @@ export type CollectExportGameParams = {
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
+  touchMinTargetPx?: number;
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
   physicsWorld: "2d" | "3d";
@@ -298,6 +299,7 @@ export async function collectAndExportGame(
     reverbDampingScale: params.reverbDampingScale,
     customResolution: params.customResolution,
     playFrameCap: params.playFrameCap,
+    touchMinTargetPx: params.touchMinTargetPx,
     pixelsPerUnit: params.pixelsPerUnit,
     pixelPerfect: params.pixelPerfect,
     physicsWorld: params.physicsWorld,

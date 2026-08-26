@@ -114,6 +114,7 @@ export interface PlayOverlayProps {
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
+  touchMinTargetPx?: number;
   navmeshBytes?: Uint8Array | null;
   audioReverbBytes?: Uint8Array | null;
   audioProjectSettings?: Partial<
@@ -185,6 +186,7 @@ export function PlayOverlay({
   hardwareScalingLevel,
   pixelsPerUnit,
   pixelPerfect,
+  touchMinTargetPx,
   navmeshBytes,
   audioReverbBytes,
   audioProjectSettings,
@@ -303,6 +305,8 @@ export function PlayOverlay({
   audioProjectSettingsRef.current = audioProjectSettings;
   const pixelsPerUnitRef = useRef(pixelsPerUnit);
   pixelsPerUnitRef.current = pixelsPerUnit;
+  const touchMinTargetPxRef = useRef(touchMinTargetPx);
+  touchMinTargetPxRef.current = touchMinTargetPx;
   const pixelPerfectRef = useRef(pixelPerfect);
   pixelPerfectRef.current = pixelPerfect;
   const physicsRef = useRef(physics);
@@ -430,6 +434,7 @@ export function PlayOverlay({
       postProcessingEnabled,
       hardwareScalingLevel,
       pixelsPerUnit: pixelsPerUnitRef.current,
+      touchMinTargetPx: touchMinTargetPxRef.current,
       pixelPerfect: pixelPerfectRef.current,
       navmeshBytes: navmeshBytesRef.current,
       audioReverbBytes: audioReverbBytesRef.current,

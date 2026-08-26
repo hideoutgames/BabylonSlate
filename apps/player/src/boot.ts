@@ -99,6 +99,7 @@ export function startPlayer(options: {
     tilesetPayloads: content.tilesetPayloads,
     pixelsPerUnit: content.pixelsPerUnit,
     pixelPerfect: content.pixelPerfect,
+    touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     textureBytes: game.textureBytes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
@@ -163,7 +164,13 @@ export function startPlayer(options: {
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };
       if (worker) worker.postControl(control);
-      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
+      else
+        runtime?.applySceneLayerResize(
+          size.frustumWidth,
+          size.frustumHeight,
+          size.canvasWidth,
+          size.canvasHeight,
+        );
     },
   });
   handle.applySceneEnvironment(scene);

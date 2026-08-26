@@ -237,6 +237,11 @@ export async function exportGame(
     mode,
     render: options.customResolution,
     playFrameCap: options.playFrameCap ?? 60,
+    touchMinTargetPx:
+      typeof options.touchMinTargetPx === "number" &&
+      options.touchMinTargetPx > 0
+        ? options.touchMinTargetPx
+        : 44,
     pixelsPerUnit:
       typeof options.pixelsPerUnit === "number" && options.pixelsPerUnit > 0
         ? options.pixelsPerUnit
@@ -327,6 +332,10 @@ export function parseGameManifest(source: string): GameManifest {
       typeof parsed.pixelsPerUnit === "number" && parsed.pixelsPerUnit > 0
         ? parsed.pixelsPerUnit
         : 100,
+    touchMinTargetPx:
+      typeof parsed.touchMinTargetPx === "number" && parsed.touchMinTargetPx > 0
+        ? parsed.touchMinTargetPx
+        : 44,
     pixelPerfect: parsed.pixelPerfect === true,
     ...(bundleDebugger
       ? {

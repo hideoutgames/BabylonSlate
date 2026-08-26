@@ -184,6 +184,15 @@ describe("Play session commands", () => {
     expect(controlType(control)).toBe("sceneLayerResize");
   });
 
+  it("setCursorVisible is a CommandMessage variant", () => {
+    const command = {
+      type: "setCursorVisible",
+      visible: true,
+      frameId: 1,
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("setCursorVisible");
+  });
+
   it("visualization console commands are CommandMessage variants", () => {
     const fps = { type: "setShowFps", enabled: true } satisfies CommandMessage;
     const stat = {

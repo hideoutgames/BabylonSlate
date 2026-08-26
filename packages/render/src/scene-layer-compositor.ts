@@ -19,6 +19,11 @@ import {
   type SceneLayerHitTest,
 } from "@babylonslate/core";
 import { installEngineDefaultMaterial } from "./default-material";
+import {
+  overlayCanvasToWorld,
+  overlayMinTargetWorldSize,
+  pointInInflatedWorldAabb,
+} from "./overlay-touch-target";
 
 export type SceneLayerCreateCommand = Extract<
   CommandMessage,
@@ -210,40 +215,107 @@ export class SceneLayerCompositor {
     }
   }
 
-  pickHits(canvasX: number, canvasY: number): OverlayPointerHit[] {
+  pickHits(
+    canvasX: number,
+    canvasY: number,
+    options?: { minTargetPx?: number; canvasCssHeight?: number },
+  ): OverlayPointerHit[] {
     const hits: OverlayPointerHit[] = [];
+    const seen = new Set<string>();
+    const minWorld = overlayMinTargetWorldSize(
+      options?.minTargetPx ?? 0,
+      options?.canvasCssHeight ?? 0,
+      this.orthoHalfHeight * 2,
+    );
+    const renderWidth = Math.max(1, this.engine.getRenderWidth());
+    const renderHeight = Math.max(1, this.engine.getRenderHeight());
+    const world =
+      minWorld > 0
+        ? overlayCanvasToWorld(
+            canvasX,
+            canvasY,
+            renderWidth,
+            renderHeight,
+            this.orthoHalfHeight,
+          )
+        : null;
+
+    const pushHit = (
+      layerId: string,
+      actorGuid: string,
+      hitTest: SceneLayerHitTest,
+      hasButton: boolean,
+    ) => {
+      if (!actorGuid || seen.has(actorGuid)) return;
+      seen.add(actorGuid);
+      hits.push({ layerId, actorGuid, hitTest, hasButton });
+    };
+
     for (const layer of [...this.sortedLayers()].reverse()) {
+      layer.scene.updateTransformMatrix();
       const pick = layer.scene.pick(canvasX, canvasY, undefined, false);
-      if (!pick?.hit || !pick.pickedMesh) continue;
-      let mesh: {
-        name: string;
-        parent: unknown;
-        metadata?: unknown;
-        isPickable?: boolean;
-      } | null = pick.pickedMesh;
-      let slotId: number | null = null;
-      let metadata: OverlayMeshMetadata | null = overlayMetadataOf(mesh);
-      while (mesh) {
-        const match = /^actor-(\d+)$/.exec(mesh.name);
-        if (match) {
-          slotId = Number(match[1]);
+      if (pick?.hit && pick.pickedMesh) {
+        let mesh: {
+          name: string;
+          parent: unknown;
+          metadata?: unknown;
+          isPickable?: boolean;
+        } | null = pick.pickedMesh;
+        let slotId: number | null = null;
+        let metadata: OverlayMeshMetadata | null = overlayMetadataOf(mesh);
+        while (mesh) {
+          const match = /^actor-(\d+)$/.exec(mesh.name);
+          if (match) {
+            slotId = Number(match[1]);
+            metadata = overlayMetadataOf(mesh) ?? metadata;
+            break;
+          }
           metadata = overlayMetadataOf(mesh) ?? metadata;
-          break;
+          mesh = (mesh.parent as typeof mesh) ?? null;
         }
-        metadata = overlayMetadataOf(mesh) ?? metadata;
-        mesh = (mesh.parent as typeof mesh) ?? null;
+        const actorGuid =
+          metadata?.overlayActorGuid ??
+          (slotId != null ? this.slotActor.get(slotId) : undefined) ??
+          "";
+        if (actorGuid) {
+          pushHit(
+            layer.layerId,
+            actorGuid,
+            parseSceneLayerHitTest(metadata?.overlayHitTest, "ignore"),
+            metadata?.overlayHasButton === true,
+          );
+        }
       }
-      const actorGuid =
-        metadata?.overlayActorGuid ??
-        (slotId != null ? this.slotActor.get(slotId) : undefined) ??
-        "";
-      if (!actorGuid) continue;
-      hits.push({
-        layerId: layer.layerId,
-        actorGuid,
-        hitTest: parseSceneLayerHitTest(metadata?.overlayHitTest, "ignore"),
-        hasButton: metadata?.overlayHasButton === true,
-      });
+
+      if (!world) continue;
+      for (const mesh of layer.scene.meshes) {
+        const metadata = overlayMetadataOf(mesh);
+        if (!metadata?.overlayHasButton) continue;
+        const hitTest = parseSceneLayerHitTest(metadata.overlayHitTest, "ignore");
+        if (hitTest === "ignore") continue;
+        const slotMatch = /^actor-(\d+)$/.exec(mesh.name);
+        const actorGuid =
+          metadata.overlayActorGuid ??
+          (slotMatch ? this.slotActor.get(Number(slotMatch[1])) : undefined) ??
+          "";
+        if (!actorGuid || seen.has(actorGuid)) continue;
+        mesh.computeWorldMatrix(true);
+        const box = mesh.getBoundingInfo().boundingBox;
+        if (
+          !pointInInflatedWorldAabb(
+            world.x,
+            world.y,
+            box.centerWorld.x,
+            box.centerWorld.y,
+            box.extendSizeWorld.x,
+            box.extendSizeWorld.y,
+            minWorld,
+          )
+        ) {
+          continue;
+        }
+        pushHit(layer.layerId, actorGuid, hitTest, true);
+      }
     }
     return hits;
   }
@@ -251,6 +323,7 @@ export class SceneLayerCompositor {
   pickAt(
     canvasX: number,
     canvasY: number,
+    options?: { minTargetPx?: number; canvasCssHeight?: number },
   ): {
     layerId: string;
     meshName: string;
@@ -260,7 +333,7 @@ export class SceneLayerCompositor {
     blocked: boolean;
     targets: OverlayPointerHit[];
   } | null {
-    const hits = this.pickHits(canvasX, canvasY);
+    const hits = this.pickHits(canvasX, canvasY, options);
     const walked = walkOverlayPointerHits(hits);
     const first = walked.targets[0];
     if (!first) {

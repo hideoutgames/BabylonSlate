@@ -182,7 +182,12 @@ function handleControl(msg: ControlMessage): void {
       ensureRuntime().applySceneLayerPointer(msg);
       return;
     case "sceneLayerResize":
-      ensureRuntime().applySceneLayerResize(msg.frustumWidth, msg.frustumHeight);
+      ensureRuntime().applySceneLayerResize(
+        msg.frustumWidth,
+        msg.frustumHeight,
+        msg.canvasWidth,
+        msg.canvasHeight,
+      );
       return;
   }
 }

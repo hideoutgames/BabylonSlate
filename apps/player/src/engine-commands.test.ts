@@ -213,6 +213,23 @@ describe("applyPlayerEngineCommand", () => {
     expect(applied).toEqual(["debugDraw"]);
   });
 
+  it("forwards setCursorVisible onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "setCursorVisible",
+        visible: true,
+        frameId: 1,
+      }),
+    ).toBe(true);
+    expect(applied).toEqual(["setCursorVisible"]);
+  });
+
   it("ignores commands the Engine does not apply", () => {
     const applied: string[] = [];
     const handle = {

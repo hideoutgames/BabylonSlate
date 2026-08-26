@@ -16,6 +16,8 @@ export type TickContext = {
   wasActionReleased?: (action: string) => boolean;
   getAxis?: (axis: string) => number;
   getAxis2D?: (axis: string) => { x: number; y: number };
+  getCursorPosition?: () => { x: number; y: number; pressed: boolean };
+  setCursorVisible?: (visible: boolean) => void;
   setGamepadRumble?: (
     gamepadIndex: number,
     intensity: number,

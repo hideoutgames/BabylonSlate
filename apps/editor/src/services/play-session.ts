@@ -137,6 +137,7 @@ export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
   "setShowAudioDebug",
   "debugColliders",
   "debugDraw",
+  "setCursorVisible",
   "animState",
 ]);
 
@@ -460,6 +461,8 @@ export function startPlaySession(options: {
   hardwareScalingLevel?: number;
   pixelsPerUnit?: number;
   pixelPerfect?: boolean;
+  /** Overlay 2DButton pick floor in CSS pixels. */
+  touchMinTargetPx?: number;
   /** Baked Scene navmesh bytes; Play imports and never generates. */
   navmeshBytes?: Uint8Array | null;
   infiniteLoopDetection?: boolean;
@@ -525,6 +528,7 @@ export function startPlaySession(options: {
     hardwareScalingLevel: options.hardwareScalingLevel,
     pixelsPerUnit: options.pixelsPerUnit,
     pixelPerfect: options.pixelPerfect,
+    touchMinTargetPx: options.touchMinTargetPx,
     environmentColor: options.scene?.settings.environmentColor,
     viewportMode: options.scene?.viewportMode,
     navmeshBytes: options.navmeshBytes,
@@ -549,7 +553,13 @@ export function startPlaySession(options: {
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };
       if (worker) worker.postControl(control);
-      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
+      else
+        runtime?.applySceneLayerResize(
+          size.frustumWidth,
+          size.frustumHeight,
+          size.canvasWidth,
+          size.canvasHeight,
+        );
     },
   });
   if (options.scene) {
