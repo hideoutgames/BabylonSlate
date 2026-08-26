@@ -45,7 +45,13 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     setMeshAssets: vi.fn(),
     setMaterialDocuments: vi.fn(),
   };
-  const createEngineMock = vi.fn(() => handle);
+  const createEngineMock = vi.fn<
+    (
+      canvas?: unknown,
+      options?: { overlayTransformBox?: boolean; sharedEngine?: unknown },
+    ) => typeof handle
+  >();
+  createEngineMock.mockReturnValue(handle);
   const sharedEngine = { isDisposed: false };
   return {
     createEngineMock,
