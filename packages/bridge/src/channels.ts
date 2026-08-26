@@ -327,6 +327,8 @@ export type CommandMessage =
         marginTop: number;
         marginBottom: number;
         hitTest?: "ignore" | "block" | "passThrough";
+        destWidth?: number;
+        destHeight?: number;
       };
     }
   | { type: "possessCamera"; slotId: number }

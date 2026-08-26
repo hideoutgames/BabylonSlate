@@ -40,7 +40,7 @@ DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle
 
 **Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`, `2DText`, `2DRichText`, `2DPanel`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
 
-Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses, plus overlay stamps **2D Anchor**, **2D Texture**, **2D Material**, **2D Button**, **2D Panel** (each a `SceneLayerActor` with that component). Those Overlay stamps are hidden on world Scenes via `placeActorsForHost({ overlay: true })`. 2D Text / Rich Text stay Add Component only. World Scene Place Actors excludes overlay stamps and `SceneLayerActor` classes.
+Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses, plus overlay stamps **2D Anchor**, **2D Texture**, **2D Material**, **2D Button**, **2D Panel** (each a `SceneLayerActor` with that component). Those Overlay stamps appear only when `placeActorsForHost({ overlay: true })` (SceneLayer host). World Scenes use `overlay: false` and never list them. 2D Text / Rich Text stay Add Component only. World Scene Place Actors excludes overlay stamps and `SceneLayerActor` classes.
 
 ## Overlay 2D physics
 
@@ -56,7 +56,7 @@ Extra unlit ortho `Scene`s on the shared Engine:
 - Layer with no PP: `autoClear = false` on color; clear depth so 2D quads sort.
 - Layer with PP: render to an RTT, run that camera stack, alpha-composite onto the framebuffer (Babylon camera PP would otherwise replace the world). Engine Settings `postProcessingEnabled` still gates overlay PP in editor Play only.
 
-The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the Play compositor. Its clear is **opaque black** (`environmentColor [0,0,0]`). Play / player overlay scenes stay transparent `(0,0,0,0)` over the world. Overlay cameras are independent orthographic views — they are **not** parented to the world camera, so translating the 3D view does not move overlay NDC.
+The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the Play compositor. Its clear is **opaque black** (`overlayEditor` on the converted editor scene plus `environmentColor [0,0,0]`). World 2D scenes keep chrome-gray clear even if environment is authored black. Play / player overlay scenes stay transparent `(0,0,0,0)` over the world. Overlay cameras are independent orthographic views — they are **not** parented to the world camera, so translating the 3D view does not move overlay NDC.
 
 ## Hit test and 2DAnchor
 
@@ -66,7 +66,7 @@ Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene
 
 `2DTexture` planes size to sniffed GPU bytes (KTX2, then PNG/JPEG) divided by Project Settings `pixelsPerUnit`. Missing guid or bytes stays **1×1**. `2DMaterial` and the default `2DButton` quad stay 1×1. Details has no Size field and Play does not write actor scale.
 
-**2D Panel** is a 9-slice unlit plane (`source` texture or material, pixel margins, Hit Test Ignore). Corners stay `marginPx / pixelsPerUnit`; edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder.
+**2D Panel** is a 9-slice unlit plane (`source` texture or material, pixel margins, Hit Test Ignore). Corners stay `marginPx / pixelsPerUnit` in world space as the actor scale changes (mesh is a unit quad; dest is `|scale.xy|`). Edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder.
 
 Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / solo `2DButton`. A button with a sibling or parent visual does not add an extra quad (same as Play).
 
@@ -76,7 +76,7 @@ Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / s
 
 Outliner parent/child: a `2DAnchor` on actor A, or on a **direct child** of A, pins **A** (the visual parent). The child helper stays at local origin.
 
-On canvas / resolution change the worker reapplies XY from a cached design pose so Get Actor Location matches the visual. `normalizeSceneLayer` bakes legacy identity-transform + non-zero `offsetX`/`offsetY` into actor XY (old “1 world unit from the corner”) so existing 16×9 layouts do not jump; later resizes use relative mapping.
+On canvas / resolution change the worker reapplies XY from a cached design pose so Get Actor Location matches the visual. `normalizeSceneLayer` bakes legacy identity XY + non-zero `offsetX`/`offsetY` into actor XY (old “1 world unit from the corner”) so existing 16×9 layouts do not jump; later resizes use relative mapping. Rotation, Z, and scale are not part of that bake.
 
 Pointer / click / press graph events come from adding a `2DButtonComponent` (same attach-gated pattern as Collider overlap). Add Event is empty of On Mouse Enter / Leave / Click / Press Start / Press End until a 2D Button is on the Actor; world Actors never see those rows (`2DButton` is overlay-exclusive). Multiple buttons → one override per event per instance (`Event On Click (2D Button 2)`). Dispatch keys hover/press by `actorGuid:componentId`. Overlay actors with only `2DText` / `2DTexture` still render; they do not get click/hover graph events until a 2D Button is added. Hit Test is a **variable** on the button (and sibling visuals for the pick walk), not an Add Event row. Old HUD event ids stay unmapped. SceneLayerActor has no native mouse stubs. There are no `onTouch*` nodes.
 

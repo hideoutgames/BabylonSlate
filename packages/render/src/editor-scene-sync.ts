@@ -222,10 +222,7 @@ export class EditorSceneSync {
       stealActiveCamera: this.stealActiveCamera,
       restoreCamera: this.restoreCamera,
       applyClearColor:
-        sceneData.viewportMode !== "2d" ||
-        (sceneData.settings.environmentColor[0] === 0 &&
-          sceneData.settings.environmentColor[1] === 0 &&
-          sceneData.settings.environmentColor[2] === 0),
+        sceneData.viewportMode !== "2d" || sceneData.overlayEditor === true,
       shadowQuality: this.shadowQuality,
       assets: this.assets,
     });

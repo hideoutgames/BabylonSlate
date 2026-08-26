@@ -106,6 +106,7 @@ describe("SceneLayer schema", () => {
     expect(scene.actors).toHaveLength(1);
     expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
     expect(scene.settings.environmentColor).toEqual([0, 0, 0]);
+    expect(scene.overlayEditor).toBe(true);
   });
 
   it("round-trips layer bounds through the editor scene as the orange camera frame", () => {
@@ -209,6 +210,17 @@ describe("SceneLayer anchors and hit tests", () => {
         frustumHeight: 18,
       }),
     ).toEqual({ x: 16, y: -9 });
+    expect(
+      sceneLayerRelativeAnchorWorldPosition({
+        anchor: "bottomLeft",
+        authoredX: 8,
+        authoredY: -4.5,
+        layerWidth: 16,
+        layerHeight: 9,
+        frustumWidth: 21.333333333333332,
+        frustumHeight: 9,
+      }),
+    ).toEqual({ x: 10.666666666666666, y: -4.5 });
   });
 
   it("walks overlay hits high-to-low, skipping Ignore and stopping on Block", () => {
