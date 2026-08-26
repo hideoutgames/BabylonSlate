@@ -19,7 +19,6 @@ describe("SceneLayerCompositor", () => {
     scene.autoClear = true;
     const compositor = new SceneLayerCompositor({
       engine,
-      worldScene: scene,
       postProcessingEnabled: () => true,
     });
     return { engine, scene, compositor };

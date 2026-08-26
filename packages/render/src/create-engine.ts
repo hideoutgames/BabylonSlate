@@ -776,7 +776,6 @@ export function createEngine(
   const sceneLayerCompositor = options.playMode
     ? new SceneLayerCompositor({
         engine,
-        worldScene: scene,
         postProcessingEnabled: () => postProcessingEnabled,
         attachLayerPostProcess: (layer, stack) => {
           attachPostProcessStack({

@@ -194,7 +194,17 @@ export function projectPlaceActors(
   prefabForGuid?: (guid: string) => SerializedComponent[] | undefined,
   options?: { overlay?: boolean },
 ): PlaceActorItem[] {
-  const parentOf = classParentLookup(assets);
+  const parentOf = classParentLookup(
+    assets.map((asset) => ({
+      path: asset.path,
+      header: {
+        type: asset.header.type ?? "",
+        name: asset.header.name,
+        parentClass: asset.header.parentClass,
+        guid: asset.header.guid,
+      },
+    })),
+  );
   const overlay = options?.overlay === true;
   return assets
     .filter((asset) => PLACEABLE_PROJECT_TYPES.has(asset.header.type ?? ""))

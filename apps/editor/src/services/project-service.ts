@@ -4,6 +4,7 @@ import type {
   ProjectLayouts,
   SerializedGraph,
   SerializedScene,
+  SerializedSceneLayer,
 } from "@babylonslate/core";
 import {
   assetTypeForDocumentKind,
@@ -1083,7 +1084,12 @@ export class ProjectService {
   async loadDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-  ): Promise<SerializedScene | SerializedGraph | Record<string, unknown>> {
+  ): Promise<
+    | SerializedScene
+    | SerializedSceneLayer
+    | SerializedGraph
+    | Record<string, unknown>
+  > {
     if (kind === "trace" || isTracePath(path)) {
       if (!this.derivedStorage) {
         throw new Error("Derived storage is not available for traces");

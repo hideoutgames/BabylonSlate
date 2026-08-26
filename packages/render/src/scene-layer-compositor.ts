@@ -39,7 +39,6 @@ export interface SceneLayerView {
 
 export interface SceneLayerCompositorOptions {
   engine: Engine;
-  worldScene: Scene;
   postProcessingEnabled?: () => boolean;
   attachLayerPostProcess?: (layer: SceneLayerView, stack: SceneLayerPostProcessEntry[]) => void;
   orthoHalfHeight?: number;
@@ -60,7 +59,6 @@ const DEFAULT_ORTHO_HALF_HEIGHT = 4.5;
  */
 export class SceneLayerCompositor {
   private readonly engine: Engine;
-  private readonly worldScene: Scene;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
   private readonly orthoHalfHeight: number;
@@ -70,7 +68,6 @@ export class SceneLayerCompositor {
 
   constructor(options: SceneLayerCompositorOptions) {
     this.engine = options.engine;
-    this.worldScene = options.worldScene;
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
     this.orthoHalfHeight = options.orthoHalfHeight ?? DEFAULT_ORTHO_HALF_HEIGHT;
