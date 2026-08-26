@@ -493,7 +493,9 @@ export function EditorChromeBar({
                             graphId: doc.id,
                             classId: classIdForGraphPath(doc.ref.path),
                             hierarchy: classHierarchyFromParentOf(parentOf),
-                            members: classMemberSymbolsFromGraphs(classGraphs),
+                            members: classMemberSymbolsFromGraphs(classGraphs, {
+                              parentOf,
+                            }),
                             knownClassIds: knownClassIdSet(
                               parentOf,
                               Object.keys(classGraphs),
@@ -504,6 +506,8 @@ export function EditorChromeBar({
                               assetRegistry?.list() ?? [],
                               openDocuments,
                             ),
+                            parentOf,
+                            otherClassGraphs: classGraphs,
                           },
                         ),
                         ...physicsPairingDiagnostics(

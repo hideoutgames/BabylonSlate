@@ -13,6 +13,7 @@ export {
   BUTTON_MOUSE_EVENTS,
   COLLIDER_EVENTS,
   ENGINE_CLASS_SCRIPT_APIS,
+  engineEventTypeClassIds,
   engineScriptApiFor,
   engineScriptEventsFor,
   engineScriptFunctionsFor,

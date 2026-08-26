@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  engineEventTypeClassIds,
   engineScriptApiFor,
   engineScriptEventsFor,
   engineScriptFunctionsFor,
@@ -80,5 +81,17 @@ describe("engine script API catalog", () => {
     expect(ENGINE_CLASS_SCRIPT_APIS.every((api) => api.classId !== "Actor")).toBe(
       true,
     );
+  });
+
+  it("maps event types onto the classes that expose them", () => {
+    const types = engineEventTypeClassIds();
+    expect(types["flow.event.onClick"]).toEqual(["2DButtonComponent"]);
+    expect(types["flow.event.beginOverlap"]).toEqual(["ColliderComponent"]);
+    expect(types["flow.event.textChanged"]).toEqual([
+      "Text3DComponent",
+      "2DTextComponent",
+      "2DRichTextComponent",
+    ]);
+    expect(types["flow.event.beginPlay"]).toBeUndefined();
   });
 });

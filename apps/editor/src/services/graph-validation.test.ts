@@ -2777,3 +2777,100 @@ describe("validateSerializedGraph material domains", () => {
     ).toEqual([]);
   });
 });
+
+describe("hydrate component event bindings", () => {
+  it("binds leftover On Click to the sole 2D Button", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "click",
+          type: "flow.event.onClick",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+      components: [
+        { id: "btn-1", classId: "2DButtonComponent", properties: {} },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      classId: "Hud",
+    });
+    expect(hydrated.nodes[0]?.data).toMatchObject({
+      componentId: "btn-1",
+      eventQualifier: "2D Button",
+    });
+    expect(String(hydrated.nodes[0]?.data.title)).toContain("(2D Button)");
+  });
+
+  it("does not guess On Click among two 2D Buttons", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "click",
+          type: "flow.event.onClick",
+          position: { x: 0, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [],
+      components: [
+        { id: "btn-1", classId: "2DButtonComponent", properties: {} },
+        { id: "btn-2", classId: "2DButtonComponent", properties: {} },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      classId: "Hud",
+    });
+    expect(hydrated.nodes[0]?.data.componentId).toBeUndefined();
+    expect(hydrated.nodes[0]?.data.eventQualifier).toBeUndefined();
+  });
+
+  it("errors event.missing_component when the bound 2D Button is gone", () => {
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "click",
+            type: "flow.event.onClick",
+            position: { x: 0, y: 0 },
+            data: { componentId: "btn-1" },
+          },
+        ],
+        edges: [],
+        components: [],
+      },
+      { assetGuid: "hud", graphId: "hud", classId: "Hud" },
+    );
+    expect(diags.some((d) => d.code === "event.missing_component")).toBe(true);
+  });
+
+  it("errors event.missing_inherited when the parent custom event is gone", () => {
+    const diags = validateSerializedGraph(
+      {
+        nodes: [
+          {
+            id: "inherited",
+            type: "flow.event.custom",
+            position: { x: 0, y: 0 },
+            data: {
+              name: "On Foo",
+              eventQualifier: "Inherited",
+              parentClassId: "Pawn",
+            },
+          },
+        ],
+        edges: [],
+      },
+      {
+        assetGuid: "hero",
+        graphId: "hero",
+        classId: "Hero",
+        otherClassGraphs: { Pawn: { nodes: [], edges: [], members: [] } },
+        parentOf: (id) => (id === "Hero" ? "Pawn" : id === "Pawn" ? "Actor" : null),
+      },
+    );
+    expect(diags.some((d) => d.code === "event.missing_inherited")).toBe(true);
+  });
+});

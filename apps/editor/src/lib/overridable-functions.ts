@@ -443,3 +443,25 @@ export function collectOverridableEventRows(options: {
 
   return rows;
 }
+
+/** Custom event body names declared on parent ancestry graphs. */
+export function collectParentEventNames(options: {
+  classId?: string;
+  parentClass?: string | null;
+  parentOf?: (id: string) => string | null | undefined;
+  parentGraphs?: Record<string, SerializedGraph>;
+}): Set<string> {
+  const names = new Set<string>();
+  const parentOf = parentLookup(options.parentOf);
+  const start = options.parentClass ?? options.classId;
+  if (!start) return names;
+  for (const ancestor of walkAncestry(start, parentOf)) {
+    if (ancestor === options.classId) continue;
+    for (const event of customEventsFromGraph(
+      options.parentGraphs?.[ancestor],
+    )) {
+      names.add(event.name);
+    }
+  }
+  return names;
+}

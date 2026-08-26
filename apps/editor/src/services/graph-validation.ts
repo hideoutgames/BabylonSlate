@@ -38,8 +38,13 @@ import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_CLASS_SCRIPT_APIS,
   ENGINE_COMPONENT_CLASS_IDS,
+  engineEventTypeClassIds,
 } from "@babylonslate/object-model";
-import { componentGraphMembersForClass } from "../lib/component-graph-members";
+import {
+  componentGraphMembersForClass,
+  mergedPrefabViewsForGraph,
+} from "../lib/component-graph-members";
+import { collectParentEventNames } from "../lib/overridable-functions";
 import {
   createDefaultNodeRegistry,
   castDefaultClassId,
@@ -423,15 +428,59 @@ export type HydrateGraphOptions = {
   functionGraphs?: SerializedGraph["functionGraphs"];
 };
 
+function bindUnboundComponentEvents(
+  graph: SerializedGraph,
+  options?: HydrateGraphOptions,
+): SerializedGraph {
+  const members = componentGraphMembersForClass({
+    graph,
+    classId: options?.classId,
+    parentOf: options?.parentOf,
+    parentGraphs: options?.otherClassGraphs,
+  });
+  const typeClassIds = engineEventTypeClassIds();
+  return {
+    ...graph,
+    nodes: graph.nodes.map((node) => {
+      const data = { ...(node.data as Record<string, unknown>) };
+      if (typeof data.componentId === "string" && data.componentId.trim()) {
+        return node;
+      }
+      const typeId = catalogTypeId({ type: node.type, data });
+      const classes = typeClassIds[typeId];
+      if (!classes) return node;
+      const matches = members.filter((member) =>
+        classes.includes(member.typeClassId ?? ""),
+      );
+      if (matches.length !== 1) return node;
+      const match = matches[0];
+      if (!match) return node;
+      const raw = typeId.startsWith("flow.event.")
+        ? typeId.slice("flow.event.".length)
+        : typeId;
+      return {
+        ...node,
+        data: {
+          ...data,
+          componentId: match.componentId,
+          eventQualifier: match.name,
+          title: formatEventTitle(raw, match.name),
+        },
+      };
+    }),
+  };
+}
+
 /**
  * Injects `data.__pins` from the node registry for canvas rendering.
  * Compile/validate already materialize pins separately; this keeps the UI in sync.
  */
 export function hydrateSerializedGraphForEditor(
-  graph: SerializedGraph,
+  input: SerializedGraph,
   nodeRegistry: NodeRegistry = registry,
   options?: HydrateGraphOptions,
 ): SerializedGraph {
+  const graph = bindUnboundComponentEvents(input, options);
   const parentOf = parentLookup(options?.parentOf);
   const latentFunctions = editorLatentFunctions(nodeRegistry, {
     classId: options?.classId,
@@ -1779,6 +1828,7 @@ export function classHierarchyFromParentOf(
 
 export function classMemberSymbolsFromGraphs(
   graphs: Record<string, SerializedGraph>,
+  options?: { parentOf?: (id: string) => string | null | undefined },
 ): ClassMemberSymbol[] {
   const symbols: ClassMemberSymbol[] = [];
   for (const [classId, graph] of Object.entries(graphs)) {
@@ -1818,6 +1868,8 @@ export function classMemberSymbolsFromGraphs(
     for (const member of componentGraphMembersForClass({
       graph,
       classId,
+      parentOf: options?.parentOf,
+      parentGraphs: graphs,
     })) {
       symbols.push({
         id: member.id,
@@ -1900,12 +1952,31 @@ export type ValidateSerializedGraphOptions = {
   enums?: TypeSchemas["enums"];
   structs?: TypeSchemas["structs"];
   materialDomains?: Readonly<Record<string, string>>;
+  parentOf?: (id: string) => string | null | undefined;
+  otherClassGraphs?: Record<string, SerializedGraph>;
+  attachedComponents?: ReadonlyArray<{ id: string; classId: string }>;
+  eventTypeClassIds?: Readonly<Record<string, readonly string[]>>;
+  parentEventNames?: ReadonlySet<string>;
 };
+
+function attachedComponentsForGraph(
+  content: SerializedGraph,
+  options: ValidateSerializedGraphOptions,
+): ReadonlyArray<{ id: string; classId: string }> {
+  if (options.attachedComponents) return options.attachedComponents;
+  return mergedPrefabViewsForGraph({
+    graph: content,
+    classId: options.classId,
+    parentOf: options.parentOf,
+    parentGraphs: options.otherClassGraphs,
+  }).map((component) => ({ id: component.id, classId: component.classId }));
+}
 
 export function validateSerializedGraph(
   content: SerializedGraph | LogicGraph,
   options: ValidateSerializedGraphOptions,
 ): Diagnostic[] {
+  const serialized = isLogicGraphPayload(content) ? undefined : content;
   const ctx = {
     assetGuid: options.assetGuid,
     hierarchy: options.hierarchy,
@@ -1926,6 +1997,19 @@ export function validateSerializedGraph(
     enums: options.enums,
     structs: options.structs,
     materialDomains: options.materialDomains,
+    attachedComponents: serialized
+      ? attachedComponentsForGraph(serialized, options)
+      : options.attachedComponents,
+    eventTypeClassIds: options.eventTypeClassIds ?? engineEventTypeClassIds(),
+    parentEventNames:
+      options.parentEventNames ??
+      (options.otherClassGraphs
+        ? collectParentEventNames({
+            classId: options.classId,
+            parentOf: options.parentOf,
+            parentGraphs: options.otherClassGraphs,
+          })
+        : undefined),
   };
   if (isLogicGraphPayload(content)) {
     return [

@@ -615,6 +615,193 @@ describe("validateGraphs", () => {
     expect(diags.some((d) => d.code === "member.missing_event")).toBe(true);
   });
 
+  it("errors event.missing_component when a bound event's component is gone", () => {
+    const graph: LogicGraph = {
+      id: "main",
+      kind: "event",
+      nodes: [
+        {
+          id: "click",
+          typeId: "flow.event.onClick",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: { componentId: "btn-1" },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      attachedComponents: [],
+      eventTypeClassIds: { "flow.event.onClick": ["2DButtonComponent"] },
+    });
+    expect(diags.some((d) => d.code === "event.missing_component")).toBe(true);
+  });
+
+  it("errors event.missing_component for Get of a removed component ref", () => {
+    const graph: LogicGraph = {
+      id: "main",
+      kind: "event",
+      nodes: [
+        flowEntry(),
+        {
+          id: "log",
+          typeId: "debug.log",
+          position: { x: 200, y: 0 },
+          pins: [
+            pin("execIn", "exec", "in", EXEC),
+            pin("execOut", "then", "out", EXEC),
+            pin("message", "message", "in", STRING),
+          ],
+          properties: {},
+        },
+        {
+          id: "get",
+          typeId: "variables.get",
+          position: { x: 0, y: 80 },
+          pins: [pin("value", "value", "out", objectRef("Text3DComponent"))],
+          properties: {
+            variableId: "component:text-1",
+            variableName: "3D Text",
+            componentId: "text-1",
+          },
+        },
+      ],
+      edges: [
+        execThen("entry", "log"),
+        {
+          id: "data",
+          sourceNodeId: "get",
+          sourcePinId: "value",
+          targetNodeId: "log",
+          targetPinId: "message",
+        },
+      ],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      classId: "Hero",
+      members: [],
+      attachedComponents: [],
+    });
+    expect(diags.some((d) => d.code === "event.missing_component")).toBe(true);
+    expect(diags.some((d) => d.code === "member.missing_variable")).toBe(false);
+  });
+
+  it("errors event.missing_component when an unbound overlap has zero or many colliders", () => {
+    const node = {
+      id: "overlap",
+      typeId: "flow.event.beginOverlap",
+      position: { x: 0, y: 0 },
+      pins: [pin("execOut", "then", "out", EXEC)],
+      properties: {},
+    };
+    const none = validateGraphs(
+      [{ id: "main", kind: "event", nodes: [node], edges: [] }],
+      {
+        assetGuid: "a",
+        attachedComponents: [],
+        eventTypeClassIds: { "flow.event.beginOverlap": ["ColliderComponent"] },
+      },
+    );
+    const many = validateGraphs(
+      [{ id: "main", kind: "event", nodes: [node], edges: [] }],
+      {
+        assetGuid: "a",
+        attachedComponents: [
+          { id: "col-1", classId: "ColliderComponent" },
+          { id: "col-2", classId: "ColliderComponent" },
+        ],
+        eventTypeClassIds: { "flow.event.beginOverlap": ["ColliderComponent"] },
+      },
+    );
+    expect(none.some((d) => d.code === "event.missing_component")).toBe(true);
+    expect(many.some((d) => d.code === "event.missing_component")).toBe(true);
+  });
+
+  it("allows an unbound overlap when exactly one collider is attached", () => {
+    const diags = validateGraphs(
+      [
+        {
+          id: "main",
+          kind: "event",
+          nodes: [
+            {
+              id: "overlap",
+              typeId: "flow.event.beginOverlap",
+              position: { x: 0, y: 0 },
+              pins: [pin("execOut", "then", "out", EXEC)],
+              properties: {},
+            },
+          ],
+          edges: [],
+        },
+      ],
+      {
+        assetGuid: "a",
+        attachedComponents: [{ id: "col-1", classId: "ColliderComponent" }],
+        eventTypeClassIds: { "flow.event.beginOverlap": ["ColliderComponent"] },
+      },
+    );
+    expect(diags.some((d) => d.code === "event.missing_component")).toBe(false);
+  });
+
+  it("errors event.missing_inherited when the parent no longer declares the event", () => {
+    const graph: LogicGraph = {
+      id: "main",
+      kind: "event",
+      nodes: [
+        {
+          id: "inherited",
+          typeId: "flow.event.custom",
+          position: { x: 0, y: 0 },
+          pins: [pin("execOut", "then", "out", EXEC)],
+          properties: {
+            name: "On Foo",
+            eventQualifier: "Inherited",
+            parentClassId: "Pawn",
+          },
+        },
+      ],
+      edges: [],
+    };
+    const diags = validateGraphs([graph], {
+      assetGuid: "a",
+      parentEventNames: new Set(),
+    });
+    expect(diags.some((d) => d.code === "event.missing_inherited")).toBe(true);
+  });
+
+  it("allows an inherited event that the parent still declares", () => {
+    const diags = validateGraphs(
+      [
+        {
+          id: "main",
+          kind: "event",
+          nodes: [
+            {
+              id: "inherited",
+              typeId: "flow.event.custom",
+              position: { x: 0, y: 0 },
+              pins: [pin("execOut", "then", "out", EXEC)],
+              properties: {
+                name: "On Foo",
+                eventQualifier: "Inherited",
+                parentClassId: "Pawn",
+              },
+            },
+          ],
+          edges: [],
+        },
+      ],
+      {
+        assetGuid: "a",
+        parentEventNames: new Set(["On Foo"]),
+      },
+    );
+    expect(diags.some((d) => d.code === "event.missing_inherited")).toBe(false);
+  });
+
   it("errors when a local variable name collides with another local or class variable", () => {
     const graph: LogicGraph = {
       id: "Jump",

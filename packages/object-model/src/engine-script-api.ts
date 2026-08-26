@@ -228,6 +228,21 @@ const BY_CLASS_ID = new Map(
   ENGINE_CLASS_SCRIPT_APIS.map((api) => [api.classId, api]),
 );
 
+/** Event node type ids → class ids that expose them (e.g. onClick → 2DButton). */
+export function engineEventTypeClassIds(): Readonly<
+  Record<string, readonly string[]>
+> {
+  const map = new Map<string, string[]>();
+  for (const api of ENGINE_CLASS_SCRIPT_APIS) {
+    for (const event of api.events ?? []) {
+      const list = map.get(event.eventType) ?? [];
+      list.push(api.classId);
+      map.set(event.eventType, list);
+    }
+  }
+  return Object.fromEntries(map);
+}
+
 export function engineScriptApiFor(
   classId: string,
 ): EngineClassScriptApi | undefined {

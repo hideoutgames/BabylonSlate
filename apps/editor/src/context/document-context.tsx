@@ -2421,7 +2421,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         graphId: documentId({ kind: "graph", path: doc.path }),
         classId: doc.classId ?? classIdForGraphPath(doc.path),
         hierarchy: classHierarchyFromParentOf(parentOf),
-        members: classMemberSymbolsFromGraphs(classGraphs),
+        members: classMemberSymbolsFromGraphs(classGraphs, { parentOf }),
         knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
@@ -2429,6 +2429,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           projectService.registry?.list() ?? [],
           [...documentService.getState().openDocuments.values()],
         ),
+        parentOf,
+        otherClassGraphs: classGraphs,
       }),
     );
     const bundles = [

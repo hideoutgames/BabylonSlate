@@ -17,6 +17,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `TickPhase` / `TICK_PHASES` / `TickClock` | Fixed-dt phases; `physics` filled by `@babylonslate/physics` |
 | `ScriptInterface` / `dispatchInterface` | Interface defs and runtime dispatch with pin defaults |
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids cannot be reparented |
+| `ENGINE_CLASS_SCRIPT_APIS` / `engineScriptApiFor` | Per-class script catalog: optional variables, functions, events (Get/Set/Call and Add Event). Mouse events live on `2DButtonComponent`, not SceneLayerActor. |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
 | `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play. Skips `SceneLayerActor` (and subclasses); those belong on overlay documents. |
@@ -62,6 +63,10 @@ Search and Add Component advertise shipped behaviour: `TilemapComponent` is adda
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas, pairing warnings, collider TRS bake, named collision layers, and backend sync.
 
+### Engine script API
+
+`ENGINE_CLASS_SCRIPT_APIS` in `@babylonslate/object-model` is the Get/Set/Call/Add Event catalog (no React/Babylon). Each class id may list `variables` (`propertyKey` on `component.variables`), `functions` (`runtime` name for `ctx.callComponentFunction`), and `events` (`eventType` / `exportName`). Overlay pointer events are on `2DButtonComponent` only; SceneLayerActor has no native mouse stubs. Collision events are on `ColliderComponent`. Text components expose Set Text and On Text Changed. See [scripting.md](scripting.md).
+
 `createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon. Overlay classes (`SceneLayerActor` and subclasses) are skipped here; `createActorsFromSerializedSceneLayer` stamps `sceneLayerId` and strips the overlay denylist (Skybox / Camera / Light).
 
 ## ScriptInterface dispatch
@@ -71,7 +76,7 @@ See [physics.md](physics.md) for RigidBody / Collider property schemas, pairing 
 - Classes declare implemented interface guids; handlers are injectable so P5 can bind compiled graphs without changing the dispatch shape (see [scripting.md](scripting.md)).
 - `World.createActor` copies `ClassRegistry.inheritedInterfaces` onto the instance unless the caller passes `implementedInterfaces`.
 - Play `ScriptHost.callInterface` calls `dispatchInterface` against the world's `InterfaceRegistry` so a missing implementation returns pin defaults instead of `undefined`.
-- `ScriptHost.invokeEvent(classId, event, self?, args?)` and compiled `ctx.invokeCustomEvent(target, eventName, args)` pass `args` into the entry as `ctx.commandArgs` (alias `ctx.args`). Cross-instance Call dispatches on `target.classId` with `self = target`. `ctx.invokeFunction(target, functionName, args)` looks up `exports[functionName]` on `target.classId` (function graphs have no lifecycle `point.event`) and returns the result or `{}`, or a Promise of that object when the export is async. See [scripting.md](scripting.md).
+- `ScriptHost.invokeEvent(classId, event, self?, args?, componentId?)` and compiled `ctx.invokeCustomEvent(target, eventName, args)` pass `args` into the entry as `ctx.commandArgs` (alias `ctx.args`). Cross-instance Call dispatches on `target.classId` with `self = target`. `ctx.invokeFunction(target, functionName, args)` looks up `exports[functionName]` on `target.classId` (function graphs have no lifecycle `point.event`) and returns the result or `{}`, or a Promise of that object when the export is async. `ctx.getComponentById` matches `guid` or authored `sourceId`. See [scripting.md](scripting.md).
 
 ## Re-parenting
 

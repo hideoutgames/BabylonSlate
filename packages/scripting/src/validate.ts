@@ -502,6 +502,98 @@ function eventBindingName(raw: string | undefined): string | undefined {
   return raw.replace(/^(Event\s+)+/i, "").trim() || undefined;
 }
 
+function attachedComponentIds(ctx: TypeContext): Set<string> | undefined {
+  if (!ctx.attachedComponents) return undefined;
+  return new Set(ctx.attachedComponents.map((component) => component.id));
+}
+
+function matchingAttachedComponents(
+  ctx: TypeContext,
+  typeId: string,
+): ReadonlyArray<{ id: string; classId: string }> | undefined {
+  const classIds = ctx.eventTypeClassIds?.[typeId];
+  if (!classIds || !ctx.attachedComponents) return undefined;
+  const allowed = new Set(classIds);
+  return ctx.attachedComponents.filter((component) =>
+    allowed.has(component.classId),
+  );
+}
+
+function isInheritedEventOverride(node: GraphNode): boolean {
+  const qualifier = stringProp(node.properties, "eventQualifier");
+  if (qualifier === "Inherited") return true;
+  return (
+    node.typeId === "flow.event.custom" &&
+    !!stringProp(node.properties, "parentClassId")
+  );
+}
+
+function inheritedEventName(node: GraphNode): string | undefined {
+  return eventBindingName(
+    stringProp(node.properties, "name") ??
+      stringProp(node.properties, "title") ??
+      stringProp(node.properties, "eventName"),
+  );
+}
+
+function validateComponentAndInheritedBindings(
+  graph: LogicGraph,
+  ctx: TypeContext,
+): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  const attachedIds = attachedComponentIds(ctx);
+  for (const node of graph.nodes) {
+    if (ctx.parentEventNames && isInheritedEventOverride(node)) {
+      const name = inheritedEventName(node);
+      if (name && !ctx.parentEventNames.has(name)) {
+        out.push(
+          diagnostic({
+            code: "event.missing_inherited",
+            message: `Inherited event "${name}" is no longer declared on a parent class`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+          }),
+        );
+      }
+    }
+
+    const componentId = stringProp(node.properties, "componentId");
+    if (componentId) {
+      if (attachedIds && !attachedIds.has(componentId)) {
+        out.push(
+          diagnostic({
+            code: "event.missing_component",
+            message: `Component "${componentId}" is not attached to this class`,
+            assetGuid: ctx.assetGuid,
+            graphId: graph.id,
+            nodeId: node.id,
+            componentId,
+          }),
+        );
+      }
+      continue;
+    }
+
+    if (!node.typeId.startsWith("flow.event.")) continue;
+    const matches = matchingAttachedComponents(ctx, node.typeId);
+    if (!matches || matches.length === 1) continue;
+    out.push(
+      diagnostic({
+        code: "event.missing_component",
+        message:
+          matches.length === 0
+            ? `Event "${node.typeId}" has no attached component that exposes it`
+            : `Event "${node.typeId}" is missing a component binding`,
+        assetGuid: ctx.assetGuid,
+        graphId: graph.id,
+        nodeId: node.id,
+      }),
+    );
+  }
+  return out;
+}
+
 function validateMemberBindings(
   graph: LogicGraph,
   ctx: TypeContext,
@@ -600,6 +692,7 @@ function validateMemberBindings(
 
   for (const node of graph.nodes) {
     if (node.typeId === "variables.get" || node.typeId === "variables.set") {
+      if (stringProp(node.properties, "componentId")) continue;
       const variableId = stringProp(node.properties, "variableId");
       const variableName = stringProp(node.properties, "variableName");
       const classId =
@@ -949,6 +1042,7 @@ export function validateGraphs(
     diagnostics.push(...keep(validatePinTyping(graph, ctx)));
     diagnostics.push(...keep(validateExecuteJavaScript(graph, ctx)));
     diagnostics.push(...keep(validateMemberBindings(graph, ctx)));
+    diagnostics.push(...keep(validateComponentAndInheritedBindings(graph, ctx)));
     diagnostics.push(...keep(validateTypeRefs(graph, ctx)));
     diagnostics.push(...keep(validateFlowSwitchCases(graph, ctx)));
   }
