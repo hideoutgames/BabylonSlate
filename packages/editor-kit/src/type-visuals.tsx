@@ -164,7 +164,6 @@ const ICON_BY_ID: Record<string, LucideIcon> = {
   RigidBodyComponent: CylinderIcon,
   ColliderComponent: CircleDashedIcon,
   Scene: LayersIcon,
-  SceneLayer: Layers2Icon,
   Graph: FileJsonIcon,
   Texture: ImageIcon,
   Material: PaintbrushIcon,
