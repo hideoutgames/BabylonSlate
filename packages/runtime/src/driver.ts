@@ -798,6 +798,9 @@ class InProcessRuntime implements RuntimeDriver {
             volume: Number.isFinite(volume) ? volume : 1,
           });
         }
+        if (component.classId === "NavAgentComponent") {
+          this.updateNavAgentParams(owner);
+        }
         const sync = owner.sceneLayerId
           ? this.overlayPhysicsSync
           : this.physicsSync;
@@ -1619,6 +1622,19 @@ class InProcessRuntime implements RuntimeDriver {
       if (!id) continue;
       this.navAgentByActor.set(actor.guid, id);
     }
+  }
+
+  private updateNavAgentParams(actor: Actor): void {
+    const agentId = this.navAgentByActor.get(actor.guid);
+    if (!agentId || !this.nav) return;
+    const component = actor.components.find(
+      (entry) => entry.classId === "NavAgentComponent" && !entry.destroyed,
+    );
+    if (!component) return;
+    this.nav.updateAgent(
+      agentId,
+      parseNavAgentParams(Object.fromEntries(component.variables)),
+    );
   }
 
   private registerNavObstacles(): void {
