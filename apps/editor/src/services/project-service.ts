@@ -107,7 +107,11 @@ import { createDefaultLogicGraphSerialized, hydrateClassDocumentPayload } from "
 
 function headerMetaForSave(
   type: string,
-  content: SerializedScene | SerializedGraph | Record<string, unknown>,
+  content:
+    | SerializedScene
+    | SerializedSceneLayer
+    | SerializedGraph
+    | Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   const materialMeta = materialHeaderMeta(
     type,
