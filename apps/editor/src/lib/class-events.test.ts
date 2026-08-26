@@ -13,9 +13,6 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
-      "flow.event.hit",
-      "flow.event.beginOverlap",
-      "flow.event.endOverlap",
     ]);
   });
 
@@ -24,9 +21,6 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
-      "flow.event.hit",
-      "flow.event.beginOverlap",
-      "flow.event.endOverlap",
     ]);
   });
 
@@ -115,7 +109,7 @@ describe("nativeEventStubs", () => {
     ).toBe(false);
   });
 
-  it("lists overlay mouse events only on SceneLayerActor graphs", () => {
+  it("does not list overlay mouse events as SceneLayerActor natives", () => {
     expect(
       nativeEventStubs({ parentClass: "SceneLayerActor" }).map(
         (stub) => stub.eventType,
@@ -124,14 +118,6 @@ describe("nativeEventStubs", () => {
       "flow.event.beginPlay",
       "flow.event.tick",
       "flow.event.destroyed",
-      "flow.event.hit",
-      "flow.event.beginOverlap",
-      "flow.event.endOverlap",
-      "flow.event.onMouseEnter",
-      "flow.event.onMouseLeave",
-      "flow.event.onClick",
-      "flow.event.onPressStart",
-      "flow.event.onPressEnd",
     ]);
     expect(
       isScriptCatalogNodeAllowed("flow.event.onClick", {

@@ -241,10 +241,6 @@ export function nativeEventStubs(
   const types: string[] = [];
   if (chain.includes("Actor")) {
     types.push(...NATIVE_CLASS_EVENT_TYPES);
-    types.push(...COLLISION_EVENT_TYPE_IDS);
-  }
-  if (chain.includes("SceneLayerActor")) {
-    types.push(...OVERLAY_MOUSE_EVENT_TYPE_IDS);
   }
   if (chain.includes("BDebugCommand")) {
     types.push("flow.event.commandRun");
