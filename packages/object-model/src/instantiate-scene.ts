@@ -6,7 +6,10 @@ import type {
   SerializedTransform,
   Transform,
 } from "@babylonslate/core";
-import { identitySerializedTransform } from "@babylonslate/core";
+import {
+  identitySerializedTransform,
+  isSceneLayerDeniedComponent,
+} from "@babylonslate/core";
 import type { LifecycleHooks } from "./objects";
 import type { Actor } from "./objects";
 import type { World } from "./world";
@@ -71,7 +74,8 @@ export function createActorsFromSerializedScene(
 ): Actor[] {
   const actors: Actor[] = [];
   for (const serialized of scene.actors) {
-    actors.push(createActorFromSerialized(world, serialized, hooksFor));
+    const actor = createActorFromSerialized(world, serialized, hooksFor);
+    if (actor) actors.push(actor);
   }
   return actors;
 }
@@ -82,9 +86,15 @@ export function createActorsFromSerializedSceneLayer(
   sceneLayerId: string,
   hooksFor?: SceneActorHooks,
 ): Actor[] {
-  return layer.actors.map((serialized) =>
-    createActorFromSerialized(world, serialized, hooksFor, sceneLayerId),
-  );
+  return layer.actors.flatMap((serialized) => {
+    const actor = createActorFromSerialized(
+      world,
+      serialized,
+      hooksFor,
+      sceneLayerId,
+    );
+    return actor ? [actor] : [];
+  });
 }
 
 function createActorFromSerialized(
@@ -92,7 +102,13 @@ function createActorFromSerialized(
   serialized: SerializedActor,
   hooksFor?: SceneActorHooks,
   sceneLayerId?: string,
-): Actor {
+): Actor | null {
+  if (
+    !sceneLayerId &&
+    world.classRegistry.isA(serialized.classId, "SceneLayerActor")
+  ) {
+    return null;
+  }
   const actor = world.createActor({
     guid: serialized.id,
     classId: serialized.classId,
@@ -107,6 +123,9 @@ function createActorFromSerialized(
     sceneLayerId: sceneLayerId ?? null,
   });
   for (const component of serialized.components) {
+    if (sceneLayerId && isSceneLayerDeniedComponent(component.classId)) {
+      continue;
+    }
     actor.attachComponent(
       world.createComponent({
         guid: component.id,

@@ -38,7 +38,7 @@ DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle
 
 `SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId`. `applyChangeScene` must not destroy them.
 
-**Denylist only** (Add Component, Place Actors, serialize skip): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist.
+**Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
 
 Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses. World Scene Place Actors excludes them.
 
@@ -60,7 +60,7 @@ The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the P
 
 ## Hit test and 2DAnchor
 
-`HitTest` on `2DButton`, `2DMaterial`, and `2DTexture`: Ignore (default on texture/material), Block (default on button), Pass Through.
+`HitTest` on `2DButton`, `2DMaterial`, and `2DTexture`: Ignore (default on texture/material), Block (default on button), Pass Through. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad.
 
 Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene, honors HitTest, then optionally the world. Overlay scenes participate in pointer-move picks for hover; world scenes keep `skipPointerMovePicking: true`.
 
@@ -77,8 +77,8 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 | Create Scene Layer | `ctx.createSceneLayer(guid, zOrder)` |
 | Remove Scene Layer | Destroy instance + actors; no-op if already gone |
 | Clear Scene Layer | Remove all |
-| Register Scene Layer Post-processing | Append a `postProcess` Material |
-| Unregister Scene Layer Post-processing | Missing material: error diagnostic / Output Log, Play continues |
+| Register Scene Layer Post-Processing | Append a `postProcess` Material |
+| Unregister Scene Layer Post-Processing | Missing material: error diagnostic / Output Log, Play continues |
 
 Register/Unregister pickers require `domain === "postProcess"`.
 
