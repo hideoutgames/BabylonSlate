@@ -885,6 +885,15 @@ describe("applyPrefabPropertyDefaults", () => {
       kind: "asset",
       value: "tex-1",
     });
+    const button = rowsFor({
+      id: "btn",
+      classId: "2DButtonComponent",
+      properties: {},
+    });
+    expect(button.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
+      kind: "enum",
+      value: "block",
+    });
     expect(texture.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
       kind: "enum",
       value: "ignore",

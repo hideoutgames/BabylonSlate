@@ -298,7 +298,7 @@ Compiled class graphs bind to object-model lifecycle without changing dispatch s
 
 Play path: compile project graphs → worker `loadScripts` control message → `loadCompiledModule` → `registerAnchors` → spawn scripted actors → tick.
 
-`shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, and `SceneLayer` so those graphs never auto-spawn as Actors.
+`shouldSpawnScriptedActor` skips `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, and `SceneLayer` so those graphs never auto-spawn as Actors. `spawnActor` also returns null for `SceneLayerActor` and subclasses — overlay actors come from SceneLayer documents / Create Scene Layer, not the world Spawn Actor node.
 
 ### Entry points
 

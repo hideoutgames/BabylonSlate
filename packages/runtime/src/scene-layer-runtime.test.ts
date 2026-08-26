@@ -351,4 +351,106 @@ describe("SceneLayer runtime compositor", () => {
     });
     expect(commands).toHaveLength(before);
   });
+
+  it("does not spawn SceneLayerActor into the world via Spawn Actor", async () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hud-script",
+        classId: "SceneLayerActor",
+        parentClassId: "Actor",
+        source: "export function onBeginPlay() {}",
+        anchors: [],
+        entryPoints: [
+          { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+        ],
+      },
+      {
+        assetGuid: "banner-script",
+        classId: "HudBanner",
+        parentClassId: "SceneLayerActor",
+        source: "export function onBeginPlay() {}",
+        anchors: [],
+        entryPoints: [
+          { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+        ],
+      },
+    ]);
+    runtime.realizePlayWorld();
+    expect(runtime.spawnScriptedActor({ classId: "SceneLayerActor" })).toBeNull();
+    expect(runtime.spawnScriptedActor({ classId: "HudBanner" })).toBeNull();
+    expect(
+      runtime
+        .getWorld()
+        .getActors()
+        .some((actor) =>
+          runtime.getWorld().classRegistry.isA(actor.classId, "SceneLayerActor"),
+        ),
+    ).toBe(false);
+  });
+
+  it("emits a default 2DButton quad only when the overlay actor has no sibling visual", () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("solo", "Solo", {
+          classId: "SceneLayerActor",
+          components: [
+            { id: "btn", classId: "2DButtonComponent", properties: {} },
+          ],
+        }),
+        createActor("pair", "Pair", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "tex",
+              classId: "2DTextureComponent",
+              properties: { textureGuid: "albedo-1" },
+            },
+            {
+              id: "btn",
+              classId: "2DButtonComponent",
+              properties: { hitTest: "block" },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    const assignSolo = commands.find(
+      (command) => command.type === "assignMesh" && command.actorGuid === "solo",
+    );
+    const assignPair = commands.find(
+      (command) => command.type === "assignMesh" && command.actorGuid === "pair",
+    );
+    expect(assignSolo).toMatchObject({
+      type: "assignMesh",
+      meshKind: "2dbutton",
+      hasButton: true,
+    });
+    expect(assignPair).toMatchObject({
+      type: "assignMesh",
+      meshKind: "2dtexture",
+      hasButton: true,
+    });
+    expect(
+      assignPair && "parts" in assignPair
+        ? assignPair.parts?.some((part) => part.meshKind === "2dbutton")
+        : false,
+    ).toBe(false);
+  });
 });

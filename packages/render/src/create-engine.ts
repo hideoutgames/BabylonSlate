@@ -778,7 +778,7 @@ export function createEngine(
         engine,
         postProcessingEnabled: () => postProcessingEnabled,
         attachLayerPostProcess: (layer, stack) => {
-          attachPostProcessStack({
+          return attachPostProcessStack({
             scene: layer.scene,
             camera: layer.camera,
             library: materialLibrary,

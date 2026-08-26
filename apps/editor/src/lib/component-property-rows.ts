@@ -1276,7 +1276,10 @@ export function componentPropertyRows(
     case "2DButtonComponent":
     case "2DTextureComponent":
     case "2DMaterialComponent": {
-      const hitTest = String(component.properties.hitTest ?? "ignore");
+      const hitTest = String(
+        component.properties.hitTest ??
+          (component.classId === "2DButtonComponent" ? "block" : "ignore"),
+      );
       const assetProperty =
         component.classId === "2DMaterialComponent"
           ? "materialGuid"

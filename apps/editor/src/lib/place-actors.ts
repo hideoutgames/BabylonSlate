@@ -4,6 +4,7 @@ import {
   createSkyboxComponent,
   createText3DComponent,
   identitySerializedTransform,
+  isSceneLayerDeniedComponent,
   type SerializedActor,
   type SerializedComponent,
   type SerializedScene,
@@ -308,18 +309,16 @@ export function spawnPlacedActor(
 ): SerializedActor {
   const kind = item.kind;
   const transform = placedTransform(position);
-  const stamp = (actor: SerializedActor): SerializedActor =>
-    options?.overlay && actor.classId === "Actor"
-      ? { ...actor, classId: "SceneLayerActor" }
-      : actor;
+  const finish = (actor: SerializedActor): SerializedActor =>
+    applyOverlayPlace(actor, options?.overlay === true);
   if (kind.type === "shape") {
-    return stamp(createActor(id, kind.meshKind, {
+    return finish(createActor(id, kind.meshKind, {
       transform,
       components: [createMeshComponent(`${id}-mesh`, kind.meshKind)],
     }));
   }
   if (kind.type === "light") {
-    return createActor(id, item.title, {
+    return finish(createActor(id, item.title, {
       transform,
       components: [
         {
@@ -331,10 +330,10 @@ export function spawnPlacedActor(
           },
         },
       ],
-    });
+    }));
   }
   if (kind.type === "camera") {
-    return createActor(id, "Camera", {
+    return finish(createActor(id, "Camera", {
       transform,
       components: [
         {
@@ -347,23 +346,23 @@ export function spawnPlacedActor(
           ),
         },
       ],
-    });
+    }));
   }
   if (kind.type === "skybox") {
-    return createActor(id, "Skybox", {
+    return finish(createActor(id, "Skybox", {
       transform,
       locked: true,
       components: [createSkyboxComponent(`${id}-skybox`)],
-    });
+    }));
   }
   if (kind.type === "text3d") {
-    return stamp(createActor(id, "3D Text", {
+    return finish(createActor(id, "3D Text", {
       transform,
       components: [createText3DComponent(`${id}-text3d`)],
     }));
   }
   if (kind.type === "navmesh") {
-    return stamp(createActor(id, "NavMesh", {
+    return finish(createActor(id, "NavMesh", {
       transform,
       components: [
         {
@@ -375,7 +374,7 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "navmesh-blocker") {
-    return stamp(createActor(id, "NavMesh Blocker", {
+    return finish(createActor(id, "NavMesh Blocker", {
       transform,
       components: [
         {
@@ -387,7 +386,7 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "blocking-volume") {
-    return stamp(createActor(id, "Blocking Volume", {
+    return finish(createActor(id, "Blocking Volume", {
       transform,
       components: [
         {
@@ -399,7 +398,7 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "audio") {
-    return stamp(createActor(id, "Audio", {
+    return finish(createActor(id, "Audio", {
       transform,
       components: [
         {
@@ -411,7 +410,7 @@ export function spawnPlacedActor(
     }));
   }
   if (kind.type === "particle") {
-    return stamp(createActor(id, "Particle", {
+    return finish(createActor(id, "Particle", {
       transform,
       components: [
         {
@@ -424,7 +423,7 @@ export function spawnPlacedActor(
   }
   if (kind.type === "asset") {
     if (kind.assetType === "Class") {
-      return stamp(createActor(id, kind.name, {
+      return finish(createActor(id, kind.name, {
         classId: kind.classId ?? kind.name,
         transform,
         components: instantiatePrefabComponents(
@@ -434,7 +433,7 @@ export function spawnPlacedActor(
       }));
     }
     if (kind.assetType === "Audio") {
-      return stamp(createActor(id, kind.name, {
+      return finish(createActor(id, kind.name, {
         transform,
         components: [
           {
@@ -452,7 +451,7 @@ export function spawnPlacedActor(
       }));
     }
     if (kind.assetType === "ParticleSystem") {
-      return stamp(createActor(id, kind.name, {
+      return finish(createActor(id, kind.name, {
         transform,
         components: [
           {
@@ -469,9 +468,23 @@ export function spawnPlacedActor(
     }
     const component = createMeshComponent(`${id}-mesh`, "box");
     component.properties.assetGuid = kind.guid;
-    return stamp(createActor(id, kind.name, { transform, components: [component] }));
+    return finish(createActor(id, kind.name, { transform, components: [component] }));
   }
-  return stamp(createActor(id, "Empty", { transform }));
+  return finish(createActor(id, "Empty", { transform }));
+}
+
+function applyOverlayPlace(
+  actor: SerializedActor,
+  overlay: boolean,
+): SerializedActor {
+  if (!overlay) return actor;
+  return {
+    ...actor,
+    classId: actor.classId === "Actor" ? "SceneLayerActor" : actor.classId,
+    components: actor.components.filter(
+      (component) => !isSceneLayerDeniedComponent(component.classId),
+    ),
+  };
 }
 
 export function duplicateSceneActor(

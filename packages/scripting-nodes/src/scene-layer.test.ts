@@ -57,6 +57,9 @@ describe("scene-layer nodes", () => {
     const created = sceneLayerNodes.find((entry) => entry.id === "scene-layer.create");
     expect(created?.title).toBe("Create Scene Layer");
     const pins = created?.pins({}) ?? [];
+    expect(pins.find((pin) => pin.id === "asset")?.name).toBe("Asset");
+    expect(pins.find((pin) => pin.id === "zOrder")?.name).toBe("Z-Order");
+    expect(pins.find((pin) => pin.id === "out")?.name).toBe("Layer");
     expect(pins.find((pin) => pin.id === "asset")?.type).toEqual({
       kind: "assetRef",
       assetType: "SceneLayer",
@@ -64,6 +67,18 @@ describe("scene-layer nodes", () => {
     expect(pins.find((pin) => pin.id === "out")?.type).toEqual(
       objectRef("SceneLayer"),
     );
+    const register = sceneLayerNodes.find(
+      (entry) => entry.id === "scene-layer.registerPostProcess",
+    );
+    expect(register?.title).toBe("Register Scene Layer Post-Processing");
+    expect(register?.pins({}).find((pin) => pin.id === "layer")?.name).toBe("Layer");
+    expect(register?.pins({}).find((pin) => pin.id === "material")?.name).toBe(
+      "Material",
+    );
+    expect(
+      sceneLayerNodes.find((entry) => entry.id === "scene-layer.unregisterPostProcess")
+        ?.title,
+    ).toBe("Unregister Scene Layer Post-Processing");
   });
 
   it("compiles Create Scene Layer onto ctx.createSceneLayer", () => {

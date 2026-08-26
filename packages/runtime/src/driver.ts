@@ -17,6 +17,7 @@ import {
   ActorComponent,
   BObject,
   SceneLayer,
+  isSceneLayerExclusiveComponent,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickPhase,
@@ -24,6 +25,7 @@ import {
 import {
   createDefaultSceneSettings,
   eulerDegreesToQuaternion,
+  isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
   parseSceneLayerHitTest,
   parseSkyboxFaces,
@@ -622,6 +624,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!target || target.destroyed) return null;
         const id = String(classId ?? "").trim();
         if (!id) return null;
+        const overlay = Boolean(target.sceneLayerId);
+        if (overlay && isSceneLayerDeniedComponent(id)) return null;
+        if (!overlay && isSceneLayerExclusiveComponent(id)) return null;
         const pose = coerceTransform(transform);
         const component = this.world.createComponent({
           classId: id,
@@ -2300,19 +2305,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitMeshAssignment(actor: Actor, slotId: number): void {
-    const renderables = actor.components.filter(
-      (component) =>
-        !component.destroyed &&
-        (component.classId === "MeshComponent" ||
-          component.classId === "SpriteComponent" ||
-          component.classId === "TilemapComponent" ||
-          component.classId === "SkyboxComponent" ||
-          component.classId === "Text3DComponent" ||
-          component.classId === "2DTextureComponent" ||
-          component.classId === "2DMaterialComponent" ||
-          component.classId === "2DButtonComponent" ||
-          (component.classId === "ColliderComponent" &&
-            component.getVariable("renderInGame") === true)),
+    const skipButtonMesh = overlayButtonHasSiblingVisual(actor);
+    const renderables = actor.components.filter((component) =>
+      isPlayRenderable(component, skipButtonMesh),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
@@ -3056,9 +3051,47 @@ class InProcessRuntime implements RuntimeDriver {
 
   private canSpawnActorClass(classId: string): boolean {
     if (!shouldSpawnScriptedActor(classId)) return false;
+    if (this.world.classRegistry.isA(classId, "SceneLayerActor")) return false;
     const kind = this.world.classRegistry.get(classId)?.kind;
     return kind !== "object" && kind !== "gameInstance";
   }
+}
+
+const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
+  "2DTextureComponent",
+  "2DMaterialComponent",
+  "SpriteComponent",
+  "MeshComponent",
+]);
+
+function overlayButtonHasSiblingVisual(actor: Actor): boolean {
+  return actor.components.some(
+    (component) =>
+      !component.destroyed && OVERLAY_BUTTON_VISUAL_CLASS_IDS.has(component.classId),
+  );
+}
+
+function isPlayRenderable(
+  component: ActorComponent,
+  skipButtonMesh: boolean,
+): boolean {
+  if (component.destroyed) return false;
+  if (component.classId === "2DButtonComponent") return !skipButtonMesh;
+  if (
+    component.classId === "MeshComponent" ||
+    component.classId === "SpriteComponent" ||
+    component.classId === "TilemapComponent" ||
+    component.classId === "SkyboxComponent" ||
+    component.classId === "Text3DComponent" ||
+    component.classId === "2DTextureComponent" ||
+    component.classId === "2DMaterialComponent"
+  ) {
+    return true;
+  }
+  return (
+    component.classId === "ColliderComponent" &&
+    component.getVariable("renderInGame") === true
+  );
 }
 
 function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {

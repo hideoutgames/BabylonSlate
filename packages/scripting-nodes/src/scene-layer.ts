@@ -81,9 +81,9 @@ export const sceneLayerNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("asset", "asset", "in", SCENE_LAYER_ASSET),
-      pin("zOrder", "Z-order", "in", INT),
-      pin("out", "out", "out", LAYER),
+      pin("asset", "Asset", "in", SCENE_LAYER_ASSET),
+      pin("zOrder", "Z-Order", "in", INT),
+      pin("out", "Layer", "out", LAYER),
     ],
     codegen: (ctx) => {
       const out = ctx.output("out");
@@ -99,7 +99,7 @@ export const sceneLayerNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("layer", "layer", "in", LAYER),
+      pin("layer", "Layer", "in", LAYER),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.removeSceneLayer(${ctx.input("layer")});`);
@@ -119,13 +119,13 @@ export const sceneLayerNodes: NodeDefinition[] = [
   },
   {
     id: "scene-layer.registerPostProcess",
-    title: "Register Scene Layer Post-processing",
+    title: "Register Scene Layer Post-Processing",
     category: "scene-layer",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("layer", "layer", "in", LAYER),
-      pin("material", "material", "in", MATERIAL_ASSET),
+      pin("layer", "Layer", "in", LAYER),
+      pin("material", "Material", "in", MATERIAL_ASSET),
     ],
     codegen: (ctx) => {
       ctx.emit(
@@ -135,13 +135,13 @@ export const sceneLayerNodes: NodeDefinition[] = [
   },
   {
     id: "scene-layer.unregisterPostProcess",
-    title: "Unregister Scene Layer Post-processing",
+    title: "Unregister Scene Layer Post-Processing",
     category: "scene-layer",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("layer", "layer", "in", LAYER),
-      pin("material", "material", "in", MATERIAL_ASSET),
+      pin("layer", "Layer", "in", LAYER),
+      pin("material", "Material", "in", MATERIAL_ASSET),
     ],
     codegen: (ctx) => {
       ctx.emit(

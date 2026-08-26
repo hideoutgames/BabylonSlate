@@ -19,8 +19,8 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `ENGINE_BASE_CLASS_IDS` / `ENGINE_COMPONENT_CLASS_IDS` / `ENGINE_BT_BUILTIN_CLASSES` / `isLockedEngineClassId` | Stable string ids for engine types; locked ids cannot be reparented |
 | `createWorldSnapshot` | Canonical JSON-serializable world state for harness goldens |
 | `createDebugInspectSnapshot` | Read-only Play inspector tree (`tickIndex` + Game Instance / actors / components + optional `variableTypes`). Not a harness golden |
-| `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play |
-| `createActorsFromSerializedSceneLayer` | Overlay actors from a `SerializedSceneLayer` (stamped `sceneLayerId`) |
+| `createActorsFromSerializedScene` | Build unspawned World actors from a `SerializedScene` for Play. Skips `SceneLayerActor` (and subclasses); those belong on overlay documents. |
+| `createActorsFromSerializedSceneLayer` | Overlay actors from a `SerializedSceneLayer` (stamped `sceneLayerId`). Drops Skybox / Camera / Light. |
 
 Depends only on `@babylonslate/core` (Guid, Result, math, seeded RNG). No React, Babylon, or Capacitor.
 
@@ -62,7 +62,7 @@ Search and Add Component advertise shipped behaviour: `TilemapComponent` is adda
 
 See [physics.md](physics.md) for RigidBody / Collider property schemas, pairing warnings, collider TRS bake, named collision layers, and backend sync.
 
-`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon.
+`createActorsFromSerializedScene` (same package) builds unspawned World actors from a `SerializedScene` — ids, actor transforms, and component properties plus each component’s local `transform` / `parentId` — so Play can instantiate the authored document without the editor touching Babylon. Overlay classes (`SceneLayerActor` and subclasses) are skipped here; `createActorsFromSerializedSceneLayer` stamps `sceneLayerId` and strips the overlay denylist (Skybox / Camera / Light).
 
 ## ScriptInterface dispatch
 

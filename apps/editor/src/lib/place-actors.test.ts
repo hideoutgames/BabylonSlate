@@ -75,6 +75,38 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(world.some((entry) => entry.kind.type === "camera")).toBe(true);
   });
 
+  it("strips Camera Light and Skybox when placing an overlay Class prefab", () => {
+    const item: PlaceActorItem = {
+      id: "asset-hud",
+      title: "Hud",
+      category: "Project",
+      kind: {
+        type: "asset",
+        name: "Hud",
+        guid: "hud",
+        assetType: "Class",
+        classId: "HudBanner",
+        components: [
+          { id: "sprite", classId: "SpriteComponent", properties: {} },
+          { id: "cam", classId: "CameraComponent", properties: {} },
+          { id: "light", classId: "LightComponent", properties: {} },
+          { id: "sky", classId: "SkyboxComponent", properties: {} },
+        ],
+      },
+    };
+    const actor = spawnPlacedActor(
+      createDefaultScene(),
+      item,
+      "actor-hud",
+      ORIGIN,
+      { overlay: true },
+    );
+    expect(actor.classId).toBe("HudBanner");
+    expect(actor.components.map((component) => component.classId)).toEqual([
+      "SpriteComponent",
+    ]);
+  });
+
   it("places an Audio actor with an AudioComponent", () => {
     const item = ENGINE_PLACE_ACTORS.find((entry) => entry.id === "audio")!;
     expect(item.category).toBe("Audio");

@@ -14,6 +14,7 @@ import type { CommandMessage } from "@babylonslate/bridge";
 import {
   parseSceneLayerHitTest,
   walkOverlayPointerHits,
+  SCENE_LAYER_ORTHO_HALF_HEIGHT,
   type OverlayPointerHit,
   type SceneLayerHitTest,
 } from "@babylonslate/core";
@@ -40,7 +41,10 @@ export interface SceneLayerView {
 export interface SceneLayerCompositorOptions {
   engine: Engine;
   postProcessingEnabled?: () => boolean;
-  attachLayerPostProcess?: (layer: SceneLayerView, stack: SceneLayerPostProcessEntry[]) => void;
+  attachLayerPostProcess?: (
+    layer: SceneLayerView,
+    stack: SceneLayerPostProcessEntry[],
+  ) => { dispose: () => void } | null;
   orthoHalfHeight?: number;
 }
 
@@ -49,9 +53,8 @@ type LayerRecord = SceneLayerView & {
   rtt: RenderTargetTexture | null;
   blitMaterial: StandardMaterial | null;
   blitScene: Scene | null;
+  attachedPostProcess: { dispose: () => void } | null;
 };
-
-const DEFAULT_ORTHO_HALF_HEIGHT = 4.5;
 
 /**
  * Play-only overlay stack: extra unlit orthographic Scenes on the shared
@@ -70,7 +73,7 @@ export class SceneLayerCompositor {
     this.engine = options.engine;
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
-    this.orthoHalfHeight = options.orthoHalfHeight ?? DEFAULT_ORTHO_HALF_HEIGHT;
+    this.orthoHalfHeight = options.orthoHalfHeight ?? SCENE_LAYER_ORTHO_HALF_HEIGHT;
   }
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
@@ -100,6 +103,7 @@ export class SceneLayerCompositor {
       rtt: null,
       blitMaterial: null,
       blitScene: null,
+      attachedPostProcess: null,
     };
     this.applyOrtho(layer);
     this.byId.set(command.layerId, layer);
@@ -320,10 +324,13 @@ export class SceneLayerCompositor {
     );
     layer.camera.outputRenderTarget = layer.rtt;
     layer.scene.autoClear = true;
-    this.attachLayerPostProcess?.(layer, enabledStack);
+    layer.attachedPostProcess =
+      this.attachLayerPostProcess?.(layer, enabledStack) ?? null;
   }
 
   private releasePostProcess(layer: LayerRecord): void {
+    layer.attachedPostProcess?.dispose();
+    layer.attachedPostProcess = null;
     layer.camera.outputRenderTarget = null;
     layer.rtt?.dispose();
     layer.rtt = null;

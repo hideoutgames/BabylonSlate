@@ -68,6 +68,54 @@ describe("createActorsFromSerializedSceneLayer", () => {
     expect(actors[0]?.sceneLayerId).toBe(layer.guid);
     expect(actors[0]?.components[0]?.assetGuid).toBe("albedo-1");
   });
+
+  it("drops Skybox, Camera, and Light when instantiating overlay actors", () => {
+    const world = testWorld();
+    const layer = world.createSceneLayer({ assetGuid: "hud", zOrder: 0 });
+    const actors = createActorsFromSerializedSceneLayer(
+      world,
+      {
+        name: "HUD",
+        settings: {
+          gravity: [0, -9.81, 0],
+          fixedTimestepMs: 16.6667,
+          postProcessStack: [],
+        },
+        folders: [],
+        actors: [
+          createActor("banner", "Banner", {
+            classId: "SceneLayerActor",
+            components: [
+              {
+                id: "sprite",
+                classId: "SpriteComponent",
+                properties: {},
+              },
+              {
+                id: "cam",
+                classId: "CameraComponent",
+                properties: {},
+              },
+              {
+                id: "light",
+                classId: "LightComponent",
+                properties: {},
+              },
+              {
+                id: "sky",
+                classId: "SkyboxComponent",
+                properties: {},
+              },
+            ],
+          }),
+        ],
+      },
+      layer.guid,
+    );
+    expect(actors[0]?.components.map((component) => component.classId)).toEqual([
+      "SpriteComponent",
+    ]);
+  });
 });
 
 describe("createActorsFromSerializedScene", () => {
@@ -253,5 +301,20 @@ describe("createActorsFromSerializedScene", () => {
       ],
     });
     expect(actors[0]!.components[0]!.assetGuid).toBe("font-display");
+  });
+
+  it("skips SceneLayerActor when realizing a world scene", () => {
+    const world = testWorld();
+    const actors = createActorsFromSerializedScene(world, {
+      name: "Level",
+      viewportMode: "3d",
+      settings: createDefaultSceneSettings(),
+      folders: [],
+      actors: [
+        createActor("hero", "Hero"),
+        createActor("banner", "Banner", { classId: "SceneLayerActor" }),
+      ],
+    });
+    expect(actors.map((actor) => actor.guid)).toEqual(["hero"]);
   });
 });

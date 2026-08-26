@@ -97,6 +97,41 @@ describe("SceneLayerCompositor", () => {
     expect(compositor.sceneForSlot(7)).toBeNull();
   });
 
+  it("disposes the attached overlay post-process stack when the layer stack is cleared", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    let disposed = 0;
+    const compositor = new SceneLayerCompositor({
+      engine,
+      attachLayerPostProcess: () => ({
+        dispose: () => {
+          disposed += 1;
+        },
+      }),
+    });
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [{ materialGuid: "bloom", enabled: true }],
+    });
+    expect(disposed).toBe(0);
+    compositor.setPostProcess("hud", []);
+    expect(disposed).toBe(1);
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [{ materialGuid: "bloom", enabled: true }],
+    });
+    compositor.remove("hud");
+    expect(disposed).toBe(2);
+  });
+
   it("uses an output render target when a layer has post-process", () => {
     const { compositor } = world();
     compositor.create({
