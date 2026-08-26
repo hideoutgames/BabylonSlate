@@ -93,6 +93,7 @@ const NON_ACTOR_SCRIPT_CLASS_IDS = new Set([
   "EditorUtilityObject",
   "EditorFunctionLibrary",
   "SceneLayer",
+  "Scene",
 ]);
 
 /** GameInstance, FunctionLibrary, and editor classes are never spawned as Actors. */

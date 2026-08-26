@@ -32,6 +32,8 @@ describe("ClassRegistry", () => {
     expect(isLockedEngineClassId("MeshComponent")).toBe(true);
     expect(isLockedEngineClassId("BTTask_Wait")).toBe(true);
     expect(registry.has("SceneLayer")).toBe(true);
+    expect(registry.has("Scene")).toBe(true);
+    expect(registry.isA("Scene", "BObject")).toBe(true);
     expect(registry.has("SceneLayerActor")).toBe(true);
     expect(registry.isA("SceneLayer", "BObject")).toBe(true);
     expect(registry.isA("SceneLayerActor", "Actor")).toBe(true);
@@ -43,6 +45,7 @@ describe("ClassRegistry", () => {
     expect(registry.isA("2DRichTextComponent", "ActorComponent")).toBe(true);
     expect(registry.isA("2DPanelComponent", "ActorComponent")).toBe(true);
     expect(isLockedEngineClassId("SceneLayer")).toBe(true);
+    expect(isLockedEngineClassId("Scene")).toBe(true);
     expect(isLockedEngineClassId("SceneLayerActor")).toBe(true);
     expect(isLockedEngineClassId("2DButtonComponent")).toBe(true);
   });

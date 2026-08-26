@@ -5,6 +5,7 @@ import {
   type GuidFactory,
   type Transform,
 } from "@babylonslate/core";
+import { sceneAssetClassId } from "./ids";
 
 export type TickContext = {
   dt: number;
@@ -185,6 +186,10 @@ export type GameInstanceHooks = LifecycleHooks<GameInstance> & {
   onGameStart?: (self: GameInstance) => void;
   onGameEnd?: (self: GameInstance) => void;
   onSceneLoaded?: (self: GameInstance, sceneName: string) => void;
+  onSceneStartLoading?: (self: GameInstance, sceneName: string) => void;
+  onSceneFinishLoading?: (self: GameInstance, sceneName: string) => void;
+  onFirstSceneLoaded?: (self: GameInstance, sceneName: string) => void;
+  onSceneExit?: (self: GameInstance, sceneName: string) => void;
 };
 
 export class SceneLayer extends BObject {
@@ -228,6 +233,29 @@ export class SceneLayer extends BObject {
   }
 }
 
+export class Scene extends BObject {
+  assetGuid: string;
+
+  constructor(options: {
+    classId?: string;
+    guid?: Guid;
+    guidFactory?: GuidFactory;
+    assetGuid: string;
+    sceneName: string;
+    variables?: Record<string, unknown>;
+    hooks?: LifecycleHooks;
+  }) {
+    super({
+      classId: options.classId ?? sceneAssetClassId(options.assetGuid),
+      guid: options.guid,
+      guidFactory: options.guidFactory,
+      variables: { sceneName: options.sceneName, ...options.variables },
+      hooks: options.hooks,
+    });
+    this.assetGuid = options.assetGuid;
+  }
+}
+
 export class GameInstance extends BObject {
   private readonly gameHooks: GameInstanceHooks;
 
@@ -258,5 +286,22 @@ export class GameInstance extends BObject {
 
   callOnSceneLoaded(sceneName: string): void {
     this.gameHooks.onSceneLoaded?.(this, sceneName);
+  }
+
+  callOnSceneStartLoading(sceneName: string): void {
+    this.gameHooks.onSceneStartLoading?.(this, sceneName);
+  }
+
+  callOnSceneFinishLoading(sceneName: string): void {
+    this.gameHooks.onSceneFinishLoading?.(this, sceneName);
+    this.gameHooks.onSceneLoaded?.(this, sceneName);
+  }
+
+  callOnFirstSceneLoaded(sceneName: string): void {
+    this.gameHooks.onFirstSceneLoaded?.(this, sceneName);
+  }
+
+  callOnSceneExit(sceneName: string): void {
+    this.gameHooks.onSceneExit?.(this, sceneName);
   }
 }

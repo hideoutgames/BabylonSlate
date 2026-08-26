@@ -137,6 +137,34 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
+    classId: "GameInstance",
+    functions: [
+      {
+        name: "Get Scene Loading Progress",
+        runtime: "getSceneLoadingProgress",
+        pins: [{ name: "progress", typeId: "float", direction: "out" }],
+      },
+      {
+        name: "Get Scene Reference",
+        runtime: "getSceneReference",
+        pins: [
+          {
+            name: "scene",
+            typeId: "object",
+            typeClassId: "Scene",
+            direction: "out",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    classId: "Scene",
+    variables: [
+      { name: "Scene Name", typeId: "string", propertyKey: "sceneName" },
+    ],
+  },
+  {
     classId: "Text3DComponent",
     variables: TEXT_VARIABLES,
     functions: [SET_TEXT],

@@ -174,7 +174,7 @@ describe("World tick", () => {
     expect(component.getVariable("max")).toBe(10);
   });
 
-  it("runs GameInstance creation, start, scene loaded, and end hooks", () => {
+  it("runs GameInstance init, scene load/exit, and application end hooks", () => {
     const events: string[] = [];
     const world = createTestWorld();
     world.setGameInstance(
@@ -186,21 +186,36 @@ describe("World tick", () => {
           onGameStart: () => events.push("start"),
           onTick: () => events.push("tick"),
           onGameEnd: () => events.push("end"),
-          onSceneLoaded: (_self, sceneName) => events.push(`scene:${sceneName}`),
+          onSceneStartLoading: (_self, sceneName) =>
+            events.push(`start:${sceneName}`),
+          onSceneFinishLoading: (_self, sceneName) =>
+            events.push(`finish:${sceneName}`),
+          onFirstSceneLoaded: (_self, sceneName) =>
+            events.push(`first:${sceneName}`),
+          onSceneExit: (_self, sceneName) => events.push(`exit:${sceneName}`),
         },
       }),
     );
     world.start();
     world.loadScene("Level1");
+    world.loadScene("Level2");
     world.tick();
     world.end();
     expect(events).toEqual([
       "create",
       "start",
-      "scene:Level1",
+      "start:Level1",
+      "finish:Level1",
+      "first:Level1",
+      "exit:Level1",
+      "start:Level2",
+      "finish:Level2",
       "tick",
+      "exit:Level2",
       "end",
     ]);
+    expect(events.filter((event) => event === "end")).toHaveLength(1);
+    expect(events.filter((event) => event.startsWith("first:"))).toHaveLength(1);
   });
 
   it("flushes spawn then destroy in the same tick so the actor does not remain", () => {

@@ -2,6 +2,7 @@
 export const ENGINE_BASE_CLASS_IDS = [
   "BObject",
   "Actor",
+  "Scene",
   "SceneLayer",
   "SceneLayerActor",
   "ActorComponent",
@@ -78,7 +79,14 @@ export function isSceneLayerExclusiveComponent(classId: string): boolean {
   );
 }
 
-/** Engine types that must not be reparented (bases, components, BT builtins). */
+/** Live Scene instance class id for a Content Browser Scene asset. */
+export function sceneAssetClassId(assetGuid: string): string {
+  return `Scene:${assetGuid}`;
+}
+
+export function isSceneAssetClassId(classId: string): boolean {
+  return classId === "Scene" || classId.startsWith("Scene:");
+}
 export function isLockedEngineClassId(classId: string): boolean {
   if ((ENGINE_BASE_CLASS_IDS as readonly string[]).includes(classId)) {
     return true;

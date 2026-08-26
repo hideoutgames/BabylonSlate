@@ -262,6 +262,7 @@ describe("unmatchedScriptSpawns", () => {
           { classId: "EditorUtilityObject" },
           { classId: "EditorFunctionLibrary" },
           { classId: "SceneLayer" },
+          { classId: "Scene" },
         ],
         new Set(),
       ),
