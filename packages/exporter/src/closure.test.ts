@@ -817,6 +817,8 @@ describe("collectExportClosure", () => {
         }),
         asset({ guid: "sprite-1", type: "Sprite", name: "Banner" }),
         asset({ guid: "tex-1", type: "Texture", name: "BannerTex" }),
+        asset({ guid: "tex-panel", type: "Texture", name: "PanelTex" }),
+        asset({ guid: "mat-panel", type: "Material", name: "PanelMat" }),
         asset({ guid: "tex-inline", type: "Texture", name: "Inline" }),
         asset({ guid: "font-1", type: "Font", name: "Display" }),
         asset({ guid: "unused-layer", type: "SceneLayer", name: "Unused" }),
@@ -842,6 +844,10 @@ describe("collectExportClosure", () => {
                     properties: { textureGuid: "tex-1" },
                   },
                   {
+                    classId: "2DPanelComponent",
+                    properties: { textureGuid: "tex-panel", materialGuid: "mat-panel" },
+                  },
+                  {
                     classId: "2DRichTextComponent",
                     properties: {
                       text: "[img=tex-inline]Hi",
@@ -865,6 +871,8 @@ describe("collectExportClosure", () => {
         "pause",
         "sprite-1",
         "tex-1",
+        "tex-panel",
+        "mat-panel",
         "tex-inline",
         "font-1",
       ]),

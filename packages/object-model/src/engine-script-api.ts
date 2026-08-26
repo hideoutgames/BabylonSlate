@@ -222,6 +222,29 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
       HIT_TEST,
     ],
   },
+  {
+    classId: "2DPanelComponent",
+    variables: [
+      { name: "Source", typeId: "string", propertyKey: "source" },
+      {
+        name: "Texture",
+        typeId: "asset",
+        typeClassId: "Texture",
+        propertyKey: "textureGuid",
+      },
+      {
+        name: "Material",
+        typeId: "asset",
+        typeClassId: "Material",
+        propertyKey: "materialGuid",
+      },
+      { name: "Margin Left", typeId: "float", propertyKey: "marginLeft" },
+      { name: "Margin Right", typeId: "float", propertyKey: "marginRight" },
+      { name: "Margin Top", typeId: "float", propertyKey: "marginTop" },
+      { name: "Margin Bottom", typeId: "float", propertyKey: "marginBottom" },
+      HIT_TEST,
+    ],
+  },
 ];
 
 const BY_CLASS_ID = new Map(

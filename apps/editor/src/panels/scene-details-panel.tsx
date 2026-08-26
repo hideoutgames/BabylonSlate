@@ -461,12 +461,24 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       },
     ];
 
-    const overlaySettingsRows = settingsRows.filter(
-      (row) =>
-        row.id === "scene-name" ||
-        row.id === "scene-gravity" ||
-        row.id === "scene-fixed-timestep",
-    );
+    const overlaySettingsRows = settingsRows
+      .filter(
+        (row) =>
+          row.id === "scene-name" ||
+          row.id === "scene-gravity" ||
+          row.id === "scene-fixed-timestep" ||
+          row.id === "scene-camera-bounds-width" ||
+          row.id === "scene-camera-bounds-height",
+      )
+      .map((row) => {
+        if (row.id === "scene-camera-bounds-width") {
+          return { ...row, label: "Layer Width" };
+        }
+        if (row.id === "scene-camera-bounds-height") {
+          return { ...row, label: "Layer Height" };
+        }
+        return row;
+      });
 
     return (
       <PanelFrame data-testid="scene-details-panel">

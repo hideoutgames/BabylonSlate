@@ -28,13 +28,16 @@ import {
   isSceneLayerDeniedComponent,
   parseSceneLayerAnchor,
   parseSceneLayerHitTest,
+  parseOverlayPanelProperties,
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText2DProperties,
   parseText3DProperties,
-  sceneLayerAnchorWorldPosition,
+  normalizeSceneLayer,
+  sceneLayerRelativeAnchorWorldPosition,
   SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT,
   SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH,
+  SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
   type Transform,
   type SerializedActor,
@@ -107,7 +110,7 @@ import {
   formatDumpActors,
   formatInspectActor,
 } from "./console-inspect";
-import { actorWorldTransforms } from "./actor-world-transform";
+import { actorParentGuid, actorWorldTransforms } from "./actor-world-transform";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   createNavigationBackend,
@@ -335,6 +338,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly overlayGravity: [number, number, number];
   private overlayFrustumWidth = SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH;
   private overlayFrustumHeight = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
+  private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
   private playCanvasHeight = 1;
   private playScene: SerializedScene | undefined;
@@ -895,8 +899,8 @@ class InProcessRuntime implements RuntimeDriver {
     ownerSceneGuid: string | null = null,
   ): SceneLayer | null {
     const guid = String(assetGuid ?? "").trim();
-    const document = this.sceneLayerLibrary.get(guid);
-    if (!document) {
+    const raw = this.sceneLayerLibrary.get(guid);
+    if (!raw) {
       this.emit({
         type: "log",
         severity: "warning",
@@ -906,6 +910,7 @@ class InProcessRuntime implements RuntimeDriver {
       });
       return null;
     }
+    const document = normalizeSceneLayer(raw);
     if (this.world.getSceneLayers().length === 0) {
       this.overlayPhysicsSync.getBackend().setGravity({
         x: document.settings.gravity[0],
@@ -920,6 +925,7 @@ class InProcessRuntime implements RuntimeDriver {
       postProcessStack: document.settings.postProcessStack.map((entry) => ({
         ...entry,
       })),
+      layerBounds: document.settings.layerBounds,
     });
     this.emit({
       type: "sceneLayerCreate",
@@ -952,8 +958,22 @@ class InProcessRuntime implements RuntimeDriver {
     );
     for (const actor of actors) {
       this.scriptHost.bindInterfaceHandlers(actor);
+      this.applyActorDefaults(actor);
+      this.assignSlot(actor);
+      this.world.spawnActorNow(actor);
+    }
+    for (const actor of actors) {
+      this.ensureOverlayDesignPose(actor);
+    }
+    for (const actor of actors) {
       this.applyOverlayAnchor(actor);
-      this.realizeActor(actor);
+    }
+    for (const actor of actors) {
+      const slotId = this.slotByGuid.get(actor.guid);
+      if (slotId === undefined) continue;
+      this.emitMeshAssignment(actor, slotId);
+      this.emitAudioComponents(actor);
+      this.emitParticleComponents(actor);
     }
     return layer;
   }
@@ -970,6 +990,7 @@ class InProcessRuntime implements RuntimeDriver {
         this.emit({ type: "despawn", slotId, actorGuid: actor.guid });
         this.slotByGuid.delete(actor.guid);
       }
+      this.overlayDesignPose.delete(actor.guid);
     }
     this.world.destroySceneLayer(layer.guid);
     this.emit({ type: "sceneLayerRemove", layerId: layer.guid });
@@ -1033,6 +1054,7 @@ class InProcessRuntime implements RuntimeDriver {
       this.playCanvasHeight = canvasHeight;
     }
     for (const actor of this.world.getActors()) {
+      this.ensureOverlayDesignPose(actor);
       this.applyOverlayAnchor(actor);
     }
     this.overlayPhysicsSync.syncFromWorld(this.world);
@@ -1043,42 +1065,62 @@ class InProcessRuntime implements RuntimeDriver {
   ): void {
     const actor = this.world.findActor(message.actorGuid);
     if (!actor || actor.destroyed || !actor.sceneLayerId) return;
-    const buttons = liveOverlayButtons(actor);
-    if (buttons.length === 0) return;
     const requested =
       typeof message.componentId === "string" ? message.componentId.trim() : "";
-    const button = requested
-      ? buttons.find(
-          (component) =>
-            component.guid === requested || component.sourceId === requested,
-        )
-      : buttons.length === 1
-        ? buttons[0]
-        : undefined;
-    if (requested && !button) return;
+    const resolved = resolveOverlayPointerButton(this.world, actor, requested);
+    if (!resolved) return;
     this.scriptHost.invokeEvent(
-      actor.classId,
+      resolved.owner.classId,
       message.event,
-      actor,
+      resolved.owner,
       {},
-      button?.guid,
+      resolved.button?.guid,
     );
+  }
+
+  private ensureOverlayDesignPose(actor: Actor): void {
+    if (!actor.sceneLayerId) return;
+    if (this.overlayDesignPose.has(actor.guid)) return;
+    this.overlayDesignPose.set(actor.guid, {
+      x: actor.transform.position.x,
+      y: actor.transform.position.y,
+    });
   }
 
   private applyOverlayAnchor(actor: Actor): void {
     if (!actor.sceneLayerId) return;
-    const anchorComp = actor.components.find(
-      (component) =>
-        component.classId === "2DAnchorComponent" && !component.destroyed,
-    );
-    if (!anchorComp) return;
-    const pos = sceneLayerAnchorWorldPosition(
-      parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
-      Number(anchorComp.getVariable("offsetX")) || 0,
-      Number(anchorComp.getVariable("offsetY")) || 0,
-      this.overlayFrustumWidth,
-      this.overlayFrustumHeight,
-    );
+    const ownAnchor = liveOverlayAnchor(actor);
+    const parentId = actorParentGuid(actor);
+    const parent = parentId ? this.world.findActor(parentId) : undefined;
+    if (ownAnchor && parent?.sceneLayerId && !liveOverlayAnchor(parent)) {
+      this.applyRelativeOverlayAnchor(parent, ownAnchor);
+      actor.transform.position.x = 0;
+      actor.transform.position.y = 0;
+      return;
+    }
+    if (!ownAnchor) return;
+    this.applyRelativeOverlayAnchor(actor, ownAnchor);
+  }
+
+  private applyRelativeOverlayAnchor(actor: Actor, anchorComp: ActorComponent): void {
+    this.ensureOverlayDesignPose(actor);
+    const authored = this.overlayDesignPose.get(actor.guid) ?? {
+      x: actor.transform.position.x,
+      y: actor.transform.position.y,
+    };
+    const layer = this.world.findSceneLayer(actor.sceneLayerId!);
+    const bounds = layer?.layerBounds ?? SCENE_LAYER_DEFAULT_LAYER_BOUNDS;
+    const pos = sceneLayerRelativeAnchorWorldPosition({
+      anchor: parseSceneLayerAnchor(anchorComp.getVariable("anchor")),
+      authoredX: authored.x,
+      authoredY: authored.y,
+      offsetX: Number(anchorComp.getVariable("offsetX")) || 0,
+      offsetY: Number(anchorComp.getVariable("offsetY")) || 0,
+      layerWidth: bounds.width,
+      layerHeight: bounds.height,
+      frustumWidth: this.overlayFrustumWidth,
+      frustumHeight: this.overlayFrustumHeight,
+    });
     actor.transform.position.x = pos.x;
     actor.transform.position.y = pos.y;
   }
@@ -2364,18 +2406,30 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private emitMeshAssignment(actor: Actor, slotId: number): void {
-    const skipButtonMesh = overlayButtonHasSiblingVisual(actor);
+    const skipButtonMesh =
+      overlayButtonHasSiblingVisual(actor) ||
+      overlayButtonHasParentVisual(actor, this.world);
     const renderables = actor.components.filter((component) =>
       isPlayRenderable(component, skipButtonMesh),
     );
     if (renderables.length > 0) {
       const primary = renderables[0]!;
       const meshKind = playMeshKindOf(primary);
+      const panelComp = renderables.find(
+        (component) => component.classId === "2DPanelComponent",
+      );
+      const overlayPanel = panelComp
+        ? parseOverlayPanelProperties(overlayPanelVariables(panelComp))
+        : null;
       const assetGuid =
-        primary.assetGuid ??
-        primary.getVariable("assetGuid") ??
-        primary.getVariable("textureGuid") ??
-        primary.getVariable("materialGuid");
+        overlayPanel
+          ? overlayPanel.source === "material"
+            ? overlayPanel.materialGuid
+            : overlayPanel.textureGuid
+          : (primary.assetGuid ??
+            primary.getVariable("assetGuid") ??
+            primary.getVariable("textureGuid") ??
+            primary.getVariable("materialGuid"));
       const renderableIds = new Set(renderables.map((component) => component.guid));
       const componentsByGuid = new Map(
         actor.components.map((component) => [component.guid, component]),
@@ -2412,9 +2466,9 @@ class InProcessRuntime implements RuntimeDriver {
         ...(actor.sceneLayerId
           ? {
               hitTest: overlayHitTestOf(actor),
-              hasButton: liveOverlayButtons(actor).length > 0,
-              ...(overlayButtonComponentId(actor)
-                ? { buttonComponentId: overlayButtonComponentId(actor) }
+              hasButton: overlayActorOrChildHasButton(actor, this.world),
+              ...(overlayButtonComponentId(actor, this.world)
+                ? { buttonComponentId: overlayButtonComponentId(actor, this.world) }
                 : {}),
             }
           : {}),
@@ -2438,6 +2492,7 @@ class InProcessRuntime implements RuntimeDriver {
             }
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp) } : {}),
+        ...(overlayPanel ? { overlayPanel } : {}),
         ...(parts ? { parts } : {}),
       });
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
@@ -3250,6 +3305,7 @@ class InProcessRuntime implements RuntimeDriver {
 const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
   "2DTextureComponent",
   "2DMaterialComponent",
+  "2DPanelComponent",
   "2DTextComponent",
   "2DRichTextComponent",
   "SpriteComponent",
@@ -3257,9 +3313,35 @@ const OVERLAY_BUTTON_VISUAL_CLASS_IDS = new Set([
 ]);
 
 function overlayButtonHasSiblingVisual(actor: Actor): boolean {
+  return overlayActorHasVisual(actor);
+}
+
+function overlayActorHasVisual(actor: Actor): boolean {
   return actor.components.some(
     (component) =>
       !component.destroyed && OVERLAY_BUTTON_VISUAL_CLASS_IDS.has(component.classId),
+  );
+}
+
+function overlayButtonHasParentVisual(actor: Actor, world: World): boolean {
+  const parentId = actorParentGuid(actor);
+  if (!parentId) return false;
+  const parent = world.findActor(parentId);
+  return parent ? overlayActorHasVisual(parent) : false;
+}
+
+function overlayActorOrChildHasButton(actor: Actor, world: World): boolean {
+  if (liveOverlayButtons(actor).length > 0) return true;
+  return world.getActors().some(
+    (child) =>
+      actorParentGuid(child) === actor.guid && liveOverlayButtons(child).length > 0,
+  );
+}
+
+function liveOverlayAnchor(actor: Actor): ActorComponent | undefined {
+  return actor.components.find(
+    (component) =>
+      component.classId === "2DAnchorComponent" && !component.destroyed,
   );
 }
 
@@ -3270,9 +3352,77 @@ function liveOverlayButtons(actor: Actor): ActorComponent[] {
   );
 }
 
-function overlayButtonComponentId(actor: Actor): string | undefined {
+function overlayButtonComponentId(
+  actor: Actor,
+  world?: World,
+): string | undefined {
   const buttons = liveOverlayButtons(actor);
-  return buttons.length === 1 ? buttons[0]!.guid : undefined;
+  if (buttons.length === 1) return buttons[0]!.guid;
+  if (buttons.length > 1 || !world) return undefined;
+  const childButtons = world.getActors()
+    .filter((child) => actorParentGuid(child) === actor.guid)
+    .flatMap((child) => liveOverlayButtons(child));
+  return childButtons.length === 1 ? childButtons[0]!.guid : undefined;
+}
+
+function findOverlayButton(
+  buttons: readonly ActorComponent[],
+  requested: string,
+): ActorComponent | undefined {
+  return buttons.find(
+    (component) =>
+      component.guid === requested || component.sourceId === requested,
+  );
+}
+
+function resolveOverlayPointerButton(
+  world: World,
+  actor: Actor,
+  requested: string,
+): { owner: Actor; button: ActorComponent | undefined } | null {
+  const own = liveOverlayButtons(actor);
+  if (own.length > 0) {
+    const button = requested
+      ? findOverlayButton(own, requested)
+      : own.length === 1
+        ? own[0]
+        : undefined;
+    if (requested && !button) return null;
+    return { owner: actor, button };
+  }
+  const children = world
+    .getActors()
+    .filter((child) => actorParentGuid(child) === actor.guid);
+  if (requested) {
+    for (const child of children) {
+      const button = findOverlayButton(liveOverlayButtons(child), requested);
+      if (button) return { owner: child, button };
+    }
+    return null;
+  }
+  const withButtons = children.filter(
+    (child) => liveOverlayButtons(child).length > 0,
+  );
+  if (withButtons.length === 0) return null;
+  const owner = withButtons[0]!;
+  const buttons = liveOverlayButtons(owner);
+  return {
+    owner,
+    button: buttons.length === 1 ? buttons[0] : undefined,
+  };
+}
+
+function overlayPanelVariables(component: ActorComponent): Record<string, unknown> {
+  return {
+    source: component.getVariable("source"),
+    textureGuid: component.getVariable("textureGuid"),
+    materialGuid: component.getVariable("materialGuid"),
+    marginLeft: component.getVariable("marginLeft"),
+    marginRight: component.getVariable("marginRight"),
+    marginTop: component.getVariable("marginTop"),
+    marginBottom: component.getVariable("marginBottom"),
+    hitTest: component.getVariable("hitTest"),
+  };
 }
 
 function componentIdFromColliderPhysicsId(
@@ -3298,6 +3448,7 @@ function isPlayRenderable(
     component.classId === "Text3DComponent" ||
     component.classId === "2DTextureComponent" ||
     component.classId === "2DMaterialComponent" ||
+    component.classId === "2DPanelComponent" ||
     component.classId === "2DTextComponent" ||
     component.classId === "2DRichTextComponent"
   ) {
@@ -3321,6 +3472,7 @@ function overlayHitTestOf(actor: Actor): "ignore" | "block" | "passThrough" {
     (component) =>
       (component.classId === "2DTextureComponent" ||
         component.classId === "2DMaterialComponent" ||
+        component.classId === "2DPanelComponent" ||
         component.classId === "2DTextComponent" ||
         component.classId === "2DRichTextComponent") &&
       !component.destroyed,
@@ -3340,6 +3492,7 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "2DRichTextComponent") return "2drichtext";
   if (component.classId === "2DTextureComponent") return "2dtexture";
   if (component.classId === "2DMaterialComponent") return "2dmaterial";
+  if (component.classId === "2DPanelComponent") return "2dpanel";
   if (component.classId === "2DButtonComponent") return "2dbutton";
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");

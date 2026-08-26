@@ -63,6 +63,15 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(overlay.some((entry) => entry.kind.type === "light")).toBe(false);
     expect(overlay.some((entry) => entry.kind.type === "skybox")).toBe(false);
     expect(overlay.some((entry) => entry.kind.type === "shape")).toBe(true);
+    expect(
+      overlay.filter((entry) => entry.category === "Overlay").map((entry) => entry.id),
+    ).toEqual([
+      "2d-anchor",
+      "2d-texture",
+      "2d-material",
+      "2d-button",
+      "2d-panel",
+    ]);
     const actor = spawnPlacedActor(
       createDefaultScene(),
       overlay.find((entry) => entry.id === "shape-box")!,
@@ -73,6 +82,33 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(actor.classId).toBe("SceneLayerActor");
     const world = placeActorsForHost({ overlay: false });
     expect(world.some((entry) => entry.kind.type === "camera")).toBe(true);
+    expect(world.some((entry) => entry.id === "2d-button")).toBe(false);
+  });
+
+  it("stamps overlay 2D Place Actors as SceneLayerActors with the matching component", () => {
+    const overlay = placeActorsForHost({ overlay: true });
+    const expected: Array<[string, string]> = [
+      ["2d-anchor", "2DAnchorComponent"],
+      ["2d-texture", "2DTextureComponent"],
+      ["2d-material", "2DMaterialComponent"],
+      ["2d-button", "2DButtonComponent"],
+      ["2d-panel", "2DPanelComponent"],
+    ];
+    for (const [id, classId] of expected) {
+      const item = overlay.find((entry) => entry.id === id);
+      expect(item?.title).toBeTruthy();
+      const actor = spawnPlacedActor(
+        createDefaultScene(),
+        item!,
+        `actor-${id}`,
+        ORIGIN,
+        { overlay: true },
+      );
+      expect(actor.classId).toBe("SceneLayerActor");
+      expect(actor.components.map((component) => component.classId)).toEqual([
+        classId,
+      ]);
+    }
   });
 
   it("strips Camera Light and Skybox when placing an overlay Class prefab", () => {

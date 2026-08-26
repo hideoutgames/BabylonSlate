@@ -3,6 +3,7 @@ import {
   normalizeScene,
   normalizeSceneLayerSpawnList,
   normalizeScenePostProcessStack,
+  type SceneCameraBounds2D,
   type SceneLayerSpawnEntry,
   type ScenePostProcessEntry,
   type SerializedActor,
@@ -50,6 +51,8 @@ export interface SceneLayerSettings {
   gravity: [number, number, number];
   fixedTimestepMs: number;
   postProcessStack: ScenePostProcessEntry[];
+  /** Orange editor outline / 2DAnchor design canvas. Default 16×9. */
+  layerBounds: SceneCameraBounds2D;
 }
 
 export interface SerializedSceneLayer {
@@ -65,12 +68,18 @@ export function isSceneLayerDeniedComponent(classId: string): boolean {
   return DENIED.has(classId);
 }
 
+export const SCENE_LAYER_DEFAULT_LAYER_BOUNDS: SceneCameraBounds2D = {
+  width: 16,
+  height: 9,
+};
+
 export function createDefaultSceneLayerSettings(): SceneLayerSettings {
   const defaults = createDefaultSceneSettings("2d");
   return {
     gravity: [...defaults.gravity] as [number, number, number],
     fixedTimestepMs: defaults.fixedTimestepMs,
     postProcessStack: [],
+    layerBounds: { ...SCENE_LAYER_DEFAULT_LAYER_BOUNDS },
   };
 }
 
@@ -93,23 +102,88 @@ function stripDeniedComponents(actor: SerializedActor): SerializedActor {
   };
 }
 
+function normalizeLayerBounds(value: unknown): SceneCameraBounds2D {
+  const source = (value ?? {}) as Record<string, unknown>;
+  return {
+    width:
+      typeof source.width === "number" && source.width > 0
+        ? source.width
+        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width,
+    height:
+      typeof source.height === "number" && source.height > 0
+        ? source.height
+        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
+  };
+}
+
+function bakeIdentityOverlayAnchor(
+  actor: SerializedActor,
+  layerWidth: number,
+  layerHeight: number,
+): SerializedActor {
+  const anchor = actor.components.find(
+    (component) => component.classId === "2DAnchorComponent",
+  );
+  if (!anchor) return actor;
+  const position = actor.transform.position;
+  if (position[0] !== 0 || position[1] !== 0) return actor;
+  const offsetX = Number(anchor.properties.offsetX) || 0;
+  const offsetY = Number(anchor.properties.offsetY) || 0;
+  if (offsetX === 0 && offsetY === 0) return actor;
+  const baked = sceneLayerAnchorWorldPosition(
+    parseSceneLayerAnchor(anchor.properties.anchor),
+    offsetX,
+    offsetY,
+    layerWidth,
+    layerHeight,
+  );
+  return {
+    ...actor,
+    transform: {
+      ...actor.transform,
+      position: [baked.x, baked.y, position[2]],
+    },
+    components: actor.components.map((component) =>
+      component.id === anchor.id
+        ? {
+            ...component,
+            properties: { ...component.properties, offsetX: 0, offsetY: 0 },
+          }
+        : component,
+    ),
+  };
+}
+
 export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
   const source = (value ?? {}) as Record<string, unknown>;
   const scene = normalizeScene({
     ...source,
     viewportMode: "2d",
   });
+  const sourceSettings =
+    (source.settings as Record<string, unknown> | undefined) ?? {};
+  const layerBounds = normalizeLayerBounds(
+    sourceSettings.layerBounds ?? scene.settings.cameraBounds2D,
+  );
   return {
     name: typeof source.name === "string" ? source.name : scene.name,
     settings: {
       gravity: scene.settings.gravity,
       fixedTimestepMs: scene.settings.fixedTimestepMs,
       postProcessStack: normalizeScenePostProcessStack(
-        (source.settings as Record<string, unknown> | undefined)
-          ?.postProcessStack ?? scene.settings.postProcessStack,
+        sourceSettings.postProcessStack ?? scene.settings.postProcessStack,
       ),
+      layerBounds,
     },
-    actors: scene.actors.map(stripDeniedComponents),
+    actors: scene.actors
+      .map(stripDeniedComponents)
+      .map((actor) =>
+        bakeIdentityOverlayAnchor(
+          actor,
+          layerBounds.width,
+          layerBounds.height,
+        ),
+      ),
     folders: scene.folders,
   };
 }
@@ -165,6 +239,54 @@ export const SCENE_LAYER_HIT_TEST_LABELS: Record<SceneLayerHitTest, string> = {
   passThrough: "Pass Through",
 };
 
+export const SCENE_LAYER_PANEL_SOURCES = ["texture", "material"] as const;
+export type SceneLayerPanelSource = (typeof SCENE_LAYER_PANEL_SOURCES)[number];
+
+export const SCENE_LAYER_PANEL_SOURCE_LABELS: Record<
+  SceneLayerPanelSource,
+  string
+> = {
+  texture: "Texture",
+  material: "Material",
+};
+
+export type OverlayPanelProperties = {
+  source: SceneLayerPanelSource;
+  textureGuid: string | null;
+  materialGuid: string | null;
+  marginLeft: number;
+  marginRight: number;
+  marginTop: number;
+  marginBottom: number;
+  hitTest: SceneLayerHitTest;
+};
+
+function nonNegativeNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
+function optionalGuid(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function parseOverlayPanelProperties(
+  value: unknown,
+): OverlayPanelProperties {
+  const source = (value ?? {}) as Record<string, unknown>;
+  return {
+    source: source.source === "material" ? "material" : "texture",
+    textureGuid: optionalGuid(source.textureGuid),
+    materialGuid: optionalGuid(source.materialGuid),
+    marginLeft: nonNegativeNumber(source.marginLeft),
+    marginRight: nonNegativeNumber(source.marginRight),
+    marginTop: nonNegativeNumber(source.marginTop),
+    marginBottom: nonNegativeNumber(source.marginBottom),
+    hitTest: parseSceneLayerHitTest(source.hitTest, "ignore"),
+  };
+}
+
 export function sceneLayerFrustumSize(aspect: number): {
   width: number;
   height: number;
@@ -175,6 +297,18 @@ export function sceneLayerFrustumSize(aspect: number): {
   return { width: height * safeAspect, height };
 }
 
+export function sceneLayerAnchorOrigin(
+  anchor: SceneLayerAnchor,
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  const origin = ANCHOR_ORIGIN[anchor] ?? ANCHOR_ORIGIN.center;
+  return {
+    x: origin[0] * (width / 2),
+    y: origin[1] * (height / 2),
+  };
+}
+
 export function sceneLayerAnchorWorldPosition(
   anchor: SceneLayerAnchor,
   offsetX: number,
@@ -182,10 +316,48 @@ export function sceneLayerAnchorWorldPosition(
   frustumWidth: number,
   frustumHeight: number,
 ): { x: number; y: number } {
-  const origin = ANCHOR_ORIGIN[anchor] ?? ANCHOR_ORIGIN.center;
+  const origin = sceneLayerAnchorOrigin(anchor, frustumWidth, frustumHeight);
   return {
-    x: origin[0] * (frustumWidth / 2) + offsetX,
-    y: origin[1] * (frustumHeight / 2) + offsetY,
+    x: origin.x + offsetX,
+    y: origin.y + offsetY,
+  };
+}
+
+/** Map a design-space XY from the orange layer bounds onto the Play frustum. */
+export function sceneLayerRelativeAnchorWorldPosition(options: {
+  anchor: SceneLayerAnchor;
+  authoredX: number;
+  authoredY: number;
+  offsetX?: number;
+  offsetY?: number;
+  layerWidth: number;
+  layerHeight: number;
+  frustumWidth: number;
+  frustumHeight: number;
+}): { x: number; y: number } {
+  const layerWidth =
+    options.layerWidth > 0
+      ? options.layerWidth
+      : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width;
+  const layerHeight =
+    options.layerHeight > 0
+      ? options.layerHeight
+      : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height;
+  const frustumWidth =
+    options.frustumWidth > 0 ? options.frustumWidth : layerWidth;
+  const frustumHeight =
+    options.frustumHeight > 0 ? options.frustumHeight : layerHeight;
+  const origin = sceneLayerAnchorOrigin(options.anchor, layerWidth, layerHeight);
+  const screen = sceneLayerAnchorOrigin(
+    options.anchor,
+    frustumWidth,
+    frustumHeight,
+  );
+  const dx = options.authoredX + (options.offsetX ?? 0) - origin.x;
+  const dy = options.authoredY + (options.offsetY ?? 0) - origin.y;
+  return {
+    x: screen.x + (dx / layerWidth) * frustumWidth,
+    y: screen.y + (dy / layerHeight) * frustumHeight,
   };
 }
 
@@ -227,6 +399,7 @@ export function editorSceneToSceneLayer(
       gravity: scene.settings.gravity,
       fixedTimestepMs: scene.settings.fixedTimestepMs,
       postProcessStack: scene.settings.postProcessStack,
+      layerBounds: scene.settings.cameraBounds2D,
     },
     actors: scene.actors,
     folders: scene.folders,
@@ -243,9 +416,11 @@ export function sceneLayerToEditorScene(
     viewportMode: "2d",
     settings: {
       ...settings,
+      environmentColor: [0, 0, 0],
       gravity: layer.settings.gravity,
       fixedTimestepMs: layer.settings.fixedTimestepMs,
       postProcessStack: layer.settings.postProcessStack,
+      cameraBounds2D: { ...layer.settings.layerBounds },
     },
     actors: layer.actors,
     folders: layer.folders,

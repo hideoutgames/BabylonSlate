@@ -897,6 +897,27 @@ describe("applyPrefabPropertyDefaults", () => {
     expect(texture.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
       kind: "enum",
       value: "ignore",
+    });
+    const panel = rowsFor({
+      id: "panel",
+      classId: "2DPanelComponent",
+      properties: { source: "texture", marginLeft: 8 },
+    });
+    expect(panel.rows.find((row) => row.id.endsWith("-source"))).toMatchObject({
+      kind: "enum",
+      value: "texture",
+      options: expect.arrayContaining([
+        { value: "texture", label: "Texture" },
+        { value: "material", label: "Material" },
+      ]),
+    });
+    expect(panel.rows.find((row) => row.id.endsWith("-marginLeft"))).toMatchObject({
+      kind: "number",
+      value: 8,
+    });
+    expect(panel.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
+      kind: "enum",
+      value: "ignore",
       options: expect.arrayContaining([
         { value: "ignore", label: "Ignore" },
         { value: "passThrough", label: "Pass Through" },

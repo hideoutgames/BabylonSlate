@@ -192,6 +192,7 @@ export class SceneLayer extends BObject {
   zOrder: number;
   ownerSceneGuid: string | null;
   postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+  layerBounds: { width: number; height: number };
 
   constructor(options: {
     classId?: string;
@@ -201,6 +202,7 @@ export class SceneLayer extends BObject {
     zOrder: number;
     ownerSceneGuid?: string | null;
     postProcessStack?: Array<{ materialGuid: string; enabled: boolean }>;
+    layerBounds?: { width: number; height: number };
     variables?: Record<string, unknown>;
     hooks?: LifecycleHooks;
   }) {
@@ -215,6 +217,14 @@ export class SceneLayer extends BObject {
     this.zOrder = options.zOrder;
     this.ownerSceneGuid = options.ownerSceneGuid ?? null;
     this.postProcessStack = [...(options.postProcessStack ?? [])];
+    this.layerBounds = {
+      width: options.layerBounds?.width && options.layerBounds.width > 0
+        ? options.layerBounds.width
+        : 16,
+      height: options.layerBounds?.height && options.layerBounds.height > 0
+        ? options.layerBounds.height
+        : 9,
+    };
   }
 }
 

@@ -35,7 +35,7 @@ export function isStructuralEditorChange(
     if (!was) return true;
     if (was.parentId !== actor.parentId) return true;
     if (was.visible !== actor.visible) return true;
-    if (actorVisualFingerprint(was) !== actorVisualFingerprint(actor)) {
+    if (actorVisualFingerprint(was, undefined, previous.actors) !== actorVisualFingerprint(actor, undefined, next.actors)) {
       return true;
     }
   }

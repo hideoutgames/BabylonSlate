@@ -8,7 +8,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | --- | --- |
 | `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed` |
 | `Actor` | World-placed object with transform and ordered component list |
-| `SceneLayer` | Session overlay instance (`BObject`); not an Actor |
+| `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 16×9). |
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
 | `ActorComponent` | Attached to an Actor; own tick |
 | `GameInstance` | Session singleton: `onGameStart` / `onTick` / `onGameEnd` / `onSceneLoaded` |
