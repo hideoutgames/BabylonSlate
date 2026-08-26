@@ -122,6 +122,8 @@ describe("focusKeepCandidates", () => {
 describe("resolveFocusKeepPanelIds", () => {
   it("uses the primary surface when the keep list is empty", () => {
     expect(resolveFocusKeepPanelIds("scene", [])).toEqual(["viewport"]);
+    expect(resolveFocusKeepPanelIds("scene-layer", [])).toEqual(["viewport"]);
+    expect(FOCUS_PRIMARY_PANEL["scene-layer"]).toBe("viewport");
     expect(resolveFocusKeepPanelIds("graph", undefined)).toEqual(["graph"]);
     expect(resolveFocusKeepPanelIds("enum", [])).toEqual(["enum-members"]);
     expect(resolveFocusKeepPanelIds("script-interface", undefined)).toEqual([

@@ -17,13 +17,15 @@ if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined")
 const harness = vi.hoisted(() => ({
   selectedActorIds: [] as string[],
   scene: null as SerializedScene | null,
+  documentKind: "scene" as "scene" | "scene-layer",
+  documentId: "scene:assets/Main.scene.babasset",
   applySceneChange: vi.fn<(id: string, scene: SerializedScene) => Promise<boolean>>(
     async () => true,
   ),
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
-  useDocumentWorkspace: () => ({ documentId: "scene:assets/Main.scene.babasset" }),
+  useDocumentWorkspace: () => ({ documentId: harness.documentId }),
 }));
 
 vi.mock("../context/scene-editing-context", () => ({
@@ -38,8 +40,8 @@ vi.mock("../context/document-context", () => ({
   useDocuments: () => ({
     openDocuments: [
       {
-        id: "scene:assets/Main.scene.babasset",
-        ref: { kind: "scene", path: "assets/Main.scene.babasset", label: "Main Scene" },
+        id: harness.documentId,
+        ref: { kind: harness.documentKind, path: "assets/Main.scene.babasset", label: "Main Scene" },
         content: harness.scene,
         layout: null,
         dirty: false,
@@ -91,6 +93,15 @@ vi.mock("../context/document-context", () => ({
           },
           path: "assets/Rock.material.babasset",
         },
+        {
+          header: {
+            guid: "layer-hud",
+            name: "HUD",
+            type: "SceneLayer",
+            parentClass: null,
+          },
+          path: "assets/Hud.scenelayer.babasset",
+        },
       ],
       getByGuid: (guid: string) =>
         guid === "mesh-1"
@@ -105,6 +116,8 @@ vi.mock("../context/document-context", () => ({
 
 beforeEach(() => {
   harness.selectedActorIds = [];
+  harness.documentKind = "scene";
+  harness.documentId = "scene:assets/Main.scene.babasset";
   harness.scene = createDefaultScene();
   harness.applySceneChange.mockClear();
 });
@@ -330,5 +343,34 @@ describe("SceneDetailsPanel authoring", () => {
     fireEvent.click(screen.getByTestId("scene-post-process-stack-0-remove"));
     const removed = harness.applySceneChange.mock.calls.at(-1)![1] as SerializedScene;
     expect(removed.settings.postProcessStack).toHaveLength(1);
+  });
+
+  it("authors a SceneLayer spawn list on world Scene Options", async () => {
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("scene-layers-stack")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("scene-layers-stack-add"));
+    expect(await screen.findByTestId("search-item-layer-hud")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("search-item-layer-hud"));
+    expect(harness.applySceneChange).toHaveBeenCalled();
+    const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
+    expect(next.settings.sceneLayers).toEqual([
+      { assetGuid: "layer-hud", zOrder: 0, enabled: true },
+    ]);
+  });
+
+  it("shows overlay Details with gravity and post-process only", () => {
+    harness.documentKind = "scene-layer";
+    harness.documentId = "scene-layer:assets/Hud.scenelayer.babasset";
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("scene-settings-grid")).toBeTruthy();
+    expect(screen.getByTestId("property-row-scene-gravity")).toBeTruthy();
+    expect(screen.getByTestId("scene-post-process-stack")).toBeTruthy();
+    expect(screen.queryByTestId("property-scene-viewport-mode")).toBeNull();
+    expect(screen.queryByTestId("property-scene-physics-world")).toBeNull();
+    expect(screen.queryByTestId("property-scene-default-camera")).toBeNull();
+    expect(screen.queryByTestId("property-scene-fog")).toBeNull();
+    expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
+    expect(screen.queryByTestId("scene-layers-stack")).toBeNull();
+    expect(screen.queryByTestId("property-scene-game-instance-class")).toBeNull();
   });
 });

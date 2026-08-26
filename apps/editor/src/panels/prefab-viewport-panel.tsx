@@ -1,6 +1,6 @@
 import type { Engine } from "@babylonjs/core";
 import type { IDockviewPanelProps } from "dockview-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createEngine,
   EDITOR_CANVAS_COLOR_SCHEME,
@@ -14,6 +14,12 @@ import { ViewportJoystick } from "../components/viewport-joystick";
 import { usePrefabEditing } from "../context/prefab-editing-context";
 import { usePlay } from "../context/play-context";
 import { useDocuments } from "../context/document-context";
+import { useDocumentWorkspace } from "../context/document-workspace-context";
+import { walkAncestry } from "@babylonslate/editor-kit";
+import {
+  classIdFromClassAsset,
+  classParentLookup,
+} from "../lib/content-browser-helpers";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
@@ -61,6 +67,17 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     openDocuments,
     assetRegistry,
   } = useDocuments();
+  const { documentId } = useDocumentWorkspace();
+  const overlayPrefab = useMemo(() => {
+    const doc = openDocuments.find((entry) => entry.id === documentId);
+    const listed = assetRegistry?.list() ?? [];
+    const indexed = listed.find((asset) => asset.path === doc?.ref.path);
+    if (!indexed) return false;
+    return walkAncestry(
+      classIdFromClassAsset(indexed),
+      classParentLookup(listed),
+    ).includes("SceneLayerActor");
+  }, [assetRegistry, documentId, openDocuments]);
   const {
     gizmoTool,
     snapEnabled,
@@ -414,7 +431,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     >
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
         <div className="pointer-events-auto rounded-md border border-border bg-card/90 p-1">
-          <ViewportToolbar testIdPrefix="prefab-" showDragSelect={false} />
+          <ViewportToolbar
+            testIdPrefix="prefab-"
+            showDragSelect={false}
+            showViewportModeToggle={!overlayPrefab}
+          />
         </div>
       </div>
       <canvas

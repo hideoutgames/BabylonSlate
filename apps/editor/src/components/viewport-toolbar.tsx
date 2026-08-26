@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@babylonslate/ui/components/tooltip";
 import type { SerializedScene } from "@babylonslate/core";
+import { isSceneWorkspaceKind } from "@babylonslate/core";
 import type { GizmoTool, ViewportShadingMode } from "@babylonslate/render";
 import {
   MoveIcon,
@@ -41,9 +42,11 @@ const TOOLS: Array<{
 export function ViewportToolbar({
   testIdPrefix = "",
   showDragSelect = true,
+  showViewportModeToggle = true,
 }: {
   testIdPrefix?: string;
   showDragSelect?: boolean;
+  showViewportModeToggle?: boolean;
 }) {
   const { documentId } = useDocumentWorkspace();
   const { openDocuments, applySceneChange } = useDocuments();
@@ -75,8 +78,9 @@ export function ViewportToolbar({
   } = useSceneEditing();
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const scene =
-    doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
+  const scene = isSceneWorkspaceKind(doc?.ref.kind)
+    ? (doc.content as SerializedScene)
+    : null;
 
   const setMode = (next: "2d" | "3d") => {
     setViewportMode(next);
@@ -328,6 +332,7 @@ export function ViewportToolbar({
       >
         <Settings2Icon />
       </NestedMenu>
+      {showViewportModeToggle ? (
       <ToggleGroup
         variant="outline"
         size="sm"
@@ -355,6 +360,7 @@ export function ViewportToolbar({
           2D
         </ToggleGroupItem>
       </ToggleGroup>
+      ) : null}
       <NumberPromptDialog
         open={numberPrompt === "grid"}
         onOpenChange={(open) => {

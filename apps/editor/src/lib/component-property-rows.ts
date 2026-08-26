@@ -11,6 +11,10 @@ import {
   parseSkyboxFaces,
   parseSkyboxSize,
   parseText3DProperties,
+  SCENE_LAYER_ANCHOR_LABELS,
+  SCENE_LAYER_ANCHORS,
+  SCENE_LAYER_HIT_TEST_LABELS,
+  SCENE_LAYER_HIT_TESTS,
   SKYBOX_FACE_KEYS,
   type SerializedComponent,
   type SkyboxFaceKey,
@@ -1248,6 +1252,73 @@ export function componentPropertyRows(
             "nearClip",
             "farClip",
             "attemptPossessViewTarget",
+          ]),
+        ),
+      ];
+    }
+    case "2DAnchorComponent": {
+      const current = String(component.properties.anchor ?? "center");
+      return [
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "anchor"),
+          label: "Anchor",
+          value: current,
+          options: SCENE_LAYER_ANCHORS.map((value) => ({
+            value,
+            label: SCENE_LAYER_ANCHOR_LABELS[value],
+          })),
+          onChange: (next) => update("anchor", next),
+        },
+        ...genericRows(actorId, component, update, new Set(["anchor"])),
+      ];
+    }
+    case "2DButtonComponent":
+    case "2DTextureComponent":
+    case "2DMaterialComponent": {
+      const hitTest = String(component.properties.hitTest ?? "ignore");
+      const assetProperty =
+        component.classId === "2DMaterialComponent"
+          ? "materialGuid"
+          : component.classId === "2DTextureComponent"
+            ? "textureGuid"
+            : null;
+      const assetRows = assetProperty
+        ? [
+            assetRow(
+              actorId,
+              component,
+              assetProperty,
+              assetProperty === "materialGuid" ? "Material" : "Texture",
+              assetProperty === "materialGuid" ? ["Material"] : ["Texture"],
+              update,
+              context,
+              assetProperty === "materialGuid"
+                ? "Pick Material"
+                : "Pick Texture",
+            ),
+          ]
+        : [];
+      return [
+        ...assetRows,
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "hitTest"),
+          label: "Hit Test",
+          value: hitTest,
+          options: SCENE_LAYER_HIT_TESTS.map((value) => ({
+            value,
+            label: SCENE_LAYER_HIT_TEST_LABELS[value],
+          })),
+          onChange: (next) => update("hitTest", next),
+        },
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set([
+            "hitTest",
+            ...(assetProperty ? [assetProperty] : []),
           ]),
         ),
       ];

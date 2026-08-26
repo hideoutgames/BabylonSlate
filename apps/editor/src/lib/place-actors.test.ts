@@ -9,6 +9,7 @@ import {
   ENGINE_PLACE_ACTORS,
   duplicateSceneActor,
   nextActorId,
+  placeActorsForHost,
   prefabComponentsForGuid,
   projectPlaceActors,
   spawnPlacedActor,
@@ -54,6 +55,24 @@ describe("ENGINE_PLACE_ACTORS", () => {
     expect(empty.iconKey).toBe("Actor");
     expect(shape.iconKey).toBe("MeshComponent");
     expect(light.iconKey).toBe("LightComponent");
+  });
+
+  it("hides Camera Lights and Skybox on overlay Place Actors and stamps SceneLayerActor", () => {
+    const overlay = placeActorsForHost({ overlay: true });
+    expect(overlay.some((entry) => entry.kind.type === "camera")).toBe(false);
+    expect(overlay.some((entry) => entry.kind.type === "light")).toBe(false);
+    expect(overlay.some((entry) => entry.kind.type === "skybox")).toBe(false);
+    expect(overlay.some((entry) => entry.kind.type === "shape")).toBe(true);
+    const actor = spawnPlacedActor(
+      createDefaultScene(),
+      overlay.find((entry) => entry.id === "shape-box")!,
+      "actor-box",
+      ORIGIN,
+      { overlay: true },
+    );
+    expect(actor.classId).toBe("SceneLayerActor");
+    const world = placeActorsForHost({ overlay: false });
+    expect(world.some((entry) => entry.kind.type === "camera")).toBe(true);
   });
 
   it("places an Audio actor with an AudioComponent", () => {
@@ -319,6 +338,40 @@ describe("projectPlaceActors", () => {
       { header: { guid: "tex", name: "Grass", type: "Texture" } },
     ]);
     expect(items.map((item) => item.title)).toEqual(["Hero", "Tree", "Jump", "Fire"]);
+  });
+
+  it("keeps SceneLayerActor classes on overlay Place Actors and world Classes off overlay", () => {
+    const assets = [
+      {
+        path: "assets/Hud.class.babasset",
+        header: {
+          guid: "hud",
+          name: "Hud",
+          type: "Class",
+          parentClass: "SceneLayerActor",
+        },
+      },
+      {
+        path: "assets/Hero.class.babasset",
+        header: {
+          guid: "hero",
+          name: "Hero",
+          type: "Class",
+          parentClass: "Actor",
+        },
+      },
+      { header: { guid: "sfx", name: "Jump", type: "Audio" } },
+    ];
+    expect(
+      projectPlaceActors(assets, undefined, { overlay: true }).map(
+        (item) => item.title,
+      ),
+    ).toEqual(["Hud", "Jump"]);
+    expect(
+      projectPlaceActors(assets, undefined, { overlay: false }).map(
+        (item) => item.title,
+      ),
+    ).toEqual(["Hero", "Jump"]);
   });
 
   it("places a project Audio asset with the guid already on AudioComponent", () => {

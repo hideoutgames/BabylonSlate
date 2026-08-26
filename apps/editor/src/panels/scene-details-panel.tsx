@@ -4,6 +4,7 @@ import {
   AssetPicker,
   AssetPickerControl,
   NamedListEditor,
+  NumberField,
   PanelFrame,
   PropertyGrid,
   SceneComponentPicker,
@@ -23,6 +24,7 @@ import {
   patchComponentProperties,
   type SerializedActor,
   type SerializedScene,
+  isSceneWorkspaceKind,
 } from "@babylonslate/core";
 import { ChevronUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
@@ -75,6 +77,9 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const [postProcessPick, setPostProcessPick] = useState<"add" | number | null>(
     null,
   );
+  const [sceneLayerPick, setSceneLayerPick] = useState<"add" | number | null>(
+    null,
+  );
   const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
     guid: asset.header.guid,
     name: asset.header.name,
@@ -114,8 +119,10 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const scene =
-    doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
+  const scene = isSceneWorkspaceKind(doc?.ref.kind)
+    ? (doc.content as SerializedScene)
+    : null;
+  const overlay = doc?.ref.kind === "scene-layer";
   const actorId = selectedActorIds[0] ?? null;
   const actor = scene && actorId ? (findActor(scene, actorId) ?? null) : null;
   const prefabTemplates = useMemo(() => {
@@ -443,11 +450,18 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
       },
     ];
 
+    const overlaySettingsRows = settingsRows.filter(
+      (row) =>
+        row.id === "scene-name" ||
+        row.id === "scene-gravity" ||
+        row.id === "scene-fixed-timestep",
+    );
+
     return (
       <PanelFrame data-testid="scene-details-panel">
         <PropertyGrid
           title="Scene settings"
-          rows={settingsRows}
+          rows={overlay ? overlaySettingsRows : settingsRows}
           data-testid="scene-settings-grid"
         />
         <div className="px-2 pb-3">
@@ -526,6 +540,101 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             )}
           />
         </div>
+        {!overlay ? (
+        <div className="px-2 pb-3">
+          <NamedListEditor
+            title="Scene Layers"
+            data-testid="scene-layers-stack"
+            values={scene.settings.sceneLayers.map((entry) => entry.assetGuid)}
+            addLabel="Add Layer"
+            onAdd={() => setSceneLayerPick("add")}
+            onChange={(guids) =>
+              mutate({
+                ...scene,
+                settings: {
+                  ...scene.settings,
+                  sceneLayers: sceneLayerStackFromGuids(
+                    guids,
+                    scene.settings.sceneLayers,
+                  ),
+                },
+              })
+            }
+            renderItem={({ value, index }) => (
+              <>
+                <Field className="min-w-32 flex-1">
+                  <FieldLabel htmlFor={`scene-layer-${index}-asset`}>
+                    Scene Layer
+                  </FieldLabel>
+                  <AssetPickerControl value={value}>
+                    <Button
+                      type="button"
+                      id={`scene-layer-${index}-asset`}
+                      variant="outline"
+                      className="min-h-[var(--touch-target,44px)] h-auto w-full justify-start"
+                      data-testid={`scene-layer-${index}-asset`}
+                      onClick={() => setSceneLayerPick(index)}
+                    >
+                      {selectedPickerIdentity(
+                        assetRowIdentity(
+                          pickerAssets.find((asset) => asset.guid === value),
+                        ),
+                        "Pick Scene Layer",
+                      )}
+                    </Button>
+                  </AssetPickerControl>
+                </Field>
+                <Field className="w-24">
+                  <FieldLabel htmlFor={`scene-layer-${index}-z`}>
+                    Z-Order
+                  </FieldLabel>
+                  <NumberField
+                    id={`scene-layer-${index}-z`}
+                    data-testid={`scene-layer-${index}-z-order`}
+                    value={scene.settings.sceneLayers[index]?.zOrder ?? index}
+                    onChange={(zOrder) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          sceneLayers: scene.settings.sceneLayers.map(
+                            (entry, row) =>
+                              row === index ? { ...entry, zOrder } : entry,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+                <Field orientation="horizontal" className="w-auto">
+                  <FieldLabel htmlFor={`scene-layer-${index}-enabled`}>
+                    Enabled
+                  </FieldLabel>
+                  <Switch
+                    id={`scene-layer-${index}-enabled`}
+                    data-testid={`scene-layer-${index}-enabled`}
+                    checked={scene.settings.sceneLayers[index]?.enabled !== false}
+                    onCheckedChange={(checked) =>
+                      mutate({
+                        ...scene,
+                        settings: {
+                          ...scene.settings,
+                          sceneLayers: scene.settings.sceneLayers.map(
+                            (entry, row) =>
+                              row === index
+                                ? { ...entry, enabled: checked === true }
+                                : entry,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </Field>
+              </>
+            )}
+          />
+        </div>
+        ) : null}
         <AssetPicker
           open={envTexturePickOpen}
           onOpenChange={setEnvTexturePickOpen}
@@ -541,6 +650,45 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
             setEnvTexturePickOpen(false);
           }}
           data-testid="scene-environment-texture-picker"
+        />
+        <AssetPicker
+          open={sceneLayerPick !== null}
+          onOpenChange={(open) => {
+            if (!open) setSceneLayerPick(null);
+          }}
+          assets={pickerAssets}
+          allowedTypes={["SceneLayer"]}
+          title="Pick Scene Layer"
+          allowNone={sceneLayerPick !== "add"}
+          onPick={(assetGuid) => {
+            const stack = [...scene.settings.sceneLayers];
+            if (sceneLayerPick === "add") {
+              if (assetGuid) {
+                stack.push({
+                  assetGuid,
+                  zOrder: stack.length,
+                  enabled: true,
+                });
+              }
+            } else if (typeof sceneLayerPick === "number") {
+              if (!assetGuid) {
+                stack.splice(sceneLayerPick, 1);
+              } else {
+                const current = stack[sceneLayerPick];
+                stack[sceneLayerPick] = {
+                  assetGuid,
+                  zOrder: current?.zOrder ?? sceneLayerPick,
+                  enabled: current?.enabled !== false,
+                };
+              }
+            }
+            mutate({
+              ...scene,
+              settings: { ...scene.settings, sceneLayers: stack },
+            });
+            setSceneLayerPick(null);
+          }}
+          data-testid="scene-layers-picker"
         />
         <AssetPicker
           open={postProcessPick !== null}
@@ -823,6 +971,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
         open={addComponentOpen}
         onOpenChange={setAddComponentOpen}
         projectItems={projectAddComponentItems(assetRegistry?.list() ?? [])}
+        overlay={overlay}
         onSelect={(selection) =>
           updateActor((entry) => ({
             ...entry,
@@ -834,8 +983,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                 properties: {
                   ...defaultPropertiesFor(
                     selection.classId,
-                    scene.settings.physicsWorld,
-                    scene.viewportMode,
+                    overlay ? "2d" : scene.settings.physicsWorld,
+                    overlay ? "2d" : scene.viewportMode,
                   ),
                   ...selection.properties,
                 },
@@ -858,5 +1007,21 @@ function stackFromGuids(
     const index = remaining.findIndex((entry) => entry.materialGuid === guid);
     const prev = index >= 0 ? remaining.splice(index, 1)[0] : undefined;
     return { materialGuid: guid, enabled: prev?.enabled !== false };
+  });
+}
+
+function sceneLayerStackFromGuids(
+  guids: readonly string[],
+  previous: readonly { assetGuid: string; zOrder: number; enabled: boolean }[],
+): { assetGuid: string; zOrder: number; enabled: boolean }[] {
+  const remaining = [...previous];
+  return guids.map((guid, index) => {
+    const found = remaining.findIndex((entry) => entry.assetGuid === guid);
+    const prev = found >= 0 ? remaining.splice(found, 1)[0] : undefined;
+    return {
+      assetGuid: guid,
+      zOrder: prev?.zOrder ?? index,
+      enabled: prev?.enabled !== false,
+    };
   });
 }

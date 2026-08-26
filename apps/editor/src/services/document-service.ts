@@ -14,9 +14,12 @@ import {
   documentKindLabel,
   isAssetDocumentKind,
   isContentBrowserId,
+  isSceneWorkspaceKind,
   labelFromPath,
   migrateRestoredDocumentId,
+  normalizeSceneLayer,
   parseDocumentId,
+  sceneLayerToEditorScene,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
 import { recordDocumentDirty } from "../lib/dirty-trace";
@@ -201,7 +204,11 @@ export class DocumentService {
       return id;
     }
 
-    const content = await projectService.loadDocument(ref.kind, ref.path);
+    const loaded = await projectService.loadDocument(ref.kind, ref.path);
+    const content =
+      ref.kind === "scene-layer"
+        ? sceneLayerToEditorScene(normalizeSceneLayer(loaded))
+        : loaded;
     const fullRef = createDocumentRef(ref.kind, ref.path, content);
 
     const entry: OpenDocument = {
@@ -339,11 +346,14 @@ export class DocumentService {
 
   updateScene(id: string, scene: SerializedScene): void {
     const doc = this.state.openDocuments.get(id);
-    if (!doc || doc.ref.kind !== "scene") return;
+    if (!doc || !isSceneWorkspaceKind(doc.ref.kind)) return;
     doc.content = scene;
     doc.dirty = true;
     recordDocumentDirty(doc.ref.kind, id);
-    doc.ref = { ...doc.ref, label: `${scene.name} Scene` };
+    doc.ref = {
+      ...doc.ref,
+      label: `${scene.name} ${documentKindLabel(doc.ref.kind)}`,
+    };
   }
 
   updateGraph(id: string, graph: SerializedGraph): void {
@@ -359,7 +369,7 @@ export class DocumentService {
     if (
       !doc ||
       doc.ref.kind === "content-browser" ||
-      doc.ref.kind === "scene" ||
+      isSceneWorkspaceKind(doc.ref.kind) ||
       doc.ref.kind === "graph"
     ) {
       return;

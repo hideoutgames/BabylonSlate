@@ -12,6 +12,7 @@ import {
   documentKindLabel,
   isAssetDocumentKind,
   isClosableDocumentKind,
+  isSceneWorkspaceKind,
   isContentBrowserId,
   isLogicGraphAssetType,
   labelFromPath,
@@ -62,6 +63,9 @@ describe("P9 document kinds", () => {
     expect(assetTypeForDocumentKind("scene-layer")).toBe("SceneLayer");
     expect(documentKindLabel("scene-layer")).toBe("Scene Layer");
     expect(isAssetDocumentKind("scene-layer")).toBe(true);
+    expect(isSceneWorkspaceKind("scene")).toBe(true);
+    expect(isSceneWorkspaceKind("scene-layer")).toBe(true);
+    expect(isSceneWorkspaceKind("graph")).toBe(false);
     expect(labelFromPath("assets/hud.scenelayer.babasset")).toBe("Hud");
     expect(
       createDocumentRef("scene-layer", "assets/hud.scenelayer.babasset", {

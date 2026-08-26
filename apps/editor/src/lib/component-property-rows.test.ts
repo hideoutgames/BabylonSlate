@@ -861,4 +861,51 @@ describe("applyPrefabPropertyDefaults", () => {
       defaultValue: "cylinder",
     });
   });
+
+  it("exposes Title Case 2DAnchor and HitTest enums plus texture/material pickers", () => {
+    const anchor = rowsFor({
+      id: "anchor",
+      classId: "2DAnchorComponent",
+      properties: { anchor: "topLeft", offsetX: 1, offsetY: 2 },
+    });
+    expect(anchor.rows.find((row) => row.id.endsWith("-anchor"))).toMatchObject({
+      kind: "enum",
+      value: "topLeft",
+      options: expect.arrayContaining([
+        { value: "topLeft", label: "Top Left" },
+        { value: "center", label: "Center" },
+      ]),
+    });
+    const texture = rowsFor({
+      id: "tex",
+      classId: "2DTextureComponent",
+      properties: { textureGuid: "tex-1", hitTest: "ignore" },
+    });
+    expect(texture.rows.find((row) => row.id.endsWith("-textureGuid"))).toMatchObject({
+      kind: "asset",
+      value: "tex-1",
+    });
+    expect(texture.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
+      kind: "enum",
+      value: "ignore",
+      options: expect.arrayContaining([
+        { value: "ignore", label: "Ignore" },
+        { value: "passThrough", label: "Pass Through" },
+      ]),
+    });
+    const material = rowsFor({
+      id: "mat",
+      classId: "2DMaterialComponent",
+      properties: { materialGuid: null, hitTest: "block" },
+    });
+    const materialPick = material.rows.find((row) => row.id.endsWith("-materialGuid"));
+    expect(materialPick).toMatchObject({ kind: "asset", value: null });
+    if (materialPick?.kind === "asset") materialPick.onPick();
+    expect(material.onPickAsset).toHaveBeenCalledWith(
+      expect.objectContaining({
+        property: "materialGuid",
+        allowedTypes: ["Material"],
+      }),
+    );
+  });
 });

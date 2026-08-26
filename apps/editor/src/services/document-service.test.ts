@@ -276,6 +276,51 @@ describe("DocumentService", () => {
     ]);
   });
 
+  it("keeps SceneLayer tabs open beside a world scene and hosts them as 2D editor scenes", async () => {
+    const { createDefaultSceneLayer } = await import("@babylonslate/core");
+    const service = new DocumentService();
+    service.ensureContentBrowserTab();
+    const layer = createDefaultSceneLayer();
+    layer.name = "HUD";
+    const project = createMockProjectService({
+      loadDocument: vi.fn(async (kind: string) => {
+        if (kind === "scene") return createDefaultScene();
+        if (kind === "scene-layer") return layer;
+        return { nodes: [], edges: [] };
+      }),
+    });
+    const sceneId = documentId({ kind: "scene", path: MAIN_SCENE_FILE });
+    const layerId = documentId({
+      kind: "scene-layer",
+      path: "assets/Hud.scenelayer.babasset",
+    });
+    await service.openDocument(project, {
+      kind: "scene",
+      path: MAIN_SCENE_FILE,
+      label: "main",
+    });
+    await service.openDocument(project, {
+      kind: "scene-layer",
+      path: "assets/Hud.scenelayer.babasset",
+      label: "HUD",
+    });
+    expect(service.getState().openDocuments.has(sceneId)).toBe(true);
+    expect(service.getState().openDocuments.has(layerId)).toBe(true);
+    const opened = service.getDocument(layerId);
+    expect(opened?.ref.kind).toBe("scene-layer");
+    expect((opened?.content as { viewportMode?: string })?.viewportMode).toBe(
+      "2d",
+    );
+    service.updateScene(layerId, {
+      ...(opened?.content as ReturnType<typeof createDefaultScene>),
+      name: "Pause",
+    });
+    expect(service.getDocument(layerId)?.dirty).toBe(true);
+    expect(
+      (service.getDocument(layerId)?.content as { name?: string })?.name,
+    ).toBe("Pause");
+  });
+
   it("unpins the scene slot when the scene tab is closed", async () => {
     const service = new DocumentService();
     service.ensureContentBrowserTab();

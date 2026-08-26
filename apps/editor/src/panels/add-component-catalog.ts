@@ -261,6 +261,8 @@ const COMPONENT_GUID_PROPERTIES = [
   "graphGuid",
   "treeGuid",
   "fontAssetGuid",
+  "textureGuid",
+  "materialGuid",
 ] as const;
 
 export type ProjectAddComponentAsset = {
@@ -345,8 +347,11 @@ export function physicsWorldFromOpenDocuments(
   }>,
 ): PhysicsWorldKind {
   const sceneDoc = openDocuments.find(
-    (entry) => entry.ref.kind === "scene" && entry.content,
+    (entry) =>
+      (entry.ref.kind === "scene" || entry.ref.kind === "scene-layer") &&
+      entry.content,
   );
   const settings = (sceneDoc?.content as SerializedScene | undefined)?.settings;
+  if (sceneDoc?.ref.kind === "scene-layer") return "2d";
   return settings?.physicsWorld === "2d" ? "2d" : "3d";
 }

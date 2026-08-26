@@ -117,7 +117,9 @@ afterEach(() => {
   cleanup();
 });
 
-function renderToolbar(props: { showDragSelect?: boolean } = {}) {
+function renderToolbar(
+  props: { showDragSelect?: boolean; showViewportModeToggle?: boolean } = {},
+) {
   return render(
     <TooltipProvider>
       <ViewportToolbar {...props} />
@@ -269,6 +271,12 @@ describe("ViewportToolbar", () => {
   it("hides Drag Select when the prefab viewport asks it off", () => {
     renderToolbar({ showDragSelect: false });
     expect(screen.queryByTestId("viewport-drag-select")).toBeNull();
+    expect(screen.getByTestId("viewport-settings")).toBeTruthy();
+  });
+
+  it("hides the 3D / 2D toggle on SceneLayer viewports", () => {
+    renderToolbar({ showViewportModeToggle: false });
+    expect(screen.queryByTestId("viewport-mode-toggle")).toBeNull();
     expect(screen.getByTestId("viewport-settings")).toBeTruthy();
   });
 

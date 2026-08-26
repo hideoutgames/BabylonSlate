@@ -23,6 +23,7 @@ import {
   type SerializedOutlinerFolder,
   type SerializedScene,
 } from "@babylonslate/core";
+import { isSceneWorkspaceKind } from "@babylonslate/core";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   EyeIcon,
@@ -255,8 +256,10 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
-  const scene =
-    doc?.ref.kind === "scene" ? (doc.content as SerializedScene) : null;
+  const scene = isSceneWorkspaceKind(doc?.ref.kind)
+    ? (doc.content as SerializedScene)
+    : null;
+  const overlay = doc?.ref.kind === "scene-layer";
 
   const parentOf = useMemo(
     () => classParentLookup(assetRegistry?.list() ?? []),
@@ -318,19 +321,22 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   const projectItems = useMemo(() => {
     const assets = assetRegistry?.list() ?? [];
-    return projectPlaceActors(assets, (guid) =>
-      prefabComponentsForGuid(guid, {
-        assets,
-        graphForPath: (path) => {
-          const open = openDocuments.find(
-            (entry) => entry.ref.kind === "graph" && entry.ref.path === path,
-          );
-          if (open?.content) return open.content as SerializedGraph;
-          return diskGraphs.get(path);
-        },
-      }),
+    return projectPlaceActors(
+      assets,
+      (guid) =>
+        prefabComponentsForGuid(guid, {
+          assets,
+          graphForPath: (path) => {
+            const open = openDocuments.find(
+              (entry) => entry.ref.kind === "graph" && entry.ref.path === path,
+            );
+            if (open?.content) return open.content as SerializedGraph;
+            return diskGraphs.get(path);
+          },
+        }),
+      { overlay },
     );
-  }, [assetRegistry, diskGraphs, openDocuments]);
+  }, [assetRegistry, diskGraphs, openDocuments, overlay]);
 
   useEffect(() => {
     if (!placeOpen) return;
@@ -365,6 +371,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
               id,
               viewportDropApi?.worldPositionAtViewCenter() ??
                 FALLBACK_PLACE_POSITION,
+              { overlay },
             ),
           ],
         });
@@ -785,6 +792,7 @@ export function SceneOutlinerPanel(_props: IDockviewPanelProps) {
         onOpenChange={setPlaceOpen}
         onSelect={addActor}
         projectItems={projectItems}
+        overlay={overlay}
       />
       <GraphDropHint hint={dropHint} testId="outliner-drop-hint" />
       {renamingFolder ? (

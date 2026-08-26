@@ -59,6 +59,13 @@ export function isAssetDocumentKind(
   return KIND_SET.has(kind);
 }
 
+/** World Scene and SceneLayer overlay documents share the viewport / outliner / details shell. */
+export function isSceneWorkspaceKind(
+  kind: string | undefined,
+): kind is "scene" | "scene-layer" {
+  return kind === "scene" || kind === "scene-layer";
+}
+
 export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
   switch (kind) {
     case "scene":

@@ -19,7 +19,7 @@ import type {
   SerializedGraph,
   SerializedScene,
 } from "@babylonslate/core";
-import { documentId, isAssetDocumentKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, text3DFontGuidsFromScene } from "@babylonslate/core";
+import { documentId, isAssetDocumentKind, isSceneWorkspaceKind, normalizeProjectSettings, normalizeScene, DEFAULT_RENDER_PROJECT_SETTINGS, DEFAULT_PLAY_FRAME_CAP, DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, text3DFontGuidsFromScene } from "@babylonslate/core";
 import {
   appendJournalLine,
   getTile,
@@ -163,6 +163,7 @@ import {
   classParentLookup,
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
+import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   copyInstanceLinkage,
@@ -1279,7 +1280,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           await projectService.saveDocument(
             doc.ref.kind,
             doc.ref.path,
-            doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
+            persistableDocumentContent(doc.ref.kind, doc.content) as
+              | SerializedScene
+              | SerializedGraph
+              | Record<string, unknown>,
           );
         }
       }
@@ -1404,7 +1408,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         await projectService.saveDocument(
           doc.ref.kind,
           doc.ref.path,
-          doc.content as SerializedScene | SerializedGraph | Record<string, unknown>,
+          persistableDocumentContent(doc.ref.kind, doc.content) as
+            | SerializedScene
+            | SerializedGraph
+            | Record<string, unknown>,
         );
       }
     }
@@ -1984,7 +1991,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       options?: { prefabSync?: boolean },
     ): Promise<boolean> => {
       const doc = documentService.getState().openDocuments.get(id);
-      if (!doc || doc.ref.kind !== "scene" || !doc.content) {
+      if (!doc || !isSceneWorkspaceKind(doc.ref.kind) || !doc.content) {
         return false;
       }
       if (isMutatingApplyBlocked(
@@ -3332,7 +3339,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
-      if (doc.ref.kind === "scene") {
+      if (doc.ref.kind === "scene" || doc.ref.kind === "scene-layer") {
         const stack =
           editSessionRef.current.getStack<SerializedScene>(activeDocumentId);
         const content = doc.content as SerializedScene;

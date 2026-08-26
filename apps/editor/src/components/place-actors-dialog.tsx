@@ -6,8 +6,8 @@ import {
   useCatalogFilter,
 } from "@babylonslate/editor-kit";
 import {
-  ENGINE_PLACE_ACTORS,
   visualForPlaceActor,
+  placeActorsForHost,
   type PlaceActorItem,
 } from "../lib/place-actors";
 
@@ -16,11 +16,13 @@ export function PlaceActorsDialog({
   onOpenChange,
   onSelect,
   projectItems,
+  overlay = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (item: PlaceActorItem) => void;
   projectItems: PlaceActorItem[];
+  overlay?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
@@ -34,8 +36,8 @@ export function PlaceActorsDialog({
   }, [open]);
 
   const items = useMemo(
-    () => [...ENGINE_PLACE_ACTORS, ...projectItems],
-    [projectItems],
+    () => [...placeActorsForHost({ overlay }), ...projectItems],
+    [overlay, projectItems],
   );
 
   const categories = useMemo(() => {
