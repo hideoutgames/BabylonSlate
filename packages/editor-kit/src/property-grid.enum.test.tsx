@@ -72,4 +72,29 @@ describe("PropertyGrid enum rows", () => {
     fireEvent.click(trigger);
     expect(document.querySelector("[data-slot='select-content']")).toBeNull();
   });
+
+  it("greys out a disabled enum option", () => {
+    render(
+      <PropertyGrid
+        rows={[
+          {
+            id: "renderer",
+            kind: "enum",
+            label: "Renderer",
+            value: "bitmap",
+            description: "Pick a Font that has an MSDF atlas (JSON + PNG).",
+            options: [
+              { value: "bitmap", label: "Bitmap" },
+              { value: "msdf", label: "MSDF", disabled: true },
+            ],
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/Pick a Font that has an MSDF atlas/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-renderer"));
+    const msdf = screen.getByRole("option", { name: "MSDF" });
+    expect(msdf.getAttribute("data-disabled")).toBe("");
+  });
 });

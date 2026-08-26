@@ -48,6 +48,7 @@ import {
   materialClosureFromGuids,
   overlayEditorScenesFromLayers,
   overlayTextureGuidsFromScene,
+  playFontGuidsFromScenes,
   sceneLayerGuidsFromGraphs,
   sceneLayerGuidsFromScenes,
   sceneLayerMaterialGuidsFromGraphs,
@@ -714,6 +715,14 @@ describe("SceneLayer Play collection", () => {
             classId: "SpriteComponent",
             properties: { assetGuid: "sprite-hud" },
           },
+          {
+            id: "rich",
+            classId: "2DRichTextComponent",
+            properties: {
+              text: "[img=tex-inline size=14]Hi",
+              fontAssetGuid: "font-hud",
+            },
+          },
         ],
       }),
     );
@@ -721,7 +730,11 @@ describe("SceneLayer Play collection", () => {
       { guid: "hud", layer },
     ]);
     expect(scenes).toEqual([sceneLayerToEditorScene(layer)]);
-    expect(overlayTextureGuidsFromScene(scenes[0])).toEqual(["tex-banner"]);
+    expect(overlayTextureGuidsFromScene(scenes[0])).toEqual([
+      "tex-banner",
+      "tex-inline",
+    ]);
+    expect(playFontGuidsFromScenes(scenes)).toEqual(["font-hud"]);
     expect(materialAssetGuidsFromScene(scenes[0])).toEqual(["mat-unlit"]);
     expect(spriteAssetGuidsFromScene(scenes[0])).toEqual(["sprite-hud"]);
   });

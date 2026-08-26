@@ -12,9 +12,9 @@ Importer (`packages/assets/src/importers/font.ts`) already accepts woff2 / woff 
 | `weight` | numeric or keyword (`400`, `bold`) |
 | `style` | `normal` \| `italic` |
 | `fallbackGuids` | ordered Font asset guids |
-| `representations` | flags for source / facetype / msdf chunks present |
+| `representations` | flags: `source`, `facetype`, `msdfJson`, `msdfPng`, and `msdf` (true only when **both** JSON and PNG exist) |
 
-Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Chunk id `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`), kind `font-facetype`.
+Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Chunk ids: `facetype-glyphs` (`FONT_FACETYPE_CHUNK_ID`); `msdf-atlas` (`FONT_MSDF_CHUNK_ID`, JSON); `msdf-atlas-png` (`FONT_MSDF_PNG_CHUNK_ID`, PNG). An MSDF PNG is a Font companion, not a Texture.
 
 ## 3D Text
 
@@ -28,6 +28,16 @@ Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Ch
 Details shows a disabled **Typeface** note when the Font has no facetype chunk. Play/export collect those bytes independently of `FontFace` source bytes. Export packs a `FontFacetype` sidecar (`font-facetype:<guid>`) so the source Font stays a font file. The component is **not** Development Only.
 
 See [render.md](render.md) and [engineplan §11.4](../engineplan.md).
+
+## Overlay 2D Text (optional MSDF)
+
+`2DTextComponent` / `2DRichTextComponent` default to **Bitmap** (FontFace raster quads). **MSDF** is enabled in Details only when the Font has both JSON and PNG. Three equivalent import paths, all using the platform picker (`pickImportFiles`, multi-select `.json,.png`):
+
+1. Content Browser **Import** — JSON + PNG together create a Font when the family is new, or attach to an existing Font.
+2. Font document **Import MSDF Atlas…** (`data-testid="font-import-msdf"`) — always attaches to the open Font.
+3. Font tile context menu **Import MSDF Atlas…**.
+
+Incomplete picks leave `representations.msdf` false until the pair is complete. Attach merges representation flags with OR so attaching MSDF does not clear `source`. Export packs `FontMsdf` (`font-msdf:<guid>`) and `FontMsdfAtlas` (`font-msdf-png:<guid>`) when the Font is in the closure and both chunks exist. A packed game missing the sidecar falls back to Bitmap (log once).
 
 ## Fallback stack
 

@@ -23,6 +23,7 @@ import {
   pickerImportAccept,
   resolvePluginEnabled,
   embedGltfImportBatch,
+  groupMsdfImportBatch,
 } from "@babylonslate/assets";
 import { convertObjImportBatch, animationRetargetHasMatches } from "@babylonslate/render";
 import {
@@ -849,6 +850,48 @@ export function ContentBrowserWorkspace({
         },
       },
       {
+        id: "import-msdf-atlas" as const,
+        label: "Import MSDF Atlas…",
+        onSelect: () => {
+          void (async () => {
+            const guid = menuTargetGuidsRef.current[0];
+            if (!guid || !assetRegistry) return;
+            const asset = assetRegistry.getByGuid(guid);
+            if (!asset || asset.header.type !== "Font") return;
+            try {
+              const files = await pickImportFiles({
+                multiple: true,
+                accept: ".json,.png",
+              });
+              if (!files.length) return;
+              const prepared = groupMsdfImportBatch(files);
+              const browse = contentBrowserFolderOps(
+                selectedFolderPath,
+                browserRoots,
+              );
+              if (browse.readOnly) return;
+              for (const file of prepared) {
+                await assetRegistry.importFile(
+                  asset.rootId,
+                  browse.relative,
+                  file.name,
+                  file.bytes,
+                  {
+                    sidecars: file.sidecars,
+                    attachToGuid: guid,
+                  },
+                );
+              }
+              await refreshAssetRegistry();
+            } catch (err) {
+              setImportErrors([
+                err instanceof Error ? err.message : String(err),
+              ]);
+            }
+          })();
+        },
+      },
+      {
         id: "duplicate" as const,
         label: "Duplicate",
         onSelect: () => {
@@ -974,6 +1017,8 @@ export function ContentBrowserWorkspace({
       refreshAssetRegistry,
       requestDeleteSnapshot,
       selectedFolderPath,
+      browserRoots,
+      setImportErrors,
     ],
   );
 
@@ -1128,7 +1173,7 @@ export function ContentBrowserWorkspace({
           engine: play?.ensureSharedEngine() ?? undefined,
         });
       errors.push(...convertErrors);
-      const prepared = embedGltfImportBatch(converted);
+      const prepared = groupMsdfImportBatch(embedGltfImportBatch(converted));
       if (prepared.length === 0) {
         setBusy(false);
         if (errors.length) setImportErrors(errors);
@@ -1160,7 +1205,10 @@ export function ContentBrowserWorkspace({
               folder,
               file.name,
               file.bytes,
-              { modelImportScale: engineSettings.modelImportDefaultScale },
+              {
+                modelImportScale: engineSettings.modelImportDefaultScale,
+                sidecars: file.sidecars,
+              },
             );
             for (const asset of created) {
               if (asset.header.type !== "Model") continue;
@@ -1509,6 +1557,10 @@ export function ContentBrowserWorkspace({
         contentBrowserContextActions({
           assetCount: guids.length,
           folderCount: folders.length,
+          singleAssetType:
+            guids.length === 1 && folders.length === 0
+              ? assetRegistry?.getByGuid(guids[0]!)?.header.type
+              : undefined,
           canRetarget: canRetargetSelectedAssets(
             guids.flatMap((guid) => {
               const asset = assetRegistry?.getByGuid(guid);

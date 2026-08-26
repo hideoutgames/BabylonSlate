@@ -97,6 +97,7 @@ import {
   overlayTextureGuidsFromScenes,
   skyboxFaceGuidsFromScene,
 } from "../lib/play-content";
+import { fontMsdfMapsFromPairs } from "../lib/play-fonts";
 import {
   hydrateSpriteAnimationPixelSizes,
   type SpriteAnimationPayload,
@@ -267,6 +268,15 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playFontFacetypeBytes, setPlayFontFacetypeBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
+  const [playFontMsdfJson, setPlayFontMsdfJson] = useState<
+    Map<string, Uint8Array>
+  >(() => new Map());
+  const [playFontMsdfPng, setPlayFontMsdfPng] = useState<
+    Map<string, Uint8Array>
+  >(() => new Map());
+  const [playFontFaceEntries, setPlayFontFaceEntries] = useState<
+    import("@babylonslate/render").FontAssetEntry[]
+  >([]);
   const [playModelBytes, setPlayModelBytes] = useState<Map<string, Uint8Array>>(
     () => new Map(),
   );
@@ -319,6 +329,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlayTilemapContent,
     collectPlayTextureBytes,
     collectPlayFontFacetypeBytes,
+    collectPlayFontMsdfPair,
+    collectPlayFontFaceEntries,
     collectPlayModelBytes,
     collectPlayModelPayloads,
     collectPlayAudio,
@@ -1038,6 +1050,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         setPlaySpriteAnimationPayloads(spriteAnimations);
 
         try {
+          const fontScenes = [
+            resolvedScene?.scene,
+            ...playLibrary.map((entry) => entry.scene),
+            ...overlayScenes,
+          ];
           setPlayFontFacetypeBytes(
             await collectPlayFontFacetypeBytes(
               resolvedScene?.scene,
@@ -1047,11 +1064,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ],
             ),
           );
+          const msdf = fontMsdfMapsFromPairs(
+            await collectPlayFontMsdfPair(resolvedScene?.scene, fontScenes.slice(1)),
+          );
+          setPlayFontMsdfJson(msdf.json);
+          setPlayFontMsdfPng(msdf.png);
+          setPlayFontFaceEntries(await collectPlayFontFaceEntries());
         } catch (error) {
           appendLog(
             `3D Text font load failed: ${error instanceof Error ? error.message : String(error)}`,
           );
           setPlayFontFacetypeBytes(new Map());
+          setPlayFontMsdfJson(new Map());
+          setPlayFontMsdfPng(new Map());
+          setPlayFontFaceEntries([]);
         }
 
         try {
@@ -1121,6 +1147,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayTilemapContent,
       collectPlayTextureBytes,
       collectPlayFontFacetypeBytes,
+      collectPlayFontMsdfPair,
+      collectPlayFontFaceEntries,
       collectPlayModelBytes,
       collectPlayModelPayloads,
       collectPlayAudio,
@@ -1351,6 +1379,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
             fontFacetypeBytes={playFontFacetypeBytes}
+            fontMsdfJson={playFontMsdfJson}
+            fontMsdfPng={playFontMsdfPng}
+            fontFaceEntries={playFontFaceEntries}
             modelBytes={playModelBytes}
             modelPayloads={playModelPayloads}
             modelClipAnimationGuids={playModelClipAnimationGuids}

@@ -3,6 +3,7 @@ import { extensionOf } from "./util";
 export interface ImportFileBytes {
   name: string;
   bytes: Uint8Array;
+  sidecars?: Record<string, Uint8Array>;
 }
 
 function stemOf(fileName: string): string {

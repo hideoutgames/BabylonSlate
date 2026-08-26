@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
+  MarkupAutocompleteTextarea,
   NamedListEditor,
   NumberField,
   PanelFrame,
@@ -21,6 +22,7 @@ import {
   createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
+  parseText2DProperties,
   patchComponentProperties,
   type SerializedActor,
   type SerializedScene,
@@ -33,6 +35,7 @@ import {
   Field,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
+import { Textarea } from "@babylonslate/ui/components/textarea";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
@@ -58,7 +61,7 @@ import {
   isPostProcessMaterialForPicker,
 } from "../lib/content-browser-helpers";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
-import { fontAssetHasFacetype } from "../lib/play-fonts";
+import { fontAssetHasFacetype, fontAssetHasMsdfJson, fontAssetHasMsdfPng } from "../lib/play-fonts";
 import { collectClassGraphsForPalette } from "../lib/logic-graph-document";
 import { classIdForGraphPath } from "../services/script-compiler";
 import { prefabTemplatesByClassId } from "../lib/prefab-instance-sync";
@@ -116,6 +119,14 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
   const fontHasFacetype = (guid: string | null | undefined) => {
     if (!guid) return false;
     return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
+  };
+  const fontHasMsdfJson = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasMsdfJson(assetRegistry?.getByGuid?.(guid)?.header.payload);
+  };
+  const fontHasMsdfPng = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasMsdfPng(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
@@ -881,6 +892,8 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   assetLabel,
                   assetType,
                   fontHasFacetype,
+                  fontHasMsdfJson,
+                  fontHasMsdfPng,
                   physicsWorld: scene.settings.physicsWorld,
                   onPickAsset: setAssetPick,
                 },
@@ -892,6 +905,69 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   : undefined,
               )}
             />
+            {component.classId === "2DTextComponent" ||
+            component.classId === "2DRichTextComponent" ? (
+              <div className="p-2">
+                <Field>
+                  <FieldLabel htmlFor={`text2d-text-${component.id}`}>
+                    Text
+                  </FieldLabel>
+                  {component.classId === "2DRichTextComponent" ? (
+                    <MarkupAutocompleteTextarea
+                      id={`text2d-text-${component.id}`}
+                      value={
+                        parseText2DProperties(component.properties, {
+                          rich: true,
+                        }).text
+                      }
+                      onChange={(value) =>
+                        updateActor((entry) => ({
+                          ...entry,
+                          components: entry.components.map((candidate) =>
+                            candidate.id === component.id
+                              ? {
+                                  ...candidate,
+                                  properties: patchComponentProperties(
+                                    candidate.properties,
+                                    "text",
+                                    value,
+                                  ),
+                                }
+                              : candidate,
+                          ),
+                        }))
+                      }
+                      data-testid={`text2d-text-${component.id}`}
+                    />
+                  ) : (
+                    <Textarea
+                      id={`text2d-text-${component.id}`}
+                      value={
+                        parseText2DProperties(component.properties).text
+                      }
+                      onChange={(event) =>
+                        updateActor((entry) => ({
+                          ...entry,
+                          components: entry.components.map((candidate) =>
+                            candidate.id === component.id
+                              ? {
+                                  ...candidate,
+                                  properties: patchComponentProperties(
+                                    candidate.properties,
+                                    "text",
+                                    event.target.value,
+                                  ),
+                                }
+                              : candidate,
+                          ),
+                        }))
+                      }
+                      data-testid={`text2d-text-${component.id}`}
+                    />
+                  )}
+                </Field>
+              </div>
+            ) : null}
             {component.classId === "ColliderComponent" ? (
               <PropertyGrid
                 title="Transform"
@@ -950,18 +1026,31 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
           const { componentId, property } = assetPick;
           updateActor((entry) => ({
             ...entry,
-            components: entry.components.map((candidate) =>
-              candidate.id === componentId
-                ? {
-                    ...candidate,
-                    properties: patchComponentProperties(
-                      candidate.properties,
-                      property,
-                      guid,
-                    ),
-                  }
-                : candidate,
-            ),
+            components: entry.components.map((candidate) => {
+              if (candidate.id !== componentId) return candidate;
+              let properties = patchComponentProperties(
+                candidate.properties,
+                property,
+                guid,
+              );
+              if (
+                property === "fontAssetGuid" &&
+                (candidate.classId === "2DTextComponent" ||
+                  candidate.classId === "2DRichTextComponent")
+              ) {
+                const pair = Boolean(
+                  guid && fontHasMsdfJson(guid) && fontHasMsdfPng(guid),
+                );
+                if (!pair) {
+                  properties = patchComponentProperties(
+                    properties,
+                    "renderer",
+                    "bitmap",
+                  );
+                }
+              }
+              return { ...candidate, properties };
+            }),
           }));
           setAssetPick(null);
         }}

@@ -38,7 +38,7 @@ DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle
 
 `SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId`. `applyChangeScene` must not destroy them.
 
-**Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
+**Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`, `2DText`, `2DRichText`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
 
 Place Actors in a SceneLayer document: `SceneLayerActor` and subclasses. World Scene Place Actors excludes them.
 
@@ -60,7 +60,7 @@ The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the P
 
 ## Hit test and 2DAnchor
 
-`HitTest` on `2DButton`, `2DMaterial`, and `2DTexture`: Ignore (default on texture/material), Block (default on button), Pass Through. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad.
+`HitTest` on `2DButton`, `2DMaterial`, `2DTexture`, `2DText`, and `2DRichText`: Ignore (default on texture/material/text), Block (default on button), Pass Through. `2DButton` is interaction-only: a sibling `2DTexture` / `2DMaterial` / `2DText` / `2DRichText` / Sprite / Mesh is the hit visual; otherwise Play emits a default unit quad.
 
 Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene, honors HitTest, then optionally the world. Overlay scenes participate in pointer-move picks for hover; world scenes keep `skipPointerMovePicking: true`.
 
@@ -84,6 +84,19 @@ Register/Unregister pickers require `domain === "postProcess"`.
 
 ## Play / export / player
 
-Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid` and `2DMaterial.materialGuid`. Player `activeScene` still swaps **world** only; compositor commands follow the worker.
+Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, fonts, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid`, `2DMaterial.materialGuid`, overlay `fontAssetGuid`, and RichText `[img]` texture guids (those guids live inside the markup string, so export does not see them via a naive string walk). Player `activeScene` still swaps **world** only; compositor commands follow the worker.
+
+## 2D Text and 2D Rich Text
+
+Overlay-only `2DTextComponent` / `2DRichTextComponent`. Shared per-glyph quads (not Babylon GUI / `TextRenderer.addParagraph`). **Renderer** is `bitmap` (default) or `msdf`.
+
+| Renderer | When | How |
+| --- | --- | --- |
+| Bitmap | Always | FontFace / canvas glyph quads, tinted. Missing Font uses the project default stack. |
+| MSDF | Font has a complete JSON + PNG pair | Same quads, atlas UVs + distance-field shader (crisp at any scale, shader stroke). Details greys out MSDF until the pair exists and writes `renderer` back to `bitmap` if the Font becomes incomplete. Missing atlas glyphs fall back to Bitmap cells. |
+
+Size is px / Project Settings `pixelsPerUnit` (default 100). Overlay frustum stays height 9. Parent pick plane is the layout AABB; glyph and inline-image children are not pickable. RichText `[img]` is always a textured quad.
+
+**2D Rich Text** markup is BBCode-like and nestable: `[b]` `[i]` `[u]`, `[color=…]` (named VGA + orange, or hex 3/4/6/8 with optional `#`), `[size=14]`, `[outline]` / `[outline-color]`, void `[img=<guid>]` / `[img=<guid> size=14]`, `[shake=1]`, `[wave=2]` (`intensity` default 1), `[hover]`, `[rotate=45]`. Unknown `[…]` stays literal. Unclosed wrappers apply to end of string. Letter effects combine on `onBeforeRender` and freeze while Play is paused.
 
 Do not re-add `@babylonslate/ui-runtime`, UserInterface, WidgetComponent, or Babylon GUI. `p9-ui-anchoring` stays “do not rebuild” for HUD widgets; `2DAnchor` is overlay-actor layout only.

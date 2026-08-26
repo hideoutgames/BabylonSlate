@@ -4,6 +4,7 @@ import {
   createActor,
   createDefaultScene,
   createText3DComponent,
+  createText2DComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
   defaultExportPreset,
   isErr,
@@ -486,6 +487,61 @@ describe("collectAndExportGame", () => {
       result.value.manifest.assets.some(
         (entry) =>
           entry.type === "FontFacetype" && entry.guid === "font-facetype:font-1",
+      ),
+    ).toBe(true);
+  });
+
+  it("packs Font MSDF JSON and atlas PNG as FontMsdf sidecars", async () => {
+    const scene = {
+      ...createDefaultScene(),
+      actors: [
+        createActor("label", "2D Text", {
+          components: [
+            {
+              ...createText2DComponent("text-1"),
+              properties: {
+                ...createText2DComponent("text-1").properties,
+                fontAssetGuid: "font-1",
+              },
+            },
+          ],
+        }),
+      ],
+    };
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "font-1", type: "Font", name: "Display" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      bytesByGuid: (guid) => {
+        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "font-1") return new Uint8Array([1, 2]);
+        return null;
+      },
+      fontMsdfJsonByGuid: (guid) => (guid === "font-1" ? new Uint8Array([9]) : null),
+      fontMsdfPngByGuid: (guid) => (guid === "font-1" ? new Uint8Array([8]) : null),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(
+      result.value.manifest.assets.some(
+        (entry) => entry.type === "FontMsdf" && entry.guid === "font-msdf:font-1",
+      ),
+    ).toBe(true);
+    expect(
+      result.value.manifest.assets.some(
+        (entry) =>
+          entry.type === "FontMsdfAtlas" && entry.guid === "font-msdf-png:font-1",
       ),
     ).toBe(true);
   });

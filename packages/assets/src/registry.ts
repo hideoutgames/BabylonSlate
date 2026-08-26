@@ -17,6 +17,7 @@ import {
   type ImportOptions,
   type ImportResult,
 } from "./importers";
+import { mergeFontAttachPayload } from "./font-payload";
 import { AccountedPayloadLoader } from "./payload-loader";
 import {
   assetFileSuffix,
@@ -675,6 +676,7 @@ export class AssetRegistry {
     extras?: {
       modelImportScale?: number;
       sidecars?: ReadonlyMap<string, Uint8Array> | Record<string, Uint8Array>;
+      attachToGuid?: string;
     },
   ): Promise<IndexedAsset[]> {
     this.assertWritable(this.getRootOrThrow(rootId));
@@ -684,9 +686,15 @@ export class AssetRegistry {
       fontGuidsByName: this.fontGuidsByName(),
       modelImportScale: extras?.modelImportScale,
       sidecars: extras?.sidecars,
+      attachToGuid: extras?.attachToGuid,
     };
     const rawResults = await importByExtension(fileName, bytes, options);
-    const results = remapImportResultGuids(rawResults, options.existingGuids);
+    const results = remapImportResultGuids(rawResults, options.existingGuids).map(
+      (result) =>
+        extras?.attachToGuid
+          ? { ...result, attachToGuid: extras.attachToGuid, guid: extras.attachToGuid }
+          : result,
+    );
 
     const created: IndexedAsset[] = [];
     for (const result of results) {
@@ -983,8 +991,21 @@ export class AssetRegistry {
 
     const { chunks, ...headerRest } = decoded.header;
     void chunks;
+    const familyFallback =
+      typeof (headerRest.payload as { family?: unknown } | undefined)?.family ===
+      "string"
+        ? ((headerRest.payload as { family: string }).family)
+        : asset.header.name;
+    const payload =
+      asset.header.type === "Font"
+        ? (mergeFontAttachPayload(
+            headerRest.payload,
+            result.payload,
+            familyFallback,
+          ) as unknown as Record<string, unknown>)
+        : { ...headerRest.payload, ...result.payload };
     const bytes = await encodeBabasset({
-      header: { ...headerRest, payload: { ...headerRest.payload, ...result.payload } },
+      header: { ...headerRest, payload },
       chunks: [...chunksById.values()],
       writeBlob: (sha256, data) => blobs.writeBlob(sha256, data),
     });

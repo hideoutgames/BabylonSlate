@@ -816,6 +816,7 @@ export function isValidSelectionMoveDestination(options: {
 
 export type ContentBrowserContextAction =
   | "open"
+  | "import-msdf-atlas"
   | "duplicate"
   | "rename"
   | "retarget"
@@ -839,12 +840,16 @@ export function contentBrowserContextActions(options: {
   assetCount: number;
   folderCount: number;
   canRetarget?: boolean;
+  singleAssetType?: string;
 }): ContentBrowserContextAction[] {
   const total = options.assetCount + options.folderCount;
   if (total === 0) return [];
   const actions: ContentBrowserContextAction[] = [];
   if (options.assetCount === 1 && options.folderCount === 0) {
     actions.push("open");
+    if (options.singleAssetType === "Font") {
+      actions.push("import-msdf-atlas");
+    }
   }
   actions.push("duplicate");
   if (total === 1) actions.push("rename");

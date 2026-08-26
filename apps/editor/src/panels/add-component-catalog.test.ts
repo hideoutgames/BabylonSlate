@@ -21,6 +21,8 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("2DButtonComponent");
     expect(ids).toContain("2DMaterialComponent");
     expect(ids).toContain("2DTextureComponent");
+    expect(ids).toContain("2DTextComponent");
+    expect(ids).toContain("2DRichTextComponent");
     expect(ids).toContain("AnimationGraphComponent");
     expect(ids).toContain("BehaviourTreeComponent");
     expect(ids).toContain("NavAgentComponent");
@@ -40,12 +42,16 @@ describe("Add Component catalog", () => {
     expect(overlay).toContain("SpriteComponent");
     expect(overlay).toContain("RigidBodyComponent");
     expect(overlay).toContain("2DButtonComponent");
+    expect(overlay).toContain("2DTextComponent");
+    expect(overlay).toContain("2DRichTextComponent");
     expect(overlay).not.toContain("SkyboxComponent");
     expect(overlay).not.toContain("CameraComponent");
     expect(overlay).not.toContain("LightComponent");
     const world = addableComponentsForHost({ overlay: false }).map((e) => e.id);
     expect(world).toContain("SkyboxComponent");
     expect(world).not.toContain("2DButtonComponent");
+    expect(world).not.toContain("2DTextComponent");
+    expect(world).not.toContain("2DRichTextComponent");
   });
 
   it("groups addable classes into Rendering, Animation, Camera, and Physics", () => {
@@ -160,6 +166,15 @@ describe("Add Component catalog", () => {
       color: [1, 1, 1],
       fontAssetGuid: null,
     });
+    expect(defaultPropertiesFor("2DTextComponent")).toMatchObject({
+      text: "Text",
+      renderer: "bitmap",
+      hitTest: "ignore",
+      size: 32,
+    });
+    expect(defaultPropertiesFor("2DRichTextComponent").text).toContain(
+      "[color=green]",
+    );
   });
 
   it("seeds camera projection from the scene viewport mode", () => {

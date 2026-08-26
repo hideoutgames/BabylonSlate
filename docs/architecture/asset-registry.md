@@ -58,7 +58,7 @@ Pure functions keyed by extension: `(bytes, options) → ImportResult[]`.
 | glb / gltf | Model (+ Material / Texture / Skeleton / Animation as needed) |
 | audio | Audio |
 | woff2 / woff / ttf / otf | Font |
-| facetype JSON / msdf atlas | Attach representations to an **existing** Font |
+| facetype JSON / MSDF JSON + PNG | Attach to an existing Font, or **create** a Font when the family is missing. MSDF PNG is a Font sidecar (`msdf-atlas-png`), not a Texture |
 | `.babasset` | Unpack / remapped copy |
 
 Cross-project import remaps colliding guids and rewrites references in the incoming set. Template instantiate keeps guids as-is.

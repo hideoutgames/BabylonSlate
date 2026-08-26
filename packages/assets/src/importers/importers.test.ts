@@ -174,6 +174,58 @@ describe("importers", () => {
     expect(attached[0]!.chunks[0]!.id).toBe("facetype-glyphs");
   });
 
+  it("imports an MSDF JSON+PNG pair as Font chunks, not a Texture", async () => {
+    const json = new TextEncoder().encode(
+      JSON.stringify({ pages: ["Ui-msdf.png"], chars: [] }),
+    );
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    const created = await importFont(json, {
+      fileName: "Ui-msdf.json",
+      existingGuids: new Set(),
+      sidecars: { "Ui-msdf.png": png },
+    });
+    expect(created[0]!.type).toBe("Font");
+    expect(created[0]!.attachToGuid).toBeUndefined();
+    expect(created[0]!.payload.representations).toMatchObject({
+      source: false,
+      msdfJson: true,
+      msdfPng: true,
+      msdf: true,
+    });
+    expect(created[0]!.chunks.map((chunk) => chunk.id).sort()).toEqual([
+      "msdf-atlas",
+      "msdf-atlas-png",
+    ]);
+  });
+
+  it("attaches an MSDF PNG named with msdf to an existing Font and leaves MSDF incomplete without JSON", async () => {
+    const attached = await importFont(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
+      fileName: "Ui-msdf.png",
+      existingGuids: new Set(["font-ui"]),
+      fontGuidsByName: new Map([["Ui", "font-ui"]]),
+    });
+    expect(attached[0]!.attachToGuid).toBe("font-ui");
+    expect(attached[0]!.chunks[0]).toMatchObject({
+      id: "msdf-atlas-png",
+      kind: "font-msdf-png",
+    });
+    expect(attached[0]!.payload.representations).toMatchObject({
+      msdfJson: false,
+      msdfPng: true,
+      msdf: false,
+    });
+  });
+
+  it("routes an MSDF PNG through importByExtension instead of creating a Texture", async () => {
+    const results = await importByExtension(
+      "Roboto.msdf.png",
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      { fileName: "Roboto.msdf.png", existingGuids: new Set() },
+    );
+    expect(results[0]!.type).toBe("Font");
+    expect(results[0]!.chunks[0]!.id).toBe("msdf-atlas-png");
+  });
+
   it("imports .babasset and remaps colliding guids", async () => {
     const bytes = await encodeBabasset({
       header: {

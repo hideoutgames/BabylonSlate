@@ -9,6 +9,12 @@ import {
   FONT_FACETYPE_EXPORT_TYPE,
   fontFacetypeExportGuid,
   fontGuidFromFontFacetypeExport,
+  FONT_MSDF_EXPORT_TYPE,
+  FONT_MSDF_ATLAS_EXPORT_TYPE,
+  fontMsdfExportGuid,
+  fontMsdfAtlasExportGuid,
+  fontGuidFromFontMsdfExport,
+  fontGuidFromFontMsdfAtlasExport,
 } from "./constants";
 
 describe("navmesh export ids", () => {
@@ -38,5 +44,16 @@ describe("font facetype export ids", () => {
     expect(guid).toBe("font-facetype:font-1");
     expect(fontGuidFromFontFacetypeExport(guid)).toBe("font-1");
     expect(fontGuidFromFontFacetypeExport("font-1")).toBeNull();
+  });
+});
+
+describe("font MSDF export ids", () => {
+  it("round-trips Font MSDF JSON and atlas PNG sidecar prefixes", () => {
+    expect(FONT_MSDF_EXPORT_TYPE).toBe("FontMsdf");
+    expect(FONT_MSDF_ATLAS_EXPORT_TYPE).toBe("FontMsdfAtlas");
+    expect(fontMsdfExportGuid("font-1")).toBe("font-msdf:font-1");
+    expect(fontMsdfAtlasExportGuid("font-1")).toBe("font-msdf-png:font-1");
+    expect(fontGuidFromFontMsdfExport("font-msdf:font-1")).toBe("font-1");
+    expect(fontGuidFromFontMsdfAtlasExport("font-msdf-png:font-1")).toBe("font-1");
   });
 });

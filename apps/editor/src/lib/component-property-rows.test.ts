@@ -917,4 +917,78 @@ describe("applyPrefabPropertyDefaults", () => {
       }),
     );
   });
+
+  it("exposes 2D Text Font, Renderer, and Hit Test without a grid text row", () => {
+    const text = rowsFor(
+      {
+        id: "label",
+        classId: "2DTextComponent",
+        properties: {
+          text: "Hello",
+          fontAssetGuid: "font-1",
+          renderer: "msdf",
+          hitTest: "block",
+        },
+      },
+      {
+        fontHasMsdfJson: (guid) => guid === "font-1",
+        fontHasMsdfPng: (guid) => guid === "font-1",
+      },
+    );
+    expect(text.rows.find((row) => row.id.endsWith("-text"))).toBeUndefined();
+    expect(text.rows.find((row) => row.id.endsWith("-fontAssetGuid"))).toMatchObject({
+      kind: "asset",
+      value: "font-1",
+    });
+    const renderer = text.rows.find((row) => row.id.endsWith("-renderer"));
+    expect(renderer).toMatchObject({
+      kind: "enum",
+      value: "msdf",
+    });
+    if (renderer?.kind === "enum") {
+      expect(renderer.options.find((option) => option.value === "msdf")?.disabled).toBe(
+        false,
+      );
+    }
+    expect(text.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
+      kind: "enum",
+      value: "block",
+    });
+    const blocked = rowsFor({
+      id: "plain",
+      classId: "2DRichTextComponent",
+      properties: { renderer: "msdf" },
+    });
+    const blockedRenderer = blocked.rows.find((row) =>
+      row.id.endsWith("-renderer"),
+    );
+    expect(blockedRenderer).toMatchObject({ kind: "enum", value: "bitmap" });
+    if (blockedRenderer?.kind === "enum") {
+      expect(
+        blockedRenderer.options.find((option) => option.value === "msdf")?.disabled,
+      ).toBe(true);
+    }
+  });
+
+  it("writes renderer back to bitmap when the Font no longer has an MSDF pair", () => {
+    const text = rowsFor(
+      {
+        id: "label",
+        classId: "2DTextComponent",
+        properties: {
+          fontAssetGuid: "font-1",
+          renderer: "msdf",
+        },
+      },
+      {
+        fontHasMsdfJson: (guid) => guid === "font-1",
+        fontHasMsdfPng: (guid) => guid === "font-1",
+      },
+    );
+    const font = text.rows.find((row) => row.id.endsWith("-fontAssetGuid"));
+    expect(font?.kind).toBe("asset");
+    if (font?.kind === "asset") font.onChange(null);
+    expect(text.update).toHaveBeenCalledWith("fontAssetGuid", null);
+    expect(text.update).toHaveBeenCalledWith("renderer", "bitmap");
+  });
 });

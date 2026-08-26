@@ -8,9 +8,11 @@ import {
 import {
   createActor,
   createDefaultScene,
+  createDefaultSceneLayer,
   createDefaultSceneSettings,
   createMeshComponent,
   createSkyboxComponent,
+  createText2DComponent,
   createText3DComponent,
   type SerializedScene,
 } from "@babylonslate/core";
@@ -1413,6 +1415,71 @@ describe("p7-play-scene-load", () => {
         },
       },
     ]);
+    runtime.stop();
+  });
+
+  it("emits assignMesh meshKind 2dtext with authored overlay text properties", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "assets/hud.scene.babasset",
+        scene: {
+          name: "World",
+          viewportMode: "2d",
+          settings: {
+            ...createDefaultSceneSettings("2d"),
+            sceneLayers: [{ assetGuid: "hud", zOrder: 0, enabled: true }],
+          },
+          folders: [],
+          actors: [],
+        },
+        sceneLayers: [
+          {
+            guid: "hud",
+            layer: {
+              ...createDefaultSceneLayer(),
+              name: "HUD",
+              actors: [
+                createActor("label", "2D Text", {
+                  classId: "SceneLayerActor",
+                  components: [
+                    {
+                      ...createText2DComponent("text-comp"),
+                      properties: {
+                        ...createText2DComponent("text-comp").properties,
+                        text: "Hi",
+                        fontAssetGuid: "font-1",
+                        renderer: "msdf",
+                      },
+                    },
+                  ],
+                }),
+              ],
+            },
+          },
+        ],
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    expect(
+      commands.find(
+        (command) => command.type === "assignMesh" && command.actorGuid === "label",
+      ),
+    ).toMatchObject({
+      type: "assignMesh",
+      meshKind: "2dtext",
+      meshAssetGuid: "font-1",
+      hitTest: "ignore",
+      hasButton: false,
+      text2d: {
+        text: "Hi",
+        fontAssetGuid: "font-1",
+        renderer: "msdf",
+        size: 32,
+      },
+    });
     runtime.stop();
   });
 });

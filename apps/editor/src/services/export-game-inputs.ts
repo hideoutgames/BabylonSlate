@@ -9,6 +9,8 @@ import {
   encodePackedAudioAsset,
   encodePackedModelAsset,
   FONT_FACETYPE_CHUNK_ID,
+  FONT_MSDF_CHUNK_ID,
+  FONT_MSDF_PNG_CHUNK_ID,
   normalizeAudioPayload,
   normalizeModelPayload,
   selectTextureChunk,
@@ -57,6 +59,8 @@ export type LoadedExportDocuments = {
   payloadByGuid: (guid: string) => unknown | null;
   bytesByGuid: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
+  fontMsdfJsonByGuid: (guid: string) => Uint8Array | null;
+  fontMsdfPngByGuid: (guid: string) => Uint8Array | null;
   navmeshByGuid: (guid: string) => Uint8Array | null;
   audioReverbByGuid: (guid: string) => Uint8Array | null;
 };
@@ -100,23 +104,34 @@ async function bytesForAsset(
   }
   for (const chunk of asset.header.chunks) {
     if (chunk.id === "document" || chunk.id === FONT_FACETYPE_CHUNK_ID) continue;
+    if (chunk.id === FONT_MSDF_CHUNK_ID || chunk.id === FONT_MSDF_PNG_CHUNK_ID) {
+      continue;
+    }
     const bytes = await readAssetChunk(asset.path, chunk.id);
     if (bytes) return bytes;
   }
   return null;
 }
 
-async function fontFacetypeBytesForAsset(
+async function fontChunkBytesForAsset(
   asset: IndexedAsset,
+  chunkId: string,
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
 ): Promise<Uint8Array | null> {
   if (asset.header.type !== "Font") return null;
   try {
-    const bytes = await readAssetChunk(asset.path, FONT_FACETYPE_CHUNK_ID);
+    const bytes = await readAssetChunk(asset.path, chunkId);
     return bytes && bytes.byteLength > 0 ? bytes : null;
   } catch {
     return null;
   }
+}
+
+async function fontFacetypeBytesForAsset(
+  asset: IndexedAsset,
+  readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
+): Promise<Uint8Array | null> {
+  return fontChunkBytesForAsset(asset, FONT_FACETYPE_CHUNK_ID, readAssetChunk);
 }
 
 export async function loadExportDocuments(
@@ -127,6 +142,8 @@ export async function loadExportDocuments(
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
   const fontFacetypes = new Map<string, Uint8Array>();
+  const fontMsdfJson = new Map<string, Uint8Array>();
+  const fontMsdfPng = new Map<string, Uint8Array>();
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
   for (const asset of loaders.assets) {
@@ -172,6 +189,18 @@ export async function loadExportDocuments(
     if (payload) bytes.set(asset.header.guid, payload);
     const facetype = await fontFacetypeBytesForAsset(asset, loaders.readAssetChunk);
     if (facetype) fontFacetypes.set(asset.header.guid, facetype);
+    const msdfJson = await fontChunkBytesForAsset(
+      asset,
+      FONT_MSDF_CHUNK_ID,
+      loaders.readAssetChunk,
+    );
+    if (msdfJson) fontMsdfJson.set(asset.header.guid, msdfJson);
+    const msdfPng = await fontChunkBytesForAsset(
+      asset,
+      FONT_MSDF_PNG_CHUNK_ID,
+      loaders.readAssetChunk,
+    );
+    if (msdfPng) fontMsdfPng.set(asset.header.guid, msdfPng);
     if (asset.header.type === "Scene") {
       try {
         const nav = await loaders.readAssetChunk(asset.path, NAVMESH_CHUNK_ID);
@@ -200,6 +229,8 @@ export async function loadExportDocuments(
     payloadByGuid: (guid) => payloads.get(guid) ?? null,
     bytesByGuid: (guid) => bytes.get(guid) ?? null,
     fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,
+    fontMsdfJsonByGuid: (guid) => fontMsdfJson.get(guid) ?? null,
+    fontMsdfPngByGuid: (guid) => fontMsdfPng.get(guid) ?? null,
     navmeshByGuid: (guid) => navmeshes.get(guid) ?? null,
     audioReverbByGuid: (guid) => audioReverbs.get(guid) ?? null,
   };

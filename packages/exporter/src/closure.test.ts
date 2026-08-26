@@ -817,6 +817,8 @@ describe("collectExportClosure", () => {
         }),
         asset({ guid: "sprite-1", type: "Sprite", name: "Banner" }),
         asset({ guid: "tex-1", type: "Texture", name: "BannerTex" }),
+        asset({ guid: "tex-inline", type: "Texture", name: "Inline" }),
+        asset({ guid: "font-1", type: "Font", name: "Display" }),
         asset({ guid: "unused-layer", type: "SceneLayer", name: "Unused" }),
       ],
       pluginEnabledGuids: new Set(),
@@ -839,6 +841,13 @@ describe("collectExportClosure", () => {
                     classId: "2DTextureComponent",
                     properties: { textureGuid: "tex-1" },
                   },
+                  {
+                    classId: "2DRichTextComponent",
+                    properties: {
+                      text: "[img=tex-inline]Hi",
+                      fontAssetGuid: "font-1",
+                    },
+                  },
                 ],
               },
             ],
@@ -856,6 +865,8 @@ describe("collectExportClosure", () => {
         "pause",
         "sprite-1",
         "tex-1",
+        "tex-inline",
+        "font-1",
       ]),
     );
     expect(result.value).not.toContain("unused-layer");

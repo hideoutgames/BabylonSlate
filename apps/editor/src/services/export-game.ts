@@ -8,7 +8,11 @@ import {
   AUDIO_REVERB_EXPORT_TYPE,
   audioReverbExportGuid,
   FONT_FACETYPE_EXPORT_TYPE,
+  FONT_MSDF_ATLAS_EXPORT_TYPE,
+  FONT_MSDF_EXPORT_TYPE,
   fontFacetypeExportGuid,
+  fontMsdfAtlasExportGuid,
+  fontMsdfExportGuid,
   type ExportAssetBytes,
   type ExportIndexedAsset,
   type ExportArtifact,
@@ -74,6 +78,8 @@ export type CollectExportGameParams = {
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid?: (guid: string) => Uint8Array | null;
+  fontMsdfJsonByGuid?: (guid: string) => Uint8Array | null;
+  fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   customResolution: RenderProjectSettings;
   playFrameCap: number;
@@ -238,6 +244,35 @@ export async function collectAndExportGame(
       bytes: facetype,
       encoding: "bytes",
       name: `${asset.name} Facetype`,
+    });
+  }
+  for (const guid of closure.value) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Font") continue;
+    const json = params.fontMsdfJsonByGuid?.(guid);
+    const png = params.fontMsdfPngByGuid?.(guid);
+    if (!json || json.byteLength === 0 || !png || png.byteLength === 0) continue;
+    const sceneGuid = sceneGuidForAsset(
+      guid,
+      startup,
+      params.assets,
+      params.sceneByGuid,
+    );
+    exportAssets.push({
+      guid: fontMsdfExportGuid(guid),
+      type: FONT_MSDF_EXPORT_TYPE,
+      sceneGuid,
+      bytes: json,
+      encoding: "bytes",
+      name: `${asset.name} MSDF`,
+    });
+    exportAssets.push({
+      guid: fontMsdfAtlasExportGuid(guid),
+      type: FONT_MSDF_ATLAS_EXPORT_TYPE,
+      sceneGuid,
+      bytes: png,
+      encoding: "bytes",
+      name: `${asset.name} MSDF Atlas`,
     });
   }
 

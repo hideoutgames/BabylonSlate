@@ -4,6 +4,7 @@ import {
   identitySerializedTransform,
   parseSkyboxFaces,
   parseSkyboxSize,
+  parseText2DProperties,
   parseText3DProperties,
   SKYBOX_FACE_KEYS,
 } from "@babylonslate/core";
@@ -42,6 +43,7 @@ import {
 } from "./editor-volume";
 import { parseColliderProperties } from "@babylonslate/physics";
 import { createText3DMesh } from "./text3d-mesh";
+import { createText2DMesh } from "./text2d-mesh";
 import {
   applyWorldVisualGroup,
   RENDERING_GROUP,
@@ -194,6 +196,8 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "AudioComponent",
   "SkyboxComponent",
   "Text3DComponent",
+  "2DTextComponent",
+  "2DRichTextComponent",
   "ParticleComponent",
   "ColliderComponent",
   "NavMeshComponent",
@@ -207,6 +211,8 @@ const SURFACE_COMPONENT_CLASS_IDS = new Set([
   "TilemapComponent",
   "SkyboxComponent",
   "Text3DComponent",
+  "2DTextComponent",
+  "2DRichTextComponent",
 ]);
 
 export const EDITOR_HELPER_BILLBOARD_ID = "billboard";
@@ -316,6 +322,15 @@ function componentVisualKind(component: SerializedComponent): string {
   if (component.classId === "Text3DComponent") {
     const parsed = parseText3DProperties(component.properties);
     return `text3d:${parsed.text}:${parsed.size}:${parsed.color.join(",")}:${parsed.fontAssetGuid ?? ""}`;
+  }
+  if (
+    component.classId === "2DTextComponent" ||
+    component.classId === "2DRichTextComponent"
+  ) {
+    const parsed = parseText2DProperties(component.properties, {
+      rich: component.classId === "2DRichTextComponent",
+    });
+    return `2dtext:${component.classId}:${parsed.text}:${parsed.size}:${parsed.renderer}:${parsed.fontAssetGuid ?? ""}:${parsed.color.join(",")}:${parsed.alignment}:${parsed.bold}:${parsed.italic}:${parsed.underline}:${parsed.outline}:${parsed.wrapWidth}:${parsed.hitTest}`;
   }
   if (component.classId === "ParticleComponent") {
     return editorBillboardKind("particle");
@@ -432,6 +447,12 @@ export function editorMeshKindOf(actor: SerializedActor): string | null {
     (component) => component.classId === "Text3DComponent",
   );
   if (text3dComponent) return componentVisualKind(text3dComponent);
+  const text2dComponent = actor.components.find(
+    (component) =>
+      component.classId === "2DTextComponent" ||
+      component.classId === "2DRichTextComponent",
+  );
+  if (text2dComponent) return componentVisualKind(text2dComponent);
   if (
     actor.components.some((component) => component.classId === "ParticleComponent")
   ) {
@@ -483,6 +504,14 @@ export function createMeshForComponent(
   }
   if (component.classId === "Text3DComponent") {
     return createText3DMesh(scene, name, component.properties, assets);
+  }
+  if (
+    component.classId === "2DTextComponent" ||
+    component.classId === "2DRichTextComponent"
+  ) {
+    return createText2DMesh(scene, name, component.properties, assets, {
+      rich: component.classId === "2DRichTextComponent",
+    });
   }
   if (component.classId === "ParticleComponent") {
     return createEditorBillboard(scene, name, "particle");
@@ -628,6 +657,11 @@ export function createActorMesh(
   const text3dComponent = actor.components.find(
     (component) => component.classId === "Text3DComponent",
   );
+  const text2dComponent = actor.components.find(
+    (component) =>
+      component.classId === "2DTextComponent" ||
+      component.classId === "2DRichTextComponent",
+  );
   if (!meshComponent && spriteComponent) {
     return createSpriteComponentMesh(scene, name, spriteComponent, assets);
   }
@@ -645,6 +679,16 @@ export function createActorMesh(
     text3dComponent
   ) {
     return createMeshForComponent(scene, name, actor, text3dComponent, assets);
+  }
+  if (
+    !meshComponent &&
+    !spriteComponent &&
+    !tilemapComponent &&
+    !skyboxComponent &&
+    !text3dComponent &&
+    text2dComponent
+  ) {
+    return createMeshForComponent(scene, name, actor, text2dComponent, assets);
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
   if (assetGuid) {

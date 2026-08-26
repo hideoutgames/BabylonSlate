@@ -1,6 +1,6 @@
 import { importAudio } from "./audio";
 import { importBabasset } from "./babasset";
-import { importFont } from "./font";
+import { importFont, isMsdfAtlasPng } from "./font";
 import { importImage } from "./image";
 import { importModel } from "./model";
 import type { ImportOptions, ImportResult, Importer } from "./types";
@@ -47,6 +47,9 @@ export async function importByExtension(
   options: ImportOptions,
 ): Promise<ImportResult[]> {
   const extension = extensionOf(fileName);
+  if (extension === "png" && isMsdfAtlasPng(fileName)) {
+    return importFont(bytes, { ...options, fileName });
+  }
   const importer = importerForExtension(extension);
   if (!importer) {
     throw new Error(`No importer registered for ".${extension}" files`);
@@ -62,6 +65,7 @@ export * from "./guid-remap";
 export * from "./image";
 export * from "./model";
 export * from "./gltf-import-batch";
+export * from "./msdf-import-batch";
 export * from "./obj-import-batch";
 export * from "./types";
 export * from "./util";

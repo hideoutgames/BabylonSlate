@@ -265,6 +265,20 @@ export type CommandMessage =
           color: [number, number, number];
           fontAssetGuid: string | null;
         };
+        text2d?: {
+          text: string;
+          size: number;
+          color: [number, number, number];
+          fontAssetGuid: string | null;
+          renderer: "bitmap" | "msdf";
+          outline: number;
+          outlineColor: [number, number, number];
+          alignment: "left" | "center" | "right";
+          bold: boolean;
+          italic: boolean;
+          underline: boolean;
+          wrapWidth: number;
+        };
       }>;
       skybox?: {
         size: number;
@@ -283,6 +297,20 @@ export type CommandMessage =
         depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
+      };
+      text2d?: {
+        text: string;
+        size: number;
+        color: [number, number, number];
+        fontAssetGuid: string | null;
+        renderer: "bitmap" | "msdf";
+        outline: number;
+        outlineColor: [number, number, number];
+        alignment: "left" | "center" | "right";
+        bold: boolean;
+        italic: boolean;
+        underline: boolean;
+        wrapWidth: number;
       };
     }
   | { type: "possessCamera"; slotId: number }

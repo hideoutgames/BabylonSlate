@@ -28,6 +28,9 @@ import {
   parseSkyboxFaces,
   sceneLayerToEditorScene,
   skyboxFaceGuids,
+  text2dFontGuidsFromScene,
+  text2dImageGuidsFromScene,
+  text3DFontGuidsFromScene,
   type SerializedGraph,
   type SerializedScene,
   type SerializedSceneLayer,
@@ -246,11 +249,21 @@ export function overlayEditorScenesFromLayers(
   return layers.map((entry) => sceneLayerToEditorScene(entry.layer));
 }
 
-/** Texture guids on overlay 2DTexture components. */
+/** Texture guids on overlay 2DTexture components and RichText `[img]` tags. */
 export function overlayTextureGuidsFromScene(
   scene: SerializedScene | null | undefined,
 ): string[] {
-  return componentGuidsFromScene(scene, "2DTextureComponent", ["textureGuid"]);
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const guid of [
+    ...componentGuidsFromScene(scene, "2DTextureComponent", ["textureGuid"]),
+    ...text2dImageGuidsFromScene(scene),
+  ]) {
+    if (seen.has(guid)) continue;
+    seen.add(guid);
+    found.push(guid);
+  }
+  return found;
 }
 
 export function overlayTextureGuidsFromScenes(
@@ -266,6 +279,25 @@ export function overlayTextureGuidsFromScenes(
     }
   }
   return guids;
+}
+
+/** Font guids on 3D Text and overlay 2D Text / 2D Rich Text. */
+export function playFontGuidsFromScenes(
+  scenes: readonly (SerializedScene | null | undefined)[],
+): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  for (const scene of scenes) {
+    for (const guid of [
+      ...text3DFontGuidsFromScene(scene),
+      ...text2dFontGuidsFromScene(scene),
+    ]) {
+      if (seen.has(guid)) continue;
+      seen.add(guid);
+      found.push(guid);
+    }
+  }
+  return found;
 }
 
 /** Tilemap asset guids referenced by scene TilemapComponents. */

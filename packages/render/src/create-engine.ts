@@ -104,6 +104,7 @@ import {
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
+import { FontRegistry, type FontAssetEntry } from "./font-registry";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
@@ -192,6 +193,8 @@ export interface EngineHandle {
   playMeshMaterialNames: () => string[];
   /** Sprite/tilemap textures and GLB bytes for editor + Play mesh builders. */
   setMeshAssets: (assets: MeshAssetContext) => void;
+  /** Register FontFace source bytes before Bitmap 2D Text paints. */
+  registerFonts: (entries: readonly FontAssetEntry[]) => Promise<void>;
   /** Play/editor environment (clear, fog, IBL) without rebuilding actor meshes. */
   applySceneEnvironment: (sceneData: SerializedScene) => void;
   setShadowQuality: (level: string) => void;
@@ -298,6 +301,12 @@ export interface CreateEngineOptions {
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
+  /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
+  fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
+  /** MSDF atlas PNG keyed by Font asset guid. */
+  fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
+  /** FontFace source bytes for Bitmap 2D Text. */
+  fontFaceEntries?: readonly FontAssetEntry[];
   /** Model source bytes keyed by Model asset guid. */
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   /** Model payloads (material slots / clip names) keyed by Model asset guid. */
@@ -667,6 +676,12 @@ export function createEngine(
     options.textureBytes?.keys() ?? [],
   );
   binding.fontFacetypeBytes = options.fontFacetypeBytes;
+  binding.fontMsdfJson = options.fontMsdfJson;
+  binding.fontMsdfPng = options.fontMsdfPng;
+  const fontRegistry = new FontRegistry();
+  if (options.fontFaceEntries && options.fontFaceEntries.length > 0) {
+    void fontRegistry.registerAll(options.fontFaceEntries);
+  }
   binding.modelBytes = options.modelBytes;
   binding.modelPayloads = options.modelPayloads;
   binding.modelClipAnimationGuids = options.modelClipAnimationGuids;
@@ -1483,6 +1498,7 @@ export function createEngine(
       }
     },
     setPaused: (paused: boolean) => {
+      binding.paused = paused;
       scheduler.setPaused(paused);
       audioService?.setPaused(paused);
     },
@@ -1559,11 +1575,17 @@ export function createEngine(
       }
       return [...names].sort();
     },
+    registerFonts: async (entries) => {
+      await fontRegistry.registerAll(entries);
+      if (fontRegistry.consumeDirty()) scheduler.invalidate("asset");
+    },
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
+      binding.fontMsdfJson = assets.fontMsdfJson;
+      binding.fontMsdfPng = assets.fontMsdfPng;
       binding.modelBytes = assets.modelBytes;
       binding.modelPayloads = assets.modelPayloads;
       binding.modelClipAnimationGuids = assets.modelClipAnimationGuids;
