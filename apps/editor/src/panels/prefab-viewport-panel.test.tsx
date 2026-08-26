@@ -142,6 +142,10 @@ vi.mock("../context/document-context", () => ({
   }),
 }));
 
+vi.mock("../context/document-workspace-context", () => ({
+  useDocumentWorkspace: () => ({ documentId: "graph:assets/Hero.class.babasset" }),
+}));
+
 vi.mock("../context/scene-editing-context", () => ({
   useSceneEditing: () => ({
     gizmoTool: "translate",
