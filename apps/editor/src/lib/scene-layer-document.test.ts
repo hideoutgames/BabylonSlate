@@ -5,7 +5,10 @@ import {
   editorSceneToSceneLayer,
   sceneLayerToEditorScene,
 } from "@babylonslate/core";
-import { persistableDocumentContent } from "./scene-layer-document";
+import {
+  editorTabContentForKind,
+  persistableDocumentContent,
+} from "./scene-layer-document";
 
 describe("persistableDocumentContent", () => {
   it("converts an open SceneLayer editor scene back to a SceneLayer payload", () => {
@@ -26,5 +29,16 @@ describe("persistableDocumentContent", () => {
   it("leaves an already-normalized SceneLayer payload unchanged", () => {
     const layer = createDefaultSceneLayer();
     expect(persistableDocumentContent("scene-layer", layer)).toBe(layer);
+  });
+
+  it("converts a disk SceneLayer payload into a locked 2D editor scene", () => {
+    const layer = createDefaultSceneLayer();
+    layer.name = "HUD";
+    const opened = editorTabContentForKind("scene-layer", layer);
+    expect(opened).toEqual(sceneLayerToEditorScene(layer));
+    expect((opened as { viewportMode: string }).viewportMode).toBe("2d");
+    expect(editorTabContentForKind("scene", createDefaultScene())).toEqual(
+      createDefaultScene(),
+    );
   });
 });

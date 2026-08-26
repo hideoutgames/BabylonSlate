@@ -164,7 +164,10 @@ import {
   classParentLookup,
   materialDomainsFromAssets,
 } from "../lib/content-browser-helpers";
-import { persistableDocumentContent } from "../lib/scene-layer-document";
+import {
+  editorTabContentForKind,
+  persistableDocumentContent,
+} from "../lib/scene-layer-document";
 import { tryReparentUserClass } from "../lib/reparent-class";
 import {
   copyInstanceLinkage,
@@ -910,11 +913,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         );
         if (!doc || doc.ref.kind === "content-browser") continue;
         try {
-          const content = await projectService.loadDocument(
+          const loaded = await projectService.loadDocument(
             doc.ref.kind,
             doc.ref.path,
           );
-          documentService.replaceLoadedContent(doc.id, content);
+          documentService.replaceLoadedContent(
+            doc.id,
+            editorTabContentForKind(doc.ref.kind, loaded) as typeof doc.content,
+          );
           editSessionRef.current.dropDocument(doc.id);
         } catch {
           // Deleted or unreadable on disk.
@@ -1302,6 +1308,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             doc.ref.path,
             persistableDocumentContent(doc.ref.kind, doc.content) as
               | SerializedScene
+              | SerializedSceneLayer
               | SerializedGraph
               | Record<string, unknown>,
           );
@@ -1430,6 +1437,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
           doc.ref.path,
           persistableDocumentContent(doc.ref.kind, doc.content) as
             | SerializedScene
+            | SerializedSceneLayer
             | SerializedGraph
             | Record<string, unknown>,
         );

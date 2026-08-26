@@ -936,7 +936,11 @@ export class ProjectService {
       const kind = documentKindForAssetType(asset.header.type);
       if (!kind) continue;
 
-      let content: SerializedScene | SerializedGraph | Record<string, unknown>;
+      let content:
+        | SerializedScene
+        | SerializedSceneLayer
+        | SerializedGraph
+        | Record<string, unknown>;
       try {
         content = await this.loadDocument(kind, asset.path);
       } catch {
@@ -1184,7 +1188,11 @@ export class ProjectService {
   async saveDocument(
     kind: Exclude<DocumentKind, "content-browser">,
     path: string,
-    content: SerializedScene | SerializedGraph | Record<string, unknown>,
+    content:
+      | SerializedScene
+      | SerializedSceneLayer
+      | SerializedGraph
+      | Record<string, unknown>,
     options?: { parentClass?: string | null },
   ): Promise<void> {
     if (kind === "trace" || isTracePath(path)) {

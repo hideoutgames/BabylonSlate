@@ -17,12 +17,11 @@ import {
   isSceneWorkspaceKind,
   labelFromPath,
   migrateRestoredDocumentId,
-  normalizeSceneLayer,
   parseDocumentId,
-  sceneLayerToEditorScene,
 } from "@babylonslate/core";
 import type { ProjectDocument } from "@babylonslate/core";
 import { recordDocumentDirty } from "../lib/dirty-trace";
+import { editorTabContentForKind } from "../lib/scene-layer-document";
 import type { ProjectService } from "./project-service";
 
 export type DocumentContent =
@@ -205,10 +204,10 @@ export class DocumentService {
     }
 
     const loaded = await projectService.loadDocument(ref.kind, ref.path);
-    const content =
-      ref.kind === "scene-layer"
-        ? sceneLayerToEditorScene(normalizeSceneLayer(loaded))
-        : loaded;
+    const content = editorTabContentForKind(
+      ref.kind,
+      loaded,
+    ) as DocumentContent;
     const fullRef = createDocumentRef(ref.kind, ref.path, content);
 
     const entry: OpenDocument = {
