@@ -110,4 +110,59 @@ describe("input nodes", () => {
     void pin;
     void EXEC;
   });
+
+  it("registers Get Cursor Position, Project Cursor To Scene, Show Cursor, and Hide Cursor", () => {
+    expect(inputNodes.map((n) => n.id)).toEqual(
+      expect.arrayContaining([
+        "input.getCursorPosition",
+        "input.projectCursorToScene",
+        "input.showCursor",
+        "input.hideCursor",
+      ]),
+    );
+    const registry = createDefaultNodeRegistry();
+    const get = registry.get("input.getCursorPosition")!;
+    expect(get.title).toBe("Get Cursor Position");
+    expect(get.pure).toBe(true);
+    expect(get.pins({}).map((p) => p.id)).toEqual(
+      expect.arrayContaining(["out", "pressed"]),
+    );
+    const project = registry.get("input.projectCursorToScene")!;
+    expect(project.title).toBe("Project Cursor To Scene");
+    expect(project.pins({}).find((p) => p.id === "drawDebug")?.defaultValue).toBe(
+      true,
+    );
+    expect(project.pins({}).find((p) => p.id === "duration")?.defaultValue).toBe(
+      0,
+    );
+    expect(registry.get("input.showCursor")!.title).toBe("Show Cursor");
+    expect(registry.get("input.hideCursor")!.title).toBe("Hide Cursor");
+  });
+
+  it("compiled Get Cursor Position reads ctx.getCursorPosition on Tick", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "cursor", "input.getCursorPosition"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "tick", "execOut", "log", "execIn"),
+        edge("e2", "cursor", "out", "log", "message"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    expect(compiled.source).toContain("ctx.getCursorPosition");
+    const mod = loadModule(compiled.source);
+    const logs: string[] = [];
+    (mod.onTick as (ctx: unknown) => void)({
+      formatValue: (v: unknown) => String((v as { x: number }).x),
+      log: (_s: string, _c: string, message: string) => logs.push(message),
+      getCursorPosition: () => ({ x: 42, y: 9, pressed: true }),
+    });
+    expect(logs).toEqual(["42"]);
+  });
 });

@@ -64,9 +64,13 @@ The SceneLayer editor tab is a normal 2D viewport (one Babylon scene), not the P
 
 Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene, honors HitTest, then optionally the world. Overlay scenes participate in pointer-move picks for hover; world scenes keep `skipPointerMovePicking: true`.
 
+`2DTexture` planes size to sniffed GPU bytes (KTX2, then PNG/JPEG) divided by Project Settings `pixelsPerUnit`. Missing guid or bytes stays **1×1**. `2DMaterial` and the default `2DButton` quad stay 1×1. Details has no Size field and Play does not write actor scale.
+
+`2DButton` uses the same graph events on mouse and touch. Play captures the pointer, `preventDefault`s `touchstart` / `touchmove`, and treats `pointercancel` like a release (click if still over the button). Engine Settings `touchMinTargetPx` (default 44) is a **screen-space pick floor** through the overlay frustum — it inflates the pick AABB, not the visual.
+
 `2DAnchor` pins actor XY to a 9-point layer/screen origin plus offset. On canvas / resolution change the worker reapplies XY so Get Actor Location matches the visual.
 
-Button graph events on SceneLayerActor palettes only: Event On Mouse Enter / Leave / Click / Press Start / Press End (`onMouseEnter`, `onMouseLeave`, `onClick`, `onPressStart`, `onPressEnd`). Old HUD event ids stay unmapped.
+Button graph events on SceneLayerActor palettes only: Event On Mouse Enter / Leave / Click / Press Start / Press End (`onMouseEnter`, `onMouseLeave`, `onClick`, `onPressStart`, `onPressEnd`). Old HUD event ids stay unmapped. There are no `onTouch*` nodes.
 
 ## Graph nodes
 

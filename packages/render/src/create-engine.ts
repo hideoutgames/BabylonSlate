@@ -109,6 +109,7 @@ import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { pickAtCanvas } from "./picking";
 import { mapCanvasPointer } from "./pick-coords";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
+import { attachPlayCursor } from "./play-cursor";
 import {
   applyOverlayPointer,
   createOverlayPointerState,
@@ -398,6 +399,8 @@ export interface CreateEngineOptions {
   onSceneLayerResize?: (size: {
     frustumWidth: number;
     frustumHeight: number;
+    canvasWidth: number;
+    canvasHeight: number;
   }) => void;
 }
 
@@ -823,17 +826,22 @@ export function createEngine(
   binding.sceneForSlot = (slotId) =>
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
   const overlayPointerState = createOverlayPointerState();
+  const playCursor = options.playMode ? attachPlayCursor(canvas) : null;
 
   const notifyOverlayResize = () => {
     if (!sceneLayerCompositor) return;
     const height = Math.max(1, engine.getRenderHeight());
     const width = Math.max(1, engine.getRenderWidth());
     const frustum = sceneLayerFrustumSize(width / height);
+    const canvasSize = pointerCanvas();
     options.onSceneLayerResize?.({
       frustumWidth: frustum.width,
       frustumHeight: frustum.height,
+      canvasWidth: canvasSize.width,
+      canvasHeight: canvasSize.height,
     });
   };
+  notifyOverlayResize();
 
   const dispatchOverlayPointer = (
     phase: OverlayPointerPhase,
@@ -1301,6 +1309,7 @@ export function createEngine(
     const rect = canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     if (dispatchOverlayPointer("down", x, y)) {
       scheduler.invalidate("selection");
       return;
@@ -1312,14 +1321,17 @@ export function createEngine(
   };
   const onPointerMove = (event: PointerEvent) => {
     const { x, y } = overlayPointerCanvasCoords(event);
+    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("move", x, y);
   };
   const onPointerUp = (event: PointerEvent) => {
     const { x, y } = overlayPointerCanvasCoords(event);
+    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("up", x, y);
   };
   const onPointerCancel = (event: PointerEvent) => {
     const { x, y } = overlayPointerCanvasCoords(event);
+    playCursor?.notePointer(event.pointerType ?? "mouse", x, y);
     dispatchOverlayPointer("cancel", x, y);
   };
   const onOverlayTouch = (event: TouchEvent) => {
@@ -1352,6 +1364,7 @@ export function createEngine(
       playFreeCam?.dispose();
       playViz?.dispose();
       playDebugDraw?.dispose();
+      playCursor?.dispose();
       disposeGestures?.();
       editor?.gizmos.dispose();
       editor?.grid.dispose();
@@ -1421,6 +1434,9 @@ export function createEngine(
       applyPlayFreeCamCommand(playFreeCam, command);
       playViz?.applyCommand(command);
       playDebugDraw?.applyCommand(command);
+      if (command.type === "setCursorVisible") {
+        playCursor?.setVisible(command.visible);
+      }
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
         sceneLayerCompositor?.noteSpawn(

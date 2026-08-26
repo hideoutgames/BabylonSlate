@@ -13,6 +13,7 @@ export * from "./engine-version";
 export * from "./guid-result";
 export * from "./math-rng";
 export * from "./euler";
+export * from "./cursor-ray";
 export * from "./format-value";
 export * from "./print-hud";
 export * from "./play-preview-aspect";

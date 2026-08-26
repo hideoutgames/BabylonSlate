@@ -1662,4 +1662,26 @@ describe("Play createEngine view", () => {
     canvas.emit("pointerup", pointerAt(128 + 16, 128));
     expect(events).toContain("onClick");
   });
+
+  it("hides the Play cursor by default and shows it on setCursorVisible", () => {
+    const canvas = new FakeCanvas();
+    const handle = createEngine(canvas as unknown as HTMLCanvasElement, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    expect(canvas.style.cursor).toBe("none");
+    handle.applyCommand({
+      type: "setCursorVisible",
+      visible: true,
+      frameId: 1,
+    });
+    expect(canvas.style.cursor).toBe("default");
+    handle.applyCommand({
+      type: "setCursorVisible",
+      visible: false,
+      frameId: 2,
+    });
+    expect(canvas.style.cursor).toBe("none");
+  });
 });

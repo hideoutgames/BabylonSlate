@@ -142,6 +142,46 @@ describe("in-process runtime driver", () => {
     runtime.stop();
   });
 
+  it("exposes primary pointer XY on TickContext.getCursorPosition", () => {
+    const samples: Array<{ x: number; y: number; pressed: boolean } | undefined> =
+      [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+    });
+    const world = runtime.getWorld();
+    const probe = world.createActor({
+      classId: "Actor",
+      hooks: {
+        onTick: (_self, ctx) => {
+          samples.push(ctx.getCursorPosition?.());
+        },
+      },
+    });
+    world.spawnActorNow(probe);
+    runtime.start();
+    runtime.pushInput([
+      {
+        kind: "pointer",
+        tick: 0,
+        pointerId: 1,
+        phase: "down",
+        x: 80,
+        y: 24,
+        button: 0,
+      },
+    ]);
+    runtime.tick();
+    expect(runtime.getResolvedInput().cursor).toEqual({
+      x: 80,
+      y: 24,
+      pressed: true,
+    });
+    expect(samples.at(-1)).toEqual({ x: 80, y: 24, pressed: true });
+    runtime.stop();
+  });
+
   it("applies live gamepad events stamped with a host wall-clock tick", () => {
     const runtime = createInProcessRuntime({
       seed: 1,

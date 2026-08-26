@@ -164,7 +164,13 @@ export function startPlayer(options: {
     onSceneLayerResize: (size) => {
       const control = { type: "sceneLayerResize" as const, ...size };
       if (worker) worker.postControl(control);
-      else runtime?.applySceneLayerResize(size.frustumWidth, size.frustumHeight);
+      else
+        runtime?.applySceneLayerResize(
+          size.frustumWidth,
+          size.frustumHeight,
+          size.canvasWidth,
+          size.canvasHeight,
+        );
     },
   });
   handle.applySceneEnvironment(scene);
