@@ -12,6 +12,8 @@ import {
   resolveText2DRenderer,
   text2dFontGuidsFromScene,
   text2dImageGuidsFromScene,
+  text2dMsdfDescription,
+  text2dMsdfStatus,
 } from "./text2d";
 
 describe("2DTextComponent helpers", () => {
@@ -73,5 +75,15 @@ describe("2DTextComponent helpers", () => {
     expect(resolveText2DRenderer("msdf", true)).toBe("msdf");
     expect(resolveText2DRenderer("msdf", false)).toBe("bitmap");
     expect(resolveText2DRenderer("bitmap", true)).toBe("bitmap");
+  });
+
+  it("explains why MSDF is unavailable on a Font", () => {
+    expect(text2dMsdfStatus(null, { json: false, png: false })).toBe("no-font");
+    expect(text2dMsdfStatus("font-1", { json: false, png: false })).toBe("none");
+    expect(text2dMsdfStatus("font-1", { json: true, png: false })).toBe("json-only");
+    expect(text2dMsdfStatus("font-1", { json: false, png: true })).toBe("png-only");
+    expect(text2dMsdfStatus("font-1", { json: true, png: true })).toBe("ready");
+    expect(text2dMsdfDescription("no-font")).toContain("Pick a Font");
+    expect(text2dMsdfDescription("json-only")).toContain("no atlas PNG");
   });
 });

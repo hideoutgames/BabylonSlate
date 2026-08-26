@@ -8,6 +8,7 @@ import {
   ListTreeIcon,
   PersonStandingIcon,
   PuzzleIcon,
+  SparklesIcon,
   TypeIcon,
   Volume2Icon,
   WorkflowIcon,
@@ -282,6 +283,14 @@ describe("resolveTypeVisual", () => {
     expect(text3d.icon).toBe(TypeIcon);
     expect(text3d.colorVar).toBe(mesh.colorVar);
     expect(engineParentOf("Text3DComponent")).toBe("ActorComponent");
+    expect(engineParentOf("2DTextComponent")).toBe("ActorComponent");
+    expect(engineParentOf("2DRichTextComponent")).toBe("ActorComponent");
+    const text2d = resolveTypeVisual({ classId: "2DTextComponent" });
+    expect(text2d.iconKey).toBe("2DTextComponent");
+    expect(text2d.icon).toBe(TypeIcon);
+    const rich = resolveTypeVisual({ classId: "2DRichTextComponent" });
+    expect(rich.iconKey).toBe("2DRichTextComponent");
+    expect(rich.icon).toBe(SparklesIcon);
     expect(
       resolveTypeVisual({ classId: "MeshComponent", family: "class" }).colorVar,
     ).toBe("var(--asset-animation)");

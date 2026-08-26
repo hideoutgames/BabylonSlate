@@ -3,6 +3,7 @@ import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
   Field,
   FieldContent,
+  FieldDescription,
   FieldGroup,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
@@ -29,6 +30,8 @@ interface PropertyRowBase {
   id: string;
   label: string;
   disabled?: boolean;
+  /** Shown under the control (Title Case labels stay on `label`). */
+  description?: string;
   /** Overrides the Field `data-testid` (`property-row-${id}` by default). */
   testId?: string;
 }
@@ -71,7 +74,7 @@ export type PropertyRow =
       kind: "enum";
       value: string;
       defaultValue?: string;
-      options: Array<{ value: string; label: string }>;
+      options: Array<{ value: string; label: string; disabled?: boolean }>;
       onChange: (value: string) => void;
     })
   | (PropertyRowBase & {
@@ -263,7 +266,11 @@ function RowControl({ row }: { row: PropertyRow }) {
           </SelectTrigger>
           <SelectContent>
             {row.options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                disabled={option.disabled}
+              >
                 {humanizePropertyLabel(option.label)}
               </SelectItem>
             ))}
@@ -408,6 +415,9 @@ export function PropertyGrid({
                   {label}
                   <FieldContent className="min-w-0">
                     <RowControl row={row} />
+                    {row.description ? (
+                      <FieldDescription>{row.description}</FieldDescription>
+                    ) : null}
                   </FieldContent>
                 </>
               ) : (
@@ -418,6 +428,9 @@ export function PropertyGrid({
                   </div>
                   <div className="min-w-0">
                     <RowControl row={row} />
+                    {row.description ? (
+                      <FieldDescription>{row.description}</FieldDescription>
+                    ) : null}
                   </div>
                 </>
               )}

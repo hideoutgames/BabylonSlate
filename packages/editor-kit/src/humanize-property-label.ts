@@ -19,6 +19,7 @@ const ACRONYMS: Record<string, string> = {
   fov: "FOV",
   fps: "FPS",
   js: "JS",
+  msdf: "MSDF",
 };
 
 function titleCaseWord(word: string): string {

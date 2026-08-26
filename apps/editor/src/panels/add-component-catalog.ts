@@ -8,6 +8,7 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   emptySkyboxFaces,
   parseText3DProperties,
+  parseText2DProperties,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -131,6 +132,18 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "Overlay",
   ),
   engineComponent(
+    "2DTextComponent",
+    "2D Text",
+    "Overlay bitmap or MSDF text from a Font",
+    "Overlay",
+  ),
+  engineComponent(
+    "2DRichTextComponent",
+    "2D Rich Text",
+    "Overlay text with markup, images, and letter effects",
+    "Overlay",
+  ),
+  engineComponent(
     "RigidBodyComponent",
     "Rigid Body",
     "Physics body",
@@ -214,6 +227,10 @@ export function defaultPropertiesFor(
       return { materialGuid: null, hitTest: "ignore" };
     case "2DTextureComponent":
       return { textureGuid: null, hitTest: "ignore" };
+    case "2DTextComponent":
+      return { ...parseText2DProperties({}) };
+    case "2DRichTextComponent":
+      return { ...parseText2DProperties({}, { rich: true }) };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent":

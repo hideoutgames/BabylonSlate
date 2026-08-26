@@ -19,6 +19,8 @@ describe("search catalog class ids", () => {
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("ParticleComponent");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("SceneLayerActor");
     expect(SEARCH_CATALOG_CLASS_IDS).toContain("2DButtonComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("2DTextComponent");
+    expect(SEARCH_CATALOG_CLASS_IDS).toContain("2DRichTextComponent");
   });
 
   it("still indexes shipped engine classes", () => {

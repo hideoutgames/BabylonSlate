@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { collectFontAssetEntries, collectFontFacetypeBytes } from "./play-fonts";
+import {
+  collectFontAssetEntries,
+  collectFontFacetypeBytes,
+  fontAssetHasMsdfJson,
+  fontAssetHasMsdfPair,
+  fontAssetHasMsdfPng,
+} from "./play-fonts";
 
 describe("collectFontAssetEntries", () => {
   it("loads source bytes for Font assets and skips empty chunks", async () => {
@@ -74,5 +80,21 @@ describe("collectFontAssetEntries", () => {
     );
     expect([...bytes.keys()]).toEqual(["font-1"]);
     expect(bytes.get("font-1")).toEqual(new Uint8Array([9, 8, 7]));
+  });
+});
+
+describe("font MSDF representation flags", () => {
+  it("reads JSON and PNG flags independently and only pairs when both are set", () => {
+    const payload = {
+      representations: { msdfJson: true, msdfPng: false },
+    };
+    expect(fontAssetHasMsdfJson(payload)).toBe(true);
+    expect(fontAssetHasMsdfPng(payload)).toBe(false);
+    expect(fontAssetHasMsdfPair(payload)).toBe(false);
+    expect(
+      fontAssetHasMsdfPair({
+        representations: { msdfJson: true, msdfPng: true },
+      }),
+    ).toBe(true);
   });
 });

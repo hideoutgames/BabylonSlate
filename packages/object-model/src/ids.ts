@@ -41,6 +41,8 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "2DButtonComponent",
   "2DMaterialComponent",
   "2DTextureComponent",
+  "2DTextComponent",
+  "2DRichTextComponent",
 ] as const;
 
 export type EngineComponentClassId =
@@ -51,6 +53,8 @@ export const SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS = [
   "2DButtonComponent",
   "2DMaterialComponent",
   "2DTextureComponent",
+  "2DTextComponent",
+  "2DRichTextComponent",
 ] as const;
 
 export type SceneLayerExclusiveComponentClassId =

@@ -31,12 +31,14 @@ import {
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { Button } from "@babylonslate/ui/components/button";
+import { Textarea } from "@babylonslate/ui/components/textarea";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   DEFAULT_COLLISION_LAYERS,
   DEFAULT_SORTING_LAYERS,
   identitySerializedTransform,
   isEditorGraphHost,
+  parseText2DProperties,
   type GraphClassMember,
   type SerializedComponent,
   type SerializedGraph,
@@ -65,7 +67,7 @@ import { usePrefabEditing } from "../context/prefab-editing-context";
 import { useOptionalSceneEditing } from "../context/scene-editing-context";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { spatialTransformPropertyRows } from "../lib/transform-property-rows";
-import { fontAssetHasFacetype } from "../lib/play-fonts";
+import { fontAssetHasFacetype, fontAssetHasMsdfJson, fontAssetHasMsdfPng } from "../lib/play-fonts";
 import {
   componentPropertyRows,
   subclassClassEntries,
@@ -545,6 +547,8 @@ function PrefabComponentDetails({
   assetLabel,
   assetType,
   fontHasFacetype,
+  fontHasMsdfJson,
+  fontHasMsdfPng,
   onUpdate,
   onUpdateTransform,
 }: {
@@ -562,6 +566,8 @@ function PrefabComponentDetails({
   assetLabel: (guid: string | null | undefined) => string | undefined;
   assetType: (guid: string | null | undefined) => string | undefined;
   fontHasFacetype?: (guid: string | null | undefined) => boolean;
+  fontHasMsdfJson?: (guid: string | null | undefined) => boolean;
+  fontHasMsdfPng?: (guid: string | null | undefined) => boolean;
   onUpdate: (property: string, value: unknown) => void;
   onUpdateTransform: (transform: SerializedTransform) => void;
 }) {
@@ -598,11 +604,29 @@ function PrefabComponentDetails({
             assetLabel,
             assetType,
             fontHasFacetype,
+            fontHasMsdfJson,
+            fontHasMsdfPng,
             physicsWorld,
             onPickAsset: setAssetPick,
           })}
         />
       </div>
+      {component.classId === "2DTextComponent" ||
+      component.classId === "2DRichTextComponent" ? (
+        <Field>
+          <FieldLabel htmlFor={`text2d-text-${component.id}`}>Text</FieldLabel>
+          <Textarea
+            id={`text2d-text-${component.id}`}
+            value={
+              parseText2DProperties(component.properties, {
+                rich: component.classId === "2DRichTextComponent",
+              }).text
+            }
+            onChange={(event) => onUpdate("text", event.target.value)}
+            data-testid={`text2d-text-${component.id}`}
+          />
+        </Field>
+      ) : null}
       <AssetPicker
         open={assetPick !== null}
         onOpenChange={(open) => {
@@ -615,6 +639,16 @@ function PrefabComponentDetails({
         onPick={(guid) => {
           if (!assetPick) return;
           onUpdate(assetPick.property, guid);
+          if (
+            assetPick.property === "fontAssetGuid" &&
+            (component.classId === "2DTextComponent" ||
+              component.classId === "2DRichTextComponent")
+          ) {
+            const pair = Boolean(
+              guid && fontHasMsdfJson?.(guid) && fontHasMsdfPng?.(guid),
+            );
+            if (!pair) onUpdate("renderer", "bitmap");
+          }
           setAssetPick(null);
         }}
         data-testid="inspector-prefab-asset-picker"
@@ -784,6 +818,14 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
     if (!guid) return false;
     return fontAssetHasFacetype(assetRegistry?.getByGuid?.(guid)?.header.payload);
   };
+  const fontHasMsdfJson = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasMsdfJson(assetRegistry?.getByGuid?.(guid)?.header.payload);
+  };
+  const fontHasMsdfPng = (guid: string | null | undefined) => {
+    if (!guid) return false;
+    return fontAssetHasMsdfPng(assetRegistry?.getByGuid?.(guid)?.header.payload);
+  };
 
   const selectedPrefabComponentIds = prefabSelectedIds.filter(
     (id) => id !== PREFAB_ROOT_ID,
@@ -820,6 +862,8 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
           assetLabel={assetLabel}
           assetType={assetType}
           fontHasFacetype={fontHasFacetype}
+          fontHasMsdfJson={fontHasMsdfJson}
+          fontHasMsdfPng={fontHasMsdfPng}
           onUpdate={(property, value) =>
             updateComponent(selectedPrefabComponent.id, property, value)
           }

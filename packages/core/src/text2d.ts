@@ -65,6 +65,52 @@ function parseRgb(value: unknown, fallback: Rgb): Rgb {
   return [r, g, b];
 }
 
+export const TEXT2D_RENDERER_LABELS: Record<Text2DRenderer, string> = {
+  bitmap: "Bitmap",
+  msdf: "MSDF",
+};
+
+export const TEXT2D_ALIGNMENT_LABELS: Record<Text2DAlignment, string> = {
+  left: "Left",
+  center: "Center",
+  right: "Right",
+};
+
+export type Text2DMsdfStatus =
+  | "ready"
+  | "no-font"
+  | "none"
+  | "json-only"
+  | "png-only";
+
+export function text2dMsdfStatus(
+  fontAssetGuid: string | null,
+  flags: { json?: boolean; png?: boolean } | undefined,
+): Text2DMsdfStatus {
+  if (!fontAssetGuid) return "no-font";
+  const json = flags?.json === true;
+  const png = flags?.png === true;
+  if (json && png) return "ready";
+  if (json) return "json-only";
+  if (png) return "png-only";
+  return "none";
+}
+
+export function text2dMsdfDescription(status: Text2DMsdfStatus): string {
+  switch (status) {
+    case "ready":
+      return "MSDF stays crisp at any scale. This atlas is one weight/style.";
+    case "no-font":
+      return "Pick a Font that has an MSDF atlas (JSON + PNG).";
+    case "json-only":
+      return "This Font has MSDF JSON but no atlas PNG. Import the matching PNG.";
+    case "png-only":
+      return "This Font has an atlas PNG but no MSDF JSON. Import the matching JSON.";
+    default:
+      return "This Font has no MSDF atlas. Open it and use Import MSDF Atlas, or Import a JSON + PNG pair.";
+  }
+}
+
 export function parseText2DRenderer(value: unknown): Text2DRenderer {
   return value === "msdf" ? "msdf" : "bitmap";
 }

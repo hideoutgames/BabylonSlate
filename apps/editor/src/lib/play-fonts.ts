@@ -35,6 +35,28 @@ export function fontAssetHasFacetype(payload: unknown): boolean {
   return normalizeFontPayload(payload, "").representations.facetype === true;
 }
 
+export function fontAssetHasMsdfJson(payload: unknown): boolean {
+  const representations =
+    payload && typeof payload === "object"
+      ? ((payload as { representations?: Record<string, unknown> }).representations ??
+        {})
+      : {};
+  return representations.msdfJson === true;
+}
+
+export function fontAssetHasMsdfPng(payload: unknown): boolean {
+  const representations =
+    payload && typeof payload === "object"
+      ? ((payload as { representations?: Record<string, unknown> }).representations ??
+        {})
+      : {};
+  return representations.msdfPng === true;
+}
+
+export function fontAssetHasMsdfPair(payload: unknown): boolean {
+  return fontAssetHasMsdfJson(payload) && fontAssetHasMsdfPng(payload);
+}
+
 /** Load facetype JSON for 3D Text, keyed by Font asset guid. */
 export async function collectFontFacetypeBytes(
   assets: readonly FontAssetSource[],

@@ -48,6 +48,8 @@ describe("SceneLayer object model", () => {
       "2DButtonComponent",
       "2DMaterialComponent",
       "2DTextureComponent",
+      "2DTextComponent",
+      "2DRichTextComponent",
     ]);
   });
 

@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import type { SerializedScene } from "@babylonslate/core";
-import { createActor, createDefaultScene, createMeshComponent, normalizeScene } from "@babylonslate/core";
+import {
+  createActor,
+  createDefaultScene,
+  createMeshComponent,
+  createRichText2DComponent,
+  createText2DComponent,
+  normalizeScene,
+} from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
 
 if (typeof window !== "undefined" && typeof window.PointerEvent === "undefined") {
@@ -372,5 +379,35 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("property-scene-environment-texture")).toBeNull();
     expect(screen.queryByTestId("scene-layers-stack")).toBeNull();
     expect(screen.queryByTestId("property-scene-game-instance-class")).toBeNull();
+  });
+
+  it("hosts 2D Text in a sibling textarea instead of a PropertyGrid text row", () => {
+    scene().actors = [
+      createActor("hud", "Label", {
+        components: [createText2DComponent("label")],
+      }),
+    ];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("property-hud-label-text")).toBeNull();
+    const field = screen.getByTestId("text2d-text-label") as HTMLTextAreaElement;
+    expect(field.value).toBe("Text");
+    fireEvent.change(field, { target: { value: "Hello overlay" } });
+    expect(harness.applySceneChange).toHaveBeenCalled();
+    const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
+    expect(next.actors[0]?.components[0]?.properties.text).toBe("Hello overlay");
+  });
+
+  it("hosts 2D Rich Text markup in a sibling textarea", () => {
+    scene().actors = [
+      createActor("hud", "Rich", {
+        components: [createRichText2DComponent("rich")],
+      }),
+    ];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("property-hud-rich-text")).toBeNull();
+    const field = screen.getByTestId("text2d-text-rich") as HTMLTextAreaElement;
+    expect(field.value).toContain("[color=green]");
   });
 });
