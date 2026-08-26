@@ -97,6 +97,70 @@ describe("createText2DMesh", () => {
     }
   });
 
+  it("sizes letter quads to the 5x7 cell when canvas paint is a solid glyph box", () => {
+    const previous = (globalThis as { document?: unknown }).document;
+    (globalThis as { document: unknown }).document = {
+      createElement: () => ({
+        width: 1,
+        height: 1,
+        getContext() {
+          return {
+            font: "",
+            textBaseline: "top",
+            textAlign: "left",
+            fillStyle: "",
+            strokeStyle: "",
+            lineJoin: "",
+            miterLimit: 0,
+            lineWidth: 0,
+            measureText: () => ({
+              width: 40,
+              actualBoundingBoxAscent: 32,
+              actualBoundingBoxDescent: 8,
+            }),
+            clearRect() {},
+            fillText() {},
+            strokeText() {},
+            getImageData: (_x: number, _y: number, w: number, h: number) => {
+              const data = new Uint8ClampedArray(w * h * 4);
+              const inset = 2;
+              for (let y = inset; y < h - inset; y++) {
+                for (let x = inset; x < w - inset; x++) {
+                  const i = (y * w + x) * 4;
+                  data[i] = 255;
+                  data[i + 1] = 255;
+                  data[i + 2] = 255;
+                  data[i + 3] = 255;
+                }
+              }
+              return { data };
+            },
+          };
+        },
+      }),
+    };
+    try {
+      const handle = createTestEngine();
+      handles.push(handle);
+      const mesh = createText2DMesh(
+        handle.scene,
+        "solid-box",
+        { text: "A", size: 32 },
+        { pixelsPerUnit: 100 },
+      );
+      const child = mesh.getChildMeshes()[0]!;
+      child.refreshBoundingInfo();
+      const size = child.getBoundingInfo().boundingBox.extendSize;
+      expect((size.x * 2) / (size.y * 2)).toBeCloseTo((5 * 5 + 2) / (7 * 5 + 2), 2);
+    } finally {
+      if (previous === undefined) {
+        Reflect.deleteProperty(globalThis, "document");
+      } else {
+        (globalThis as { document: unknown }).document = previous;
+      }
+    }
+  });
+
   it("parents glyph quads under an AABB pick plane", () => {
     const handle = createTestEngine();
     handles.push(handle);

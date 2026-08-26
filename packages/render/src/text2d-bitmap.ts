@@ -58,10 +58,26 @@ function isLetterShapedAlpha(pixels: Uint8ClampedArray, width: number, height: n
   const total = width * height;
   if (total <= 0) return false;
   let opaque = 0;
-  for (let i = 3; i < pixels.length; i += 4) {
-    if ((pixels[i] ?? 0) > 8) opaque += 1;
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if ((pixels[(y * width + x) * 4 + 3] ?? 0) <= 8) continue;
+      opaque += 1;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
   }
-  return opaque > 0 && opaque < total * 0.9;
+  if (opaque === 0 || opaque >= total * 0.9) return false;
+  const bboxW = maxX - minX + 1;
+  const bboxH = maxY - minY + 1;
+  const solid = opaque >= bboxW * bboxH * 0.95;
+  const thin = bboxW < width * 0.45 || bboxH < height * 0.45;
+  return !(solid && !thin);
 }
 
 function nextPowerOfTwo(value: number): number {
