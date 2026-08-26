@@ -37,7 +37,9 @@ export function attachPlayCursor(canvas: HTMLCanvasElement): PlayCursorControlle
 
   const sync = () => {
     const touch = pointerType === "touch";
-    canvas.style.cursor = visible && !touch ? "default" : "none";
+    if (canvas.style) {
+      canvas.style.cursor = visible && !touch ? "default" : "none";
+    }
     if (!ring) return;
     if (visible && touch) {
       ring.style.display = "block";
@@ -48,7 +50,9 @@ export function attachPlayCursor(canvas: HTMLCanvasElement): PlayCursorControlle
     }
   };
 
-  canvas.style.cursor = "none";
+  if (canvas.style) {
+    canvas.style.cursor = "none";
+  }
   sync();
 
   return {
@@ -64,7 +68,9 @@ export function attachPlayCursor(canvas: HTMLCanvasElement): PlayCursorControlle
     },
     dispose() {
       ring?.remove();
-      canvas.style.cursor = "";
+      if (canvas.style) {
+        canvas.style.cursor = "";
+      }
     },
   };
 }

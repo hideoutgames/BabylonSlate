@@ -19,4 +19,12 @@ describe("attachPlayCursor", () => {
     cursor.dispose();
     expect(canvas.style.cursor).toBe("");
   });
+
+  it("does not require canvas.style (NullEngine FakeCanvas)", () => {
+    const canvas = { parentElement: null } as HTMLCanvasElement;
+    const cursor = attachPlayCursor(canvas);
+    cursor.setVisible(true);
+    cursor.notePointer("mouse", 0, 0);
+    cursor.dispose();
+  });
 });
