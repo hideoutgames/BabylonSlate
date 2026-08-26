@@ -64,4 +64,84 @@ describe("ScriptHost BObject receivers", () => {
     expect(ctx.getComponentById(actor, "text-1")).toBe(text);
     expect(ctx.getComponentById(actor, "missing")).toBeNull();
   });
+
+  it("dispatches a prefab-bound entry when Play invokes the remapped live guid", async () => {
+    const logs: string[] = [];
+    const host = new ScriptHost(
+      stubServices({
+        log: (_severity, category) => {
+          logs.push(category);
+        },
+      }),
+    );
+    await host.load({
+      assetGuid: "hero-script",
+      classId: "Hero",
+      source:
+        'export function onHit(ctx) { ctx.log("log", "Hit", "ok"); }\n',
+      anchors: [],
+      entryPoints: [
+        {
+          name: "onHit",
+          event: "onHit",
+          isAsync: false,
+          componentId: "prefab-col",
+        },
+      ],
+    });
+    const actor = new Actor({ classId: "Hero" });
+    actor.attachComponent(
+      new ActorComponent({
+        classId: "ColliderComponent",
+        guid: "live-col",
+        sourceId: "prefab-col",
+      }),
+    );
+    host.invokeEvent("Hero", "onHit", actor, {}, "live-col");
+    expect(logs).toEqual(["Hit"]);
+  });
+
+  it("does not run leftover unbound component events when invoke carries a component id", async () => {
+    const logs: string[] = [];
+    const host = new ScriptHost(
+      stubServices({
+        log: (_severity, category) => {
+          logs.push(category);
+        },
+      }),
+    );
+    await host.load({
+      assetGuid: "hero-script",
+      classId: "Hero",
+      source: [
+        'export function onHit(ctx) { ctx.log("log", "Unbound", "ok"); }',
+        'export function onHit_2(ctx) { ctx.log("log", "Bound", "ok"); }',
+        'export function onBeginPlay(ctx) { ctx.log("log", "Play", "ok"); }',
+        "",
+      ].join("\n"),
+      anchors: [],
+      entryPoints: [
+        { name: "onHit", event: "onHit", isAsync: false },
+        {
+          name: "onHit_2",
+          event: "onHit",
+          isAsync: false,
+          componentId: "prefab-col",
+        },
+        { name: "onBeginPlay", event: "onBeginPlay", isAsync: false },
+      ],
+    });
+    const actor = new Actor({ classId: "Hero" });
+    actor.attachComponent(
+      new ActorComponent({
+        classId: "ColliderComponent",
+        guid: "live-col",
+        sourceId: "prefab-col",
+      }),
+    );
+    host.invokeEvent("Hero", "onHit", actor, {}, "live-col");
+    expect(logs).toEqual(["Bound"]);
+    host.invokeEvent("Hero", "onBeginPlay", actor);
+    expect(logs).toEqual(["Bound", "Play"]);
+  });
 });

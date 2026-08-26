@@ -13,12 +13,22 @@ import type {
 import { listDebugCollidersFromRecords } from "./debug-colliders";
 import { quatToPlanarAngle } from "./collider-bake";
 
+type RapierEventQueue = {
+  drainCollisionEvents(
+    f: (handle1: number, handle2: number, started: boolean) => void,
+  ): void;
+  free(): void;
+};
+
 type RapierApi = {
   init(): Promise<void>;
+  EventQueue: new (autoDrain: boolean) => RapierEventQueue;
+  ActiveEvents: { COLLISION_EVENTS: number };
+  ActiveCollisionTypes: { ALL: number };
   World: new (gravity: { x: number; y: number }) => {
     gravity: { x: number; y: number };
     timestep: number;
-    step(): void;
+    step(eventQueue?: RapierEventQueue): void;
     free(): void;
     createRigidBody(desc: unknown): RapierRigidBody;
     removeRigidBody(body: RapierRigidBody): void;
@@ -80,6 +90,8 @@ type RapierColliderDesc = {
   setSensor(v: boolean): RapierColliderDesc;
   setTranslation(x: number, y: number): RapierColliderDesc;
   setRotation(angle: number): RapierColliderDesc;
+  setActiveEvents(events: number): RapierColliderDesc;
+  setActiveCollisionTypes(types: number): RapierColliderDesc;
 };
 
 type RapierRigidBody = {
@@ -92,7 +104,9 @@ type RapierRigidBody = {
 };
 
 type RapierCollider = {
+  handle: number;
   parent(): RapierRigidBody | null;
+  translation(): { x: number; y: number };
 };
 
 type RapierCharacterController = {
@@ -145,11 +159,17 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly colliders = new Map<string, ColliderRecord>();
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly bodyIdByHandle = new Map<number, string>();
+  private readonly colliderIdByHandle = new Map<number, string>();
+  private readonly eventQueue: RapierEventQueue;
+  private readonly pendingContacts: PhysicsContactEvent[] = [];
+  private readonly blockingKeys = new Set<string>();
+  private readonly triggerKeys = new Set<string>();
   private disposed = false;
 
   private constructor(RAPIER: RapierApi, gravity: Vec3) {
     this.RAPIER = RAPIER;
     this.world = new RAPIER.World({ x: gravity.x, y: gravity.y });
+    this.eventQueue = new RAPIER.EventQueue(true);
   }
 
   static async create(
@@ -167,6 +187,11 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.characters.clear();
     this.colliders.clear();
     this.bodies.clear();
+    this.colliderIdByHandle.clear();
+    this.blockingKeys.clear();
+    this.triggerKeys.clear();
+    this.pendingContacts.length = 0;
+    this.eventQueue.free();
     this.world.free();
   }
 
@@ -273,7 +298,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     colliderDesc
       .setFriction(desc.friction)
       .setRestitution(desc.restitution)
-      .setSensor(desc.isTrigger);
+      .setSensor(desc.isTrigger)
+      .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+      .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
     if (desc.translation) {
       colliderDesc.setTranslation(desc.translation.x, desc.translation.y);
     }
@@ -283,6 +310,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const collider = this.world.createCollider(colliderDesc, body.body);
     const extra = this.createLoopCloseSegment(desc, body.body);
     this.colliders.set(desc.id, { desc: { ...desc }, collider, extra });
+    this.colliderIdByHandle.set(collider.handle, desc.id);
+    if (extra) this.colliderIdByHandle.set(extra.handle, desc.id);
     if (extra) {
       const prev = this.world.timestep;
       this.world.timestep = 0;
@@ -294,6 +323,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   destroyCollider(colliderId: string): void {
     const record = this.colliders.get(colliderId);
     if (!record) return;
+    this.colliderIdByHandle.delete(record.collider.handle);
+    if (record.extra) this.colliderIdByHandle.delete(record.extra.handle);
     this.world.removeCollider(record.collider, true);
     if (record.extra) this.world.removeCollider(record.extra, true);
     this.colliders.delete(colliderId);
@@ -306,12 +337,27 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   }
 
   pollContacts(): PhysicsContactEvent[] {
-    return [];
+    const events = [...this.pendingContacts];
+    this.pendingContacts.length = 0;
+    for (const key of this.blockingKeys) {
+      const parsed = parseContactKey(key);
+      if (!parsed) continue;
+      events.push({
+        kind: "hit",
+        ...parsed,
+        location: this.contactLocation(parsed.colliderAId, parsed.colliderBId),
+        normal: this.contactNormal(parsed.colliderAId, parsed.colliderBId),
+      });
+    }
+    return events;
   }
 
   step(dt: number): void {
     this.world.timestep = dt;
-    this.world.step();
+    this.world.step(this.eventQueue);
+    this.eventQueue.drainCollisionEvents((handleA, handleB, started) => {
+      this.recordCollisionEvent(handleA, handleB, started);
+    });
   }
 
   readTransforms(): ReadonlyMap<string, PhysicsTransform> {
@@ -497,7 +543,119 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     const segment = this.RAPIER.ColliderDesc.polyline(flat)
       .setFriction(desc.friction)
       .setRestitution(desc.restitution)
-      .setSensor(desc.isTrigger);
+      .setSensor(desc.isTrigger)
+      .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
+      .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
     return this.world.createCollider(segment, body);
   }
+
+  private recordCollisionEvent(
+    handleA: number,
+    handleB: number,
+    started: boolean,
+  ): void {
+    const colliderAId = this.colliderIdByHandle.get(handleA);
+    const colliderBId = this.colliderIdByHandle.get(handleB);
+    if (!colliderAId || !colliderBId || colliderAId === colliderBId) return;
+    const colliderA = this.colliders.get(colliderAId);
+    const colliderB = this.colliders.get(colliderBId);
+    if (!colliderA || !colliderB) return;
+    const bodyA = this.bodies.get(colliderA.desc.bodyId);
+    const bodyB = this.bodies.get(colliderB.desc.bodyId);
+    if (!bodyA || !bodyB || bodyA.desc.actorId === bodyB.desc.actorId) return;
+    let actorAId = bodyA.desc.actorId;
+    let actorBId = bodyB.desc.actorId;
+    let idA = colliderAId;
+    let idB = colliderBId;
+    if (actorAId > actorBId) {
+      const swapActor = actorAId;
+      actorAId = actorBId;
+      actorBId = swapActor;
+      const swapCollider = idA;
+      idA = idB;
+      idB = swapCollider;
+    }
+    const key = contactKey(actorAId, idA, actorBId, idB);
+    const isTrigger = colliderA.desc.isTrigger || colliderB.desc.isTrigger;
+    if (isTrigger) {
+      if (started) {
+        if (this.triggerKeys.has(key)) return;
+        this.triggerKeys.add(key);
+        this.pendingContacts.push({
+          kind: "overlapBegin",
+          actorAId,
+          actorBId,
+          colliderAId: idA,
+          colliderBId: idB,
+          location: this.contactLocation(idA, idB),
+          normal: this.contactNormal(idA, idB),
+        });
+      } else if (this.triggerKeys.delete(key)) {
+        this.pendingContacts.push({
+          kind: "overlapEnd",
+          actorAId,
+          actorBId,
+          colliderAId: idA,
+          colliderBId: idB,
+          location: { x: 0, y: 0, z: 0 },
+          normal: { x: 0, y: 1, z: 0 },
+        });
+      }
+      return;
+    }
+    if (started) this.blockingKeys.add(key);
+    else this.blockingKeys.delete(key);
+  }
+
+  private contactLocation(
+    colliderAId: string,
+    colliderBId: string,
+  ): { x: number; y: number; z: number } {
+    const a = this.colliderTranslation(colliderAId);
+    const b = this.colliderTranslation(colliderBId);
+    return {
+      x: (a.x + b.x) * 0.5,
+      y: (a.y + b.y) * 0.5,
+      z: 0,
+    };
+  }
+
+  private contactNormal(
+    colliderAId: string,
+    colliderBId: string,
+  ): { x: number; y: number; z: number } {
+    const a = this.colliderTranslation(colliderAId);
+    const b = this.colliderTranslation(colliderBId);
+    let x = b.x - a.x;
+    let y = b.y - a.y;
+    const length = Math.hypot(x, y);
+    if (length < 1e-8) return { x: 0, y: 1, z: 0 };
+    return { x: x / length, y: y / length, z: 0 };
+  }
+
+  private colliderTranslation(colliderId: string): { x: number; y: number } {
+    const record = this.colliders.get(colliderId);
+    if (!record) return { x: 0, y: 0 };
+    return record.collider.translation();
+  }
+}
+
+function contactKey(
+  actorAId: string,
+  colliderAId: string,
+  actorBId: string,
+  colliderBId: string,
+): string {
+  return `${actorAId}\t${colliderAId}\t${actorBId}\t${colliderBId}`;
+}
+
+function parseContactKey(key: string): {
+  actorAId: string;
+  actorBId: string;
+  colliderAId: string;
+  colliderBId: string;
+} | null {
+  const [actorAId, colliderAId, actorBId, colliderBId] = key.split("\t");
+  if (!actorAId || !colliderAId || !actorBId || !colliderBId) return null;
+  return { actorAId, colliderAId, actorBId, colliderBId };
 }
