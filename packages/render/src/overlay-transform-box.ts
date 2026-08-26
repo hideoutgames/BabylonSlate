@@ -392,7 +392,7 @@ export function createOverlayTransformBox(
   const boxScale = new TransformNode("overlay-box-scale", util);
   boxScale.parent = root;
 
-  let frame: LinesMesh = CreateLines(
+  const frame: LinesMesh = CreateLines(
     "overlay-box-frame",
     { points: rectPoints(0.5, 0.5), updatable: true },
     util,
