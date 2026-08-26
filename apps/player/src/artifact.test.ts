@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createDefaultScene,
+  createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@babylonslate/core";
 import { exportGame } from "@babylonslate/exporter";
@@ -162,5 +163,41 @@ describe("loadGameFromFiles", () => {
     const loaded = await loadGameFromFiles(packed.value.files);
     expect(loaded.modelBytes.get("hero-model")).toEqual(glb);
     expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(1);
+  });
+
+  it("loads packed SceneLayer documents onto the compositor library", async () => {
+    const layer = { ...createDefaultSceneLayer(), name: "HUD" };
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new TextEncoder().encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "hud",
+          type: "SceneLayer",
+          sceneGuid: "scene-1",
+          name: "HUD",
+          bytes: new TextEncoder().encode(JSON.stringify(layer)),
+        },
+      ],
+      playerFiles: new Map([
+        ["index.html", new TextEncoder().encode("<html></html>")],
+        ["player.js", new TextEncoder().encode("void 0")],
+      ]),
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const loaded = await loadGameFromFiles(packed.value.files);
+    expect(loaded.sceneLayers.get("hud")?.name).toBe("HUD");
+    expect(loaded.manifest.assets.find((entry) => entry.guid === "hud")?.encoding).toBe(
+      "json",
+    );
   });
 });

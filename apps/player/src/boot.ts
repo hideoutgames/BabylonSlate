@@ -194,6 +194,10 @@ export function startPlayer(options: {
     guid,
     scene: authored,
   }));
+  const sceneLayers = [...game.sceneLayers.entries()].map(([guid, layer]) => ({
+    guid,
+    layer,
+  }));
   const loadControl = {
     type: "load" as const,
     sceneAssetGuid: startup,
@@ -209,6 +213,7 @@ export function startPlayer(options: {
       scene.settings.gameInstanceClass ??
       undefined,
     scenes,
+    sceneLayers,
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     animClipCatalog: content.animClipCatalog,

@@ -22,4 +22,9 @@ describe("persistableDocumentContent", () => {
     const scene = createDefaultScene();
     expect(persistableDocumentContent("scene", scene)).toBe(scene);
   });
+
+  it("leaves an already-normalized SceneLayer payload unchanged", () => {
+    const layer = createDefaultSceneLayer();
+    expect(persistableDocumentContent("scene-layer", layer)).toBe(layer);
+  });
 });

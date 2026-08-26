@@ -25,6 +25,7 @@ export const docsSidebar: SidebarItem[] = [
       { text: "Render", link: "/architecture/render" },
       { text: "Scripting", link: "/architecture/scripting" },
       { text: "Scene editing", link: "/architecture/scene-editing" },
+      { text: "Scene layers", link: "/architecture/scene-layers" },
       { text: "Input", link: "/architecture/input" },
       { text: "Physics", link: "/architecture/physics" },
       { text: "Debugger", link: "/architecture/debugger" },

@@ -7,6 +7,7 @@ import {
   type RenderProjectSettings,
   type AudioProjectSettings,
   type SerializedScene,
+  type SerializedSceneLayer,
 } from "@babylonslate/core";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { SelectableText } from "@babylonslate/editor-kit";
@@ -74,6 +75,7 @@ export interface PlayOverlayProps {
   scene?: SerializedScene;
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   /** Project `playFrameCap` applied once when the session starts. */
   frameCap?: number;
   infiniteLoopDetection?: boolean;
@@ -142,6 +144,7 @@ export function PlayOverlay({
   scene,
   gameInstanceClass,
   scenes,
+  sceneLayers,
   frameCap = DEFAULT_PLAY_FRAME_CAP,
   infiniteLoopDetection,
   loopCount,
@@ -288,8 +291,15 @@ export function PlayOverlay({
     scene,
     gameInstanceClass,
     scenes,
+    sceneLayers,
   });
-  sceneRef.current = { sceneAssetGuid, scene, gameInstanceClass, scenes };
+  sceneRef.current = {
+    sceneAssetGuid,
+    scene,
+    gameInstanceClass,
+    scenes,
+    sceneLayers,
+  };
   const initialFrameCapRef = useRef(frameCap);
   const initialPauseOnPlayRef = useRef(pauseOnPlay);
   const initialInfiniteLoopDetectionRef = useRef(infiniteLoopDetection);
@@ -367,6 +377,7 @@ export function PlayOverlay({
       scene: sceneRef.current.scene,
       gameInstanceClass: sceneRef.current.gameInstanceClass,
       scenes: sceneRef.current.scenes,
+      sceneLayers: sceneRef.current.sceneLayers,
       frameCap: initialFrameCapRef.current,
       infiniteLoopDetection: initialInfiniteLoopDetectionRef.current,
       loopCount: initialLoopCountRef.current,

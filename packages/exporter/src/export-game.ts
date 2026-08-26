@@ -45,6 +45,7 @@ const JSON_TYPES = new Set([
   "ParticleEmitter",
   "ParticleSystem",
   "Animation",
+  "SceneLayer",
 ]);
 
 function scenePackName(sceneGuid: string): string {

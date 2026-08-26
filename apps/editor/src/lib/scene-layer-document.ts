@@ -8,7 +8,12 @@ export function persistableDocumentContent(
   kind: string,
   content: unknown,
 ): unknown {
-  if (kind === "scene-layer" && content && typeof content === "object") {
+  if (
+    kind === "scene-layer" &&
+    content &&
+    typeof content === "object" &&
+    "viewportMode" in content
+  ) {
     return editorSceneToSceneLayer(content as SerializedScene);
   }
   return content;

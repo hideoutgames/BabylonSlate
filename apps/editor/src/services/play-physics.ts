@@ -3,6 +3,7 @@ import {
   normalizeScene,
   type PhysicsWorldKind,
   type SerializedScene,
+  type SerializedSceneLayer,
 } from "@babylonslate/core";
 
 /** Public path of the self-hosted Havok wasm (same pattern as `/ktx2/`). */
@@ -167,6 +168,7 @@ export function playLoadControl(options: {
   gravity?: [number, number, number];
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
+  sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   audioAssetGuids?: string[];
@@ -194,6 +196,7 @@ export function playLoadControl(options: {
     havokWasmUrl: editorHavokWasmUrl(),
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
+    sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
     audioAssetGuids: options.audioAssetGuids,
