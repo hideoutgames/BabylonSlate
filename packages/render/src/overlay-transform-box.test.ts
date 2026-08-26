@@ -1,6 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  MeshBuilder,
+  PointerDragBehavior,
+  Scene,
+  UtilityLayerRenderer,
+  Vector3,
+  type AbstractMesh,
+} from "@babylonjs/core";
+import { createTestEngine } from "./create-null-engine";
+import { createGizmoHost } from "./gizmo-host";
 import {
   applyOverlayBoxDrag,
+  createOverlayTransformBox,
+  overlayBoxLocalBounds,
   OVERLAY_BOX_MIN_SCALE,
   type OverlayBoxDragStart,
   type OverlayBoxLocalBounds,
@@ -170,3 +182,197 @@ describe("applyOverlayBoxDrag rotate", () => {
     expect(next.rotationZ).toBeCloseTo((15 * Math.PI) / 180);
   });
 });
+
+const handles: Array<{
+  engine: { dispose: () => void };
+  scene: { dispose: () => void };
+}> = [];
+
+function createHandle() {
+  const handle = createTestEngine();
+  handles.push(handle);
+  return handle;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  while (handles.length > 0) {
+    const handle = handles.pop();
+    handle?.scene.dispose();
+    handle?.engine.dispose();
+  }
+});
+
+function dragOf(mesh: AbstractMesh | null): PointerDragBehavior {
+  const behavior = mesh?.behaviors.find((entry) => entry.name === "PointerDrag");
+  if (!behavior || !("onDragStartObservable" in behavior)) {
+    throw new Error(`expected PointerDrag on ${mesh?.name ?? "missing mesh"}`);
+  }
+  return behavior as PointerDragBehavior;
+}
+
+function dragAt(x: number, y: number) {
+  return {
+    dragPlanePoint: new Vector3(x, y, 0),
+    pointerId: 1,
+    pointerInfo: null,
+    delta: Vector3.Zero(),
+    dragPlaneNormal: Vector3.Forward(),
+    dragDistance: 0,
+  };
+}
+
+describe("createOverlayTransformBox", () => {
+  it("builds an interior, eight resize handles, and a rotation knob above the box", () => {
+    const { scene } = createHandle();
+    const layer = new UtilityLayerRenderer(scene);
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const box = createOverlayTransformBox(layer, scene);
+    box.attachTo(mesh);
+    const util = layer.utilityLayerScene;
+    expect(util.getMeshByName("overlay-box-interior")).not.toBeNull();
+    expect(util.getMeshByName("overlay-box-handle-e")).not.toBeNull();
+    expect(util.getMeshByName("overlay-box-handle-se")).not.toBeNull();
+    expect(util.getMeshByName("overlay-box-rotate")).not.toBeNull();
+    const rotate = util.getMeshByName("overlay-box-rotate")!;
+    const interior = util.getMeshByName("overlay-box-interior")!;
+    rotate.computeWorldMatrix(true);
+    interior.computeWorldMatrix(true);
+    expect(rotate.getAbsolutePosition().y).toBeGreaterThan(
+      interior.getAbsolutePosition().y + interior.getBoundingInfo().boundingBox.extendSizeWorld.y,
+    );
+    box.dispose();
+    layer.dispose();
+  });
+
+  it("moves the attached mesh when the interior is dragged", () => {
+    const { scene } = createHandle();
+    const layer = new UtilityLayerRenderer(scene);
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const box = createOverlayTransformBox(layer, scene);
+    box.attachTo(mesh);
+    const interior = layer.utilityLayerScene.getMeshByName("overlay-box-interior");
+    const drag = dragOf(interior);
+    drag.onDragStartObservable.notifyObservers(dragAt(0, 0));
+    drag.onDragObservable.notifyObservers(dragAt(2, 3));
+    drag.onDragEndObservable.notifyObservers(dragAt(2, 3));
+    expect(mesh.position.x).toBeCloseTo(2);
+    expect(mesh.position.y).toBeCloseTo(3);
+    expect(mesh.position.z).toBeCloseTo(0);
+    expect(box.isDragging()).toBe(false);
+    box.dispose();
+    layer.dispose();
+  });
+
+  it("resizes with the east handle without moving Z", () => {
+    const { scene } = createHandle();
+    const layer = new UtilityLayerRenderer(scene);
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    mesh.position.z = 4;
+    const box = createOverlayTransformBox(layer, scene);
+    box.attachTo(mesh);
+    const handle = layer.utilityLayerScene.getMeshByName("overlay-box-handle-e");
+    const drag = dragOf(handle);
+    drag.onDragStartObservable.notifyObservers(dragAt(0.5, 0));
+    drag.onDragObservable.notifyObservers(dragAt(1.5, 0));
+    expect(mesh.scaling.x).toBeCloseTo(2);
+    expect(mesh.position.x).toBeCloseTo(0.5);
+    expect(mesh.position.z).toBeCloseTo(4);
+    box.dispose();
+    layer.dispose();
+  });
+
+  it("rotates around Z from the rotation knob", () => {
+    const { scene } = createHandle();
+    const layer = new UtilityLayerRenderer(scene);
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const box = createOverlayTransformBox(layer, scene);
+    box.attachTo(mesh);
+    const knob = layer.utilityLayerScene.getMeshByName("overlay-box-rotate");
+    const drag = dragOf(knob);
+    drag.onDragStartObservable.notifyObservers(dragAt(1, 0));
+    drag.onDragObservable.notifyObservers(dragAt(0, 1));
+    const euler = mesh.rotationQuaternion!.toEulerAngles();
+    expect(euler.z).toBeCloseTo(Math.PI / 2);
+    expect(mesh.position.x).toBeCloseTo(0);
+    expect(mesh.position.y).toBeCloseTo(0);
+    box.dispose();
+    layer.dispose();
+  });
+});
+
+describe("gizmo host overlay-box manipulator", () => {
+  it("does not attach TRS gizmos and keeps the default host on axis gizmos", () => {
+    const { scene } = createHandle();
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const overlay = createGizmoHost(scene, { manipulator: "overlay-box" });
+    overlay.attachTo(mesh);
+    expect(overlay.attachedMesh()).toBe(mesh);
+    expect(overlay.positionGizmo.attachedMesh).toBeNull();
+    expect(overlay.rotationGizmo.attachedMesh).toBeNull();
+    expect(overlay.scaleGizmo.attachedMesh).toBeNull();
+    overlay.dispose();
+
+    const trs = createGizmoHost(scene, { tool: "translate" });
+    trs.attachTo(mesh);
+    expect(trs.positionGizmo.attachedMesh).toBe(mesh);
+    trs.dispose();
+  });
+
+  it("hitTests true when the utility-layer pick hits the box", () => {
+    const { scene } = createHandle();
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const overlay = createGizmoHost(scene, { manipulator: "overlay-box" });
+    overlay.attachTo(mesh);
+    vi.spyOn(Scene.prototype, "pick").mockReturnValue({ hit: true } as never);
+    expect(overlay.hitTest(10, 10)).toBe(true);
+    overlay.dispose();
+  });
+
+  it("moves, resizes, and Z-rotates through the host utility layer", () => {
+    const { scene } = createHandle();
+    const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
+    const overlay = createGizmoHost(scene, { manipulator: "overlay-box" });
+    overlay.attachTo(mesh);
+    const util = overlay.positionGizmo.gizmoLayer.utilityLayerScene;
+
+    const interior = util.getMeshByName("overlay-box-interior");
+    const move = dragOf(interior);
+    move.onDragStartObservable.notifyObservers(dragAt(0, 0));
+    move.onDragObservable.notifyObservers(dragAt(2, 0));
+    move.onDragEndObservable.notifyObservers(dragAt(2, 0));
+    expect(mesh.position.x).toBeCloseTo(2);
+    expect(mesh.scaling.x).toBeCloseTo(1);
+
+    const handle = util.getMeshByName("overlay-box-handle-e");
+    const resize = dragOf(handle);
+    resize.onDragStartObservable.notifyObservers(dragAt(2.5, 0));
+    resize.onDragObservable.notifyObservers(dragAt(3.5, 0));
+    expect(mesh.scaling.x).toBeCloseTo(2);
+    expect(mesh.position.x).toBeCloseTo(2.5);
+    expect(mesh.position.z).toBeCloseTo(0);
+
+    const knob = util.getMeshByName("overlay-box-rotate");
+    const rotate = dragOf(knob);
+    rotate.onDragStartObservable.notifyObservers(dragAt(3.5, 0));
+    rotate.onDragObservable.notifyObservers(dragAt(2.5, 1));
+    expect(mesh.rotationQuaternion!.toEulerAngles().z).not.toBe(0);
+    overlay.dispose();
+  });
+});
+
+describe("overlayBoxLocalBounds", () => {
+  it("uses visual AABB and skips pick-proxy meshes", () => {
+    const { scene } = createHandle();
+    const origin = MeshBuilder.CreateBox("origin", { size: 10 }, scene);
+    origin.metadata = { editorPickProxy: true };
+    const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, scene);
+    visual.parent = origin;
+    const bounds = overlayBoxLocalBounds(origin, [origin, visual]);
+    expect(bounds.minX).toBeCloseTo(-0.5);
+    expect(bounds.maxX).toBeCloseTo(0.5);
+    expect(bounds.minY).toBeCloseTo(-0.5);
+    expect(bounds.maxY).toBeCloseTo(0.5);
+  });
+});
+
