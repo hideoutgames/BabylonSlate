@@ -69,7 +69,9 @@ test("component gallery renders every editor-kit composite", async ({
 
   await expect(page.getByTestId("gallery-markup-autocomplete")).toBeVisible();
   await page.getByTestId("gallery-markup-autocomplete").click();
-  await expect(page.getByTestId("gallery-markup-autocomplete-suggestions")).toBeVisible();
+  await expect(
+    page.getByTestId("gallery-markup-autocomplete-editor-suggestions"),
+  ).toBeVisible();
   await expect(page.getByTestId("search-item-tag:b")).toBeVisible();
   await page.keyboard.press("Escape");
 
