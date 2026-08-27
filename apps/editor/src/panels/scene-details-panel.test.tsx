@@ -8,6 +8,7 @@ import {
   createMeshComponent,
   createRichText2DComponent,
   createText2DComponent,
+  identitySerializedTransform,
   normalizeScene,
 } from "@babylonslate/core";
 import { SceneDetailsPanel } from "./scene-details-panel";
@@ -382,6 +383,36 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("property-row-scene-camera-bounds-width")).toBeTruthy();
     expect(screen.getByText("Layer Width")).toBeTruthy();
     expect(screen.getByText("Layer Height")).toBeTruthy();
+  });
+
+  it("hosts a 9-slice still-frame overlay for 2D Panel", () => {
+    scene().actors = [
+      createActor("hud", "Panel", {
+        components: [
+          {
+            id: "panel",
+            classId: "2DPanelComponent",
+            properties: {
+              source: "texture",
+              textureGuid: null,
+              materialGuid: null,
+              marginLeft: 0,
+              marginRight: 0,
+              marginTop: 0,
+              marginBottom: 0,
+              hitTest: "ignore",
+            },
+            parentId: null,
+            transform: identitySerializedTransform(),
+          },
+        ],
+      }),
+    ];
+    harness.selectedActorIds = ["hud"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("panel-nine-slice-preview")).toBeTruthy();
+    expect(screen.getByTestId("property-hud-panel-marginLeft")).toBeTruthy();
+    expect(screen.queryByTestId("panel-nine-slice-overlay")).toBeNull();
   });
 
   it("hosts 2D Text in a sibling textarea instead of a PropertyGrid text row", () => {

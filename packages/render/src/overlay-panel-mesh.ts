@@ -61,14 +61,14 @@ export function createOverlayPanelMesh(
   const ppu = assets?.pixelsPerUnit && assets.pixelsPerUnit > 0 ? assets.pixelsPerUnit : 100;
   const src = sourceSizePx(parsed, dest.destWidth, dest.destHeight, assets);
   const cells = overlayNineSliceCells({
-    destWidth: 1,
-    destHeight: 1,
+    destWidth: dest.destWidth,
+    destHeight: dest.destHeight,
     srcWidthPx: src.width,
     srcHeightPx: src.height,
-    marginLeft: parsed.marginLeft / dest.destWidth,
-    marginRight: parsed.marginRight / dest.destWidth,
-    marginTop: parsed.marginTop / dest.destHeight,
-    marginBottom: parsed.marginBottom / dest.destHeight,
+    marginLeft: parsed.marginLeft,
+    marginRight: parsed.marginRight,
+    marginTop: parsed.marginTop,
+    marginBottom: parsed.marginBottom,
     pixelsPerUnit: ppu,
   });
   const positions: number[] = [];
@@ -77,10 +77,10 @@ export function createOverlayPanelMesh(
   let vertex = 0;
   for (const cell of cells) {
     if (cell.width <= 1e-8 || cell.height <= 1e-8) continue;
-    const x0 = cell.x;
-    const y0 = cell.y;
-    const x1 = cell.x + cell.width;
-    const y1 = cell.y + cell.height;
+    const x0 = cell.x / dest.destWidth;
+    const y0 = cell.y / dest.destHeight;
+    const x1 = (cell.x + cell.width) / dest.destWidth;
+    const y1 = (cell.y + cell.height) / dest.destHeight;
     positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
     uvs.push(cell.u0, cell.v0, cell.u1, cell.v0, cell.u1, cell.v1, cell.u0, cell.v1);
     indices.push(vertex, vertex + 1, vertex + 2, vertex, vertex + 2, vertex + 3);

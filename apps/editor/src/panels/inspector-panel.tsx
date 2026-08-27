@@ -39,6 +39,7 @@ import {
   DEFAULT_SORTING_LAYERS,
   identitySerializedTransform,
   isEditorGraphHost,
+  parseOverlayPanelProperties,
   parseText2DProperties,
   type GraphClassMember,
   type SerializedComponent,
@@ -75,6 +76,7 @@ import {
   type AssetPickRequest,
 } from "../lib/component-property-rows";
 import { JsBodyEditor } from "../components/js-body-editor";
+import { NineSlicePreview } from "../components/nine-slice-preview";
 import { isValidJsIdentifier } from "@babylonslate/scripting-nodes";
 import { isReservedConsoleCommandName } from "@babylonslate/debugger";
 import {
@@ -612,6 +614,11 @@ function PrefabComponentDetails({
             onPickAsset: setAssetPick,
           })}
         />
+        {component.classId === "2DPanelComponent" ? (
+          <NineSlicePreview
+            {...parseOverlayPanelProperties(component.properties)}
+          />
+        ) : null}
       </div>
       {component.classId === "2DTextComponent" ||
       component.classId === "2DRichTextComponent" ? (

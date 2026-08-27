@@ -88,3 +88,48 @@ export function overlayNineSliceCells(
   }
   return cells;
 }
+
+export type OverlayNineSliceSourceFractions = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+function clampPixelMargin(value: number, max: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(value, Math.max(0, max));
+}
+
+/** Pixel-margin splits on the source image (CSS Y: top of PNG is 0). */
+export function overlayNineSliceSourceFractions(options: {
+  srcWidthPx: number;
+  srcHeightPx: number;
+  marginLeft: number;
+  marginRight: number;
+  marginTop: number;
+  marginBottom: number;
+}): OverlayNineSliceSourceFractions {
+  const srcW = options.srcWidthPx > 0 ? options.srcWidthPx : 1;
+  const srcH = options.srcHeightPx > 0 ? options.srcHeightPx : 1;
+  let left = clampPixelMargin(options.marginLeft, srcW);
+  let right = clampPixelMargin(options.marginRight, srcW);
+  let top = clampPixelMargin(options.marginTop, srcH);
+  let bottom = clampPixelMargin(options.marginBottom, srcH);
+  if (left + right > srcW) {
+    const scale = srcW / (left + right);
+    left *= scale;
+    right *= scale;
+  }
+  if (top + bottom > srcH) {
+    const scale = srcH / (top + bottom);
+    top *= scale;
+    bottom *= scale;
+  }
+  return {
+    left: left / srcW,
+    right: 1 - right / srcW,
+    top: top / srcH,
+    bottom: 1 - bottom / srcH,
+  };
+}

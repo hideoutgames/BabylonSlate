@@ -71,5 +71,13 @@ describe("createOverlayPanelMesh", () => {
       widths.add(Number((positions[i + 3]! - positions[i]!).toFixed(6)));
     }
     expect([...widths].sort((a, b) => a - b)[0]).toBeCloseTo(0.025);
+    const uvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
+    const uniqueU = [...new Set(uvs.filter((_, index) => index % 2 === 0))].sort(
+      (a, b) => a - b,
+    );
+    expect(uniqueU[0]).toBeCloseTo(0);
+    expect(uniqueU[1]).toBeCloseTo(0.1);
+    expect(uniqueU[2]).toBeCloseTo(0.9);
+    expect(uniqueU[3]).toBeCloseTo(1);
   });
 });
