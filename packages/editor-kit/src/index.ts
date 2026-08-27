@@ -207,9 +207,9 @@ export {
   type AddFunctionDialogProps,
 } from "./add-function-dialog";
 export {
-  NamePromptDialog,
-  type NamePromptDialogProps,
-} from "./name-prompt-dialog";
+  MultilineTextField,
+  type MultilineTextFieldProps,
+} from "./multiline-text-field";
 export {
   NumberPromptDialog,
   type NumberPromptDialogProps,

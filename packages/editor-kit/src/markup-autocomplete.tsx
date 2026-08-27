@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Textarea } from "@babylonslate/ui/components/textarea";
-import { SearchDropdown } from "./search-dropdown";
+import { Button } from "@babylonslate/ui/components/button";
 
 export type MarkupSuggestion = {
   id: string;
@@ -329,7 +329,39 @@ export function MarkupAutocompleteTextarea({
   };
 
   return (
-    <div className="relative">
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {open && session ? (
+        <div
+          className="max-h-48 overflow-y-auto overscroll-y-contain rounded-md border border-border"
+          data-testid={testId ? `${testId}-suggestions` : undefined}
+          role="listbox"
+        >
+          {session.items.map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              variant="ghost"
+              size="touch"
+              className="h-auto w-full justify-start"
+              data-testid={`search-item-${item.id}`}
+              onClick={() => {
+                const applied = applyMarkupSuggestion(value, session, item.id);
+                pendingCaret.current = applied.caret;
+                setCaret(applied.caret);
+                setDismissed(true);
+                onChange(applied.value, applied.caret);
+              }}
+            >
+              <span className="truncate">{item.label}</span>
+              {item.description ? (
+                <span className="ml-2 truncate text-muted-foreground">
+                  {item.description}
+                </span>
+              ) : null}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       <Textarea
         {...rest}
         ref={ref}
@@ -349,27 +381,6 @@ export function MarkupAutocompleteTextarea({
         onKeyUp={(event) => updateCaret(event.currentTarget)}
         onClick={(event) => updateCaret(event.currentTarget)}
       />
-      <SearchDropdown
-        open={open}
-        onOpenChange={(next) => {
-          if (!next) setDismissed(true);
-        }}
-        title="Markup"
-        items={session?.items ?? []}
-        onSelect={(itemId) => {
-          if (!session) return;
-          const applied = applyMarkupSuggestion(value, session, itemId);
-          pendingCaret.current = applied.caret;
-          setCaret(applied.caret);
-          setDismissed(true);
-          onChange(applied.value, applied.caret);
-        }}
-        data-testid={testId ? `${testId}-suggestions` : undefined}
-      >
-        <button type="button" className="sr-only" tabIndex={-1} aria-hidden>
-          Markup
-        </button>
-      </SearchDropdown>
     </div>
   );
 }

@@ -136,7 +136,7 @@ describe("MarkupAutocompleteTextarea", () => {
     cleanup();
   });
 
-  it("opens a SearchDropdown of tags when the caret is after [", () => {
+  it("lists tags above the textarea when the caret is after [", () => {
     render(
       <MarkupAutocompleteTextarea
         value="["

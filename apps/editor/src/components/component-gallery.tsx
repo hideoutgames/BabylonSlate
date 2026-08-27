@@ -24,7 +24,7 @@ import {
   PropertyGrid,
   SearchDialog,
   SearchDropdown,
-  MarkupAutocompleteTextarea,
+  MultilineTextField,
   SelectableText,
   ToolbarStrip,
   TreeView,
@@ -519,8 +519,10 @@ function GalleryComposites() {
         <div className="w-full max-w-md">
           <Field>
             <FieldLabel htmlFor="gallery-markup-autocomplete">Markup</FieldLabel>
-            <MarkupAutocompleteTextarea
+            <MultilineTextField
               id="gallery-markup-autocomplete"
+              title="Markup"
+              markup
               value={markup}
               onChange={setMarkup}
               data-testid="gallery-markup-autocomplete"
