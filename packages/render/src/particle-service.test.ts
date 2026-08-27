@@ -1,4 +1,4 @@
-import { Color4, Mesh, MeshBuilder, NodeMaterialModes, ParticleSystem, RawTexture } from "@babylonjs/core";
+import { Color4, Mesh, MeshBuilder, NodeMaterialModes, ParticleSystem, RawTexture, Scene } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   PARTICLE_BLENDMODE_ONEONE,
@@ -580,5 +580,57 @@ describe("ParticleService", () => {
     expect(attached[0]).toBe(scene.particleSystems[0]);
     withMaterial.dispose();
     service.dispose();
+  });
+
+  it("hosts overlay-slot particles on the overlay scene, not the world scene", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const overlay = new Scene(handle.engine);
+    const texture = RawTexture.CreateRGBATexture(
+      new Uint8Array([255, 255, 255, 255]),
+      1,
+      1,
+      overlay,
+    );
+    const emitterMesh = MeshBuilder.CreateBox("overlay-emitter", { size: 0.1 }, overlay);
+    const service = new ParticleService({
+      scene: handle.scene,
+      gpuSupported: false,
+      resolveTexture: (guid) => (guid === "tex-1" ? texture : null),
+      resolveEmitter: (slotId) => (slotId === 4 ? emitterMesh : null),
+      sceneForSlot: (slotId) => (slotId === 4 ? overlay : null),
+    });
+    service.setLibrary({
+      emitters: new Map([
+        [
+          "em-1",
+          normalizeParticleEmitterPayload({
+            ...createDefaultParticleEmitterPayload(),
+            textureGuid: "tex-1",
+          }),
+        ],
+      ]),
+      systems: new Map([
+        [
+          "sys-1",
+          { ...createDefaultParticleSystemPayload(), emitterGuids: ["em-1"] },
+        ],
+      ]),
+    });
+    service.handleCommand({
+      type: "assignParticle",
+      slotId: 4,
+      actorGuid: "fx",
+      componentId: "particle-1",
+      particleSystemGuid: "sys-1",
+      play: true,
+    });
+    expect(overlay.particleSystems).toHaveLength(1);
+    expect(handle.scene.particleSystems).toHaveLength(0);
+    const emitter = overlay.particleSystems[0]?.emitter as Mesh;
+    expect(emitter.getScene()).toBe(overlay);
+    expect(handle.scene.getMeshByName(emitter.name)).toBeNull();
+    service.dispose();
+    overlay.dispose();
   });
 });

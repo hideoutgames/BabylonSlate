@@ -86,6 +86,7 @@ export class ParticleService {
   private readonly resolveEmitter?: (
     slotId: number,
   ) => AbstractMesh | Mesh | null;
+  private sceneForSlot?: (slotId: number) => Scene | null;
   private onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
   private library: ParticleLibrary = emptyLibrary();
   private readonly live = new Map<string, LiveComponent>();
@@ -97,6 +98,7 @@ export class ParticleService {
     resolveTexture: (guid: string) => Texture | null;
     resolveMaterial?: (guid: string) => NodeMaterial | null;
     resolveEmitter?: (slotId: number) => AbstractMesh | null;
+    sceneForSlot?: (slotId: number) => Scene | null;
     onDiagnostic?: (diagnostic: ParticleServiceDiagnostic) => void;
   }) {
     this.scene = options.scene;
@@ -104,6 +106,7 @@ export class ParticleService {
     this.resolveTexture = options.resolveTexture;
     this.resolveMaterial = options.resolveMaterial;
     this.resolveEmitter = options.resolveEmitter;
+    this.sceneForSlot = options.sceneForSlot;
     this.onDiagnostic = options.onDiagnostic;
     this.publishStats();
   }
@@ -116,6 +119,10 @@ export class ParticleService {
 
   setLibrary(library: ParticleLibrary): void {
     this.library = library;
+  }
+
+  setSceneForSlot(sceneForSlot: ((slotId: number) => Scene | null) | undefined): void {
+    this.sceneForSlot = sceneForSlot;
   }
 
   bindSlot(slotId: number, mesh: AbstractMesh | null): void {
@@ -171,7 +178,8 @@ export class ParticleService {
       this.publishStats();
       return;
     }
-    const node = MeshBuilder.CreateBox(`particleEmitter:${key}`, { size: 0.01 }, this.scene);
+    const hostScene = this.sceneForSlot?.(command.slotId) ?? this.scene;
+    const node = MeshBuilder.CreateBox(`particleEmitter:${key}`, { size: 0.01 }, hostScene);
     node.isVisible = true;
     node.visibility = 0;
     node.isPickable = false;
@@ -206,7 +214,7 @@ export class ParticleService {
       const capacity = particleCapacityFor(emitter, this.gpu);
       const system = createBabylonParticleSystem(
         `particle:${key}:${index}`,
-        this.scene,
+        hostScene,
         capacity,
         this.gpu,
       );

@@ -110,7 +110,7 @@ export class SceneLayerCompositor {
       blitScene: null,
       attachedPostProcess: null,
     };
-    this.applyOrtho(layer);
+    this.bindHudCamera(layer);
     this.byId.set(command.layerId, layer);
     this.rebuildPostProcess(layer);
     return layer;
@@ -199,7 +199,7 @@ export class SceneLayerCompositor {
 
   resize(): void {
     for (const layer of this.byId.values()) {
-      this.applyOrtho(layer);
+      this.bindHudCamera(layer);
       if (layer.rtt) {
         const width = Math.max(1, this.engine.getRenderWidth());
         const height = Math.max(1, this.engine.getRenderHeight());
@@ -211,6 +211,7 @@ export class SceneLayerCompositor {
   render(): void {
     for (const layer of this.sortedLayers()) {
       const record = layer as LayerRecord;
+      this.bindHudCamera(record);
       if (record.rtt) {
         record.scene.autoClear = true;
         record.scene.render();
@@ -391,6 +392,22 @@ export class SceneLayerCompositor {
 
   dispose(): void {
     this.clear();
+  }
+
+  private bindHudCamera(layer: LayerRecord): void {
+    layer.camera.parent = null;
+    layer.camera.position.set(0, 0, -10);
+    layer.camera.rotation.set(0, 0, 0);
+    if (layer.camera.rotationQuaternion) {
+      layer.camera.rotationQuaternion.set(0, 0, 0, 1);
+    }
+    layer.camera.setTarget(Vector3.Zero());
+    layer.camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
+    layer.scene.activeCamera = layer.camera;
+    this.applyOrtho(layer);
+    layer.camera.getViewMatrix(true);
+    layer.camera.getProjectionMatrix(true);
+    layer.scene.updateTransformMatrix();
   }
 
   private applyOrtho(layer: LayerRecord): void {

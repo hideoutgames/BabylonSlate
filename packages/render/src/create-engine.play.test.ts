@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Camera, NullEngine, PBRMaterial, UniversalCamera } from "@babylonjs/core";
+import { Camera, Matrix, NullEngine, PBRMaterial, UniversalCamera, Vector3 } from "@babylonjs/core";
 import {
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -1029,6 +1029,109 @@ describe("Play createEngine view", () => {
     );
     expect(overlay?.scene.getMeshByName("actor-8")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-8")).toBeNull();
+  });
+
+  it("keeps overlay box assignMesh off the world Scene", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 9,
+      meshAssetGuid: null,
+      meshKind: "box",
+      actorGuid: "panel",
+      sceneLayerId: "hud",
+    });
+    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "hud");
+    expect(overlay?.scene.getMeshByName("actor-9")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-9")).toBeNull();
+  });
+
+  it("keeps overlay HUD ortho and NDC stable when the world perspective camera moves", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud",
+      zOrder: 0,
+      ownerSceneGuid: "world-a",
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 3,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "hud",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 3,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+      actorGuid: "banner",
+      sceneLayerId: "hud",
+    });
+    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "hud");
+    const overlayScene = overlay?.scene;
+    const overlayCam = overlayScene?.activeCamera as UniversalCamera | null;
+    const mesh = overlayScene?.getMeshByName("actor-3");
+    expect(overlayCam?.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(mesh).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-3")).toBeNull();
+
+    const worldCam = handle.scene.activeCamera as UniversalCamera;
+    worldCam.mode = Camera.PERSPECTIVE_CAMERA;
+    worldCam.fov = 0.9;
+    worldCam.position.set(0, 1, -8);
+    mesh!.position.set(1.25, 0.4, 0);
+    mesh!.computeWorldMatrix(true);
+    overlayScene!.updateTransformMatrix();
+    const viewport = overlayCam!.viewport.toGlobal(
+      engine.getRenderWidth(),
+      engine.getRenderHeight(),
+    );
+    const project = () =>
+      Vector3.Project(
+        mesh!.getAbsolutePosition(),
+        Matrix.Identity(),
+        overlayScene!.getTransformMatrix(),
+        viewport,
+      );
+    const before = project();
+
+    worldCam.position.x += 10;
+    worldCam.rotation.y += 0.6;
+    worldCam.fov = 1.35;
+    handle.scene.updateTransformMatrix();
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    overlayScene!.updateTransformMatrix();
+    const after = project();
+    expect(overlayScene?.activeCamera).toBe(overlayCam);
+    expect(overlayCam?.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(overlayCam?.position.z).toBeCloseTo(-10);
+    expect(handle.scene.getMeshByName("actor-3")).toBeNull();
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
   });
 
   it("does not plant overlay-flagged snapshot meshes in the world before spawn", () => {
