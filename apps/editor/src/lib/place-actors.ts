@@ -43,7 +43,9 @@ export type PlaceActorKind =
         | "2DTextureComponent"
         | "2DMaterialComponent"
         | "2DButtonComponent"
-        | "2DPanelComponent";
+        | "2DPanelComponent"
+        | "2DTextComponent"
+        | "2DRichTextComponent";
     }
   | {
       type: "asset";
@@ -163,6 +165,18 @@ const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
     title: "2D Panel",
     category: "Overlay",
     kind: { type: "overlay-2d", classId: "2DPanelComponent" },
+  },
+  {
+    id: "2d-text",
+    title: "2D Text",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DTextComponent" },
+  },
+  {
+    id: "2d-rich-text",
+    title: "2D Rich Text",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DRichTextComponent" },
   },
 ];
 

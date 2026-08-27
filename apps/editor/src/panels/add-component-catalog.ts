@@ -8,7 +8,8 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   emptySkyboxFaces,
   parseText3DProperties,
-  parseText2DProperties,
+  createRichText2DComponent,
+  createText2DComponent,
 } from "@babylonslate/core";
 import {
   parseColliderProperties,
@@ -245,9 +246,9 @@ export function defaultPropertiesFor(
         hitTest: "ignore",
       };
     case "2DTextComponent":
-      return { ...parseText2DProperties({}) };
+      return { ...createText2DComponent("text").properties };
     case "2DRichTextComponent":
-      return { ...parseText2DProperties({}, { rich: true }) };
+      return { ...createRichText2DComponent("rich").properties };
     case "RigidBodyComponent":
       return { ...parseRigidBodyProperties({}) };
     case "ColliderComponent":

@@ -50,6 +50,7 @@ describe("assignMesh visual payloads", () => {
         italic: false,
         underline: false,
         wrapWidth: 0,
+        wrapHeight: 0,
       },
     } satisfies CommandMessage;
     expect(commandType(command)).toBe("assignMesh");

@@ -978,6 +978,14 @@ describe("applyPrefabPropertyDefaults", () => {
       kind: "enum",
       value: "block",
     });
+    expect(text.rows.find((row) => row.id.endsWith("-wrapWidth"))).toMatchObject({
+      kind: "slider",
+      value: 0,
+    });
+    expect(text.rows.find((row) => row.id.endsWith("-wrapHeight"))).toMatchObject({
+      kind: "slider",
+      value: 0,
+    });
     const blocked = rowsFor({
       id: "plain",
       classId: "2DRichTextComponent",

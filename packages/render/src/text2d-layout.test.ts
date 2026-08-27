@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   combineText2DEffects,
   layoutText2D,
+  layoutText2DFromProperties,
   type GlyphMetricsProvider,
   type Text2DLayoutItem,
 } from "./text2d-layout";
@@ -133,6 +134,21 @@ describe("layoutText2D", () => {
     expect(glyphs(broken.items)[0]?.ch).toBe("A");
     expect(glyphs(broken.items)[1]?.ch).toBe("B");
     expect(glyphs(broken.items)[1]?.y).toBeLessThan(glyphs(broken.items)[0]!.y);
+  });
+
+  it("lets extra lines overflow wrapHeight; wrapWidth still drives breaks", () => {
+    const tall = layoutText2DFromProperties(
+      {
+        text: "AAAA",
+        wrapWidth: 32,
+        wrapHeight: 8,
+        size: 32,
+      },
+      { rich: false, pixelsPerUnit: 100, metrics: provider() },
+    );
+    const rows = new Set(glyphs(tall.layout.items).map((item) => item.y.toFixed(3)));
+    expect(rows.size).toBe(2);
+    expect(tall.layout.height).toBeGreaterThan(8 / 100);
   });
 
   it("layouts rich-text images and keeps missing MSDF glyphs on the bitmap path", () => {

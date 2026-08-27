@@ -452,6 +452,7 @@ export interface EditorTools {
     position: [number, number, number];
     rotation: [number, number, number, number];
     scale: [number, number, number];
+    text2dWrap?: { wrapWidth: number; wrapHeight: number };
   }>;
   /** Live transform of the gizmo-attached mesh, for turning a drag into a command. */
   attachedActorTransform: () => {
@@ -459,6 +460,7 @@ export interface EditorTools {
     position: [number, number, number];
     rotation: [number, number, number, number];
     scale: [number, number, number];
+    text2dWrap?: { wrapWidth: number; wrapHeight: number };
   } | null;
   /** Preview the named Default Camera without replacing the stored orbit pose. */
   setPreviewGameCamera: (enabled: boolean) => void;
@@ -987,11 +989,26 @@ export function createEngine(
         position: [number, number, number];
         rotation: [number, number, number, number];
         scale: [number, number, number];
+        text2dWrap?: { wrapWidth: number; wrapHeight: number };
       }> = [];
       for (const actorId of roots) {
         const mesh = editorSync.meshForActor(actorId);
         if (!mesh) continue;
-        live.push({ actorId, ...readMeshLocalTransform(mesh) });
+        const liveTransform = readMeshLocalTransform(mesh);
+        const meta = mesh.metadata as {
+          text2dPendingWrap?: { wrapWidth: number; wrapHeight: number };
+          text2dDragStartScale?: [number, number, number];
+        } | null;
+        live.push({
+          actorId,
+          ...liveTransform,
+          ...(meta?.text2dDragStartScale
+            ? { scale: meta.text2dDragStartScale }
+            : {}),
+          ...(meta?.text2dPendingWrap
+            ? { text2dWrap: meta.text2dPendingWrap }
+            : {}),
+        });
       }
       return live;
     };

@@ -92,7 +92,7 @@ See [fonts.md](fonts.md).
 
 `createText2DMesh` (SceneLayer editor viewport and Play `assignMesh` `2dtext` / `2drichtext`) is **not** GUI `TextBlock`, not a `DynamicTexture` plane, and not a solid unlit letter box:
 
-- Invisible AABB pick plane; glyph / `[img]` children are not pickable
+- Invisible wrap-box pick plane (`wrapWidth`/`wrapHeight` px ÷ `pixelsPerUnit`); glyph / `[img]` children are not pickable
 - Bitmap: canvas `FontFace` cells packed onto one `RawTexture` atlas when the paint is letter-shaped; a full-canvas fill or a solid tofu box (headless/software) falls back to bundled 5×7. Quad size follows the raster cell so 5×7 is not stretched to `measureText`. Quads sample `emissiveTexture` + `diffuseTexture` with alpha test, matching sprites. `setMeshAssets` supplies `fontCssStack` / `fontCssStackByGuid` from `compileText2DFontStacks`
 - MSDF: imported JSON + PNG through `ResourceCache`; missing glyphs fall back to Bitmap cells
 - Fingerprint includes compiled CSS stack **values** so a fallback change rebuilds meshes

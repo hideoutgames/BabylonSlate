@@ -15,6 +15,8 @@ import {
   applyOverlayBoxDrag,
   createOverlayTransformBox,
   overlayBoxLocalBounds,
+  overlayTextWrapFromResize,
+  writeOverlayBoxTransform,
   OVERLAY_BOX_MIN_SCALE,
   type OverlayBoxDragStart,
   type OverlayBoxLocalBounds,
@@ -458,6 +460,79 @@ describe("overlayBoxLocalBounds", () => {
     origin.metadata = { editorPickProxy: true };
     const bounds = overlayBoxLocalBounds(origin, [origin]);
     expect(bounds).toEqual({ minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 });
+  });
+
+  it("uses only the wrap plane for 2D text, ignoring overflowing glyphs", () => {
+    const { scene } = createHandle();
+    const origin = MeshBuilder.CreatePlane("text", { width: 2, height: 0.64 }, scene);
+    origin.metadata = { text2d: true, text2dWrapWidth: 200, text2dWrapHeight: 64 };
+    const glyph = MeshBuilder.CreatePlane("glyph", { size: 4 }, scene);
+    glyph.parent = origin;
+    origin.computeWorldMatrix(true);
+    glyph.computeWorldMatrix(true);
+    const bounds = overlayBoxLocalBounds(origin, [origin, glyph]);
+    expect(bounds.minX).toBeCloseTo(-1);
+    expect(bounds.maxX).toBeCloseTo(1);
+    expect(bounds.minY).toBeCloseTo(-0.32);
+    expect(bounds.maxY).toBeCloseTo(0.32);
+  });
+});
+
+describe("overlayTextWrapFromResize", () => {
+  it("maps E/W scale to wrapWidth and N/S scale to wrapHeight", () => {
+    expect(
+      overlayTextWrapFromResize([1, 1, 1], [2, 1, 1], 200, 64),
+    ).toEqual({ wrapWidth: 400, wrapHeight: 64 });
+    expect(
+      overlayTextWrapFromResize([1, 1, 1], [1, 0.5, 1], 200, 64),
+    ).toEqual({ wrapWidth: 200, wrapHeight: 32 });
+  });
+});
+
+describe("writeOverlayBoxTransform text wrap", () => {
+  it("stores pending wrap px and inverse-scales glyph children", () => {
+    const { scene } = createHandle();
+    const mesh = MeshBuilder.CreatePlane("text", { width: 2, height: 0.64 }, scene);
+    mesh.metadata = { text2d: true, text2dWrapWidth: 200, text2dWrapHeight: 64 };
+    const glyph = MeshBuilder.CreatePlane("glyph", { size: 0.32 }, scene);
+    glyph.parent = mesh;
+    writeOverlayBoxTransform(
+      mesh,
+      { position: [0.5, 0, 0], rotationZ: 0, scale: [2, 1, 1] },
+      { position: [0, 0, 0], rotationZ: 0, scale: [1, 1, 1] },
+    );
+    const meta = mesh.metadata as {
+      text2dPendingWrap?: { wrapWidth: number; wrapHeight: number };
+      text2dDragStartScale?: [number, number, number];
+    };
+    expect(meta.text2dPendingWrap).toEqual({ wrapWidth: 400, wrapHeight: 64 });
+    expect(meta.text2dDragStartScale).toEqual([1, 1, 1]);
+    expect(mesh.scaling.x).toBeCloseTo(2);
+    expect(glyph.scaling.x).toBeCloseTo(0.5);
+    expect(glyph.scaling.y).toBeCloseTo(1);
+  });
+});
+
+describe("gizmo host overlay-box 2D text resize", () => {
+  it("commits wrap metadata on E/W drag and leaves start scale on the metadata", () => {
+    const { scene } = createHandle();
+    const mesh = MeshBuilder.CreatePlane("text", { width: 2, height: 0.64 }, scene);
+    mesh.metadata = { text2d: true, text2dWrapWidth: 200, text2dWrapHeight: 64 };
+    const overlay = createGizmoHost(scene, { manipulator: "overlay-box" });
+    overlay.attachTo(mesh);
+    const util = overlay.positionGizmo.gizmoLayer.utilityLayerScene;
+    const handle = util.getMeshByName("overlay-box-handle-e");
+    const resize = dragOf(handle);
+    resize.onDragStartObservable.notifyObservers(dragAt(1, 0));
+    resize.onDragObservable.notifyObservers(dragAt(3, 0));
+    const meta = mesh.metadata as {
+      text2dPendingWrap?: { wrapWidth: number; wrapHeight: number };
+      text2dDragStartScale?: [number, number, number];
+    };
+    expect(meta.text2dPendingWrap?.wrapWidth).toBeCloseTo(400);
+    expect(meta.text2dPendingWrap?.wrapHeight).toBeCloseTo(64);
+    expect(meta.text2dDragStartScale).toEqual([1, 1, 1]);
+    overlay.dispose();
   });
 });
 

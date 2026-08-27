@@ -63,6 +63,9 @@ describe("createText2DMesh", () => {
     );
     const children = mesh.getChildMeshes();
     expect(children.length).toBeGreaterThanOrEqual(2);
+    expect(
+      (mesh.metadata as { text2dWrapWidth?: number }).text2dWrapWidth,
+    ).toBeGreaterThan(0);
     for (const child of children) {
       const material = child.material as StandardMaterial;
       expect(
@@ -72,6 +75,31 @@ describe("createText2DMesh", () => {
       expect(uvs?.length).toBe(8);
       expect(uvs?.[0]).not.toBe(uvs?.[2]);
     }
+  });
+
+  it("sizes the pick plane to wrapWidth/wrapHeight and lets glyphs overflow", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createText2DMesh(
+      handle.scene,
+      "wrap",
+      {
+        text: "AAAA",
+        size: 32,
+        wrapWidth: 32,
+        wrapHeight: 16,
+      },
+      { pixelsPerUnit: 100 },
+      { metrics: fixedMetrics() },
+    );
+    mesh.refreshBoundingInfo(false, false);
+    const size = mesh.getBoundingInfo().boundingBox.extendSize;
+    expect(size.x * 2).toBeCloseTo(0.32);
+    expect(size.y * 2).toBeCloseTo(0.16);
+    expect((mesh.metadata as { text2dWrapWidth?: number }).text2dWrapWidth).toBe(32);
+    expect((mesh.metadata as { text2dWrapHeight?: number }).text2dWrapHeight).toBe(16);
+    const glyphYs = mesh.getChildMeshes().map((child) => child.position.y);
+    expect(Math.max(...glyphYs) - Math.min(...glyphYs)).toBeGreaterThan(0.16);
   });
 
   it("samples a glyph atlas for rich text color spans instead of a solid fill", () => {
@@ -325,6 +353,7 @@ describe("2D text editor and Play wiring", () => {
         italic: false,
         underline: false,
         wrapWidth: 0,
+        wrapHeight: 0,
       },
     });
     const mesh = binding.meshes.get(4);

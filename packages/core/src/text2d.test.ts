@@ -4,6 +4,8 @@ import { createDefaultScene } from "./project";
 import {
   DEFAULT_RICH_TEXT_EXAMPLE,
   DEFAULT_TEXT2D_SIZE,
+  DEFAULT_TEXT2D_WRAP_HEIGHT,
+  DEFAULT_TEXT2D_WRAP_WIDTH,
   TEXT2D_ALIGNMENTS,
   TEXT2D_RENDERERS,
   createRichText2DComponent,
@@ -33,14 +35,19 @@ describe("2DTextComponent helpers", () => {
       italic: false,
       underline: false,
       hitTest: "ignore",
-      wrapWidth: 0,
+      wrapWidth: DEFAULT_TEXT2D_WRAP_WIDTH,
+      wrapHeight: DEFAULT_TEXT2D_WRAP_HEIGHT,
     });
     expect(TEXT2D_RENDERERS).toEqual(["bitmap", "msdf"]);
     expect(TEXT2D_ALIGNMENTS).toEqual(["left", "center", "right"]);
-    expect(parseText2DProperties({ size: -1, renderer: "nope" })).toMatchObject({
+    expect(
+      parseText2DProperties({ size: -1, renderer: "nope" }),
+    ).toMatchObject({
       size: 32,
       renderer: "bitmap",
       hitTest: "ignore",
+      wrapWidth: 0,
+      wrapHeight: 0,
     });
   });
 
