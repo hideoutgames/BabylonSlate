@@ -147,26 +147,36 @@ describe("ModelPreview", () => {
 
   it("overlays session PBR / Unlit / Wireframe shading on the glTF canvas", () => {
     render(
-      <ModelPreview
-        payload={{ materialSlots: [], clipNames: [] }}
-        sourceBytes={encodeTriangleGlb()}
-      />,
+      <ModelColliderSessionProvider>
+        <ModelPreview
+          payload={{ materialSlots: [], clipNames: [] }}
+          sourceBytes={encodeTriangleGlb()}
+        />
+      </ModelColliderSessionProvider>,
     );
-    expect(screen.getByTestId("model-preview-shading")).toBeTruthy();
+    const trigger = screen.getByTestId("model-preview-shading");
+    expect(trigger.className).toContain("h-7");
+    expect(screen.getByTestId("model-show-collision").className).toContain(
+      "h-7",
+    );
+    expect(screen.queryByTestId("model-preview-shading-pbr")).toBeNull();
+    fireEvent.click(trigger);
     expect(
-      screen.getByTestId("model-preview-shading-pbr").getAttribute("aria-pressed"),
+      screen.getByTestId("model-preview-shading-pbr").getAttribute("aria-checked"),
     ).toBe("true");
     expect(screen.getByTestId("model-preview-shading-unlit")).toBeTruthy();
     expect(screen.getByTestId("model-preview-shading-wireframe")).toBeTruthy();
     fireEvent.click(screen.getByTestId("model-preview-shading-unlit"));
+    fireEvent.click(trigger);
     expect(
-      screen.getByTestId("model-preview-shading-unlit").getAttribute("aria-pressed"),
+      screen.getByTestId("model-preview-shading-unlit").getAttribute("aria-checked"),
     ).toBe("true");
     fireEvent.click(screen.getByTestId("model-preview-shading-wireframe"));
+    fireEvent.click(trigger);
     expect(
       screen
         .getByTestId("model-preview-shading-wireframe")
-        .getAttribute("aria-pressed"),
+        .getAttribute("aria-checked"),
     ).toBe("true");
   });
 

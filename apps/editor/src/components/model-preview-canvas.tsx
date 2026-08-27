@@ -26,6 +26,8 @@ import {
   type MaterialPreviewScene,
   type ViewportShadingMode,
 } from "@babylonslate/render";
+import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
+import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
 import {
   ToggleGroup,
@@ -357,35 +359,32 @@ export function ModelPreviewCanvas({
     showCollision,
   ]);
 
+  const shadingItems: NestedMenuItem[] = [
+    {
+      type: "radio-group",
+      id: "preview-shading",
+      value: shadingMode,
+      onValueChange: (value) => {
+        if (value === "pbr" || value === "unlit" || value === "wireframe") {
+          setShadingMode(value);
+        }
+      },
+      items: MODEL_PREVIEW_SHADING.map((mode) => ({
+        id: mode.value,
+        label: mode.label,
+        value: mode.value,
+        testId: `model-preview-shading-${mode.value}`,
+      })),
+    },
+  ];
+  const shadingLabel =
+    MODEL_PREVIEW_SHADING.find((mode) => mode.value === shadingMode)?.label ??
+    "PBR";
+
   return (
     <div className="relative h-full min-h-0">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
-        <div
-          className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
-          data-testid="model-preview-shading"
-        >
-          <ToggleGroup
-            variant="outline"
-            size="touch"
-            spacing={1}
-            value={[shadingMode]}
-            onValueChange={(value) => {
-              const next = value[0] as ViewportShadingMode | undefined;
-              if (!next) return;
-              setShadingMode(next);
-            }}
-            aria-label="Preview Shading"
-          >
-            {MODEL_PREVIEW_SHADING.map((mode) => (
-              <ToggleGroupItem
-                key={mode.value}
-                value={mode.value}
-                data-testid={`model-preview-shading-${mode.value}`}
-              >
-                {mode.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+        <div className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md">
           <Toggle
             size="sm"
             variant="outline"
@@ -423,6 +422,27 @@ export function ModelPreviewCanvas({
               ))}
             </ToggleGroup>
           ) : null}
+        </div>
+      </div>
+      <div className="pointer-events-none absolute top-0 right-0 z-10 p-2">
+        <div className="pointer-events-auto">
+          <NestedMenu
+            items={shadingItems}
+            size="chrome"
+            align="end"
+            contentTestId="model-preview-shading-menu"
+            trigger={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label="Preview Shading"
+                data-testid="model-preview-shading"
+              />
+            }
+          >
+            {shadingLabel}
+          </NestedMenu>
         </div>
       </div>
       <canvas
