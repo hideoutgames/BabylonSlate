@@ -204,6 +204,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("chip", "Chip", {
           classId: "SceneLayerActor",
@@ -273,6 +277,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("badge", "Badge", {
           classId: "SceneLayerActor",
@@ -306,6 +314,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("badge", "Badge", {
           classId: "SceneLayerActor",
@@ -343,6 +355,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("banner", "Banner", {
           classId: "SceneLayerActor",
@@ -391,6 +407,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("banner", "Banner", {
           classId: "SceneLayerActor",
@@ -613,6 +633,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("solo", "Solo", {
           classId: "SceneLayerActor",
@@ -676,6 +700,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("caption", "Caption", {
           classId: "SceneLayerActor",
@@ -729,6 +757,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("banner", "Banner", {
           classId: "SceneLayerActor",
@@ -811,6 +843,10 @@ describe("SceneLayer runtime compositor", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("frame", "Frame", {
           classId: "SceneLayerActor",
