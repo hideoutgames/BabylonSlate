@@ -3,6 +3,7 @@ import { createDefaultAnimGraph } from "@babylonslate/anim-graph";
 import {
   createActor,
   createDefaultScene,
+  createMeshComponent,
   createText3DComponent,
   createText2DComponent,
   DEFAULT_RENDER_PROJECT_SETTINGS,
@@ -10,6 +11,7 @@ import {
   isErr,
   isOk,
 } from "@babylonslate/core";
+import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { MISSING_STARTUP_SCENE_MESSAGE, parseScriptRegistry } from "@babylonslate/exporter";
 import { collectAndExportGame } from "./export-game";
 import type { ExportIndexedAsset } from "@babylonslate/exporter";
@@ -106,6 +108,44 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.assets.some((entry) => entry.guid === "euo-1")).toBe(
       false,
     );
+  });
+
+  it("warns when a packed Material samples a Texture that has no bytes", async () => {
+    const mesh = createMeshComponent("mesh-1", "box");
+    mesh.properties.materialGuid = "mat-rock";
+    const scene = {
+      ...createDefaultScene(),
+      actors: [createActor("hero", "Hero", { components: [mesh] })],
+    };
+    const material = migrateLegacyShaderPayload({}, { textureGuids: ["tex-missing"] });
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({ guid: "scene-1", type: "Scene", name: "Main" }),
+        asset({ guid: "mat-rock", type: "Material", name: "Rock" }),
+        asset({ guid: "tex-missing", type: "Texture", name: "Missing" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: (guid) => (guid === "scene-1" ? scene : null),
+      graphByGuid: () => null,
+      payloadByGuid: (guid) => (guid === "mat-rock" ? material : null),
+      bytesByGuid: (guid) => {
+        if (guid === "scene-1") return new TextEncoder().encode(JSON.stringify(scene));
+        if (guid === "mat-rock") return new TextEncoder().encode(JSON.stringify(material));
+        return null;
+      },
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(
+      result.value.warnings.some((warning) => warning.includes("tex-missing")),
+    ).toBe(true);
   });
 
   it("packs a project Game Instance when the startup scene omits one", async () => {
