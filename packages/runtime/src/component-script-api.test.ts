@@ -418,6 +418,10 @@ describe("component script API", () => {
     const hud: SerializedSceneLayer = {
       ...createDefaultSceneLayer(),
       name: "HUD",
+      settings: {
+        ...createDefaultSceneLayer().settings,
+        layerBounds: { width: 16, height: 9 },
+      },
       actors: [
         createActor("badge", "Badge", {
           classId: "Hero",

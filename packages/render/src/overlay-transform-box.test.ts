@@ -268,7 +268,7 @@ describe("createOverlayTransformBox", () => {
     layer.dispose();
   });
 
-  it("sizes handles from canvas CSS height so they stay 44px", () => {
+  it("sizes pick handles from canvas CSS height so they stay 44px with 1/4 visuals", () => {
     const { scene, engine } = createHandle();
     const camera = new FreeCamera("cam", new Vector3(0, 0, -10), scene);
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
@@ -283,9 +283,25 @@ describe("createOverlayTransformBox", () => {
     const mesh = MeshBuilder.CreatePlane("actor", { size: 1 }, scene);
     const box = createOverlayTransformBox(layer, scene);
     box.attachTo(mesh);
+    const pick = (44 / 100) * 9;
     const handle = layer.utilityLayerScene.getMeshByName("overlay-box-handle-e")!;
-    expect(handle.scaling.x).toBeCloseTo((44 / 100) * 9);
+    expect(handle.scaling.x).toBeCloseTo(pick);
     expect(handle.scaling.x).not.toBeCloseTo((44 / 400) * 9);
+    expect(handle.isPickable).toBe(true);
+    expect(handle.visibility).toBe(0);
+    const visual = handle.getChildMeshes(false).find((child) =>
+      child.name.endsWith("-visual"),
+    );
+    expect(visual).toBeDefined();
+    expect(visual!.isPickable).toBe(false);
+    expect(visual!.scaling.x).toBeCloseTo(0.25);
+    const knob = layer.utilityLayerScene.getMeshByName("overlay-box-rotate")!;
+    expect(knob.visibility).toBe(0);
+    expect(knob.scaling.x).toBeCloseTo(pick);
+    const knobVisual = knob.getChildMeshes(false).find((child) =>
+      child.name.endsWith("-visual"),
+    );
+    expect(knobVisual?.scaling.x).toBeCloseTo(0.25);
     box.dispose();
     layer.dispose();
   });

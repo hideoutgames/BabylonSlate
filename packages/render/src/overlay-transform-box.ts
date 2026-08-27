@@ -244,6 +244,8 @@ const HANDLE_OFFSET: Record<OverlayBoxHandle, { x: number; y: number }> = {
 const FALLBACK_HANDLE_WORLD = 0.2;
 const ROTATE_STEM_HANDLES = 1.75;
 const TOUCH_HANDLE_PX = 44;
+/** Visual cubes/disc as a fraction of the 44px pick mesh. */
+const OVERLAY_HANDLE_VISUAL_SCALE = 0.25;
 
 const scratchScale = new Vector3();
 const scratchRotation = new Quaternion();
@@ -421,7 +423,14 @@ export function createOverlayTransformBox(
     const handle = CreateBox(`overlay-box-handle-${id}`, { size: 1 }, util);
     handle.material = fill;
     handle.isPickable = true;
+    handle.visibility = 0;
+    handle.isVisible = true;
     handle.parent = root;
+    const visual = CreateBox(`overlay-box-handle-${id}-visual`, { size: 1 }, util);
+    visual.material = fill;
+    visual.isPickable = false;
+    visual.parent = handle;
+    visual.scaling.setAll(OVERLAY_HANDLE_VISUAL_SCALE);
     handles.set(id, handle);
   }
 
@@ -441,7 +450,18 @@ export function createOverlayTransformBox(
   );
   knob.material = fill;
   knob.isPickable = true;
+  knob.visibility = 0;
+  knob.isVisible = true;
   knob.parent = root;
+  const knobVisual = CreateDisc(
+    "overlay-box-rotate-visual",
+    { radius: 0.5, tessellation: 24, sideOrientation: Mesh.DOUBLESIDE },
+    util,
+  );
+  knobVisual.material = fill;
+  knobVisual.isPickable = false;
+  knobVisual.parent = knob;
+  knobVisual.scaling.setAll(OVERLAY_HANDLE_VISUAL_SCALE);
 
   let attached: AbstractMesh | null = null;
   let visuals: AbstractMesh[] = [];
@@ -496,19 +516,20 @@ export function createOverlayTransformBox(
       originalScene,
       options.canvasCssHeight?.(),
     );
-    const stemLen = handleSize * ROTATE_STEM_HANDLES;
+    const visualSize = handleSize * OVERLAY_HANDLE_VISUAL_SCALE;
+    const stemLen = visualSize * ROTATE_STEM_HANDLES;
     for (const [id, handle] of handles) {
       const offset = HANDLE_OFFSET[id];
-      handle.position.set(offset.x * halfW, offset.y * halfH, -handleSize);
+      handle.position.set(offset.x * halfW, offset.y * halfH, -visualSize);
       handle.scaling.set(handleSize, handleSize, handleSize);
     }
-    stem.position.set(0, halfH, -handleSize * 0.5);
+    stem.position.set(0, halfH, -visualSize * 0.5);
     stem = CreateLines(
       "overlay-box-rotate-stem",
       { points: stemPoints(stemLen), instance: stem },
       util,
     );
-    knob.position.set(0, halfH + stemLen, -handleSize * 1.5);
+    knob.position.set(0, halfH + stemLen, -visualSize * 1.5);
     knob.scaling.set(handleSize, handleSize, handleSize);
   };
 

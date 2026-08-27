@@ -51,7 +51,7 @@ export interface SceneLayerSettings {
   gravity: [number, number, number];
   fixedTimestepMs: number;
   postProcessStack: ScenePostProcessEntry[];
-  /** Orange editor outline / 2DAnchor design canvas. Default 16×9. */
+  /** Orange editor outline / 2DAnchor design canvas. Default 32×18. */
   layerBounds: SceneCameraBounds2D;
 }
 
@@ -69,8 +69,8 @@ export function isSceneLayerDeniedComponent(classId: string): boolean {
 }
 
 export const SCENE_LAYER_DEFAULT_LAYER_BOUNDS: SceneCameraBounds2D = {
-  width: 16,
-  height: 9,
+  width: 32,
+  height: 18,
 };
 
 export function createDefaultSceneLayerSettings(): SceneLayerSettings {
@@ -162,9 +162,7 @@ export function normalizeSceneLayer(value: unknown): SerializedSceneLayer {
   });
   const sourceSettings =
     (source.settings as Record<string, unknown> | undefined) ?? {};
-  const layerBounds = normalizeLayerBounds(
-    sourceSettings.layerBounds ?? scene.settings.cameraBounds2D,
-  );
+  const layerBounds = normalizeLayerBounds(sourceSettings.layerBounds);
   return {
     name: typeof source.name === "string" ? source.name : scene.name,
     settings: {
