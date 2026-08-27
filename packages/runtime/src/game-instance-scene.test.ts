@@ -450,4 +450,225 @@ describe("Game Instance native events and scene APIs", () => {
     expect(logMessages(commands)).toContain("first:Level1");
     runtime.stop();
   });
+
+  it("fires OnSceneExit then OnEnd when Play stops before sceneModelsReady", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      deferSceneModelsReady: true,
+      playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
+      playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(giLoggerGraph(registry), registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    expect(
+      logMessages(commands).some((message) => message.startsWith("finish:")),
+    ).toBe(false);
+    runtime.stop();
+    const messages = logMessages(commands);
+    expect(messages).toContain("exit:Level1");
+    expect(messages).toContain("end");
+    expect(messages.indexOf("exit:Level1")).toBeLessThan(messages.indexOf("end"));
+    expect(messages.some((message) => message.startsWith("finish:"))).toBe(false);
+  });
+
+  it("Gets Scene Asset Guid and Get/Sets Gravity on a live Scene reference", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const settings = createDefaultSceneSettings();
+    settings.gravity = [0, -4, 0];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      gravity: [0, -4, 0],
+      playScene: {
+        name: "Level1",
+        viewportMode: "3d",
+        settings,
+        folders: [],
+        actors: [
+          createActor("ball", "Ball", {
+            transform: {
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            components: [
+              {
+                id: "rb-ball",
+                classId: "RigidBodyComponent",
+                properties: { motionType: "dynamic", mass: 1, gravityScale: 1 },
+              },
+              {
+                id: "col-ball",
+                classId: "ColliderComponent",
+                properties: {
+                  shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } },
+                },
+              },
+            ],
+          }),
+        ],
+      },
+      playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "finish", "flow.event.sceneFinishLoading"),
+        node(registry, "log", "debug.executeJavaScript", {
+          inputs: [],
+          outputs: [],
+          body: [
+            "const scene = ctx.getSceneReference();",
+            'const guid = ctx.getVariableFrom(scene, "assetGuid");',
+            'const before = ctx.getVariableFrom(scene, "gravity");',
+            'ctx.setVariableOn(scene, "gravity", { x: 0, y: 12, z: 0 });',
+            'const after = ctx.getVariableFrom(scene, "gravity");',
+            'ctx.log("log", "Script", "guid:" + guid);',
+            'ctx.log("log", "Script", "g0:" + (before && before.y));',
+            'ctx.log("log", "Script", "g1:" + (after && after.y));',
+          ].join("\n"),
+        }),
+      ],
+      edges: [edge("e1", "finish", "execOut", "log", "execIn")],
+    };
+    await runtime.loadScripts([
+      toScript(graph, registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    expect(logMessages(commands)).toEqual(
+      expect.arrayContaining(["guid:scene-1", "g0:-4", "g1:12"]),
+    );
+    const ball = runtime.getWorld().findActor("ball");
+    expect(ball).toBeTruthy();
+    runtime.start();
+    for (let i = 0; i < 45; i++) runtime.tick();
+    expect(ball!.transform.position.y).toBeGreaterThan(0);
+    runtime.stop();
+  });
+
+  it("ignores sceneModelsReady after Play stop so finish cannot run after OnEnd", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      deferSceneModelsReady: true,
+      playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
+      playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(giLoggerGraph(registry), registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    runtime.stop();
+    runtime.notifySceneModelsReady("scene-1");
+    const messages = logMessages(commands);
+    expect(messages).toContain("exit:Level1");
+    expect(messages).toContain("end");
+    expect(messages.some((message) => message.startsWith("finish:"))).toBe(false);
+    expect(messages.filter((message) => message === "end")).toHaveLength(1);
+  });
+
+  it("fires OnSceneExit then starts the next load when changeScene runs before sceneModelsReady", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      deferSceneModelsReady: true,
+      playScene: sceneNamed("Level1", [createActor("hero", "Hero")]),
+      playSceneGuid: "scene-1",
+      sceneLibrary: {
+        "scene-2": sceneNamed("Level2", [createActor("other", "Other")]),
+      },
+      sceneGuidByKey: { "scene-2": "scene-2", Level2: "scene-2" },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      toScript(giLoggerGraph(registry), registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    runtime.executeConsoleCommand("changescene Level2");
+    const afterChange = logMessages(commands);
+    expect(afterChange).toContain("exit:Level1");
+    expect(afterChange).toContain("start:Level2");
+    expect(afterChange).not.toContain("end");
+    expect(afterChange.some((message) => message.startsWith("finish:"))).toBe(
+      false,
+    );
+    runtime.notifySceneModelsReady("scene-1");
+    expect(
+      logMessages(commands).some((message) => message.startsWith("finish:")),
+    ).toBe(false);
+    runtime.notifySceneModelsReady("scene-2");
+    expect(logMessages(commands)).toContainEqual(
+      expect.stringMatching(/^finish:Level2/),
+    );
+    expect(logMessages(commands)).not.toContain("end");
+    runtime.stop();
+    const afterStop = logMessages(commands);
+    expect(afterStop).toContain("exit:Level2");
+    expect(afterStop.lastIndexOf("exit:Level2")).toBeLessThan(
+      afterStop.lastIndexOf("end"),
+    );
+  });
+
+  it("applies the destination scene gravity when changeScene swaps worlds", async () => {
+    const registry = createDefaultNodeRegistry();
+    const commands: CommandMessage[] = [];
+    const level1 = sceneNamed("Level1");
+    level1.settings.gravity = [0, -4, 0];
+    const level2 = sceneNamed("Level2");
+    level2.settings.gravity = [0, 8, 0];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      gravity: [0, -4, 0],
+      playScene: level1,
+      playSceneGuid: "scene-1",
+      sceneLibrary: { "scene-2": level2 },
+      sceneGuidByKey: { "scene-2": "scene-2", Level2: "scene-2" },
+      onCommand: (command) => commands.push(command),
+    });
+    const graph: LogicGraph = {
+      id: "event-graph",
+      kind: "event",
+      nodes: [
+        node(registry, "finish", "flow.event.sceneFinishLoading"),
+        node(registry, "log", "debug.executeJavaScript", {
+          inputs: [],
+          outputs: [],
+          body: [
+            "const scene = ctx.getSceneReference();",
+            'const g = ctx.getVariableFrom(scene, "gravity");',
+            'ctx.log("log", "Script", "g:" + (g && g.y) + ":" + ctx.getVariableFrom(scene, "assetGuid"));',
+          ].join("\n"),
+        }),
+      ],
+      edges: [edge("e1", "finish", "execOut", "log", "execIn")],
+    };
+    await runtime.loadScripts([
+      toScript(graph, registry, "GameInstance", "gi", "GameInstance"),
+    ]);
+    runtime.realizePlayWorld();
+    expect(logMessages(commands)).toContain("g:-4:scene-1");
+    runtime.executeConsoleCommand("changescene Level2");
+    expect(logMessages(commands)).toContain("g:8:scene-2");
+    runtime.stop();
+  });
 });

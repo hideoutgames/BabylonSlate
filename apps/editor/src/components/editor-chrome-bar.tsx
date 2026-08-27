@@ -66,7 +66,8 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import { sceneAssetClassId } from "@babylonslate/object-model";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { SettingsModal } from "./settings-modal";
@@ -474,17 +475,22 @@ export function EditorChromeBar({
                       const parentOf = classParentLookup(
                         assetRegistry?.list() ?? [],
                       );
+                      const assets = assetRegistry?.list() ?? [];
                       const classGraphs = collectClassGraphsForPalette({
-                        assets: assetRegistry?.list() ?? [],
+                        assets,
                         openDocuments,
                         classIdForPath: classIdForGraphPath,
                       });
                       const typeSchemas = typeSchemasFromGraphAssets(
                         collectGraphTypeAssets({
-                          assets: assetRegistry?.list() ?? [],
+                          assets,
                           openDocuments,
                         }),
                       );
+                      const sceneClassIds = collectSceneDocumentsForPalette({
+                        assets,
+                        openDocuments,
+                      }).map((scene) => sceneAssetClassId(scene.guid));
                       return [
                         ...validateSerializedGraph(
                           doc.content as SerializedGraph,
@@ -496,10 +502,10 @@ export function EditorChromeBar({
                             members: classMemberSymbolsFromGraphs(classGraphs, {
                               parentOf,
                             }),
-                            knownClassIds: knownClassIdSet(
-                              parentOf,
-                              Object.keys(classGraphs),
-                            ),
+                            knownClassIds: knownClassIdSet(parentOf, [
+                              ...Object.keys(classGraphs),
+                              ...sceneClassIds,
+                            ]),
                             enums: typeSchemas.enums,
                             structs: typeSchemas.structs,
                             materialDomains: materialDomainsFromAssets(

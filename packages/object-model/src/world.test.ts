@@ -218,6 +218,42 @@ describe("World tick", () => {
     expect(events.filter((event) => event.startsWith("first:"))).toHaveLength(1);
   });
 
+  it("fires OnSceneExit for a scene that started loading but never finished", () => {
+    const events: string[] = [];
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+    });
+    world.setGameInstance(
+      new GameInstance({
+        classId: "GameInstance",
+        guid: "gi",
+        hooks: {
+          onCreation: () => events.push("create"),
+          onGameStart: () => events.push("start"),
+          onGameEnd: () => events.push("end"),
+          onSceneStartLoading: (_self, sceneName) =>
+            events.push(`start:${sceneName}`),
+          onSceneFinishLoading: (_self, sceneName) =>
+            events.push(`finish:${sceneName}`),
+          onSceneExit: (_self, sceneName) => events.push(`exit:${sceneName}`),
+        },
+      }),
+    );
+    world.start();
+    world.beginSceneLoad("Level1");
+    world.createScene({ assetGuid: "scene-1", sceneName: "Level1" });
+    world.end();
+    expect(events).toEqual([
+      "create",
+      "start",
+      "start:Level1",
+      "exit:Level1",
+      "end",
+    ]);
+  });
+
   it("flushes spawn then destroy in the same tick so the actor does not remain", () => {
     const world = createTestWorld();
     const events: string[] = [];

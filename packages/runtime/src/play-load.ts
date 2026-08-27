@@ -1,5 +1,6 @@
 import type { CommandMessage, ControlMessage } from "@babylonslate/bridge";
 import { type SerializedScene, type SerializedSceneLayer } from "@babylonslate/core";
+import { isSceneAssetClassId } from "@babylonslate/object-model";
 import {
   createInProcessRuntime,
   type RuntimeDriver,
@@ -98,8 +99,9 @@ const NON_ACTOR_SCRIPT_CLASS_IDS = new Set([
   "Scene",
 ]);
 
-/** GameInstance, FunctionLibrary, and editor classes are never spawned as Actors. */
+/** GameInstance, FunctionLibrary, editor, Scene, and Scene:{guid} classes are never spawned as Actors. */
 export function shouldSpawnScriptedActor(classId: string): boolean {
+  if (isSceneAssetClassId(classId)) return false;
   return !NON_ACTOR_SCRIPT_CLASS_IDS.has(classId);
 }
 

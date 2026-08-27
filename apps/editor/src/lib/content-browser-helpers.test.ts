@@ -1047,6 +1047,12 @@ describe("content-browser-helpers", () => {
     expect(visual.icon).not.toBe(resolveTypeVisual({ classId: "BObject" }).icon);
   });
 
+  it("parents Scene:{guid} types under engine Scene", () => {
+    const parentOf = classParentLookup([]);
+    expect(parentOf("Scene:scene-1")).toBe("Scene");
+    expect(parentOf("Scene")).toBe("BObject");
+  });
+
   it("looks up Class parents by compile id when the header name still has a type suffix", () => {
     const parentOf = classParentLookup([
       {

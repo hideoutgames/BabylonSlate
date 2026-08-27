@@ -324,7 +324,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly maxCatchUp: number;
   private readonly dt: number;
   private readonly physicsWorldKind: PhysicsWorldKind;
-  private readonly gravity: [number, number, number];
+  private gravity: [number, number, number];
   private readonly havokWasmUrl: string | undefined;
   private readonly preferSoftwarePhysics: boolean;
   private accumulator = 0;
@@ -753,6 +753,9 @@ class InProcessRuntime implements RuntimeDriver {
         if (!Number.isFinite(value)) return 0;
         return Math.min(1, Math.max(0, value));
       },
+      setWorldGravity: (gravity) => {
+        this.setWorldGravity(gravity);
+      },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {
@@ -959,6 +962,27 @@ class InProcessRuntime implements RuntimeDriver {
 
   getOverlayPhysicsSync(): PhysicsWorldSync | null {
     return this.overlayPhysicsSync;
+  }
+
+  private setWorldGravity(gravity: { x: number; y: number; z: number }): void {
+    const next: [number, number, number] = [
+      Number.isFinite(gravity.x) ? gravity.x : 0,
+      Number.isFinite(gravity.y) ? gravity.y : 0,
+      Number.isFinite(gravity.z) ? gravity.z : 0,
+    ];
+    this.gravity = next;
+    this.physicsSync.getBackend().setGravity({
+      x: next[0],
+      y: next[1],
+      z: next[2],
+    });
+    if (this.playScene) {
+      this.playScene.settings.gravity = next;
+    }
+    const scene = this.world.currentScene;
+    if (scene && !scene.destroyed) {
+      scene.setVariable("gravity", { x: next[0], y: next[1], z: next[2] });
+    }
   }
 
   createSceneLayer(
@@ -1338,9 +1362,17 @@ class InProcessRuntime implements RuntimeDriver {
       if (scene) {
         this.sceneLoadingProgress = 0;
         this.world.beginSceneLoad(name);
+        const authoredGravity = scene.settings?.gravity;
+        const gravity = {
+          x: Number(authoredGravity?.[0] ?? this.gravity[0]),
+          y: Number(authoredGravity?.[1] ?? this.gravity[1]),
+          z: Number(authoredGravity?.[2] ?? this.gravity[2]),
+        };
+        this.setWorldGravity(gravity);
         this.world.createScene({
           assetGuid: guid,
           sceneName: name,
+          variables: { gravity },
         });
         this.emit({ type: "activeScene", sceneAssetGuid: guid });
       }
@@ -3261,6 +3293,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     this.running = false;
+    this.pendingSceneFinish = null;
     this.finalizeTrace();
     this.world.end();
     this.physicsSync.dispose();

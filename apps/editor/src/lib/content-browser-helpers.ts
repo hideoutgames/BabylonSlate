@@ -49,6 +49,7 @@ import {
   type TreeDropPlacement,
 } from "@babylonslate/editor-kit";
 import { typeColorThumbAccent } from "@babylonslate/ui/lib/data-types";
+import { isSceneAssetClassId } from "@babylonslate/object-model";
 import { createDefaultLogicGraphSerialized, defaultNodeRegistry } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
 
@@ -1367,6 +1368,7 @@ export function classParentLookup(
     if (asset.header.name !== id) map.set(asset.header.name, parent);
   }
   return (id) => {
+    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
     return map.get(id) ?? engineParentOf(id) ?? null;
   };
 }
