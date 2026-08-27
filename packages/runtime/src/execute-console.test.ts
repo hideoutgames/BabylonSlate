@@ -26,7 +26,7 @@ describe("RuntimeDriver.executeConsoleCommand", () => {
       success: true,
       output: "changed scene to other-level",
     });
-    expect(loaded).toBe("other-level");
+    expect(loaded).toBeUndefined();
     runtime.stop();
   });
 

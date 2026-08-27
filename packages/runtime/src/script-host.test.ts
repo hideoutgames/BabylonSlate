@@ -570,6 +570,24 @@ describe("script host runs compiled graphs", () => {
       seed: 1,
       seedDemoActors: false,
       preferSoftwarePhysics: true,
+      playScene: {
+        name: "Level1",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [],
+      },
+      playSceneGuid: "scene-1",
+      sceneLibrary: {
+        Level2: {
+          name: "Level2",
+          viewportMode: "3d",
+          settings: createDefaultSceneSettings(),
+          folders: [],
+          actors: [createActor("other", "Other")],
+        },
+      },
+      sceneGuidByKey: { Level2: "scene-2" },
     });
     runtime.getWorld().setGameInstance(
       new GameInstance({

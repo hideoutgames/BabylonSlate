@@ -1164,7 +1164,10 @@ describe("p7-play-scene-load", () => {
     runtime.executeConsoleCommand('changescene scene="Level 2"');
     expect(
       commands.filter((command) => command.type === "activeScene"),
-    ).toEqual([{ type: "activeScene", sceneAssetGuid: "scene-2" }]);
+    ).toEqual([
+      { type: "activeScene", sceneAssetGuid: "scene-1" },
+      { type: "activeScene", sceneAssetGuid: "scene-2" },
+    ]);
     runtime.stop();
   });
 

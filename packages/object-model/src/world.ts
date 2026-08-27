@@ -127,10 +127,10 @@ export class World {
 
   exitActiveScene(): void {
     const name = this.activeSceneName;
-    if (!name) return;
     this.activeSceneName = null;
-    this.gameInstance?.callOnSceneExit(name);
     this.clearCurrentScene();
+    if (!name) return;
+    this.gameInstance?.callOnSceneExit(name);
   }
 
   /** Queue actor for spawn; applied after the current phase / at end of tick. */

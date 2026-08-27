@@ -32,6 +32,7 @@ export function runtimeOptionsFromLoadControl(
   | "loopCount"
   | "audioAssetGuids"
   | "animClipCatalog"
+  | "deferSceneModelsReady"
 > {
   const sceneLibrary: Record<string, SerializedScene> = {};
   const sceneGuidByKey: Record<string, string> = {};
@@ -73,6 +74,7 @@ export function runtimeOptionsFromLoadControl(
     ...(msg.animClipCatalog && msg.animClipCatalog.length > 0
       ? { animClipCatalog: msg.animClipCatalog }
       : {}),
+    ...(msg.deferSceneModelsReady ? { deferSceneModelsReady: true } : {}),
   };
 }
 

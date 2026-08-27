@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ClassRegistry } from "./class-registry";
 import { sceneAssetClassId } from "./ids";
-import { Scene } from "./objects";
+import { GameInstance, Scene } from "./objects";
 import { World } from "./world";
 
 describe("Scene object model", () => {
@@ -39,6 +39,35 @@ describe("Scene object model", () => {
     expect(first.destroyed).toBe(true);
     expect(world.currentScene).toBe(second);
     expect(world.currentScene?.destroyed).toBe(false);
+  });
+
+  it("clears currentScene before OnSceneExit", () => {
+    const world = new World({
+      seed: 1,
+      dt: 1 / 60,
+      classRegistry: new ClassRegistry(),
+    });
+    let duringExit: Scene | null | undefined;
+    world.setGameInstance(
+      new GameInstance({
+        classId: "GameInstance",
+        guid: "gi",
+        hooks: {
+          onSceneExit: () => {
+            duringExit = world.currentScene;
+          },
+        },
+      }),
+    );
+    const scene = world.createScene({
+      assetGuid: "scene-1",
+      sceneName: "Main",
+    });
+    world.finishSceneLoad("Main");
+    world.exitActiveScene();
+    expect(duringExit).toBeNull();
+    expect(scene.destroyed).toBe(true);
+    expect(world.currentScene).toBeNull();
   });
 });
 
