@@ -416,7 +416,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.queryByTestId("panel-nine-slice-overlay")).toBeNull();
   });
 
-  it("hosts 3D Text in a sibling textarea instead of a PropertyGrid text row", () => {
+  it("hosts 3D Text in a sibling read-only trigger that opens a modal editor", () => {
     scene().actors = [
       createActor("label", "3D Text", {
         components: [createText3DComponent("text3d")],
@@ -426,15 +426,20 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-label-text3d-text")).toBeNull();
     expect(screen.getByTestId("property-label-text3d-alignment")).toBeTruthy();
-    const field = screen.getByTestId("text3d-text-text3d") as HTMLTextAreaElement;
+    const trigger = screen.getByTestId("text3d-text-text3d");
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).toContain("Text");
+    fireEvent.click(trigger);
+    const field = screen.getByTestId("text3d-text-text3d-editor") as HTMLTextAreaElement;
     expect(field.value).toBe("Text");
     fireEvent.change(field, { target: { value: "Hello\nWorld" } });
+    fireEvent.click(screen.getByTestId("text3d-text-text3d-done"));
     expect(harness.applySceneChange).toHaveBeenCalled();
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
     expect(next.actors[0]?.components[0]?.properties.text).toBe("Hello\nWorld");
   });
 
-  it("hosts 2D Text in a sibling textarea instead of a PropertyGrid text row", () => {
+  it("hosts 2D Text in a sibling read-only trigger that opens a modal editor", () => {
     scene().actors = [
       createActor("hud", "Label", {
         components: [createText2DComponent("label")],
@@ -443,15 +448,20 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-hud-label-text")).toBeNull();
-    const field = screen.getByTestId("text2d-text-label") as HTMLTextAreaElement;
+    const trigger = screen.getByTestId("text2d-text-label");
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).toContain("Text");
+    fireEvent.click(trigger);
+    const field = screen.getByTestId("text2d-text-label-editor") as HTMLTextAreaElement;
     expect(field.value).toBe("Text");
     fireEvent.change(field, { target: { value: "Hello overlay" } });
+    fireEvent.click(screen.getByTestId("text2d-text-label-done"));
     expect(harness.applySceneChange).toHaveBeenCalled();
     const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
     expect(next.actors[0]?.components[0]?.properties.text).toBe("Hello overlay");
   });
 
-  it("hosts 2D Rich Text markup in a sibling textarea", () => {
+  it("hosts 2D Rich Text markup in a sibling trigger", () => {
     scene().actors = [
       createActor("hud", "Rich", {
         components: [createRichText2DComponent("rich")],
@@ -460,11 +470,10 @@ describe("SceneDetailsPanel authoring", () => {
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.queryByTestId("property-hud-rich-text")).toBeNull();
-    const field = screen.getByTestId("text2d-text-rich") as HTMLTextAreaElement;
-    expect(field.value).toContain("[color=green]");
+    expect(screen.getByTestId("text2d-text-rich").textContent).toContain("[color=green]");
   });
 
-  it("opens markup tag suggestions for 2D Rich Text", () => {
+  it("opens markup tag suggestions for 2D Rich Text in the modal editor", () => {
     scene().actors = [
       createActor("hud", "Rich", {
         components: [createRichText2DComponent("rich")],
@@ -472,11 +481,12 @@ describe("SceneDetailsPanel authoring", () => {
     ];
     harness.selectedActorIds = ["hud"];
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
-    const field = screen.getByTestId("text2d-text-rich") as HTMLTextAreaElement;
+    fireEvent.click(screen.getByTestId("text2d-text-rich"));
+    const field = screen.getByTestId("text2d-text-rich-editor") as HTMLTextAreaElement;
     fireEvent.change(field, { target: { value: "[" } });
     field.setSelectionRange(1, 1);
     fireEvent.select(field);
-    expect(screen.getByTestId("text2d-text-rich-suggestions")).toBeTruthy();
+    expect(screen.getByTestId("text2d-text-rich-editor-suggestions")).toBeTruthy();
     expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
   });
 });

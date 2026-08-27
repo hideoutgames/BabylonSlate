@@ -298,6 +298,7 @@ export type CommandMessage =
           italic: boolean;
           underline: boolean;
           wrapWidth: number;
+          wrapHeight: number;
         };
         sortingLayer?: string;
         orderInLayer?: number;
@@ -334,6 +335,7 @@ export type CommandMessage =
         italic: boolean;
         underline: boolean;
         wrapWidth: number;
+        wrapHeight: number;
       };
       overlayPanel?: {
         source: "texture" | "material";

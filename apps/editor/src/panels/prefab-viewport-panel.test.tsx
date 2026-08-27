@@ -146,6 +146,7 @@ vi.mock("../context/prefab-editing-context", () => ({
     selectedId: null,
     setSelectedId: vi.fn(),
     updateComponentTransform: vi.fn(),
+    commitComponentGizmo: vi.fn(),
     applyPivotTransform: vi.fn(),
   }),
 }));

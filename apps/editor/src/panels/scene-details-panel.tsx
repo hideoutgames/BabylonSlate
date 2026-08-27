@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   AssetPicker,
   AssetPickerControl,
-  MarkupAutocompleteTextarea,
+  MultilineTextField,
   NamedListEditor,
   NumberField,
   PanelFrame,
@@ -37,7 +37,6 @@ import {
   Field,
   FieldLabel,
 } from "@babylonslate/ui/components/field";
-import { Textarea } from "@babylonslate/ui/components/textarea";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
@@ -931,10 +930,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   <FieldLabel htmlFor={`text3d-text-${component.id}`}>
                     Text
                   </FieldLabel>
-                  <Textarea
+                  <MultilineTextField
                     id={`text3d-text-${component.id}`}
+                    title="Text"
                     value={parseText3DProperties(component.properties).text}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       updateActor((entry) => ({
                         ...entry,
                         components: entry.components.map((candidate) =>
@@ -944,7 +944,7 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                                 properties: patchComponentProperties(
                                   candidate.properties,
                                   "text",
-                                  event.target.value,
+                                  value,
                                 ),
                               }
                             : candidate,
@@ -963,59 +963,34 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   <FieldLabel htmlFor={`text2d-text-${component.id}`}>
                     Text
                   </FieldLabel>
-                  {component.classId === "2DRichTextComponent" ? (
-                    <MarkupAutocompleteTextarea
-                      id={`text2d-text-${component.id}`}
-                      value={
-                        parseText2DProperties(component.properties, {
-                          rich: true,
-                        }).text
-                      }
-                      onChange={(value) =>
-                        updateActor((entry) => ({
-                          ...entry,
-                          components: entry.components.map((candidate) =>
-                            candidate.id === component.id
-                              ? {
-                                  ...candidate,
-                                  properties: patchComponentProperties(
-                                    candidate.properties,
-                                    "text",
-                                    value,
-                                  ),
-                                }
-                              : candidate,
-                          ),
-                        }))
-                      }
-                      data-testid={`text2d-text-${component.id}`}
-                    />
-                  ) : (
-                    <Textarea
-                      id={`text2d-text-${component.id}`}
-                      value={
-                        parseText2DProperties(component.properties).text
-                      }
-                      onChange={(event) =>
-                        updateActor((entry) => ({
-                          ...entry,
-                          components: entry.components.map((candidate) =>
-                            candidate.id === component.id
-                              ? {
-                                  ...candidate,
-                                  properties: patchComponentProperties(
-                                    candidate.properties,
-                                    "text",
-                                    event.target.value,
-                                  ),
-                                }
-                              : candidate,
-                          ),
-                        }))
-                      }
-                      data-testid={`text2d-text-${component.id}`}
-                    />
-                  )}
+                  <MultilineTextField
+                    id={`text2d-text-${component.id}`}
+                    title="Text"
+                    markup={component.classId === "2DRichTextComponent"}
+                    value={
+                      parseText2DProperties(component.properties, {
+                        rich: component.classId === "2DRichTextComponent",
+                      }).text
+                    }
+                    onChange={(value) =>
+                      updateActor((entry) => ({
+                        ...entry,
+                        components: entry.components.map((candidate) =>
+                          candidate.id === component.id
+                            ? {
+                                ...candidate,
+                                properties: patchComponentProperties(
+                                  candidate.properties,
+                                  "text",
+                                  value,
+                                ),
+                              }
+                            : candidate,
+                        ),
+                      }))
+                    }
+                    data-testid={`text2d-text-${component.id}`}
+                  />
                 </Field>
               </div>
             ) : null}

@@ -258,15 +258,26 @@ function skipOverlayBoxVisual(mesh: AbstractMesh): boolean {
   const meta = mesh.metadata as {
     editorPickProxy?: boolean;
     editorColliderVisual?: boolean;
+    text2d?: boolean;
   } | null;
   return Boolean(meta?.editorPickProxy || meta?.editorColliderVisual);
+}
+
+export function isText2DOverlayMesh(mesh: AbstractMesh): boolean {
+  return Boolean(
+    (mesh.metadata as { text2d?: boolean } | null | undefined)?.text2d,
+  );
 }
 
 export function overlayBoxLocalBounds(
   origin: AbstractMesh,
   visuals: readonly AbstractMesh[] = [],
 ): OverlayBoxLocalBounds {
-  const candidates = visuals.length > 0 ? visuals : [origin];
+  const candidates = isText2DOverlayMesh(origin)
+    ? [origin]
+    : visuals.length > 0
+      ? visuals
+      : [origin];
   const sources = candidates.filter((mesh) => !skipOverlayBoxVisual(mesh));
   if (sources.length === 0) {
     return { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5 };
@@ -294,6 +305,28 @@ export function overlayBoxLocalBounds(
   return { minX, maxX, minY, maxY };
 }
 
+export function overlayTextWrapFromResize(
+  startScale: readonly [number, number, number],
+  nextScale: readonly [number, number, number],
+  wrapWidthPx: number,
+  wrapHeightPx: number,
+): { wrapWidth: number; wrapHeight: number } {
+  const rx = startScale[0] !== 0 ? nextScale[0] / startScale[0] : 1;
+  const ry = startScale[1] !== 0 ? nextScale[1] / startScale[1] : 1;
+  return {
+    wrapWidth: Math.max(1, wrapWidthPx * Math.abs(rx)),
+    wrapHeight: Math.max(1, wrapHeightPx * Math.abs(ry)),
+  };
+}
+
+type Text2DOverlayMeta = {
+  text2d?: boolean;
+  text2dWrapWidth?: number;
+  text2dWrapHeight?: number;
+  text2dPendingWrap?: { wrapWidth: number; wrapHeight: number };
+  text2dDragStartScale?: [number, number, number];
+};
+
 export function readOverlayBoxTransform(mesh: AbstractMesh): OverlayBoxTransform {
   const rotation = mesh.rotationQuaternion
     ? mesh.rotationQuaternion
@@ -308,11 +341,40 @@ export function readOverlayBoxTransform(mesh: AbstractMesh): OverlayBoxTransform
 export function writeOverlayBoxTransform(
   mesh: AbstractMesh,
   next: OverlayBoxTransform,
+  start?: OverlayBoxTransform,
 ): void {
   if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
   mesh.position.set(next.position[0], next.position[1], next.position[2]);
   mesh.rotationQuaternion ??= new Quaternion();
   Quaternion.FromEulerAnglesToRef(0, 0, next.rotationZ, mesh.rotationQuaternion);
+  const meta = (mesh.metadata ?? {}) as Text2DOverlayMeta;
+  if (isText2DOverlayMesh(mesh) && start) {
+    const wrapWidthPx =
+      typeof meta.text2dWrapWidth === "number" && meta.text2dWrapWidth > 0
+        ? meta.text2dWrapWidth
+        : Math.max(1, mesh.getBoundingInfo().boundingBox.extendSize.x * 2 * 100);
+    const wrapHeightPx =
+      typeof meta.text2dWrapHeight === "number" && meta.text2dWrapHeight > 0
+        ? meta.text2dWrapHeight
+        : Math.max(1, mesh.getBoundingInfo().boundingBox.extendSize.y * 2 * 100);
+    mesh.metadata = {
+      ...meta,
+      text2dPendingWrap: overlayTextWrapFromResize(
+        start.scale,
+        next.scale,
+        wrapWidthPx,
+        wrapHeightPx,
+      ),
+      text2dDragStartScale: [...start.scale] as [number, number, number],
+    };
+    mesh.scaling.set(next.scale[0], next.scale[1], next.scale[2]);
+    const invX = next.scale[0] !== 0 ? start.scale[0] / next.scale[0] : 1;
+    const invY = next.scale[1] !== 0 ? start.scale[1] / next.scale[1] : 1;
+    for (const child of mesh.getChildMeshes(false)) {
+      child.scaling.set(invX, invY, 1);
+    }
+    return;
+  }
   mesh.scaling.set(next.scale[0], next.scale[1], next.scale[2]);
 }
 
@@ -553,6 +615,7 @@ export function createOverlayTransformBox(
     writeOverlayBoxTransform(
       attached,
       applyOverlayBoxDrag(session, pointerFrom(world), snap),
+      session.transform,
     );
     layout();
     options.scheduler?.invalidate("gizmo");

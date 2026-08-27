@@ -156,23 +156,48 @@ function flushLine(
       rotatePhase: rotatePhaseFor(entry.index),
       uvs: entry.uvs,
     });
+    cursorX += entry.advance;
+  }
+  const underlineThickness = Math.max(lineHeight * 0.06, 0.004);
+  const underlineY = cursorY - lineHeight / 2;
+  let runStart: number | null = null;
+  let runEnd = 0;
+  let runStyle = line[0]!.style;
+  let runIndex = line[0]!.index;
+  const flushUnderline = () => {
+    if (runStart === null) return;
+    items.push({
+      kind: "underline",
+      x: (runStart + runEnd) / 2,
+      y: underlineY,
+      width: Math.max(runEnd - runStart, 0.001),
+      height: underlineThickness,
+      style: runStyle,
+      effects: emptyEffects(),
+      source: "bitmap",
+      index: runIndex,
+      hoverPhase: 0,
+      rotatePhase: 0,
+    });
+    runStart = null;
+  };
+  cursorX = shift;
+  for (const entry of line) {
+    const left = cursorX + entry.bearingX;
+    const right = left + entry.width;
     if (entry.style.underline) {
-      items.push({
-        kind: "underline",
-        x,
-        y: y - entry.height / 2,
-        width: entry.width,
-        height: Math.max(entry.height * 0.06, 0.004),
-        style: entry.style,
-        effects: entry.effects,
-        source: "bitmap",
-        index: entry.index,
-        hoverPhase: hoverPhaseFor(entry.index),
-        rotatePhase: rotatePhaseFor(entry.index),
-      });
+      if (runStart === null) {
+        runStart = left;
+        runStyle = entry.style;
+        runIndex = entry.index;
+      }
+      runEnd = right;
+    } else {
+      flushUnderline();
     }
     cursorX += entry.advance;
   }
+  flushUnderline();
   return { width: lineWidth, height: lineHeight };
 }
 

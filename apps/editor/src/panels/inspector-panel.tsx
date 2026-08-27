@@ -3,7 +3,7 @@ import {
   AssetPicker,
   AssetPickerControl,
   ClassPicker,
-  MarkupAutocompleteTextarea,
+  MultilineTextField,
   FUNCTION_PIN_PICKER_TYPES,
   PIN_PICKER_TYPES,
   PanelFrame,
@@ -32,7 +32,6 @@ import {
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
 import { Button } from "@babylonslate/ui/components/button";
-import { Textarea } from "@babylonslate/ui/components/textarea";
 import type { IDockviewPanelProps } from "dockview-react";
 import {
   DEFAULT_COLLISION_LAYERS,
@@ -624,10 +623,11 @@ function PrefabComponentDetails({
       {component.classId === "Text3DComponent" ? (
         <Field>
           <FieldLabel htmlFor={`text3d-text-${component.id}`}>Text</FieldLabel>
-          <Textarea
+          <MultilineTextField
             id={`text3d-text-${component.id}`}
+            title="Text"
             value={parseText3DProperties(component.properties).text}
-            onChange={(event) => onUpdate("text", event.target.value)}
+            onChange={(value) => onUpdate("text", value)}
             data-testid={`text3d-text-${component.id}`}
           />
         </Field>
@@ -636,23 +636,18 @@ function PrefabComponentDetails({
       component.classId === "2DRichTextComponent" ? (
         <Field>
           <FieldLabel htmlFor={`text2d-text-${component.id}`}>Text</FieldLabel>
-          {component.classId === "2DRichTextComponent" ? (
-            <MarkupAutocompleteTextarea
-              id={`text2d-text-${component.id}`}
-              value={
-                parseText2DProperties(component.properties, { rich: true }).text
-              }
-              onChange={(value) => onUpdate("text", value)}
-              data-testid={`text2d-text-${component.id}`}
-            />
-          ) : (
-            <Textarea
-              id={`text2d-text-${component.id}`}
-              value={parseText2DProperties(component.properties).text}
-              onChange={(event) => onUpdate("text", event.target.value)}
-              data-testid={`text2d-text-${component.id}`}
-            />
-          )}
+          <MultilineTextField
+            id={`text2d-text-${component.id}`}
+            title="Text"
+            markup={component.classId === "2DRichTextComponent"}
+            value={
+              parseText2DProperties(component.properties, {
+                rich: component.classId === "2DRichTextComponent",
+              }).text
+            }
+            onChange={(value) => onUpdate("text", value)}
+            data-testid={`text2d-text-${component.id}`}
+          />
         </Field>
       ) : null}
       <AssetPicker

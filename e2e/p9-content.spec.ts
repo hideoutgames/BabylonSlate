@@ -560,11 +560,16 @@ test.describe("P9 content systems", () => {
     await expect(page.getByTestId("material-node-glsl-signature")).toContainText(
       "result = fn(a, b)",
     );
-    await glsl.fill("#define X 1");
+    await glsl.click();
+    const glslEditor = page.getByTestId("material-node-glsl-editor");
+    await glslEditor.fill("#define X 1");
+    await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toBeVisible({ timeout: 10_000 });
-    await glsl.fill("a + b");
+    await glsl.click();
+    await glslEditor.fill("a + b");
+    await page.getByTestId("material-node-glsl-done").click();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toHaveCount(0);

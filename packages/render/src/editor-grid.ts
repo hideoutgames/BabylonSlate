@@ -1,9 +1,12 @@
-import { Color3, Effect, LinesMesh, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector3, type ArcRotateCamera } from "@babylonjs/core";
+import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector3, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
+import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { ViewportMode } from "@babylonslate/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
 export const GRID_MESH_NAME = "__editor-grid__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
+/** Screen-space GreasedLine width for the orange 2D camera / 2DAnchor frame. */
+export const CAMERA_BOUNDS_LINE_WIDTH = 3;
 /** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
 export const GRID_ALPHA_INDEX = 0;
 
@@ -188,7 +191,7 @@ void main() {
 
 export interface EditorGrid {
   readonly mesh: Mesh;
-  readonly boundsMesh: LinesMesh | null;
+  readonly boundsMesh: AbstractMesh | null;
   setMode: (mode: ViewportMode) => void;
   setSpacing: (spacing: number) => void;
   setSubdivisions: (subdivisions: number) => void;
@@ -214,7 +217,7 @@ export function createEditorGrid(
   const camera = options.camera ?? null;
   const fadeOrigin = new Vector3();
 
-  let boundsMesh: LinesMesh | null = null;
+  let boundsMesh: AbstractMesh | null = null;
   let requestedBounds: { width: number; height: number } | null = null;
   let visible = true;
 
@@ -289,20 +292,35 @@ export function createEditorGrid(
     if (!requestedBounds || mode !== "2d") return;
     const halfWidth = requestedBounds.width / 2;
     const halfHeight = requestedBounds.height / 2;
-    boundsMesh = MeshBuilder.CreateLines(
-      CAMERA_BOUNDS_MESH_NAME,
-      {
-        points: [
-          new Vector3(-halfWidth, -halfHeight, 0),
-          new Vector3(halfWidth, -halfHeight, 0),
-          new Vector3(halfWidth, halfHeight, 0),
-          new Vector3(-halfWidth, halfHeight, 0),
-          new Vector3(-halfWidth, -halfHeight, 0),
-        ],
-      },
-      scene,
-    );
-    boundsMesh.color = new Color3(0.9, 0.7, 0.2);
+    const points = [
+      new Vector3(-halfWidth, -halfHeight, 0),
+      new Vector3(halfWidth, -halfHeight, 0),
+      new Vector3(halfWidth, halfHeight, 0),
+      new Vector3(-halfWidth, halfHeight, 0),
+      new Vector3(-halfWidth, -halfHeight, 0),
+    ];
+    const color = new Color3(0.9, 0.7, 0.2);
+    try {
+      boundsMesh = CreateGreasedLine(
+        CAMERA_BOUNDS_MESH_NAME,
+        { points },
+        {
+          width: CAMERA_BOUNDS_LINE_WIDTH,
+          color,
+          sizeAttenuation: false,
+          createAndAssignMaterial: true,
+        },
+        scene,
+      );
+    } catch {
+      const lines = MeshBuilder.CreateLines(
+        CAMERA_BOUNDS_MESH_NAME,
+        { points },
+        scene,
+      );
+      lines.color = color;
+      boundsMesh = lines;
+    }
     boundsMesh.isPickable = false;
     boundsMesh.alwaysSelectAsActiveMesh = true;
     boundsMesh.isVisible = true;

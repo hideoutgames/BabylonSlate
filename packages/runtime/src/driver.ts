@@ -3856,6 +3856,7 @@ function text2dAssignPayload(
       italic: component.getVariable("italic"),
       underline: component.getVariable("underline"),
       wrapWidth: component.getVariable("wrapWidth"),
+      wrapHeight: component.getVariable("wrapHeight"),
     },
     { rich: component.classId === "2DRichTextComponent" },
   );
@@ -3872,6 +3873,7 @@ function text2dAssignPayload(
     italic: parsed.italic,
     underline: parsed.underline,
     wrapWidth: parsed.wrapWidth,
+    wrapHeight: parsed.wrapHeight,
   };
 }
 
