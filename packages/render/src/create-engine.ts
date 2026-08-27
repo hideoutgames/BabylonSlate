@@ -1520,12 +1520,22 @@ export function createEngine(
       audioService?.handleCommand(command);
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
+        if (command.sceneLayerId) {
+          sceneLayerCompositor?.noteSpawn(
+            command.slotId,
+            command.sceneLayerId,
+            command.actorGuid,
+          );
+          syncOverlaySlot(command.slotId);
+        }
         const previousCamera = scene.activeCamera;
         const overlayScene = sceneLayerCompositor?.sceneForSlot(command.slotId);
-        if (
-          !overlayScene &&
-          sceneLayerCompositor?.layerIdForSlot(command.slotId)
-        ) {
+        const overlayIdentity =
+          Boolean(command.sceneLayerId) ||
+          sceneLayerCompositor?.layerIdForSlot(command.slotId) != null ||
+          (sceneLayerCompositor != null &&
+            isOverlayOnlyMeshKind(command.meshKind));
+        if (!overlayScene && overlayIdentity) {
           pendingOverlayAssign.set(command.slotId, command);
         } else {
           applyAssignMesh(overlayScene ?? scene, binding, command);
@@ -1837,6 +1847,20 @@ function materialTextureGuidMap(
     out.set(guid, materialDependencies(document).textures);
   }
   return out;
+}
+
+function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
+  switch (meshKind) {
+    case "2dtexture":
+    case "2dmaterial":
+    case "2dbutton":
+    case "2dpanel":
+    case "2dtext":
+    case "2drichtext":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function setOtherEngineViewsEnabled(
