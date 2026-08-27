@@ -26,7 +26,7 @@ import type {
   MaterialDocument,
   MaterialFunctionDocument,
 } from "@babylonslate/shader-graph";
-import { playLoadSpritesControl, playLoadTilemapsControl, playSceneByGuid } from "../lib/play-content";
+import { playLoadModelsControl, playLoadSpritesControl, playLoadTilemapsControl, cookPlayComplexMeshes, playSceneByGuid } from "../lib/play-content";
 import {
   createEngine,
   navDebugBlockersFromActors,
@@ -223,6 +223,7 @@ export function playSessionBootControls(options: {
   blackboards?: ReadonlyArray<{ guid: string; document: unknown }>;
   tilemaps?: Extract<ControlMessage, { type: "loadTilemaps" }> | null;
   sprites?: Extract<ControlMessage, { type: "loadSprites" }> | null;
+  models?: Extract<ControlMessage, { type: "loadModels" }> | null;
   navmeshBytes?: Uint8Array | null;
   pauseOnPlay?: boolean;
 }): ControlMessage[] {
@@ -252,6 +253,7 @@ export function playSessionBootControls(options: {
   }
   if (options.tilemaps) controls.push(options.tilemaps);
   if (options.sprites) controls.push(options.sprites);
+  if (options.models) controls.push(options.models);
   if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {
     const copy = options.navmeshBytes.slice();
     controls.push({
@@ -758,6 +760,10 @@ export function startPlaySession(options: {
         options.spriteAnimationPayloads,
         options.pixelsPerUnit,
       ),
+      models: playLoadModelsControl(
+        options.modelPayloads,
+        cookPlayComplexMeshes(options.modelBytes, options.modelPayloads),
+      ),
       navmeshBytes: options.navmeshBytes,
       pauseOnPlay: options.pauseOnPlay,
     })) {
@@ -816,6 +822,15 @@ export function startPlaySession(options: {
         sprites: options.spritePayloads ?? new Map(),
         spriteAnimations: options.spriteAnimationPayloads ?? new Map(),
         pixelsPerUnit: options.pixelsPerUnit,
+      });
+    }
+    if (options.modelPayloads && options.modelPayloads.size > 0) {
+      inProcess.registerModelContent({
+        models: options.modelPayloads,
+        complexMeshes: cookPlayComplexMeshes(
+          options.modelBytes,
+          options.modelPayloads,
+        ),
       });
     }
     if (options.navmeshBytes && options.navmeshBytes.byteLength > 0) {

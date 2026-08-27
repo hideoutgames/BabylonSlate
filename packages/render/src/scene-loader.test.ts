@@ -21,6 +21,7 @@ import {
   helperBillboardIconOf,
 } from "./scene-loader";
 import { isEditorVolumeMesh } from "./editor-volume";
+import { isColliderVisualMesh } from "./collider-visual";
 
 function lightComponent(
   color: [number, number, number] = [1, 1, 1],
@@ -80,9 +81,10 @@ describe("scene-loader", () => {
       ]),
     );
 
-    expect(countSceneMeshes(scene)).toBe(2);
-    expect(scene.getMeshByName(editorMeshName("actor-1"))).toBeNull();
     expect(scene.getMeshByName(editorMeshName("box-a"))).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("box-b"))).not.toBeNull();
+    expect(scene.getMeshByName(editorMeshName("actor-1"))).toBeNull();
+    expect(countSceneMeshes(scene)).toBeGreaterThan(2);
   });
 
   it("handles an empty actor list", () => {
@@ -366,6 +368,74 @@ describe("scene-loader", () => {
     expect(dashes!.scaling.x).toBe(2);
     expect(dashes!.renderingGroupId).toBe(1);
     expect(dashes!.getChildMeshes().length).toBeGreaterThan(0);
+  });
+
+  it("draws MeshComponent simple collision dashes as unpickable children", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("crate", "Crate", {
+          components: [createMeshComponent("mesh", "box")],
+        }),
+      ]),
+    );
+    const mesh = scene.getMeshByName(editorMeshName("crate"));
+    const dash = mesh
+      ?.getChildMeshes()
+      .find((child) => child instanceof Mesh && isColliderVisualMesh(child));
+    expect(dash).toBeTruthy();
+    expect(dash!.isPickable).toBe(false);
+    expect(dash!.parent).toBe(mesh);
+  });
+
+  it("skips MeshComponent collision dashes when mode is none", () => {
+    const { scene } = createHandle();
+    const component = createMeshComponent("mesh", "box");
+    component.properties.collisionMode = "none";
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("deco", "Deco", { components: [component] }),
+      ]),
+    );
+    const mesh = scene.getMeshByName(editorMeshName("deco"));
+    expect(
+      mesh
+        ?.getChildMeshes()
+        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
+    ).toBe(false);
+  });
+
+  it("skips MeshComponent collision dashes in a 2D scene", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(scene, {
+      ...createDefaultScene("2d"),
+      actors: [
+        createActor("crate", "Crate", {
+          components: [createMeshComponent("mesh", "box")],
+        }),
+      ],
+    });
+    const mesh = scene.getMeshByName(editorMeshName("crate"));
+    expect(
+      mesh
+        ?.getChildMeshes()
+        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
+    ).toBe(false);
+  });
+
+  it("includes Mesh collision mode in the visual fingerprint", () => {
+    const actor = createActor("crate", "Crate", {
+      components: [createMeshComponent("mesh", "box")],
+    });
+    const none = {
+      ...actor,
+      components: [
+        { ...actor.components[0]!, properties: { ...actor.components[0]!.properties, collisionMode: "none" } },
+      ],
+    };
+    expect(actorVisualFingerprint(none)).not.toBe(actorVisualFingerprint(actor));
   });
 
   it("parents camera, light, and audio billboards under a non-billboard origin", () => {

@@ -34,7 +34,7 @@ import {
   isStructuralEditorChange,
   unfreezeEditorActiveMeshes,
 } from "./scene-perf";
-import { isColliderVisualMesh } from "./collider-visual";
+import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
 import { visualMeshes } from "./visual-meshes";
 
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
@@ -162,14 +162,23 @@ export class EditorSceneSync {
 
     for (const actor of sceneData.actors) {
       this.liveIds.add(actor.id);
-      const kind = actorVisualFingerprint(actor, this.assets, sceneData.actors);
+      const kind = actorVisualFingerprint(
+        actor,
+        this.meshAssetsForScene(sceneData),
+        sceneData.actors,
+      );
       let mesh = this.meshes.get(actor.id);
       if (mesh && this.meshKinds.get(actor.id) !== kind) {
         mesh.dispose();
         mesh = undefined;
       }
       if (!mesh) {
-        mesh = createActorMesh(this.scene, actor, this.assets, sceneData.actors);
+        mesh = createActorMesh(
+          this.scene,
+          actor,
+          this.meshAssetsForScene(sceneData),
+          sceneData.actors,
+        );
         this.meshes.set(actor.id, mesh);
         this.meshKinds.set(actor.id, kind);
       }
@@ -287,6 +296,13 @@ export class EditorSceneSync {
    * Details edit or a late Material-document load does not need a mesh rebuild.
    * Pivot markers and non-mesh visuals stay on their construction materials.
    */
+  private meshAssetsForScene(sceneData: SerializedScene): MeshAssetContext {
+    return {
+      ...(this.assets ?? {}),
+      drawMeshCollision: sceneData.settings.physicsWorld !== "2d",
+    };
+  }
+
   private meshComponentAssetGuid(actor: SerializedActor): string | null {
     const component = actor.components.find(
       (entry) => entry.classId === "MeshComponent",
@@ -357,6 +373,7 @@ export class EditorSceneSync {
       const visual = visualForMeshComponent(root, actor.id, component.id);
       if (!visual) continue;
       for (const target of meshAndDescendantMeshes(visual)) {
+        if (isColliderVisualTree(target)) continue;
         if (!this.constructionMaterials.has(target)) continue;
         target.material = this.constructionMaterials.get(target) ?? null;
       }
@@ -380,6 +397,7 @@ export class EditorSceneSync {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual);
     for (const target of targets) {
+      if (isColliderVisualTree(target)) continue;
       if (!this.constructionMaterials.has(target)) {
         this.constructionMaterials.set(target, target.material);
       }
@@ -387,6 +405,7 @@ export class EditorSceneSync {
     const material = this.resolveMaterial?.(guid) ?? null;
     if (!material) return;
     for (const target of targets) {
+      if (isColliderVisualTree(target)) continue;
       target.material = material;
     }
   }

@@ -9,6 +9,7 @@ import {
   type SerializedGraph,
 } from "@babylonslate/core";
 import {
+  buildBoxGlbFixture,
   createDefaultSpriteAnimationPayload,
   createDefaultSpritePayload,
   createDefaultTilemapPayload,
@@ -30,6 +31,8 @@ import {
   playSpriteAnimationPayloadsFromGuids,
   playSpritePayloadsFromGuids,
   playLoadSpritesControl,
+  playLoadModelsControl,
+  cookPlayComplexMeshes,
   spriteAnimationGuidsFromAnimGraphs,
   spriteAnimationGuidsFromBehaviourTrees,
   spriteAssetGuidsFromScene,
@@ -326,6 +329,28 @@ describe("scene-referenced Play content", () => {
     expect(playLoadSpritesControl(new Map(), new Map())).toBeNull();
   });
 
+  it("builds a worker loadModels control from Model payloads and cooked meshes", () => {
+    const payload = {
+      materialSlots: [],
+      clipNames: [],
+      skeletonGuid: null,
+      importScale: 1,
+      simpleColliders: [],
+    };
+    const cooked = cookPlayComplexMeshes(
+      new Map([["hero-model", buildBoxGlbFixture(1)]]),
+      new Map([["hero-model", payload]]),
+    );
+    expect(cooked.get("hero-model")?.vertices.length).toBeGreaterThanOrEqual(3);
+    expect(
+      playLoadModelsControl(new Map([["hero-model", payload]]), cooked),
+    ).toMatchObject({
+      type: "loadModels",
+      models: [{ guid: "hero-model", document: payload }],
+    });
+    expect(playLoadModelsControl(new Map())).toBeNull();
+  });
+
   it("collects tileset guids from loaded tilemaps", () => {
     const tilemap = {
       ...createDefaultTilemapPayload(),
@@ -470,6 +495,7 @@ describe("scene-referenced Play content", () => {
           clipNames: [],
           skeletonGuid: null,
           importScale: 1,
+          simpleColliders: [],
           materialSlots: [
             { index: 0, name: "Hero Mat", materialGuid: "mat-hero" },
             { index: 1, name: "Eyes", materialGuid: null },
@@ -482,6 +508,7 @@ describe("scene-referenced Play content", () => {
           clipNames: [],
           skeletonGuid: null,
           importScale: 1,
+          simpleColliders: [],
           materialSlots: [{ index: 0, name: "Rock", materialGuid: "mat-rock" }],
         },
       ],

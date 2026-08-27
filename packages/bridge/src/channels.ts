@@ -132,6 +132,15 @@ export type ControlMessage =
       spriteAnimations: Array<{ guid: string; document: unknown }>;
       pixelsPerUnit?: number;
     }
+  | {
+      type: "loadModels";
+      models: Array<{ guid: string; document: unknown }>;
+      complexMeshes?: Array<{
+        guid: string;
+        vertices: Array<{ x: number; y: number; z: number }>;
+        indices: number[];
+      }>;
+    }
   | { type: "loadNavMesh"; bytes: ArrayBuffer }
   | { type: "play" }
   | { type: "pause" }

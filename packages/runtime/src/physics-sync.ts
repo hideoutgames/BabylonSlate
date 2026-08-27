@@ -1,22 +1,31 @@
 import type { PhysicsBackend, PhysicsTransform, Vec3 } from "@babylonslate/physics";
 import {
-  parseColliderProperties,
-  parseRigidBodyProperties,
-  bakeColliderLocal,
-} from "@babylonslate/physics";
-import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
-import {
   decodeTileGid,
+  meshColliderId,
+  parseMeshCollisionLayer,
+  parseMeshCollisionMask,
+  parseMeshCollisionMode,
+  resolveMeshCollisions,
   spriteAnimationFrameAt,
   spriteClipFrameAt,
   spriteCollisionToBox2d,
   tilemapChunkChains,
   tilemapTilesetGuids,
+  type ModelPayload,
   type SpriteAnimationPayload,
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
 } from "@babylonslate/assets";
+import {
+  parseColliderProperties,
+  parseRigidBodyProperties,
+  bakeColliderLocal,
+  multiplyQuat,
+  rotateQuatVec,
+  type ColliderShape,
+} from "@babylonslate/physics";
+import type { Actor, ActorComponent, World } from "@babylonslate/object-model";
 import {
   actorParentGuid,
   actorWorldTransforms,
@@ -28,7 +37,8 @@ import {
 
 /**
  * Keeps `@babylonslate/physics` bodies in sync with World actors that carry
- * RigidBodyComponent / ColliderComponent, tilemap collision, or a Blocking Volume.
+ * RigidBodyComponent / ColliderComponent, MeshComponent collision, tilemap
+ * collision, or a Blocking Volume.
  */
 export class PhysicsWorldSync {
   private readonly backend: PhysicsBackend;
@@ -47,6 +57,12 @@ export class PhysicsWorldSync {
     { assetGuid: string; clipName: string; normalisedTime: number }
   >();
   private spriteColliderKeyByActor = new Map<string, Map<string, string>>();
+  private meshColliderKeyByActor = new Map<string, Map<string, string>>();
+  private models = new Map<string, ModelPayload>();
+  private complexMeshes = new Map<
+    string,
+    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+  >();
   private pixelsPerUnit = 100;
 
   constructor(
@@ -90,6 +106,29 @@ export class PhysicsWorldSync {
     this.spriteColliderKeyByActor.clear();
   }
 
+  setModelContent(options: {
+    models:
+      | ReadonlyMap<string, ModelPayload>
+      | Readonly<Record<string, ModelPayload>>;
+    complexMeshes?:
+      | ReadonlyMap<
+          string,
+          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+        >
+      | Readonly<
+          Record<
+            string,
+            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+          >
+        >;
+  }): void {
+    this.models = toMap(options.models);
+    this.complexMeshes = options.complexMeshes
+      ? toMap(options.complexMeshes)
+      : new Map();
+    this.meshColliderKeyByActor.clear();
+  }
+
   setActorSpriteClip(
     actorGuid: string,
     clip: {
@@ -128,7 +167,8 @@ export class PhysicsWorldSync {
       const blocking = actor.components.find(
         (c) => c.classId === "BlockingVolumeComponent" && !c.destroyed,
       );
-      if (!rigid && !tilemap && !blocking) continue;
+      const meshPhysics = this.meshPhysicsComponents(actor).length > 0;
+      if (!rigid && !tilemap && !blocking && !meshPhysics) continue;
       live.add(actor.guid);
       if (!this.bodyByActor.has(actor.guid)) {
         this.createForActor(actor);
@@ -149,6 +189,7 @@ export class PhysicsWorldSync {
           );
         }
         this.applySpriteColliders(actor, bodyId);
+        this.applyMeshColliders(actor, bodyId);
       }
     }
     for (const [actorId, bodyId] of [...this.bodyByActor]) {
@@ -158,6 +199,7 @@ export class PhysicsWorldSync {
       this.characterByActor.delete(actorId);
       this.spriteClipByActor.delete(actorId);
       this.spriteColliderKeyByActor.delete(actorId);
+      this.meshColliderKeyByActor.delete(actorId);
     }
     this.synced = true;
   }
@@ -226,6 +268,10 @@ export class PhysicsWorldSync {
       });
       return;
     }
+    if (component.classId === "MeshComponent") {
+      this.applyMeshColliders(owner, bodyId);
+      return;
+    }
     if (component.classId !== "ColliderComponent") return;
     const collider = parseColliderProperties(
       mapToRecord(component.variables),
@@ -290,7 +336,7 @@ export class PhysicsWorldSync {
     const blocking = actor.components.find(
       (c) => c.classId === "BlockingVolumeComponent" && !c.destroyed,
     );
-    if (!rigid && !tilemap && !blocking) return;
+    if (!rigid && !tilemap && !blocking && this.meshPhysicsComponents(actor).length === 0) return;
     const bodyId = `body:${actor.guid}`;
     const props = parseRigidBodyProperties(
       rigid
@@ -343,6 +389,84 @@ export class PhysicsWorldSync {
     if (blocking) this.createBlockingVolumeCollider(actor, bodyId, blocking);
     if (tilemap) this.createTilemapColliders(actor, bodyId, tilemap);
     this.applySpriteColliders(actor, bodyId);
+    this.applyMeshColliders(actor, bodyId);
+  }
+
+  private meshPhysicsComponents(actor: Actor): Actor["components"] {
+    if (this.backend.kind !== "3d") return [];
+    return actor.components.filter((component) => {
+      if (component.classId !== "MeshComponent" || component.destroyed) {
+        return false;
+      }
+      return this.resolvedMeshCollisions(component).length > 0;
+    });
+  }
+
+  private resolvedMeshCollisions(component: Actor["components"][number]) {
+    const properties = mapToRecord(component.variables);
+    if (parseMeshCollisionMode(properties.collisionMode) === "none") return [];
+    const assetGuid =
+      typeof properties.assetGuid === "string" ? properties.assetGuid.trim() : "";
+    return resolveMeshCollisions(properties, {
+      modelPayload: assetGuid ? this.models.get(assetGuid) : undefined,
+      complexMesh: assetGuid ? this.complexMeshes.get(assetGuid) : undefined,
+    });
+  }
+
+  private applyMeshColliders(actor: Actor, bodyId: string): void {
+    const keys = this.meshColliderKeyByActor.get(actor.guid) ?? new Map();
+    this.meshColliderKeyByActor.set(actor.guid, keys);
+    const live = new Set<string>();
+    for (const component of this.meshPhysicsComponents(actor)) {
+      const properties = mapToRecord(component.variables);
+      const layer = parseMeshCollisionLayer(properties.layer);
+      const mask = parseMeshCollisionMask(properties.mask);
+      for (const collision of this.resolvedMeshCollisions(component)) {
+        const colliderId = meshColliderId(component.guid, collision.shapeId);
+        live.add(colliderId);
+        const composed = composeMeshColliderLocal(
+          component.transform,
+          collision,
+        );
+        const baked = bakeColliderLocal(
+          collision.shape as ColliderShape,
+          composed,
+          worldScale(actor, this.worldTransforms),
+        );
+        const fingerprint = [
+          collision.shape.kind,
+          baked.translation.x,
+          baked.translation.y,
+          baked.translation.z,
+          baked.rotation.x,
+          baked.rotation.y,
+          baked.rotation.z,
+          baked.rotation.w,
+          layer,
+          mask,
+        ].join(",");
+        if (keys.get(colliderId) === fingerprint) continue;
+        this.backend.destroyCollider(colliderId);
+        this.backend.createCollider({
+          id: colliderId,
+          bodyId,
+          shape: baked.shape,
+          friction: 0.5,
+          restitution: 0,
+          isTrigger: false,
+          layer,
+          mask,
+          translation: baked.translation,
+          rotation: baked.rotation,
+        });
+        keys.set(colliderId, fingerprint);
+      }
+    }
+    for (const colliderId of [...keys.keys()]) {
+      if (live.has(colliderId)) continue;
+      this.backend.destroyCollider(colliderId);
+      keys.delete(colliderId);
+    }
   }
 
   private createBlockingVolumeCollider(
@@ -628,3 +752,46 @@ function toMap<T>(
   if (value instanceof Map) return new Map(value);
   return new Map(Object.entries(value));
 }
+
+function composeMeshColliderLocal(
+  meshTransform: {
+    position: { x: number; y: number; z: number };
+    rotation: { x: number; y: number; z: number; w: number };
+    scale: { x: number; y: number; z: number };
+  },
+  collision: {
+    position: [number, number, number];
+    rotation: [number, number, number, number];
+    scale: [number, number, number];
+  },
+): {
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number; w: number };
+  scale: { x: number; y: number; z: number };
+} {
+  const childPosition = {
+    x: collision.position[0] * meshTransform.scale.x,
+    y: collision.position[1] * meshTransform.scale.y,
+    z: collision.position[2] * meshTransform.scale.z,
+  };
+  const rotated = rotateQuatVec(meshTransform.rotation, childPosition);
+  return {
+    position: {
+      x: meshTransform.position.x + rotated.x,
+      y: meshTransform.position.y + rotated.y,
+      z: meshTransform.position.z + rotated.z,
+    },
+    rotation: multiplyQuat(meshTransform.rotation, {
+      x: collision.rotation[0],
+      y: collision.rotation[1],
+      z: collision.rotation[2],
+      w: collision.rotation[3],
+    }),
+    scale: {
+      x: meshTransform.scale.x * collision.scale[0],
+      y: meshTransform.scale.y * collision.scale[1],
+      z: meshTransform.scale.z * collision.scale[2],
+    },
+  };
+}
+

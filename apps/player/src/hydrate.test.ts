@@ -195,6 +195,63 @@ describe("packedContentFromGame", () => {
     expect(controls.some((entry) => entry.type === "loadBehaviourTrees")).toBe(true);
   });
 
+  it("posts loadModels with cooked triangle meshes and not the raw GLB", async () => {
+    const { buildBoxGlbFixture, encodePackedModelAsset } = await import(
+      "@babylonslate/assets"
+    );
+    const glb = buildBoxGlbFixture(1);
+    const packedModel = encodePackedModelAsset(
+      {
+        importScale: 2,
+        clipNames: [],
+        materialSlots: [],
+        skeletonGuid: null,
+        simpleColliders: [],
+      },
+      glb,
+    );
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "hero-model",
+          type: "Model",
+          sceneGuid: "scene-1",
+          name: "Hero",
+          bytes: packedModel,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    expect(content.modelPayloads.get("hero-model")?.importScale).toBe(2);
+    expect(content.complexMeshes.get("hero-model")?.vertices.length).toBeGreaterThanOrEqual(
+      3,
+    );
+    const controls = packedPlayControls(content);
+    const loadModels = controls.find((entry) => entry.type === "loadModels");
+    expect(loadModels).toMatchObject({ type: "loadModels" });
+    expect(loadModels && "models" in loadModels ? loadModels.models[0]?.guid : null).toBe(
+      "hero-model",
+    );
+    expect(
+      loadModels && "complexMeshes" in loadModels
+        ? loadModels.complexMeshes?.[0]?.vertices.length
+        : 0,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
   it("resolves packed Animation Graph clips from Animation assets and maps clip guids", async () => {
     const graph = createDefaultAnimGraph("Hero");
     graph.clips[0] = {

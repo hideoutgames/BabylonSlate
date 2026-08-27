@@ -30,6 +30,8 @@ import {
   type SpritePayload,
   type TilemapPayload,
   type TilesetPayload,
+  type ModelPayload,
+  cookComplexCollisionMeshes,
 } from "@babylonslate/assets";
 import {
   parseBehaviourTreeDocument,
@@ -83,6 +85,11 @@ export type PackedGameContent = {
   particleLibrary: PackedParticleLibrary;
   modelClipAnimationGuids: Map<string, Map<string, string>>;
   retargetAnimationLoads: Map<string, RetargetAnimationLoad[]>;
+  modelPayloads: Map<string, ModelPayload>;
+  complexMeshes: Map<
+    string,
+    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+  >;
 };
 
 function jsonFromBytes(bytes: Uint8Array): unknown | null {
@@ -297,6 +304,8 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     retargetAnimationLoads: retargetAnimationLoadsFromAnimations(
       [...animationPayloads.entries()].map(([guid, payload]) => ({ guid, payload })),
     ),
+    modelPayloads: new Map(game.modelPayloads),
+    complexMeshes: cookComplexCollisionMeshes(game.modelBytes, game.modelPayloads),
   };
 }
 
@@ -337,6 +346,26 @@ export function packedPlayControls(content: PackedGameContent): ControlMessage[]
         document,
       })),
       ...(content.pixelsPerUnit > 0 ? { pixelsPerUnit: content.pixelsPerUnit } : {}),
+    });
+  }
+  if (content.modelPayloads.size > 0) {
+    controls.push({
+      type: "loadModels",
+      models: [...content.modelPayloads.entries()].map(([guid, document]) => ({
+        guid,
+        document,
+      })),
+      ...(content.complexMeshes.size > 0
+        ? {
+            complexMeshes: [...content.complexMeshes.entries()].map(
+              ([guid, mesh]) => ({
+                guid,
+                vertices: mesh.vertices,
+                indices: mesh.indices,
+              }),
+            ),
+          }
+        : {}),
     });
   }
   if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {

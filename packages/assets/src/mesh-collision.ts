@@ -1,7 +1,11 @@
 import type { ModelPayload } from "./model-payload";
+import { extractGltfCollisionMesh } from "./glb-geometry";
 import {
   createDefaultSimpleCollider,
+  simpleColliderToPhysicsShape,
+  IDENTITY_SIMPLE_COLLIDER_TRANSFORM,
   type ModelSimpleCollider,
+  type SimpleColliderPhysicsShape,
 } from "./simple-collision";
 
 export type MeshCollisionMode = "simple" | "complex" | "none";
@@ -177,3 +181,112 @@ export function resolveMeshSimpleColliders(
     typeof properties.meshKind === "string" ? properties.meshKind : "box";
   return simpleCollidersForMeshKind(meshKind);
 }
+
+export type ResolvedMeshCollision = {
+  shapeId: string;
+  shape: SimpleColliderPhysicsShape;
+  position: [number, number, number];
+  rotation: [number, number, number, number];
+  scale: [number, number, number];
+};
+
+export function meshColliderId(componentGuid: string, shapeId: string): string {
+  return `mesh-collider:${componentGuid}:${shapeId}`;
+}
+
+/** Stable key so editor meshes rebuild when Mesh collision or Model hulls change. */
+export function meshCollisionFingerprint(
+  properties: Record<string, unknown>,
+  modelPayload?: ModelPayload | null,
+): string {
+  const mode = parseMeshCollisionMode(properties.collisionMode);
+  if (mode === "none") return "none";
+  const assetGuid =
+    typeof properties.assetGuid === "string" ? properties.assetGuid.trim() : "";
+  if (mode === "complex") {
+    return `complex:${assetGuid || (typeof properties.meshKind === "string" ? properties.meshKind : "box")}`;
+  }
+  if (assetGuid) {
+    return `simple:${assetGuid}:${JSON.stringify(modelPayload?.simpleColliders ?? [])}`;
+  }
+  return `simple:${typeof properties.meshKind === "string" ? properties.meshKind : "box"}`;
+}
+
+export function cookComplexCollisionMeshes(
+  modelBytes: ReadonlyMap<string, Uint8Array> | undefined,
+  modelPayloads?: ReadonlyMap<string, ModelPayload> | undefined,
+): Map<
+  string,
+  { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+> {
+  const out = new Map<
+    string,
+    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+  >();
+  if (!modelBytes) return out;
+  for (const [guid, bytes] of modelBytes) {
+    const scale = modelPayloads?.get(guid)?.importScale ?? 1;
+    const mesh = extractGltfCollisionMesh(bytes, scale);
+    if (!mesh || mesh.vertices.length < 3) continue;
+    out.set(guid, mesh);
+  }
+  return out;
+}
+
+export function resolveMeshCollisions(
+  properties: Record<string, unknown>,
+  options?: {
+    modelPayload?: ModelPayload | null;
+    complexMesh?: {
+      vertices: Array<{ x: number; y: number; z: number }>;
+      indices: number[];
+    } | null;
+  },
+): ResolvedMeshCollision[] {
+  const mode = parseMeshCollisionMode(properties.collisionMode);
+  if (mode === "none") return [];
+  if (mode === "simple") {
+    return resolveMeshSimpleColliders(properties, options?.modelPayload).map(
+      (collider) => ({
+        shapeId: collider.id,
+        shape: simpleColliderToPhysicsShape(collider),
+        position: collider.position,
+        rotation: collider.rotation,
+        scale: collider.scale,
+      }),
+    );
+  }
+  const identity = IDENTITY_SIMPLE_COLLIDER_TRANSFORM;
+  const assetGuid =
+    typeof properties.assetGuid === "string" ? properties.assetGuid.trim() : "";
+  if (assetGuid) {
+    const mesh = options?.complexMesh;
+    if (!mesh || mesh.vertices.length < 3) return [];
+    return [
+      {
+        shapeId: "complex",
+        shape: {
+          kind: "mesh",
+          vertices: mesh.vertices,
+          indices: mesh.indices,
+        },
+        ...identity,
+      },
+    ];
+  }
+  const tessellated = complexCollisionMeshForMeshKind(
+    typeof properties.meshKind === "string" ? properties.meshKind : "box",
+  );
+  return [
+    {
+      shapeId: "complex",
+      shape: {
+        kind: "mesh",
+        vertices: tessellated.vertices,
+        indices: tessellated.indices,
+      },
+      ...identity,
+    },
+  ];
+}
+

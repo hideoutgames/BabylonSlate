@@ -383,6 +383,12 @@ export function startPlayer(options: {
         pixelsPerUnit: content.pixelsPerUnit,
       });
     }
+    if (content.modelPayloads.size > 0) {
+      inProcess.registerModelContent({
+        models: content.modelPayloads,
+        complexMeshes: content.complexMeshes,
+      });
+    }
     if (content.navmeshBytes && content.navmeshBytes.byteLength > 0) {
       boot.queueNavMesh(inProcess, content.navmeshBytes);
     }

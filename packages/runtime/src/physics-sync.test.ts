@@ -832,3 +832,155 @@ describe("PhysicsWorldSync live component updates", () => {
     sync.dispose();
   });
 });
+
+describe("PhysicsWorldSync MeshComponent collision", () => {
+  function spawnMeshActor(
+    world: World,
+    options: {
+      guid: string;
+      variables?: Record<string, unknown>;
+      position?: { x: number; y: number; z: number };
+      withRigidBody?: boolean;
+    },
+  ) {
+    const actor = world.createActor({
+      classId: "Actor",
+      guid: options.guid,
+      transform: {
+        ...identityTransform(),
+        position: options.position ?? { x: 0, y: 0, z: 0 },
+      },
+    });
+    if (options.withRigidBody) {
+      actor.attachComponent(
+        world.createComponent({
+          classId: "RigidBodyComponent",
+          guid: `${options.guid}-rb`,
+          variables: { motionType: "static", mass: 0, gravityScale: 0 },
+        }),
+      );
+    }
+    actor.attachComponent(
+      world.createComponent({
+        classId: "MeshComponent",
+        guid: `${options.guid}-mesh`,
+        variables: { meshKind: "box", ...options.variables },
+      }),
+    );
+    world.spawnActorNow(actor);
+    return actor;
+  }
+
+  it("creates an implicit static body from primitive simple collision", () => {
+    const world = createWorld();
+    spawnMeshActor(world, { guid: "crate" });
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toContain(
+      "crate",
+    );
+    sync.dispose();
+  });
+
+  it("skips MeshComponent collision when mode is none", () => {
+    const world = createWorld();
+    spawnMeshActor(world, {
+      guid: "deco",
+      variables: { collisionMode: "none" },
+    });
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
+    sync.dispose();
+  });
+
+  it("skips MeshComponent collision in a 2D world", () => {
+    const world = createWorld();
+    spawnMeshActor(world, { guid: "crate" });
+    const backend = createSoftwarePhysicsBackend("2d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
+    sync.dispose();
+  });
+
+  it("uses Model simple colliders when a payload is registered", () => {
+    const world = createWorld();
+    spawnMeshActor(world, {
+      guid: "statue",
+      variables: { assetGuid: "model-1", collisionMode: "simple" },
+    });
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.setModelContent({
+      models: {
+        "model-1": {
+          materialSlots: [],
+          clipNames: [],
+          skeletonGuid: null,
+          importScale: 1,
+          simpleColliders: [
+            {
+              id: "box-1",
+              name: "Box",
+              kind: "box",
+              position: [3, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              halfExtents: { x: 0.5, y: 0.5, z: 0.5 },
+            },
+          ],
+        },
+      },
+    });
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 3, y: 0, z: 0 }, 0.2).actorIds).toContain(
+      "statue",
+    );
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toEqual([]);
+    sync.dispose();
+  });
+
+  it("uses a cooked triangle mesh for Use Complex Collision", () => {
+    const world = createWorld();
+    spawnMeshActor(world, {
+      guid: "rock",
+      variables: { assetGuid: "model-1", collisionMode: "complex" },
+    });
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.setModelContent({
+      models: {
+        "model-1": {
+          materialSlots: [],
+          clipNames: [],
+          skeletonGuid: null,
+          importScale: 1,
+          simpleColliders: [],
+        },
+      },
+      complexMeshes: {
+        "model-1": {
+          vertices: [
+            { x: -0.5, y: -0.5, z: -0.5 },
+            { x: 0.5, y: -0.5, z: -0.5 },
+            { x: 0.5, y: 0.5, z: -0.5 },
+            { x: -0.5, y: 0.5, z: -0.5 },
+            { x: -0.5, y: -0.5, z: 0.5 },
+            { x: 0.5, y: -0.5, z: 0.5 },
+            { x: 0.5, y: 0.5, z: 0.5 },
+            { x: -0.5, y: 0.5, z: 0.5 },
+          ],
+          indices: [0, 1, 2, 0, 2, 3],
+        },
+      },
+    });
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.2).actorIds).toContain(
+      "rock",
+    );
+    sync.dispose();
+  });
+});

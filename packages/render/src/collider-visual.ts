@@ -25,6 +25,15 @@ export function isColliderVisualMesh(mesh: Mesh): boolean {
   );
 }
 
+export function isColliderVisualTree(mesh: { parent?: unknown } | Mesh): boolean {
+  let node: unknown = mesh;
+  while (node) {
+    if (node instanceof Mesh && isColliderVisualMesh(node)) return true;
+    node = (node as { parent?: unknown }).parent ?? null;
+  }
+  return false;
+}
+
 export function createDashedEdgesMesh(
   scene: Scene,
   name: string,
