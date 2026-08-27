@@ -2,6 +2,7 @@ import { migrateLegacyShaderPayload } from "@babylonslate/shader-graph";
 import { normalizeAnimationPayload } from "../animation-payload";
 import { newAssetGuid } from "../guid";
 import { MATERIAL_PAYLOAD_VERSION } from "../migration";
+import { cookGeneratedCollisionFromGltf } from "../simple-collision";
 import { normalizeModelPayload, DEFAULT_MODEL_IMPORT_SCALE } from "../model-payload";
 import { normalizeSkeletonPayload } from "../skeleton-payload";
 import { nextCopyName } from "../unique-names";
@@ -234,6 +235,17 @@ function importFromBrowse(
       ? browse.materials.map((material) => material.name)
       : materialGuids.map(() => "Material");
 
+  const importScale =
+    typeof modelImportScale === "number" &&
+    Number.isFinite(modelImportScale) &&
+    modelImportScale > 0
+      ? modelImportScale
+      : DEFAULT_MODEL_IMPORT_SCALE;
+  const simpleColliders =
+    skeletonGuid == null
+      ? [cookGeneratedCollisionFromGltf(bytes, { importScale })]
+      : [];
+
   results.unshift({
     type: "Model",
     name,
@@ -254,12 +266,8 @@ function importFromBrowse(
           materialGuid: guid,
         })),
         skeletonGuid,
-        importScale:
-          typeof modelImportScale === "number" &&
-          Number.isFinite(modelImportScale) &&
-          modelImportScale > 0
-            ? modelImportScale
-            : DEFAULT_MODEL_IMPORT_SCALE,
+        importScale,
+        simpleColliders,
       }),
     } as Record<string, unknown>,
     chunks: [{ id: "source", kind: "geometry", mime, data: bytes }],

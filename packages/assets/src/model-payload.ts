@@ -1,4 +1,8 @@
 import { concatBytes, readU32LE, writeU32LE } from "./bytes";
+import {
+  normalizeModelSimpleColliders,
+  type ModelSimpleCollider,
+} from "./simple-collision";
 
 export interface ModelMaterialSlot {
   index: number;
@@ -18,6 +22,8 @@ export interface ModelPayload {
    * Missing / invalid values normalize to 1 so legacy assets keep authored size.
    */
   importScale: number;
+  /** Authored / generated simple collision volumes in model local space. */
+  simpleColliders: ModelSimpleCollider[];
 }
 
 export function normalizeModelImportScale(value: unknown): number {
@@ -80,6 +86,7 @@ export function normalizeModelPayload(value: unknown): ModelPayload {
     clipNames: stringList(record.clipNames),
     skeletonGuid: nullableGuid(record.skeletonGuid),
     importScale: normalizeModelImportScale(record.importScale),
+    simpleColliders: normalizeModelSimpleColliders(record.simpleColliders),
   };
 }
 

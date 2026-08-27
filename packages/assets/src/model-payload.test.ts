@@ -29,6 +29,7 @@ describe("normalizeModelPayload", () => {
       ],
       skeletonGuid: null,
       importScale: 1,
+      simpleColliders: [],
     });
     expect("materialCount" in payload).toBe(false);
     expect("textureCount" in payload).toBe(false);
@@ -104,6 +105,28 @@ describe("normalizeModelPayload", () => {
       1,
     );
   });
+
+  it("normalizes missing simpleColliders to an empty list so legacy Models keep loading", () => {
+    expect(normalizeModelPayload({ clipNames: [] }).simpleColliders).toEqual([]);
+  });
+
+  it("keeps authored simple colliders on the payload header", () => {
+    const payload = normalizeModelPayload({
+      simpleColliders: [
+        {
+          id: "box-1",
+          kind: "box",
+          halfExtents: { x: 1, y: 2, z: 3 },
+        },
+      ],
+    });
+    expect(payload.simpleColliders).toHaveLength(1);
+    expect(payload.simpleColliders[0]).toMatchObject({
+      id: "box-1",
+      kind: "box",
+      halfExtents: { x: 1, y: 2, z: 3 },
+    });
+  });
 });
 
 describe("packed Model envelope", () => {
@@ -124,6 +147,7 @@ describe("packed Model envelope", () => {
       clipNames: ["Walk"],
       materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
       skeletonGuid: "skel-1",
+      simpleColliders: [],
     });
     expect(decodePackedModelAsset(packed)).toEqual({
       payload: {
@@ -131,6 +155,7 @@ describe("packed Model envelope", () => {
         clipNames: ["Walk"],
         materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
         skeletonGuid: "skel-1",
+        simpleColliders: [],
       },
       source: glb,
     });

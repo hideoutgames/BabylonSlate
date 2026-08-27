@@ -12,6 +12,7 @@ import {
   registeredImportAccept,
   pickerImportAccept,
 } from "./index";
+import { buildBoxGlbFixture } from "../glb-geometry";
 import { buildMinimalGlbFixture } from "./glb-parse";
 
 describe("importers", () => {
@@ -59,6 +60,35 @@ describe("importers", () => {
     });
     const model = results.find((result) => result.type === "Model")!;
     expect(model.payload.importScale).toBe(4);
+  });
+
+  it("stamps one generated collider on a static mesh import", async () => {
+    const results = await importModel(buildBoxGlbFixture(1), {
+      fileName: "crate.glb",
+      existingGuids: new Set(),
+    });
+    const model = results.find((result) => result.type === "Model")!;
+    expect(model.payload.skeletonGuid).toBeNull();
+    const colliders = model.payload.simpleColliders as Array<{ kind: string }>;
+    expect(colliders).toHaveLength(1);
+    expect(colliders[0]!.kind).toBe("generated");
+  });
+
+  it("leaves simpleColliders empty when the GLB creates a Skeleton", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const bytes = new Uint8Array(
+      await readFile(
+        resolve("engine-content/kenney-assets/Mannequin/mannequin.glb"),
+      ),
+    );
+    const results = await importModel(bytes, {
+      fileName: "mannequin.glb",
+      existingGuids: new Set(),
+    });
+    const model = results.find((result) => result.type === "Model")!;
+    expect(model.payload.skeletonGuid).toEqual(expect.any(String));
+    expect(model.payload.simpleColliders).toEqual([]);
   });
 
   it("uniquifies duplicate glTF image names so Kenney Mannequin can import", async () => {
