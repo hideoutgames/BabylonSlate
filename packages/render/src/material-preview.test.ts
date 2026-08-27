@@ -326,6 +326,23 @@ describe("material preview orbit gestures", () => {
     );
   });
 
+  it("does not orbit when blockOrbit is true", () => {
+    const host = createMaterialPreviewScene(engine() as never);
+    disposers.push(() => host.dispose());
+    const canvas = new FakeCanvas();
+    const handle = attachMaterialPreviewGestures(
+      canvas as unknown as HTMLCanvasElement,
+      host.camera,
+      { blockOrbit: () => true },
+    );
+    disposers.push(() => handle.dispose());
+    const alphaBefore = host.camera.alpha;
+    canvas.emit("pointerdown", pointer(1, 160, 90));
+    canvas.emit("pointermove", pointer(1, 220, 110));
+    canvas.emit("pointerup", pointer(1, 220, 110));
+    expect(host.camera.alpha).toBeCloseTo(alphaBefore, 5);
+  });
+
   it("decreases beta when dragging down to match the Scene viewport", () => {
     const host = createMaterialPreviewScene(engine() as never);
     disposers.push(() => host.dispose());

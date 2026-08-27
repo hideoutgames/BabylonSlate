@@ -237,6 +237,17 @@ export function generateSimpleCollisionFromPoints(
   };
 }
 
+export function uniqueSimpleColliderName(
+  existing: readonly ModelSimpleCollider[],
+  base: string,
+): string {
+  const names = new Set(existing.map((entry) => entry.name));
+  if (!names.has(base)) return base;
+  let index = 2;
+  while (names.has(`${base} ${index}`)) index += 1;
+  return `${base} ${index}`;
+}
+
 export function cookGeneratedCollisionFromGltf(
   bytes: Uint8Array,
   options?: { importScale?: number; id?: string; name?: string },

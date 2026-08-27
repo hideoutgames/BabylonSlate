@@ -385,6 +385,16 @@ const SCRIPT_INTERFACE_WINDOWS: DockWindowDefinition[] = [
 const MODEL_WINDOWS: DockWindowDefinition[] = [
   { id: "model-preview", component: "model-preview", title: "Preview" },
   {
+    id: "model-colliders",
+    component: "model-colliders",
+    title: "Colliders",
+    defaultPosition: {
+      referencePanelId: "model-preview",
+      direction: "left",
+      initialWidth: 240,
+    },
+  },
+  {
     id: "model-details",
     component: "model-details",
     title: "Details",

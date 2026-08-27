@@ -229,12 +229,22 @@ describe("listDockWindows", () => {
     expect(primaryDockPanel("particle-system")).toBe("particle-system-preview");
     expect(listDockWindows("model").map((entry) => entry.id)).toEqual([
       "model-preview",
+      "model-colliders",
       "model-details",
     ]);
     expect(listDockWindows("model").map((entry) => entry.title)).toEqual([
       "Preview",
+      "Colliders",
       "Details",
     ]);
+    expect(
+      listDockWindows("model").find((entry) => entry.id === "model-colliders")
+        ?.defaultPosition,
+    ).toEqual({
+      referencePanelId: "model-preview",
+      direction: "left",
+      initialWidth: 240,
+    });
     expect(
       listDockWindows("model").find((entry) => entry.id === "model-details")
         ?.defaultPosition,

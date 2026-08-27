@@ -6,7 +6,20 @@ import {
   generateSimpleCollisionFromPoints,
   normalizeModelSimpleColliders,
   simpleColliderToPhysicsShape,
+  uniqueSimpleColliderName,
 } from "./simple-collision";
+
+describe("uniqueSimpleColliderName", () => {
+  it("appends a number when the label is already used", () => {
+    expect(uniqueSimpleColliderName([], "Box")).toBe("Box");
+    expect(
+      uniqueSimpleColliderName(
+        [{ name: "Box" } as never, { name: "Box 2" } as never],
+        "Box",
+      ),
+    ).toBe("Box 3");
+  });
+});
 
 describe("normalizeModelSimpleColliders", () => {
   it("treats missing or non-array values as an empty list", () => {

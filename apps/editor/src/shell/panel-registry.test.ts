@@ -40,8 +40,9 @@ describe("panelComponents", () => {
     expect(panelComponents["particle-system-details"]).toBeTypeOf("function");
   });
 
-  it("registers Model Preview and Details docks", () => {
+  it("registers Model Preview, Colliders, and Details docks", () => {
     expect(panelComponents["model-preview"]).toBeTypeOf("function");
+    expect(panelComponents["model-colliders"]).toBeTypeOf("function");
     expect(panelComponents["model-details"]).toBeTypeOf("function");
   });
 
