@@ -98,6 +98,8 @@ Register/Unregister pickers require `domain === "postProcess"`.
 
 Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, fonts, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid`, `2DMaterial.materialGuid`, `2DPanel` texture/material guids, overlay `fontAssetGuid`, and RichText `[img]` texture guids (those guids live inside the markup string, so export does not see them via a naive string walk). Player `activeScene` still swaps **world** only; compositor commands follow the worker.
 
+Editor Play and the packaged player apply `sceneLayerCreate` / `Remove` / `Clear` / `PostProcess` (and `despawn`) on the engine handle via the shared `PLAY_ENGINE_COMMAND_TYPES` allowlist. Overlay `assignMesh` / snapshots must not fall back into the world scene: tagged slots wait for the overlay `Scene`, then migrate if a mesh was already created in the world.
+
 ## 2D Text and 2D Rich Text
 
 Overlay-only `2DTextComponent` / `2DRichTextComponent`. Shared per-glyph quads (not Babylon GUI / `TextRenderer.addParagraph`). **Renderer** is `bitmap` (default) or `msdf`.

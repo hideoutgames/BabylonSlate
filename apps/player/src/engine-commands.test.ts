@@ -167,6 +167,23 @@ describe("applyPlayerEngineCommand", () => {
     ]);
   });
 
+  it("forwards despawn onto the Engine handle", () => {
+    const applied: string[] = [];
+    const handle = {
+      applyCommand: (command: { type: string }) => {
+        applied.push(command.type);
+      },
+    };
+    expect(
+      applyPlayerEngineCommand(handle, {
+        type: "despawn",
+        slotId: 4,
+        actorGuid: "banner",
+      }),
+    ).toBe(true);
+    expect(applied).toEqual(["despawn"]);
+  });
+
   it("forwards Play visualization commands onto the Engine handle", () => {
     const applied: string[] = [];
     const handle = {

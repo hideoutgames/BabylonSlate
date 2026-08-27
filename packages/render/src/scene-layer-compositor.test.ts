@@ -90,6 +90,7 @@ describe("SceneLayerCompositor", () => {
       postProcessStack: [],
     });
     compositor.noteSpawn(7, "hud");
+    expect(compositor.slotIdsForLayer("hud")).toEqual([7]);
     expect(compositor.sceneForSlot(7)).toBe(compositor.layers()[0]?.scene);
     expect(compositor.sceneForSlot(7)).not.toBe(scene);
     compositor.remove("hud");

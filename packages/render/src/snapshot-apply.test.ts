@@ -1550,4 +1550,31 @@ describe("createPlayMesh", () => {
     expect(mesh?.renderingGroupId).toBe(expected.renderingGroupId);
     expect(mesh?.alphaIndex).toBe(expected.sortKey);
   });
+
+  it("does not create overlay-tagged snapshot meshes in the world scene", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(4, "2dtexture");
+    binding.isOverlaySlot = () => true;
+    binding.sceneForSlot = () => null;
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: 1,
+        },
+      ],
+    });
+    expect(binding.meshes.get(4)).toBeUndefined();
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+  });
 });

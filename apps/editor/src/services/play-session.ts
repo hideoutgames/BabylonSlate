@@ -37,6 +37,7 @@ import {
 } from "@babylonslate/render";
 import { encodeInputEvents } from "@babylonslate/input";
 import {
+  isPlayEngineCommandType,
   snapshotFloatCount,
   snapshotTickIndex,
   type CommandMessage,
@@ -114,35 +115,8 @@ export function applyPlaySessionPausedCommand(
   return true;
 }
 
-export const PLAY_ENGINE_APPLY_COMMAND_TYPES = new Set<CommandMessage["type"]>([
-  "assignMesh",
-  "assignMaterial",
-  "possessCamera",
-  "setShadowQuality",
-  "spawn",
-  "playSound",
-  "stopSound",
-  "setChannelVolume",
-  "setGlobalVolume",
-  "setFrameCap",
-  "setRenderQuality",
-  "setResolutionScale",
-  "assignParticle",
-  "setParticlePlaying",
-  "setFreeCam",
-  "setWireframe",
-  "setShowBounds",
-  "setShowCollision",
-  "setShowNav",
-  "setShowAudioDebug",
-  "debugColliders",
-  "debugDraw",
-  "setCursorVisible",
-  "animState",
-]);
-
 export function shouldForwardPlayEngineCommand(type: string): boolean {
-  return PLAY_ENGINE_APPLY_COMMAND_TYPES.has(type as CommandMessage["type"]);
+  return isPlayEngineCommandType(type);
 }
 
 export function overlayLogForCommand(
