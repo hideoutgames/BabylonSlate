@@ -899,6 +899,138 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
+  it("holds sprite assignMesh off the world until overlay spawn tags a layer scene", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "sprite",
+    });
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 4,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "front",
+    });
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "front",
+      assetGuid: "hud",
+      zOrder: 3,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
+    expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("plants sprite assignMesh on the world after a world spawn", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshAssetGuid: null,
+      meshKind: "sprite",
+    });
+    expect(handle.scene.getMeshByName("actor-2")).toBeNull();
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 2,
+      actorGuid: "hero",
+      classId: "Actor",
+    });
+    expect(handle.scene.getMeshByName("actor-2")).not.toBeNull();
+    expect(handle.sceneLayerScenes()).toHaveLength(0);
+  });
+
+  it("keeps scene-owned overlay sprite commands off the world Scene", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "hud-instance",
+      assetGuid: "hud",
+      zOrder: 0,
+      ownerSceneGuid: "world-a",
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 7,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "hud-instance",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 7,
+      meshAssetGuid: null,
+      meshKind: "sprite",
+      actorGuid: "banner",
+      sceneLayerId: "hud-instance",
+    });
+    const overlay = handle.sceneLayerScenes().find(
+      (layer) => layer.layerId === "hud-instance",
+    );
+    expect(overlay?.scene.getMeshByName("actor-7")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-7")).toBeNull();
+  });
+
+  it("keeps graph createSceneLayer sprite commands off the world Scene", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "graph-hud",
+      assetGuid: "hud",
+      zOrder: 5,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 8,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "graph-hud",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 8,
+      meshAssetGuid: null,
+      meshKind: "sprite",
+      actorGuid: "banner",
+      sceneLayerId: "graph-hud",
+    });
+    const overlay = handle.sceneLayerScenes().find(
+      (layer) => layer.layerId === "graph-hud",
+    );
+    expect(overlay?.scene.getMeshByName("actor-8")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-8")).toBeNull();
+  });
+
   it("does not plant overlay-flagged snapshot meshes in the world before spawn", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");

@@ -864,6 +864,7 @@ export function createEngine(
     number,
     Extract<CommandMessage, { type: "assignMesh" }>
   >();
+  const worldPlaySlots = new Set<number>();
   const syncOverlaySlot = (slotId: number) => {
     if (!sceneLayerCompositor) return;
     const overlayScene = sceneLayerCompositor.sceneForSlot(slotId);
@@ -1522,15 +1523,31 @@ export function createEngine(
       }
       if (command.type === "spawn") {
         audioService?.noteActorSlot(command.actorGuid, command.slotId);
-        sceneLayerCompositor?.noteSpawn(
-          command.slotId,
-          command.sceneLayerId,
-          command.actorGuid,
-        );
-        syncOverlaySlot(command.slotId);
+        if (command.sceneLayerId) {
+          worldPlaySlots.delete(command.slotId);
+          sceneLayerCompositor?.noteSpawn(
+            command.slotId,
+            command.sceneLayerId,
+            command.actorGuid,
+          );
+          syncOverlaySlot(command.slotId);
+        } else {
+          worldPlaySlots.add(command.slotId);
+          sceneLayerCompositor?.noteSpawn(
+            command.slotId,
+            undefined,
+            command.actorGuid,
+          );
+          const pendingWorld = pendingOverlayAssign.get(command.slotId);
+          if (pendingWorld) {
+            applyAssignMesh(scene, binding, pendingWorld);
+            pendingOverlayAssign.delete(command.slotId);
+          }
+        }
       }
       if (command.type === "despawn") {
         pendingOverlayAssign.delete(command.slotId);
+        worldPlaySlots.delete(command.slotId);
         sceneLayerCompositor?.noteDespawn(command.slotId);
       }
       if (command.type === "sceneLayerCreate") {
@@ -1558,6 +1575,7 @@ export function createEngine(
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         if (command.sceneLayerId) {
+          worldPlaySlots.delete(command.slotId);
           sceneLayerCompositor?.noteSpawn(
             command.slotId,
             command.sceneLayerId,
@@ -1571,7 +1589,10 @@ export function createEngine(
           Boolean(command.sceneLayerId) ||
           sceneLayerCompositor?.layerIdForSlot(command.slotId) != null ||
           (sceneLayerCompositor != null &&
-            isOverlayOnlyMeshKind(command.meshKind));
+            isOverlayOnlyMeshKind(command.meshKind)) ||
+          (sceneLayerCompositor != null &&
+            isAmbiguousHudMeshKind(command.meshKind) &&
+            !worldPlaySlots.has(command.slotId));
         if (!overlayScene && overlayIdentity) {
           pendingOverlayAssign.set(command.slotId, command);
         } else {
@@ -1900,6 +1921,11 @@ function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
     default:
       return false;
   }
+}
+
+/** World scenes also use these kinds; hold off until spawn classifies the slot. */
+function isAmbiguousHudMeshKind(meshKind: string | null | undefined): boolean {
+  return meshKind === "sprite" || meshKind === "tilemap";
 }
 
 function setOtherEngineViewsEnabled(
