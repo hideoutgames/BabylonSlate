@@ -284,6 +284,14 @@ describe("shouldForwardPlayEngineCommand", () => {
     expect(shouldForwardPlayEngineCommand("setCursorVisible")).toBe(true);
     expect(shouldForwardPlayEngineCommand("stats")).toBe(false);
   });
+
+  it("forwards SceneLayer compositor commands and despawn onto the Play engine", () => {
+    expect(shouldForwardPlayEngineCommand("sceneLayerCreate")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("sceneLayerRemove")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("sceneLayerClear")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("sceneLayerPostProcess")).toBe(true);
+    expect(shouldForwardPlayEngineCommand("despawn")).toBe(true);
+  });
 });
 
 describe("overlayLogForCommand", () => {

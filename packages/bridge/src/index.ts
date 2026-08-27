@@ -37,6 +37,11 @@ export {
   type ScriptConsoleCommand,
 } from "./channels";
 export {
+  PLAY_ENGINE_COMMAND_TYPES,
+  isPlayEngineCommandType,
+  type PlayEngineCommandType,
+} from "./play-engine-commands";
+export {
   createRpcHost,
   handleRpcRequest,
   type RpcFailure,

@@ -827,6 +827,76 @@ describe("Play createEngine view", () => {
     worldRender.mockRestore();
   });
 
+  it("does not parent overlay spawn meshes into the world when the layer scene is missing", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 4,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "front",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    expect(handle.sceneLayerScenes()).toHaveLength(0);
+
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "front",
+      assetGuid: "hud",
+      zOrder: 3,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
+    expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("migrates a world-spawned overlay mesh into the layer scene on create", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    expect(handle.scene.getMeshByName("actor-4")).not.toBeNull();
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 4,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "front",
+    });
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "front",
+      assetGuid: "hud",
+      zOrder: 3,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
+    expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
   it("attaches the authored stack when postProcessingEnabled is omitted", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {

@@ -102,6 +102,7 @@ import {
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
+  migratePlaySlotVisual,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
 import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
@@ -835,6 +836,30 @@ export function createEngine(
     : null;
   binding.sceneForSlot = (slotId) =>
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
+  binding.isOverlaySlot = (slotId) =>
+    sceneLayerCompositor?.layerIdForSlot(slotId) != null;
+  const pendingOverlayAssign = new Map<
+    number,
+    Extract<CommandMessage, { type: "assignMesh" }>
+  >();
+  const syncOverlaySlot = (slotId: number) => {
+    if (!sceneLayerCompositor) return;
+    const overlayScene = sceneLayerCompositor.sceneForSlot(slotId);
+    if (!overlayScene) return;
+    const pending = pendingOverlayAssign.get(slotId);
+    if (pending) {
+      applyAssignMesh(overlayScene, binding, pending);
+      pendingOverlayAssign.delete(slotId);
+      return;
+    }
+    migratePlaySlotVisual(overlayScene, binding, slotId);
+  };
+  const syncOverlayLayer = (layerId: string) => {
+    if (!sceneLayerCompositor) return;
+    for (const slotId of sceneLayerCompositor.slotIdsForLayer(layerId)) {
+      syncOverlaySlot(slotId);
+    }
+  };
   const overlayPointerState = createOverlayPointerState();
   const playCursor = options.playMode ? attachPlayCursor(canvas) : null;
 
@@ -1465,12 +1490,15 @@ export function createEngine(
           command.sceneLayerId,
           command.actorGuid,
         );
+        syncOverlaySlot(command.slotId);
       }
       if (command.type === "despawn") {
+        pendingOverlayAssign.delete(command.slotId);
         sceneLayerCompositor?.noteDespawn(command.slotId);
       }
       if (command.type === "sceneLayerCreate") {
         sceneLayerCompositor?.create(command);
+        syncOverlayLayer(command.layerId);
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerRemove") {
@@ -1478,6 +1506,7 @@ export function createEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "sceneLayerClear") {
+        pendingOverlayAssign.clear();
         sceneLayerCompositor?.clear();
         scheduler.invalidate("snapshot");
       }
@@ -1492,11 +1521,15 @@ export function createEngine(
       particleService?.handleCommand(command);
       if (command.type === "assignMesh") {
         const previousCamera = scene.activeCamera;
-        applyAssignMesh(
-          sceneLayerCompositor?.sceneForSlot(command.slotId) ?? scene,
-          binding,
-          command,
-        );
+        const overlayScene = sceneLayerCompositor?.sceneForSlot(command.slotId);
+        if (
+          !overlayScene &&
+          sceneLayerCompositor?.layerIdForSlot(command.slotId)
+        ) {
+          pendingOverlayAssign.set(command.slotId, command);
+        } else {
+          applyAssignMesh(overlayScene ?? scene, binding, command);
+        }
         pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);
         particleService?.bindSlot(

@@ -133,6 +133,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   resolveMaterial?: (assetGuid: string) => Material | null;
   /** Overlay Play: create missing visuals in the SceneLayer scene for this slot. */
   sceneForSlot?: (slotId: number) => Scene | null;
+  /** Overlay Play: slot is tagged to a SceneLayer even if that scene is not live yet. */
+  isOverlaySlot?: (slotId: number) => boolean;
 }
 
 export function createSnapshotSceneBinding(): SnapshotSceneBinding {
@@ -436,6 +438,42 @@ export function applyAssignMesh(
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
   syncPlayFillLight(scene, binding);
+}
+
+/** Rebuild a Play mesh in `scene` when it was created on the wrong host Scene. */
+export function migratePlaySlotVisual(
+  scene: Scene,
+  binding: SnapshotSceneBinding,
+  slotId: number,
+): Mesh | null {
+  const existing = binding.meshes.get(slotId);
+  if (!existing) return null;
+  if (existing.getScene() === scene) return existing;
+  const position = existing.position.clone();
+  const rotationQuaternion = existing.rotationQuaternion?.clone();
+  const rotation = existing.rotation.clone();
+  const scaling = existing.scaling.clone();
+  const visible = existing.isVisible;
+  const metadata = existing.metadata;
+  existing.dispose();
+  binding.spriteOverlays?.get(slotId)?.dispose();
+  binding.spriteOverlays?.delete(slotId);
+  invalidateSlotAnimLoad(binding, slotId);
+  const rebuilt = createPlayVisual(scene, slotId, binding);
+  rebuilt.position.copyFrom(position);
+  if (rotationQuaternion) {
+    rebuilt.rotationQuaternion = rotationQuaternion;
+  } else {
+    rebuilt.rotation.copyFrom(rotation);
+  }
+  rebuilt.scaling.copyFrom(scaling);
+  if (metadata && typeof metadata === "object") {
+    rebuilt.metadata = { ...(rebuilt.metadata ?? {}), ...metadata };
+  }
+  binding.meshes.set(slotId, rebuilt);
+  applyMaterialToActorMeshes(binding, slotId, rebuilt);
+  setPlayVisualVisibility(rebuilt, visible);
+  return rebuilt;
 }
 
 function applyAssignMeshSorting(mesh: Mesh, command: AssignMeshCommand): void {
@@ -884,11 +922,11 @@ export function applySnapshotToScene(
       live.add(actor.slotId);
       let mesh = binding.meshes.get(actor.slotId);
       if (!mesh) {
-        mesh = createPlayVisual(
-          binding.sceneForSlot?.(actor.slotId) ?? scene,
-          actor.slotId,
-          binding,
-        );
+        const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
+        if (!overlayScene && binding.isOverlaySlot?.(actor.slotId)) {
+          continue;
+        }
+        mesh = createPlayVisual(overlayScene ?? scene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
       }

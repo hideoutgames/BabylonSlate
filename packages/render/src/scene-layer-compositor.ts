@@ -178,6 +178,14 @@ export class SceneLayerCompositor {
     return this.slotLayer.get(slotId) ?? null;
   }
 
+  slotIdsForLayer(layerId: string): number[] {
+    const slotIds: number[] = [];
+    for (const [slotId, id] of this.slotLayer) {
+      if (id === layerId) slotIds.push(slotId);
+    }
+    return slotIds;
+  }
+
   layers(): SceneLayerView[] {
     return [...this.byId.values()];
   }
