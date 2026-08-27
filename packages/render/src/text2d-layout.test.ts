@@ -97,6 +97,88 @@ describe("layoutText2D", () => {
     expect(right.items[1]?.x).toBeCloseTo(-0.08);
   });
 
+  it("aligns left and right to wrap-box borders when wrapWidth is set", () => {
+    const left = layoutText2D({
+      text: "Hi",
+      rich: false,
+      size: 32,
+      color: [1, 1, 1],
+      alignment: "left",
+      wrapWidth: 200,
+      wrapHeight: 64,
+      verticalAlignment: "center",
+      bold: false,
+      italic: false,
+      underline: false,
+      outline: 0,
+      outlineColor: [0, 0, 0],
+      pixelsPerUnit: 100,
+      metrics: provider(),
+    });
+    expect(left.items[0]?.x).toBeCloseTo(-0.92);
+    expect(left.items[1]?.x).toBeCloseTo(-0.76);
+
+    const right = layoutText2D({
+      text: "Hi",
+      rich: false,
+      size: 32,
+      color: [1, 1, 1],
+      alignment: "right",
+      wrapWidth: 200,
+      wrapHeight: 64,
+      verticalAlignment: "center",
+      bold: false,
+      italic: false,
+      underline: false,
+      outline: 0,
+      outlineColor: [0, 0, 0],
+      pixelsPerUnit: 100,
+      metrics: provider(),
+    });
+    expect(right.items[0]?.x).toBeCloseTo(0.76);
+    expect(right.items[1]?.x).toBeCloseTo(0.92);
+  });
+
+  it("pins the first or last line to wrap-box top or bottom", () => {
+    const top = layoutText2D({
+      text: "Hi",
+      rich: false,
+      size: 32,
+      color: [1, 1, 1],
+      alignment: "center",
+      wrapWidth: 200,
+      wrapHeight: 64,
+      verticalAlignment: "top",
+      bold: false,
+      italic: false,
+      underline: false,
+      outline: 0,
+      outlineColor: [0, 0, 0],
+      pixelsPerUnit: 100,
+      metrics: provider(),
+    });
+    expect(top.items[0]?.y).toBeCloseTo(0.16);
+
+    const bottom = layoutText2D({
+      text: "Hi",
+      rich: false,
+      size: 32,
+      color: [1, 1, 1],
+      alignment: "center",
+      wrapWidth: 200,
+      wrapHeight: 64,
+      verticalAlignment: "bottom",
+      bold: false,
+      italic: false,
+      underline: false,
+      outline: 0,
+      outlineColor: [0, 0, 0],
+      pixelsPerUnit: 100,
+      metrics: provider(),
+    });
+    expect(bottom.items[0]?.y).toBeCloseTo(-0.16);
+  });
+
   it("wraps on wrapWidth and newlines", () => {
     const wrapped = layoutText2D({
       text: "AAAA",

@@ -7,6 +7,7 @@ import {
   DEFAULT_TEXT2D_WRAP_HEIGHT,
   DEFAULT_TEXT2D_WRAP_WIDTH,
   TEXT2D_ALIGNMENTS,
+  TEXT2D_VERTICAL_ALIGNMENTS,
   TEXT2D_RENDERERS,
   createRichText2DComponent,
   createText2DComponent,
@@ -31,6 +32,7 @@ describe("2DTextComponent helpers", () => {
       outline: 0,
       outlineColor: [0, 0, 0],
       alignment: "left",
+      verticalAlignment: "center",
       bold: false,
       italic: false,
       underline: false,
@@ -40,6 +42,7 @@ describe("2DTextComponent helpers", () => {
     });
     expect(TEXT2D_RENDERERS).toEqual(["bitmap", "msdf"]);
     expect(TEXT2D_ALIGNMENTS).toEqual(["left", "center", "right"]);
+    expect(TEXT2D_VERTICAL_ALIGNMENTS).toEqual(["top", "center", "bottom"]);
     expect(
       parseText2DProperties({ size: -1, renderer: "nope" }),
     ).toMatchObject({
@@ -48,6 +51,7 @@ describe("2DTextComponent helpers", () => {
       hitTest: "ignore",
       wrapWidth: 0,
       wrapHeight: 0,
+      verticalAlignment: "center",
     });
   });
 

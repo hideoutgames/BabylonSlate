@@ -177,6 +177,7 @@ describe("Add Component catalog", () => {
       size: 32,
       wrapWidth: 200,
       wrapHeight: 64,
+      verticalAlignment: "center",
     });
     expect(defaultPropertiesFor("2DRichTextComponent").text).toContain(
       "[color=green]",

@@ -5,8 +5,8 @@ import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
 export const GRID_MESH_NAME = "__editor-grid__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
-/** Screen-space GreasedLine width for the orange 2D camera / 2DAnchor frame. */
-export const CAMERA_BOUNDS_LINE_WIDTH = 3;
+/** Screen-space GreasedLine width (px) for the orange 2D camera / 2DAnchor frame. */
+export const CAMERA_BOUNDS_LINE_WIDTH = 2;
 /** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
 export const GRID_ALPHA_INDEX = 0;
 
@@ -282,7 +282,7 @@ export function createEditorGrid(
     if (!boundsMesh) return;
     boundsMesh.isVisible = true;
     boundsMesh.alwaysSelectAsActiveMesh = true;
-    boundsMesh.visibility = visible ? 1 : 0;
+    boundsMesh.visibility = 1;
   };
 
   const buildBounds = () => {
@@ -307,7 +307,7 @@ export function createEditorGrid(
         {
           width: CAMERA_BOUNDS_LINE_WIDTH,
           color,
-          sizeAttenuation: false,
+          sizeAttenuation: true,
           createAndAssignMaterial: true,
         },
         scene,
@@ -324,10 +324,16 @@ export function createEditorGrid(
     boundsMesh.isPickable = false;
     boundsMesh.alwaysSelectAsActiveMesh = true;
     boundsMesh.isVisible = true;
-    boundsMesh.renderingGroupId = RENDERING_GROUP.world;
+    boundsMesh.renderingGroupId = RENDERING_GROUP.foreground;
     boundsMesh.alphaIndex = GRID_ALPHA_INDEX;
     if (boundsMesh.material) {
       boundsMesh.material.disableDepthWrite = true;
+      const material = boundsMesh.material as {
+        disableDepthCheck?: boolean;
+      };
+      if ("disableDepthCheck" in material) {
+        material.disableDepthCheck = true;
+      }
     }
     applyBoundsVisibility();
   };

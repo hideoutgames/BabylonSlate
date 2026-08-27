@@ -77,6 +77,7 @@ const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   { name: "Outline", typeId: "float", propertyKey: "outline" },
   { name: "Outline Color", typeId: "color", propertyKey: "outlineColor" },
   { name: "Alignment", typeId: "string", propertyKey: "alignment" },
+  { name: "Vertical Alignment", typeId: "string", propertyKey: "verticalAlignment" },
   { name: "Bold", typeId: "bool", propertyKey: "bold" },
   { name: "Italic", typeId: "bool", propertyKey: "italic" },
   { name: "Underline", typeId: "bool", propertyKey: "underline" },

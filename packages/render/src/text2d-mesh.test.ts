@@ -349,6 +349,7 @@ describe("2D text editor and Play wiring", () => {
         outline: 0,
         outlineColor: [0, 0, 0],
         alignment: "left",
+        verticalAlignment: "center",
         bold: false,
         italic: false,
         underline: false,

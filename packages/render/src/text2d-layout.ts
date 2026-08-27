@@ -6,6 +6,7 @@ import {
   type RichTextStyle,
   type Text2DAlignment,
   type Text2DProperties,
+  type Text2DVerticalAlignment,
 } from "@babylonslate/core";
 
 export type GlyphSource = "bitmap" | "msdf";
@@ -54,7 +55,9 @@ export type LayoutText2DInput = {
   size: number;
   color: [number, number, number];
   alignment: Text2DAlignment;
+  verticalAlignment?: Text2DVerticalAlignment;
   wrapWidth: number;
+  wrapHeight?: number;
   bold: boolean;
   italic: boolean;
   underline: boolean;
@@ -123,10 +126,28 @@ function spansFrom(input: LayoutText2DInput): RichTextSpan[] {
   ];
 }
 
+function lineShiftX(
+  alignment: Text2DAlignment,
+  lineWidth: number,
+  wrapWorld: number,
+): number {
+  if (wrapWorld > 0) {
+    if (alignment === "left") return -wrapWorld / 2;
+    if (alignment === "right") return wrapWorld / 2 - lineWidth;
+    return -lineWidth / 2;
+  }
+  return alignment === "center"
+    ? -lineWidth / 2
+    : alignment === "right"
+      ? -lineWidth
+      : 0;
+}
+
 function flushLine(
   line: Pending[],
   cursorY: number,
   alignment: Text2DAlignment,
+  wrapWorld: number,
   items: Text2DLayoutItem[],
 ): { width: number; height: number } {
   if (line.length === 0) {
@@ -134,8 +155,7 @@ function flushLine(
   }
   const lineWidth = line.reduce((sum, entry) => sum + entry.advance, 0);
   const lineHeight = Math.max(...line.map((entry) => entry.height), 0);
-  const shift =
-    alignment === "center" ? -lineWidth / 2 : alignment === "right" ? -lineWidth : 0;
+  const shift = lineShiftX(alignment, lineWidth, wrapWorld);
   let cursorX = shift;
   for (const entry of line) {
     const x = cursorX + entry.bearingX + entry.width / 2;
@@ -205,6 +225,8 @@ function flushLine(
 export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
   const ppu = input.pixelsPerUnit > 0 ? input.pixelsPerUnit : 100;
   const wrapWorld = input.wrapWidth > 0 ? input.wrapWidth / ppu : 0;
+  const wrapHeightWorld = input.wrapHeight && input.wrapHeight > 0 ? input.wrapHeight / ppu : 0;
+  const vertical = input.verticalAlignment ?? "center";
   const items: Text2DLayoutItem[] = [];
   const lines: Array<{ pending: Pending[]; width: number; height: number }> = [];
   let line: Pending[] = [];
@@ -213,7 +235,7 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
   const defaultLineHeight = input.size / ppu;
 
   const breakLine = () => {
-    const flushed = flushLine(line, 0, input.alignment, []);
+    const flushed = flushLine(line, 0, input.alignment, wrapWorld, []);
     lines.push({ pending: line, width: flushed.width, height: flushed.height || defaultLineHeight });
     line = [];
     lineAdvance = 0;
@@ -274,10 +296,16 @@ export function layoutText2D(input: LayoutText2DInput): Text2DLayout {
 
   const totalHeight = lines.reduce((sum, entry) => sum + entry.height, 0);
   const totalWidth = Math.max(0, ...lines.map((entry) => entry.width));
-  let cursorY = totalHeight / 2;
+  const frameHeight = wrapHeightWorld > 0 ? wrapHeightWorld : totalHeight;
+  let cursorY =
+    vertical === "top"
+      ? frameHeight / 2
+      : vertical === "bottom"
+        ? -frameHeight / 2 + totalHeight
+        : totalHeight / 2;
   for (const row of lines) {
     cursorY -= row.height / 2;
-    flushLine(row.pending, cursorY, input.alignment, items);
+    flushLine(row.pending, cursorY, input.alignment, wrapWorld, items);
     cursorY -= row.height / 2;
   }
   return { items, width: totalWidth, height: totalHeight };
@@ -300,7 +328,9 @@ export function layoutText2DFromProperties(
       size: parsed.size,
       color: parsed.color,
       alignment: parsed.alignment,
+      verticalAlignment: parsed.verticalAlignment,
       wrapWidth: parsed.wrapWidth,
+      wrapHeight: parsed.wrapHeight,
       bold: parsed.bold,
       italic: parsed.italic,
       underline: parsed.underline,

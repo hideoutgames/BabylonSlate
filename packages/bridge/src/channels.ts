@@ -294,6 +294,7 @@ export type CommandMessage =
           outline: number;
           outlineColor: [number, number, number];
           alignment: "left" | "center" | "right";
+          verticalAlignment: "top" | "center" | "bottom";
           bold: boolean;
           italic: boolean;
           underline: boolean;
@@ -331,6 +332,7 @@ export type CommandMessage =
         outline: number;
         outlineColor: [number, number, number];
         alignment: "left" | "center" | "right";
+        verticalAlignment: "top" | "center" | "bottom";
         bold: boolean;
         italic: boolean;
         underline: boolean;
