@@ -1550,7 +1550,7 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("hides 2D camera bounds with the grid and restores them on show", () => {
+  it("keeps 2D camera bounds visible when the tile grid is hidden", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 10, height: 6 });
@@ -1558,7 +1558,8 @@ describe("editor grid", () => {
     expect(grid.boundsMesh?.isVisible).toBe(true);
     expect(grid.boundsMesh?.visibility).toBe(1);
     expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
-    expect(grid.boundsMesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
+    expect(grid.boundsMesh?.renderingGroupId).toBe(RENDERING_GROUP.foreground);
+    expect(grid.boundsMesh?.material?.disableDepthWrite).toBe(true);
 
     grid.setVisible(false);
     expect(grid.mesh.isVisible).toBe(true);
@@ -1567,7 +1568,7 @@ describe("editor grid", () => {
       (grid.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
     ).toBe(0);
     expect(grid.boundsMesh?.isVisible).toBe(true);
-    expect(grid.boundsMesh?.visibility).toBe(0);
+    expect(grid.boundsMesh?.visibility).toBe(1);
     expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
 
     grid.setVisible(true);
@@ -1622,11 +1623,11 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("draws a thicker orange 2D camera bounds frame", () => {
+  it("draws a 2px screen-space orange 2D camera bounds frame", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 16, height: 9 });
-    expect(CAMERA_BOUNDS_LINE_WIDTH).toBeGreaterThan(1);
+    expect(CAMERA_BOUNDS_LINE_WIDTH).toBe(2);
     expect(grid.boundsMesh?.name).toBe("__editor-camera-bounds__");
     grid.dispose();
   });

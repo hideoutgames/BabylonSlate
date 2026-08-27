@@ -28,6 +28,9 @@ export type Text2DRenderer = (typeof TEXT2D_RENDERERS)[number];
 export const TEXT2D_ALIGNMENTS = ["left", "center", "right"] as const;
 export type Text2DAlignment = (typeof TEXT2D_ALIGNMENTS)[number];
 
+export const TEXT2D_VERTICAL_ALIGNMENTS = ["top", "center", "bottom"] as const;
+export type Text2DVerticalAlignment = (typeof TEXT2D_VERTICAL_ALIGNMENTS)[number];
+
 export const TEXT2D_COMPONENT_CLASS_IDS = [
   "2DTextComponent",
   "2DRichTextComponent",
@@ -42,6 +45,7 @@ export type Text2DProperties = {
   outline: number;
   outlineColor: Rgb;
   alignment: Text2DAlignment;
+  verticalAlignment: Text2DVerticalAlignment;
   bold: boolean;
   italic: boolean;
   underline: boolean;
@@ -77,6 +81,15 @@ export const TEXT2D_ALIGNMENT_LABELS: Record<Text2DAlignment, string> = {
   left: "Left",
   center: "Center",
   right: "Right",
+};
+
+export const TEXT2D_VERTICAL_ALIGNMENT_LABELS: Record<
+  Text2DVerticalAlignment,
+  string
+> = {
+  top: "Top",
+  center: "Center",
+  bottom: "Bottom",
 };
 
 export type Text2DMsdfStatus =
@@ -133,6 +146,14 @@ export function parseText2DAlignment(value: unknown): Text2DAlignment {
     : "left";
 }
 
+export function parseText2DVerticalAlignment(
+  value: unknown,
+): Text2DVerticalAlignment {
+  return TEXT2D_VERTICAL_ALIGNMENTS.includes(value as Text2DVerticalAlignment)
+    ? (value as Text2DVerticalAlignment)
+    : "center";
+}
+
 export function parseText2DProperties(
   value: unknown,
   options: { rich?: boolean } = {},
@@ -176,6 +197,7 @@ export function parseText2DProperties(
     outline,
     outlineColor: parseRgb(source.outlineColor, DEFAULT_TEXT2D_OUTLINE_COLOR),
     alignment: parseText2DAlignment(source.alignment),
+    verticalAlignment: parseText2DVerticalAlignment(source.verticalAlignment),
     bold: source.bold === true,
     italic: source.italic === true,
     underline: source.underline === true,
@@ -196,6 +218,7 @@ function componentProperties(rich: boolean): Record<string, unknown> {
     outline: parsed.outline,
     outlineColor: [...parsed.outlineColor],
     alignment: parsed.alignment,
+    verticalAlignment: parsed.verticalAlignment,
     bold: parsed.bold,
     italic: parsed.italic,
     underline: parsed.underline,

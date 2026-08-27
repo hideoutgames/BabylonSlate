@@ -47,6 +47,7 @@ describe("assignMesh visual payloads", () => {
         outline: 0,
         outlineColor: [0, 0, 0],
         alignment: "left",
+        verticalAlignment: "center",
         bold: false,
         italic: false,
         underline: false,

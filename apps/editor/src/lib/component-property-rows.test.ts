@@ -989,6 +989,14 @@ describe("applyPrefabPropertyDefaults", () => {
       kind: "slider",
       value: 0,
     });
+    expect(text.rows.find((row) => row.id.endsWith("-alignment"))).toMatchObject({
+      kind: "enum",
+      value: "left",
+    });
+    expect(text.rows.find((row) => row.id.endsWith("-verticalAlignment"))).toMatchObject({
+      kind: "enum",
+      value: "center",
+    });
     const blocked = rowsFor({
       id: "plain",
       classId: "2DRichTextComponent",

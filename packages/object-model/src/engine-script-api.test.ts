@@ -232,6 +232,7 @@ describe("engine script API catalog", () => {
       "outline",
       "outlineColor",
       "alignment",
+      "verticalAlignment",
       "bold",
       "italic",
       "underline",
