@@ -3293,6 +3293,7 @@ class InProcessRuntime implements RuntimeDriver {
 
   stop(): void {
     this.running = false;
+    this.pendingSceneFinish = null;
     this.finalizeTrace();
     this.world.end();
     this.physicsSync.dispose();
