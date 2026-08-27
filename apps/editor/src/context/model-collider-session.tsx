@@ -56,6 +56,7 @@ export function ModelColliderSessionProvider({
   );
 }
 
+/* eslint-disable react-refresh/only-export-components -- context module */
 export function useModelColliderSession(): ModelColliderSessionValue {
   return useContext(ModelColliderSessionContext);
 }

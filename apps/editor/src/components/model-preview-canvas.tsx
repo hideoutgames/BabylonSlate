@@ -106,6 +106,7 @@ export function ModelPreviewCanvas({
     let gestures: { dispose: () => void } | null = null;
     let loaded: { dispose: () => void } | null = null;
     const raf = { id: 0 };
+    const visuals = colliderVisualsRef.current;
     void (async () => {
       try {
         host = createModelPreviewScene(engine);
@@ -230,10 +231,10 @@ export function ModelPreviewCanvas({
       shadingRef.current = null;
       gizmoHostRef.current?.dispose();
       gizmoHostRef.current = null;
-      colliderVisualsRef.current.forEach((visual) => visual.dispose());
-      colliderVisualsRef.current.clear();
+      visuals.forEach((visual) => visual.dispose());
+      visuals.clear();
     };
-  }, [engine, sourceBytes, model.importScale]);
+  }, [engine, sourceBytes, model.importScale, setSelectedColliderId]);
 
   useEffect(() => {
     const overlay = shadingRef.current;
@@ -300,9 +301,8 @@ export function ModelPreviewCanvas({
   useEffect(() => {
     const host = hostRef.current;
     const gizmos = gizmoHostRef.current;
+    const visuals = colliderVisualsRef.current;
     if (!host) return;
-    colliderVisualsRef.current.forEach((visual) => visual.dispose());
-    colliderVisualsRef.current.clear();
     gizmos?.attachTo(null);
     if (showCollision) {
       const colliders = JSON.parse(colliderKey) as ModelSimpleCollider[];
@@ -333,10 +333,10 @@ export function ModelPreviewCanvas({
           collider.rotation[3],
         );
         visual.scaling.set(collider.scale[0], collider.scale[1], collider.scale[2]);
-        colliderVisualsRef.current.set(collider.id, visual);
+        visuals.set(collider.id, visual);
       }
       const selected = selectedColliderId
-        ? colliderVisualsRef.current.get(selectedColliderId)
+        ? visuals.get(selectedColliderId)
         : undefined;
       if (selected) {
         gizmos?.attachTo(selected);
@@ -345,8 +345,8 @@ export function ModelPreviewCanvas({
     }
     presenterRef.current?.present({ force: true });
     return () => {
-      colliderVisualsRef.current.forEach((visual) => visual.dispose());
-      colliderVisualsRef.current.clear();
+      visuals.forEach((visual) => visual.dispose());
+      visuals.clear();
       gizmos?.attachTo(null);
     };
   }, [
