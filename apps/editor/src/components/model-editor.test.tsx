@@ -238,4 +238,17 @@ describe("ModelColliders", () => {
       "Generated Collision",
     );
   });
+
+  it("does not add Generated Collision until the Model source chunk is loaded", () => {
+    render(<ColliderHarness />);
+    fireEvent.click(screen.getByTestId("model-add-collider"));
+    const generated = screen.getByTestId("model-add-collider-generated");
+    expect(
+      generated.hasAttribute("data-disabled") ||
+        generated.getAttribute("aria-disabled") === "true" ||
+        (generated as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(generated);
+    expect(screen.getByText("No Colliders")).toBeTruthy();
+  });
 });

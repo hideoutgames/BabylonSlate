@@ -883,6 +883,26 @@ describe("PhysicsWorldSync MeshComponent collision", () => {
     sync.dispose();
   });
 
+  it("rebuilds Mesh colliders when actor scale changes the baked size", () => {
+    const world = createWorld();
+    const actor = spawnMeshActor(world, { guid: "crate" });
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    sync.syncFromWorld(world);
+    expect(
+      backend.sphereOverlap({ x: 0.7, y: 0, z: 0 }, 0.01).actorIds,
+    ).toContain("crate");
+    actor.transform.scale = { x: 0.1, y: 0.1, z: 0.1 };
+    sync.syncFromWorld(world);
+    expect(backend.sphereOverlap({ x: 0.7, y: 0, z: 0 }, 0.01).actorIds).toEqual(
+      [],
+    );
+    expect(
+      backend.sphereOverlap({ x: 0, y: 0, z: 0 }, 0.01).actorIds,
+    ).toContain("crate");
+    sync.dispose();
+  });
+
   it("skips MeshComponent collision when mode is none", () => {
     const world = createWorld();
     spawnMeshActor(world, {

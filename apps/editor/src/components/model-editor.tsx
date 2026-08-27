@@ -363,6 +363,7 @@ export function ModelColliders({
   };
 
   const addKind = (kind: ModelSimpleColliderKind) => {
+    if (kind === "generated" && !sourceBytes) return;
     const name = uniqueSimpleColliderName(
       model.simpleColliders,
       SIMPLE_COLLIDER_KIND_LABELS[kind],
@@ -385,6 +386,7 @@ export function ModelColliders({
     id: kind,
     label: SIMPLE_COLLIDER_KIND_LABELS[kind],
     testId: `model-add-collider-${kind}`,
+    disabled: kind === "generated" && !sourceBytes,
     onSelect: () => addKind(kind),
   }));
 

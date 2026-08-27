@@ -408,7 +408,7 @@ export function ModelPreviewCanvas({
                   setGizmoTool(next);
                 }
               }}
-              aria-label="Collider transform tool"
+              aria-label="Collider Transform Tool"
               data-testid="model-collider-gizmo-tools"
             >
               {MODEL_PREVIEW_GIZMO_TOOLS.map((tool) => (

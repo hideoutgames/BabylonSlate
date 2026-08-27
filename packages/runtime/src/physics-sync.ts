@@ -434,7 +434,7 @@ export class PhysicsWorldSync {
           worldScale(actor, this.worldTransforms),
         );
         const fingerprint = [
-          collision.shape.kind,
+          JSON.stringify(baked.shape),
           baked.translation.x,
           baked.translation.y,
           baked.translation.z,

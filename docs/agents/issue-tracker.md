@@ -19,6 +19,12 @@ When the code-review skill reports Standards or Spec findings:
 
 | Date | Branch | Checklist / issue | Axis | Finding | Status |
 | --- | --- | --- | --- | --- | --- |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `PhysicsWorldSync.applyMeshColliders` fingerprinted kind + TRS + layer/mask but not `baked.shape`, so actor scale (and radius/hull size) kept the old Havok collider | Resolved |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Add → Generated Collision with no Model `source` chunk wrote `kind: "generated"` and `points: []` instead of recooking the hull | Resolved |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Play `showcollision` maps cylinder to a box AABB and skips convex/mesh (cone, generated, complex). Editor dashes already use cylinder/hull wires. Same skip as prior convex authorship | Accepted |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | Havok always uses `PhysicsShapeCylinder` (present in Babylon 9); unused `cylinderConvexPoints` prism fallback not wired | Accepted |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Spec | `physicsActorDiagnostics` treats Mesh `collisionMode !== "none"` as a collider source without resolved shapes or Model payloads | Accepted |
+| 2026-08-27 | cursor/model-simple-collision-33dd | Model simple collision | Standards | Colliders Add/Delete sit in the panel body, not `PanelFrame.toolbar`. DockView already titles the tab Colliders | Accepted |
 | 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Nested `2DButton` editor origin was unpickable at create then `applyActorTransform` restored picks, stealing viewport hits from the parent visual | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-review-fixes-db32 | SceneLayer 2D Improvements | Spec | Child `2DButton` click test used an unbound `onClick`; overlay pointer always invokes with the button id so the owner never logged after #453 | Resolved |
 | 2026-08-26 | cursor/scenelayer-2d-improvements-db32 | SceneLayer 2D Improvements | Spec | Child `2DButton` stamped parent visual with Hit Test Ignore so Play picks skipped nested buttons | Resolved |
