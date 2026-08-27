@@ -32,7 +32,7 @@ Content Browser type `SceneLayer` → document kind `scene-layer`. Payload is a 
 
 Editor tabs convert to a locked 2D `SerializedScene` (`sceneLayerToEditorScene`) so Viewport / Outliner / Details reuse the scene shell. Save writes `SerializedSceneLayer` (`editorSceneToSceneLayer`).
 
-DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle; lock Unlit shading. Overlay Details (nothing selected): Name, Gravity, Timestep, Post Process, **Layer Width**, **Layer Height**. No Default Camera, fog/IBL, lights, or 3D/2D physics-world picker. Layer Width/Height are the orange 2D camera outline (`cameraBounds2D` in the editor scene, `settings.layerBounds` on the SceneLayer document; default **32×18**). That rectangle is the design canvas; Play / Preview Build / export stretch it to the full viewport. Show Grid shows or hides the orange outline with the tile grid.
+DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle; lock Unlit shading. Overlay Details (nothing selected): Name, Gravity, Timestep, Post Process, **Layer Width**, **Layer Height**. No Default Camera, fog/IBL, lights, or 3D/2D physics-world picker. Layer Width/Height are the orange 2D camera outline (`cameraBounds2D` in the editor scene, `settings.layerBounds` on the SceneLayer document; default **32×18**). The outline is a GreasedLine (`CAMERA_BOUNDS_LINE_WIDTH` 3, screen-space) so it stays easier to see than a hairline. That rectangle is the design canvas; Play / Preview Build / export stretch it to the full viewport. Show Grid shows or hides the orange outline with the tile grid.
 
 ## Object model
 
