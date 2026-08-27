@@ -22,6 +22,7 @@ import {
   createDefaultSceneSettings,
   findActor,
   identitySerializedTransform,
+  parseOverlayPanelProperties,
   parseText2DProperties,
   patchComponentProperties,
   type SerializedActor,
@@ -41,6 +42,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing, selectionAfterLockChange } from "../context/scene-editing-context";
 import { useOptionalNavBake } from "../context/nav-bake-context";
 import { IconActionButton } from "../components/icon-action-button";
+import { NineSlicePreview } from "../components/nine-slice-preview";
 import { AddComponentDialog } from "../components/add-component-dialog";
 import {
   defaultPropertiesFor,
@@ -917,6 +919,11 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
                   : undefined,
               )}
             />
+            {component.classId === "2DPanelComponent" ? (
+              <NineSlicePreview
+                {...parseOverlayPanelProperties(component.properties)}
+              />
+            ) : null}
             {component.classId === "2DTextComponent" ||
             component.classId === "2DRichTextComponent" ? (
               <div className="p-2">
