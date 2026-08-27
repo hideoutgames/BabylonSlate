@@ -387,6 +387,12 @@ export interface CreateEngineOptions {
     message: string;
     assetGuid?: string;
   }) => void;
+  onMaterialDiagnostic?: (diagnostic: {
+    code: string;
+    message: string;
+    severity?: string;
+    nodeId?: string;
+  }) => void;
   /** Baked navmesh bytes for Play `shownav`. */
   navmeshBytes?: Uint8Array | null;
   /** NavMesh Blocker volumes drawn with Play `shownav`. */
@@ -743,6 +749,12 @@ export function createEngine(
   );
   binding.materialTextureGuids = materialTextureGuidMap(materialDocuments);
   const editingMaterialGuids = new Set<string>();
+  const compiledMaterialGuids = new Set<string>();
+  binding.compiledMaterialGuids = compiledMaterialGuids;
+  const freezeLibraryMaterials = (): void => {
+    if (options.playMode) return;
+    applyEditorMaterialFreeze(scene, editingMaterialGuids);
+  };
   const materialLibrary = new MaterialLibrary({
     functions: () => Object.fromEntries(materialFunctions),
     resolveTexture: (guid) => {
@@ -750,14 +762,21 @@ export function createEngine(
       if (!bytes) return null;
       return getMaterialTexture(resourceCache, guid, engine, bytes);
     },
+    onTextureError: (diagnostic) => {
+      options.onMaterialDiagnostic?.(diagnostic);
+    },
   });
   binding.resolveMaterial = (guid) => {
     const live = materialLibrary.materialFor(scene, guid);
-    if (live) return live;
+    if (live) {
+      compiledMaterialGuids.add(guid);
+      return live;
+    }
     const document = materialDocuments.get(guid);
     if (!document) return null;
     const acquired = materialLibrary.acquire(scene, guid, document);
     if (materialUnavailable(acquired)) return null;
+    compiledMaterialGuids.add(guid);
     return acquired.material;
   };
 
@@ -939,7 +958,7 @@ export function createEngine(
     );
     if (editorSync) {
       editorSync.apply(sceneData);
-      applyEditorMaterialFreeze(scene, editingMaterialGuids);
+      freezeLibraryMaterials();
       rebuildPostProcessStack();
       pinClientTextures();
       return;
@@ -1719,6 +1738,7 @@ export function createEngine(
         editorSync?.setMeshAssets({
           ...assets,
           materialTextureGuids: binding.materialTextureGuids,
+          compiledMaterialGuids,
         }) === true;
       if (rebuilt && lastSelectedActorIds.length > 0) {
         editor?.setSelectedActors(lastSelectedActorIds);
@@ -1784,18 +1804,18 @@ export function createEngine(
       rebuildPostProcessStack();
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
-      applyEditorMaterialFreeze(scene, editingMaterialGuids);
+      freezeLibraryMaterials();
       scheduler.invalidate("asset");
     },
     setEditingMaterialGuids: (guids) => {
       editingMaterialGuids.clear();
       for (const guid of guids) editingMaterialGuids.add(guid);
-      applyEditorMaterialFreeze(scene, editingMaterialGuids);
+      freezeLibraryMaterials();
       scheduler.invalidate("asset");
     },
     prewarmSceneMaterials: async () => {
       await warmSceneMaterials(scene);
-      applyEditorMaterialFreeze(scene, editingMaterialGuids);
+      freezeLibraryMaterials();
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {

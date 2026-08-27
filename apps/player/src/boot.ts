@@ -156,6 +156,15 @@ export function startPlayer(options: {
       });
       options.onDiagnostic?.(diagnostics);
     },
+    onMaterialDiagnostic: (diagnostic) => {
+      diagnostics.push({
+        message: diagnostic.message,
+        severity: diagnostic.severity ?? "error",
+        code: diagnostic.code,
+        nodeId: diagnostic.nodeId,
+      });
+      options.onDiagnostic?.(diagnostics);
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);

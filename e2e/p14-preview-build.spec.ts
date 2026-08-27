@@ -1,11 +1,19 @@
 import { expect, test, type Page } from "@playwright/test";
-import { createContentBrowserAsset, openMainScene, openTestProject } from "./open-test-project";
+import { createContentBrowserAsset, openAssetFromBrowser, openMainScene, openTestProject } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
 import { saveAllIfEnabled } from "./save-all";
 import {
   EXPECTED_PREVIEW_ACTOR_POSITIONS,
   previewPlacementScene,
 } from "./preview-scene-fixture";
+import {
+  addMaterialPaletteNode,
+  compileMaterialPreview,
+  connectMaterialPins,
+  guidForPath,
+  importAlbedoTexture,
+  pickMaterialNodeTexture,
+} from "./material-graph";
 
 async function previewSlotMaterialNames(page: Page): Promise<string[]> {
   const root = page
@@ -288,6 +296,90 @@ test.describe("P14 Preview Build", () => {
         async () => {
           const names = await previewSlotMaterialNames(page);
           return names.some((name) => name.startsWith("material:"))
+            ? "bound"
+            : names.join(",") || "none";
+        },
+        { timeout: 30_000 },
+      )
+      .toBe("bound");
+
+    await expect
+      .poll(
+        async () => {
+          const stats = await previewCanvasPixelStats(page);
+          if (!stats.ok || stats.total < 50) {
+            return `wait:${JSON.stringify(stats)}`;
+          }
+          const bad = stats.redStub + stats.magenta;
+          return stats.albedo > bad && bad / stats.total < 0.25
+            ? "ok"
+            : `albedo:${stats.albedo}/red:${stats.redStub}/magenta:${stats.magenta}/total:${stats.total}`;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe("ok");
+    await page.getByTestId("preview-build-close").click();
+  });
+
+  test("Preview Build authored Texture Sample on a primitive is not slim-stub red or the error sampler", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await openTestProject(page);
+    const albedoGuid = await importAlbedoTexture(page);
+    await createContentBrowserAsset(page, "Material", "PreviewAlbedo");
+    await openAssetFromBrowser(page, "assets/PreviewAlbedo.material.babasset");
+    await expect(page.getByTestId("document-workspace-material")).toBeVisible();
+    await expect(page.getByTestId("property-shadingModel")).toBeVisible();
+    await page.getByTestId("property-shadingModel").click();
+    await page.getByRole("option", { name: "Unlit" }).click();
+    await expect(page.getByTestId("property-shadingModel")).toContainText("Unlit");
+    await addMaterialPaletteNode(page, "Texture Sample", "texture.sample");
+    await pickMaterialNodeTexture(page, albedoGuid);
+    await connectMaterialPins(
+      page,
+      "texture.sample-",
+      "rgb",
+      '[data-id="output"]',
+      "baseColor",
+    );
+    await compileMaterialPreview(page);
+    await saveAllIfEnabled(page);
+    const materialGuid = await guidForPath(
+      page,
+      "assets/PreviewAlbedo.material.babasset",
+    );
+    expect(materialGuid.length).toBeGreaterThan(0);
+
+    await openMainScene(page);
+    const scene = previewPlacementScene(materialGuid);
+    expect(
+      await page.evaluate(async (nextScene) => {
+        const host = globalThis as unknown as {
+          __babylonslateTest?: {
+            setActiveSceneContent: (scene: typeof nextScene) => Promise<boolean>;
+          };
+        };
+        return host.__babylonslateTest?.setActiveSceneContent(nextScene) ?? false;
+      }, scene),
+    ).toBe(true);
+    await saveAllIfEnabled(page);
+
+    await page.getByTestId("debug-menu").click();
+    await page.getByTestId("preview-build-toggle").click();
+    await page.getByTestId("play-preview").click();
+    const root = await waitForPreviewBuildBoot(page);
+    await expect
+      .poll(async () => Number((await root.getAttribute("data-ticks")) ?? "0"), {
+        timeout: 30_000,
+      })
+      .toBeGreaterThan(0);
+
+    await expect
+      .poll(
+        async () => {
+          const names = await previewSlotMaterialNames(page);
+          return names.some((name) => name === `material:${materialGuid}`)
             ? "bound"
             : names.join(",") || "none";
         },

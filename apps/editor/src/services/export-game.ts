@@ -22,6 +22,7 @@ import {
   type ExportPreset,
   type RenderProjectSettings,
   isErr,
+  isOk,
   type Result,
   type SerializedGraph,
   type SerializedScene,
@@ -31,6 +32,13 @@ import {
   resolvePluginEnabled,
   type IndexedAsset,
 } from "@babylonslate/assets";
+import {
+  missingPackedMaterialTextureGuids,
+  normalizeMaterialDocument,
+  normalizeMaterialFunctionDocument,
+  type MaterialDocument,
+  type MaterialFunctionDocument,
+} from "@babylonslate/shader-graph";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import {
   compileAnimGraphScripts,
@@ -132,6 +140,63 @@ function sceneGuidForAsset(
     if (blob.includes(guid)) return candidate.guid;
   }
   return startupSceneGuid;
+}
+
+function decodeJsonPayload(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function materialDocumentForExport(
+  type: string,
+  payload: unknown,
+): MaterialDocument | MaterialFunctionDocument | null {
+  if (payload == null) return null;
+  if (type === "MaterialFunction") {
+    return normalizeMaterialFunctionDocument(payload);
+  }
+  if (type === "Material") {
+    return normalizeMaterialDocument(payload);
+  }
+  return null;
+}
+
+/** Packed Texture guids that have bytes, vs Material samples that do not. */
+function packedMaterialTextureWarnings(
+  assets: readonly ExportIndexedAsset[],
+  closureGuids: ReadonlySet<string>,
+  exportAssets: readonly ExportAssetBytes[],
+  payloadByGuid?: (guid: string) => unknown | null,
+): string[] {
+  const packedTextureGuids = new Set<string>();
+  const bytesByGuid = new Map<string, Uint8Array>();
+  for (const asset of exportAssets) {
+    bytesByGuid.set(asset.guid, asset.bytes);
+    if (asset.type === "Texture" && asset.bytes.byteLength > 0) {
+      packedTextureGuids.add(asset.guid);
+    }
+  }
+  const documents: Array<MaterialDocument | MaterialFunctionDocument> = [];
+  for (const guid of closureGuids) {
+    const asset = assets.find((entry) => entry.guid === guid);
+    if (
+      !asset ||
+      (asset.type !== "Material" && asset.type !== "MaterialFunction")
+    ) {
+      continue;
+    }
+    const packed = bytesByGuid.get(guid);
+    const payload =
+      payloadByGuid?.(guid) ?? (packed ? decodeJsonPayload(packed) : null);
+    const document = materialDocumentForExport(asset.type, payload);
+    if (document) documents.push(document);
+  }
+  return missingPackedMaterialTextureGuids(documents, packedTextureGuids).map(
+    (guid) => `Packed Material samples Texture ${guid} with no bytes`,
+  );
 }
 
 export async function collectAndExportGame(
@@ -287,7 +352,7 @@ export async function collectAndExportGame(
   const scripts: ScriptBundleEntry[] = [...classScripts, ...animScripts];
 
   params.onPhase?.("Writing Pack");
-  return exportGame({
+  const packed = await exportGame({
     mode,
     bundleDebugger,
     startupSceneGuid: startup,
@@ -312,6 +377,17 @@ export async function collectAndExportGame(
     fileCountWarn: preset.fileCountWarn,
     fileCountFail: preset.fileCountFail,
   });
+  if (isOk(packed)) {
+    packed.value.warnings.push(
+      ...packedMaterialTextureWarnings(
+        params.assets,
+        new Set(closure.value),
+        exportAssets,
+        params.payloadByGuid,
+      ),
+    );
+  }
+  return packed;
 }
 
 export function zipGameArtifact(artifact: ExportArtifact): Uint8Array {

@@ -40,6 +40,7 @@ export type ModelAnimLoadBinding = Pick<
   | "spritePayloads"
   | "textureBytes"
   | "materialTextureGuids"
+  | "compiledMaterialGuids"
 >;
 
 const MODEL_PLACEHOLDER_KEY = "editorModelPlaceholder";
@@ -213,12 +214,16 @@ async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
 }
 
 function packedSlimProof(
-  binding: Pick<ModelAnimLoadBinding, "textureBytes" | "materialTextureGuids">,
+  binding: Pick<
+    ModelAnimLoadBinding,
+    "textureBytes" | "materialTextureGuids" | "compiledMaterialGuids"
+  >,
 ): PackedTextureSlimProof | undefined {
   if (!binding.textureBytes || !binding.materialTextureGuids) return undefined;
   return {
     packedTextureGuids: new Set(binding.textureBytes.keys()),
     texturesByMaterialGuid: binding.materialTextureGuids,
+    compiledMaterialGuids: binding.compiledMaterialGuids ?? new Set(),
   };
 }
 

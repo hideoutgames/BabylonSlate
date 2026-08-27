@@ -77,7 +77,18 @@ from Editor Texture LOD. Preview Build packs KTX2 into a cold iframe Engine, so
 `acquire` / `resolveMaterial` stay **synchronous** (slot bind cannot wait): the
 compiler assigns the live `Texture` object, calls `material.build()`, then
 subscribes `onLoadObservable` and **rebuilds** so the mesh does not stay on
-Babylon’s error sampler. The packed player also sets
+Babylon’s error sampler. Frozen NodeMaterials ignore dirty/`build()`: the load
+callback **unfreezes**, rebuilds, re-applies authored blend
+(`applyAuthoredSurfaceBlend`), then restores freeze if the material was frozen.
+`onErrorObservable` (when the Texture exposes it) reports
+`material.missingTexture` instead of leaving the error sampler forever; rebuild
+errors surface the same way rather than swallowing. `createEngine({ playMode: true })`
+skips `applyEditorMaterialFreeze` so Play / the packed player never
+**additionally** freeze library materials after compile / prewarm. Play scenes
+still use `ScenePerformancePriority.Intermediate`, which sets
+`checkReadyOnlyOnce` (`isFrozen`) when a NodeMaterial first becomes ready.
+Editor freeze stays, but the load callback still unfreeze-rebuild-refreezes.
+The packed player also sets
 `KhronosTextureContainer2.DefaultNumWorkers = 0` (decode on this thread; blob
 Workers often fail to `importScripts` the self-hosted wasm under COEP) and
 `DefaultDecoderOptions.forceRGBA` for that play-mode Engine (software WebGL
@@ -289,6 +300,17 @@ Play path: `EditorSceneSync` binds the same guid onto `editorActor:<id>` /
 The shared browser fixture asserts the authored material on Scene, Prefab,
 overlay Play, Preview Build, and the packed player rather than relying only on
 command-record tests.
+
+### Viewport / Play / Preview pixels
+
+| Look | Meaning |
+| --- | --- |
+| Red/magenta checker | Babylon **error sampler**: Texture assigned but not ready, or decode failed. Frozen rebuild used to leave this on Preview KTX2. |
+| Solid red | GLB **slim stub** (`slimGlbEmbeddedImages` 1×1 red PNG) when slot materials never stick. Slim now also requires those Materials compiled (`compiledMaterialGuids`). |
+| Grey UV checker | Engine default when `materialGuid` is empty and there is no glTF construction material. |
+| Black | Failed compile, missing/broken IBL on PBR, boot/iframe failure, or a freeze that never rebuilt. |
+
+Pack warns when a Material samples a Texture guid with no bytes (`Packed Material samples Texture … with no bytes`). Logic `compileGraph` cannot paint an error sampler.
 
 Scene Details authors `SceneSettings.postProcessStack` (ordered Material guid +
 Enabled) with `NamedListEditor` / `AssetPicker`. The picker lists post-process

@@ -559,6 +559,12 @@ export function startPlaySession(options: {
     onParticleDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },
+    onMaterialDiagnostic: (diagnostic) => {
+      options.onLog?.(
+        diagnostic.message,
+        diagnostic.severity === "error" ? "error" : "warning",
+      );
+    },
     onSceneLayerPointer: (event) => {
       const control = { type: "sceneLayerPointer" as const, ...event };
       if (worker) worker.postControl(control);
