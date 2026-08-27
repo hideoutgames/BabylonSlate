@@ -940,7 +940,7 @@ export function applySnapshotToScene(
       if (wantsOverlay && !overlayScene) {
         continue;
       }
-      let mesh = binding.meshes.get(actor.slotId);
+      let mesh = binding.meshes.get(actor.slotId) ?? null;
       if (mesh && overlayScene && mesh.getScene() !== overlayScene) {
         mesh = migratePlaySlotVisual(overlayScene, binding, actor.slotId);
       }
