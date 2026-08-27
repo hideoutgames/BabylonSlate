@@ -264,4 +264,9 @@ describe("2DPanel properties", () => {
       hitTest: "ignore",
     });
   });
+
+  it("keeps 0-1 margins as fractions and values above 1 as legacy pixels", () => {
+    expect(parseOverlayPanelProperties({ marginLeft: 0.5 }).marginLeft).toBe(0.5);
+    expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(10);
+  });
 });

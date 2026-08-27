@@ -45,6 +45,32 @@ describe("createOverlayPanelMesh", () => {
     expect(mesh.getTotalVertices()).toBe(36);
   });
 
+  it("treats 0.1 margins as 10% of a 100px source", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const mesh = createOverlayPanelMesh(
+      handle.scene,
+      "panel",
+      {
+        source: "texture",
+        textureGuid: "tex-1",
+        materialGuid: null,
+        marginLeft: 0.1,
+        marginRight: 0.1,
+        marginTop: 0.1,
+        marginBottom: 0.1,
+        hitTest: "ignore",
+      },
+      { pixelsPerUnit: 100, textureBytes: new Map([["tex-1", new Uint8Array(4)]] ) },
+    );
+    const uvs = mesh.getVerticesData(VertexBuffer.UVKind) ?? [];
+    const uniqueU = [...new Set(uvs.filter((_, index) => index % 2 === 0))].sort(
+      (a, b) => a - b,
+    );
+    expect(uniqueU[1]).toBeCloseTo(0.1);
+    expect(uniqueU[2]).toBeCloseTo(0.9);
+  });
+
   it("builds a unit quad whose corners stay margin/ppu after actor scale", () => {
     const handle = createTestEngine();
     handles.push(handle);

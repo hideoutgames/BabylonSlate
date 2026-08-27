@@ -901,7 +901,7 @@ describe("applyPrefabPropertyDefaults", () => {
     const panel = rowsFor({
       id: "panel",
       classId: "2DPanelComponent",
-      properties: { source: "texture", marginLeft: 8 },
+      properties: { source: "texture", marginLeft: 0.5 },
     });
     expect(panel.rows.find((row) => row.id.endsWith("-source"))).toMatchObject({
       kind: "enum",
@@ -912,8 +912,11 @@ describe("applyPrefabPropertyDefaults", () => {
       ]),
     });
     expect(panel.rows.find((row) => row.id.endsWith("-marginLeft"))).toMatchObject({
-      kind: "number",
-      value: 8,
+      kind: "slider",
+      value: 0.5,
+      min: 0,
+      max: 1,
+      step: 0.01,
     });
     expect(panel.rows.find((row) => row.id.endsWith("-hitTest"))).toMatchObject({
       kind: "enum",
