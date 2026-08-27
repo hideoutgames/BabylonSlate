@@ -244,7 +244,9 @@ export class ResourceCache {
 
   /**
    * Resolve a Texture for an asset guid through the cache so editor and Play
-   * share one InternalTexture (stable URL + canonical sampling flags).
+   * share one InternalTexture (stable URL + first-load canonical sampling).
+   * A live wrapper is reused even when a later caller requests different flags
+   * (2D overlay NEAREST must not dispose a 3D material albedo).
    */
   getTexture(
     assetGuid: string,
@@ -254,7 +256,7 @@ export class ResourceCache {
   ): Texture | CubeTexture {
     const key = samplingKey(options);
     const existing = this.entries.get(assetGuid);
-    if (existing?.texture && existing.samplingKey === key) {
+    if (existing?.texture) {
       if (!isDisposedGpuTexture(existing.texture)) {
         existing.refCount += 1;
         existing.lastUsed = ++this.clock;
@@ -264,10 +266,6 @@ export class ResourceCache {
     }
     const url = this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(assetGuid)!;
-    if (entry.texture && entry.samplingKey !== key) {
-      entry.texture.dispose();
-      entry.texture = undefined;
-    }
     // Canonical sampling flags are part of Babylon's InternalTexture cache key.
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
@@ -304,16 +302,12 @@ export class ResourceCache {
   ): CubeTexture {
     const key = ["cube6", noMipmap ? "1" : "0", ...files].join(":");
     const existing = this.entries.get(assetGuid);
-    if (existing?.texture && existing.samplingKey === key) {
+    if (existing?.texture) {
       if (!isDisposedGpuTexture(existing.texture)) {
         existing.refCount += 1;
         existing.lastUsed = ++this.clock;
         return existing.texture as CubeTexture;
       }
-      existing.texture = undefined;
-    }
-    if (existing?.texture) {
-      existing.texture.dispose();
       existing.texture = undefined;
     }
     const texture = createEngineCubeTextureFromImages(

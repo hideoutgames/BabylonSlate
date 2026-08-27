@@ -35,7 +35,7 @@ import {
   type BlockRealization,
   type MaterialPlumbing,
 } from "./material-block-registry";
-import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { isDisposedGpuTexture, isEngineOwnedGpuTexture } from "./gpu-resource-live";
 
 export interface CompileMaterialOptions {
   scene: Scene;
@@ -109,7 +109,8 @@ export function compileMaterialPlan(
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
-    material.dispose();
+    detachEngineOwnedTextures(material);
+    material.dispose(false, false);
     return { ok: false, diagnostics };
   };
 
@@ -425,9 +426,21 @@ export function compileMaterialPlan(
       if (disposed) return;
       disposed = true;
       for (const unsubscribe of loadObservers) unsubscribe();
-      material.dispose();
+      detachEngineOwnedTextures(material);
+      material.dispose(false, false);
     },
   };
+}
+
+/** Drop ResourceCache textures so NodeMaterial.dispose cannot free engine-owned GPU wrappers. */
+function detachEngineOwnedTextures(material: NodeMaterial): void {
+  for (const block of material.attachedBlocks) {
+    const textured = block as { texture?: Texture | null };
+    if (!textured.texture || !isEngineOwnedGpuTexture(textured.texture)) {
+      continue;
+    }
+    textured.texture = null;
+  }
 }
 
 /** NodeMaterial has no typed `alphaCutOff`; StandardMaterial / PBR do. */

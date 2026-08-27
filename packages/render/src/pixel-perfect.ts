@@ -1,4 +1,5 @@
 import { Texture, type BaseTexture } from "@babylonjs/core";
+import { isEngineOwnedGpuTexture } from "./gpu-resource-live";
 
 export interface PixelPerfectSettings {
   pixelsPerUnit: number;
@@ -75,6 +76,7 @@ export function applyPixelArtSamplingToScene(scene: {
   textures: BaseTexture[];
 }): void {
   for (const texture of scene.textures) {
+    if (isEngineOwnedGpuTexture(texture)) continue;
     applyPixelArtSampling(texture);
   }
 }

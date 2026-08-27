@@ -5,6 +5,8 @@ import {
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { MaterialLibrary } from "./material-library";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { getMaterialTexture, ResourceCache } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
 
@@ -192,6 +194,73 @@ describe("material library", () => {
     );
     library.acquire(scene, "mat-1", doc);
     expect(resolveTexture).toHaveBeenCalledWith("tex-1");
+  });
+
+  it("does not dispose a ResourceCache Texture when a compiled material is released", () => {
+    const scene = host();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    disposers.push(() => cache.dispose());
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const cached = getMaterialTexture(
+      cache,
+      "tex-1",
+      scene.getEngine(),
+      bytes,
+    );
+    expect(cached).not.toBeNull();
+    const library = new MaterialLibrary({
+      resolveTexture: (guid) => (guid === "tex-1" ? cached : null),
+    });
+    disposers.push(() => library.dispose());
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "texUv",
+        type: "input.uv",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-tex",
+        sourceNodeId: "tex",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "texture",
+      },
+      {
+        id: "e-uv",
+        sourceNodeId: "texUv",
+        sourcePinId: "uv",
+        targetNodeId: "sample",
+        targetPinId: "uv",
+      },
+      {
+        id: "e-out",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const acquired = library.acquire(scene, "mat-1", doc);
+    expect(acquired.ok).toBe(true);
+    library.release(scene, "mat-1");
+    expect(isDisposedGpuTexture(cached!)).toBe(false);
   });
 
   it("drops every material for a scene when that scene is released", () => {
