@@ -96,20 +96,18 @@ describe("ViewportShadingOverlay", () => {
     engine.dispose();
   });
 
-  it("sets points cloud and restores fill flags when returning to PBR", () => {
+  it("restores an authored points-cloud fill when returning to PBR", () => {
     const { engine, scene } = createTestEngine();
     const mesh = MeshBuilder.CreateBox("actor", { size: 1 }, scene);
     mesh.material = new StandardMaterial("actor-mat", scene);
+    mesh.material.pointsCloud = true;
     const overlay = new ViewportShadingOverlay(scene);
-    overlay.setMode("pointsCloud");
-    expect(mesh.material.pointsCloud).toBe(true);
-    expect(mesh.material.wireframe).toBe(false);
     overlay.setMode("wireframe");
     expect(mesh.material.wireframe).toBe(true);
     expect(mesh.material.pointsCloud).toBe(false);
     overlay.setMode("pbr");
     expect(mesh.material.wireframe).toBe(false);
-    expect(mesh.material.pointsCloud).toBe(false);
+    expect(mesh.material.pointsCloud).toBe(true);
     engine.dispose();
   });
 

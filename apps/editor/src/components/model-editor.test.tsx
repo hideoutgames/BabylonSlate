@@ -129,6 +129,7 @@ describe("ModelPreview", () => {
     render(<ModelPreview payload={{ materialSlots: [], clipNames: [] }} />);
     expect(screen.getByTestId("model-preview")).toBeTruthy();
     expect(screen.getByText("No Mesh")).toBeTruthy();
+    expect(screen.queryByTestId("model-preview-shading")).toBeNull();
   });
 
   it("renders a 1fps preview canvas for glTF source bytes", () => {
@@ -140,5 +141,30 @@ describe("ModelPreview", () => {
     );
     expect(screen.getByTestId("model-preview-canvas")).toBeTruthy();
     expect(screen.queryByText("No Mesh")).toBeNull();
+  });
+
+  it("overlays session PBR / Unlit / Wireframe shading on the glTF canvas", () => {
+    render(
+      <ModelPreview
+        payload={{ materialSlots: [], clipNames: [] }}
+        sourceBytes={encodeTriangleGlb()}
+      />,
+    );
+    expect(screen.getByTestId("model-preview-shading")).toBeTruthy();
+    expect(
+      screen.getByTestId("model-preview-shading-pbr").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.getByTestId("model-preview-shading-unlit")).toBeTruthy();
+    expect(screen.getByTestId("model-preview-shading-wireframe")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("model-preview-shading-unlit"));
+    expect(
+      screen.getByTestId("model-preview-shading-unlit").getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(screen.getByTestId("model-preview-shading-wireframe"));
+    expect(
+      screen
+        .getByTestId("model-preview-shading-wireframe")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 });

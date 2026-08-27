@@ -6,7 +6,7 @@ import { isEditorVolumeMesh } from "./editor-volume";
 import { isEditorModelPlaceholder } from "./glb-anim";
 import { isEditorActorOrigin } from "./scene-loader";
 
-export type ViewportShadingMode = "pbr" | "unlit" | "wireframe" | "pointsCloud";
+export type ViewportShadingMode = "pbr" | "unlit" | "wireframe";
 
 type LightingMaterial = Material & {
   unlit?: boolean;
@@ -44,9 +44,9 @@ function lightingMaterial(material: Material): LightingMaterial {
 }
 
 /**
- * Session overlay for editor Viewport Mode (PBR / Unlit / Wireframe / Points
- * Cloud). Mutates live materials and restores authored flags; does not write
- * scene documents.
+ * Session overlay for editor Viewport Mode (PBR / Unlit / Wireframe).
+ * Mutates live materials and restores authored flags; does not write scene
+ * documents.
  */
 export class ViewportShadingOverlay {
   private current: ViewportShadingMode = "pbr";
@@ -103,8 +103,6 @@ export class ViewportShadingOverlay {
     const lit = lightingMaterial(material);
     if (this.current === "wireframe") {
       material.fillMode = Material.WireFrameFillMode;
-    } else if (this.current === "pointsCloud") {
-      material.fillMode = Material.PointFillMode;
     } else if (original.wireframe) {
       material.fillMode = Material.WireFrameFillMode;
     } else if (original.pointsCloud) {

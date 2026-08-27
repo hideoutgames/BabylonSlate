@@ -6,6 +6,7 @@ import {
 } from "@babylonslate/assets";
 import {
   MaterialLibrary,
+  ViewportShadingOverlay,
   applyModelMaterialSlots,
   attachMaterialPreviewGestures,
   createMaterialPreviewPresenter,
@@ -16,10 +17,21 @@ import {
   resourceCacheForEngine,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
+  type ViewportShadingMode,
 } from "@babylonslate/render";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@babylonslate/ui/components/toggle-group";
 import { useDocuments } from "../context/document-context";
 import { useOptionalPlay } from "../context/play-context";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
+
+const MODEL_PREVIEW_SHADING: { value: ViewportShadingMode; label: string }[] = [
+  { value: "pbr", label: "PBR" },
+  { value: "unlit", label: "Unlit" },
+  { value: "wireframe", label: "Wireframe" },
+];
 
 export function ModelPreviewCanvas({
   payload,
@@ -37,6 +49,10 @@ export function ModelPreviewCanvas({
   const [previewGeneration, setPreviewGeneration] = useState(0);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
+  const shadingRef = useRef<ViewportShadingOverlay | null>(null);
+  const [shadingMode, setShadingMode] = useState<ViewportShadingMode>("pbr");
+  const shadingModeRef = useRef(shadingMode);
+  shadingModeRef.current = shadingMode;
   const model = normalizeModelPayload(payload);
   const slotKey = JSON.stringify(model.materialSlots);
 
@@ -68,6 +84,9 @@ export function ModelPreviewCanvas({
         });
         hostRef.current = host;
         presenterRef.current = presenter;
+        const shading = new ViewportShadingOverlay(host.scene);
+        shading.setMode(shadingModeRef.current);
+        shadingRef.current = shading;
         presenter.present({ force: true });
         if (cancelled) {
           presenter.dispose();
@@ -76,6 +95,7 @@ export function ModelPreviewCanvas({
           host.dispose();
           hostRef.current = null;
           presenterRef.current = null;
+          shadingRef.current = null;
           return;
         }
         setPreviewGeneration((value) => value + 1);
@@ -92,6 +112,7 @@ export function ModelPreviewCanvas({
         host?.dispose();
         hostRef.current = null;
         presenterRef.current = null;
+        shadingRef.current = null;
       }
     })();
     return () => {
@@ -103,8 +124,16 @@ export function ModelPreviewCanvas({
       host?.dispose();
       hostRef.current = null;
       presenterRef.current = null;
+      shadingRef.current = null;
     };
   }, [engine, sourceBytes, model.importScale]);
+
+  useEffect(() => {
+    const overlay = shadingRef.current;
+    if (!overlay) return;
+    overlay.setMode(shadingMode);
+    presenterRef.current?.present({ force: true });
+  }, [shadingMode, previewGeneration]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -145,6 +174,7 @@ export function ModelPreviewCanvas({
       applyModelMaterialSlots(host.mesh, slots, (guid) =>
         library.materialFor(host.scene, guid),
       );
+      shadingRef.current?.apply();
       presenterRef.current?.present({ force: true });
     })();
     return () => {
@@ -161,10 +191,41 @@ export function ModelPreviewCanvas({
   ]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="h-full w-full"
-      data-testid="model-preview-canvas"
-    />
+    <div className="relative h-full min-h-0">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        <div
+          className="pointer-events-auto flex flex-wrap items-center gap-1 rounded-lg border border-border bg-popover p-1 shadow-md"
+          data-testid="model-preview-shading"
+        >
+          <ToggleGroup
+            variant="outline"
+            size="touch"
+            spacing={1}
+            value={[shadingMode]}
+            onValueChange={(value) => {
+              const next = value[0] as ViewportShadingMode | undefined;
+              if (!next) return;
+              setShadingMode(next);
+            }}
+            aria-label="Preview Shading"
+          >
+            {MODEL_PREVIEW_SHADING.map((mode) => (
+              <ToggleGroupItem
+                key={mode.value}
+                value={mode.value}
+                data-testid={`model-preview-shading-${mode.value}`}
+              >
+                {mode.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+      </div>
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full"
+        data-testid="model-preview-canvas"
+      />
+    </div>
   );
 }
