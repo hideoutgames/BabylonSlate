@@ -78,3 +78,13 @@ export function schedulePlayerMaterialPrewarm(
   scheduled.current = true;
   void handle.whenEditorModelsReady().then(() => handle.prewarmSceneMaterials());
 }
+
+export function schedulePlayerSceneModelsReady(
+  post: (message: { type: "sceneModelsReady"; sceneAssetGuid: string }) => void,
+  handle: { whenEditorModelsReady: () => Promise<void> },
+  sceneAssetGuid: string,
+): void {
+  void handle.whenEditorModelsReady().then(() => {
+    post({ type: "sceneModelsReady", sceneAssetGuid });
+  });
+}

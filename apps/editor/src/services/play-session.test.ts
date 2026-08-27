@@ -21,6 +21,7 @@ import {
   playSessionBootControls,
   previewFixtureThrowHint,
   resolvePlayFrameCap,
+  scheduleSceneModelsReady,
 } from "./play-session";
 
 describe("diagnosticFromCommand", () => {
@@ -470,5 +471,27 @@ describe("previewFixtureThrowHint", () => {
   it("is null when Play has no behaviour tree so the graph fixture stays", () => {
     expect(previewFixtureThrowHint()).toBeNull();
     expect(previewFixtureThrowHint([])).toBeNull();
+  });
+});
+
+describe("scheduleSceneModelsReady", () => {
+  it("posts sceneModelsReady after whenModelsReady resolves", async () => {
+    const posted: string[] = [];
+    let resolveReady!: () => void;
+    const whenModelsReady = () =>
+      new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+    const pending = scheduleSceneModelsReady({
+      whenModelsReady,
+      notify: (sceneAssetGuid) => {
+        posted.push(sceneAssetGuid);
+      },
+      sceneAssetGuid: "scene-1",
+    });
+    expect(posted).toEqual([]);
+    resolveReady();
+    await pending;
+    expect(posted).toEqual(["scene-1"]);
   });
 });

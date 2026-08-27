@@ -152,6 +152,16 @@ export function overlayLogForCommand(
   return null;
 }
 
+export function scheduleSceneModelsReady(options: {
+  whenModelsReady: () => Promise<void>;
+  notify: (sceneAssetGuid: string) => void;
+  sceneAssetGuid: string;
+}): Promise<void> {
+  return options.whenModelsReady().then(() => {
+    options.notify(options.sceneAssetGuid);
+  });
+}
+
 export function applyPlayHudConsoleCommand(
   command: CommandMessage,
   handlers: {
@@ -627,6 +637,14 @@ export function startPlaySession(options: {
         handle.resetAudioSession();
         handle.resetParticleSession();
       }
+      void scheduleSceneModelsReady({
+        whenModelsReady: () => handle.whenEditorModelsReady(),
+        notify: (sceneAssetGuid) => {
+          worker?.postControl({ type: "sceneModelsReady", sceneAssetGuid });
+          runtime?.notifySceneModelsReady(sceneAssetGuid);
+        },
+        sceneAssetGuid: command.sceneAssetGuid,
+      });
     }
     if (command.type === "log") {
       options.onLog?.(command.message, command.severity ?? "log");

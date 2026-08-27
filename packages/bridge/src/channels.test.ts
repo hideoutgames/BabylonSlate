@@ -284,4 +284,12 @@ describe("Audio live commands", () => {
     } satisfies ControlMessage;
     expect(controlType(control)).toBe("audioVoiceEnded");
   });
+
+  it("sceneModelsReady is a ControlMessage variant", () => {
+    const control = {
+      type: "sceneModelsReady",
+      sceneAssetGuid: "scene-1",
+    } satisfies ControlMessage;
+    expect(controlType(control)).toBe("sceneModelsReady");
+  });
 });

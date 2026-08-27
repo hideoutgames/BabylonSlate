@@ -4,6 +4,7 @@ import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
   schedulePlayerMaterialPrewarm,
+  schedulePlayerSceneModelsReady,
 } from "./engine-commands";
 
 describe("applyPlayerEngineCommand", () => {
@@ -300,6 +301,27 @@ describe("schedulePlayerMaterialPrewarm", () => {
     expect(scheduled.current).toBe(true);
     await vi.waitFor(() => {
       expect(order).toEqual(["models", "prewarm"]);
+    });
+  });
+});
+
+describe("schedulePlayerSceneModelsReady", () => {
+  it("posts sceneModelsReady after models are ready", async () => {
+    const posted: Array<{ type: string; sceneAssetGuid: string }> = [];
+    const handle = {
+      whenEditorModelsReady: async () => {},
+    };
+    schedulePlayerSceneModelsReady(
+      (message) => {
+        posted.push(message);
+      },
+      handle,
+      "scene-1",
+    );
+    await vi.waitFor(() => {
+      expect(posted).toEqual([
+        { type: "sceneModelsReady", sceneAssetGuid: "scene-1" },
+      ]);
     });
   });
 });

@@ -201,6 +201,7 @@ export function playLoadControl(options: {
     loopCount: options.loopCount,
     audioAssetGuids: options.audioAssetGuids,
     animClipCatalog: options.animClipCatalog,
+    deferSceneModelsReady: true,
   };
 }
 
