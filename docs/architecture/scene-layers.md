@@ -36,7 +36,7 @@ DockView: Viewport, Outliner, Details, Output Log. Hide the 3D/2D toolbar toggle
 
 ## Object model
 
-`SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId`. `applyChangeScene` must not destroy them.
+`SceneLayer` extends `BObject` (`kind: "object"`). `SceneLayerActor` extends `Actor`. Overlay actors stay in the same `World` (same tick/snapshots) tagged `sceneLayerId` so graph nodes, `2DButton` events, and Get All Actors still see them. HUD **meshes** are not world Scene children — they live on compositor overlay Scenes. `applyChangeScene` must not destroy overlay actors.
 
 **Denylist only** (Add Component, Place Actors, serialize skip, overlay instantiate): Skybox, Camera, Light. Everything else is allowed, plus overlay-only `2DAnchor`, `2DTexture`, `2DMaterial`, `2DButton`, `2DText`, `2DRichText`, `2DPanel`. User Class prefabs that inherit `SceneLayerActor` follow the same denylist (strip Camera/Light/Skybox on Place). Spawn Actor and world-scene instantiate never create `SceneLayerActor` (or subclasses) in the world.
 
@@ -96,13 +96,15 @@ Category `scene-layer` (GameInstance and other graphs; instances live on the ses
 
 Register/Unregister pickers require `domain === "postProcess"`.
 
+World Scene Details **Scene Layers** (`settings.sceneLayers`) and **Create Scene Layer** both call `createSceneLayer`. They differ only in `ownerSceneGuid` (scene-owned vs graph/`null`). Neither path instantiates overlay meshes into the world Babylon Scene. The Details list does not copy overlay actors into the authored world `scene.actors`.
+
 ## Play / export / player
 
 Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, fonts, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid`, `2DMaterial.materialGuid`, `2DPanel` texture/material guids, overlay `fontAssetGuid`, and RichText `[img]` texture guids (those guids live inside the markup string, so export does not see them via a naive string walk). Player `activeScene` still swaps **world** only; compositor commands follow the worker.
 
 A SceneLayer is a **HUD**: unlit orthographic overlay drawn after the world, independent of the possessed/world camera. Overlay XY lives in the compositor frustum (height 9). World camera motion must not move overlay NDC. Overlay cameras and meshes are **not** parented to the world camera.
 
-Editor Play and the packaged player apply `sceneLayerCreate` / `Remove` / `Clear` / `PostProcess` (and `despawn`) on the engine handle via the shared `PLAY_ENGINE_COMMAND_TYPES` allowlist. Snapshots set `flags` bit 1 (`SNAPSHOT_FLAG_OVERLAY`) for actors with `sceneLayerId`. `assignMesh` carries optional `sceneLayerId` so the compositor can `noteSpawn` before routing. Overlay identity is that id / snapshot bit (sprites and tilemaps on overlay actors are still HUD). Overlay visuals must not instantiate in the world Scene: skip until the overlay `Scene` is live, create there, and `migratePlaySlotVisual` if a leftover world mesh exists. Overlay slots skip world-camera tilemap parallax. Overlay-only kinds (`2dtexture`, `2dmaterial`, `2dbutton`, `2dpanel`, `2dtext`, `2drichtext`) never fall back to `worldScene` while the compositor exists.
+Editor Play and the packaged player apply `sceneLayerCreate` / `Remove` / `Clear` / `PostProcess` (and `despawn`) on the engine handle via the shared `PLAY_ENGINE_COMMAND_TYPES` allowlist. Snapshots set `flags` bit 1 (`SNAPSHOT_FLAG_OVERLAY`) for actors with `sceneLayerId`. Overlay-flagged snapshot slots never call `createPlayVisual` on the world Scene. `assignMesh` carries optional `sceneLayerId` so the compositor can `noteSpawn` before routing. Overlay identity is that id / snapshot bit / overlay-only mesh kind. Sprites and tilemaps on overlay actors are still HUD: while the compositor exists they hold off the world Scene until a **world** spawn (no `sceneLayerId`) classifies the slot. Overlay visuals must not instantiate in the world Scene: skip until the overlay `Scene` is live, create there, and `migratePlaySlotVisual` if a leftover world mesh exists. Overlay slots skip world-camera tilemap parallax. Overlay-only kinds (`2dtexture`, `2dmaterial`, `2dbutton`, `2dpanel`, `2dtext`, `2drichtext`) never fall back to `worldScene` while the compositor exists.
 
 ## 2D Text and 2D Rich Text
 

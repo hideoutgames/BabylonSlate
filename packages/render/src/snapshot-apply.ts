@@ -940,12 +940,14 @@ export function applySnapshotToScene(
       if (wantsOverlay && !overlayScene) {
         continue;
       }
+      const hostScene = wantsOverlay ? overlayScene : scene;
+      if (!hostScene) continue;
       let mesh = binding.meshes.get(actor.slotId) ?? null;
       if (mesh && overlayScene && mesh.getScene() !== overlayScene) {
         mesh = migratePlaySlotVisual(overlayScene, binding, actor.slotId);
       }
       if (!mesh) {
-        mesh = createPlayVisual(overlayScene ?? scene, actor.slotId, binding);
+        mesh = createPlayVisual(hostScene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
       }

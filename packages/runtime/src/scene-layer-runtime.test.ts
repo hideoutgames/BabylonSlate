@@ -84,6 +84,77 @@ describe("SceneLayer runtime compositor", () => {
     );
   });
 
+  it("tags scene-owned overlay sprite spawn with sceneLayerId and overlay snapshot flags", () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "sprite",
+              classId: "SpriteComponent",
+              properties: {},
+            },
+          ],
+        }),
+      ],
+    };
+    const levelA = worldScene("A", [
+      { assetGuid: "hud", zOrder: 2, enabled: true },
+    ]);
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      maxActors: 16,
+      playScene: levelA,
+      playSceneGuid: "a",
+      sceneLibrary: { a: levelA },
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    const layer = runtime.getWorld().getSceneLayers()[0];
+    expect(layer?.ownerSceneGuid).toBe("a");
+    expect(
+      runtime.getWorld().getActors().some((actor) => actor.guid === "banner"),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "spawn" &&
+          command.actorGuid === "banner" &&
+          command.sceneLayerId === layer?.guid,
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "assignMesh" &&
+          command.actorGuid === "banner" &&
+          command.meshKind === "sprite" &&
+          command.sceneLayerId === layer?.guid,
+      ),
+    ).toBe(true);
+    runtime.start();
+    runtime.tick();
+    const buf = new Float32Array(snapshotFloatCount(16));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    const overlaySlots = [...Array(8).keys()]
+      .map((index) => readActorSlot(buf, index))
+      .filter(
+        (slot) => (slot.flags & SNAPSHOT_FLAG_OVERLAY) === SNAPSHOT_FLAG_OVERLAY,
+      );
+    expect(overlaySlots.length).toBeGreaterThan(0);
+    expect(
+      overlaySlots.every(
+        (slot) => (slot.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
+      ),
+    ).toBe(true);
+  });
+
   it("keeps graph-created overlays across scene travel until remove or clear", () => {
     const hud = overlayLayer();
     const levelA = worldScene("A");

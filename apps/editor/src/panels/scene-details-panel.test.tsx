@@ -355,6 +355,7 @@ describe("SceneDetailsPanel authoring", () => {
   });
 
   it("authors a SceneLayer spawn list on world Scene Options", async () => {
+    const actorIds = scene().actors.map((actor) => actor.id);
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("scene-layers-stack")).toBeTruthy();
     fireEvent.click(screen.getByTestId("scene-layers-stack-add"));
@@ -365,6 +366,7 @@ describe("SceneDetailsPanel authoring", () => {
     expect(next.settings.sceneLayers).toEqual([
       { assetGuid: "layer-hud", zOrder: 0, enabled: true },
     ]);
+    expect(next.actors.map((actor) => actor.id)).toEqual(actorIds);
   });
 
   it("shows overlay Details with gravity and post-process only", () => {

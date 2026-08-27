@@ -1610,6 +1610,31 @@ describe("createPlayMesh", () => {
     expect(scene.getMeshByName("actor-4")).toBeNull();
   });
 
+  it("does not create overlay-flagged sprite snapshot meshes in the world scene", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(4, "sprite");
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+        },
+      ],
+    });
+    expect(binding.meshes.get(4)).toBeUndefined();
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+  });
+
   it("creates overlay-flagged snapshot meshes on the overlay scene and migrates world leftovers", () => {
     const handle = createTestEngine();
     handles.push(handle);
