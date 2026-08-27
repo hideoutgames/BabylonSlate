@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Material, NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Material, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -943,6 +943,102 @@ describe("material compiler", () => {
     ready = true;
     resolved.onLoadObservable.notifyObservers(resolved);
     expect(rebuild).toHaveBeenCalled();
+  });
+
+  it("unfreezes a frozen NodeMaterial before rebuilding when a packed texture becomes ready", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "imported-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    result.material.freeze();
+    expect(result.material.isFrozen).toBe(true);
+    const unfreeze = vi.spyOn(result.material, "unfreeze");
+    const rebuild = vi.spyOn(result.material, "build");
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(unfreeze).toHaveBeenCalled();
+    expect(rebuild).toHaveBeenCalled();
+    expect(unfreeze.mock.invocationCallOrder[0]!).toBeLessThan(
+      rebuild.mock.invocationCallOrder[0]!,
+    );
+    expect(result.material.isFrozen).toBe(true);
+  });
+
+  it("re-applies authored blend after a packed-texture rebuild", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    doc.blendMode = "masked";
+    doc.alphaCutoff = 0.4;
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "masked-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    expect(result.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    result.material.freeze();
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(result.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    expect((result.material as Material & { alphaCutOff: number }).alphaCutOff).toBeCloseTo(
+      0.4,
+    );
+  });
+
+  it("reports material.missingTexture when a packed texture fails to load", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    vi.spyOn(resolved, "isReady").mockReturnValue(false);
+    const errors = new Observable<{ message?: string }>();
+    (
+      resolved as Texture & { onErrorObservable: Observable<{ message?: string }> }
+    ).onErrorObservable = errors;
+    const diagnostics: Array<{ code: string }> = [];
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "imported-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+      onTextureError: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    result.material.freeze();
+    const rebuild = vi.spyOn(result.material, "build");
+    const unfreeze = vi.spyOn(result.material, "unfreeze");
+    errors.notifyObservers({ message: "ktx2 decode failed" });
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "material.missingTexture",
+        severity: "error",
+      }),
+    ]);
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(unfreeze).not.toHaveBeenCalled();
   });
 
   it("keeps invertY false on the compiled sampling TextureBlock", () => {

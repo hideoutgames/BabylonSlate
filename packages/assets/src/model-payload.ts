@@ -125,12 +125,18 @@ export function modelAssetGuids(payload: unknown): string[] {
 export type PackedTextureSlimProof = {
   packedTextureGuids: ReadonlySet<string>;
   texturesByMaterialGuid: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Slot Material guids that compiled in this Scene. Omit or leave empty to
+   * keep authored GLB rasters — packed bytes alone must not slim.
+   */
+  compiledMaterialGuids?: ReadonlySet<string>;
 };
 
 /**
- * Slim only when every slot has a Material guid **and** every texture that
- * Material samples is present in packed Texture bytes. Bound slots alone must
- * not slim — Preview Build otherwise leaves construction mats on a red stub.
+ * Slim only when every slot has a Material guid, that Material compiled, and
+ * every texture it samples is present in packed Texture bytes. Bound slots
+ * alone must not slim — Preview Build otherwise leaves construction mats on
+ * a red stub.
  */
 export function shouldSlimModelEmbeddedTextures(
   payload: unknown,
@@ -147,9 +153,11 @@ export function shouldSlimModelEmbeddedTextures(
     return false;
   }
   if (!packed) return false;
+  if (!packed.compiledMaterialGuids) return false;
   for (const slot of slots) {
     const materialGuid = slot.materialGuid;
     if (!materialGuid) return false;
+    if (!packed.compiledMaterialGuids.has(materialGuid)) return false;
     const textures = packed.texturesByMaterialGuid.get(materialGuid);
     if (!textures) return false;
     for (const guid of textures) {

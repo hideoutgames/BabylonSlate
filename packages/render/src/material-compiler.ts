@@ -42,6 +42,8 @@ export interface CompileMaterialOptions {
   name: string;
   /** Texture asset guid to a live Babylon texture (through `ResourceCache`). */
   resolveTexture?: (guid: string) => Texture | null;
+  /** Packed KTX2 / raster decode failure after the first `build()`. */
+  onTextureError?: (diagnostic: MaterialDiagnostic) => void;
 }
 
 export interface CompiledMaterial {
@@ -399,11 +401,21 @@ export function compileMaterialPlan(
   let disposed = false;
   const rebuildWhenReady = (): void => {
     if (disposed) return;
+    const wasFrozen = material.isFrozen;
+    if (wasFrozen) material.unfreeze();
     try {
       material.build();
-    } catch {
-      // Packed KTX2 can become ready after the first build; a later build
-      // error must not throw into Texture.onLoadObservable.
+      applyAuthoredSurfaceBlend(material, plan);
+    } catch (error) {
+      // Must not throw into Texture.onLoadObservable / onErrorObservable.
+      options.onTextureError?.({
+        code: "material.compile.buildFailed",
+        message:
+          error instanceof Error ? error.message : "Material failed to rebuild",
+        severity: "error",
+      });
+    } finally {
+      if (wasFrozen && !material.isFrozen) material.freeze();
     }
   };
   for (const texture of pendingTextures) {
@@ -415,6 +427,21 @@ export function compileMaterialPlan(
       loadObservers.push(() => {
         texture.onLoadObservable.remove(observer);
       });
+    }
+    const errors = gpuTextureErrorObservable(texture);
+    if (errors) {
+      const errorObserver = errors.addOnce((payload) => {
+        options.onTextureError?.({
+          code: "material.missingTexture",
+          message: textureErrorMessage(payload),
+          severity: "error",
+        });
+      });
+      if (errorObserver) {
+        loadObservers.push(() => {
+          errors.remove(errorObserver);
+        });
+      }
     }
   }
 
@@ -435,6 +462,33 @@ type MaterialAlphaCutOff = { alphaCutOff: number };
 
 function applyAlphaCutOff(material: Material, cutoff: number): void {
   (material as Material & MaterialAlphaCutOff).alphaCutOff = cutoff;
+}
+
+type GpuTextureErrorObservable = {
+  addOnce: (callback: (payload: unknown) => void) => unknown;
+  remove: (observer: unknown) => void;
+};
+
+function gpuTextureErrorObservable(
+  texture: Texture,
+): GpuTextureErrorObservable | null {
+  const host = texture as Texture & {
+    onErrorObservable?: GpuTextureErrorObservable | null;
+  };
+  return host.onErrorObservable ?? null;
+}
+
+function textureErrorMessage(payload: unknown): string {
+  if (typeof payload === "string" && payload.trim().length > 0) {
+    return payload;
+  }
+  if (payload && typeof payload === "object" && "message" in payload) {
+    const message = (payload as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message;
+    }
+  }
+  return "Texture failed to load";
 }
 
 /** Map authored blend / two-sided onto Babylon after `material.build()`. */

@@ -56,6 +56,13 @@ describe("gpuModelBytes", () => {
         packedTextureGuids: new Set(["tex-1"]),
         texturesByMaterialGuid: new Map([["mat-1", ["tex-1"]]]),
       }).byteLength,
+    ).toBe(glb.byteLength);
+    expect(
+      gpuModelBytes(glb, bound, {
+        packedTextureGuids: new Set(["tex-1"]),
+        texturesByMaterialGuid: new Map([["mat-1", ["tex-1"]]]),
+        compiledMaterialGuids: new Set(["mat-1"]),
+      }).byteLength,
     ).toBeLessThan(glb.byteLength);
     expect(
       gpuModelBytes(glb, bound, {

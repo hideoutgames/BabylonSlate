@@ -170,6 +170,18 @@ describe("shouldSlimModelEmbeddedTextures", () => {
     expect(shouldSlimModelEmbeddedTextures(boundSlots)).toBe(false);
   });
 
+  it("is false when textures are packed but slot Materials have not compiled", () => {
+    expect(
+      shouldSlimModelEmbeddedTextures(boundSlots, {
+        packedTextureGuids: new Set(["tex-a", "tex-b"]),
+        texturesByMaterialGuid: new Map([
+          ["mat-1", ["tex-a"]],
+          ["mat-2", ["tex-b"]],
+        ]),
+      }),
+    ).toBe(false);
+  });
+
   it("is true only when every slot Material texture guid is packed", () => {
     const packed = {
       packedTextureGuids: new Set(["tex-a", "tex-b"]),
@@ -177,18 +189,21 @@ describe("shouldSlimModelEmbeddedTextures", () => {
         ["mat-1", ["tex-a"]],
         ["mat-2", ["tex-b"]],
       ]),
+      compiledMaterialGuids: new Set(["mat-1", "mat-2"]),
     };
     expect(shouldSlimModelEmbeddedTextures(boundSlots, packed)).toBe(true);
     expect(
       shouldSlimModelEmbeddedTextures(boundSlots, {
         packedTextureGuids: new Set(["tex-a"]),
         texturesByMaterialGuid: packed.texturesByMaterialGuid,
+        compiledMaterialGuids: packed.compiledMaterialGuids,
       }),
     ).toBe(false);
     expect(
       shouldSlimModelEmbeddedTextures(boundSlots, {
         packedTextureGuids: packed.packedTextureGuids,
         texturesByMaterialGuid: new Map([["mat-1", ["tex-a"]]]),
+        compiledMaterialGuids: packed.compiledMaterialGuids,
       }),
     ).toBe(false);
   });
@@ -201,6 +216,7 @@ describe("shouldSlimModelEmbeddedTextures", () => {
           ["mat-1", []],
           ["mat-2", []],
         ]),
+        compiledMaterialGuids: new Set(["mat-1", "mat-2"]),
       }),
     ).toBe(true);
   });

@@ -41,6 +41,7 @@ export function materialAvailable(
 export interface MaterialLibraryOptions {
   resolveTexture?: (guid: string) => Texture | null;
   functions?: () => Record<string, MaterialFunctionDocument>;
+  onTextureError?: (diagnostic: MaterialDiagnostic) => void;
 }
 
 interface CacheEntry {
@@ -122,6 +123,7 @@ export class MaterialLibrary {
       scene,
       name: `material:${assetGuid}`,
       resolveTexture: this.options.resolveTexture,
+      onTextureError: this.options.onTextureError,
     });
     if (materialCompileFailed(compiled)) {
       return { ok: false, diagnostics: compiled.diagnostics };
