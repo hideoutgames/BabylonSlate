@@ -18,6 +18,28 @@ export type PlayPreviewPreparePlan =
       dirtyNames: string[];
     };
 
+export type PlayBundlesNeedCollectInput = {
+  playLoadedSignature: string | null;
+  currentGraphSignature: string;
+  scriptsLength: number;
+  /**
+   * Editor Compile / compile-on-save fingerprint. Must not control Play skip —
+   * those paths can mark graphs current without writing Play's bundle array.
+   */
+  editorCompileSignature?: string | null;
+};
+
+/** True when Play must run `collectPlayPreviewScripts` instead of reusing stored bundles. */
+export function playBundlesNeedCollect(
+  input: PlayBundlesNeedCollectInput,
+): boolean {
+  void input.editorCompileSignature;
+  if (input.scriptsLength === 0 || input.playLoadedSignature === null) {
+    return true;
+  }
+  return input.playLoadedSignature !== input.currentGraphSignature;
+}
+
 export function planPlayPreviewPrepare(
   input: PlayPreviewPrepareInput,
 ): PlayPreviewPreparePlan {

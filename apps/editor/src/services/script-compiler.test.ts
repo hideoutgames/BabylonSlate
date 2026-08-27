@@ -905,6 +905,10 @@ describe("graphsNeedCompile", () => {
   });
 });
 
+// Play skip uses playBundlesNeedCollect (play-loaded signature + stored
+// bundles), not graphsNeedCompile. Editor Compile / compile-on-save must
+// not fake Play current.
+
 describe("GraphScriptCompileCache", () => {
   it("Play-prepares many graphs without recompiling an unchanged graph", () => {
     const cache = new GraphScriptCompileCache();

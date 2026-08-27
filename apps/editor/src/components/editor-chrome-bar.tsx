@@ -243,7 +243,7 @@ export function EditorChromeBar({
     canRedoActiveDocument,
     isLayoutFocused,
     toggleLayoutFocus,
-    collectScriptBundles,
+    collectPlayPreviewScripts,
     graphsNeedCompile,
     activateDockPanel,
     assetRegistry,
@@ -533,7 +533,7 @@ export function EditorChromeBar({
                       ];
                     }),
                   );
-                  void collectScriptBundles();
+                  void collectPlayPreviewScripts();
                   activateDockPanel("compiler-results");
                 }}
               >
