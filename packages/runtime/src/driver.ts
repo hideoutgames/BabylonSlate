@@ -1,4 +1,6 @@
 import {
+  SNAPSHOT_FLAG_OVERLAY,
+  SNAPSHOT_FLAG_VISIBLE,
   SeqLockSnapshotPair,
   writeActorSlot,
   writeSnapshotHeader,
@@ -2648,6 +2650,7 @@ class InProcessRuntime implements RuntimeDriver {
           : {}),
         ...(actor.sceneLayerId
           ? {
+              sceneLayerId: actor.sceneLayerId,
               hitTest: overlayHitTestOf(actor, this.world),
               hasButton: overlayActorOrChildHasButton(actor, this.world),
               ...(overlayButtonComponentId(actor, this.world)
@@ -3543,7 +3546,9 @@ class InProcessRuntime implements RuntimeDriver {
         position: world.position,
         rotation: world.rotation,
         scale: world.scale,
-        flags: 1,
+        flags:
+          SNAPSHOT_FLAG_VISIBLE |
+          (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0),
       });
       count += 1;
     }

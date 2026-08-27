@@ -17,6 +17,8 @@ import {
   snapshotTickIndex,
   writeActorSlot,
   writeSnapshotHeader,
+  SNAPSHOT_FLAG_OVERLAY,
+  SNAPSHOT_FLAG_VISIBLE,
   type ActorSlot,
 } from "./snapshot-buffer";
 import { SeqLockSnapshotPair } from "./seq-lock";
@@ -76,6 +78,28 @@ describe("snapshot layout", () => {
     expect(header.physicsMs).toBeCloseTo(0.25);
     expect(readActorSlot(buf, 1).position).toEqual({ x: 4, y: 5, z: 6 });
     expect(snapshotTickIndex(buf)).toBe(9);
+  });
+
+  it("stores SceneLayer overlay identity on flags bit 1 without changing stride", () => {
+    const buf = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(buf, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId: 4,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+    });
+    const slot = readActorSlot(buf, 0);
+    expect(SNAPSHOT_ACTOR_STRIDE).toBe(16);
+    expect(slot.flags & SNAPSHOT_FLAG_VISIBLE).toBe(SNAPSHOT_FLAG_VISIBLE);
+    expect(slot.flags & SNAPSHOT_FLAG_OVERLAY).toBe(SNAPSHOT_FLAG_OVERLAY);
   });
 
   it("returns null snapshotTickIndex for unpublished buffers", () => {

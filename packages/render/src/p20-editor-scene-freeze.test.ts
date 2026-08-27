@@ -385,4 +385,36 @@ describe("p20-editor-scene-freeze", () => {
     expect(assignedWarm).toHaveBeenCalled();
     expect(defaultWarm).toHaveBeenCalled();
   });
+
+  it("skips editor material freeze on Play after prewarm", async () => {
+    const handle = playHandle();
+    handle.setMaterialDocuments(
+      new Map([["mat-1", createDefaultMaterialDocument()]]),
+    );
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "box",
+      meshAssetGuid: null,
+    });
+    handle.applyCommand({
+      type: "assignMaterial",
+      slotId: 1,
+      materialAssetGuid: "mat-1",
+    });
+    await handle.prewarmSceneMaterials();
+    expect(handle.playMeshMaterialNames()).toEqual(
+      expect.arrayContaining(["material:mat-1"]),
+    );
+    const material = handle.scene.materials.find(
+      (entry) => entry.name === "material:mat-1",
+    );
+    expect(material).toBeTruthy();
+    // Play Intermediate sets checkReadyOnlyOnce via isReadyForSubMesh. Skip
+    // applyEditorMaterialFreeze so a later unfreeze is not immediately
+    // re-frozen by setEditingMaterialGuids / a second prewarm helper.
+    material!.unfreeze();
+    handle.setEditingMaterialGuids(new Set());
+    expect(material!.isFrozen).toBe(false);
+  });
 });

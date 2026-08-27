@@ -25,6 +25,11 @@ export interface MeshAssetContext {
    * With `textureBytes`, GLB slim runs only when those guids are packed.
    */
   materialTextureGuids?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Material guids that compiled successfully in this Scene. GLB slim requires
+   * this so a packed-but-unbound slot cannot stick on the 1×1 red stub.
+   */
+  compiledMaterialGuids?: ReadonlySet<string>;
   /** Native clipName → Animation guid, keyed by Model guid. */
   modelClipAnimationGuids?: ReadonlyMap<string, ReadonlyMap<string, string>>;
   /** Retargeted Animation loads keyed by the actor (target) Model guid. */
@@ -154,7 +159,7 @@ export function applyAlbedoTexture(
   material.diffuseTexture = texture;
   material.emissiveTexture = texture;
   material.emissiveColor = Color3.White();
-  texture.hasAlpha = true;
+  material.useAlphaFromDiffuseTexture = true;
   material.transparencyMode = Material.MATERIAL_ALPHATEST;
   material.alphaCutOff = 0.4;
   mesh.material = material;

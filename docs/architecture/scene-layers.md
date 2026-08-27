@@ -66,6 +66,8 @@ Play overlay walks layers high `zOrder` → low, `scene.pick` each overlay scene
 
 `2DTexture` planes size to sniffed GPU bytes (KTX2, then PNG/JPEG) divided by Project Settings `pixelsPerUnit`. Missing guid or bytes stays **1×1**. `2DMaterial` and the default `2DButton` quad stay 1×1. Details has no Size field and Play does not write actor scale.
 
+`2DTexture` / `2DMaterial` (and 2D Panel texture/material source) share the Engine `ResourceCache` with world Scenes. Assigning the default Mannequin albedo Texture or its Material must **reuse** that GPU wrapper — overlay NEAREST sampling, `hasAlpha`, pixel-art resample, and NodeMaterial dispose must not steal it or the 3D Mannequin goes black.
+
 **2D Panel** is a 9-slice unlit plane (`source` texture or material, **0–1 source-texture fractions** (`0.5` = 50% of that edge), Hit Test Ignore). Values **above 1** stay legacy **pixels**. Corners stay `marginPx / pixelsPerUnit` in world space as the actor scale changes (mesh is a unit quad; dest is `|scale.xy|`). UV borders stay `marginPx / sourcePx` and do not shrink with dest. Edges stretch on one axis; the center stretches. Margins clamp when the destination is smaller than L+R or T+B. Editor Preview and Play share the same builder. Details shows a still frame of the Texture (or the Material’s first Texture Sample) with dashed margin lines and orange intersection dots; margins edit as 0–1 sliders.
 
 Editor Preview shows unlit planes for `2DTexture` / `2DMaterial` / `2DPanel` / solo `2DButton`. A button with a sibling or parent visual does not add an extra quad (same as Play). A nested button helper stays an unpickable origin so viewport picks hit the parent visual; select that actor in the Outliner to edit the button.
@@ -98,7 +100,9 @@ Register/Unregister pickers require `domain === "postProcess"`.
 
 Collect SceneLayer documents from every Play-library scene’s `sceneLayers` plus graph `assetRef("SceneLayer")` pin defaults. Pack textures, sprites, tilemaps, audio, particles, fonts, and materials those layer actors reference (same closure as a 2D scene), including `2DTexture.textureGuid`, `2DMaterial.materialGuid`, `2DPanel` texture/material guids, overlay `fontAssetGuid`, and RichText `[img]` texture guids (those guids live inside the markup string, so export does not see them via a naive string walk). Player `activeScene` still swaps **world** only; compositor commands follow the worker.
 
-Editor Play and the packaged player apply `sceneLayerCreate` / `Remove` / `Clear` / `PostProcess` (and `despawn`) on the engine handle via the shared `PLAY_ENGINE_COMMAND_TYPES` allowlist. Overlay `assignMesh` / snapshots must not fall back into the world scene: tagged slots wait for the overlay `Scene`, then migrate if a mesh was already created in the world.
+A SceneLayer is a **HUD**: unlit orthographic overlay drawn after the world, independent of the possessed/world camera. Overlay XY lives in the compositor frustum (height 9). World camera motion must not move overlay NDC. Overlay cameras and meshes are **not** parented to the world camera.
+
+Editor Play and the packaged player apply `sceneLayerCreate` / `Remove` / `Clear` / `PostProcess` (and `despawn`) on the engine handle via the shared `PLAY_ENGINE_COMMAND_TYPES` allowlist. Snapshots set `flags` bit 1 (`SNAPSHOT_FLAG_OVERLAY`) for actors with `sceneLayerId`. `assignMesh` carries optional `sceneLayerId` so the compositor can `noteSpawn` before routing. Overlay identity is that id / snapshot bit (sprites and tilemaps on overlay actors are still HUD). Overlay visuals must not instantiate in the world Scene: skip until the overlay `Scene` is live, create there, and `migratePlaySlotVisual` if a leftover world mesh exists. Overlay slots skip world-camera tilemap parallax. Overlay-only kinds (`2dtexture`, `2dmaterial`, `2dbutton`, `2dpanel`, `2dtext`, `2drichtext`) never fall back to `worldScene` while the compositor exists.
 
 ## 2D Text and 2D Rich Text
 

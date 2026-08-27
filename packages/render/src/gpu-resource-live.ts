@@ -33,6 +33,11 @@ export function isDisposedGpuTexture(texture: object): boolean {
   return probe._engine == null;
 }
 
+/** ResourceCache wrappers are Engine-owned and must not be resampled or disposed by overlay Scenes. */
+export function isEngineOwnedGpuTexture(texture: object): boolean {
+  return (texture as TextureDisposeProbe).uniqueId === undefined;
+}
+
 /** `dispose()` removes the material from `scene.materials`. */
 export function isDisposedNodeMaterial(
   material: object,

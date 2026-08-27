@@ -20,6 +20,7 @@ export {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   materialDependencies,
+  missingPackedMaterialTextureGuids,
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,

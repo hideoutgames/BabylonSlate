@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CommandMessage } from "@babylonslate/bridge";
+import {
+  readActorSlot,
+  snapshotFloatCount,
+  SNAPSHOT_FLAG_OVERLAY,
+  SNAPSHOT_FLAG_VISIBLE,
+  type CommandMessage,
+} from "@babylonslate/bridge";
 import {
   createActor,
   createDefaultScene,
@@ -142,10 +148,23 @@ describe("SceneLayer runtime compositor", () => {
         ...overlayLayer().settings,
         postProcessStack: [{ materialGuid: "bloom", enabled: true }],
       },
+      actors: [
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "tex",
+              classId: "2DTextureComponent",
+              properties: { textureGuid: "albedo-1" },
+            },
+          ],
+        }),
+      ],
     };
     const runtime = createInProcessRuntime({
       seed: 1,
       preferSoftwarePhysics: true,
+      maxActors: 16,
       playScene: worldScene("A"),
       sceneLayerLibrary: { hud },
       onCommand: (command) => commands.push(command),
@@ -161,6 +180,27 @@ describe("SceneLayer runtime compositor", () => {
           command.type === "spawn" &&
           command.actorGuid === "banner" &&
           command.sceneLayerId === layer.guid,
+      ),
+    ).toBe(true);
+    expect(
+      commands.some(
+        (command) =>
+          command.type === "assignMesh" &&
+          command.actorGuid === "banner" &&
+          command.sceneLayerId === layer.guid,
+      ),
+    ).toBe(true);
+    runtime.start();
+    runtime.tick();
+    const buf = new Float32Array(snapshotFloatCount(16));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    const overlaySlots = [...Array(8).keys()]
+      .map((index) => readActorSlot(buf, index))
+      .filter((slot) => (slot.flags & SNAPSHOT_FLAG_OVERLAY) === SNAPSHOT_FLAG_OVERLAY);
+    expect(overlaySlots.length).toBeGreaterThan(0);
+    expect(
+      overlaySlots.every(
+        (slot) => (slot.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
       ),
     ).toBe(true);
     runtime.registerSceneLayerPostProcess(layer.guid, "vignette");

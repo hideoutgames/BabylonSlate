@@ -675,3 +675,17 @@ export function materialDependencies(
     all,
   };
 }
+
+/** Texture guids sampled by Materials that are absent from packed Texture bytes. */
+export function missingPackedMaterialTextureGuids(
+  documents: Iterable<MaterialDocument | MaterialFunctionDocument>,
+  packedTextureGuids: ReadonlySet<string>,
+): string[] {
+  const missing = new Set<string>();
+  for (const document of documents) {
+    for (const guid of materialDependencies(document).textures) {
+      if (!packedTextureGuids.has(guid)) missing.add(guid);
+    }
+  }
+  return [...missing].sort();
+}

@@ -5,6 +5,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   materialDependencies,
+  missingPackedMaterialTextureGuids,
   migrateLegacyShaderPayload,
   normalizeMaterialDocument,
   normalizeMaterialFunctionDocument,
@@ -192,6 +193,30 @@ describe("material document", () => {
     expect(deps.functions).toEqual(["fn-1"]);
     expect(deps.meshes).toEqual(["model-9"]);
     expect(deps.all).toEqual(["fn-1", "model-9", "tex-a", "tex-b"]);
+  });
+
+  it("lists Material texture guids missing from a packed Texture set", () => {
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex-a",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "tex-b",
+        type: "param.texture",
+        position: { x: 0, y: 80 },
+        properties: { textureGuid: "tex-2" },
+      },
+    );
+    expect(
+      missingPackedMaterialTextureGuids([doc], new Set(["tex-1"])),
+    ).toEqual(["tex-2"]);
+    expect(
+      missingPackedMaterialTextureGuids([doc], new Set(["tex-1", "tex-2"])),
+    ).toEqual([]);
   });
 
   it("creates a material function with matching interface and plumbing nodes", () => {

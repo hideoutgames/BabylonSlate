@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Material, NullEngine, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Material, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -8,6 +8,8 @@ import {
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { getMaterialTexture, ResourceCache } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
 
@@ -945,6 +947,102 @@ describe("material compiler", () => {
     expect(rebuild).toHaveBeenCalled();
   });
 
+  it("unfreezes a frozen NodeMaterial before rebuilding when a packed texture becomes ready", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "imported-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    result.material.freeze();
+    expect(result.material.isFrozen).toBe(true);
+    const unfreeze = vi.spyOn(result.material, "unfreeze");
+    const rebuild = vi.spyOn(result.material, "build");
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(unfreeze).toHaveBeenCalled();
+    expect(rebuild).toHaveBeenCalled();
+    expect(unfreeze.mock.invocationCallOrder[0]!).toBeLessThan(
+      rebuild.mock.invocationCallOrder[0]!,
+    );
+    expect(result.material.isFrozen).toBe(true);
+  });
+
+  it("re-applies authored blend after a packed-texture rebuild", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    doc.blendMode = "masked";
+    doc.alphaCutoff = 0.4;
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "masked-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    expect(result.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    result.material.freeze();
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(result.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
+    expect(
+      (result.material as unknown as { alphaCutOff: number }).alphaCutOff,
+    ).toBeCloseTo(0.4);
+  });
+
+  it("reports material.missingTexture when a packed texture fails to load", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    vi.spyOn(resolved, "isReady").mockReturnValue(false);
+    const errors = new Observable<{ message?: string }>();
+    (
+      resolved as Texture & { onErrorObservable: Observable<{ message?: string }> }
+    ).onErrorObservable = errors;
+    const diagnostics: Array<{ code: string }> = [];
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "imported-albedo",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+      onTextureError: (diagnostic) => diagnostics.push(diagnostic),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    result.material.freeze();
+    const rebuild = vi.spyOn(result.material, "build");
+    const unfreeze = vi.spyOn(result.material, "unfreeze");
+    errors.notifyObservers({ message: "ktx2 decode failed" });
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "material.missingTexture",
+        severity: "error",
+      }),
+    ]);
+    expect(rebuild).not.toHaveBeenCalled();
+    expect(unfreeze).not.toHaveBeenCalled();
+  });
+
   it("keeps invertY false on the compiled sampling TextureBlock", () => {
     const scene = host();
     const resolved = new Texture(null, scene, true, false);
@@ -997,6 +1095,63 @@ describe("material compiler", () => {
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
     expect(sample?.texture?.invertY).toBe(false);
+  });
+
+  it("does not dispose a ResourceCache Texture when the compiled material is dropped", () => {
+    const scene = host();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    disposers.push(() => cache.dispose());
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const cached = getMaterialTexture(
+      cache,
+      "tex-1",
+      scene.getEngine(),
+      bytes,
+    );
+    expect(cached).not.toBeNull();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-tex",
+        sourceNodeId: "tex",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "texture",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: (guid) => (guid === "tex-1" ? cached : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    result.dispose();
+    expect(isDisposedGpuTexture(cached!)).toBe(false);
   });
 
   it("inlines a material function into the same block graph", () => {
