@@ -176,6 +176,59 @@ describe("p20-editor-scene-freeze", () => {
     expect(activeMeshesOf(handle.scene)).toContain(mesh);
   });
 
+  it("frames an actor once at a pull-back distance without locking the camera to the mesh", () => {
+    const handle = editorHandle();
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          transform: {
+            position: [8, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ],
+    });
+    const editor = handle.editor!;
+    const mesh = editor.sync.meshForActor("hero")!;
+    editor.camera.camera.radius = 0.5;
+    editor.frameActor("hero");
+    editor.camera.camera.getViewMatrix();
+
+    expect(editor.camera.camera.target).not.toBe(mesh.getAbsolutePosition());
+    expect(editor.camera.camera.target.x).toBeCloseTo(8, 1);
+    expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(12);
+    expect(editor.camera.camera.radius).toBeGreaterThan(editor.camera.camera.minZ);
+
+    const framedTarget = editor.camera.camera.target.clone();
+    mesh.position.x = 40;
+    mesh.computeWorldMatrix(true);
+    editor.camera.camera.getViewMatrix();
+    expect(editor.camera.camera.target.x).toBeCloseTo(framedTarget.x, 5);
+    expect(editor.camera.camera.target.y).toBeCloseTo(framedTarget.y, 5);
+    expect(editor.camera.camera.target.z).toBeCloseTo(framedTarget.z, 5);
+  });
+
+  it("re-frames the same actor to the viewing radius after a close zoom", () => {
+    const handle = editorHandle();
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("hero", "Hero", {
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ],
+    });
+    const editor = handle.editor!;
+    editor.frameActor("hero");
+    editor.camera.camera.radius = 0.5;
+    editor.frameActor("hero");
+    editor.camera.camera.getViewMatrix();
+    expect(editor.camera.camera.radius).toBeGreaterThanOrEqual(12);
+  });
+
   it("keeps the editor grid in the frozen active-mesh list after hide", () => {
     const handle = editorHandle();
     const grid = handle.editor?.grid.mesh;

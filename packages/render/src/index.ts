@@ -21,6 +21,7 @@ export * from "./play-cursor";
 export * from "./picking";
 export * from "./pick-coords";
 export * from "./editor-camera";
+export * from "./actor-framing";
 export * from "./editor-place";
 export * from "./editor-grid";
 export * from "./editor-scene-sync";

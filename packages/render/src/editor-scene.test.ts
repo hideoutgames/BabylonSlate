@@ -6,6 +6,7 @@ import {
   Camera,
   Effect,
   Mesh,
+  MeshBuilder,
   ShaderMaterial,
   StandardMaterial,
   Vector3,
@@ -22,7 +23,9 @@ import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import {
   createEditorCamera,
+  DEFAULT_CAMERA_RADIUS,
   MAX_CAMERA_RADIUS,
+  MIN_CAMERA_RADIUS,
   TWO_D_ALPHA,
   TWO_D_BETA,
 } from "./editor-camera";
@@ -214,6 +217,42 @@ describe("editor camera controller", () => {
       Vector3.Distance(eyeBefore, target),
       4,
     );
+  });
+
+  it("does not alias the 3D orbit target to a live mesh position", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    const mesh = MeshBuilder.CreateBox("frame-alias", { size: 1 }, scene);
+    mesh.position.set(4, 1, 2);
+    mesh.computeWorldMatrix(true);
+
+    controller.frame(mesh.getAbsolutePosition());
+    expect(controller.camera.target).not.toBe(mesh.getAbsolutePosition());
+
+    mesh.position.set(20, 8, -6);
+    mesh.computeWorldMatrix(true);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.target.x).toBeCloseTo(4, 5);
+    expect(controller.camera.target.y).toBeCloseTo(1, 5);
+    expect(controller.camera.target.z).toBeCloseTo(2, 5);
+  });
+
+  it("rebuilds 3D framing when the same point is framed again with a radius", () => {
+    const { scene } = createHandle();
+    const controller = createEditorCamera(scene, { mode: "3d" });
+    controller.camera.radius = 3;
+    const point = new Vector3(2, 0, 1);
+
+    controller.frame(point);
+    controller.camera.radius = MIN_CAMERA_RADIUS;
+    controller.frame(point, DEFAULT_CAMERA_RADIUS);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.radius).toBeCloseTo(DEFAULT_CAMERA_RADIUS, 5);
+    expect(
+      Vector3.Distance(controller.camera.position, controller.camera.target),
+    ).toBeCloseTo(DEFAULT_CAMERA_RADIUS, 4);
   });
 
   it("still pans the 2D target when framing", () => {
