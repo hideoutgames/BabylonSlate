@@ -37,6 +37,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
+import { isSceneAssetClassId, sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -44,6 +45,7 @@ import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
+  collectSceneDocumentsForPalette,
   collectScriptInterfacesForPalette,
   commitLogicGraph,
   serializedGraphFromDocument,
@@ -109,7 +111,10 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const parentClass =
     indexed?.header.parentClass ??
     (doc?.ref.kind === "anim-graph" ? "BObject" : null);
-  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
+  const parentOf = (id: string) => {
+    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
+    return classParentLookup(assetRegistry?.list() ?? [])(id);
+  };
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = serializedGraphFromDocument(
     doc?.ref.kind ?? "",
@@ -133,6 +138,14 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         classIdForPath: classIdForGraphPath,
       }),
     [assetRegistry, openDocuments, parentOf],
+  );
+  const sceneDocuments = useMemo(
+    () =>
+      collectSceneDocumentsForPalette({
+        assets: assetRegistry?.list() ?? [],
+        openDocuments,
+      }),
+    [assetRegistry, openDocuments],
   );
   const scriptInterfaces = useMemo(
     () =>
@@ -164,8 +177,12 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     return classMemberSymbolsFromGraphs(graphs, { parentOf });
   }, [classId, graphContent, otherClassGraphs, parentOf]);
   const knownClassIds = useMemo(
-    () => knownClassIdSet(parentOf, Object.keys(otherClassGraphs)),
-    [otherClassGraphs, parentOf],
+    () =>
+      knownClassIdSet(parentOf, [
+        ...Object.keys(otherClassGraphs),
+        ...sceneDocuments.map((scene) => sceneAssetClassId(scene.guid)),
+      ]),
+    [otherClassGraphs, parentOf, sceneDocuments],
   );
   const pinCompatibility = useMemo(
     () => scriptPinCompatibility(hierarchy),
@@ -312,6 +329,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     scriptInterfaces,
     structures: typeAssets.structures,
     enums: typeAssets.enums,
+    sceneDocuments,
     animationGraphHost:
       doc?.ref.kind === "anim-graph" ? ("object" as const) : undefined,
   };

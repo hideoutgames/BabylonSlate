@@ -940,6 +940,57 @@ describe("scriptPaletteNodes", () => {
     );
   });
 
+  it("injects Cast to scene display names and Get-only placed components", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "GameInstance",
+      classId: "MyGame",
+      sceneDocuments: [
+        {
+          guid: "scene-1",
+          name: "Main Hall",
+          actors: [
+            {
+              name: "Hero",
+              components: [{ id: "mesh-hero", classId: "MeshComponent" }],
+            },
+            {
+              name: "Cam",
+              components: [{ id: "cam-1", classId: "CameraComponent" }],
+            },
+          ],
+        },
+      ],
+    });
+    const sceneCast = nodes.find(
+      (node) => node.id === "casting.cast:Scene:scene-1",
+    );
+    expect(sceneCast?.title).toBe("Cast to Main Hall");
+    expect(sceneCast?.defaultData).toMatchObject({
+      defaultClassId: "Scene:scene-1",
+      resultKind: "objectRef",
+    });
+    expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
+    expect(nodes.some((node) => node.title === "Set Scene Name")).toBe(false);
+    const meshGet = nodes.find(
+      (node) =>
+        node.nodeType === "variables.get" &&
+        node.defaultData?.componentId === "mesh-hero",
+    );
+    expect(meshGet?.title).toBe("Get Mesh");
+    expect(meshGet?.defaultData).toMatchObject({
+      classId: "Scene:scene-1",
+      typeClassId: "MeshComponent",
+      implicitSelf: false,
+    });
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.set" &&
+          node.defaultData?.componentId === "mesh-hero",
+      ),
+    ).toBe(false);
+  });
+
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {
     const nodes = scriptPaletteNodes(registry, { parentClass: "BTDecorator" });
     expect(nodes.some((node) => node.id === "bt.event.evaluate")).toBe(true);

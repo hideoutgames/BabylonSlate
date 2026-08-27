@@ -94,6 +94,7 @@ describe("engine script API catalog", () => {
         name: "Scene Name",
         typeId: "string",
         propertyKey: "sceneName",
+        getOnly: true,
       }),
     ]);
     const gi = engineScriptApiFor("GameInstance");

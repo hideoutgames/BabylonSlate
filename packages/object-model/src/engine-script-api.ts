@@ -12,6 +12,8 @@ export type EngineScriptVariable = {
   /** Extra Content Browser types the pin picker accepts (e.g. Mesh + Model). */
   typeClassIds?: readonly string[];
   propertyKey: string;
+  /** When true, the palette injects Get only (no Set). */
+  getOnly?: boolean;
 };
 
 export type EngineScriptFunction = {
@@ -161,7 +163,12 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   {
     classId: "Scene",
     variables: [
-      { name: "Scene Name", typeId: "string", propertyKey: "sceneName" },
+      {
+        name: "Scene Name",
+        typeId: "string",
+        propertyKey: "sceneName",
+        getOnly: true,
+      },
     ],
   },
   {

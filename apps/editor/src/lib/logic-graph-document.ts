@@ -1,5 +1,6 @@
 import {
   isFunctionLibraryClass,
+  normalizeScene,
   type GraphClassMember,
   type GraphClassMemberPin,
   type SerializedGraph,
@@ -444,6 +445,75 @@ export function collectClassGraphsForPalette(options: {
     graphs[classId] = graph;
   }
   return graphs;
+}
+
+export type PaletteSceneDocument = {
+  guid: string;
+  name: string;
+  actors: Array<{
+    name: string;
+    components: Array<{
+      id: string;
+      classId: string;
+      properties?: Record<string, unknown>;
+    }>;
+  }>;
+};
+
+function paletteSceneFromContent(
+  guid: string,
+  content: unknown,
+  fallbackName: string,
+): PaletteSceneDocument {
+  const scene = normalizeScene(content);
+  return {
+    guid,
+    name: scene.name || fallbackName,
+    actors: scene.actors.map((actor) => ({
+      name: actor.name,
+      components: actor.components.map((component) => ({
+        id: component.id,
+        classId: component.classId,
+        properties: component.properties,
+      })),
+    })),
+  };
+}
+
+export function collectSceneDocumentsForPalette(options: {
+  assets: ReadonlyArray<{
+    path: string;
+    header: {
+      guid?: string;
+      type: string;
+      name: string;
+      payload?: Record<string, unknown>;
+    };
+  }>;
+  openDocuments: ReadonlyArray<{
+    ref: { kind: string; path: string };
+    content: unknown;
+  }>;
+}): PaletteSceneDocument[] {
+  const byGuid = new Map<string, PaletteSceneDocument>();
+  for (const asset of options.assets) {
+    if (asset.header.type !== "Scene") continue;
+    const guid = asset.header.guid?.trim();
+    if (!guid) continue;
+    byGuid.set(
+      guid,
+      paletteSceneFromContent(guid, asset.header.payload ?? {}, asset.header.name),
+    );
+  }
+  for (const doc of options.openDocuments) {
+    if (doc.ref.kind !== "scene") continue;
+    const guid = options.assets.find(
+      (asset) => asset.path === doc.ref.path,
+    )?.header.guid;
+    if (!guid) continue;
+    byGuid.set(guid, paletteSceneFromContent(guid, doc.content, guid));
+  }
+  return [...byGuid.values()];
 }
 
 export type LogicGraphCommit =
