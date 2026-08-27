@@ -28,6 +28,12 @@ describe("SceneLayer object model", () => {
     expect(layer.layerBounds).toEqual({ width: 20, height: 10 });
     expect(world.getSceneLayers()).toEqual([layer]);
 
+    const defaultBounds = world.createSceneLayer({
+      assetGuid: "fallback",
+      zOrder: 0,
+    });
+    expect(defaultBounds.layerBounds).toEqual({ width: 32, height: 18 });
+
     const actor = world.createActor({
       classId: "SceneLayerActor",
       sceneLayerId: layer.guid,

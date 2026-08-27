@@ -9,7 +9,7 @@ Shared surface for the headless runtime object graph (engineplan §5, §16). Imp
 | `BObject` | Base instance: guid, classId, variables, `onCreation` / `onTick` / `onDestroyed` |
 | `Actor` | World-placed object with transform and ordered component list |
 | `Scene` | Live Play scene `BObject` (`classId` `Scene:{assetGuid}`). `variables.sceneName` is the authored display name; `variables.assetGuid` is the document guid (Get-only); `variables.gravity` is the live world gravity `{ x, y, z }` (Get/Set). Not spawnable. |
-| `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 16×9). |
+| `SceneLayer` | Session overlay instance (`BObject`); not an Actor. Stores `layerBounds` (orange design canvas, default 32×18). |
 | `SceneLayerActor` | Overlay actor tagged `sceneLayerId`; same World tick as world actors |
 | `ActorComponent` | Attached to an Actor; own tick |
 | `GameInstance` | Session singleton. Application: `onCreation` (script `onInit`), `onTick`, `onGameEnd` (script `onEnd`). Scene: `onSceneStartLoading` / `onSceneFinishLoading` / `onFirstSceneLoaded` / `onSceneExit`. `onSceneLoaded` still aliases finish. |

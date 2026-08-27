@@ -30,7 +30,7 @@ describe("SceneLayer schema", () => {
     expect(layer.settings.fixedTimestepMs).toBe(
       createDefaultSceneSettings("2d").fixedTimestepMs,
     );
-    expect(layer.settings.layerBounds).toEqual({ width: 16, height: 9 });
+    expect(layer.settings.layerBounds).toEqual({ width: 32, height: 18 });
   });
 
   it("stamps schema version 1 for new SceneLayer assets", () => {
@@ -104,7 +104,7 @@ describe("SceneLayer schema", () => {
       { materialGuid: "pp", enabled: true },
     ]);
     expect(scene.actors).toHaveLength(1);
-    expect(scene.settings.cameraBounds2D).toEqual({ width: 16, height: 9 });
+    expect(scene.settings.cameraBounds2D).toEqual({ width: 32, height: 18 });
     expect(scene.settings.environmentColor).toEqual([0, 0, 0]);
     expect(scene.overlayEditor).toBe(true);
   });
@@ -130,6 +130,7 @@ describe("SceneLayer schema", () => {
   it("bakes identity-transform 2DAnchor offsets into authored XY so 16x9 layout does not jump", () => {
     const layer = normalizeSceneLayer({
       name: "HUD",
+      settings: { layerBounds: { width: 16, height: 9 } },
       actors: [
         createActor("badge", "Badge", {
           classId: "SceneLayerActor",

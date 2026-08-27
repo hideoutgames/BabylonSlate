@@ -1,6 +1,7 @@
 import {
   identityTransform,
   newGuid,
+  SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   type Guid,
   type GuidFactory,
   type Transform,
@@ -225,10 +226,10 @@ export class SceneLayer extends BObject {
     this.layerBounds = {
       width: options.layerBounds?.width && options.layerBounds.width > 0
         ? options.layerBounds.width
-        : 16,
+        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width,
       height: options.layerBounds?.height && options.layerBounds.height > 0
         ? options.layerBounds.height
-        : 9,
+        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
     };
   }
 }

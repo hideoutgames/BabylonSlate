@@ -1510,11 +1510,15 @@ describe("editor grid", () => {
     grid.dispose();
   });
 
-  it("hides the grid without hiding 2D camera bounds", () => {
+  it("hides 2D camera bounds with the grid and restores them on show", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 10, height: 6 });
     expect(scene.getMeshByName("__editor-camera-bounds__")).not.toBeNull();
+    expect(grid.boundsMesh?.isVisible).toBe(true);
+    expect(grid.boundsMesh?.visibility).toBe(1);
+    expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
+    expect(grid.boundsMesh?.renderingGroupId).toBe(RENDERING_GROUP.world);
 
     grid.setVisible(false);
     expect(grid.mesh.isVisible).toBe(true);
@@ -1523,9 +1527,32 @@ describe("editor grid", () => {
       (grid.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
     ).toBe(0);
     expect(grid.boundsMesh?.isVisible).toBe(true);
+    expect(grid.boundsMesh?.visibility).toBe(0);
+    expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
+
+    grid.setVisible(true);
+    expect(grid.boundsMesh?.isVisible).toBe(true);
+    expect(grid.boundsMesh?.visibility).toBe(1);
 
     grid.setCameraBounds(null);
     expect(scene.getMeshByName("__editor-camera-bounds__")).toBeNull();
+    grid.dispose();
+  });
+
+  it("keeps rebuilt 2D camera bounds in the frozen active list", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "2d" });
+    const sync = new EditorSceneSync(scene);
+    sync.apply(
+      sceneWith([
+        createActor("a", "A", { components: [createMeshComponent("c1", "box")] }),
+      ]),
+    );
+    expect(scene._activeMeshesFrozen).toBe(true);
+    grid.setCameraBounds({ width: 10, height: 6 });
+    expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
+    expect(grid.boundsMesh?.isVisible).toBe(true);
+    expect(grid.boundsMesh?.visibility).toBe(1);
     grid.dispose();
   });
 

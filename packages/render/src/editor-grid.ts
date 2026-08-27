@@ -275,6 +275,13 @@ export function createEditorGrid(
     applyUniforms();
   };
 
+  const applyBoundsVisibility = () => {
+    if (!boundsMesh) return;
+    boundsMesh.isVisible = true;
+    boundsMesh.alwaysSelectAsActiveMesh = true;
+    boundsMesh.visibility = visible ? 1 : 0;
+  };
+
   const buildBounds = () => {
     boundsMesh?.dispose();
     boundsMesh = null;
@@ -297,6 +304,14 @@ export function createEditorGrid(
     );
     boundsMesh.color = new Color3(0.9, 0.7, 0.2);
     boundsMesh.isPickable = false;
+    boundsMesh.alwaysSelectAsActiveMesh = true;
+    boundsMesh.isVisible = true;
+    boundsMesh.renderingGroupId = RENDERING_GROUP.world;
+    boundsMesh.alphaIndex = GRID_ALPHA_INDEX;
+    if (boundsMesh.material) {
+      boundsMesh.material.disableDepthWrite = true;
+    }
+    applyBoundsVisibility();
   };
 
   const sync = () => {
@@ -357,6 +372,7 @@ export function createEditorGrid(
       mesh.alwaysSelectAsActiveMesh = true;
       mesh.visibility = next ? 1 : 0;
       material.setFloat("gridVisible", next ? 1 : 0);
+      applyBoundsVisibility();
     },
     setCameraBounds: (bounds) => {
       requestedBounds = bounds;
