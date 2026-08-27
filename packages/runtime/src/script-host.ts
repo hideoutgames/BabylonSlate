@@ -161,6 +161,8 @@ export interface ScriptHostServices {
   possessCamera?(target: unknown): void;
   updateIllumination?(target: unknown): void;
   refreshComponent?(component: ActorComponent): void;
+  /** Apply live world-scene gravity from a Scene Gravity Set. */
+  setWorldGravity?(gravity: { x: number; y: number; z: number }): void;
   findPathTo?(
     from: Vec3,
     to: Vec3,
@@ -828,6 +830,13 @@ export class ScriptHost {
         (target ?? self)?.getVariable(name),
       setVariableOn: (target, name, value) => {
         const object = target ?? self;
+        if (object instanceof Scene && String(name ?? "") === "gravity") {
+          const gravity = asScriptVec3(value);
+          if (!gravity) return;
+          object.setVariable("gravity", gravity);
+          services.setWorldGravity?.(gravity);
+          return;
+        }
         object?.setVariable(name, value);
         if (object instanceof ActorComponent) {
           this.applyComponentVariable(object, String(name ?? ""), value);
@@ -1423,6 +1432,25 @@ export class ScriptHost {
 
 function asActor(target: unknown): Actor | null {
   return target instanceof Actor ? target : null;
+}
+
+function asScriptVec3(
+  value: unknown,
+): { x: number; y: number; z: number } | null {
+  if (Array.isArray(value) && value.length >= 3) {
+    const x = Number(value[0]);
+    const y = Number(value[1]);
+    const z = Number(value[2]);
+    if (![x, y, z].every(Number.isFinite)) return null;
+    return { x, y, z };
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as { x?: unknown; y?: unknown; z?: unknown };
+  const x = Number(record.x);
+  const y = Number(record.y);
+  const z = Number(record.z);
+  if (![x, y, z].every(Number.isFinite)) return null;
+  return { x, y, z };
 }
 
 function asActorComponent(target: unknown): ActorComponent | null {

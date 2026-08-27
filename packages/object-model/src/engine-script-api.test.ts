@@ -87,7 +87,7 @@ describe("engine script API catalog", () => {
     ]);
   });
 
-  it("exposes Scene Name on Scene and Game Instance scene getters", () => {
+  it("exposes Scene Name, Asset Guid, and Gravity on Scene and Game Instance scene getters", () => {
     const scene = engineScriptApiFor("Scene");
     expect(scene?.variables).toEqual([
       expect.objectContaining({
@@ -95,6 +95,17 @@ describe("engine script API catalog", () => {
         typeId: "string",
         propertyKey: "sceneName",
         getOnly: true,
+      }),
+      expect.objectContaining({
+        name: "Asset Guid",
+        typeId: "string",
+        propertyKey: "assetGuid",
+        getOnly: true,
+      }),
+      expect.objectContaining({
+        name: "Gravity",
+        typeId: "vec3",
+        propertyKey: "gravity",
       }),
     ]);
     const gi = engineScriptApiFor("GameInstance");

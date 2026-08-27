@@ -249,7 +249,11 @@ export class Scene extends BObject {
       classId: options.classId ?? sceneAssetClassId(options.assetGuid),
       guid: options.guid,
       guidFactory: options.guidFactory,
-      variables: { sceneName: options.sceneName, ...options.variables },
+      variables: {
+        sceneName: options.sceneName,
+        assetGuid: options.assetGuid,
+        ...options.variables,
+      },
       hooks: options.hooks,
     });
     this.assetGuid = options.assetGuid;

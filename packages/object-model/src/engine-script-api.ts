@@ -169,6 +169,17 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         propertyKey: "sceneName",
         getOnly: true,
       },
+      {
+        name: "Asset Guid",
+        typeId: "string",
+        propertyKey: "assetGuid",
+        getOnly: true,
+      },
+      {
+        name: "Gravity",
+        typeId: "vec3",
+        propertyKey: "gravity",
+      },
     ],
   },
   {

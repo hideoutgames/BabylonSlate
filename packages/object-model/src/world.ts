@@ -69,6 +69,7 @@ export class World {
   private ticking = false;
   private firstSceneLoaded = false;
   private activeSceneName: string | null = null;
+  private loadingSceneName: string | null = null;
 
   constructor(options: WorldOptions) {
     this.classRegistry = options.classRegistry;
@@ -113,11 +114,13 @@ export class World {
   }
 
   beginSceneLoad(sceneName: string): void {
+    this.loadingSceneName = sceneName;
     this.gameInstance?.callOnSceneStartLoading(sceneName);
   }
 
   finishSceneLoad(sceneName: string): void {
     this.activeSceneName = sceneName;
+    this.loadingSceneName = null;
     this.gameInstance?.callOnSceneFinishLoading(sceneName);
     if (!this.firstSceneLoaded) {
       this.firstSceneLoaded = true;
@@ -126,8 +129,9 @@ export class World {
   }
 
   exitActiveScene(): void {
-    const name = this.activeSceneName;
+    const name = this.activeSceneName ?? this.loadingSceneName;
     this.activeSceneName = null;
+    this.loadingSceneName = null;
     this.clearCurrentScene();
     if (!name) return;
     this.gameInstance?.callOnSceneExit(name);

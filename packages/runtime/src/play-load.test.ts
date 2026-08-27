@@ -8,6 +8,7 @@ import {
 import {
   createRuntimeFromLoad,
   runtimeOptionsFromLoadControl,
+  shouldSpawnScriptedActor,
   unmatchedScriptSpawns,
 } from "./play-load";
 
@@ -275,9 +276,16 @@ describe("unmatchedScriptSpawns", () => {
           { classId: "EditorFunctionLibrary" },
           { classId: "SceneLayer" },
           { classId: "Scene" },
+          { classId: "Scene:abc" },
         ],
         new Set(),
       ),
     ).toEqual([{ classId: "Mover" }]);
+  });
+
+  it("does not treat Scene:{guid} graphs as spawnable Actors", () => {
+    expect(shouldSpawnScriptedActor("Scene")).toBe(false);
+    expect(shouldSpawnScriptedActor("Scene:abc")).toBe(false);
+    expect(shouldSpawnScriptedActor("Mover")).toBe(true);
   });
 });

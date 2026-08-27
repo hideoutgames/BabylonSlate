@@ -19,6 +19,7 @@ describe("Scene object model", () => {
     expect(scene.classId).toBe(sceneAssetClassId("scene-1"));
     expect(scene.assetGuid).toBe("scene-1");
     expect(scene.getVariable("sceneName")).toBe("Main");
+    expect(scene.getVariable("assetGuid")).toBe("scene-1");
     expect(world.currentScene).toBe(scene);
   });
 

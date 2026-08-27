@@ -75,6 +75,7 @@ import {
 import type { ProjectStorage } from "@babylonslate/core";
 import type { ScriptBundleEntry } from "@babylonslate/bridge";
 import type { Diagnostic } from "@babylonslate/scripting";
+import { sceneAssetClassId } from "@babylonslate/object-model";
 import type { TracePayload } from "@babylonslate/debugger";
 import {
   DocumentService,
@@ -131,7 +132,7 @@ import {
   knownClassIdSet,
   validateSerializedGraph,
 } from "../services/graph-validation";
-import { collectClassGraphsForPalette, collectGraphTypeAssets, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
+import { collectClassGraphsForPalette, collectGraphTypeAssets, collectSceneDocumentsForPalette, typeSchemasFromGraphAssets } from "../lib/logic-graph-document";
 import { applyFocusLayout, focusKeepPanelIds } from "../shell/layout-ops";
 import {
   capturePanelPlacement,
@@ -2408,15 +2409,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     const documents = await loadProjectGraphDocuments();
     const animDocuments = await loadProjectAnimGraphDocuments();
     const parentOf = classParentLookup(projectService.registry?.list() ?? []);
+    const assets = projectService.registry?.list() ?? [];
+    const openDocuments = [...documentService.getState().openDocuments.values()];
     const classGraphs = collectClassGraphsForPalette({
-      assets: projectService.registry?.list() ?? [],
-      openDocuments: [...documentService.getState().openDocuments.values()],
+      assets,
+      openDocuments,
       classIdForPath: classIdForGraphPath,
     });
     for (const doc of documents) {
       classGraphs[classIdForGraphPath(doc.path)] = doc.content;
     }
     const typeSchemas = collectGraphTypeSchemas();
+    const sceneClassIds = collectSceneDocumentsForPalette({
+      assets,
+      openDocuments,
+    }).map((scene) => sceneAssetClassId(scene.guid));
     const diagnostics = documents.flatMap((doc) =>
       validateSerializedGraph(doc.content, {
         assetGuid: doc.path,
@@ -2424,7 +2431,10 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         classId: doc.classId ?? classIdForGraphPath(doc.path),
         hierarchy: classHierarchyFromParentOf(parentOf),
         members: classMemberSymbolsFromGraphs(classGraphs, { parentOf }),
-        knownClassIds: knownClassIdSet(parentOf, Object.keys(classGraphs)),
+        knownClassIds: knownClassIdSet(parentOf, [
+          ...Object.keys(classGraphs),
+          ...sceneClassIds,
+        ]),
         enums: typeSchemas.enums,
         structs: typeSchemas.structs,
         materialDomains: materialDomainsFromAssets(

@@ -37,7 +37,7 @@ import {
   defaultNodeRegistry,
 } from "../services/graph-validation";
 import { classIdForGraphPath } from "../services/script-compiler";
-import { isSceneAssetClassId, sceneAssetClassId } from "@babylonslate/object-model";
+import { sceneAssetClassId } from "@babylonslate/object-model";
 import { shouldPublishGraphDiagnostics } from "../lib/graph-diagnostics-scope";
 import { physicsPairingDiagnostics } from "../lib/physics-pairing-diagnostics";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
@@ -111,10 +111,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
   const parentClass =
     indexed?.header.parentClass ??
     (doc?.ref.kind === "anim-graph" ? "BObject" : null);
-  const parentOf = (id: string) => {
-    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
-    return classParentLookup(assetRegistry?.list() ?? [])(id);
-  };
+  const parentOf = classParentLookup(assetRegistry?.list() ?? []);
   const classId = doc?.ref.path ? classIdForGraphPath(doc.ref.path) : undefined;
   const graphContent = serializedGraphFromDocument(
     doc?.ref.kind ?? "",

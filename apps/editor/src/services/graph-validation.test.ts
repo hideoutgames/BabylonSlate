@@ -971,6 +971,38 @@ describe("scriptPaletteNodes", () => {
     });
     expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
     expect(nodes.some((node) => node.title === "Set Scene Name")).toBe(false);
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.get" &&
+          node.title === "Get Asset Guid" &&
+          node.defaultData?.classId === "Scene",
+      ),
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.set" &&
+          node.title === "Set Asset Guid" &&
+          node.defaultData?.classId === "Scene",
+      ),
+    ).toBe(false);
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.get" &&
+          node.title === "Get Gravity" &&
+          node.defaultData?.classId === "Scene",
+      ),
+    ).toBe(true);
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.set" &&
+          node.title === "Set Gravity" &&
+          node.defaultData?.classId === "Scene",
+      ),
+    ).toBe(true);
     const meshGet = nodes.find(
       (node) =>
         node.nodeType === "variables.get" &&
