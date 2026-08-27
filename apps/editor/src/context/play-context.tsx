@@ -761,7 +761,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     appendLog,
     assetRegistry,
     dirtyDocuments.length,
-    ensureEngine,
     exportGameArtifact,
     openPlaySceneGuid,
     playFromScene,
