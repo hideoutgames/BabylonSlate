@@ -18,7 +18,7 @@ Facetype and MSDF remain **import-only** optional chunks (no in-engine bake). Ch
 
 ## 3D Text
 
-`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Serialized `depth` is ignored.
+`Text3DComponent` (catalog **3D Text**) builds a flat triangulated TypeFace mesh in `@babylonslate/render` (`createText3DMesh`: `CreateTextShapePaths` + `CreatePolygon` + injected `earcut`). One unlit two-sided material. This is a scene mesh, not a DynamicTexture plane. Bundled ASCII glyphs greedy-merge 5×7 pixels into rectangles. Serialized `depth` is ignored. Newlines (`\n`; CRLF normalized) stack extra lines **up** from a bottom origin. `alignment` (`left` default, `center`, `right`) is the horizontal anchor of the block, not a wrap-width.
 
 | Font data | When |
 | --- | --- |

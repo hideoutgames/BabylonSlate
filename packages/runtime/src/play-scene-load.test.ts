@@ -1438,6 +1438,7 @@ describe("p7-play-scene-load", () => {
           depth: 0.1,
           color: [1, 1, 1],
           fontAssetGuid: "font-1",
+          alignment: "left",
         },
       },
     ]);

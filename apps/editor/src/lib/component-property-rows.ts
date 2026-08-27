@@ -18,6 +18,8 @@ import {
   TEXT2D_ALIGNMENTS,
   TEXT2D_RENDERER_LABELS,
   TEXT2D_RENDERERS,
+  TEXT3D_ALIGNMENT_LABELS,
+  TEXT3D_ALIGNMENTS,
   text2dMsdfDescription,
   text2dMsdfStatus,
   SCENE_LAYER_ANCHORS,
@@ -1028,14 +1030,6 @@ export function componentPropertyRows(
         parsed.fontAssetGuid && context.fontHasFacetype?.(parsed.fontAssetGuid),
       );
       const rows: PropertyRow[] = [
-        {
-          kind: "text",
-          id: rowId(actorId, component.id, "text"),
-          label: "Text",
-          value: parsed.text,
-          defaultValue: "Text",
-          onChange: (next) => update("text", next),
-        },
         sliderRow(
           actorId,
           component.id,
@@ -1055,6 +1049,18 @@ export function componentPropertyRows(
           value: parsed.color,
           defaultValue: [1, 1, 1],
           onChange: (next) => update("color", next),
+        },
+        {
+          kind: "enum",
+          id: rowId(actorId, component.id, "alignment"),
+          label: "Alignment",
+          value: parsed.alignment,
+          defaultValue: "left",
+          options: TEXT3D_ALIGNMENTS.map((value) => ({
+            value,
+            label: TEXT3D_ALIGNMENT_LABELS[value],
+          })),
+          onChange: (next) => update("alignment", next),
         },
         assetRow(
           actorId,
@@ -1082,7 +1088,7 @@ export function componentPropertyRows(
           actorId,
           component,
           update,
-          new Set(["text", "size", "depth", "color", "fontAssetGuid"]),
+          new Set(["text", "size", "depth", "color", "fontAssetGuid", "alignment"]),
         ),
       );
       return rows;

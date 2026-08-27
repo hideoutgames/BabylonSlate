@@ -60,12 +60,13 @@ describe("engine script API catalog", () => {
 
   it("exposes Text3D Set Text, text properties, and On Text Changed", () => {
     const api = engineScriptApiFor("Text3DComponent");
-    expect(names(api?.variables)).toEqual(["Text", "Size", "Color", "Font"]);
+    expect(names(api?.variables)).toEqual(["Text", "Size", "Color", "Font", "Alignment"]);
     expect(api?.variables?.map((entry) => entry.propertyKey)).toEqual([
       "text",
       "size",
       "color",
       "fontAssetGuid",
+      "alignment",
     ]);
     const setText = engineScriptFunctionsFor("Text3DComponent").find(
       (entry) => entry.name === "Set Text",

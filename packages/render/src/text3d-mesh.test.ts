@@ -31,6 +31,7 @@ describe("3D Text mesh", () => {
       depth: 0.1,
       color: [1, 0, 0],
       fontAssetGuid: "font-t",
+      alignment: "left",
     }, {
       fontFacetypeBytes: new Map([
         ["font-t", new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T))],
@@ -74,6 +75,7 @@ describe("3D Text mesh", () => {
       depth: 4,
       color: [1, 1, 1],
       fontAssetGuid: null,
+      alignment: "left",
     });
     const indices = mesh.getIndices();
     expect(indices).not.toBeNull();
@@ -89,6 +91,7 @@ describe("3D Text mesh", () => {
       depth: 0.1,
       color: [1, 1, 1],
       fontAssetGuid: "font-t",
+      alignment: "left",
     }, {
       fontFacetypeBytes: new Map([
         ["font-t", new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T))],
@@ -117,6 +120,7 @@ describe("3D Text mesh", () => {
         depth: 0.1,
         color: [1, 1, 1],
         fontAssetGuid: "missing",
+        alignment: "left",
       },
       { fontFacetypeBytes: new Map() },
     );
@@ -132,6 +136,7 @@ describe("3D Text mesh", () => {
         depth: 0.1,
         color: [1, 1, 1],
         fontAssetGuid: "font-1",
+        alignment: "left",
       },
       { fontFacetypeBytes: new Map([["font-1", bytes]]) },
     );
@@ -165,5 +170,97 @@ describe("3D Text mesh", () => {
         ],
       }),
     );
+    actor.components[0]!.properties.alignment = "right";
+    expect(actorVisualFingerprint(actor)).not.toBe(
+      actorVisualFingerprint({
+        ...actor,
+        components: [
+          {
+            ...actor.components[0]!,
+            properties: { ...actor.components[0]!.properties, alignment: "left" },
+          },
+        ],
+      }),
+    );
+  });
+
+  it("keeps the bottom line at the origin and extra lines above", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const assets = {
+      fontFacetypeBytes: new Map([
+        ["font-t", new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T))],
+      ]),
+    };
+    const single = createText3DMesh(
+      handle.scene,
+      "one-line",
+      { text: "T", size: 1, fontAssetGuid: "font-t", alignment: "left" },
+      assets,
+    );
+    const stacked = createText3DMesh(
+      handle.scene,
+      "two-line",
+      { text: "T\nT", size: 1, fontAssetGuid: "font-t", alignment: "left" },
+      assets,
+    );
+    const crlf = createText3DMesh(
+      handle.scene,
+      "crlf",
+      { text: "T\r\nT", size: 1, fontAssetGuid: "font-t", alignment: "left" },
+      assets,
+    );
+    single.refreshBoundingInfo();
+    stacked.refreshBoundingInfo();
+    crlf.refreshBoundingInfo();
+    const singleBox = single.getBoundingInfo().boundingBox;
+    const stackedBox = stacked.getBoundingInfo().boundingBox;
+    const crlfBox = crlf.getBoundingInfo().boundingBox;
+    expect(stackedBox.minimum.y).toBeCloseTo(singleBox.minimum.y, 4);
+    expect(stackedBox.maximum.y).toBeGreaterThan(singleBox.maximum.y + 0.2);
+    expect(crlfBox.maximum.y).toBeCloseTo(stackedBox.maximum.y, 4);
+    expect(crlfBox.maximum.x - crlfBox.minimum.x).toBeCloseTo(
+      stackedBox.maximum.x - stackedBox.minimum.x,
+      4,
+    );
+  });
+
+  it("anchors the block left, center, or right on X with a bottom pivot", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const assets = {
+      fontFacetypeBytes: new Map([
+        ["font-t", new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T))],
+      ]),
+    };
+    const left = createText3DMesh(
+      handle.scene,
+      "align-left",
+      { text: "T", size: 1, fontAssetGuid: "font-t", alignment: "left" },
+      assets,
+    );
+    const center = createText3DMesh(
+      handle.scene,
+      "align-center",
+      { text: "T", size: 1, fontAssetGuid: "font-t", alignment: "center" },
+      assets,
+    );
+    const right = createText3DMesh(
+      handle.scene,
+      "align-right",
+      { text: "T", size: 1, fontAssetGuid: "font-t", alignment: "right" },
+      assets,
+    );
+    left.refreshBoundingInfo();
+    center.refreshBoundingInfo();
+    right.refreshBoundingInfo();
+    const leftBox = left.getBoundingInfo().boundingBox;
+    const centerBox = center.getBoundingInfo().boundingBox;
+    const rightBox = right.getBoundingInfo().boundingBox;
+    expect(leftBox.minimum.x).toBeCloseTo(0, 4);
+    expect((centerBox.minimum.x + centerBox.maximum.x) / 2).toBeCloseTo(0, 4);
+    expect(rightBox.maximum.x).toBeCloseTo(0, 4);
+    expect(leftBox.minimum.y).toBeCloseTo(centerBox.minimum.y, 4);
+    expect(rightBox.minimum.y).toBeCloseTo(centerBox.minimum.y, 4);
   });
 });

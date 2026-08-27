@@ -314,7 +314,7 @@ Engine classes expose an optional script catalog in `@babylonslate/object-model`
 | `SkyboxComponent` | Size | — | — |
 | `CameraComponent` | Field Of View, Orthographic Size, Projection Mode, Near Clip, Far Clip | Possess | — |
 | `LightComponent` | Enabled, Color, Intensity, Kind, Range, Inner Angle, Outer Angle, Cast Shadows | — | — |
-| `Text3DComponent` | Text, Size, Color, Font | Set Text | On Text Changed |
+| `Text3DComponent` | Text, Size, Color, Font, Alignment | Set Text | On Text Changed |
 | `2DTextComponent` / `2DRichTextComponent` | shared text + Hit Test, Renderer, Outline, Outline Color, Alignment, Bold, Italic, Underline, Wrap Width | Set Text | On Text Changed |
 | `AudioComponent` | Audio, Volume, Loop | Play, Stop | On Audio Finished |
 | `ParticleComponent` | Particle System, Sorting Layer, Order In Layer | Play, Stop | — |

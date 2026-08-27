@@ -1482,6 +1482,7 @@ describe("createPlayMesh", () => {
         depth: 0.1,
         color: [1, 0, 0],
         fontAssetGuid: null,
+        alignment: "left",
       },
     });
     const mesh = scene.getMeshByName("actor-4") as Mesh | null;

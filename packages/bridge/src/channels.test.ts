@@ -22,6 +22,7 @@ describe("assignMesh visual payloads", () => {
         depth: 0.1,
         color: [1, 1, 1],
         fontAssetGuid: "font-1",
+        alignment: "left",
       },
     } satisfies CommandMessage;
     expect(commandType(command)).toBe("assignMesh");

@@ -41,6 +41,7 @@ import {
   isEditorGraphHost,
   parseOverlayPanelProperties,
   parseText2DProperties,
+  parseText3DProperties,
   type GraphClassMember,
   type SerializedComponent,
   type SerializedGraph,
@@ -620,6 +621,17 @@ function PrefabComponentDetails({
           />
         ) : null}
       </div>
+      {component.classId === "Text3DComponent" ? (
+        <Field>
+          <FieldLabel htmlFor={`text3d-text-${component.id}`}>Text</FieldLabel>
+          <Textarea
+            id={`text3d-text-${component.id}`}
+            value={parseText3DProperties(component.properties).text}
+            onChange={(event) => onUpdate("text", event.target.value)}
+            data-testid={`text3d-text-${component.id}`}
+          />
+        </Field>
+      ) : null}
       {component.classId === "2DTextComponent" ||
       component.classId === "2DRichTextComponent" ? (
         <Field>
