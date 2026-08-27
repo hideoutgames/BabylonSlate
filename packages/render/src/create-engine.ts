@@ -428,7 +428,7 @@ export interface EditorTools {
   selection: SelectionOutline;
   sync: EditorSceneSync;
   setViewportMode: (mode: ViewportMode) => void;
-  /** Session overlay: PBR / Unlit / Wireframe / Points Cloud. */
+  /** Session overlay: PBR / Unlit / Wireframe. */
   setViewportShadingMode: (mode: ViewportShadingMode) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
   setPixelPerfect: (

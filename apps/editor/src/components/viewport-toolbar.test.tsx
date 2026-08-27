@@ -32,7 +32,7 @@ const harness = vi.hoisted(() => ({
   setPreviewGameCamera: vi.fn(),
   pivotAroundCenter: false,
   setPivotAroundCenter: vi.fn(),
-  viewportShadingMode: "pbr" as "pbr" | "unlit" | "wireframe" | "pointsCloud",
+  viewportShadingMode: "pbr" as "pbr" | "unlit" | "wireframe",
   setViewportShadingMode: vi.fn(),
   scene: null as SerializedScene | null,
   applySceneChange: vi.fn(async () => true),
@@ -302,7 +302,7 @@ describe("ViewportToolbar", () => {
     );
     expect(screen.getByTestId("viewport-shading-unlit")).toBeTruthy();
     expect(screen.getByTestId("viewport-shading-wireframe")).toBeTruthy();
-    expect(screen.getByTestId("viewport-shading-points-cloud")).toBeTruthy();
+    expect(screen.queryByTestId("viewport-shading-points-cloud")).toBeNull();
     expect(screen.getByTestId("viewport-mode-toggle").getAttribute("aria-label")).toBe(
       "2D / 3D",
     );

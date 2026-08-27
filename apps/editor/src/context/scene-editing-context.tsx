@@ -55,7 +55,7 @@ export interface SceneEditingContextValue {
   /** Session-only 3D orbit around the current look-at point. */
   pivotAroundCenter: boolean;
   setPivotAroundCenter: (enabled: boolean) => void;
-  /** Session-only actor shading overlay (PBR / Unlit / Wireframe / Points Cloud). */
+  /** Session-only actor shading overlay (PBR / Unlit / Wireframe). */
   viewportShadingMode: ViewportShadingMode;
   setViewportShadingMode: (mode: ViewportShadingMode) => void;
   frameActor: (actorId: string) => void;

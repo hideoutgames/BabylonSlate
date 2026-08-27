@@ -170,12 +170,6 @@ export function ViewportToolbar({
               value: "wireframe",
               testId: `${testIdPrefix}viewport-shading-wireframe`,
             },
-            {
-              id: "points-cloud",
-              label: "Points Cloud",
-              value: "pointsCloud",
-              testId: `${testIdPrefix}viewport-shading-points-cloud`,
-            },
           ],
         },
       ],
