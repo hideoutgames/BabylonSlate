@@ -17,6 +17,7 @@ export type ColliderShape3D =
   | { kind: "box"; halfExtents: Vec3 }
   | { kind: "sphere"; radius: number }
   | { kind: "capsule"; radius: number; halfHeight: number }
+  | { kind: "cylinder"; radius: number; height: number }
   | { kind: "convex"; points: readonly Vec3[] }
   | { kind: "mesh"; vertices: readonly Vec3[]; indices: readonly number[] };
 

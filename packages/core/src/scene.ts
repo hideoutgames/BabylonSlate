@@ -218,7 +218,14 @@ export function createMeshComponent(
     classId: "MeshComponent",
     // `materialGuid` overrides the whole mesh; imported models can additionally
     // override one slot at a time through `materialSlots`.
-    properties: { meshKind, assetGuid: null, materialGuid: null },
+    properties: {
+      meshKind,
+      assetGuid: null,
+      materialGuid: null,
+      collisionMode: "simple",
+      layer: 1,
+      mask: 0xffffffff,
+    },
     parentId: null,
     transform: identitySerializedTransform(),
   };

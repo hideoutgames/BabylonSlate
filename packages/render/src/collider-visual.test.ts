@@ -52,4 +52,15 @@ describe("collider visual", () => {
     });
     expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
   });
+
+  it("builds dashed cylinder edges instead of an AABB", () => {
+    const { scene } = createHandle();
+    const mesh = createColliderVisualMesh(scene, "cyl", {
+      kind: "cylinder",
+      radius: 0.5,
+      height: 1,
+    });
+    expect(isColliderVisualMesh(mesh)).toBe(true);
+    expect(mesh.getChildMeshes().length).toBeGreaterThan(8);
+  });
 });

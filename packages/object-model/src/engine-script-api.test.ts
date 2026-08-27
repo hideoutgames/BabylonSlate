@@ -136,6 +136,9 @@ describe("engine script API catalog", () => {
       ["Mesh Kind", "meshKind"],
       ["Mesh", "assetGuid"],
       ["Material", "materialGuid"],
+      ["Collision Mode", "collisionMode"],
+      ["Layer", "layer"],
+      ["Mask", "mask"],
     ]);
     const mesh = api?.variables?.find((entry) => entry.propertyKey === "assetGuid");
     expect(mesh?.typeId).toBe("asset");

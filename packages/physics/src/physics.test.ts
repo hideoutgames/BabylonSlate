@@ -6,6 +6,7 @@ import {
   parseColliderProperties,
   parseRigidBodyProperties,
   resetLoadedBackendModules,
+  scaleColliderShape,
   type PhysicsBackend,
 } from "./index";
 
@@ -417,6 +418,12 @@ describe("@babylonslate/physics", () => {
     ).toEqual({ kind: "capsule", radius: 0.3, halfHeight: 0.8 });
     expect(
       parseColliderProperties(
+        { shape: { kind: "cylinder", radius: 0.4, height: 2 } },
+        "3d",
+      ).shape,
+    ).toEqual({ kind: "cylinder", radius: 0.4, height: 2 });
+    expect(
+      parseColliderProperties(
         { shape: { kind: "convex", points: "nope" } },
         "3d",
       ).shape,
@@ -447,6 +454,15 @@ describe("@babylonslate/physics", () => {
       parseRigidBodyProperties({ motionType: "kinematic", mass: 2 })
         .motionType,
     ).toBe("kinematic");
+  });
+
+  it("scales cylinder radius on XZ and height on Y", () => {
+    expect(
+      scaleColliderShape(
+        { kind: "cylinder", radius: 0.5, height: 2 },
+        { x: 2, y: 3, z: 1 },
+      ),
+    ).toEqual({ kind: "cylinder", radius: 1, height: 6 });
   });
 
   it("software shapeSweep and impulse move a dynamic body", () => {

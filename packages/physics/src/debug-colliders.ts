@@ -129,6 +129,18 @@ export function debugColliderFromDesc(
         radius: shape.radius,
         halfHeight: shape.halfHeight,
       };
+    case "cylinder":
+      return {
+        id: desc.id,
+        shape: "box",
+        position,
+        rotation,
+        halfExtents: {
+          x: shape.radius,
+          y: shape.height / 2,
+          z: shape.radius,
+        },
+      };
     case "polygon":
     case "chain":
       return {

@@ -21,6 +21,7 @@ import {
   PhysicsShapeCapsule,
   PhysicsShapeContainer,
   PhysicsShapeConvexHull,
+  PhysicsShapeCylinder,
   PhysicsShapeMesh,
   PhysicsShapeSphere,
 } from "@babylonjs/core/Physics/v2/physicsShape";
@@ -99,6 +100,7 @@ function isShape3D(shape: ColliderShape): boolean {
     shape.kind === "box" ||
     shape.kind === "sphere" ||
     shape.kind === "capsule" ||
+    shape.kind === "cylinder" ||
     shape.kind === "convex" ||
     shape.kind === "mesh"
   );
@@ -705,6 +707,20 @@ export class HavokPhysicsBackend implements PhysicsBackend {
           localRotation,
         );
         return new PhysicsShapeCapsule(
+          origin.add(start),
+          origin.add(end),
+          shape.radius,
+          this.scene,
+        );
+      }
+      case "cylinder": {
+        const start = new Vector3(0, -shape.height / 2, 0).applyRotationQuaternion(
+          localRotation,
+        );
+        const end = new Vector3(0, shape.height / 2, 0).applyRotationQuaternion(
+          localRotation,
+        );
+        return new PhysicsShapeCylinder(
           origin.add(start),
           origin.add(end),
           shape.radius,

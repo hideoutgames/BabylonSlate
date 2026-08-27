@@ -185,6 +185,7 @@ function colliderWorldKindFromShape(value: unknown): "3d" | "2d" | null {
     kind === "box" ||
     kind === "sphere" ||
     kind === "capsule" ||
+    kind === "cylinder" ||
     kind === "convex" ||
     kind === "mesh"
   ) {

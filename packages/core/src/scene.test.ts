@@ -505,6 +505,14 @@ describe("scene schema", () => {
     );
   });
 
+  it("defaults MeshComponent collision to Use Simple Collision with layer/mask", () => {
+    expect(createMeshComponent("c1", "box").properties).toMatchObject({
+      collisionMode: "simple",
+      layer: 1,
+      mask: 0xffffffff,
+    });
+  });
+
   it("creates mesh components with an identity local transform", () => {
     expect(createMeshComponent("c1", "sphere").transform).toEqual({
       position: [0, 0, 0],

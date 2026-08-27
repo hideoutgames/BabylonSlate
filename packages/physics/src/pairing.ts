@@ -8,7 +8,11 @@ export type PhysicsPairingWarning = {
 
 export type PhysicsActorLike = {
   id: string;
-  components: readonly { id: string; classId: string }[];
+  components: readonly {
+    id: string;
+    classId: string;
+    properties?: Record<string, unknown>;
+  }[];
 };
 
 const COLLIDER_WITHOUT_BODY =
@@ -16,7 +20,15 @@ const COLLIDER_WITHOUT_BODY =
 const BODY_WITHOUT_COLLIDER =
   "RigidBodyComponent needs a ColliderComponent on the same actor.";
 
-/** Pairing warnings for RigidBody / Collider. Tilemaps and blocking volumes are exempt. */
+function meshComponentHasCollision(component: {
+  classId: string;
+  properties?: Record<string, unknown>;
+}): boolean {
+  if (component.classId !== "MeshComponent") return false;
+  return component.properties?.collisionMode !== "none";
+}
+
+/** Pairing warnings for RigidBody / Collider. Tilemaps, blocking volumes, and Mesh collision are exempt. */
 export function physicsActorDiagnostics(
   actor: PhysicsActorLike,
 ): PhysicsPairingWarning[] {
@@ -24,7 +36,8 @@ export function physicsActorDiagnostics(
   const hasImplicitBody = live.some(
     (component) =>
       component.classId === "TilemapComponent" ||
-      component.classId === "BlockingVolumeComponent",
+      component.classId === "BlockingVolumeComponent" ||
+      meshComponentHasCollision(component),
   );
   if (hasImplicitBody) return [];
   const hasBody = live.some(

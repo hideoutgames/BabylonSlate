@@ -92,4 +92,67 @@ describe("physicsActorDiagnostics", () => {
       }),
     ).toEqual([]);
   });
+
+  it("treats MeshComponent simple collision as an implicit body and collider", () => {
+    expect(
+      physicsActorDiagnostics({
+        id: "crate",
+        components: [{ id: "mesh", classId: "MeshComponent" }],
+      }),
+    ).toEqual([]);
+    expect(
+      physicsActorDiagnostics({
+        id: "crate-rb",
+        components: [
+          { id: "mesh", classId: "MeshComponent" },
+          { id: "rb", classId: "RigidBodyComponent" },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      physicsActorDiagnostics({
+        id: "crate-col",
+        components: [
+          { id: "mesh", classId: "MeshComponent", properties: { collisionMode: "simple" } },
+          { id: "col", classId: "ColliderComponent" },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not treat No Collision MeshComponent as a physics source", () => {
+    expect(
+      physicsActorDiagnostics({
+        id: "deco",
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { collisionMode: "none" },
+          },
+        ],
+      }),
+    ).toEqual([]);
+    expect(
+      physicsActorDiagnostics({
+        id: "deco-rb",
+        components: [
+          {
+            id: "mesh",
+            classId: "MeshComponent",
+            properties: { collisionMode: "none" },
+          },
+          { id: "rb", classId: "RigidBodyComponent" },
+        ],
+      }),
+    ).toEqual([
+      {
+        severity: "warning",
+        code: "physics.body_without_collider",
+        message: "RigidBodyComponent needs a ColliderComponent on the same actor.",
+        actorId: "deco-rb",
+        componentId: "rb",
+      },
+    ]);
+  });
 });

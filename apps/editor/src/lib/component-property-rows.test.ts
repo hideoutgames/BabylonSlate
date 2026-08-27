@@ -103,6 +103,45 @@ describe("componentPropertyRows", () => {
     });
   });
 
+  it("exposes MeshComponent collision mode and hides layer rows when none or 2D", () => {
+    const simple = rowsFor({
+      id: "mesh",
+      classId: "MeshComponent",
+      properties: { meshKind: "box", assetGuid: null },
+    });
+    expect(simple.rows.find((row) => row.id.endsWith("-collisionMode"))).toMatchObject({
+      kind: "enum",
+      label: "Collision",
+      value: "simple",
+      options: [
+        { value: "simple", label: "Use Simple Collision" },
+        { value: "complex", label: "Use Complex Collision" },
+        { value: "none", label: "No Collision" },
+      ],
+    });
+    expect(simple.rows.find((row) => row.id.endsWith("-layer"))).toBeDefined();
+    expect(simple.rows.find((row) => row.id.endsWith("-mask"))).toBeDefined();
+
+    const none = rowsFor({
+      id: "mesh",
+      classId: "MeshComponent",
+      properties: { meshKind: "box", collisionMode: "none" },
+    });
+    expect(none.rows.find((row) => row.id.endsWith("-layer"))).toBeUndefined();
+    expect(none.rows.find((row) => row.id.endsWith("-mask"))).toBeUndefined();
+
+    const twoD = rowsFor(
+      {
+        id: "mesh",
+        classId: "MeshComponent",
+        properties: { meshKind: "box" },
+      },
+      { physicsWorld: "2d" },
+    );
+    expect(twoD.rows.find((row) => row.id.endsWith("-collisionMode"))).toBeUndefined();
+    expect(twoD.rows.find((row) => row.id.endsWith("-layer"))).toBeUndefined();
+  });
+
   it("exposes 3D Text size, color, Alignment, and Font picker without a grid text row", () => {
     const text3d = rowsFor(
       {

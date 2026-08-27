@@ -116,6 +116,24 @@ describe("debugColliderFromDesc", () => {
     expect(
       debugColliderFromDesc(
         {
+          id: "cylinder",
+          bodyId: "body",
+          shape: { kind: "cylinder", radius: 0.5, height: 2 },
+          friction: 0,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 1,
+        },
+        identity,
+      ),
+    ).toMatchObject({
+      shape: "box",
+      halfExtents: { x: 0.5, y: 1, z: 0.5 },
+    });
+    expect(
+      debugColliderFromDesc(
+        {
           id: "mesh",
           bodyId: "body",
           shape: { kind: "mesh", vertices: [], indices: [] },

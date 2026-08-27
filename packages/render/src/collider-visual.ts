@@ -8,6 +8,7 @@ import {
   StandardMaterial,
   Vector3,
 } from "@babylonjs/core";
+import { convexHullEdges } from "@babylonslate/assets";
 import type { ColliderShape } from "@babylonslate/physics";
 import { RENDERING_GROUP } from "./sorting";
 
@@ -29,14 +30,15 @@ export function createDashedEdgesMesh(
   name: string,
   edges: Array<[Vector3, Vector3]>,
   color: Color3 = COLLIDER_COLOR,
+  options?: { pickable?: boolean },
 ): Mesh {
   const root = new Mesh(name, scene);
   root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
-  root.isPickable = false;
+  root.isPickable = options?.pickable === true;
   root.renderingGroupId = RENDERING_GROUP.world;
   const material = colliderMaterial(scene, color);
   for (const [from, to] of edges) {
-    addDashedEdge(root, scene, material, from, to);
+    addDashedEdge(root, scene, material, from, to, options?.pickable === true);
   }
   return root;
 }
@@ -46,14 +48,15 @@ export function createColliderVisualMesh(
   name: string,
   shape: ColliderShape,
   color: Color3 = COLLIDER_COLOR,
+  options?: { pickable?: boolean },
 ): Mesh {
   const root = new Mesh(name, scene);
   root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
-  root.isPickable = false;
+  root.isPickable = options?.pickable === true;
   root.renderingGroupId = RENDERING_GROUP.world;
   const material = colliderMaterial(scene, color);
   for (const [from, to] of shapeEdges(shape)) {
-    addDashedEdge(root, scene, material, from, to);
+    addDashedEdge(root, scene, material, from, to, options?.pickable === true);
   }
   return root;
 }
@@ -89,6 +92,7 @@ function addDashedEdge(
   material: StandardMaterial,
   from: Vector3,
   to: Vector3,
+  pickable = false,
 ): void {
   const delta = to.subtract(from);
   const length = delta.length();
@@ -115,7 +119,7 @@ function addDashedEdge(
     dash.position.copyFrom(mid);
     dash.rotationQuaternion = rotation.clone();
     dash.material = material;
-    dash.isPickable = false;
+    dash.isPickable = pickable;
     dash.renderingGroupId = RENDERING_GROUP.world;
     offset += period;
     index += 1;
@@ -147,6 +151,8 @@ function shapeEdges(shape: ColliderShape): Array<[Vector3, Vector3]> {
       return capsuleEdges(shape.radius, shape.halfHeight, true);
     case "capsule2d":
       return capsuleEdges(shape.radius, shape.halfHeight, false);
+    case "cylinder":
+      return cylinderEdges(shape.radius, shape.height);
     case "polygon":
     case "chain":
       return polylineEdges(
@@ -154,9 +160,9 @@ function shapeEdges(shape: ColliderShape): Array<[Vector3, Vector3]> {
         shape.kind === "chain" ? shape.loop === true : true,
       );
     case "convex":
-      return aabbEdges(shape.points);
+      return hullEdges(shape.points);
     case "mesh":
-      return aabbEdges(shape.vertices);
+      return hullEdges(shape.vertices);
     default:
       return boxEdges(0.5, 0.5, 0.5);
   }
@@ -328,6 +334,19 @@ function polylineEdges(
     edges.push([points[points.length - 1]!, points[0]!]);
   }
   return edges;
+}
+
+function hullEdges(
+  points: readonly { x: number; y: number; z?: number }[],
+): Array<[Vector3, Vector3]> {
+  const edges = convexHullEdges(
+    points.map((point) => ({ x: point.x, y: point.y, z: point.z ?? 0 })),
+  );
+  if (edges.length === 0) return aabbEdges(points);
+  return edges.map(([from, to]) => [
+    new Vector3(from.x, from.y, from.z),
+    new Vector3(to.x, to.y, to.z),
+  ]);
 }
 
 function aabbEdges(
