@@ -382,7 +382,7 @@ function componentVisualKind(
   }
   if (component.classId === "Text3DComponent") {
     const parsed = parseText3DProperties(component.properties);
-    return `text3d:${parsed.text}:${parsed.size}:${parsed.color.join(",")}:${parsed.fontAssetGuid ?? ""}`;
+    return `text3d:${parsed.text}:${parsed.size}:${parsed.color.join(",")}:${parsed.fontAssetGuid ?? ""}:${parsed.alignment}`;
   }
   if (
     component.classId === "2DTextComponent" ||

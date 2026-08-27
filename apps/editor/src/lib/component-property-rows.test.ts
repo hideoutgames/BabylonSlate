@@ -103,7 +103,7 @@ describe("componentPropertyRows", () => {
     });
   });
 
-  it("exposes 3D Text text, size, color, and Font picker", () => {
+  it("exposes 3D Text size, color, Alignment, and Font picker without a grid text row", () => {
     const text3d = rowsFor(
       {
         id: "label",
@@ -114,21 +114,24 @@ describe("componentPropertyRows", () => {
           depth: 0.25,
           color: [0.2, 0.4, 0.6],
           fontAssetGuid: "font-1",
+          alignment: "center",
         },
       },
       {
         fontHasFacetype: (guid) => guid === "font-1",
       },
     );
-    expect(text3d.rows.find((row) => row.id.endsWith("-text"))).toMatchObject({
-      kind: "text",
-      label: "Text",
-      value: "Hello",
-    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-text"))).toBeUndefined();
     expect(text3d.rows.find((row) => row.id.endsWith("-size"))).toMatchObject({
       kind: "slider",
       label: "Size",
       value: 2,
+    });
+    expect(text3d.rows.find((row) => row.id.endsWith("-alignment"))).toMatchObject({
+      kind: "enum",
+      label: "Alignment",
+      value: "center",
+      defaultValue: "left",
     });
     expect(text3d.rows.find((row) => row.id.endsWith("-depth"))).toBeUndefined();
     expect(text3d.rows.find((row) => row.id.endsWith("-color"))).toMatchObject({

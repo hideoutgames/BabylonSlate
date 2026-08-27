@@ -283,6 +283,7 @@ export type CommandMessage =
           depth: number;
           color: [number, number, number];
           fontAssetGuid: string | null;
+          alignment: "left" | "center" | "right";
         };
         text2d?: {
           text: string;
@@ -319,6 +320,7 @@ export type CommandMessage =
         depth: number;
         color: [number, number, number];
         fontAssetGuid: string | null;
+        alignment: "left" | "center" | "right";
       };
       text2d?: {
         text: string;

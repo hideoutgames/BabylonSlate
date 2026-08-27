@@ -16,6 +16,7 @@ import {
 import earcut from "earcut";
 import {
   parseText3DProperties,
+  type Text3DAlignment,
   type Text3DProperties,
 } from "@babylonslate/core";
 import {
@@ -71,11 +72,24 @@ function pathPointsToShape(points: Array<{ x: number; y: number }>): Vector3[] {
   return shape;
 }
 
-function bakeCreateTextOrientation(mesh: Mesh, scene: Scene): void {
+function bakeCreateTextOrientation(
+  mesh: Mesh,
+  scene: Scene,
+  alignment: Text3DAlignment,
+): void {
+  mesh.computeWorldMatrix(true);
+  mesh.refreshBoundingInfo();
   const bbox = mesh.getBoundingInfo().boundingBox;
-  mesh.position.x += -(bbox.minimumWorld.x + bbox.maximumWorld.x) / 2;
+  if (alignment === "left") {
+    mesh.position.x += -bbox.minimumWorld.x;
+  } else if (alignment === "right") {
+    mesh.position.x += -bbox.maximumWorld.x;
+  } else {
+    mesh.position.x += -(bbox.minimumWorld.x + bbox.maximumWorld.x) / 2;
+  }
   mesh.position.y += -(bbox.minimumWorld.y + bbox.maximumWorld.y) / 2;
-  mesh.position.z += -(bbox.minimumWorld.z + bbox.maximumWorld.z) / 2 + bbox.extendSize.z;
+  mesh.position.z +=
+    -(bbox.minimumWorld.z + bbox.maximumWorld.z) / 2 + bbox.extendSize.z;
   const pivot = new TransformNode("text3d-pivot", scene);
   pivot.rotation.x = -Math.PI / 2;
   mesh.parent = pivot;
@@ -84,14 +98,24 @@ function bakeCreateTextOrientation(mesh: Mesh, scene: Scene): void {
   pivot.dispose();
 }
 
+function normalizeText3DNewlines(text: string): string {
+  return text.replace(/\r\n|\r/g, "\n");
+}
+
 function createFlatTextMesh(
   scene: Scene,
   name: string,
   text: string,
   size: number,
   font: IFontData,
+  alignment: Text3DAlignment,
 ): Mesh | null {
-  const shapePaths = CreateTextShapePaths(text, size, TEXT3D_RESOLUTION, font);
+  const shapePaths = CreateTextShapePaths(
+    normalizeText3DNewlines(text),
+    size,
+    TEXT3D_RESOLUTION,
+    font,
+  );
   const meshes: Mesh[] = [];
   for (const shapePath of shapePaths) {
     if (!shapePath.paths.length) continue;
@@ -135,7 +159,7 @@ function createFlatTextMesh(
     for (const mesh of meshes) mesh.dispose();
     return null;
   }
-  bakeCreateTextOrientation(merged, scene);
+  bakeCreateTextOrientation(merged, scene, alignment);
   merged.name = name;
   return merged;
 }
@@ -160,7 +184,14 @@ export function createText3DMesh(
   const { font } = resolveText3DFontData(parsed, assets);
   const text = parsed.text.length > 0 ? parsed.text : " ";
   const material = createText3DMaterial(scene, name, parsed.color);
-  const created = createFlatTextMesh(scene, name, text, parsed.size, font);
+  const created = createFlatTextMesh(
+    scene,
+    name,
+    text,
+    parsed.size,
+    font,
+    parsed.alignment,
+  );
   if (!created || !created.getVerticesData(VertexBuffer.PositionKind)) {
     created?.dispose();
     return createFallbackPlane(scene, name, parsed, material);

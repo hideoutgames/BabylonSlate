@@ -168,6 +168,7 @@ describe("Add Component catalog", () => {
       depth: 0.1,
       color: [1, 1, 1],
       fontAssetGuid: null,
+      alignment: "left",
     });
     expect(defaultPropertiesFor("2DTextComponent")).toMatchObject({
       text: "Text",

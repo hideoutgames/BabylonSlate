@@ -24,6 +24,7 @@ import {
   identitySerializedTransform,
   parseOverlayPanelProperties,
   parseText2DProperties,
+  parseText3DProperties,
   patchComponentProperties,
   type SerializedActor,
   type SerializedScene,
@@ -922,6 +923,38 @@ export function SceneDetailsPanel(_props: IDockviewPanelProps) {
               <NineSlicePreview
                 {...parseOverlayPanelProperties(component.properties)}
               />
+            ) : null}
+            {component.classId === "Text3DComponent" ? (
+              <div className="p-2">
+                <Field>
+                  <FieldLabel htmlFor={`text3d-text-${component.id}`}>
+                    Text
+                  </FieldLabel>
+                  <MultilineTextField
+                    id={`text3d-text-${component.id}`}
+                    title="Text"
+                    value={parseText3DProperties(component.properties).text}
+                    onChange={(value) =>
+                      updateActor((entry) => ({
+                        ...entry,
+                        components: entry.components.map((candidate) =>
+                          candidate.id === component.id
+                            ? {
+                                ...candidate,
+                                properties: patchComponentProperties(
+                                  candidate.properties,
+                                  "text",
+                                  value,
+                                ),
+                              }
+                            : candidate,
+                        ),
+                      }))
+                    }
+                    data-testid={`text3d-text-${component.id}`}
+                  />
+                </Field>
+              </div>
             ) : null}
             {component.classId === "2DTextComponent" ||
             component.classId === "2DRichTextComponent" ? (

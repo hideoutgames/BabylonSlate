@@ -185,7 +185,10 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
   },
   {
     classId: "Text3DComponent",
-    variables: TEXT_VARIABLES,
+    variables: [
+      ...TEXT_VARIABLES,
+      { name: "Alignment", typeId: "string", propertyKey: "alignment" },
+    ],
     functions: [SET_TEXT],
     events: [TEXT_CHANGED],
   },

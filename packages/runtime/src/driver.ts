@@ -2668,13 +2668,7 @@ class InProcessRuntime implements RuntimeDriver {
           : {}),
         ...(text3dComp
           ? {
-              text3d: parseText3DProperties({
-                text: text3dComp.getVariable("text"),
-                size: text3dComp.getVariable("size"),
-                depth: text3dComp.getVariable("depth"),
-                color: text3dComp.getVariable("color"),
-                fontAssetGuid: text3dComp.getVariable("fontAssetGuid"),
-              }),
+              text3d: text3dAssignPayload(text3dComp),
             }
           : {}),
         ...(text2dComp ? { text2d: text2dAssignPayload(text2dComp) } : {}),
@@ -3831,6 +3825,19 @@ function playPartsNeeded(components: readonly ActorComponent[]): boolean {
   );
 }
 
+function text3dAssignPayload(
+  component: ActorComponent,
+): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text3d"]> {
+  return parseText3DProperties({
+    text: component.getVariable("text"),
+    size: component.getVariable("size"),
+    depth: component.getVariable("depth"),
+    color: component.getVariable("color"),
+    fontAssetGuid: component.getVariable("fontAssetGuid"),
+    alignment: component.getVariable("alignment"),
+  });
+}
+
 function text2dAssignPayload(
   component: ActorComponent,
 ): NonNullable<Extract<CommandMessage, { type: "assignMesh" }>["text2d"]> {
@@ -3886,13 +3893,7 @@ function playMeshPartOf(
     scale: [scale.x, scale.y, scale.z],
     ...(component.classId === "Text3DComponent"
       ? {
-          text3d: parseText3DProperties({
-            text: component.getVariable("text"),
-            size: component.getVariable("size"),
-            depth: component.getVariable("depth"),
-            color: component.getVariable("color"),
-            fontAssetGuid: component.getVariable("fontAssetGuid"),
-          }),
+          text3d: text3dAssignPayload(component),
         }
       : {}),
     ...(component.classId === "2DTextComponent" ||

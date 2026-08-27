@@ -8,6 +8,7 @@ import {
   createMeshComponent,
   createRichText2DComponent,
   createText2DComponent,
+  createText3DComponent,
   identitySerializedTransform,
   normalizeScene,
 } from "@babylonslate/core";
@@ -413,6 +414,29 @@ describe("SceneDetailsPanel authoring", () => {
     expect(screen.getByTestId("panel-nine-slice-preview")).toBeTruthy();
     expect(screen.getByTestId("property-hud-panel-marginLeft")).toBeTruthy();
     expect(screen.queryByTestId("panel-nine-slice-overlay")).toBeNull();
+  });
+
+  it("hosts 3D Text in a sibling read-only trigger that opens a modal editor", () => {
+    scene().actors = [
+      createActor("label", "3D Text", {
+        components: [createText3DComponent("text3d")],
+      }),
+    ];
+    harness.selectedActorIds = ["label"];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.queryByTestId("property-label-text3d-text")).toBeNull();
+    expect(screen.getByTestId("property-label-text3d-alignment")).toBeTruthy();
+    const trigger = screen.getByTestId("text3d-text-text3d");
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger.textContent).toContain("Text");
+    fireEvent.click(trigger);
+    const field = screen.getByTestId("text3d-text-text3d-editor") as HTMLTextAreaElement;
+    expect(field.value).toBe("Text");
+    fireEvent.change(field, { target: { value: "Hello\nWorld" } });
+    fireEvent.click(screen.getByTestId("text3d-text-text3d-done"));
+    expect(harness.applySceneChange).toHaveBeenCalled();
+    const next = harness.applySceneChange.mock.calls[0]![1] as SerializedScene;
+    expect(next.actors[0]?.components[0]?.properties.text).toBe("Hello\nWorld");
   });
 
   it("hosts 2D Text in a sibling read-only trigger that opens a modal editor", () => {
