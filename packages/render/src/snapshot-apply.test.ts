@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Material, Mesh, PointLight, Quaternion, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Material, Mesh, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
+import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
 import { DEFAULT_SORTING_LAYERS } from "@babylonslate/core";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
@@ -1576,5 +1577,66 @@ describe("createPlayMesh", () => {
     });
     expect(binding.meshes.get(4)).toBeUndefined();
     expect(scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("does not create overlay-flagged snapshot meshes in the world scene", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(4, "2dtexture");
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+        },
+      ],
+    });
+    expect(binding.meshes.get(4)).toBeUndefined();
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("creates overlay-flagged snapshot meshes on the overlay scene and migrates world leftovers", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(4, "2dtexture");
+    applyAssignMesh(scene, binding, {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+    });
+    expect(scene.getMeshByName("actor-4")).not.toBeNull();
+    binding.sceneForSlot = () => overlay;
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 2, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+        },
+      ],
+    });
+    expect(overlay.getMeshByName("actor-4")).not.toBeNull();
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+    expect(binding.meshes.get(4)?.position.x).toBeCloseTo(2);
+    overlay.dispose();
   });
 });

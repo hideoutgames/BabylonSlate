@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Camera, NullEngine, PBRMaterial, UniversalCamera } from "@babylonjs/core";
 import {
+  SNAPSHOT_FLAG_OVERLAY,
+  SNAPSHOT_FLAG_VISIBLE,
   snapshotFloatCount,
   writeActorSlot,
   writeSnapshotHeader,
@@ -863,7 +865,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 
-  it("migrates a world-spawned overlay mesh into the layer scene on create", () => {
+  it("holds overlay-only assignMesh off the world until spawn tags a layer scene", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
       sharedEngine: sharedEngine(),
@@ -876,7 +878,7 @@ describe("Play createEngine view", () => {
       meshAssetGuid: null,
       meshKind: "2dtexture",
     });
-    expect(handle.scene.getMeshByName("actor-4")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
     handle.applyCommand({
       type: "spawn",
       slotId: 4,
@@ -894,6 +896,62 @@ describe("Play createEngine view", () => {
     });
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("does not plant overlay-flagged snapshot meshes in the world before spawn", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    const snapshot = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(snapshot, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(snapshot, 0, {
+      slotId: 4,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+    });
+    handle.pushSnapshot(snapshot);
+    runRenderLoop.mock.calls[0]?.[0]?.();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("parents assignMesh with sceneLayerId into the overlay scene without a prior spawn", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "front",
+      assetGuid: "hud",
+      zOrder: 3,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+      sceneLayerId: "front",
+    });
+    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
+    expect(overlay?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
 

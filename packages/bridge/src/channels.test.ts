@@ -57,6 +57,18 @@ describe("assignMesh visual payloads", () => {
     expect(command.text2d?.fontAssetGuid).toBe("font-1");
   });
 
+  it("assignMesh can carry a SceneLayer instance id", () => {
+    const command = {
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: null,
+      meshKind: "2dtexture",
+      sceneLayerId: "hud",
+    } satisfies CommandMessage;
+    expect(commandType(command)).toBe("assignMesh");
+    expect(command.sceneLayerId).toBe("hud");
+  });
+
   it("assignMesh can carry a 2D Panel 9-slice payload", () => {
     const command = {
       type: "assignMesh",

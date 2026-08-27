@@ -32,6 +32,11 @@ export interface Quat {
   w: number;
 }
 
+/** Snapshot `flags` bit 0: actor is visible. */
+export const SNAPSHOT_FLAG_VISIBLE = 1;
+/** Snapshot `flags` bit 1: actor is a SceneLayer HUD overlay (not the world Scene). */
+export const SNAPSHOT_FLAG_OVERLAY = 2;
+
 export interface ActorSlot {
   slotId: number;
   position: Vec3;

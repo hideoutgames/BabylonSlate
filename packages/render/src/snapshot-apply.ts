@@ -16,7 +16,12 @@ import {
   type Material,
   type ShadowGenerator,
 } from "@babylonjs/core";
-import type { ActorSlot, CommandMessage } from "@babylonslate/bridge";
+import {
+  SNAPSHOT_FLAG_OVERLAY,
+  SNAPSHOT_FLAG_VISIBLE,
+  type ActorSlot,
+  type CommandMessage,
+} from "@babylonslate/bridge";
 import {
   DEFAULT_SORTING_LAYERS,
   emptySkyboxFaces,
@@ -901,6 +906,16 @@ function finishPlayWorldMesh(mesh: Mesh): Mesh {
   return mesh;
 }
 
+function snapshotSlotWantsOverlay(
+  actor: ActorSlot,
+  binding: SnapshotSceneBinding,
+): boolean {
+  return (
+    (actor.flags & SNAPSHOT_FLAG_OVERLAY) === SNAPSHOT_FLAG_OVERLAY ||
+    binding.isOverlaySlot?.(actor.slotId) === true
+  );
+}
+
 /**
  * Apply an interpolated snapshot to the scene. Bulk path wraps Babylon block
  * helpers to avoid per-mesh dirty storms.
@@ -920,18 +935,25 @@ export function applySnapshotToScene(
     for (let i = 0; i < count; i++) {
       const actor = snapshot.actors[i]!;
       live.add(actor.slotId);
+      const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
+      const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
+      if (wantsOverlay && !overlayScene) {
+        continue;
+      }
       let mesh = binding.meshes.get(actor.slotId);
+      if (mesh && overlayScene && mesh.getScene() !== overlayScene) {
+        mesh = migratePlaySlotVisual(overlayScene, binding, actor.slotId);
+      }
       if (!mesh) {
-        const overlayScene = binding.sceneForSlot?.(actor.slotId) ?? null;
-        if (!overlayScene && binding.isOverlaySlot?.(actor.slotId)) {
-          continue;
-        }
         mesh = createPlayVisual(overlayScene ?? scene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
       }
       writeActorTransform(mesh, actor);
-      setPlayVisualVisibility(mesh, (actor.flags & 1) === 1);
+      setPlayVisualVisibility(
+        mesh,
+        (actor.flags & SNAPSHOT_FLAG_VISIBLE) === SNAPSHOT_FLAG_VISIBLE,
+      );
       const light = binding.lights.get(actor.slotId);
       if (light) {
         const composed = composeSlotPartTransform(actor, binding, actor.slotId);
@@ -942,10 +964,12 @@ export function applySnapshotToScene(
         const composed = composeSlotPartTransform(actor, binding, actor.slotId);
         updateAuthoredCameraTransform(camera, composed.position, composed.rotation);
       }
-      applyTilemapParallaxToMesh(
-        mesh,
-        scene.activeCamera ?? { position: actor.position },
-      );
+      if (!wantsOverlay) {
+        applyTilemapParallaxToMesh(
+          mesh,
+          scene.activeCamera ?? { position: actor.position },
+        );
+      }
     }
     snapPlayCameraToPixelGrid(scene, binding);
     for (const [slotId, mesh] of binding.meshes) {

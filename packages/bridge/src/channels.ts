@@ -234,6 +234,8 @@ export type CommandMessage =
       type: "assignMesh";
       slotId: number;
       meshAssetGuid: string | null;
+      /** SceneLayer instance id; tags the slot as HUD overlay before spawn. */
+      sceneLayerId?: string | null;
       /** Overlay actor guid for HitTest / pointer events. */
       actorGuid?: string | null;
       /** Overlay HitTest for the actor visual (`ignore` is not pickable). */
