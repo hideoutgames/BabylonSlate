@@ -56,9 +56,24 @@ function evaluateEditorActiveMeshes(scene: Scene): void {
   internals._evaluateActiveMeshes();
 }
 
+const freezeSkipGenerations = new WeakMap<Scene, number>();
+
+function beginSkipFrustumForFreeze(scene: Scene): () => void {
+  const generation = (freezeSkipGenerations.get(scene) ?? 0) + 1;
+  freezeSkipGenerations.set(scene, generation);
+  scene.skipFrustumClipping = true;
+  return () => {
+    if (freezeSkipGenerations.get(scene) !== generation) return;
+    scene.skipFrustumClipping = false;
+  };
+}
+
 export function freezeEditorActiveMeshes(scene: Scene): void {
   scene.unfreezeActiveMeshes();
-  scene.freezeActiveMeshes(false, undefined, undefined, false, true);
+  // Membership must include off-frustum drawable meshes. keepFrustumCulling
+  // still skips their draw; camera motion then reveals them without an apply.
+  const restoreSkip = beginSkipFrustumForFreeze(scene);
+  scene.freezeActiveMeshes(false, restoreSkip, restoreSkip, false, true);
   // freezeActiveMeshes waits on executeWhenReady. Real Engines must keep
   // that wait so unready PBR/GLB meshes are not frozen out of the list.
   // NullEngine PrePass never goes ready, so evaluate and stamp now.
@@ -66,6 +81,7 @@ export function freezeEditorActiveMeshes(scene: Scene): void {
   evaluateEditorActiveMeshes(scene);
   scene._activeMeshesFrozen = true;
   scene._activeMeshesFrozenButKeepClipping = true;
+  restoreSkip();
 }
 
 export function unfreezeEditorActiveMeshes(scene: Scene): void {
