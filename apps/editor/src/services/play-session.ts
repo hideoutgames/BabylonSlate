@@ -162,6 +162,36 @@ export function scheduleSceneModelsReady(options: {
   });
 }
 
+export function applyPlayActiveScene(options: {
+  handle: {
+    loadScene: (scene: SerializedScene) => void;
+    applySceneEnvironment: (scene: SerializedScene) => void;
+    resetAudioSession: () => void;
+    resetParticleSession: () => void;
+  };
+  command: { type: string; sceneAssetGuid?: string };
+  scenes: ReadonlyArray<{ guid: string; scene: SerializedScene }>;
+  boot: { guid?: string; scene?: SerializedScene };
+  currentSceneGuid: string | null;
+}): string | null {
+  if (
+    options.command.type !== "activeScene" ||
+    typeof options.command.sceneAssetGuid !== "string"
+  ) {
+    return options.currentSceneGuid;
+  }
+  const guid = options.command.sceneAssetGuid;
+  if (guid === options.currentSceneGuid) return options.currentSceneGuid;
+  const scene = playSceneByGuid(guid, options.scenes, options.boot);
+  if (scene) {
+    options.handle.loadScene(scene);
+    options.handle.applySceneEnvironment(scene);
+    options.handle.resetAudioSession();
+    options.handle.resetParticleSession();
+  }
+  return guid;
+}
+
 export function applyPlayHudConsoleCommand(
   command: CommandMessage,
   handlers: {
@@ -590,6 +620,7 @@ export function startPlaySession(options: {
   const workerDiagnostics = new SessionDiagnosticAggregator();
 
   const spawnedActorGuids: string[] = [];
+  let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
   const consoleWaiters: Array<(result: { success: boolean; output: string }) => void> =
     [];
   const inspectWaiters: Array<(snapshot: DebugInspectSnapshot) => void> = [];
@@ -626,17 +657,13 @@ export function startPlaySession(options: {
       handle.applyCommand(command);
     }
     if (command.type === "activeScene") {
-      const scene = playSceneByGuid(
-        command.sceneAssetGuid,
-        options.scenes ?? [],
-        { guid: options.sceneAssetGuid, scene: options.scene },
-      );
-      if (scene) {
-        handle.loadScene(scene);
-        handle.applySceneEnvironment(scene);
-        handle.resetAudioSession();
-        handle.resetParticleSession();
-      }
+      hostSceneGuid = applyPlayActiveScene({
+        handle,
+        command,
+        scenes: options.scenes ?? [],
+        boot: { guid: options.sceneAssetGuid, scene: options.scene },
+        currentSceneGuid: hostSceneGuid,
+      });
       void scheduleSceneModelsReady({
         whenModelsReady: () => handle.whenEditorModelsReady(),
         notify: (sceneAssetGuid) => {

@@ -266,9 +266,15 @@ export function startPlayer(options: {
   };
 
   const materialsWarmed = { current: false };
+  let hostSceneGuid: string | null = startup;
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
-    applyPlayerActiveScene(handle, game.scenes, command);
+    if (
+      applyPlayerActiveScene(handle, game.scenes, command, hostSceneGuid) &&
+      typeof command.sceneAssetGuid === "string"
+    ) {
+      hostSceneGuid = command.sceneAssetGuid;
+    }
     schedulePlayerMaterialPrewarm(handle, command.type, materialsWarmed);
     if (command.type === "activeScene" && typeof command.sceneAssetGuid === "string") {
       schedulePlayerSceneModelsReady(

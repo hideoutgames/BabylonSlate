@@ -280,6 +280,35 @@ describe("applyPlayerActiveScene", () => {
       "reset-particles",
     ]);
   });
+
+  it("does not reload or reset when the host already has that scene", () => {
+    const loaded: string[] = [];
+    const handle = {
+      loadScene: (scene: { name: string }) => {
+        loaded.push(`load:${scene.name}`);
+      },
+      applySceneEnvironment: (scene: { name: string }) => {
+        loaded.push(`env:${scene.name}`);
+      },
+      resetAudioSession: () => {
+        loaded.push("reset-audio");
+      },
+      resetParticleSession: () => {
+        loaded.push("reset-particles");
+      },
+    };
+    const scene = { ...createDefaultScene(), name: "Level 1" };
+    const scenes = new Map([["scene-1", scene]]);
+    expect(
+      applyPlayerActiveScene(
+        handle,
+        scenes,
+        { type: "activeScene", sceneAssetGuid: "scene-1" },
+        "scene-1",
+      ),
+    ).toBe(true);
+    expect(loaded).toEqual([]);
+  });
 });
 
 describe("schedulePlayerMaterialPrewarm", () => {

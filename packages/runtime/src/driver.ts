@@ -1338,6 +1338,11 @@ class InProcessRuntime implements RuntimeDriver {
       if (scene) {
         this.sceneLoadingProgress = 0;
         this.world.beginSceneLoad(name);
+        this.world.createScene({
+          assetGuid: guid,
+          sceneName: name,
+        });
+        this.emit({ type: "activeScene", sceneAssetGuid: guid });
       }
       if (scene) {
         const actors = createActorsFromSerializedScene(
@@ -1370,11 +1375,6 @@ class InProcessRuntime implements RuntimeDriver {
       this.registerNavObstacles();
       this.attemptPossessViewTarget();
       if (scene) {
-        this.world.createScene({
-          assetGuid: guid,
-          sceneName: name,
-        });
-        this.emit({ type: "activeScene", sceneAssetGuid: guid });
         this.finishOrDeferSceneLoad(name, guid);
       }
       this.spawnOwnedSceneLayers();
