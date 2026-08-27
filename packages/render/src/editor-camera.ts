@@ -385,7 +385,9 @@ export function createEditorCamera(
     frame: (target: Vector3, radius?: number) => {
       if (mode === "3d") {
         camera.getViewMatrix();
-        camera.setTarget(target);
+        // Clone: Babylon assigns Vector3 setTarget by reference. Passing a
+        // mesh's live _absolutePosition would stick the orbit center to it.
+        camera.setTarget(target.clone(), true);
         camera.radius = Math.min(
           MAX_CAMERA_RADIUS,
           Math.max(MIN_CAMERA_RADIUS, camera.radius),

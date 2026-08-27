@@ -57,6 +57,7 @@ import {
 import { applySceneToBabylonScene, unfreezeActorWorldMatrix, freezeStaticActorWorldMatrix } from "./scene-loader";
 import { accountedGeometryBytesForScene, isEditorModelPlaceholder } from "./glb-anim";
 import { snapCanvasDrawingBuffer } from "./canvas-drawing-buffer";
+import { actorFramingRadius, actorFramingTarget } from "./actor-framing";
 import { isSkyboxMesh, skyboxCubeCacheGuid, skyboxCubeCacheGuidsFromScene } from "./skybox";
 import {
   applySceneEnvironment as applySerializedSceneEnvironment,
@@ -1156,7 +1157,15 @@ export function createEngine(
       frameActor: (actorId: string) => {
         const mesh = editorSync.meshForActor(actorId);
         if (!mesh || isSkyboxMesh(mesh)) return;
-        cameraController.frame(mesh.getAbsolutePosition());
+        const center = actorFramingTarget(mesh);
+        if (cameraController.mode === "3d") {
+          cameraController.frame(
+            center,
+            actorFramingRadius(mesh, { minZ: cameraController.camera.minZ }),
+          );
+        } else {
+          cameraController.frame(center);
+        }
       },
       selectedActorTransforms,
       attachedActorTransform: () => {
