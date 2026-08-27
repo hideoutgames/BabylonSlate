@@ -176,6 +176,57 @@ describe("p20-editor-scene-freeze", () => {
     expect(activeMeshesOf(handle.scene)).toContain(mesh);
   });
 
+  it("keeps an off-frustum box on the frozen active-mesh list", () => {
+    const handle = editorHandle();
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("far", "Far", {
+          transform: {
+            position: [500, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ],
+    });
+    const mesh = handle.editor?.sync.meshForActor("far");
+    expect(mesh).not.toBeNull();
+    handle.scene.updateTransformMatrix();
+    expect(mesh!.isInFrustum(handle.scene.frustumPlanes)).toBe(false);
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene._activeMeshesFrozenButKeepClipping).toBe(true);
+    expect(handle.scene.skipFrustumClipping).toBe(false);
+    expect(activeMeshesOf(handle.scene)).toContain(mesh);
+  });
+
+  it("keeps an off-frustum box on the frozen list after camera move without apply", () => {
+    const handle = editorHandle();
+    handle.loadScene({
+      ...createDefaultScene(),
+      actors: [
+        createActor("far", "Far", {
+          transform: {
+            position: [500, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [createMeshComponent("c1", "box")],
+        }),
+      ],
+    });
+    const mesh = handle.editor?.sync.meshForActor("far");
+    expect(mesh).not.toBeNull();
+    const freeze = vi.spyOn(handle.scene, "freezeActiveMeshes");
+    freeze.mockClear();
+    handle.editor!.camera.frame(mesh!.getAbsolutePosition(), 12);
+    handle.scene.updateTransformMatrix();
+    expect(freeze).not.toHaveBeenCalled();
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(activeMeshesOf(handle.scene)).toContain(mesh);
+  });
+
   it("frames an actor once at a pull-back distance without locking the camera to the mesh", () => {
     const handle = editorHandle();
     handle.loadScene({
@@ -286,6 +337,7 @@ describe("p20-editor-scene-freeze", () => {
     expect(handle.scene._activeMeshesFrozen).toBe(true);
     const active = activeMeshesOf(handle.scene);
     expect(parts.some((part) => active.includes(part))).toBe(true);
+    expect(root!.isWorldMatrixFrozen).toBe(true);
   });
 
   it("freezes static actor world matrices and unfreezes them on gizmo drag", () => {
@@ -384,6 +436,17 @@ describe("p20-editor-scene-freeze", () => {
     await handle.prewarmSceneMaterials();
     expect(assignedWarm).toHaveBeenCalled();
     expect(defaultWarm).toHaveBeenCalled();
+  });
+
+  it("refreezes editor active meshes after shader warm", async () => {
+    const handle = editorHandle();
+    handle.loadScene(createDefaultScene());
+    const freeze = vi.spyOn(handle.scene, "freezeActiveMeshes");
+    freeze.mockClear();
+    await handle.prewarmSceneMaterials();
+    expect(freeze).toHaveBeenCalled();
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(handle.scene.skipFrustumClipping).toBe(false);
   });
 
   it("skips editor material freeze on Play after prewarm", async () => {

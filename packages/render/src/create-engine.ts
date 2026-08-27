@@ -148,6 +148,7 @@ import { createRttCanvasPresent } from "./rtt-canvas-present";
 import { configureEditorRenderingGroups } from "./sorting";
 import {
   applyEditorMaterialFreeze,
+  freezeEditorActiveMeshes,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
 } from "./scene-perf";
@@ -1833,6 +1834,7 @@ export function createEngine(
     prewarmSceneMaterials: async () => {
       await warmSceneMaterials(scene);
       freezeLibraryMaterials();
+      if (options.editor) freezeEditorActiveMeshes(scene);
     },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {
