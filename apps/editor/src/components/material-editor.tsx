@@ -718,7 +718,7 @@ function MaterialNodeDetails({
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
       {node.type === "custom.glsl" ? (
-        <div className="px-3" data-testid="material-node-glsl-editor">
+        <div className="px-3" data-testid="material-node-glsl-field">
           <Field>
             <FieldLabel htmlFor="material-node-glsl">Expression</FieldLabel>
             <MultilineTextField
