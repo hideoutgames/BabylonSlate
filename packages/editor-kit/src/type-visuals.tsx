@@ -77,6 +77,7 @@ const ACTOR_ICON = PersonStandingIcon;
 const ENGINE_PARENT: Record<string, string | null> = {
   BObject: null,
   Actor: "BObject",
+  Scene: "BObject",
   SceneLayer: "BObject",
   SceneLayerActor: "Actor",
   ActorComponent: "BObject",

@@ -95,6 +95,18 @@ describe("runtimeOptionsFromLoadControl", () => {
     });
   });
 
+  it("forwards deferSceneModelsReady onto the runtime", () => {
+    expect(
+      runtimeOptionsFromLoadControl({
+        type: "load",
+        sceneAssetGuid: "play-scene",
+        deferSceneModelsReady: true,
+      }),
+    ).toMatchObject({
+      deferSceneModelsReady: true,
+    });
+  });
+
   it("forwards gameInstanceClass and a scene library for changescene", () => {
     const scene = { name: "Level2", actors: [] };
     expect(
@@ -262,6 +274,7 @@ describe("unmatchedScriptSpawns", () => {
           { classId: "EditorUtilityObject" },
           { classId: "EditorFunctionLibrary" },
           { classId: "SceneLayer" },
+          { classId: "Scene" },
         ],
         new Set(),
       ),

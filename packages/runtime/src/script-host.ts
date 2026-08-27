@@ -23,6 +23,7 @@ import {
   Actor,
   ActorComponent,
   BObject,
+  Scene,
   SceneLayer,
   dispatchInterface,
   interfaceHandlerKey,
@@ -68,6 +69,10 @@ export interface ScriptHostServices {
   classRegistry?: ClassRegistry;
   /** World actors in deterministic spawn order for class queries. */
   getActors?(): readonly Actor[];
+  /** Live Scene instance for the active Play scene, if any. */
+  getSceneReference?(): Scene | null;
+  /** Scene load progress in 0..1. */
+  getSceneLoadingProgress?(): number;
   log(severity: LogSeverity, category: string, message: string): void;
   addComponent?(
     actor: Actor | null | undefined,
@@ -320,6 +325,8 @@ export interface ScriptContext {
   ): unknown;
   spawnActor(classId: string, transform?: unknown): Actor | null;
   isA(instance: unknown, classId: string): boolean;
+  getSceneLoadingProgress(): number;
+  getSceneReference(): Scene | null;
   getAnimGraphVariable(target: unknown, name: string): unknown;
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
   getAnimGraphCurrentState(): { id: string; name: string } | null;
@@ -522,9 +529,18 @@ export class ScriptHost {
   hooksFor(classId: string): LifecycleHooks<BObject> | undefined {
     const loaded = this.byClassId.get(classId);
     if (!loaded || loaded.length === 0) return undefined;
+    const isGameInstance =
+      this.services.classRegistry?.isA(classId, "GameInstance") ??
+      classId === "GameInstance";
     return {
       onCreation: (self) => {
-        this.dispatchEvent(loaded, "onBeginPlay", self, 0, 0);
+        this.dispatchEvent(
+          loaded,
+          isGameInstance ? "onInit" : "onBeginPlay",
+          self,
+          0,
+          0,
+        );
       },
       onTick: (self, ctx: TickContext) => {
         this.dispatchEvent(
@@ -951,7 +967,12 @@ export class ScriptHost {
         asActor(actor ?? self)?.components.find((c) => c.classId === classId) ??
         null,
       getComponentById: (actor, componentId) =>
-        findComponentById(asActor(actor ?? self), componentId),
+        findComponentByIdFromTarget(
+          actor ?? self,
+          componentId,
+          services.getActors?.(),
+          services.getSceneReference?.() ?? null,
+        ),
       callComponentFunction: (target, name, args) =>
         this.callNativeComponentFunction(target ?? self, String(name ?? ""), args ?? {}),
       addComponent: (actor, classId, transform) => {
@@ -961,6 +982,12 @@ export class ScriptHost {
       },
       spawnActor: (classId, transform) =>
         services.spawnActor?.(String(classId), transform) ?? null,
+      getSceneLoadingProgress: () =>
+        clamp01(services.getSceneLoadingProgress?.() ?? 1),
+      getSceneReference: () => {
+        const scene = services.getSceneReference?.() ?? null;
+        return scene && !scene.destroyed ? scene : null;
+      },
       isA: (instance, classId) => {
         if (instance == null || typeof instance !== "object") return false;
         const id = (instance as { classId?: unknown }).classId;
@@ -1400,6 +1427,30 @@ function asActor(target: unknown): Actor | null {
 
 function asActorComponent(target: unknown): ActorComponent | null {
   return target instanceof ActorComponent ? target : null;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(1, Math.max(0, value));
+}
+
+function findComponentByIdFromTarget(
+  target: unknown,
+  componentId: string,
+  actors: readonly Actor[] | undefined,
+  currentScene: Scene | null,
+): ActorComponent | null {
+  if (target instanceof Scene) {
+    if (target.destroyed || currentScene !== target) return null;
+    if (!actors) return null;
+    for (const actor of actors) {
+      if (actor.destroyed) continue;
+      const found = findComponentById(actor, componentId);
+      if (found) return found;
+    }
+    return null;
+  }
+  return findComponentById(asActor(target), componentId);
 }
 
 function findComponentById(

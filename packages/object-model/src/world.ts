@@ -10,6 +10,7 @@ import {
   Actor,
   ActorComponent,
   GameInstance,
+  Scene,
   SceneLayer,
   type GameInstanceHooks,
   type LifecycleHooks,
@@ -57,6 +58,7 @@ export class World {
   private inputProvider: WorldInputProvider | null;
 
   gameInstance: GameInstance | null = null;
+  currentScene: Scene | null = null;
   /** Actors in spawn order — never iterate a Map for tick/snapshot. */
   private readonly actors: Actor[] = [];
   private readonly sceneLayers: SceneLayer[] = [];
@@ -65,6 +67,8 @@ export class World {
   private started = false;
   /** True while a tick phase is executing (before deferred flush). */
   private ticking = false;
+  private firstSceneLoaded = false;
+  private activeSceneName: string | null = null;
 
   constructor(options: WorldOptions) {
     this.classRegistry = options.classRegistry;
@@ -98,11 +102,35 @@ export class World {
   }
 
   end(): void {
+    this.exitActiveScene();
     this.gameInstance?.callOnGameEnd();
   }
 
   loadScene(sceneName: string): void {
-    this.gameInstance?.callOnSceneLoaded(sceneName);
+    this.exitActiveScene();
+    this.beginSceneLoad(sceneName);
+    this.finishSceneLoad(sceneName);
+  }
+
+  beginSceneLoad(sceneName: string): void {
+    this.gameInstance?.callOnSceneStartLoading(sceneName);
+  }
+
+  finishSceneLoad(sceneName: string): void {
+    this.activeSceneName = sceneName;
+    this.gameInstance?.callOnSceneFinishLoading(sceneName);
+    if (!this.firstSceneLoaded) {
+      this.firstSceneLoaded = true;
+      this.gameInstance?.callOnFirstSceneLoaded(sceneName);
+    }
+  }
+
+  exitActiveScene(): void {
+    const name = this.activeSceneName;
+    this.activeSceneName = null;
+    this.clearCurrentScene();
+    if (!name) return;
+    this.gameInstance?.callOnSceneExit(name);
   }
 
   /** Queue actor for spawn; applied after the current phase / at end of tick. */
@@ -169,6 +197,33 @@ export class World {
     layer.destroyed = true;
     layer.callOnDestroyed();
     this.sceneLayers.splice(index, 1);
+  }
+
+  createScene(options: {
+    classId?: string;
+    guid?: Guid;
+    assetGuid: string;
+    sceneName: string;
+    variables?: Record<string, unknown>;
+    hooks?: LifecycleHooks;
+  }): Scene {
+    this.clearCurrentScene();
+    const scene = new Scene({
+      ...options,
+      guidFactory: this.guidFactory,
+    });
+    this.currentScene = scene;
+    scene.callOnCreation();
+    return scene;
+  }
+
+  private clearCurrentScene(): void {
+    const scene = this.currentScene;
+    if (!scene) return;
+    this.currentScene = null;
+    if (scene.destroyed) return;
+    scene.destroyed = true;
+    scene.callOnDestroyed();
   }
 
   findActor(guid: Guid): Actor | undefined {

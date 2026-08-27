@@ -34,6 +34,12 @@ const EVENT_EXPORT_BY_TYPE: Record<string, string> = {
   "flow.event.beginPlay": "onBeginPlay",
   "flow.event.tick": "onTick",
   "flow.event.destroyed": "onDestroyed",
+  "flow.event.init": "onInit",
+  "flow.event.end": "onEnd",
+  "flow.event.firstSceneLoaded": "onFirstSceneLoaded",
+  "flow.event.sceneStartLoading": "onSceneStartLoading",
+  "flow.event.sceneFinishLoading": "onSceneFinishLoading",
+  "flow.event.sceneExit": "onSceneExit",
   "flow.event.hit": "onHit",
   "flow.event.beginOverlap": "onBeginOverlap",
   "flow.event.endOverlap": "onEndOverlap",
@@ -77,6 +83,70 @@ export const flowNodes: NodeDefinition[] = [
       pin("deltaSeconds", "deltaSeconds", "out", FLOAT),
     ],
     codegen: () => ({ deltaSeconds: "ctx.deltaSeconds" }),
+  },
+  {
+    id: "flow.event.init",
+    title: "Event On Init",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.end",
+    title: "Event On End",
+    category: "flow",
+    pure: true,
+    pins: () => [pin("execOut", "then", "out", EXEC)],
+    codegen: () => {
+      /* entry point emitted by the compiler */
+    },
+  },
+  {
+    id: "flow.event.firstSceneLoaded",
+    title: "Event On First Scene Loaded",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("sceneName", "Scene Name", "out", STRING),
+    ],
+    codegen: () => ({ sceneName: "(ctx.args.sceneName)" }),
+  },
+  {
+    id: "flow.event.sceneStartLoading",
+    title: "Event On Scene Start Loading",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("sceneName", "Scene Name", "out", STRING),
+    ],
+    codegen: () => ({ sceneName: "(ctx.args.sceneName)" }),
+  },
+  {
+    id: "flow.event.sceneFinishLoading",
+    title: "Event On Scene Finish Loading",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("sceneName", "Scene Name", "out", STRING),
+    ],
+    codegen: () => ({ sceneName: "(ctx.args.sceneName)" }),
+  },
+  {
+    id: "flow.event.sceneExit",
+    title: "Event On Scene Exit",
+    category: "flow",
+    pure: true,
+    pins: () => [
+      pin("execOut", "then", "out", EXEC),
+      pin("sceneName", "Scene Name", "out", STRING),
+    ],
+    codegen: () => ({ sceneName: "(ctx.args.sceneName)" }),
   },
   {
     id: "flow.event.destroyed",

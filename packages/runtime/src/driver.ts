@@ -18,6 +18,7 @@ import {
   BObject,
   SceneLayer,
   isSceneLayerExclusiveComponent,
+  sceneAssetClassId,
   type ClassKind,
   type DebugInspectSnapshot,
   type TickPhase,
@@ -177,6 +178,11 @@ export interface RuntimeDriverOptions {
   sprites?: Readonly<Record<string, SpritePayload>>;
   spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
   pixelsPerUnit?: number;
+  /**
+   * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Play overlay and
+   * the exported player set this; in-process tests leave it false.
+   */
+  deferSceneModelsReady?: boolean;
 }
 
 export interface RuntimeDriver {
@@ -216,6 +222,8 @@ export interface RuntimeDriver {
    * Idempotent. Call after `loadScripts` so Begin Play binds on spawn.
    */
   realizePlayWorld(): void;
+  /** Complete a deferred scene load after the host finishes mesh instantiation. */
+  notifySceneModelsReady(sceneAssetGuid: string): void;
   /** Upgrade from software to Havok/Rapier when available. */
   loadPhysics(): Promise<void>;
   getPhysicsSync(): PhysicsWorldSync | null;
@@ -352,6 +360,10 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly sceneGuidByKey = new Map<string, string>();
   private readonly sceneLayerLibrary = new Map<string, SerializedSceneLayer>();
   private playWorldRealized = false;
+  private sceneLoadingProgress = 1;
+  private readonly deferSceneModelsReady: boolean;
+  private pendingSceneFinish: { name: string; guid: string } | null = null;
+  private gameInstanceBound = false;
   /** A script `Possess Camera` outranks the authored per-camera option. */
   private cameraPossessedByScript = false;
   private possessedCameraSlotId: number | null = null;
@@ -412,14 +424,35 @@ class InProcessRuntime implements RuntimeDriver {
     this.playScene = options.playScene;
     this.playSceneGuid = options.playSceneGuid ?? "play-scene";
     this.gameInstanceClass = options.gameInstanceClass ?? "GameInstance";
+    this.deferSceneModelsReady = options.deferSceneModelsReady === true;
     if (options.sceneLibrary) {
       for (const [key, scene] of Object.entries(options.sceneLibrary)) {
         this.sceneLibrary.set(key, scene);
+        const displayName =
+          typeof scene.name === "string" ? scene.name.trim() : "";
+        if (displayName && displayName !== key) {
+          this.sceneLibrary.set(displayName, scene);
+        }
       }
     }
     if (options.sceneGuidByKey) {
       for (const [key, guid] of Object.entries(options.sceneGuidByKey)) {
         this.sceneGuidByKey.set(key, guid);
+      }
+    }
+    if (options.sceneLibrary) {
+      for (const [key, scene] of Object.entries(options.sceneLibrary)) {
+        if (!this.sceneGuidByKey.has(key)) {
+          this.sceneGuidByKey.set(key, key);
+        }
+        const displayName =
+          typeof scene.name === "string" ? scene.name.trim() : "";
+        if (displayName && !this.sceneGuidByKey.has(displayName)) {
+          this.sceneGuidByKey.set(
+            displayName,
+            this.sceneGuidByKey.get(key) ?? key,
+          );
+        }
       }
     }
     if (options.sceneLayerLibrary) {
@@ -711,6 +744,15 @@ class InProcessRuntime implements RuntimeDriver {
         });
       },
       getActors: () => this.world.getActors(),
+      getSceneReference: () => {
+        const scene = this.world.currentScene;
+        return scene && !scene.destroyed ? scene : null;
+      },
+      getSceneLoadingProgress: () => {
+        const value = this.sceneLoadingProgress;
+        if (!Number.isFinite(value)) return 0;
+        return Math.min(1, Math.max(0, value));
+      },
       executeConsoleCommand: (command) => this.executeConsoleCommand(command),
       delay: (seconds) =>
         new Promise<void>((resolve) => {
@@ -866,6 +908,7 @@ class InProcessRuntime implements RuntimeDriver {
       },
     });
 
+    this.registerPlaySceneTypes();
     this.bindGameInstance();
 
     if (options.seedDemoActors !== false && !options.playScene) {
@@ -1285,10 +1328,26 @@ class InProcessRuntime implements RuntimeDriver {
     this.playWorldRealized = true;
     this.loopGuard.reset();
     try {
-      if (this.playScene) {
+      this.world.start();
+      const scene = this.playScene;
+      const guid = this.playSceneGuid;
+      const name =
+        typeof scene?.name === "string" && scene.name.trim()
+          ? scene.name
+          : guid;
+      if (scene) {
+        this.sceneLoadingProgress = 0;
+        this.world.beginSceneLoad(name);
+        this.world.createScene({
+          assetGuid: guid,
+          sceneName: name,
+        });
+        this.emit({ type: "activeScene", sceneAssetGuid: guid });
+      }
+      if (scene) {
         const actors = createActorsFromSerializedScene(
           this.world,
-          this.playScene,
+          scene,
           (classId) => {
             const hooks = this.scriptHost.hooksFor(classId);
             if (!hooks) return undefined;
@@ -1301,15 +1360,23 @@ class InProcessRuntime implements RuntimeDriver {
             };
           },
         );
+        const total = actors.length;
+        let realized = 0;
         for (const actor of actors) {
           this.scriptHost.bindInterfaceHandlers(actor);
           this.realizeActor(actor);
+          realized += 1;
+          this.sceneLoadingProgress =
+            total > 0 ? (realized / total) * 0.5 : 0.5;
         }
+        if (total === 0) this.sceneLoadingProgress = 0.5;
       }
       this.registerNavAgents();
       this.registerNavObstacles();
       this.attemptPossessViewTarget();
-      this.world.loadScene(this.playSceneGuid);
+      if (scene) {
+        this.finishOrDeferSceneLoad(name, guid);
+      }
       this.spawnOwnedSceneLayers();
     } catch (error) {
       if (!isInfiniteLoopError(error)) throw error;
@@ -1349,9 +1416,10 @@ class InProcessRuntime implements RuntimeDriver {
         message: `changeScene: no scene asset loaded for ${key}`,
         frameId: this.frameId,
       });
-      this.world.loadScene(key);
       return;
     }
+    this.pendingSceneFinish = null;
+    this.world.exitActiveScene();
     const departingSceneGuid = this.playSceneGuid;
     for (const layer of [...this.world.getSceneLayers()]) {
       if (layer.ownerSceneGuid === departingSceneGuid) {
@@ -1382,7 +1450,6 @@ class InProcessRuntime implements RuntimeDriver {
     // The new scene owns its own camera choice.
     this.cameraPossessedByScript = false;
     this.possessedCameraSlotId = null;
-    this.emit({ type: "activeScene", sceneAssetGuid: this.playSceneGuid });
     this.realizePlayWorld();
   }
 
@@ -3079,8 +3146,9 @@ class InProcessRuntime implements RuntimeDriver {
   }
 
   private bindGameInstance(): void {
+    if (this.gameInstanceBound) return;
+    this.gameInstanceBound = true;
     const classId = this.gameInstanceClass;
-    const hooks = this.scriptHost.hooksFor(classId);
     this.world.setGameInstance(
       this.world.createGameInstance({
         classId,
@@ -3088,6 +3156,7 @@ class InProcessRuntime implements RuntimeDriver {
         variables: { ticks: 0 },
         hooks: {
           onCreation: (self) => {
+            const hooks = this.scriptHost.hooksFor(classId);
             this.guardScript(() => hooks?.onCreation?.(self));
           },
           onTick: (self, ctx) => {
@@ -3095,15 +3164,96 @@ class InProcessRuntime implements RuntimeDriver {
               "ticks",
               Number(self.getVariable("ticks")) + 1,
             );
+            const hooks = this.scriptHost.hooksFor(classId);
             this.guardScript(() => hooks?.onTick?.(self, ctx));
+          },
+          onGameEnd: (self) => {
+            this.guardScript(() =>
+              this.scriptHost.invokeEvent(classId, "onEnd", self),
+            );
+          },
+          onSceneStartLoading: (self, sceneName) => {
+            this.guardScript(() =>
+              this.scriptHost.invokeEvent(
+                classId,
+                "onSceneStartLoading",
+                self,
+                { sceneName },
+              ),
+            );
+          },
+          onSceneFinishLoading: (self, sceneName) => {
+            this.guardScript(() =>
+              this.scriptHost.invokeEvent(
+                classId,
+                "onSceneFinishLoading",
+                self,
+                { sceneName },
+              ),
+            );
+          },
+          onFirstSceneLoaded: (self, sceneName) => {
+            this.guardScript(() =>
+              this.scriptHost.invokeEvent(
+                classId,
+                "onFirstSceneLoaded",
+                self,
+                { sceneName },
+              ),
+            );
+          },
+          onSceneExit: (self, sceneName) => {
+            this.guardScript(() =>
+              this.scriptHost.invokeEvent(classId, "onSceneExit", self, {
+                sceneName,
+              }),
+            );
           },
         },
       }),
     );
   }
 
+  private registerPlaySceneTypes(): void {
+    const guids = new Set<string>();
+    if (this.playSceneGuid) guids.add(this.playSceneGuid);
+    for (const guid of this.sceneGuidByKey.values()) {
+      if (guid) guids.add(guid);
+    }
+    for (const guid of guids) {
+      this.world.classRegistry.ensure({
+        id: sceneAssetClassId(guid),
+        parentClassId: "Scene",
+        kind: "object",
+        variables: [],
+        implementedInterfaces: [],
+      });
+    }
+  }
+
+  private finishOrDeferSceneLoad(name: string, guid: string): void {
+    if (this.deferSceneModelsReady) {
+      this.pendingSceneFinish = { name, guid };
+      return;
+    }
+    this.completeSceneLoad(name);
+  }
+
+  private completeSceneLoad(name: string): void {
+    this.sceneLoadingProgress = 1;
+    this.pendingSceneFinish = null;
+    this.world.finishSceneLoad(name);
+  }
+
+  notifySceneModelsReady(sceneAssetGuid: string): void {
+    const pending = this.pendingSceneFinish;
+    if (!pending) return;
+    const guid = String(sceneAssetGuid ?? "").trim();
+    if (guid && guid !== pending.guid) return;
+    this.completeSceneLoad(pending.name);
+  }
+
   start(): void {
-    this.bindGameInstance();
     this.running = true;
     this.paused = false;
     this.world.start();

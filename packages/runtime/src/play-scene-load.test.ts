@@ -1129,6 +1129,29 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("emits activeScene before spawn so the host can swap before assignMesh", () => {
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Level1",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [createActor("hero", "Hero")],
+      },
+      playSceneGuid: "scene-1",
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    const types = commands.map((command) => command.type);
+    expect(types.indexOf("activeScene")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("spawn")).toBeGreaterThan(types.indexOf("activeScene"));
+    runtime.stop();
+  });
+
   it("changeScene emits activeScene with the canonical guid when addressed by name", () => {
     const level2: SerializedScene = {
       name: "Level 2",
@@ -1164,7 +1187,10 @@ describe("p7-play-scene-load", () => {
     runtime.executeConsoleCommand('changescene scene="Level 2"');
     expect(
       commands.filter((command) => command.type === "activeScene"),
-    ).toEqual([{ type: "activeScene", sceneAssetGuid: "scene-2" }]);
+    ).toEqual([
+      { type: "activeScene", sceneAssetGuid: "scene-1" },
+      { type: "activeScene", sceneAssetGuid: "scene-2" },
+    ]);
     runtime.stop();
   });
 

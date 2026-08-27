@@ -65,7 +65,9 @@ Structural and resource changes **never** go through the snapshot buffer.
 
 **Stats command:** `{ type: "stats" }` is **not** a hot-path channel. The worker emits it at ~5 Hz (`STATS_COMMAND_INTERVAL_MS` = 200). `scriptMs` / `physicsMs` / `tickIndex` on the snapshot header stay per-tick. Overlay Play and the packaged player stamp input from `snapshotTickIndex`, not from sparse `stats`.
 
-`loadScripts.spawn` is filtered with `shouldSpawnScriptedActor` so `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, and `EditorFunctionLibrary` never become Actors.
+`load` may set `deferSceneModelsReady`. Overlay Play and the packaged player then post `{ type: "sceneModelsReady", sceneAssetGuid }` after `whenEditorModelsReady()` so Game Instance **On Scene Finish Loading** waits for mesh/model instantiation. Headless in-process tests omit the flag so finish is synchronous. Runtime emits `activeScene` before spawn; the host reloads and resets audio/particles only when the guid differs from the scene already on the handle.
+
+`loadScripts.spawn` is filtered with `shouldSpawnScriptedActor` so `GameInstance`, `FunctionLibrary`, `EditorUtilityObject`, `EditorFunctionLibrary`, `SceneLayer`, and `Scene` never become Actors.
 
 ## Typed RPC
 

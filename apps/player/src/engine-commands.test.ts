@@ -4,6 +4,7 @@ import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
   schedulePlayerMaterialPrewarm,
+  schedulePlayerSceneModelsReady,
 } from "./engine-commands";
 
 describe("applyPlayerEngineCommand", () => {
@@ -279,6 +280,35 @@ describe("applyPlayerActiveScene", () => {
       "reset-particles",
     ]);
   });
+
+  it("does not reload or reset when the host already has that scene", () => {
+    const loaded: string[] = [];
+    const handle = {
+      loadScene: (scene: { name: string }) => {
+        loaded.push(`load:${scene.name}`);
+      },
+      applySceneEnvironment: (scene: { name: string }) => {
+        loaded.push(`env:${scene.name}`);
+      },
+      resetAudioSession: () => {
+        loaded.push("reset-audio");
+      },
+      resetParticleSession: () => {
+        loaded.push("reset-particles");
+      },
+    };
+    const scene = { ...createDefaultScene(), name: "Level 1" };
+    const scenes = new Map([["scene-1", scene]]);
+    expect(
+      applyPlayerActiveScene(
+        handle,
+        scenes,
+        { type: "activeScene", sceneAssetGuid: "scene-1" },
+        "scene-1",
+      ),
+    ).toBe(true);
+    expect(loaded).toEqual([]);
+  });
 });
 
 describe("schedulePlayerMaterialPrewarm", () => {
@@ -300,6 +330,27 @@ describe("schedulePlayerMaterialPrewarm", () => {
     expect(scheduled.current).toBe(true);
     await vi.waitFor(() => {
       expect(order).toEqual(["models", "prewarm"]);
+    });
+  });
+});
+
+describe("schedulePlayerSceneModelsReady", () => {
+  it("posts sceneModelsReady after models are ready", async () => {
+    const posted: Array<{ type: string; sceneAssetGuid: string }> = [];
+    const handle = {
+      whenEditorModelsReady: async () => {},
+    };
+    schedulePlayerSceneModelsReady(
+      (message) => {
+        posted.push(message);
+      },
+      handle,
+      "scene-1",
+    );
+    await vi.waitFor(() => {
+      expect(posted).toEqual([
+        { type: "sceneModelsReady", sceneAssetGuid: "scene-1" },
+      ]);
     });
   });
 });

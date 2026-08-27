@@ -52,10 +52,12 @@ export function applyPlayerActiveScene(
   },
   scenes: ReadonlyMap<string, SerializedScene>,
   command: { type: string; sceneAssetGuid?: unknown },
+  currentSceneGuid?: string | null,
 ): boolean {
   if (command.type !== "activeScene" || typeof command.sceneAssetGuid !== "string") {
     return false;
   }
+  if (command.sceneAssetGuid === currentSceneGuid) return true;
   const scene = scenes.get(command.sceneAssetGuid);
   if (!scene) return false;
   handle.loadScene(scene);
@@ -77,4 +79,14 @@ export function schedulePlayerMaterialPrewarm(
   if (commandType !== "assignMesh" || scheduled.current) return;
   scheduled.current = true;
   void handle.whenEditorModelsReady().then(() => handle.prewarmSceneMaterials());
+}
+
+export function schedulePlayerSceneModelsReady(
+  post: (message: { type: "sceneModelsReady"; sceneAssetGuid: string }) => void,
+  handle: { whenEditorModelsReady: () => Promise<void> },
+  sceneAssetGuid: string,
+): void {
+  void handle.whenEditorModelsReady().then(() => {
+    post({ type: "sceneModelsReady", sceneAssetGuid });
+  });
 }

@@ -5,6 +5,7 @@ import {
   snapshotFloatCount,
   writeSnapshotHeader,
 } from "@babylonslate/bridge";
+import { createDefaultScene } from "@babylonslate/core";
 import {
   applyPlayFpsSample,
   applyWorkerPlayStats,
@@ -21,6 +22,8 @@ import {
   playSessionBootControls,
   previewFixtureThrowHint,
   resolvePlayFrameCap,
+  scheduleSceneModelsReady,
+  applyPlayActiveScene,
 } from "./play-session";
 
 describe("diagnosticFromCommand", () => {
@@ -470,5 +473,96 @@ describe("previewFixtureThrowHint", () => {
   it("is null when Play has no behaviour tree so the graph fixture stays", () => {
     expect(previewFixtureThrowHint()).toBeNull();
     expect(previewFixtureThrowHint([])).toBeNull();
+  });
+});
+
+describe("applyPlayActiveScene", () => {
+  const scene = { ...createDefaultScene(), name: "Level 1" };
+  const other = { ...createDefaultScene(), name: "Level 2" };
+
+  it("skips reload and audio/particle reset when the boot scene is already active", () => {
+    const loaded: string[] = [];
+    const handle = {
+      loadScene: (next: { name: string }) => {
+        loaded.push(`load:${next.name}`);
+      },
+      applySceneEnvironment: (next: { name: string }) => {
+        loaded.push(`env:${next.name}`);
+      },
+      resetAudioSession: () => {
+        loaded.push("reset-audio");
+      },
+      resetParticleSession: () => {
+        loaded.push("reset-particles");
+      },
+    };
+    expect(
+      applyPlayActiveScene({
+        handle,
+        command: { type: "activeScene", sceneAssetGuid: "scene-1" },
+        scenes: [{ guid: "scene-1", scene }],
+        boot: { guid: "scene-1", scene },
+        currentSceneGuid: "scene-1",
+      }),
+    ).toBe("scene-1");
+    expect(loaded).toEqual([]);
+  });
+
+  it("reloads and resets when the runtime switches to another scene", () => {
+    const loaded: string[] = [];
+    const handle = {
+      loadScene: (next: { name: string }) => {
+        loaded.push(`load:${next.name}`);
+      },
+      applySceneEnvironment: (next: { name: string }) => {
+        loaded.push(`env:${next.name}`);
+      },
+      resetAudioSession: () => {
+        loaded.push("reset-audio");
+      },
+      resetParticleSession: () => {
+        loaded.push("reset-particles");
+      },
+    };
+    expect(
+      applyPlayActiveScene({
+        handle,
+        command: { type: "activeScene", sceneAssetGuid: "scene-2" },
+        scenes: [
+          { guid: "scene-1", scene },
+          { guid: "scene-2", scene: other },
+        ],
+        boot: { guid: "scene-1", scene },
+        currentSceneGuid: "scene-1",
+      }),
+    ).toBe("scene-2");
+    expect(loaded).toEqual([
+      "load:Level 2",
+      "env:Level 2",
+      "reset-audio",
+      "reset-particles",
+    ]);
+  });
+});
+
+describe("scheduleSceneModelsReady", () => {
+  it("posts sceneModelsReady after whenModelsReady resolves", async () => {
+    const posted: string[] = [];
+    let resolveReady!: () => void;
+    const whenModelsReady = () =>
+      new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+    const pending = scheduleSceneModelsReady({
+      whenModelsReady,
+      notify: (sceneAssetGuid) => {
+        posted.push(sceneAssetGuid);
+      },
+      sceneAssetGuid: "scene-1",
+    });
+    expect(posted).toEqual([]);
+    resolveReady();
+    await pending;
+    expect(posted).toEqual(["scene-1"]);
   });
 });

@@ -192,6 +192,9 @@ function handleControl(msg: ControlMessage): void {
     case "audioVoiceEnded":
       ensureRuntime().applyAudioVoiceEnded(msg);
       return;
+    case "sceneModelsReady":
+      ensureRuntime().notifySceneModelsReady(msg.sceneAssetGuid);
+      return;
   }
 }
 

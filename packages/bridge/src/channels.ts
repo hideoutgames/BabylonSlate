@@ -99,6 +99,11 @@ export type ControlMessage =
         skeletonGuid?: string | null;
         modelGuid?: string;
       }>;
+      /**
+       * Play overlay / player: hold OnSceneFinishLoading until the host posts
+       * `sceneModelsReady`. Headless tests omit this so finish is synchronous.
+       */
+      deferSceneModelsReady?: boolean;
     }
   | {
       type: "loadScripts";
@@ -154,7 +159,8 @@ export type ControlMessage =
       canvasWidth?: number;
       canvasHeight?: number;
     }
-  | { type: "audioVoiceEnded"; voiceId: string };
+  | { type: "audioVoiceEnded"; voiceId: string }
+  | { type: "sceneModelsReady"; sceneAssetGuid: string };
 
 export type DebugColliderPrimitive = {
   id: string;

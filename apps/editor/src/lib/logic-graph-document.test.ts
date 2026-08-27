@@ -6,6 +6,7 @@ import {
   collectClassGraphsForPalette,
   collectFunctionLibrariesForPalette,
   collectGraphTypeAssets,
+  collectSceneDocumentsForPalette,
   commitLogicGraph,
   replaceSerializedGraphInDocument,
   serializedGraphFromDocument,
@@ -269,6 +270,68 @@ describe("collectClassGraphsForPalette", () => {
       classIdForPath: () => "Loco_anim",
     });
     expect(graphs).toEqual({});
+  });
+});
+
+describe("collectSceneDocumentsForPalette", () => {
+  it("indexes Scene assets by guid and prefers open document actors", () => {
+    const scenes = collectSceneDocumentsForPalette({
+      assets: [
+        {
+          path: "assets/Hall.scene.babasset",
+          header: {
+            guid: "scene-1",
+            type: "Scene",
+            name: "Hall",
+            payload: {
+              name: "Main Hall",
+              actors: [
+                {
+                  id: "hero",
+                  name: "Hero",
+                  classId: "Actor",
+                  components: [
+                    { id: "mesh-hero", classId: "MeshComponent", properties: {} },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      ],
+      openDocuments: [
+        {
+          ref: { kind: "scene", path: "assets/Hall.scene.babasset" },
+          content: {
+            name: "Main Hall Live",
+            actors: [
+              {
+                id: "hero",
+                name: "Hero",
+                classId: "Actor",
+                components: [
+                  { id: "cam-1", classId: "CameraComponent", properties: {} },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(scenes).toEqual([
+      {
+        guid: "scene-1",
+        name: "Main Hall Live",
+        actors: [
+          {
+            name: "Hero",
+            components: [
+              { id: "cam-1", classId: "CameraComponent", properties: {} },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 });
 

@@ -12,6 +12,8 @@ export type EngineScriptVariable = {
   /** Extra Content Browser types the pin picker accepts (e.g. Mesh + Model). */
   typeClassIds?: readonly string[];
   propertyKey: string;
+  /** When true, the palette injects Get only (no Set). */
+  getOnly?: boolean;
 };
 
 export type EngineScriptFunction = {
@@ -136,6 +138,39 @@ export const COLLIDER_EVENTS: readonly EngineScriptEvent[] = [
 ];
 
 export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
+  {
+    classId: "GameInstance",
+    functions: [
+      {
+        name: "Get Scene Loading Progress",
+        runtime: "getSceneLoadingProgress",
+        pins: [{ name: "progress", typeId: "float", direction: "out" }],
+      },
+      {
+        name: "Get Scene Reference",
+        runtime: "getSceneReference",
+        pins: [
+          {
+            name: "scene",
+            typeId: "object",
+            typeClassId: "Scene",
+            direction: "out",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    classId: "Scene",
+    variables: [
+      {
+        name: "Scene Name",
+        typeId: "string",
+        propertyKey: "sceneName",
+        getOnly: true,
+      },
+    ],
+  },
   {
     classId: "Text3DComponent",
     variables: TEXT_VARIABLES,

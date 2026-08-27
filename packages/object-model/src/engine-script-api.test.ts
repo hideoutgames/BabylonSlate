@@ -87,6 +87,23 @@ describe("engine script API catalog", () => {
     ]);
   });
 
+  it("exposes Scene Name on Scene and Game Instance scene getters", () => {
+    const scene = engineScriptApiFor("Scene");
+    expect(scene?.variables).toEqual([
+      expect.objectContaining({
+        name: "Scene Name",
+        typeId: "string",
+        propertyKey: "sceneName",
+        getOnly: true,
+      }),
+    ]);
+    const gi = engineScriptApiFor("GameInstance");
+    expect(names(gi?.functions)).toEqual([
+      "Get Scene Loading Progress",
+      "Get Scene Reference",
+    ]);
+  });
+
   it("does not invent APIs for bake-only and graph-document hosts", () => {
     expect(engineScriptApiFor("BlockingVolumeComponent")).toBeUndefined();
     expect(engineScriptApiFor("NavMeshComponent")).toBeUndefined();

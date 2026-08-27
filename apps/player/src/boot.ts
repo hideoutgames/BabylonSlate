@@ -21,7 +21,7 @@ import { playFramebufferSize, type SerializedScene } from "@babylonslate/core";
 import type { GameManifest } from "@babylonslate/exporter";
 import { createPlayerWorkerHost, type PlayerWorkerHost } from "./worker-host";
 import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
-import { applyPlayerActiveScene, applyPlayerEngineCommand, schedulePlayerMaterialPrewarm } from "./engine-commands";
+import { applyPlayerActiveScene, applyPlayerEngineCommand, schedulePlayerMaterialPrewarm, schedulePlayerSceneModelsReady } from "./engine-commands";
 import { mountPlayerPrintOverlay } from "./print-overlay";
 import { packedBootControls, packedContentFromGame } from "./hydrate";
 import { attachInputCapture, playInputStampTick } from "./input";
@@ -235,6 +235,7 @@ export function startPlayer(options: {
     ...loopGuardLoadFields(manifest),
     audioAssetGuids: [...content.audioLibrary.audio.keys()],
     animClipCatalog: content.animClipCatalog,
+    deferSceneModelsReady: true,
   };
 
   const spawn = playerSpawnListForScripts(game.scripts);
@@ -265,10 +266,26 @@ export function startPlayer(options: {
   };
 
   const materialsWarmed = { current: false };
+  let hostSceneGuid: string | null = startup;
   const onCommand = (command: { type: string } & Record<string, unknown>) => {
     applyPlayerEngineCommand(handle, command);
-    applyPlayerActiveScene(handle, game.scenes, command);
+    if (
+      applyPlayerActiveScene(handle, game.scenes, command, hostSceneGuid) &&
+      typeof command.sceneAssetGuid === "string"
+    ) {
+      hostSceneGuid = command.sceneAssetGuid;
+    }
     schedulePlayerMaterialPrewarm(handle, command.type, materialsWarmed);
+    if (command.type === "activeScene" && typeof command.sceneAssetGuid === "string") {
+      schedulePlayerSceneModelsReady(
+        (message) => {
+          worker?.postControl(message);
+          runtime?.notifySceneModelsReady(message.sceneAssetGuid);
+        },
+        handle,
+        command.sceneAssetGuid,
+      );
+    }
     if (command.type === "print") {
       printHud.applyPrint({
         message: command.message,

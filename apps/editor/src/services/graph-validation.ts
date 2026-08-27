@@ -39,12 +39,15 @@ import {
   ENGINE_CLASS_SCRIPT_APIS,
   ENGINE_COMPONENT_CLASS_IDS,
   engineEventTypeClassIds,
+  isSceneAssetClassId,
+  sceneAssetClassId,
 } from "@babylonslate/object-model";
 import {
   componentGraphMembersForClass,
   mergedPrefabViewsForGraph,
 } from "../lib/component-graph-members";
 import { collectParentEventNames } from "../lib/overridable-functions";
+import { prefabComponentLabel } from "../panels/add-component-catalog";
 import {
   createDefaultNodeRegistry,
   castDefaultClassId,
@@ -62,6 +65,7 @@ import {
   isScriptCatalogNodeAllowed,
   nativeEventStubs,
   NATIVE_CLASS_EVENT_TYPES,
+  NATIVE_GAME_INSTANCE_EVENT_TYPES,
   SEEDED_NATIVE_EVENT_TYPES,
   COLLISION_EVENT_TYPE_IDS,
   type ClassEventOptions,
@@ -204,7 +208,10 @@ function shouldRegeneratePins(typeId: string): boolean {
 function parentLookup(
   parentOf?: (id: string) => string | null | undefined,
 ): (id: string) => string | null | undefined {
-  return (id) => parentOf?.(id) ?? engineParentOf(id);
+  return (id) => {
+    if (isSceneAssetClassId(id) && id !== "Scene") return "Scene";
+    return parentOf?.(id) ?? engineParentOf(id);
+  };
 }
 
 function resultKindForClass(
@@ -708,6 +715,7 @@ function withVisualMeta(
 const DEFAULT_EVENT_NODE_IDS: Record<string, string> = {
   "flow.event.beginPlay": "event-begin-play",
   "flow.event.tick": "event-tick",
+  "flow.event.init": "event-on-init",
 };
 
 function defaultEventNodeId(eventType: string): string {
@@ -734,6 +742,7 @@ export function createDefaultLogicGraphSerialized(
   const seedNatives = new Set<string>(SEEDED_NATIVE_EVENT_TYPES);
   const skipSeedNatives = new Set<string>([
     ...NATIVE_CLASS_EVENT_TYPES,
+    ...NATIVE_GAME_INSTANCE_EVENT_TYPES,
     ...COLLISION_EVENT_TYPE_IDS,
   ]);
   const stubs = nativeEventStubs(options).filter((stub) => {
@@ -858,6 +867,20 @@ export type ScriptPaletteOptions = ClassEventOptions & {
   }>;
   structures?: readonly GraphStructureEntry[];
   enums?: readonly GraphEnumEntry[];
+  sceneDocuments?: readonly PaletteSceneDocument[];
+};
+
+export type PaletteSceneDocument = {
+  guid: string;
+  name: string;
+  actors: ReadonlyArray<{
+    name: string;
+    components: ReadonlyArray<{
+      id: string;
+      classId: string;
+      properties?: Record<string, unknown>;
+    }>;
+  }>;
 };
 
 function otherClassAllowedOnHost(
@@ -984,7 +1007,7 @@ function functionRows(graph?: SerializedGraph): FunctionRow[] {
 function paletteParentOf(
   options?: ScriptPaletteOptions,
 ): (id: string) => string | null | undefined {
-  return options?.parentOf ?? ((id: string) => engineParentOf(id) ?? null);
+  return parentLookup(options?.parentOf);
 }
 
 function isPaletteLibraryClass(
@@ -1068,6 +1091,7 @@ function callFunctionPaletteNodes(
   }
   for (const api of ENGINE_CLASS_SCRIPT_APIS) {
     if (api.classId === localClassId) continue;
+    if (api.classId === "GameInstance") continue;
     if (!otherClassAllowedOnHost(api.classId, options)) continue;
     for (const fn of api.functions ?? []) {
       pushRow(
@@ -1293,8 +1317,12 @@ function variableAccessPaletteNodes(
           propertyKey: variable.propertyKey,
         },
         implicitSelf: false,
+        getOnly: variable.getOnly === true,
       });
     }
+  }
+  for (const row of scenePlacedComponentRows(options)) {
+    rows.push(row);
   }
   for (const [classId, graph] of Object.entries(options?.otherClassGraphs ?? {})) {
     if (classId === localClassId) continue;
@@ -1387,6 +1415,73 @@ function variableAccessPaletteNodes(
   return injected;
 }
 
+function uniquifyLabels(labels: readonly string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const label of labels) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  return labels.map((label) => {
+    if ((counts.get(label) ?? 0) < 2) return label;
+    const next = (seen.get(label) ?? 0) + 1;
+    seen.set(label, next);
+    return next === 1 ? label : `${label} ${next}`;
+  });
+}
+
+function scenePlacedComponentRows(
+  options?: ScriptPaletteOptions,
+): Array<{
+  classId: string;
+  variable: VariableRow;
+  implicitSelf: boolean;
+  getOnly?: boolean;
+}> {
+  const rows: Array<{
+    classId: string;
+    variable: VariableRow;
+    implicitSelf: boolean;
+    getOnly?: boolean;
+  }> = [];
+  for (const scene of options?.sceneDocuments ?? []) {
+    const classId = sceneAssetClassId(scene.guid);
+    const entries = scene.actors.flatMap((actor) =>
+      actor.components.map((component) => ({ actor, component })),
+    );
+    const classCounts = new Map<string, number>();
+    for (const entry of entries) {
+      classCounts.set(
+        entry.component.classId,
+        (classCounts.get(entry.component.classId) ?? 0) + 1,
+      );
+    }
+    const labels = uniquifyLabels(
+      entries.map(({ actor, component }) => {
+        const typeLabel = prefabComponentLabel(component);
+        return (classCounts.get(component.classId) ?? 0) > 1
+          ? `${actor.name} ${typeLabel}`
+          : typeLabel;
+      }),
+    );
+    entries.forEach((entry, index) => {
+      rows.push({
+        classId,
+        variable: {
+          id: `scene:${scene.guid}:component:${entry.component.id}`,
+          name: labels[index] ?? prefabComponentLabel(entry.component),
+          typeId: "object",
+          typeClassId: entry.component.classId,
+          scope: "member",
+          componentId: entry.component.id,
+        },
+        implicitSelf: false,
+        getOnly: true,
+      });
+    });
+  }
+  return rows;
+}
+
 function castPaletteNodes(
   nodeRegistry: NodeRegistry,
   options?: ScriptPaletteOptions,
@@ -1394,12 +1489,22 @@ function castPaletteNodes(
   const def = nodeRegistry.get("casting.cast");
   if (!def) return [];
   const parentOf = parentLookup(options?.parentOf);
+  const sceneIds = (options?.sceneDocuments ?? []).map((scene) =>
+    sceneAssetClassId(scene.guid),
+  );
+  const sceneTitles = new Map(
+    (options?.sceneDocuments ?? []).map((scene) => [
+      sceneAssetClassId(scene.guid),
+      scene.name,
+    ]),
+  );
   const classIds = [
     ...knownClassIdSet(
       parentOf,
       [
         options?.classId,
         ...Object.keys(options?.otherClassGraphs ?? {}),
+        ...sceneIds,
       ].filter((id): id is string => Boolean(id)),
     ),
   ].sort((a, b) => a.localeCompare(b));
@@ -1410,10 +1515,11 @@ function castPaletteNodes(
       "default:class": classId,
       resultKind,
     };
+    const sceneName = sceneTitles.get(classId);
     return {
       id: `casting.cast:${classId}`,
       nodeType: "casting.cast",
-      title: `Cast to ${classId}`,
+      title: sceneName ? `Cast to ${sceneName}` : `Cast to ${classId}`,
       category: def.category,
       pins: def.pins(defaultData),
       pure: def.pure,
@@ -1617,6 +1723,7 @@ export function scriptPaletteInjectorKey(
     typeof options?.parentClass === "string" ? options.parentClass : null,
     ...Object.keys(options?.otherClassGraphs ?? {}),
     ...(options?.functionLibraries ?? []).map((lib) => lib.classId),
+    ...(options?.sceneDocuments ?? []).map((scene) => sceneAssetClassId(scene.guid)),
   ].filter((id): id is string => Boolean(id));
   const classIds = [...knownClassIdSet(parentOf, seed)].sort((a, b) =>
     a.localeCompare(b),
@@ -1637,6 +1744,14 @@ export function scriptPaletteInjectorKey(
     scriptInterfaces: options?.scriptInterfaces ?? [],
     structures: options?.structures ?? [],
     enums: options?.enums ?? [],
+    scenes: (options?.sceneDocuments ?? []).map((scene) => [
+      scene.guid,
+      scene.name,
+      scene.actors.map((actor) => [
+        actor.name,
+        actor.components.map((component) => [component.id, component.classId]),
+      ]),
+    ]),
   });
 }
 

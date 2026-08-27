@@ -566,6 +566,23 @@ describe("createDefaultLogicGraphSerialized", () => {
     expect(graph.nodes).toEqual([]);
   });
 
+  it("seeds On Init and Tick for a GameInstance class", () => {
+    const graph = createDefaultLogicGraphSerialized(registry, {
+      parentClass: "GameInstance",
+    });
+    expect(
+      graph.nodes
+        .filter((node) => node.type !== "flow.event.callParent")
+        .map((node) => node.type),
+    ).toEqual(["flow.event.init", "flow.event.tick"]);
+    expect(graph.nodes.some((node) => node.type === "flow.event.beginPlay")).toBe(
+      false,
+    );
+    expect(graph.nodes.some((node) => node.type === "flow.event.sceneExit")).toBe(
+      false,
+    );
+  });
+
   it("does not seed leftover EditorUtilityInterface as a logic host", () => {
     const graph = createDefaultLogicGraphSerialized(registry, {
       parentClass: "BObject",
@@ -900,6 +917,78 @@ describe("scriptPaletteNodes", () => {
     expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(false);
     expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(false);
+  });
+
+  it("shows Game Instance events and scene getters on GameInstance graphs", () => {
+    const nodes = scriptPaletteNodes(registry, { parentClass: "GameInstance" });
+    expect(nodes.some((node) => node.id === "flow.event.init")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.tick")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.end")).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.sceneExit")).toBe(true);
+    expect(nodes.some((node) => node.id === "gameInstance.getSceneReference")).toBe(
+      true,
+    );
+    expect(
+      nodes.some((node) => node.id === "gameInstance.getSceneLoadingProgress"),
+    ).toBe(true);
+    expect(nodes.some((node) => node.id === "flow.event.beginPlay")).toBe(false);
+    expect(nodes.some((node) => node.id === "flow.event.destroyed")).toBe(false);
+    const actor = scriptPaletteNodes(registry, { parentClass: "Actor" });
+    expect(actor.some((node) => node.id === "flow.event.init")).toBe(false);
+    expect(actor.some((node) => node.id === "gameInstance.getSceneReference")).toBe(
+      false,
+    );
+  });
+
+  it("injects Cast to scene display names and Get-only placed components", () => {
+    const nodes = scriptPaletteNodes(registry, {
+      parentClass: "GameInstance",
+      classId: "MyGame",
+      sceneDocuments: [
+        {
+          guid: "scene-1",
+          name: "Main Hall",
+          actors: [
+            {
+              name: "Hero",
+              components: [{ id: "mesh-hero", classId: "MeshComponent" }],
+            },
+            {
+              name: "Cam",
+              components: [{ id: "cam-1", classId: "CameraComponent" }],
+            },
+          ],
+        },
+      ],
+    });
+    const sceneCast = nodes.find(
+      (node) => node.id === "casting.cast:Scene:scene-1",
+    );
+    expect(sceneCast?.title).toBe("Cast to Main Hall");
+    expect(sceneCast?.defaultData).toMatchObject({
+      defaultClassId: "Scene:scene-1",
+      resultKind: "objectRef",
+    });
+    expect(nodes.some((node) => node.title === "Get Scene Name")).toBe(true);
+    expect(nodes.some((node) => node.title === "Set Scene Name")).toBe(false);
+    const meshGet = nodes.find(
+      (node) =>
+        node.nodeType === "variables.get" &&
+        node.defaultData?.componentId === "mesh-hero",
+    );
+    expect(meshGet?.title).toBe("Get Mesh");
+    expect(meshGet?.defaultData).toMatchObject({
+      classId: "Scene:scene-1",
+      typeClassId: "MeshComponent",
+      implicitSelf: false,
+    });
+    expect(
+      nodes.some(
+        (node) =>
+          node.nodeType === "variables.set" &&
+          node.defaultData?.componentId === "mesh-hero",
+      ),
+    ).toBe(false);
   });
 
   it("shows On Evaluate and hides Begin Play on BTDecorator class graphs", () => {
