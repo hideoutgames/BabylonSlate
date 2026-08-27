@@ -576,6 +576,7 @@ describe("loadExportDocuments", () => {
         clipNames: ["Walk"],
         materialSlots: [{ index: 0, name: "Body", materialGuid: "mat-1" }],
         skeletonGuid: "skel-1",
+        simpleColliders: [],
       },
       source: glb,
     });
