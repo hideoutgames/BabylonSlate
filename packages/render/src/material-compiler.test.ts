@@ -1000,9 +1000,9 @@ describe("material compiler", () => {
     ready = true;
     resolved.onLoadObservable.notifyObservers(resolved);
     expect(result.material.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
-    expect((result.material as Material & { alphaCutOff: number }).alphaCutOff).toBeCloseTo(
-      0.4,
-    );
+    expect(
+      (result.material as unknown as { alphaCutOff: number }).alphaCutOff,
+    ).toBeCloseTo(0.4);
   });
 
   it("reports material.missingTexture when a packed texture fails to load", () => {
