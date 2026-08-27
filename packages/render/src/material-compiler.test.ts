@@ -8,6 +8,8 @@ import {
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
+import { isDisposedGpuTexture } from "./gpu-resource-live";
+import { getMaterialTexture, ResourceCache } from "./resource-cache";
 
 const disposers: Array<() => void> = [];
 
@@ -997,6 +999,63 @@ describe("material compiler", () => {
     ) as TextureBlock | undefined;
     expect(sample?.texture).toBe(resolved);
     expect(sample?.texture?.invertY).toBe(false);
+  });
+
+  it("does not dispose a ResourceCache Texture when the compiled material is dropped", () => {
+    const scene = host();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    disposers.push(() => cache.dispose());
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const cached = getMaterialTexture(
+      cache,
+      "tex-1",
+      scene.getEngine(),
+      bytes,
+    );
+    expect(cached).not.toBeNull();
+    const doc = createDefaultMaterialDocument();
+    doc.nodes.push(
+      {
+        id: "tex",
+        type: "param.texture",
+        position: { x: 0, y: 0 },
+        properties: { textureGuid: "tex-1" },
+      },
+      {
+        id: "sample",
+        type: "texture.sample",
+        position: { x: 0, y: 0 },
+        properties: {},
+      },
+    );
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-color-output");
+    doc.edges.push(
+      {
+        id: "e-tex",
+        sourceNodeId: "tex",
+        sourcePinId: "out",
+        targetNodeId: "sample",
+        targetPinId: "texture",
+      },
+      {
+        id: "e-sample",
+        sourceNodeId: "sample",
+        sourcePinId: "rgb",
+        targetNodeId: "output",
+        targetPinId: "baseColor",
+      },
+    );
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "test",
+      resolveTexture: (guid) => (guid === "tex-1" ? cached : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    result.dispose();
+    expect(isDisposedGpuTexture(cached!)).toBe(false);
   });
 
   it("inlines a material function into the same block graph", () => {

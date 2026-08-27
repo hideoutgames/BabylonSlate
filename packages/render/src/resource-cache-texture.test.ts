@@ -60,13 +60,14 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
-  it("rebuilds when sampling flags change (cache key includes flags)", () => {
+  it("keeps a live Texture when a later caller requests different sampling flags", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([9, 9, 9]);
     const a = cache.getTexture("tex", engine, bytes, { noMipmap: false });
     const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
-    expect(a).not.toBe(b);
+    expect(b).toBe(a);
+    expect(isDisposedGpuTexture(a)).toBe(false);
     cache.dispose();
     engine.dispose();
   });
@@ -132,6 +133,14 @@ describe("resource cache getTexture", () => {
     expect(cube._files).toEqual(files);
     const again = cache.getCubeTextureFromImages("sky-faces", scene, files);
     expect(again).toBe(cube);
+    const nearest = cache.getCubeTextureFromImages(
+      "sky-faces",
+      scene,
+      files,
+      true,
+    );
+    expect(nearest).toBe(cube);
+    expect(isDisposedGpuTexture(cube)).toBe(false);
     cache.dispose();
     scene.dispose();
     engine.dispose();

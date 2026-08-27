@@ -3,6 +3,7 @@ import { NodeMaterial, NullEngine, Scene, Texture } from "@babylonjs/core";
 import {
   isDisposedGpuTexture,
   isDisposedNodeMaterial,
+  isEngineOwnedGpuTexture,
 } from "./gpu-resource-live";
 
 const disposers: Array<() => void> = [];
@@ -40,6 +41,24 @@ describe("isDisposedGpuTexture", () => {
     expect(isDisposedGpuTexture(texture)).toBe(false);
     texture.dispose();
     expect(isDisposedGpuTexture(texture)).toBe(true);
+  });
+});
+
+describe("isEngineOwnedGpuTexture", () => {
+  it("is true for ResourceCache-style engine textures and false for scene-owned ones", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    disposers.push(() => {
+      scene.dispose();
+      engine.dispose();
+    });
+    const engineOwned = new Texture("data:image/png;base64,aa", engine, {
+      noMipmap: true,
+      invertY: false,
+    });
+    const sceneOwned = new Texture(null, scene, true, false);
+    expect(isEngineOwnedGpuTexture(engineOwned)).toBe(true);
+    expect(isEngineOwnedGpuTexture(sceneOwned)).toBe(false);
   });
 });
 

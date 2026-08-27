@@ -9,6 +9,7 @@ import {
   snapToPixelGrid,
 } from "./pixel-perfect";
 import { createEditorCamera } from "./editor-camera";
+import { ResourceCache } from "./resource-cache";
 
 describe("pixelPerfectOrthoHalfHeight", () => {
   it("frames the canvas so one texture pixel covers one device pixel", () => {
@@ -134,6 +135,33 @@ describe("applyPixelArtSampling", () => {
     expect(b.wrapV).toBe(Texture.CLAMP_ADDRESSMODE);
     a.dispose();
     b.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("skips engine-owned ResourceCache textures registered on the scene", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const owned = cache.getTexture(
+      "tex",
+      engine,
+      new Uint8Array([1, 2, 3, 4]),
+      { samplingMode: Texture.TRILINEAR_SAMPLINGMODE },
+    );
+    const local = new Texture(
+      null,
+      scene,
+      true,
+      false,
+      Texture.TRILINEAR_SAMPLINGMODE,
+    );
+    scene.textures.push(owned);
+    applyPixelArtSamplingToScene(scene);
+    expect(owned.samplingMode).toBe(Texture.TRILINEAR_SAMPLINGMODE);
+    expect(local.wrapU).toBe(Texture.CLAMP_ADDRESSMODE);
+    local.dispose();
+    cache.dispose();
     scene.dispose();
     engine.dispose();
   });
