@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { encodeTriangleGlb } from "@babylonslate/render";
-import { ModelEditor, ModelPreview } from "./model-editor";
+import { ModelColliderSessionProvider } from "../context/model-collider-session";
+import { ModelColliders, ModelEditor, ModelPreview } from "./model-editor";
 
 vi.mock("../context/play-context", () => ({
   useOptionalPlay: () => null,
@@ -166,5 +168,87 @@ describe("ModelPreview", () => {
         .getByTestId("model-preview-shading-wireframe")
         .getAttribute("aria-pressed"),
     ).toBe("true");
+  });
+
+  it("toggles Show Collision on the glTF preview toolbar", () => {
+    render(
+      <ModelColliderSessionProvider>
+        <ModelPreview
+          payload={{ materialSlots: [], clipNames: [] }}
+          sourceBytes={encodeTriangleGlb()}
+        />
+      </ModelColliderSessionProvider>,
+    );
+    const toggle = screen.getByTestId("model-show-collision");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+function ColliderHarness({
+  sourceBytes,
+}: {
+  sourceBytes?: Uint8Array | null;
+}) {
+  const [payload, setPayload] = useState<Record<string, unknown>>({
+    materialSlots: [],
+    clipNames: [],
+  });
+  return (
+    <ModelColliderSessionProvider>
+      <ModelColliders
+        payload={payload}
+        sourceBytes={sourceBytes}
+        onChange={setPayload}
+      />
+      <ModelPreview payload={payload} sourceBytes={sourceBytes ?? undefined} />
+    </ModelColliderSessionProvider>
+  );
+}
+
+describe("ModelColliders", () => {
+  it("adds a Box from the Add menu and deletes the selected row", () => {
+    render(<ColliderHarness />);
+    expect(screen.getByTestId("model-colliders")).toBeTruthy();
+    expect(screen.getByText("No Colliders")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("model-add-collider"));
+    fireEvent.click(screen.getByTestId("model-add-collider-box"));
+    expect(screen.getByTestId("model-collider-tree").textContent).toContain("Box");
+    expect(screen.getByTestId("property-row-halfExtents")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("model-delete-collider"));
+    expect(screen.getByText("No Colliders")).toBeTruthy();
+  });
+
+  it("shows Move Rotate Scale tools after a collider is selected", () => {
+    render(<ColliderHarness sourceBytes={encodeTriangleGlb()} />);
+    fireEvent.click(screen.getByTestId("model-add-collider"));
+    fireEvent.click(screen.getByTestId("model-add-collider-box"));
+    expect(screen.getByTestId("model-collider-gizmo-tools")).toBeTruthy();
+    expect(screen.getByTestId("model-collider-gizmo-translate")).toBeTruthy();
+    expect(screen.getByTestId("model-collider-gizmo-rotate")).toBeTruthy();
+    expect(screen.getByTestId("model-collider-gizmo-scale")).toBeTruthy();
+  });
+
+  it("cooks Generated Collision from the open Model source chunk", () => {
+    render(<ColliderHarness sourceBytes={encodeTriangleGlb()} />);
+    fireEvent.click(screen.getByTestId("model-add-collider"));
+    fireEvent.click(screen.getByTestId("model-add-collider-generated"));
+    expect(screen.getByTestId("model-collider-tree").textContent).toContain(
+      "Generated Collision",
+    );
+  });
+
+  it("does not add Generated Collision until the Model source chunk is loaded", () => {
+    render(<ColliderHarness />);
+    fireEvent.click(screen.getByTestId("model-add-collider"));
+    const generated = screen.getByTestId("model-add-collider-generated");
+    expect(
+      generated.hasAttribute("data-disabled") ||
+        generated.getAttribute("aria-disabled") === "true" ||
+        (generated as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(generated);
+    expect(screen.getByText("No Colliders")).toBeTruthy();
   });
 });

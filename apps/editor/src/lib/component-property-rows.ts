@@ -36,6 +36,7 @@ import {
   type SerializedComponent,
   type SkyboxFaceKey,
 } from "@babylonslate/core";
+import { parseMeshCollisionMode } from "@babylonslate/assets";
 import {
   parseColliderProperties,
   type ColliderShape,
@@ -349,6 +350,36 @@ function colliderShapeRows(
   return rows;
 }
 
+function meshCollisionRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: (property: string, value: unknown) => void,
+  context: ComponentPropertyContext,
+): PropertyRow[] {
+  if (context.physicsWorld !== "3d") return [];
+  const mode = parseMeshCollisionMode(component.properties.collisionMode);
+  const rows: PropertyRow[] = [
+    {
+      kind: "enum",
+      id: rowId(actorId, component.id, "collisionMode"),
+      label: "Collision",
+      value: mode,
+      options: [
+        { value: "simple", label: "Use Simple Collision" },
+        { value: "complex", label: "Use Complex Collision" },
+        { value: "none", label: "No Collision" },
+      ],
+      onChange: (next) => update("collisionMode", next),
+    },
+  ];
+  if (mode === "none") return rows;
+  rows.push(
+    collisionLayerRow(actorId, component, update, context.collisionLayers),
+    collidesWithRow(actorId, component, update, context.collisionLayers),
+  );
+  return rows;
+}
+
 function genericRows(
   actorId: string,
   component: SerializedComponent,
@@ -470,11 +501,19 @@ export function componentPropertyRows(
           context,
           "Pick Material",
         ),
+        ...meshCollisionRows(actorId, component, update, context),
         ...genericRows(
           actorId,
           component,
           update,
-          new Set(["meshKind", "assetGuid", "materialGuid"]),
+          new Set([
+            "meshKind",
+            "assetGuid",
+            "materialGuid",
+            "collisionMode",
+            "layer",
+            "mask",
+          ]),
         ),
       ];
     }

@@ -6,7 +6,7 @@ import {
   Scene,
   StandardMaterial,
 } from "@babylonjs/core";
-import { applyAlbedoTexture, meshAssetFingerprint } from "./mesh-assets";
+import { applyAlbedoTexture, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
 import { getMaterialTexture, ResourceCache } from "./resource-cache";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 
@@ -24,6 +24,41 @@ describe("meshAssetFingerprint", () => {
         fontCssStackByGuid: new Map([["g", '"Other", sans-serif']]),
       }),
     );
+  });
+});
+
+describe("modelSlotFingerprint", () => {
+  it("changes when Model simple colliders change", () => {
+    const base = {
+      materialSlots: [] as { index: number; name: string; materialGuid: string | null }[],
+      clipNames: [] as string[],
+      skeletonGuid: null,
+      importScale: 1,
+      simpleColliders: [],
+    };
+    const empty = modelSlotFingerprint(new Map([["model-1", { ...base, simpleColliders: [] }]]));
+    const withHull = modelSlotFingerprint(
+      new Map([
+        [
+          "model-1",
+          {
+            ...base,
+            simpleColliders: [
+              {
+                id: "hull",
+                name: "Generated Collision",
+                kind: "generated",
+                position: [0, 0, 0],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+                points: [{ x: 1, y: 0, z: 0 }],
+              },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(withHull).not.toBe(empty);
   });
 });
 

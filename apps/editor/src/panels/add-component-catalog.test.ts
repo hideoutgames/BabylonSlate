@@ -138,6 +138,13 @@ describe("Add Component catalog", () => {
       sortingLayer: "Default",
       orderInLayer: 0,
     });
+    expect(defaultPropertiesFor("MeshComponent")).toEqual({
+      meshKind: "box",
+      assetGuid: null,
+      collisionMode: "simple",
+      layer: 1,
+      mask: 0xffffffff,
+    });
   });
 
   it("seeds light range and spot outer angle", () => {

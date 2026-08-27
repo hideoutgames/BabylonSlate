@@ -102,6 +102,12 @@ function parseShape(
         radius: numberOr(source.radius, 0.25),
         halfHeight: numberOr(source.halfHeight, 0.5),
       };
+    case "cylinder":
+      return {
+        kind: "cylinder",
+        radius: numberOr(source.radius, 0.5),
+        height: numberOr(source.height, 1),
+      };
     case "convex":
       return { kind: "convex", points: parsePoints3(source.points) };
     case "mesh":

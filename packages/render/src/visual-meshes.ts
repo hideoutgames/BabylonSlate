@@ -1,5 +1,6 @@
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { AbstractMesh, Material } from "@babylonjs/core";
+import { Mesh, type AbstractMesh, type Material } from "@babylonjs/core";
+import { isColliderVisualTree } from "./collider-visual";
 
 const CONSTRUCTION_KEY = "babylonslateModelConstructionMaterial";
 
@@ -25,7 +26,10 @@ function hasGeometry(mesh: AbstractMesh): boolean {
  * `__root__` meshes so slot 0 is the first real primitive.
  */
 export function visualMeshes(root: AbstractMesh): AbstractMesh[] {
-  const children = root.getChildMeshes().filter(hasGeometry);
+  const children = root.getChildMeshes().filter(
+    (mesh) => hasGeometry(mesh) && !isColliderVisualTree(mesh as Mesh),
+  );
+  if (isColliderVisualTree(root as Mesh)) return [];
   const placeholder =
     (root.visibility === 0 || root.isVisible === false) && children.length > 0;
   if (placeholder) {

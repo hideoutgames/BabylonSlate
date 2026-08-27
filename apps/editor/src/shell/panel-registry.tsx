@@ -58,6 +58,7 @@ import {
   ParticleSystemPreviewPanel,
 } from "../components/particle-editor";
 import {
+  ModelCollidersPanel,
   ModelDetailsPanel,
   ModelPreviewPanel,
 } from "../components/model-editor";
@@ -209,6 +210,9 @@ export const panelComponents = {
   ),
   "model-preview": (props: IDockviewPanelProps) => (
     <ModelPreviewPanel {...props} />
+  ),
+  "model-colliders": (props: IDockviewPanelProps) => (
+    <ModelCollidersPanel {...props} />
   ),
   "model-details": (props: IDockviewPanelProps) => (
     <ModelDetailsPanel {...props} />

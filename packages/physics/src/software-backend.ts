@@ -129,6 +129,22 @@ function aabbForShape(
         max: vec(box.max.x + r, box.max.y + r, box.max.z + r),
       };
     }
+    case "cylinder": {
+      const r = shape.radius;
+      const hh = shape.height / 2;
+      if (!oriented) {
+        return {
+          min: vec(position.x - r, position.y - hh, position.z - r),
+          max: vec(position.x + r, position.y + hh, position.z + r),
+        };
+      }
+      return aabbFromLocalPoints(position, rotation, [
+        { x: -r, y: -hh, z: -r },
+        { x: r, y: -hh, z: -r },
+        { x: r, y: hh, z: r },
+        { x: -r, y: hh, z: r },
+      ]);
+    }
     case "convex":
     case "mesh": {
       const pts = shape.kind === "convex" ? shape.points : shape.vertices;
@@ -721,6 +737,7 @@ function isShape3D(shape: ColliderShape): boolean {
     shape.kind === "box" ||
     shape.kind === "sphere" ||
     shape.kind === "capsule" ||
+    shape.kind === "cylinder" ||
     shape.kind === "convex" ||
     shape.kind === "mesh"
   );

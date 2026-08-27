@@ -222,6 +222,9 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
         typeClassId: "Material",
         propertyKey: "materialGuid",
       },
+      { name: "Collision Mode", typeId: "string", propertyKey: "collisionMode" },
+      { name: "Layer", typeId: "int", propertyKey: "layer" },
+      { name: "Mask", typeId: "int", propertyKey: "mask" },
     ],
   },
   {

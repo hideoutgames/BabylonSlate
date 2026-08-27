@@ -115,7 +115,7 @@ import {
   formatInspectActor,
 } from "./console-inspect";
 import { actorParentGuid, actorWorldTransforms } from "./actor-world-transform";
-import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
+import type { ModelPayload, SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload } from "@babylonslate/assets";
 import {
   createNavigationBackend,
   facingYawFromVelocity,
@@ -179,6 +179,13 @@ export interface RuntimeDriverOptions {
   tilesets?: Readonly<Record<string, TilesetPayload>>;
   sprites?: Readonly<Record<string, SpritePayload>>;
   spriteAnimations?: Readonly<Record<string, SpriteAnimationPayload>>;
+  models?: Readonly<Record<string, ModelPayload>>;
+  complexMeshes?: Readonly<
+    Record<
+      string,
+      { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+    >
+  >;
   pixelsPerUnit?: number;
   /**
    * Hold OnSceneFinishLoading until `notifySceneModelsReady`. Play overlay and
@@ -284,6 +291,20 @@ export interface RuntimeDriver {
       | ReadonlyMap<string, SpriteAnimationPayload>;
     pixelsPerUnit?: number;
   }): void;
+  registerModelContent(options: {
+    models: Readonly<Record<string, ModelPayload>> | ReadonlyMap<string, ModelPayload>;
+    complexMeshes?:
+      | Readonly<
+          Record<
+            string,
+            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+          >
+        >
+      | ReadonlyMap<
+          string,
+          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+        >;
+  }): void;
   /** Import a baked Scene navmesh chunk. Never generates. */
   loadNavMesh(bytes: Uint8Array): Promise<void>;
   setNavAgentTarget(actorGuid: string, target: NavPoint): boolean;
@@ -388,6 +409,11 @@ class InProcessRuntime implements RuntimeDriver {
   private tilesets = new Map<string, TilesetPayload>();
   private sprites = new Map<string, SpritePayload>();
   private spriteAnimations = new Map<string, SpriteAnimationPayload>();
+  private models = new Map<string, ModelPayload>();
+  private complexMeshes = new Map<
+    string,
+    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+  >();
   private pendingAnimJumpBySlot = new Map<number, string>();
   private pixelsPerUnit = 100;
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void }> =
@@ -560,6 +586,12 @@ class InProcessRuntime implements RuntimeDriver {
         sprites: options.sprites ?? {},
         spriteAnimations: options.spriteAnimations ?? {},
         pixelsPerUnit: options.pixelsPerUnit,
+      });
+    }
+    if (options.models) {
+      this.registerModelContent({
+        models: options.models,
+        complexMeshes: options.complexMeshes,
       });
     }
 
@@ -1272,6 +1304,10 @@ class InProcessRuntime implements RuntimeDriver {
       spriteAnimations: this.spriteAnimations,
       pixelsPerUnit: this.pixelsPerUnit,
     });
+    sync.setModelContent({
+      models: this.models,
+      complexMeshes: this.complexMeshes,
+    });
   }
 
   async loadScripts(scripts: readonly CompiledScript[]): Promise<void> {
@@ -1623,6 +1659,39 @@ class InProcessRuntime implements RuntimeDriver {
       sprites: this.sprites,
       spriteAnimations: this.spriteAnimations,
       pixelsPerUnit: this.pixelsPerUnit,
+    });
+  }
+
+  registerModelContent(options: {
+    models: Readonly<Record<string, ModelPayload>> | ReadonlyMap<string, ModelPayload>;
+    complexMeshes?:
+      | Readonly<
+          Record<
+            string,
+            { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+          >
+        >
+      | ReadonlyMap<
+          string,
+          { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+        >;
+  }): void {
+    this.models =
+      options.models instanceof Map
+        ? new Map(options.models)
+        : new Map(Object.entries(options.models));
+    this.complexMeshes = options.complexMeshes
+      ? options.complexMeshes instanceof Map
+        ? new Map(options.complexMeshes)
+        : new Map(Object.entries(options.complexMeshes))
+      : new Map();
+    this.physicsSync.setModelContent({
+      models: this.models,
+      complexMeshes: this.complexMeshes,
+    });
+    this.overlayPhysicsSync.setModelContent({
+      models: this.models,
+      complexMeshes: this.complexMeshes,
     });
   }
 

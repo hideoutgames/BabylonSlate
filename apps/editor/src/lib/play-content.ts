@@ -6,6 +6,7 @@ import {
   builtinClassId,
 } from "@babylonslate/behaviour-tree";
 import {
+  cookComplexCollisionMeshes,
   modelMaterialGuids,
   normalizeAnimationPayload,
   parseSpriteAnimationPayload,
@@ -795,6 +796,48 @@ export function playLoadSpritesControl(
     spriteAnimations: guidDocuments(spriteAnimations),
     ...(typeof pixelsPerUnit === "number" && pixelsPerUnit > 0
       ? { pixelsPerUnit }
+      : {}),
+  };
+}
+
+export function cookPlayComplexMeshes(
+  modelBytes: ReadonlyMap<string, Uint8Array> | undefined,
+  modelPayloads: ReadonlyMap<string, ModelPayload> | undefined,
+): Map<
+  string,
+  { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+> {
+  return cookComplexCollisionMeshes(modelBytes, modelPayloads);
+}
+
+/** Worker `loadModels` control, or null when Play has no Model payloads. */
+export function playLoadModelsControl(
+  models: ReadonlyMap<string, ModelPayload> | undefined,
+  complexMeshes?: ReadonlyMap<
+    string,
+    { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+  >,
+): {
+  type: "loadModels";
+  models: Array<{ guid: string; document: unknown }>;
+  complexMeshes?: Array<{
+    guid: string;
+    vertices: Array<{ x: number; y: number; z: number }>;
+    indices: number[];
+  }>;
+} | null {
+  if (!models || models.size === 0) return null;
+  return {
+    type: "loadModels",
+    models: guidDocuments(models),
+    ...(complexMeshes && complexMeshes.size > 0
+      ? {
+          complexMeshes: [...complexMeshes.entries()].map(([guid, mesh]) => ({
+            guid,
+            vertices: mesh.vertices,
+            indices: mesh.indices,
+          })),
+        }
       : {}),
   };
 }

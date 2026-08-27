@@ -171,7 +171,13 @@ export function defaultPropertiesFor(
 ): Record<string, unknown> {
   switch (classId) {
     case "MeshComponent":
-      return { meshKind: "box", assetGuid: null };
+      return {
+        meshKind: "box",
+        assetGuid: null,
+        collisionMode: "simple",
+        layer: 1,
+        mask: 0xffffffff,
+      };
     case "SpriteComponent":
       return { assetGuid: null, sortingLayer: "Default", orderInLayer: 0 };
     case "TilemapComponent":

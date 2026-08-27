@@ -440,6 +440,23 @@ describe("playSessionBootControls", () => {
       controls.map((control) => control.type).indexOf("loadSprites"),
     );
   });
+
+  it("sends loadModels before play", () => {
+    const controls = playSessionBootControls({
+      load: { type: "load", sceneAssetGuid: "play-scene" },
+      models: {
+        type: "loadModels",
+        models: [{ guid: "hero-model", document: { simpleColliders: [] } }],
+      },
+    });
+    expect(controls.find((control) => control.type === "loadModels")).toEqual({
+      type: "loadModels",
+      models: [{ guid: "hero-model", document: { simpleColliders: [] } }],
+    });
+    expect(controls.map((control) => control.type).indexOf("play")).toBeGreaterThan(
+      controls.map((control) => control.type).indexOf("loadModels"),
+    );
+  });
 });
 
 describe("previewFixtureThrowHint", () => {

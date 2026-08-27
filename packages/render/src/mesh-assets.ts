@@ -21,6 +21,11 @@ export interface MeshAssetContext {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /**
+   * Editor MeshComponent collision dashes. 2D worlds and Play omit this
+   * (`showcollision` draws physics debug instead).
+   */
+  drawMeshCollision?: boolean;
+  /**
    * Texture guids sampled by each Material document (`materialDependencies`).
    * With `textureBytes`, GLB slim runs only when those guids are packed.
    */
@@ -130,7 +135,8 @@ export function modelSlotFingerprint(
       const slots = payload.materialSlots
         .map((slot) => `${slot.index}=${slot.materialGuid ?? ""}`)
         .join(",");
-      return `${guid}:${slots}`;
+      const colliders = JSON.stringify(payload.simpleColliders ?? []);
+      return `${guid}:${slots}:${colliders}`;
     })
     .sort()
     .join(";");

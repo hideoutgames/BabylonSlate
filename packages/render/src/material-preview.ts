@@ -260,13 +260,24 @@ function zoomPreviewCamera(camera: ArcRotateCamera, factor: number): void {
 export function attachMaterialPreviewGestures(
   canvas: HTMLCanvasElement,
   camera: ArcRotateCamera,
-  options?: { onChange?: () => void },
+  options?: {
+    onChange?: () => void;
+    blockOrbit?: (x: number, y: number) => boolean;
+    onPointer?: (
+      type: "down" | "move" | "up",
+      x: number,
+      y: number,
+      pointerId: number,
+    ) => void;
+    onTap?: (x: number, y: number) => void;
+  },
 ): { dispose: () => void } {
   const pointers = new Map<number, PointerSample>();
   let lastPoint: PointerSample | null = null;
   let downPoint: PointerSample | null = null;
   let lastSpread = 0;
   let moved = false;
+  let stealing = false;
 
   const toCanvas = (event: PointerEvent): PointerSample => {
     const rect = canvas.getBoundingClientRect();
@@ -275,11 +286,13 @@ export function attachMaterialPreviewGestures(
 
   const onPointerDown = (event: PointerEvent) => {
     const point = toCanvas(event);
+    options?.onPointer?.("down", point.x, point.y, event.pointerId);
     pointers.set(event.pointerId, point);
     canvas.setPointerCapture?.(event.pointerId);
     if (pointers.size === 1) {
+      stealing = options?.blockOrbit?.(point.x, point.y) === true;
       downPoint = point;
-      lastPoint = point;
+      lastPoint = stealing ? null : point;
       moved = false;
       lastSpread = 0;
     } else {
@@ -290,26 +303,29 @@ export function attachMaterialPreviewGestures(
 
   const onPointerMove = (event: PointerEvent) => {
     if (!pointers.has(event.pointerId)) return;
-    pointers.set(event.pointerId, toCanvas(event));
+    const point = toCanvas(event);
+    options?.onPointer?.("move", point.x, point.y, event.pointerId);
+    pointers.set(event.pointerId, point);
+    if (stealing) return;
     const samples = [...pointers.values()];
     if (samples.length === 1 && lastPoint) {
-      const point = samples[0]!;
+      const sample = samples[0]!;
       if (
         downPoint &&
-        Math.hypot(point.x - downPoint.x, point.y - downPoint.y) >
+        Math.hypot(sample.x - downPoint.x, sample.y - downPoint.y) >
           TAP_TOLERANCE_PX
       ) {
         moved = true;
       }
       if (moved) {
-        camera.alpha -= (point.x - lastPoint.x) * ORBIT_SCALE;
+        camera.alpha -= (sample.x - lastPoint.x) * ORBIT_SCALE;
         camera.beta = Math.min(
           Math.PI - 0.01,
-          Math.max(0.01, camera.beta - (point.y - lastPoint.y) * ORBIT_SCALE),
+          Math.max(0.01, camera.beta - (sample.y - lastPoint.y) * ORBIT_SCALE),
         );
         options?.onChange?.();
       }
-      lastPoint = point;
+      lastPoint = sample;
       return;
     }
     if (samples.length === 2) {
@@ -326,6 +342,16 @@ export function attachMaterialPreviewGestures(
   };
 
   const endPointer = (event: PointerEvent) => {
+    const point = toCanvas(event);
+    options?.onPointer?.("up", point.x, point.y, event.pointerId);
+    if (
+      pointers.size === 1 &&
+      pointers.has(event.pointerId) &&
+      !moved &&
+      !stealing
+    ) {
+      options?.onTap?.(point.x, point.y);
+    }
     pointers.delete(event.pointerId);
     if (pointers.size === 1) {
       lastPoint = [...pointers.values()][0]!;
@@ -335,6 +361,7 @@ export function attachMaterialPreviewGestures(
       downPoint = null;
       lastSpread = 0;
       moved = false;
+      stealing = false;
     } else {
       lastSpread = pointerSpread([...pointers.values()]);
     }

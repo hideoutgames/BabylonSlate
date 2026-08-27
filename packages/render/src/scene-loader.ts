@@ -12,6 +12,13 @@ import {
 } from "@babylonslate/core";
 import { applyAlbedoTexture, applyTilemapAlbedoTextures, type MeshAssetContext } from "./mesh-assets";
 import {
+  extractGltfCollisionMesh,
+  meshCollisionFingerprint,
+  parseMeshCollisionMode,
+  resolveMeshCollisions,
+} from "@babylonslate/assets";
+import type { ColliderShape } from "@babylonslate/physics";
+import {
   createOverlayTextureQuad,
   overlayTextureVisualKind,
 } from "./overlay-texture-quad";
@@ -185,6 +192,7 @@ function colliderWorldKindFromShape(value: unknown): "3d" | "2d" | null {
     kind === "box" ||
     kind === "sphere" ||
     kind === "capsule" ||
+    kind === "cylinder" ||
     kind === "convex" ||
     kind === "mesh"
   ) {
@@ -366,7 +374,11 @@ function componentVisualKind(
       typeof component.properties.meshKind === "string"
         ? component.properties.meshKind
         : "box";
-    return `mesh:${kind}:${asset}`;
+    const collision = meshCollisionFingerprint(
+      component.properties,
+      asset ? assets?.modelPayloads?.get(asset) : undefined,
+    );
+    return `mesh:${kind}:${asset}:${collision}`;
   }
   if (component.classId === "SpriteComponent") return `sprite:${asset}`;
   if (component.classId === "TilemapComponent") return `tilemap:${asset}`;
@@ -702,14 +714,77 @@ export function createMeshForComponent(
     );
   }
   const assetGuid = stringProp(component.properties.assetGuid);
-  if (assetGuid) {
-    return createModelActorRoot(scene, name);
+  const visual = assetGuid
+    ? createModelActorRoot(scene, name)
+    : createPrimitiveMesh(
+        scene,
+        name,
+        typeof component.properties.meshKind === "string"
+          ? component.properties.meshKind
+          : null,
+      );
+  attachMeshCollisionDashes(visual, component, assets);
+  return visual;
+}
+
+function attachMeshCollisionDashes(
+  mesh: Mesh,
+  component: SerializedComponent,
+  assets?: MeshAssetContext,
+): void {
+  if (assets?.drawMeshCollision === false) return;
+  if (parseMeshCollisionMode(component.properties.collisionMode) === "none") {
+    return;
   }
-  const meshKind =
-    typeof component.properties.meshKind === "string"
-      ? component.properties.meshKind
-      : null;
-  return createPrimitiveMesh(scene, name, meshKind);
+  const assetGuid = stringProp(component.properties.assetGuid);
+  const modelPayload = assetGuid
+    ? assets?.modelPayloads?.get(assetGuid)
+    : undefined;
+  let complexMesh:
+    | { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+    | null
+    | undefined;
+  if (
+    parseMeshCollisionMode(component.properties.collisionMode) === "complex" &&
+    assetGuid
+  ) {
+    const bytes = assets?.modelBytes?.get(assetGuid);
+    if (bytes) {
+      complexMesh = extractGltfCollisionMesh(
+        bytes,
+        modelPayload?.importScale ?? 1,
+      );
+    }
+  }
+  const collisions = resolveMeshCollisions(component.properties, {
+    modelPayload,
+    complexMesh,
+  });
+  const scene = mesh.getScene();
+  for (const collision of collisions) {
+    const visual = createColliderVisualMesh(
+      scene,
+      `${mesh.name}:mesh-collider:${collision.shapeId}`,
+      collision.shape as ColliderShape,
+    );
+    visual.parent = mesh;
+    visual.position.set(
+      collision.position[0],
+      collision.position[1],
+      collision.position[2],
+    );
+    visual.rotationQuaternion = new Quaternion(
+      collision.rotation[0],
+      collision.rotation[1],
+      collision.rotation[2],
+      collision.rotation[3],
+    );
+    visual.scaling.set(
+      collision.scale[0],
+      collision.scale[1],
+      collision.scale[2],
+    );
+  }
 }
 
 function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {
@@ -892,7 +967,9 @@ export function createActorMesh(
   }
   const assetGuid = stringProp(meshComponent?.properties.assetGuid);
   if (assetGuid) {
-    return createModelActorRoot(scene, name);
+    const root = createModelActorRoot(scene, name);
+    if (meshComponent) attachMeshCollisionDashes(root, meshComponent, assets);
+    return root;
   }
   const icon = parseEditorBillboardIcon(editorMeshKindOf(actor, assets, allActors));
   if (icon) {
@@ -904,7 +981,9 @@ export function createActorMesh(
     typeof meshComponent?.properties.meshKind === "string"
       ? meshComponent.properties.meshKind
       : null;
-  return createPrimitiveMesh(scene, name, meshKind);
+  const primitive = createPrimitiveMesh(scene, name, meshKind);
+  if (meshComponent) attachMeshCollisionDashes(primitive, meshComponent, assets);
+  return primitive;
 }
 
 function childMeshesOf(mesh: Mesh): Mesh[] {
@@ -1062,21 +1141,27 @@ export function applySceneToBabylonScene(
 ): void {
   clearSceneMeshes(scene);
 
+  const meshAssets: MeshAssetContext = {
+    ...(assets ?? {}),
+    drawMeshCollision:
+      assets?.drawMeshCollision ?? sceneData.settings.physicsWorld !== "2d",
+  };
+
   const meshes = new Map<string, Mesh>();
   const loadBinding = {
     slotAnimEpoch: new Map<number, number>(),
     slotAnimationGroups: new Map(),
     slotAnimLoads: new Map<number, Promise<void>>(),
-    modelBytes: assets?.modelBytes,
-    modelPayloads: assets?.modelPayloads,
-    modelClipAnimationGuids: assets?.modelClipAnimationGuids,
-    retargetAnimationLoads: assets?.retargetAnimationLoads,
-    textureBytes: assets?.textureBytes,
-    materialTextureGuids: assets?.materialTextureGuids,
+    modelBytes: meshAssets.modelBytes,
+    modelPayloads: meshAssets.modelPayloads,
+    modelClipAnimationGuids: meshAssets.modelClipAnimationGuids,
+    retargetAnimationLoads: meshAssets.retargetAnimationLoads,
+    textureBytes: meshAssets.textureBytes,
+    materialTextureGuids: meshAssets.materialTextureGuids,
   };
   let loadSlot = 0;
   for (const actor of sceneData.actors) {
-    const mesh = createActorMesh(scene, actor, assets, sceneData.actors);
+    const mesh = createActorMesh(scene, actor, meshAssets, sceneData.actors);
     applyActorTransform(mesh, actor);
     meshes.set(actor.id, mesh);
     const guid = actor.components.find(

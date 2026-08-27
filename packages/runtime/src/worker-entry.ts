@@ -8,9 +8,11 @@ import {
   parseBlackboardDocument,
 } from "@babylonslate/behaviour-tree";
 import {
+  normalizeModelPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
   parseSpriteAnimationPayload,
+  type ModelPayload,
   type SpritePayload,
 } from "@babylonslate/assets";
 import {
@@ -136,6 +138,25 @@ function handleControl(msg: ControlMessage): void {
         spriteAnimations,
         pixelsPerUnit: msg.pixelsPerUnit,
       });
+      return;
+    }
+    case "loadModels": {
+      const rt = ensureRuntime();
+      const models: Record<string, ModelPayload> = {};
+      for (const entry of msg.models) {
+        models[entry.guid] = normalizeModelPayload(entry.document);
+      }
+      const complexMeshes: Record<
+        string,
+        { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
+      > = {};
+      for (const entry of msg.complexMeshes ?? []) {
+        complexMeshes[entry.guid] = {
+          vertices: entry.vertices,
+          indices: entry.indices,
+        };
+      }
+      rt.registerModelContent({ models, complexMeshes });
       return;
     }
     case "loadNavMesh": {

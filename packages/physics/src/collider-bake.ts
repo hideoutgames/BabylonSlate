@@ -111,6 +111,12 @@ export function scaleColliderShape(
         radius: shape.radius * xz,
         halfHeight: shape.halfHeight * sy,
       };
+    case "cylinder":
+      return {
+        kind: "cylinder",
+        radius: shape.radius * xz,
+        height: shape.height * sy,
+      };
     case "capsule2d":
       return {
         kind: "capsule2d",

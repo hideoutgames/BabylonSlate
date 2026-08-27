@@ -148,6 +148,7 @@ describe("beginSlotModelAnimLoad", () => {
           clipNames: [],
           skeletonGuid: null,
           importScale: 10,
+          simpleColliders: [],
         },
       ],
     ]);

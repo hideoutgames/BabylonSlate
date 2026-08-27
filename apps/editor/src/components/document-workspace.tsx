@@ -20,6 +20,7 @@ import { AnimGraphEditingProvider } from "../context/anim-graph-editing-context"
 import { BehaviourTreeEditingProvider } from "../context/behaviour-tree-editing-context";
 import { SpriteAnimationEditingProvider } from "./sprite-animation-editor";
 import { TracePlaybackProvider } from "./trace-editor";
+import { ModelColliderSessionProvider } from "../context/model-collider-session";
 import { sceneFocusActorId } from "../lib/search-navigation";
 import {
   useDocumentWorkingSet,
@@ -445,6 +446,29 @@ export function DocumentWorkspace() {
           );
         }
 
+        if (doc.ref.kind === "model") {
+          if (!shouldMount) return null;
+          return (
+            <WorkspaceErrorBoundary key={id}>
+              <DocumentWorkspaceProvider documentId={id}>
+                <ModelColliderSessionProvider>
+                  <DocumentShell
+                    path={doc.ref.path}
+                    testId="document-workspace-model"
+                    active={active}
+                  >
+                    <RegisteredDockviewShell
+                      id={id}
+                      documentKind="model"
+                      initialLayout={doc.layout}
+                    />
+                  </DocumentShell>
+                </ModelColliderSessionProvider>
+              </DocumentWorkspaceProvider>
+            </WorkspaceErrorBoundary>
+          );
+        }
+
         if (
           doc.ref.kind === "sprite" ||
           doc.ref.kind === "plugin-settings" ||
@@ -454,7 +478,6 @@ export function DocumentWorkspace() {
           doc.ref.kind === "sound-attenuation" ||
           doc.ref.kind === "particle-emitter" ||
           doc.ref.kind === "particle-system" ||
-          doc.ref.kind === "model" ||
           doc.ref.kind === "skeleton" ||
           doc.ref.kind === "animation" ||
           doc.ref.kind === "skybox-creator"
