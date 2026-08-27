@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Material, MeshBuilder, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -1048,7 +1048,7 @@ describe("material compiler", () => {
     const resolved = new Texture(null, scene, true, false);
     disposers.push(() => resolved.dispose());
     vi.spyOn(resolved, "isReady").mockReturnValue(true);
-    (resolved as { _loadingError: boolean })._loadingError = true;
+    (resolved as unknown as { _loadingError: boolean })._loadingError = true;
     expect(isGpuTextureSampleReady(resolved)).toBe(false);
     const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
     const result = compileMaterialPlan(planFor(doc), {
@@ -1062,7 +1062,7 @@ describe("material compiler", () => {
     }
     disposers.push(() => result.material.dispose());
     const rebuild = vi.spyOn(result.material, "build");
-    (resolved as { _loadingError: boolean })._loadingError = false;
+    (resolved as unknown as { _loadingError: boolean })._loadingError = false;
     resolved.onLoadObservable.notifyObservers(resolved);
     expect(rebuild).toHaveBeenCalled();
   });
@@ -1087,7 +1087,9 @@ describe("material compiler", () => {
     scene.blockMaterialDirtyMechanism = true;
     result.material.freeze();
     const dirtyWhileBlocked: boolean[] = [];
-    vi.spyOn(result.material, "markDirty").mockImplementation(function () {
+    vi.spyOn(result.material, "markDirty").mockImplementation(function (
+      this: NodeMaterial,
+    ) {
       dirtyWhileBlocked.push(this.getScene().blockMaterialDirtyMechanism);
     });
     ready = true;
