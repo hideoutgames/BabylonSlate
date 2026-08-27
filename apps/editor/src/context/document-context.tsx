@@ -111,6 +111,7 @@ import {
   graphCompileSignature,
   graphsNeedCompile as compileSignatureIsStale,
 } from "../services/script-compiler";
+import { playBundlesNeedCollect } from "../services/play-preview-prepare";
 import type { CreateProjectOptions } from "../lib/create-project";
 import type { ExportArtifact } from "@babylonslate/exporter";
 import {
@@ -443,7 +444,10 @@ interface DocumentContextValue {
   writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array) => Promise<void>;
   thumbnailEpoch: number;
   thumbnailsEnabled: boolean;
-  /** Compile every project graph into runtime script bundles for Preview. */
+  /**
+   * Compile every project graph into runtime script bundles.
+   * Does not record Play-loaded bundles — use `collectPlayPreviewScripts` for Play / toolbar Compile.
+   */
   collectScriptBundles: () => Promise<ScriptBundleEntry[]>;
   /** Compile and validate every project graph for the Play prepare path. */
   collectPlayPreviewScripts: () => Promise<{
@@ -554,10 +558,20 @@ interface DocumentContextValue {
   }>;
   /** Class graph payload from an open tab or disk. */
   loadGraphDocument: (path: string) => Promise<SerializedGraph | null>;
-  /** True when a compiled graph changed since the last successful compile (positions ignored). */
+  /**
+   * True when Play's stored full-project bundles do not match the current
+   * open-graph fingerprint (or Play has not collected this session).
+   * Distinct from `graphsNeedCompile` / editor Compile.
+   */
   scriptsStale: boolean;
   /** True when Compile should run: never compiled this session, or open graphs changed. */
   graphsNeedCompile: boolean;
+  /** Open-graph compile fingerprint (node positions omitted). */
+  currentGraphSignature: string;
+  /** Last full-project bundles written by `collectPlayPreviewScripts` (toolbar Compile or Play). */
+  playPreviewBundles: ScriptBundleEntry[];
+  playPreviewDiagnostics: Diagnostic[];
+  playLoadedSignature: string | null;
   markScriptsCurrent: () => void;
   /** Project-wide search index (headers + Scene/Graph documents). */
   searchIndex: ProjectSearchIndex | null;
@@ -704,11 +718,37 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [lastCompiledSignature, setLastCompiledSignature] = useState<
     string | null
   >(null);
+  const [playLoadedSignature, setPlayLoadedSignature] = useState<string | null>(
+    null,
+  );
+  const [playPreviewBundles, setPlayPreviewBundles] = useState<
+    ScriptBundleEntry[]
+  >([]);
+  const [playPreviewDiagnostics, setPlayPreviewDiagnostics] = useState<
+    Diagnostic[]
+  >([]);
   const graphCompileCacheRef = useRef(new GraphScriptCompileCache());
   const markScriptsCurrent = useCallback(() => {
     setLastCompiledSignature(
       graphCompileSignature(openGraphCompileDocuments(documentServiceRef.current)),
     );
+  }, []);
+  const recordPlayPreviewScripts = useCallback(
+    (bundles: ScriptBundleEntry[], nextDiagnostics: Diagnostic[]) => {
+      const signature = graphCompileSignature(
+        openGraphCompileDocuments(documentServiceRef.current),
+      );
+      setLastCompiledSignature(signature);
+      setPlayLoadedSignature(signature);
+      setPlayPreviewBundles(bundles);
+      setPlayPreviewDiagnostics(nextDiagnostics);
+    },
+    [],
+  );
+  const clearPlayPreviewScripts = useCallback(() => {
+    setPlayLoadedSignature(null);
+    setPlayPreviewBundles([]);
+    setPlayPreviewDiagnostics([]);
   }, []);
 
   const bump = useCallback(() => setRegistryVersion((v) => v + 1), []);
@@ -1144,6 +1184,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       setProjectDocument(document);
       setMigrationPending(pending);
       setLastCompiledSignature(null);
+      clearPlayPreviewScripts();
       graphCompileCacheRef.current.clear();
       setRoute("editor");
       setAnimEditorModes({});
@@ -1177,6 +1218,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       recordRecent,
       refreshProjectList,
       captureMtimeSnapshot,
+      clearPlayPreviewScripts,
     ],
   );
 
@@ -1344,6 +1386,8 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
             };
           });
         const typeSchemas = collectGraphTypeSchemas();
+        // Warm the codegen cache for open graphs only. Do not record Play
+        // bundles — Play still runs collectPlayPreviewScripts for the full set.
         compileGraphDocuments(graphs, {
           cache: graphCompileCacheRef.current,
           enums: typeSchemas.enums,
@@ -1500,6 +1544,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setRecoveryAvailable(false);
     setMigrationPending([]);
     setLastCompiledSignature(null);
+    clearPlayPreviewScripts();
     graphCompileCacheRef.current.clear();
     setRoute("home");
     setAnimEditorModes({});
@@ -1514,6 +1559,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ensureDerived,
     projectService,
     refreshProjectList,
+    clearPlayPreviewScripts,
   ]);
 
   const closeProject = useCallback(async () => {
@@ -2455,14 +2501,14 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         cache: graphCompileCacheRef.current,
       }),
     ];
-    markScriptsCurrent();
+    recordPlayPreviewScripts(bundles, diagnostics);
     return { bundles, diagnostics };
   }, [
     collectGraphTypeSchemas,
     documentService,
     loadProjectAnimGraphDocuments,
     loadProjectGraphDocuments,
-    markScriptsCurrent,
+    recordPlayPreviewScripts,
     projectService,
   ]);
 
@@ -3993,9 +4039,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         currentGraphSignature,
         lastCompiledSignature,
       ),
-      scriptsStale:
-        lastCompiledSignature !== null &&
-        compileSignatureIsStale(currentGraphSignature, lastCompiledSignature),
+      currentGraphSignature,
+      scriptsStale: playBundlesNeedCollect({
+        playLoadedSignature,
+        currentGraphSignature,
+        scriptsLength: playPreviewBundles.length,
+        editorCompileSignature: lastCompiledSignature,
+      }),
+      playPreviewBundles,
+      playPreviewDiagnostics,
+      playLoadedSignature,
       markScriptsCurrent,
       searchIndex: projectService.searchIndex,
     };
@@ -4045,6 +4098,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySceneLayers,
       loadGraphDocument,
       lastCompiledSignature,
+      playLoadedSignature,
+      playPreviewBundles,
+      playPreviewDiagnostics,
       markScriptsCurrent,
       listedProjects,
       needsReconnect,

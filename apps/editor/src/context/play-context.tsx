@@ -113,7 +113,7 @@ import {
   EditorSchedulerRegistry,
   type EditorLoopHandle,
 } from "../lib/editor-scheduler-registry";
-import { planPlayPreviewPrepare } from "../services/play-preview-prepare";
+import { planPlayPreviewPrepare, playBundlesNeedCollect } from "../services/play-preview-prepare";
 import { projectHasBlockingErrors } from "../services/graph-validation";
 import type { PlayPreparePhase } from "../components/play-prepare-dialog";
 import { animClipCatalogFromAssets, modelClipAnimationGuidsFromAssets, retargetAnimationLoadsFromAssets } from "../lib/anim-clip-catalog";
@@ -351,17 +351,21 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     openRecordedTrace,
     projectDocument,
     dirtyDocuments,
-    scriptsStale,
+    graphsNeedCompile,
     migrationPending,
     saveAll,
     assetRegistry,
     readAssetChunk,
     onSessionDiagnostic,
+    playPreviewBundles,
+    playPreviewDiagnostics,
+    playLoadedSignature,
+    currentGraphSignature,
   } = useDocuments();
   const projectOpen = projectDocument != null;
   const projectOpenRef = useRef(projectOpen);
   projectOpenRef.current = projectOpen;
-  const { diagnostics, setDiagnostics, setFocusDiagnostic } = useValidation();
+  const { setDiagnostics, setFocusDiagnostic } = useValidation();
   const guidForPath = (path: string) =>
     assetRegistry?.list().find((asset) => asset.path === path)?.header.guid ??
     null;
@@ -790,7 +794,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       const inject = Boolean(options?.injectFixtureThrow);
       const plan = planPlayPreviewPrepare({
         dirtyDocuments: dirtyDocuments.map((doc) => ({ label: doc.ref.label })),
-        scriptsStale,
+        scriptsStale: graphsNeedCompile,
         migrationPending: migrationPending.length > 0,
       });
 
@@ -821,19 +825,20 @@ export function PlayProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        const shouldCompile =
-          scriptsStale ||
-          scripts.length === 0 ||
-          (plan.action === "prepare" && plan.needsCompile);
-        let nextScripts = scripts;
-        let nextDiagnostics = diagnostics;
+        const shouldCompile = playBundlesNeedCollect({
+          playLoadedSignature,
+          currentGraphSignature,
+          scriptsLength: playPreviewBundles.length,
+        });
+        let nextScripts = playPreviewBundles;
+        let nextDiagnostics = playPreviewDiagnostics;
         if (shouldCompile) {
           const result = await collectPlayPreviewScripts();
           nextScripts = result.bundles;
           nextDiagnostics = result.diagnostics;
-          setScripts(nextScripts);
-          setDiagnostics(nextDiagnostics);
         }
+        setScripts(nextScripts);
+        setDiagnostics(nextDiagnostics);
         let playLibrary: Array<{
           guid: string;
           scene: import("@babylonslate/core").SerializedScene;
@@ -1167,7 +1172,6 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlayMaterialLibrary,
       collectPlaySceneLibrary,
       collectPlaySceneLayers,
-      diagnostics,
       dirtyDocuments,
       launchPlay,
       migrationPending.length,
@@ -1183,8 +1187,11 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       assetRegistry,
       readAssetChunk,
       saveAll,
-      scripts,
-      scriptsStale,
+      playPreviewBundles,
+      playPreviewDiagnostics,
+      playLoadedSignature,
+      currentGraphSignature,
+      graphsNeedCompile,
       setDiagnostics,
       projectDocument,
     ],
