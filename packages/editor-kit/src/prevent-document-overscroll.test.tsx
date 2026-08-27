@@ -103,5 +103,15 @@ describe("prevent-document-overscroll", () => {
       scrollable.appendChild(child);
       expect(shouldPreventDocumentOverscroll(child, 0, 10)).toBe(true);
     });
+
+    it("allows native editing targets so iPad selection handles can drag", () => {
+      const field = document.createElement("textarea");
+      document.body.appendChild(field);
+      expect(shouldPreventDocumentOverscroll(field, 0, 10)).toBe(false);
+
+      const input = document.createElement("input");
+      document.body.appendChild(input);
+      expect(shouldPreventDocumentOverscroll(input, 0, 10)).toBe(false);
+    });
   });
 });
