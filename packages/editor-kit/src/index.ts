@@ -211,6 +211,10 @@ export {
   type MultilineTextFieldProps,
 } from "./multiline-text-field";
 export {
+  NamePromptDialog,
+  type NamePromptDialogProps,
+} from "./name-prompt-dialog";
+export {
   NumberPromptDialog,
   type NumberPromptDialogProps,
 } from "./number-prompt-dialog";
