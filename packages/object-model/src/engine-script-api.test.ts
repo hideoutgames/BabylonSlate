@@ -235,6 +235,7 @@ describe("engine script API catalog", () => {
       "italic",
       "underline",
       "wrapWidth",
+      "wrapHeight",
     ]);
     expect(
       engineScriptApiFor("AudioComponent")?.variables?.map(

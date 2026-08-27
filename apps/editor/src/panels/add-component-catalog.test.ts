@@ -174,6 +174,8 @@ describe("Add Component catalog", () => {
       renderer: "bitmap",
       hitTest: "ignore",
       size: 32,
+      wrapWidth: 200,
+      wrapHeight: 64,
     });
     expect(defaultPropertiesFor("2DRichTextComponent").text).toContain(
       "[color=green]",

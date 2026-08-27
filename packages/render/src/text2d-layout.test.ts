@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   combineText2DEffects,
   layoutText2D,
+  layoutText2DFromProperties,
   type GlyphMetricsProvider,
   type Text2DLayoutItem,
 } from "./text2d-layout";
@@ -135,6 +136,21 @@ describe("layoutText2D", () => {
     expect(glyphs(broken.items)[1]?.y).toBeLessThan(glyphs(broken.items)[0]!.y);
   });
 
+  it("lets extra lines overflow wrapHeight; wrapWidth still drives breaks", () => {
+    const tall = layoutText2DFromProperties(
+      {
+        text: "AAAA",
+        wrapWidth: 32,
+        wrapHeight: 8,
+        size: 32,
+      },
+      { rich: false, pixelsPerUnit: 100, metrics: provider() },
+    );
+    const rows = new Set(glyphs(tall.layout.items).map((item) => item.y.toFixed(3)));
+    expect(rows.size).toBe(2);
+    expect(tall.layout.height).toBeGreaterThan(8 / 100);
+  });
+
   it("layouts rich-text images and keeps missing MSDF glyphs on the bitmap path", () => {
     const layout = layoutText2D({
       text: "A[img=tex-1 size=14]B",
@@ -181,6 +197,38 @@ describe("layoutText2D", () => {
     expect(a?.rotatePhase).not.toBe(b?.rotatePhase);
     expect(a?.effects.rotate).toBe(45);
     expect(a?.effects.hover).toBe(1);
+  });
+
+  it("underlines with a shared line Y and ignores letter effects", () => {
+    const layout = layoutText2D({
+      text: "[u][wave=2]Ag",
+      rich: true,
+      size: 32,
+      color: [1, 1, 1],
+      alignment: "left",
+      wrapWidth: 0,
+      bold: false,
+      italic: false,
+      underline: false,
+      outline: 0,
+      outlineColor: [0, 0, 0],
+      pixelsPerUnit: 100,
+      metrics: provider({
+        A: { width: 0.16, height: 0.32, advance: 0.16 },
+        g: { width: 0.16, height: 0.2, advance: 0.16 },
+      }),
+    });
+    const underlines = layout.items.filter((item) => item.kind === "underline");
+    expect(underlines).toHaveLength(1);
+    expect(underlines[0]?.y).toBeCloseTo(-layout.height / 2, 1);
+    expect(underlines[0]?.effects).toEqual({
+      shake: 0,
+      waveSpeed: 0,
+      waveIntensity: 0,
+      hover: 0,
+      rotate: 0,
+    });
+    expect(glyphs(layout.items)[0]?.effects.waveSpeed).toBe(2);
   });
 });
 

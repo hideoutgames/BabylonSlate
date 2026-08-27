@@ -2,6 +2,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import { useState } from "react";
 import {
   ClassPicker,
+  MultilineTextField,
   PanelFrame,
   PropertyGrid,
   type PropertyRow,
@@ -17,7 +18,6 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
-import { Textarea } from "@babylonslate/ui/components/textarea";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
@@ -114,13 +114,12 @@ export function PluginSettingsDetailsPanel(_props: IDockviewPanelProps) {
           <FieldLabel htmlFor="plugin-settings-description">
             Description
           </FieldLabel>
-          <Textarea
+          <MultilineTextField
             id="plugin-settings-description"
+            title="Description"
             value={settings.description}
             disabled={readOnly}
-            onChange={(event) =>
-              commit({ description: event.target.value })
-            }
+            onChange={(description) => commit({ description })}
             data-testid="plugin-settings-description"
           />
         </Field>

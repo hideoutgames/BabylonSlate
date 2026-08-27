@@ -20,7 +20,10 @@ import {
   type EngineHandle,
 } from "@babylonslate/render";
 import { NAVMESH_CHUNK_ID } from "@babylonslate/navigation";
-import { type SerializedScene, isSceneWorkspaceKind } from "@babylonslate/core";
+import {
+  type SerializedScene,
+  isSceneWorkspaceKind,
+} from "@babylonslate/core";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import {
@@ -36,7 +39,10 @@ import { isTestModeEnabled } from "@babylonslate/vfs";
 import { editorViewportPausedForSession } from "../lib/preview-build-handoff";
 import { attachViewportRenderGate } from "../lib/viewport-render-gate";
 import { useEditorViewportPrefs } from "../lib/viewport-engine-prefs";
-import { takeGizmoDragScene } from "../lib/gizmo-drag-commit";
+import {
+  applyLiveGizmoToActor,
+  takeGizmoDragScene,
+} from "../lib/gizmo-drag-commit";
 import { editorKtx2PublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
@@ -236,14 +242,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       actors: current.actors.map((entry) => {
         const live = byId.get(entry.id);
         if (!live) return entry;
-        return {
-          ...entry,
-          transform: {
-            position: live.position,
-            rotation: live.rotation,
-            scale: live.scale,
-          },
-        };
+        return applyLiveGizmoToActor(entry, live);
       }),
     };
     void applySceneChange(documentId, next);

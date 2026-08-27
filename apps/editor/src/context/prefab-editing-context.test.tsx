@@ -97,7 +97,8 @@ function SelectionProbe() {
 }
 
 function UpdateProbe() {
-  const { updateComponent, updateComponentTransform } = usePrefabEditing();
+  const { updateComponent, updateComponentTransform, commitComponentGizmo } =
+    usePrefabEditing();
   return (
     <>
       <button
@@ -119,6 +120,23 @@ function UpdateProbe() {
         }
       >
         Move
+      </button>
+      <button
+        type="button"
+        data-testid="commit-text-gizmo"
+        onClick={() =>
+          commitComponentGizmo(
+            "prefab-mesh",
+            {
+              position: [2, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+            { wrapWidth: 400, wrapHeight: 80 },
+          )
+        }
+      >
+        Wrap
       </button>
     </>
   );
@@ -165,6 +183,35 @@ describe("PrefabEditingContext updateComponent", () => {
             id: "prefab-mesh",
             transform: {
               position: [1, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+            },
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("applyGraphChange with wrap properties and transform in one write", () => {
+    render(
+      <PrefabEditingProvider>
+        <UpdateProbe />
+      </PrefabEditingProvider>,
+    );
+    fireEvent.click(screen.getByTestId("commit-text-gizmo"));
+    expect(applyGraphChange).toHaveBeenCalledTimes(1);
+    expect(applyGraphChange).toHaveBeenCalledWith(
+      "graph:assets/Hero.class.babasset",
+      expect.objectContaining({
+        components: [
+          expect.objectContaining({
+            id: "prefab-mesh",
+            properties: expect.objectContaining({
+              wrapWidth: 400,
+              wrapHeight: 80,
+            }),
+            transform: {
+              position: [2, 0, 0],
               rotation: [0, 0, 0, 1],
               scale: [1, 1, 1],
             },

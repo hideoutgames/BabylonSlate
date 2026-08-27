@@ -71,6 +71,8 @@ describe("ENGINE_PLACE_ACTORS", () => {
       "2d-material",
       "2d-button",
       "2d-panel",
+      "2d-text",
+      "2d-rich-text",
     ]);
     const actor = spawnPlacedActor(
       createDefaultScene(),
@@ -93,6 +95,8 @@ describe("ENGINE_PLACE_ACTORS", () => {
       ["2d-material", "2DMaterialComponent"],
       ["2d-button", "2DButtonComponent"],
       ["2d-panel", "2DPanelComponent"],
+      ["2d-text", "2DTextComponent"],
+      ["2d-rich-text", "2DRichTextComponent"],
     ];
     for (const [id, classId] of expected) {
       const item = overlay.find((entry) => entry.id === id);
@@ -108,6 +112,10 @@ describe("ENGINE_PLACE_ACTORS", () => {
       expect(actor.components.map((component) => component.classId)).toEqual([
         classId,
       ]);
+      if (classId === "2DTextComponent" || classId === "2DRichTextComponent") {
+        expect(actor.components[0]?.properties.wrapWidth).toBe(200);
+        expect(actor.components[0]?.properties.wrapHeight).toBe(64);
+      }
     }
   });
 

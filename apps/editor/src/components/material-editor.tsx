@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from "dockview-react";
 import {
   AssetPicker,
   AssetPickerControl,
+  MultilineTextField,
   PanelFrame,
   PinListEditor,
   PropertyGrid,
@@ -27,7 +28,6 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
-import { Textarea } from "@babylonslate/ui/components/textarea";
 import { GraphEditor } from "@babylonslate/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import {
@@ -718,20 +718,19 @@ function MaterialNodeDetails({
       <p className="px-3 text-xs text-muted-foreground">{node.type}</p>
       {rows.length > 0 ? <PropertyGrid rows={rows} /> : null}
       {node.type === "custom.glsl" ? (
-        <div className="px-3" data-testid="material-node-glsl-editor">
+        <div className="px-3" data-testid="material-node-glsl-field">
           <Field>
             <FieldLabel htmlFor="material-node-glsl">Expression</FieldLabel>
-            <Textarea
+            <MultilineTextField
               id="material-node-glsl"
-              className="min-h-24 font-mono text-sm"
+              title="Expression"
+              editorClassName="min-h-24 font-mono text-sm"
               value={
                 typeof node.properties.body === "string"
                   ? node.properties.body
                   : "a + b"
               }
-              onChange={(event) =>
-                setProperties({ body: event.target.value })
-              }
+              onChange={(body) => setProperties({ body })}
               data-testid="material-node-glsl"
             />
             <FieldDescription data-testid="material-node-glsl-signature">

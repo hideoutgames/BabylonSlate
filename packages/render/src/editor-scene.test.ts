@@ -35,6 +35,7 @@ import { glbContainerLoadCount, accountedGeometryBytesForScene } from "./glb-ani
 import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import {
+  CAMERA_BOUNDS_LINE_WIDTH,
   createEditorGrid,
   GRID_MESH_NAME,
   gridCoverageWorld,
@@ -1618,6 +1619,15 @@ describe("editor grid", () => {
       (grid.mesh.material as ShaderMaterial).serialize().floats.gridVisible,
     ).toBe(1);
     expect(grid.mesh.alwaysSelectAsActiveMesh).toBe(true);
+    grid.dispose();
+  });
+
+  it("draws a thicker orange 2D camera bounds frame", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "2d" });
+    grid.setCameraBounds({ width: 16, height: 9 });
+    expect(CAMERA_BOUNDS_LINE_WIDTH).toBeGreaterThan(1);
+    expect(grid.boundsMesh?.name).toBe("__editor-camera-bounds__");
     grid.dispose();
   });
 

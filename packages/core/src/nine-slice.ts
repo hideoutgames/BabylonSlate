@@ -21,6 +21,13 @@ export type OverlayNineSliceOptions = {
   pixelsPerUnit: number;
 };
 
+/** Authored 0–1 is a source-texture fraction; values above 1 stay legacy pixels. */
+export function overlayPanelMarginToPx(margin: number, srcPx: number): number {
+  if (!Number.isFinite(margin) || margin <= 0) return 0;
+  if (margin > 1) return margin;
+  return margin * (srcPx > 0 ? srcPx : 0);
+}
+
 function clampMargin(value: number, max: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.min(value, Math.max(0, max));
@@ -45,10 +52,13 @@ export function overlayNineSliceCells(
   const ppu = options.pixelsPerUnit > 0 ? options.pixelsPerUnit : 100;
   const srcW = options.srcWidthPx > 0 ? options.srcWidthPx : destW * ppu;
   const srcH = options.srcHeightPx > 0 ? options.srcHeightPx : destH * ppu;
-  let left = clampMargin(options.marginLeft / ppu, destW);
-  let right = clampMargin(options.marginRight / ppu, destW);
-  let bottom = clampMargin(options.marginBottom / ppu, destH);
-  let top = clampMargin(options.marginTop / ppu, destH);
+  let left = clampMargin(overlayPanelMarginToPx(options.marginLeft, srcW) / ppu, destW);
+  let right = clampMargin(overlayPanelMarginToPx(options.marginRight, srcW) / ppu, destW);
+  let bottom = clampMargin(
+    overlayPanelMarginToPx(options.marginBottom, srcH) / ppu,
+    destH,
+  );
+  let top = clampMargin(overlayPanelMarginToPx(options.marginTop, srcH) / ppu, destH);
   if (left + right > destW) {
     const scale = destW / (left + right);
     left *= scale;
@@ -112,10 +122,13 @@ export function overlayNineSliceSourceFractions(options: {
 }): OverlayNineSliceSourceFractions {
   const srcW = options.srcWidthPx > 0 ? options.srcWidthPx : 1;
   const srcH = options.srcHeightPx > 0 ? options.srcHeightPx : 1;
-  let left = clampPixelMargin(options.marginLeft, srcW);
-  let right = clampPixelMargin(options.marginRight, srcW);
-  let top = clampPixelMargin(options.marginTop, srcH);
-  let bottom = clampPixelMargin(options.marginBottom, srcH);
+  let left = clampPixelMargin(overlayPanelMarginToPx(options.marginLeft, srcW), srcW);
+  let right = clampPixelMargin(overlayPanelMarginToPx(options.marginRight, srcW), srcW);
+  let top = clampPixelMargin(overlayPanelMarginToPx(options.marginTop, srcH), srcH);
+  let bottom = clampPixelMargin(
+    overlayPanelMarginToPx(options.marginBottom, srcH),
+    srcH,
+  );
   if (left + right > srcW) {
     const scale = srcW / (left + right);
     left *= scale;

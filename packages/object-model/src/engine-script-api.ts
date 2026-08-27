@@ -81,6 +81,7 @@ const TEXT2D_VARIABLES: readonly EngineScriptVariable[] = [
   { name: "Italic", typeId: "bool", propertyKey: "italic" },
   { name: "Underline", typeId: "bool", propertyKey: "underline" },
   { name: "Wrap Width", typeId: "float", propertyKey: "wrapWidth" },
+  { name: "Wrap Height", typeId: "float", propertyKey: "wrapHeight" },
 ];
 
 const TEXT_CHANGED: EngineScriptEvent = {

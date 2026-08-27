@@ -417,6 +417,7 @@ export function createText2DMesh(
 ): Mesh {
   const rich = options.rich === true;
   const parsed = parseText2DProperties(properties, { rich });
+  const hitTest = parseSceneLayerHitTest(parsed.hitTest, "ignore");
   const ppu = assets?.pixelsPerUnit && assets.pixelsPerUnit > 0 ? assets.pixelsPerUnit : 100;
   const fontGuid = parsed.fontAssetGuid;
   const json = fontGuid ? assets?.fontMsdfJson?.get(fontGuid) : undefined;
@@ -434,10 +435,11 @@ export function createText2DMesh(
     pixelsPerUnit: ppu,
     metrics,
   });
-  const width = Math.max(layout.width, 0.01);
-  const height = Math.max(layout.height, 0.01);
-  const hitTest = parseSceneLayerHitTest(parsed.hitTest, "ignore");
-  const parent = MeshBuilder.CreatePlane(name, { width, height }, scene);
+  const wrapW =
+    parsed.wrapWidth > 0 ? parsed.wrapWidth / ppu : Math.max(layout.width, 0.01);
+  const wrapH =
+    parsed.wrapHeight > 0 ? parsed.wrapHeight / ppu : Math.max(layout.height, 0.01);
+  const parent = MeshBuilder.CreatePlane(name, { width: wrapW, height: wrapH }, scene);
   parent.material = unlitMaterial(scene, `${name}:pick`, [0, 0, 0], false);
   parent.visibility = 0;
   parent.isPickable = hitTest !== "ignore";
@@ -447,6 +449,8 @@ export function createText2DMesh(
     text2dRenderer: renderer,
     text2dRich: rich,
     text2dFontStack: fontStack,
+    text2dWrapWidth: parsed.wrapWidth > 0 ? parsed.wrapWidth : wrapW * ppu,
+    text2dWrapHeight: parsed.wrapHeight > 0 ? parsed.wrapHeight : wrapH * ppu,
   };
 
   const atlasTexture =

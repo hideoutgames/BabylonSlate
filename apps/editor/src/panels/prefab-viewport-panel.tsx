@@ -54,7 +54,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     components,
     selectedId,
     setSelectedId,
-    updateComponentTransform,
+    commitComponentGizmo,
     applyPivotTransform,
   } = usePrefabEditing();
   const {
@@ -108,8 +108,8 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   componentsRef.current = components;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
-  const updateComponentTransformRef = useRef(updateComponentTransform);
-  updateComponentTransformRef.current = updateComponentTransform;
+  const commitComponentGizmoRef = useRef(commitComponentGizmo);
+  commitComponentGizmoRef.current = commitComponentGizmo;
   const applyPivotTransformRef = useRef(applyPivotTransform);
   applyPivotTransformRef.current = applyPivotTransform;
 
@@ -133,8 +133,11 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
         setSelectedIdRef.current(prefabSelectedIdFromPick(actorId, ids));
       },
       onGizmoDragEnd: () => {
-        const live = engineRef.current?.editor?.attachedActorTransform();
+        const lives = engineRef.current?.editor?.selectedActorTransforms() ?? [];
         const selected = selectedIdRef.current;
+        const live =
+          lives.find((entry) => entry.actorId === selected) ??
+          engineRef.current?.editor?.attachedActorTransform();
         if (!live || !selected) return;
         const transform = {
           position: live.position,
@@ -145,7 +148,16 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           applyPivotTransformRef.current(transform);
           return;
         }
-        updateComponentTransformRef.current(selected, transform);
+        commitComponentGizmoRef.current(
+          selected,
+          transform,
+          live.text2dWrap
+            ? {
+                wrapWidth: live.text2dWrap.wrapWidth,
+                wrapHeight: live.text2dWrap.wrapHeight,
+              }
+            : undefined,
+        );
       },
       editorFlySpeed: () => flySpeedRef.current,
     });

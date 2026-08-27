@@ -17,6 +17,8 @@ export { DEFAULT_RICH_TEXT_EXAMPLE };
 
 export const DEFAULT_TEXT2D_TEXT = "Text";
 export const DEFAULT_TEXT2D_SIZE = 32;
+export const DEFAULT_TEXT2D_WRAP_WIDTH = 200;
+export const DEFAULT_TEXT2D_WRAP_HEIGHT = 64;
 export const DEFAULT_TEXT2D_COLOR: Rgb = [1, 1, 1];
 export const DEFAULT_TEXT2D_OUTLINE_COLOR: Rgb = [0, 0, 0];
 
@@ -45,6 +47,7 @@ export type Text2DProperties = {
   underline: boolean;
   hitTest: SceneLayerHitTest;
   wrapWidth: number;
+  wrapHeight: number;
 };
 
 function parseRgb(value: unknown, fallback: Rgb): Rgb {
@@ -155,6 +158,12 @@ export function parseText2DProperties(
     source.wrapWidth >= 0
       ? source.wrapWidth
       : 0;
+  const wrapHeight =
+    typeof source.wrapHeight === "number" &&
+    Number.isFinite(source.wrapHeight) &&
+    source.wrapHeight >= 0
+      ? source.wrapHeight
+      : 0;
   return {
     text: typeof source.text === "string" ? source.text : defaultText,
     fontAssetGuid:
@@ -172,6 +181,7 @@ export function parseText2DProperties(
     underline: source.underline === true,
     hitTest: parseSceneLayerHitTest(source.hitTest, "ignore"),
     wrapWidth,
+    wrapHeight,
   };
 }
 
@@ -190,7 +200,8 @@ function componentProperties(rich: boolean): Record<string, unknown> {
     italic: parsed.italic,
     underline: parsed.underline,
     hitTest: parsed.hitTest,
-    wrapWidth: parsed.wrapWidth,
+    wrapWidth: DEFAULT_TEXT2D_WRAP_WIDTH,
+    wrapHeight: DEFAULT_TEXT2D_WRAP_HEIGHT,
   };
 }
 
