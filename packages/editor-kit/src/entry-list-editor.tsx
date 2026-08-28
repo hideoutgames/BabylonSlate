@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import { FieldGroup } from "@babylonslate/ui/components/field";
+import { ListRowActions } from "./list-row-actions";
 
 export type EntryListItemRenderArgs<T> = {
   item: T;
@@ -16,6 +16,8 @@ export type EntryListEditorProps<T> = {
   renderItem: (args: EntryListItemRenderArgs<T>) => ReactNode;
   title?: string;
   addLabel?: string;
+  /** Count copy next to Add (`1 item` / `2 items`). Map uses entry/entries. */
+  countNoun?: { one: string; other: string };
   "data-testid"?: string;
 };
 
@@ -29,7 +31,7 @@ function moveItem<T>(items: readonly T[], index: number, delta: number): T[] {
   return next;
 }
 
-/** Reorderable typed rows with 44px add/remove/move targets. */
+/** Reorderable typed rows with a compact up / down / trash cluster. */
 export function EntryListEditor<T>({
   items,
   onChange,
@@ -37,19 +39,23 @@ export function EntryListEditor<T>({
   renderItem,
   title,
   addLabel = "Add",
+  countNoun = { one: "item", other: "items" },
   "data-testid": testId,
 }: EntryListEditorProps<T>) {
   const rootId = testId ?? "entry-list";
+  const countLabel = `${items.length} ${
+    items.length === 1 ? countNoun.one : countNoun.other
+  }`;
 
   return (
-    <div className="flex flex-col gap-2" data-testid={rootId}>
+    <div className="flex flex-col gap-1" data-testid={rootId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {items.map((item, index) => (
         <FieldGroup
           key={index}
-          className="rounded-md border border-border p-2"
+          className="rounded-md border border-border px-1 py-0.5"
         >
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-nowrap items-center gap-1">
             <div className="min-w-0 flex-1">
               {renderItem({
                 item,
@@ -61,53 +67,36 @@ export function EntryListEditor<T>({
                 },
               })}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch-icon"
-              aria-label={`Move row ${index + 1} up`}
-              data-testid={`${rootId}-${index}-move-up`}
-              disabled={index === 0}
-              onClick={() => onChange(moveItem(items, index, -1))}
-            >
-              <ChevronUpIcon />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch-icon"
-              aria-label={`Move row ${index + 1} down`}
-              data-testid={`${rootId}-${index}-move-down`}
-              disabled={index === items.length - 1}
-              onClick={() => onChange(moveItem(items, index, 1))}
-            >
-              <ChevronDownIcon />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch"
-              aria-label={`Remove row ${index + 1}`}
-              data-testid={`${rootId}-${index}-remove`}
-              onClick={() =>
+            <ListRowActions
+              index={index}
+              count={items.length}
+              testIdPrefix={rootId}
+              onMove={(delta) => onChange(moveItem(items, index, delta))}
+              onRemove={() =>
                 onChange(items.filter((_, rowIndex) => rowIndex !== index))
               }
-            >
-              Remove
-            </Button>
+            />
           </div>
         </FieldGroup>
       ))}
-      <Button
-        type="button"
-        variant="outline"
-        size="touch"
-        className="w-fit"
-        data-testid={`${rootId}-add`}
-        onClick={() => onChange([...items, onCreate()])}
-      >
-        {addLabel}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="touch"
+          className="w-fit"
+          data-testid={`${rootId}-add`}
+          onClick={() => onChange([...items, onCreate()])}
+        >
+          {addLabel}
+        </Button>
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid={`${rootId}-count`}
+        >
+          {countLabel}
+        </span>
+      </div>
     </div>
   );
 }

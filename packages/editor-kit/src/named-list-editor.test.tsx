@@ -31,13 +31,50 @@ describe("NamedListEditor", () => {
 
     onChange.mockClear();
     const up = screen.getByTestId("named-list-1-move-up");
-    expect(up.className).toMatch(/touch-icon|min-h|size-\[var\(--touch-target/);
+    expect(up.className).toMatch(/icon-sm|size-7/);
     fireEvent.click(up);
     expect(onChange).toHaveBeenCalledWith(["Foreground", "Default"]);
 
     onChange.mockClear();
     fireEvent.click(screen.getByTestId("named-list-0-remove"));
     expect(onChange).toHaveBeenCalledWith(["Foreground"]);
+  });
+
+  it("removes a row with a trash icon, not a Remove label", () => {
+    render(
+      <NamedListEditor values={["Default"]} onChange={() => {}} />,
+    );
+
+    const remove = screen.getByRole("button", { name: "Remove row 1" });
+    expect(remove).toBe(screen.getByTestId("named-list-0-remove"));
+    expect(screen.queryAllByText("Remove")).toEqual([]);
+    expect(remove.className).toMatch(/icon-sm|size-7/);
+  });
+
+  it("clusters move and remove on a compact nowrap row", () => {
+    render(
+      <NamedListEditor values={["Default"]} onChange={() => {}} />,
+    );
+
+    const remove = screen.getByTestId("named-list-0-remove");
+    const cluster = remove.parentElement;
+    expect(cluster?.className).toMatch(/gap-0/);
+    const row = cluster?.parentElement;
+    expect(row?.className).toMatch(/flex-nowrap/);
+    expect(row?.className).toMatch(/gap-1/);
+    expect(row?.parentElement?.className).toMatch(/px-1/);
+    expect(row?.parentElement?.className).toMatch(/py-0\.5/);
+    expect(row?.parentElement?.className).not.toMatch(/\bp-2\b/);
+    expect(cluster?.className).toMatch(/self-center/);
+    expect(row?.className).toMatch(/items-center/);
+  });
+
+  it("keeps the Name label out of the action row so the cluster centers on the input", () => {
+    render(<NamedListEditor values={["Default"]} onChange={() => {}} />);
+    const cluster = screen.getByTestId("named-list-0-remove").parentElement;
+    const input = screen.getByTestId("named-list-0-value");
+    expect(cluster?.parentElement).toBe(input.parentElement);
+    expect(cluster?.parentElement?.querySelector("[data-slot=field-label]")).toBeNull();
   });
 
   it("renders a custom item control", () => {

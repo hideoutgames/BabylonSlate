@@ -123,6 +123,33 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await expect(page.getByTestId("enum-row-1")).toBeVisible();
   });
 
+  test("Array and Map Inspector defaults show an in-line count next to Add", async ({
+    page,
+  }) => {
+    await openTestProject(page);
+    await openAssetFromBrowser(page, "assets/Mannequin.class.babasset");
+    await expect(page.getByTestId("my-class-panel")).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByTestId("class-add-variables").click();
+    await page.getByTestId("name-prompt-input").fill("Scores");
+    await page.getByTestId("name-prompt-confirm").click();
+    await expect(page.getByTestId("inspector-member-type")).toBeVisible();
+    await page.getByTestId("inspector-member-container-array").click();
+    const add = page.getByTestId("inspector-member-defaults-add");
+    const count = page.getByTestId("inspector-member-defaults-count");
+    await expect(add).toHaveText("Add Item");
+    await expect(count).toHaveText("0 items");
+    await expect(count).toHaveClass(/text-xs/);
+    await add.click();
+    await expect(count).toHaveText("1 item");
+    await page.getByTestId("inspector-member-container-map").click();
+    await expect(add).toHaveText("Add Entry");
+    await expect(count).toHaveText("0 entries");
+    await add.click();
+    await expect(count).toHaveText("1 entry");
+  });
+
   test("Class panel add variable opens PinTypePicker in Inspector", async ({
     page,
   }) => {

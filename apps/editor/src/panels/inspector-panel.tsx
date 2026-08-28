@@ -436,6 +436,9 @@ function ClassMemberDetails({
             data-testid="inspector-member-defaults"
             renderItem={({ item, index, onChange: changeItem }) => (
               <PropertyGrid
+                orientation="horizontal"
+                hideLabels
+                density="compact"
                 rows={variableDefaultPropertyRows(
                   typeId,
                   item,
@@ -471,10 +474,13 @@ function ClassMemberDetails({
               value: seedVariableEntry(typeId, member.typeClassId, schemas),
             })}
             addLabel="Add Entry"
+            countNoun={{ one: "entry", other: "entries" }}
             data-testid="inspector-member-defaults"
             renderItem={({ item, index, onChange: changeItem }) => (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
                 <PropertyGrid
+                  orientation="horizontal"
+                  density="compact"
                   rows={variableDefaultPropertyRows(
                     member.keyTypeId ?? "string",
                     item.key,
@@ -495,6 +501,8 @@ function ClassMemberDetails({
                   )}
                 />
                 <PropertyGrid
+                  orientation="horizontal"
+                  density="compact"
                   rows={variableDefaultPropertyRows(
                     typeId,
                     item.value,

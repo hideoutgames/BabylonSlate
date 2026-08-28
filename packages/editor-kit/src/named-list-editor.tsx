@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
 import {
   Field,
@@ -7,6 +6,7 @@ import {
   FieldLabel,
 } from "@babylonslate/ui/components/field";
 import { Input } from "@babylonslate/ui/components/input";
+import { ListRowActions } from "./list-row-actions";
 
 export type NamedListItemRenderArgs = {
   value: string;
@@ -36,7 +36,7 @@ function moveItem(values: readonly string[], index: number, delta: number): stri
   return next;
 }
 
-/** Reorderable named string rows with 44px add/remove/move targets. */
+/** Reorderable named string rows with a compact up / down / trash cluster. */
 export function NamedListEditor({
   values,
   onChange,
@@ -51,17 +51,20 @@ export function NamedListEditor({
   const rootId = testId ?? "named-list";
 
   return (
-    <div className="flex flex-col gap-2" data-testid={rootId}>
+    <div className="flex flex-col gap-1" data-testid={rootId}>
       {title ? <div className="text-sm font-medium">{title}</div> : null}
       {values.map((value, index) => (
         <FieldGroup
           key={`${value}-${index}`}
-          className="rounded-md border border-border p-2"
+          className="rounded-md border border-border px-1 py-0.5 gap-1"
         >
-          <div className="flex flex-wrap items-end gap-2">
-            <Field className="min-w-32 flex-1">
-              {renderItem ? (
-                renderItem({
+          {renderItem ? null : (
+            <FieldLabel htmlFor={`${rootId}-${index}-value`}>Name</FieldLabel>
+          )}
+          <div className="flex flex-nowrap items-center gap-1">
+            {renderItem ? (
+              <div className="min-w-0 flex-1">
+                {renderItem({
                   value,
                   index,
                   onChange: (next) => {
@@ -69,60 +72,30 @@ export function NamedListEditor({
                     rows[index] = next;
                     onChange(rows);
                   },
-                })
-              ) : (
-                <>
-                  <FieldLabel htmlFor={`${rootId}-${index}-value`}>
-                    Name
-                  </FieldLabel>
-                  <Input
-                    id={`${rootId}-${index}-value`}
-                    className="min-h-[var(--touch-target,44px)]"
-                    value={value}
-                    onChange={(event) => {
-                      const rows = [...values];
-                      rows[index] = event.target.value;
-                      onChange(rows);
-                    }}
-                    data-testid={`${rootId}-${index}-value`}
-                  />
-                </>
-              )}
-            </Field>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch-icon"
-              aria-label={`Move row ${index + 1} up`}
-              data-testid={`${rootId}-${index}-move-up`}
-              disabled={index === 0}
-              onClick={() => onChange(moveItem(values, index, -1))}
-            >
-              <ChevronUpIcon />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch-icon"
-              aria-label={`Move row ${index + 1} down`}
-              data-testid={`${rootId}-${index}-move-down`}
-              disabled={index === values.length - 1}
-              onClick={() => onChange(moveItem(values, index, 1))}
-            >
-              <ChevronDownIcon />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="touch"
-              aria-label={`Remove row ${index + 1}`}
-              data-testid={`${rootId}-${index}-remove`}
-              onClick={() =>
+                })}
+              </div>
+            ) : (
+              <Input
+                id={`${rootId}-${index}-value`}
+                className="min-h-[var(--touch-target,44px)] min-w-0 flex-1"
+                value={value}
+                onChange={(event) => {
+                  const rows = [...values];
+                  rows[index] = event.target.value;
+                  onChange(rows);
+                }}
+                data-testid={`${rootId}-${index}-value`}
+              />
+            )}
+            <ListRowActions
+              index={index}
+              count={values.length}
+              testIdPrefix={rootId}
+              onMove={(delta) => onChange(moveItem(values, index, delta))}
+              onRemove={() =>
                 onChange(values.filter((_, rowIndex) => rowIndex !== index))
               }
-            >
-              Remove
-            </Button>
+            />
           </div>
         </FieldGroup>
       ))}

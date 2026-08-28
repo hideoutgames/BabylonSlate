@@ -57,6 +57,16 @@ describe("VariableTypeFields", () => {
       />,
     );
     expect(screen.getByTestId("inspector-member-key-type")).toBeTruthy();
+    const type = screen.getByTestId("inspector-member-type");
+    const keyType = screen.getByTestId("inspector-member-key-type");
+    const container = screen.getByTestId("inspector-member-container");
+    expect(
+      type.compareDocumentPosition(keyType) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+    expect(
+      keyType.compareDocumentPosition(container) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
   });
 
   it("commits Array from the container ToggleGroup", () => {

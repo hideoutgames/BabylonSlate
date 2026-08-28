@@ -107,6 +107,22 @@ vi.mock("../context/document-context", () => ({
               defaultValue: [{ pitch: 1, yaw: 0, roll: 0 }],
             },
             {
+              id: "var-array-bool",
+              kind: "variable",
+              name: "Flags",
+              typeId: "bool",
+              container: "array",
+              defaultValue: [true],
+            },
+            {
+              id: "var-array-float",
+              kind: "variable",
+              name: "Amounts",
+              typeId: "float",
+              container: "array",
+              defaultValue: [1.5],
+            },
+            {
               id: "var-map",
               kind: "variable",
               name: "By Name",
@@ -416,15 +432,95 @@ describe("Inspector class member details", () => {
     );
   });
 
-  it("places Map default entries below Type, Container, and Key Type", () => {
+  it("edits Array rotator items with vector fields and a hidden Item label", () => {
+    renderMemberInspector("var-array-filled");
+    const pitch = screen.getByTestId("property-item-0-pitch") as HTMLInputElement;
+    expect(pitch.value).toBe("1");
+    expect(screen.getByTestId("property-item-0-yaw")).toBeTruthy();
+    expect(screen.getByTestId("property-item-0-roll")).toBeTruthy();
+    const row = screen.getByTestId("property-row-item-0");
+    expect(row.getAttribute("data-orientation")).toBe("horizontal");
+    expect(
+      row.querySelector('[data-slot="field-label"]')?.className,
+    ).toMatch(/sr-only/);
+    expect(row.className).not.toMatch(/px-2/);
+  });
+
+  it("edits Array bool items with a checkbox, not a text field", () => {
+    renderMemberInspector("var-array-bool");
+    const control = screen.getByTestId("property-item-0");
+    expect(control.getAttribute("role")).toBe("checkbox");
+    expect(control.getAttribute("aria-checked")).toBe("true");
+    expect(control.tagName).not.toBe("INPUT");
+  });
+
+  it("edits Array float items with a numeric drag field", () => {
+    renderMemberInspector("var-array-float");
+    const control = screen.getByTestId("property-item-0") as HTMLInputElement;
+    expect(control.value).toBe("1.5");
+    expect(screen.getByTestId("property-item-0-scrub")).toBeTruthy();
+  });
+
+  it("edits Map key and value with type-specific fields", () => {
+    renderMemberInspector("var-map-filled");
+    const key = screen.getByTestId("property-key-0") as HTMLInputElement;
+    expect(key.value).toBe("a");
+    expect(screen.queryByTestId("property-key-0-scrub")).toBeNull();
+    const value = screen.getByTestId("property-value-0") as HTMLInputElement;
+    expect(value.value).toBe("1");
+    expect(screen.getByTestId("property-value-0-scrub")).toBeTruthy();
+    const keyRow = screen.getByTestId("property-row-key-0");
+    expect(keyRow.getAttribute("data-orientation")).toBe("horizontal");
+    expect(
+      keyRow.querySelector('[data-slot="field-label"]')?.className,
+    ).not.toMatch(/sr-only/);
+    expect(keyRow.querySelector('[data-slot="field-label"]')?.textContent).toBe(
+      "Key",
+    );
+    expect(
+      screen
+        .getByTestId("property-row-value-0")
+        .querySelector('[data-slot="field-label"]')?.textContent,
+    ).toBe("Value");
+  });
+
+  it("places Map Key Type between Type and Container, then Default", () => {
     renderMemberInspector("var-map");
     expectDocumentOrder(
       screen.getByTestId("inspector-member-type"),
-      screen.getByTestId("inspector-member-defaults"),
+      screen.getByTestId("inspector-member-key-type"),
     );
     expectDocumentOrder(
       screen.getByTestId("inspector-member-key-type"),
+      screen.getByTestId("inspector-member-container"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-container"),
       screen.getByTestId("inspector-member-defaults"),
+    );
+  });
+
+  it("shows item and entry counts next to Array and Map add buttons", () => {
+    renderMemberInspector("var-array");
+    const emptyArray = screen.getByTestId("inspector-member-defaults-count");
+    expect(emptyArray.textContent).toBe("0 items");
+    expect(screen.getByTestId("inspector-member-defaults-add").parentElement).toBe(
+      emptyArray.parentElement,
+    );
+    cleanup();
+    renderMemberInspector("var-array-filled");
+    expect(screen.getByTestId("inspector-member-defaults-count").textContent).toBe(
+      "1 item",
+    );
+    cleanup();
+    renderMemberInspector("var-map");
+    expect(screen.getByTestId("inspector-member-defaults-count").textContent).toBe(
+      "0 entries",
+    );
+    cleanup();
+    renderMemberInspector("var-map-filled");
+    expect(screen.getByTestId("inspector-member-defaults-count").textContent).toBe(
+      "1 entry",
     );
   });
 
