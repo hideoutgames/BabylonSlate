@@ -1,10 +1,6 @@
 import { useState } from "react";
-import {
-  ChevronDownIcon,
-  ChevronUpIcon,
-  Trash2Icon,
-} from "lucide-react";
 import { Button } from "@babylonslate/ui/components/button";
+import { ListRowActions } from "./list-row-actions";
 import { Checkbox } from "@babylonslate/ui/components/checkbox";
 import {
   Field,
@@ -207,44 +203,17 @@ export function PinListEditor({
                 data-testid={`${testIdPrefix}-${row.id}-type`}
               />
               {readOnly ? null : (
-              <div className="flex shrink-0 items-center gap-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-7"
-                  aria-label={`Move ${row.name} up`}
-                  data-testid={`${testIdPrefix}-${row.id}-move-up`}
-                  disabled={index === 0}
-                  onClick={() => onChange(moveRow(rows, index, -1))}
-                >
-                  <ChevronUpIcon />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-7"
-                  aria-label={`Move ${row.name} down`}
-                  data-testid={`${testIdPrefix}-${row.id}-move-down`}
-                  disabled={index === rows.length - 1}
-                  onClick={() => onChange(moveRow(rows, index, 1))}
-                >
-                  <ChevronDownIcon />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-7"
-                  aria-label={`Remove ${row.name}`}
-                  onClick={() =>
-                    onChange(rows.filter((entry) => entry.id !== row.id))
-                  }
-                >
-                  <Trash2Icon />
-                </Button>
-              </div>
+              <ListRowActions
+                index={index}
+                count={rows.length}
+                name={row.name}
+                testIdPrefix={testIdPrefix}
+                rowId={row.id}
+                onMove={(delta) => onChange(moveRow(rows, index, delta))}
+                onRemove={() =>
+                  onChange(rows.filter((entry) => entry.id !== row.id))
+                }
+              />
               )}
             </div>
             {selected && !readOnly ? (
