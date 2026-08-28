@@ -18,6 +18,7 @@ import {
   localVariableIdent,
   objectLiteralKey,
   pinTypeForMember,
+  localVariablePreamble,
   typeClassIdFromPinType,
   typeIdFromPinType,
 } from "./member-pins";
@@ -100,5 +101,37 @@ describe("objectLiteralKey", () => {
   it("quotes keys that are not JS identifiers", () => {
     expect(objectLiteralKey("result")).toBe("result");
     expect(objectLiteralKey("2 Jump!")).toBe('"2 Jump!"');
+  });
+});
+
+describe("localVariablePreamble", () => {
+  it("emits JSON array defaults for Array locals and Map pairs for Map locals", () => {
+    expect(
+      localVariablePreamble([
+        {
+          name: "Hits",
+          typeId: "float",
+          container: "array",
+          defaultValue: [1, 2],
+        },
+        {
+          name: "By Name",
+          typeId: "float",
+          container: "map",
+          keyTypeId: "string",
+          defaultValue: [{ key: "a", value: 1 }],
+        },
+        {
+          name: "Empty Map",
+          typeId: "float",
+          container: "map",
+          keyTypeId: "string",
+        },
+      ]),
+    ).toEqual([
+      "  let __lv_Hits = [1,2];",
+      '  let __lv_By_Name = new Map([["a",1]]);',
+      "  let __lv_Empty_Map = new Map();",
+    ]);
   });
 });

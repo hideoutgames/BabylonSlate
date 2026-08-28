@@ -162,8 +162,7 @@ function defaultValueForVariableType(
   },
   schemas: ReturnType<typeof typeSchemasFromGraphAssets>,
 ): unknown {
-  if (spec.container === "array") return [];
-  if (spec.container === "map") return undefined;
+  if (spec.container === "array" || spec.container === "map") return [];
   if (
     spec.typeId === "object" ||
     spec.typeId === "actor" ||

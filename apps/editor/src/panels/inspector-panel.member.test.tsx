@@ -312,6 +312,20 @@ describe("Inspector class member details", () => {
     );
   });
 
+  it("commits Map container with an empty default entry list", () => {
+    renderMemberInspector("var-1");
+    screen.getByTestId("inspector-member-container-map").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.find((member) => member.id === "var-1")).toEqual(
+      expect.objectContaining({
+        typeId: "bool",
+        container: "map",
+        defaultValue: [],
+      }),
+    );
+  });
+
   it("shows list bars on Array variable rows in the Class tree", () => {
     renderMemberInspector("var-array", true);
     const icon = screen.getByTestId("class-var-type-var-array");

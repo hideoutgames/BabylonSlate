@@ -256,6 +256,18 @@ describe("ClassRegistry", () => {
       container: "map",
     });
     expect(mapValue).toBeInstanceOf(Map);
+    expect((mapValue as Map<unknown, unknown>).size).toBe(0);
+    const filledMap = hydrateClassVariableValue({
+      name: "byName",
+      type: "float",
+      container: "map",
+      defaultValue: [
+        { key: "a", value: 1 },
+        { key: "a", value: 2 },
+      ],
+    });
+    expect(filledMap).toBeInstanceOf(Map);
+    expect((filledMap as Map<unknown, unknown>).get("a")).toBe(2);
     expect(
       hydrateClassVariableValue({
         name: "health",
