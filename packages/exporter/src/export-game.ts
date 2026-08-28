@@ -73,6 +73,12 @@ function indexEntry(
     type: asset.type,
     encoding: encodingFor(asset),
     ...(asset.name ? { name: asset.name } : {}),
+    ...(typeof asset.width === "number" &&
+    asset.width > 0 &&
+    typeof asset.height === "number" &&
+    asset.height > 0
+      ? { width: asset.width, height: asset.height }
+      : {}),
     ...extra,
   };
 }

@@ -50,6 +50,38 @@ function spawn(
 }
 
 describe("runtime material assignment", () => {
+  it("resolves overlay assignMaterial as unlit on the mesh scene", () => {
+    const engine = new NullEngine();
+    const world = new Scene(engine);
+    const overlay = new Scene(engine);
+    disposers.push(() => {
+      overlay.dispose();
+      world.dispose();
+      engine.dispose();
+    });
+    const binding = createSnapshotSceneBinding();
+    binding.isOverlaySlot = () => true;
+    const overlayMat = new StandardMaterial("overlay-unlit", overlay);
+    const worldMat = new StandardMaterial("world-lit", world);
+    binding.resolveMaterial = (guid, options) =>
+      options?.unlit === true && options.scene === overlay
+        ? overlayMat
+        : worldMat;
+    applyAssignMesh(overlay, binding, {
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "2dmaterial",
+      meshAssetGuid: "mat-1",
+    });
+    spawn(overlay, binding, [1]);
+    applyAssignMaterial(world, binding, {
+      type: "assignMaterial",
+      slotId: 1,
+      materialAssetGuid: "mat-1",
+    });
+    expect(binding.meshes.get(1)?.material).toBe(overlayMat);
+  });
+
   it("applies an assigned material to a spawned actor", () => {
     const { scene, binding, material } = host();
     applyAssignMesh(scene, binding, {

@@ -37,6 +37,27 @@ function textureAsset(): IndexedAsset {
 }
 
 describe("loadExportDocuments", () => {
+  it("exposes authored Texture payload size for overlay 2DTexture layout", async () => {
+    const loaded = await loadExportDocuments({
+      assets: [
+        {
+          ...textureAsset(),
+          header: {
+            ...textureAsset().header,
+            payload: { width: 1024, height: 512 },
+          },
+        },
+      ],
+      loadDocument: async () => null,
+      readAssetChunk: async () => new Uint8Array([1]),
+      transcoderAvailable: false,
+    });
+    expect(loaded.payloadByGuid("tex-1")).toMatchObject({
+      width: 1024,
+      height: 512,
+    });
+  });
+
   it("serializes scenes as JSON and packs the KTX2 texture chunk", async () => {
     const scene = createDefaultScene();
     const loaded = await loadExportDocuments({
