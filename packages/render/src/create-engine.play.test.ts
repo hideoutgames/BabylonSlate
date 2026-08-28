@@ -85,6 +85,7 @@ class FakeCanvas {
 function spawnOverlayButton(
   handle: ReturnType<typeof createEngine>,
   layerId = "hud",
+  layerBounds?: { width: number; height: number },
 ): void {
   handle.applyCommand({
     type: "sceneLayerCreate",
@@ -93,6 +94,7 @@ function spawnOverlayButton(
     zOrder: 0,
     ownerSceneGuid: null,
     postProcessStack: [],
+    ...(layerBounds ? { layerBounds } : {}),
   });
   handle.applyCommand({
     type: "spawn",
@@ -2052,7 +2054,7 @@ describe("Play createEngine view", () => {
       },
     });
     handles.push(handle);
-    spawnOverlayButton(handle);
+    spawnOverlayButton(handle, "hud", { width: 9, height: 9 });
     const mesh = handle.sceneLayerScenes()[0]?.scene.getMeshByName("actor-1");
     mesh?.refreshBoundingInfo(false, false);
     const extent = mesh?.getBoundingInfo().boundingBox.extendSize;
