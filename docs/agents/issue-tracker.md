@@ -309,7 +309,7 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Latent nodes as async generator state machines | later polish (`scripting`) | Host promises today; Delay / async ExecuteJavaScript still run |
 | Timeline / delegate timer nodes | later design (`scripting`, runtime, editor) | Needs authored curves and delegate/event pins; not a fixed-pin catalog addition |
 | Advanced physics query shapes / filters | P7 polish (`physics`, runtime, scripting-nodes) | Box/capsule overlap, arbitrary shape descriptors, ignore-Actor lists, and backend parity need a query-filter contract |
-| Inline Array / Map pin defaults | later editor design | Dynamic Make Array / Make Map are the authoring path; generic pin-default fields intentionally remain scalar/struct/enum only |
+| Inline Array / Map **node** pin defaults | later editor design | Class-variable Inspector Array/Map defaults shipped (empty `[]`, add/remove, JSON Map `{ key, value }` rows). Dynamic Make Array / Make Map **node** pins still use count + generated pins; generic pin-default fields remain scalar/struct/enum only |
 | ExecuteConsoleCommand registry + debug-tier warnings | P8 | Landed (`p8-command-system`) |
 | BDebugCommand + parameter list | P8 | Landed (`p8-bdebugcommand`) |
 | Play console + stats HUD | P8 | Landed (`p8-console-hud`) |
@@ -318,6 +318,8 @@ Design notes: [scripting.md](../architecture/scripting.md).
 | Development Only node flag | Done | Inspector checkbox; Print defaults on; `compileGraphDocumentsForExport` skips the node and continues exec (`then` / Sequence `then_*`). P14 release export must call that helper |
 | AI / navigation scripting nodes | P11 | Catalog categories wait for behaviour trees + navmesh |
 | Audio node runtime helpers beyond stubs | P16 | Play Sound / Set Channel Volume / Set Global Volume emit audio commands (P16 Done) |
+
+**Closed (class-variable Array/Map defaults):** Inspector add/remove default entries (`EntryListEditor`); Map `defaultValue` is JSON `{ key, value }[]`; `hydrateClassVariableValue` / function locals build a live `Map`; For Each Element / For Each Map Key–Value connect and Add Node use resolved display types (`pinWithDisplayType`) without rewriting stored `__pins`. Shared `PinShapeGlyph` for Array list bars vs Map key-value pairs on pins, Class Variables, and VariableTypeFields.
 
 **Closed (authoring loop):** host `__pins` hydration + palette pin payload; `AddNodeCommand` / `RemoveNodeCommand`; new graphs seed Begin Play + Tick via `createDefaultLogicGraphSerialized`; **drag-to-connect** (`onConnect` / connect-end palette) plus tap-to-connect; **Format** (exec highway / independent chain roots); **hold-to-marquee** (`attachGraphPaneMarquee`).
 
