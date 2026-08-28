@@ -67,6 +67,12 @@ export class SnapshotInterpolator {
     this.write = 1 - this.write;
   }
 
+  /** Drop buffered snapshots so the next sample is null until a fresh push. */
+  clear(): void {
+    this.prev = null;
+    this.next = null;
+  }
+
   sample(alpha: number): SampledSnapshot | null {
     if (!this.next || !isPublishedSnapshot(this.next)) return null;
     const t = Math.min(1, Math.max(0, alpha));

@@ -1514,6 +1514,128 @@ describe("Play createEngine view", () => {
     handle.dispose();
   });
 
+  function publishedSlotSnapshot(slotId: number, tickIndex = 1): Float32Array {
+    const buf = new Float32Array(snapshotFloatCount(8));
+    writeSnapshotHeader(buf, {
+      frameId: tickIndex,
+      tickIndex,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE,
+    });
+    return buf;
+  }
+
+  it("lets the destination Default Camera win after play loadScene", () => {
+    const { handle } = playHandle(sharedEngine());
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 1,
+      actorGuid: "cam-a",
+      classId: "Actor",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: false,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
+
+    handle.loadScene(createDefaultScene());
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 2,
+      actorGuid: "cam-b",
+      classId: "Actor",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:2");
+    expect(handle.scene.getCameraByName("authoredCamera:1")).toBeFalsy();
+  });
+
+  it("keeps destination possess when a stale pre-swap snapshot renders", () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: engine,
+      playMode: true,
+    });
+    handles.push(handle);
+    const callback = runRenderLoop.mock.calls[0]?.[0];
+
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 1,
+      actorGuid: "cam-a",
+      classId: "Actor",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 1,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 1 });
+    handle.pushSnapshot(publishedSlotSnapshot(1, 1));
+    callback?.();
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:1");
+
+    handle.loadScene(createDefaultScene());
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 2,
+      actorGuid: "cam-b",
+      classId: "Actor",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "camera",
+      meshAssetGuid: null,
+      camera: {
+        projectionMode: "perspective",
+        fieldOfView: 60,
+        isDefault: true,
+      },
+    });
+    handle.applyCommand({ type: "possessCamera", slotId: 2 });
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:2");
+
+    callback?.();
+    expect(handle.scene.activeCamera?.name).toBe("authoredCamera:2");
+    expect(handle.scene.getCameraByName("authoredCamera:2")).toBeTruthy();
+  });
+
   it("applies setFreeCam without pausing and restores on possessCamera", () => {
     const { handle } = playHandle(sharedEngine());
     const defaultCam = handle.scene.activeCamera;

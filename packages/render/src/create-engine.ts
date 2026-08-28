@@ -104,6 +104,9 @@ import {
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
   disposeWorldOverlayLeftovers,
+  refreshPlayActiveCamera,
+  retirePlaySlot,
+  retirePlayWorldSlots,
   migratePlaySlotVisual,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
@@ -987,6 +990,10 @@ export function createEngine(
     }
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
+      interpolator.clear();
+      retirePlayWorldSlots(binding);
+      worldPlaySlots.clear();
+      refreshPlayActiveCamera(scene, binding);
       playViz?.applyCommand({ type: "setShowNav", enabled: false });
       // Play visuals come from assignMesh. Document illumination would plant a
       // second set of lights (`authoredLight:<actorId>`) on changescene.
@@ -1574,6 +1581,10 @@ export function createEngine(
         pendingOverlayAssign.delete(command.slotId);
         worldPlaySlots.delete(command.slotId);
         sceneLayerCompositor?.noteDespawn(command.slotId);
+        const previousCamera = scene.activeCamera;
+        retirePlaySlot(binding, command.slotId);
+        refreshPlayActiveCamera(scene, binding);
+        rebuildIfActiveCameraChanged(previousCamera);
       }
       if (command.type === "sceneLayerCreate") {
         sceneLayerCompositor?.create(command);

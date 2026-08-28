@@ -356,6 +356,29 @@ describe("snapshot interpolator", () => {
     expect(out!.frameId).toBe(2);
   });
 
+  it("clear drops published snapshots so sample returns null", () => {
+    const buf = new Float32Array(snapshotFloatCount(1));
+    writeSnapshotHeader(buf, {
+      frameId: 1,
+      tickIndex: 1,
+      actorCount: 1,
+      scriptMs: 0,
+      physicsMs: 0,
+    });
+    writeActorSlot(buf, 0, {
+      slotId: 0,
+      position: { x: 1, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: 1,
+    });
+    const interp = new SnapshotInterpolator(1);
+    interp.push(buf);
+    expect(interp.sample(1)?.actorCount).toBe(1);
+    interp.clear();
+    expect(interp.sample(1)).toBeNull();
+  });
+
   it("copies into owned ping-pong buffers instead of slicing each push", () => {
     const slice = vi.spyOn(Float32Array.prototype, "slice");
     const buf = new Float32Array(snapshotFloatCount(2));
