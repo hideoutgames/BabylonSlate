@@ -423,7 +423,7 @@ export function applyAssignMesh(
   }
   const existing = binding.meshes.get(command.slotId);
   if (existing) {
-    disposeSlotVisuals(scene, binding, command.slotId);
+    disposeSlotVisuals(binding, command.slotId);
   }
   if (command.skybox) {
     binding.skyboxProps.set(command.slotId, command.skybox);
@@ -651,7 +651,6 @@ export function disposeWorldOverlayLeftovers(worldScene: Scene, slotId: number):
 }
 
 function disposeSlotVisuals(
-  scene: Scene,
   binding: SnapshotSceneBinding,
   slotId: number,
 ): void {
