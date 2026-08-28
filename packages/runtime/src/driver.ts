@@ -39,8 +39,6 @@ import {
   parseText3DProperties,
   normalizeSceneLayer,
   sceneLayerRelativeAnchorWorldPosition,
-  SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT,
-  SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH,
   SCENE_LAYER_DEFAULT_LAYER_BOUNDS,
   deprojectCursorRay,
   type Transform,
@@ -371,8 +369,6 @@ class InProcessRuntime implements RuntimeDriver {
   private physicsSync: PhysicsWorldSync;
   private overlayPhysicsSync: PhysicsWorldSync;
   private readonly overlayGravity: [number, number, number];
-  private overlayFrustumWidth = SCENE_LAYER_DEFAULT_FRUSTUM_WIDTH;
-  private overlayFrustumHeight = SCENE_LAYER_DEFAULT_FRUSTUM_HEIGHT;
   private readonly overlayDesignPose = new Map<string, { x: number; y: number }>();
   private playCanvasWidth = 1;
   private playCanvasHeight = 1;
@@ -1060,6 +1056,7 @@ class InProcessRuntime implements RuntimeDriver {
       zOrder: layer.zOrder,
       ownerSceneGuid: layer.ownerSceneGuid,
       postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
+      layerBounds: { ...layer.layerBounds },
     });
     const remapped = remapOverlaySerializedActors(
       document.actors,
@@ -1171,8 +1168,6 @@ class InProcessRuntime implements RuntimeDriver {
     const height = Number(frustumHeight);
     if (!Number.isFinite(width) || width <= 0) return;
     if (!Number.isFinite(height) || height <= 0) return;
-    this.overlayFrustumWidth = width;
-    this.overlayFrustumHeight = height;
     if (typeof canvasWidth === "number" && canvasWidth > 0) {
       this.playCanvasWidth = canvasWidth;
     }
@@ -1271,8 +1266,8 @@ class InProcessRuntime implements RuntimeDriver {
       offsetY: Number(anchorComp.getVariable("offsetY")) || 0,
       layerWidth: bounds.width,
       layerHeight: bounds.height,
-      frustumWidth: this.overlayFrustumWidth,
-      frustumHeight: this.overlayFrustumHeight,
+      frustumWidth: bounds.width,
+      frustumHeight: bounds.height,
     });
     actor.transform.position.x = pos.x;
     actor.transform.position.y = pos.y;

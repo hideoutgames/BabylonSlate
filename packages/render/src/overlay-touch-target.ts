@@ -29,21 +29,21 @@ export function pointInInflatedWorldAabb(
   return Math.abs(x - centerX) <= hw && Math.abs(y - centerY) <= hh;
 }
 
-/** Overlay ortho canvas CSS pixels → world XY (Y up, matching the height-9 frustum). */
+/** Overlay ortho canvas CSS pixels → world XY (Y up, matching the layerBounds camera). */
 export function overlayCanvasToWorld(
   canvasX: number,
   canvasY: number,
   renderWidth: number,
   renderHeight: number,
+  orthoHalfWidth: number,
   orthoHalfHeight: number,
 ): { x: number; y: number } {
   const width = Math.max(1, renderWidth);
   const height = Math.max(1, renderHeight);
-  const aspect = width / height;
   const ndcX = (canvasX / width) * 2 - 1;
   const ndcY = 1 - (canvasY / height) * 2;
   return {
-    x: ndcX * orthoHalfHeight * aspect,
+    x: ndcX * orthoHalfWidth,
     y: ndcY * orthoHalfHeight,
   };
 }

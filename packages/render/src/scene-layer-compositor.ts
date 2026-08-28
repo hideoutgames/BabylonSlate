@@ -13,8 +13,8 @@ import {
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
   parseSceneLayerHitTest,
+  sceneLayerOrthoBounds,
   walkOverlayPointerHits,
-  SCENE_LAYER_ORTHO_HALF_HEIGHT,
   type OverlayPointerHit,
   type SceneLayerHitTest,
 } from "@babylonslate/core";
@@ -50,10 +50,10 @@ export interface SceneLayerCompositorOptions {
     layer: SceneLayerView,
     stack: SceneLayerPostProcessEntry[],
   ) => { dispose: () => void } | null;
-  orthoHalfHeight?: number;
 }
 
 type LayerRecord = SceneLayerView & {
+  layerBounds: { width: number; height: number };
   postProcessStack: SceneLayerPostProcessEntry[];
   rtt: RenderTargetTexture | null;
   blitMaterial: StandardMaterial | null;
@@ -69,7 +69,6 @@ export class SceneLayerCompositor {
   private readonly engine: Engine;
   private readonly postProcessingEnabled: () => boolean;
   private readonly attachLayerPostProcess?: SceneLayerCompositorOptions["attachLayerPostProcess"];
-  private readonly orthoHalfHeight: number;
   private readonly byId = new Map<string, LayerRecord>();
   private readonly slotLayer = new Map<number, string>();
   private readonly slotActor = new Map<number, string>();
@@ -78,7 +77,6 @@ export class SceneLayerCompositor {
     this.engine = options.engine;
     this.postProcessingEnabled = options.postProcessingEnabled ?? (() => true);
     this.attachLayerPostProcess = options.attachLayerPostProcess;
-    this.orthoHalfHeight = options.orthoHalfHeight ?? SCENE_LAYER_ORTHO_HALF_HEIGHT;
   }
 
   create(command: SceneLayerCreateCommand): SceneLayerView {
@@ -104,6 +102,7 @@ export class SceneLayerCompositor {
       zOrder: command.zOrder,
       scene,
       camera,
+      layerBounds: sceneLayerOrthoBounds(command.layerBounds),
       postProcessStack: command.postProcessStack.map((entry) => ({ ...entry })),
       rtt: null,
       blitMaterial: null,
@@ -231,23 +230,8 @@ export class SceneLayerCompositor {
   ): OverlayPointerHit[] {
     const hits: OverlayPointerHit[] = [];
     const seen = new Set<string>();
-    const minWorld = overlayMinTargetWorldSize(
-      options?.minTargetPx ?? 0,
-      options?.canvasCssHeight ?? 0,
-      this.orthoHalfHeight * 2,
-    );
     const renderWidth = Math.max(1, this.engine.getRenderWidth());
     const renderHeight = Math.max(1, this.engine.getRenderHeight());
-    const world =
-      minWorld > 0
-        ? overlayCanvasToWorld(
-            canvasX,
-            canvasY,
-            renderWidth,
-            renderHeight,
-            this.orthoHalfHeight,
-          )
-        : null;
 
     const pushHit = (
       layerId: string,
@@ -308,7 +292,20 @@ export class SceneLayerCompositor {
         }
       }
 
-      if (!world) continue;
+      const minWorld = overlayMinTargetWorldSize(
+        options?.minTargetPx ?? 0,
+        options?.canvasCssHeight ?? 0,
+        layer.layerBounds.height,
+      );
+      if (!(minWorld > 0)) continue;
+      const world = overlayCanvasToWorld(
+        canvasX,
+        canvasY,
+        renderWidth,
+        renderHeight,
+        layer.layerBounds.width / 2,
+        layer.layerBounds.height / 2,
+      );
       for (const mesh of layer.scene.meshes) {
         const metadata = overlayMetadataOf(mesh);
         if (!metadata?.overlayHasButton) continue;
@@ -411,13 +408,12 @@ export class SceneLayerCompositor {
   }
 
   private applyOrtho(layer: LayerRecord): void {
-    const width = Math.max(1, this.engine.getRenderWidth());
-    const height = Math.max(1, this.engine.getRenderHeight());
-    const aspect = width / height;
-    layer.camera.orthoTop = this.orthoHalfHeight;
-    layer.camera.orthoBottom = -this.orthoHalfHeight;
-    layer.camera.orthoLeft = -this.orthoHalfHeight * aspect;
-    layer.camera.orthoRight = this.orthoHalfHeight * aspect;
+    const halfW = layer.layerBounds.width / 2;
+    const halfH = layer.layerBounds.height / 2;
+    layer.camera.orthoTop = halfH;
+    layer.camera.orthoBottom = -halfH;
+    layer.camera.orthoLeft = -halfW;
+    layer.camera.orthoRight = halfW;
   }
 
   private rebuildPostProcess(layer: LayerRecord): void {

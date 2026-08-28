@@ -46,6 +46,40 @@ describe("SceneLayerCompositor", () => {
     expect(scene.autoClear).toBe(true);
   });
 
+  it("sizes the HUD ortho to the orange layerBounds, not a height-9 aspect box", () => {
+    const { engine, compositor } = world();
+    vi.spyOn(engine, "getRenderWidth").mockReturnValue(1920);
+    vi.spyOn(engine, "getRenderHeight").mockReturnValue(1080);
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const camera = compositor.layers()[0]!.camera;
+    expect(camera.orthoLeft).toBeCloseTo(-16);
+    expect(camera.orthoRight).toBeCloseTo(16);
+    expect(camera.orthoTop).toBeCloseTo(9);
+    expect(camera.orthoBottom).toBeCloseTo(-9);
+
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "wide",
+      assetGuid: "wide-asset",
+      zOrder: 1,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+      layerBounds: { width: 20, height: 10 },
+    });
+    const wide = compositor.layers().find((layer) => layer.layerId === "wide")!;
+    expect(wide.camera.orthoLeft).toBeCloseTo(-10);
+    expect(wide.camera.orthoRight).toBeCloseTo(10);
+    expect(wide.camera.orthoTop).toBeCloseTo(5);
+    expect(wide.camera.orthoBottom).toBeCloseTo(-5);
+  });
+
   it("sorts overlay draw order by zOrder and stable layer id on ties", () => {
     const { compositor } = world();
     compositor.create({
@@ -161,6 +195,7 @@ describe("SceneLayerCompositor", () => {
       zOrder: 0,
       ownerSceneGuid: null,
       postProcessStack: [],
+      layerBounds: { width: 9, height: 9 },
     });
     const layer = compositor.layers()[0]!;
     const mesh = MeshBuilder.CreatePlane(

@@ -536,6 +536,7 @@ export type CommandMessage =
       zOrder: number;
       ownerSceneGuid: string | null;
       postProcessStack: Array<{ materialGuid: string; enabled: boolean }>;
+      layerBounds?: { width: number; height: number };
     }
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
