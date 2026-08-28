@@ -26,6 +26,7 @@ import {
 import { useDocuments } from "../context/document-context";
 import {
   collectEnumMemberNames,
+  variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
 import {
@@ -57,12 +58,19 @@ export function BlackboardEditor({
   const doc = useMemo(() => asBoard(payload), [payload]);
   const [selected, setSelected] = useState(0);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
+  const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
   const typeCatalog = collectGraphTypeAssets({
     assets: assetRegistry?.list() ?? [],
     openDocuments,
   });
   const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
   const typeAssets = typeAssetPickerEntries(typeCatalog);
+  const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
   const enumMembers = collectEnumMemberNames(
     openDocuments,
     assetRegistry?.list() ?? [],
@@ -112,6 +120,12 @@ export function BlackboardEditor({
             typeClassId,
             schemas: typeSchemas,
             enumMembers,
+            assetEntries: pickerAssets.map((entry) => ({
+              id: entry.guid,
+              name: entry.name,
+              type: entry.type,
+            })),
+            onPickAsset: () => setDefaultAssetPickerOpen(true),
           },
         ),
       ]
@@ -246,6 +260,26 @@ export function BlackboardEditor({
                 setTypeAssetPickerOpen(false);
               }}
               data-testid="blackboard-key-type-asset-picker"
+            />
+            <AssetPicker
+              open={defaultAssetPickerOpen}
+              onOpenChange={setDefaultAssetPickerOpen}
+              assets={pickerAssets}
+              allowedTypes={variableAssetPickerAllowedTypes(typeClassId)}
+              allowNone
+              title="Pick Asset"
+              onPick={(guid) => {
+                commit({
+                  ...doc,
+                  keys: doc.keys.map((entry, index) =>
+                    index === selected
+                      ? { ...entry, defaultValue: guid ?? "" }
+                      : entry,
+                  ),
+                });
+                setDefaultAssetPickerOpen(false);
+              }}
+              data-testid="blackboard-key-default-asset-picker"
             />
           </div>
         ) : (

@@ -18,6 +18,7 @@ import { useTypeAssetEditing } from "../context/type-asset-editing-context";
 import { patchEnumMember, patchStructureField } from "../lib/asset-settings";
 import {
   collectEnumMemberNames,
+  variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
 import {
@@ -37,6 +38,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   const { openDocuments, applyAssetDocumentChange, assetRegistry } = useDocuments();
   const { selectedMemberId } = useTypeAssetEditing();
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
+  const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const payload = (doc?.content ?? {}) as Record<string, unknown>;
   const kind = doc?.ref.kind;
@@ -47,6 +49,12 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
   });
   const typeSchemas = typeSchemasFromGraphAssets(typeCatalog);
   const typeAssets = typeAssetPickerEntries(typeCatalog);
+  const pickerAssets = (assetRegistry?.list() ?? []).map((asset) => ({
+    guid: asset.header.guid,
+    name: asset.header.name,
+    type: asset.header.type,
+    path: asset.path,
+  }));
   const enumMembers = collectEnumMemberNames(
     openDocuments,
     assetRegistry?.list() ?? [],
@@ -131,6 +139,12 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
         typeClassId: field.typeClassId,
         schemas: typeSchemas,
         enumMembers,
+        assetEntries: pickerAssets.map((entry) => ({
+          id: entry.guid,
+          name: entry.name,
+          type: entry.type,
+        })),
+        onPickAsset: () => setDefaultAssetPickerOpen(true),
       },
     );
     return (
@@ -214,6 +228,23 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
               setTypeAssetPickerOpen(false);
             }}
             data-testid="structure-field-type-asset-picker"
+          />
+          <AssetPicker
+            open={defaultAssetPickerOpen}
+            onOpenChange={setDefaultAssetPickerOpen}
+            assets={pickerAssets}
+            allowedTypes={variableAssetPickerAllowedTypes(field.typeClassId)}
+            allowNone
+            title="Pick Asset"
+            onPick={(guid) => {
+              commit(
+                patchStructureField(asset, selectedIndex, {
+                  defaultValue: guid ?? "",
+                }),
+              );
+              setDefaultAssetPickerOpen(false);
+            }}
+            data-testid="structure-field-default-asset-picker"
           />
         </div>
       </PanelFrame>

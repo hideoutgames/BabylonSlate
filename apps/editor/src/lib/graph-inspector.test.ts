@@ -19,6 +19,7 @@ import {
   pinTypeFromParameterType,
   pinsFromNodeData,
   assetPickerAllowedTypes,
+  variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "./graph-inspector";
 
@@ -32,6 +33,18 @@ describe("assetPickerAllowedTypes", () => {
 
   it("falls back to the pin asset type when typeClassIds is missing", () => {
     expect(assetPickerAllowedTypes("Material", undefined)).toEqual(["Material"]);
+  });
+});
+
+describe("variableAssetPickerAllowedTypes", () => {
+  it("filters Default picks to the Asset Type when set", () => {
+    expect(variableAssetPickerAllowedTypes("Audio")).toEqual(["Audio"]);
+  });
+
+  it("lists Content Browser kinds when Asset Type is empty", () => {
+    expect(variableAssetPickerAllowedTypes("")).toContain("Audio");
+    expect(variableAssetPickerAllowedTypes(undefined)).toContain("Texture");
+    expect(variableAssetPickerAllowedTypes("")).not.toContain("");
   });
 });
 
@@ -773,5 +786,28 @@ describe("variableDefaultPropertyRows", () => {
     expect(
       variableDefaultPropertyRows("float", 1, vi.fn(), { container: "map" }),
     ).toEqual([]);
+  });
+
+  it("maps asset defaults onto an AssetPicker Default row", () => {
+    const onChange = vi.fn();
+    const onPickAsset = vi.fn();
+    const rows = variableDefaultPropertyRows("asset", "audio-1", onChange, {
+      typeClassId: "Audio",
+      assetEntries: [{ id: "audio-1", name: "Jump", type: "Audio" }],
+      onPickAsset,
+    });
+    expect(rows).toMatchObject([
+      {
+        kind: "asset",
+        id: "default",
+        label: "Default",
+        value: "audio-1",
+        displayLabel: "Jump",
+        displayType: "Audio",
+      },
+    ]);
+    const row = rows[0];
+    if (row?.kind === "asset") row.onPick();
+    expect(onPickAsset).toHaveBeenCalledWith("default", "Audio");
   });
 });
