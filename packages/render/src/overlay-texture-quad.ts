@@ -11,15 +11,31 @@ import { applyAlbedoTexture, type MeshAssetContext } from "./mesh-assets";
 export const OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE = { width: 1, height: 1 };
 
 /**
- * Overlay 2DTexture world size from sniffed GPU bytes (KTX2, then PNG/JPEG).
- * Missing guid/bytes stay 1×1. Does not read Babylon Texture.getSize().
+ * Overlay 2DTexture world size from authored Texture pixels / pixelsPerUnit.
+ * GPU bytes (LOD/KTX2) are a fallback sniff only. Missing guid/size stays 1×1.
  */
 export function overlayTextureWorldSize(
   guid: string | null | undefined,
   textureBytes: ReadonlyMap<string, Uint8Array | Blob> | undefined,
   pixelsPerUnit = 100,
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>,
 ): { width: number; height: number } {
-  if (!guid || !textureBytes) {
+  const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
+  if (!guid) {
+    return { ...OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE };
+  }
+  const authored = texturePixelSizes?.get(guid);
+  if (
+    authored &&
+    authored.width > 0 &&
+    authored.height > 0
+  ) {
+    return {
+      width: authored.width / ppu,
+      height: authored.height / ppu,
+    };
+  }
+  if (!textureBytes) {
     return { ...OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE };
   }
   const bytes = textureBytes.get(guid);
@@ -30,7 +46,6 @@ export function overlayTextureWorldSize(
   if (!px) {
     return { ...OVERLAY_TEXTURE_DEFAULT_WORLD_SIZE };
   }
-  const ppu = pixelsPerUnit > 0 ? pixelsPerUnit : 100;
   return {
     width: px.width / ppu,
     height: px.height / ppu,
@@ -42,8 +57,14 @@ export function overlayTextureVisualKind(
   hitTest: unknown,
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>,
   pixelsPerUnit?: number,
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>,
 ): string {
-  const size = overlayTextureWorldSize(guid, textureBytes, pixelsPerUnit);
+  const size = overlayTextureWorldSize(
+    guid,
+    textureBytes,
+    pixelsPerUnit,
+    texturePixelSizes,
+  );
   return `2dtexture:${guid ?? ""}:${size.width}x${size.height}:${String(hitTest ?? "ignore")}`;
 }
 
@@ -58,6 +79,7 @@ export function createOverlayTextureQuad(
     textureGuid,
     assets?.textureBytes,
     assets?.pixelsPerUnit,
+    assets?.texturePixelSizes,
   );
   const mesh = MeshBuilder.CreatePlane(
     name,

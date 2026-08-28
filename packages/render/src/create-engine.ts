@@ -317,6 +317,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Authored Texture source pixels for overlay 2DTexture world size. */
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
@@ -709,6 +711,7 @@ export function createEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  binding.texturePixelSizes = options.texturePixelSizes;
   resourceCache.setClientTextures(
     scene.uid,
     options.textureBytes?.keys() ?? [],
@@ -1777,6 +1780,7 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      binding.texturePixelSizes = assets.texturePixelSizes;
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;

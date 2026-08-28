@@ -42,6 +42,7 @@ function sourceSizePx(
     properties.textureGuid,
     assets?.textureBytes,
     ppu,
+    assets?.texturePixelSizes,
   );
   return { width: world.width * ppu, height: world.height * ppu };
 }

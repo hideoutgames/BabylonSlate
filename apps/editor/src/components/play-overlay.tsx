@@ -93,6 +93,7 @@ export interface PlayOverlayProps {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
@@ -165,6 +166,7 @@ export function PlayOverlay({
   tilemapPayloads,
   tilesetPayloads,
   textureBytes,
+  texturePixelSizes,
   fontFacetypeBytes,
   fontMsdfJson,
   fontMsdfPng,
@@ -263,6 +265,8 @@ export function PlayOverlay({
   tilesetPayloadsRef.current = tilesetPayloads;
   const textureBytesRef = useRef(textureBytes);
   textureBytesRef.current = textureBytes;
+  const texturePixelSizesRef = useRef(texturePixelSizes);
+  texturePixelSizesRef.current = texturePixelSizes;
   const fontFacetypeBytesRef = useRef(fontFacetypeBytes);
   fontFacetypeBytesRef.current = fontFacetypeBytes;
   const fontMsdfJsonRef = useRef(fontMsdfJson);
@@ -414,6 +418,7 @@ export function PlayOverlay({
       tilemapPayloads: tilemapPayloadsRef.current,
       tilesetPayloads: tilesetPayloadsRef.current,
       textureBytes: textureBytesRef.current,
+      texturePixelSizes: texturePixelSizesRef.current,
       fontFacetypeBytes: fontFacetypeBytesRef.current,
       fontMsdfJson: fontMsdfJsonRef.current,
       fontMsdfPng: fontMsdfPngRef.current,

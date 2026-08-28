@@ -14,6 +14,8 @@ import type { ResourceCache } from "./resource-cache";
 export interface MeshAssetContext {
   resourceCache?: ResourceCache;
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Authored Texture payload width/height (source pixels), not LOD GPU bytes. */
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   spritePayloads?: ReadonlyMap<string, SpritePayload>;
   spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>;
   tilemaps?: ReadonlyMap<string, TilemapPayload>;
@@ -104,6 +106,14 @@ export function meshAssetFingerprint(
     `tilemaps:${sortedMapKeys(assets.tilemaps)}`,
     `tilesets:${sortedMapKeys(assets.tilesets)}`,
     `tex:${byteMapFingerprint(assets.textureBytes)}`,
+    `texPx:${
+      assets.texturePixelSizes
+        ? [...assets.texturePixelSizes.entries()]
+            .map(([guid, size]) => `${guid}:${size.width}x${size.height}`)
+            .sort()
+            .join(",")
+        : ""
+    }`,
     `fonts:${byteMapFingerprint(assets.fontFacetypeBytes)}`,
     `msdf:${byteMapFingerprint(assets.fontMsdfJson)}:${byteMapFingerprint(assets.fontMsdfPng)}`,
     `fontCss:${assets.fontCssStack ?? ""}:${sortedStringMapFingerprint(assets.fontCssStackByGuid)}`,
@@ -121,6 +131,7 @@ export function meshAssetFingerprintWithoutModels(
     tilemaps: assets?.tilemaps,
     tilesets: assets?.tilesets,
     textureBytes: assets?.textureBytes,
+    texturePixelSizes: assets?.texturePixelSizes,
     fontFacetypeBytes: assets?.fontFacetypeBytes,
     fontMsdfJson: assets?.fontMsdfJson,
     fontMsdfPng: assets?.fontMsdfPng,

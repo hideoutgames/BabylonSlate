@@ -165,6 +165,22 @@ describe("createPlayMesh", () => {
     expect(extent.y * 2).toBeCloseTo(0.32);
   });
 
+  it("sizes a 2DTexture plane from authored pixels when GPU bytes are LOD-downsampled", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const binding = createSnapshotSceneBinding();
+    binding.pixelsPerUnit = 100;
+    binding.textureBytes = new Map([["tex-1", pngIhdr(512, 256)]]);
+    binding.texturePixelSizes = new Map([
+      ["tex-1", { width: 1024, height: 512 }],
+    ]);
+    const mesh = createPlayMesh(handle.scene, 1, "2dtexture", "tex-1", binding);
+    mesh.refreshBoundingInfo(false, false);
+    const extent = mesh.getBoundingInfo().boundingBox.extendSize;
+    expect(extent.x * 2).toBeCloseTo(10.24);
+    expect(extent.y * 2).toBeCloseTo(5.12);
+  });
+
   it("keeps a 1x1 2DTexture plane when the guid or bytes are missing", () => {
     const handle = createTestEngine();
     handles.push(handle);

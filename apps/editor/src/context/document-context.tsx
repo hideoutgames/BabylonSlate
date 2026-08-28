@@ -96,7 +96,7 @@ import { dirtyScenesBlockingOpen } from "../lib/exclusive-scene";
 import { notifyDocumentEdited } from "../lib/notify-document-edited";
 import { advanceTestIdleClock } from "../lib/document-working-set";
 import { shouldApplyAssetDocumentChange } from "../lib/asset-document-change";
-import { collectGpuTextureBytes } from "../lib/collect-gpu-texture-bytes";
+import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "../lib/collect-gpu-texture-bytes";
 import {
   recordedTraceFileName,
   spillRecordedTraceDocument,
@@ -497,6 +497,13 @@ interface DocumentContextValue {
     extraGuids?: readonly string[],
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
   ) => Promise<Map<string, Uint8Array>>;
+  /** Authored Texture payload pixels for overlay 2DTexture world size. */
+  collectPlayTexturePixelSizes: (
+    sprites: ReadonlyMap<string, SpritePayload>,
+    tilesets: ReadonlyMap<string, TilesetPayload>,
+    extraGuids?: readonly string[],
+    spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
+  ) => Map<string, { width: number; height: number }>;
   /** Facetype JSON bytes for Text3DComponent Font references. */
   collectPlayFontFacetypeBytes: (
     scene?: SerializedScene | null,
@@ -2815,6 +2822,23 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     [projectService],
   );
 
+  const collectPlayTexturePixelSizes = useCallback(
+    (
+      sprites: ReadonlyMap<string, SpritePayload>,
+      tilesets: ReadonlyMap<string, TilesetPayload>,
+      extraGuids: readonly string[] = [],
+      spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
+    ): Map<string, { width: number; height: number }> => {
+      const assets = projectService.registry?.list() ?? [];
+      const guids = [
+        ...textureGuidsFromPlayPayloads(sprites, tilesets, spriteAnimations),
+        ...extraGuids,
+      ];
+      return texturePixelSizesFromHeaders(assets, guids);
+    },
+    [projectService],
+  );
+
   const collectPlayFontFacetypeBytes = useCallback(
     async (
       scene?: SerializedScene | null,
@@ -4023,6 +4047,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
+      collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
@@ -4085,6 +4110,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
+      collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,

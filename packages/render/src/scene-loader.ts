@@ -419,6 +419,7 @@ function componentVisualKind(
       component.properties.hitTest,
       assets?.textureBytes,
       assets?.pixelsPerUnit,
+      assets?.texturePixelSizes,
     );
   }
   if (component.classId === "2DMaterialComponent") {

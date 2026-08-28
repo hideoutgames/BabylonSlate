@@ -444,6 +444,7 @@ export function startPlaySession(options: {
   tilemapPayloads?: ReadonlyMap<string, TilemapPayload>;
   tilesetPayloads?: ReadonlyMap<string, TilesetPayload>;
   textureBytes?: ReadonlyMap<string, Uint8Array>;
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   fontMsdfJson?: ReadonlyMap<string, Uint8Array>;
   fontMsdfPng?: ReadonlyMap<string, Uint8Array>;
@@ -521,6 +522,7 @@ export function startPlaySession(options: {
     tilemapPayloads: options.tilemapPayloads,
     tilesetPayloads: options.tilesetPayloads,
     textureBytes: options.textureBytes,
+    texturePixelSizes: options.texturePixelSizes,
     fontFacetypeBytes: options.fontFacetypeBytes,
     fontMsdfJson: options.fontMsdfJson,
     fontMsdfPng: options.fontMsdfPng,

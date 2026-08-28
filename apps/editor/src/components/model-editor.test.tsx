@@ -33,6 +33,7 @@ vi.mock("../context/document-context", () => ({
       textureGuids: [],
     }),
     collectPlayTextureBytes: async () => new Map(),
+    collectPlayTexturePixelSizes: () => new Map(),
   }),
 }));
 
