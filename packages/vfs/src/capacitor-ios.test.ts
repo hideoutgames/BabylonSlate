@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -10,10 +10,17 @@ const pkg = JSON.parse(
 ) as { dependencies: Record<string, string> };
 const editorPkg = JSON.parse(
   readFileSync(join(repoRoot, "apps/editor/package.json"), "utf8"),
-) as { dependencies: Record<string, string> };
+) as {
+  dependencies: Record<string, string>;
+  scripts: Record<string, string>;
+};
 const lockfile = readFileSync(join(repoRoot, "pnpm-lock.yaml"), "utf8");
 const podfile = readFileSync(
   join(repoRoot, "apps/editor/ios/App/Podfile"),
+  "utf8",
+);
+const podfileLock = readFileSync(
+  join(repoRoot, "apps/editor/ios/App/Podfile.lock"),
   "utf8",
 );
 const pbxproj = readFileSync(
@@ -24,15 +31,52 @@ const plist = readFileSync(
   join(repoRoot, "apps/editor/ios/App/App/Info.plist"),
   "utf8",
 );
+const capacitorConfig = readFileSync(
+  join(repoRoot, "apps/editor/capacitor.config.ts"),
+  "utf8",
+);
+const iosSyncScriptPath = join(repoRoot, "apps/editor/scripts/ios-sync.mjs");
+const iosSyncScript = readFileSync(iosSyncScriptPath, "utf8");
+
+const skippedDirectories = new Set([
+  "public",
+  "Pods",
+  "build",
+  "DerivedData",
+  "output",
+  "xcuserdata",
+]);
+const textExtensions = new Set([
+  ".h",
+  ".lock",
+  ".m",
+  ".mm",
+  ".pbxproj",
+  ".plist",
+  ".podspec",
+  ".rb",
+  ".swift",
+  ".xml",
+]);
 
 function filesIn(directory: string): string[] {
+  if (!existsSync(directory)) {
+    return [];
+  }
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
+      if (skippedDirectories.has(entry.name)) {
+        return [];
+      }
       return filesIn(path);
     }
     return [path];
   });
+}
+
+function isTextFile(path: string): boolean {
+  return basename(path) === "Podfile" || textExtensions.has(extname(path));
 }
 
 function podNameForDependency(dependency: string): string {
@@ -68,21 +112,46 @@ describe("Capacitor 8 iOS host", () => {
       /^\s{6}'@capacitor\/ios':\s*\n\s{8}specifier:[^\n]+\n\s{8}version:\s*([0-9]+\.[0-9]+\.[0-9]+)/m,
     )?.[1];
     expect(resolvedCapacitorVersion).toBeDefined();
-    expect(podfile).toContain(`@capacitor+ios@${resolvedCapacitorVersion}_`);
-    for (const match of podfile.matchAll(/@capacitor\+ios@([0-9.]+)_/g)) {
-      expect(match[1]).toBe(resolvedCapacitorVersion);
+    const capacitorPodfilePath = podfile.match(
+      /pod 'Capacitor', :path => '([^']+)'/,
+    )?.[1];
+    const capacitorLockfilePath = podfileLock.match(
+      /Capacitor:\s*\n\s*:path: "([^"]+)"/,
+    )?.[1];
+    expect(capacitorPodfilePath).toBeDefined();
+    expect(capacitorLockfilePath).toBe(capacitorPodfilePath);
+    for (const source of [podfile, podfileLock]) {
+      const capacitorPaths = [
+        ...source.matchAll(/@capacitor\+ios@([0-9.]+)_/g),
+      ];
+      expect(capacitorPaths.length).toBeGreaterThan(0);
+      for (const match of capacitorPaths) {
+        expect(match[1]).toBe(resolvedCapacitorVersion);
+      }
     }
 
     const podNames = new Set(
       [...podfile.matchAll(/pod '([^']+)'/g)].map((match) => match[1]),
     );
-    for (const dependency of Object.keys(pkg.dependencies).filter(
+    const nativeDependencies = Object.keys(editorPkg.dependencies).filter(
       (name) =>
-        name.startsWith("@capacitor/") ||
+        (name.startsWith("@capacitor/") &&
+          name !== "@capacitor/cli" &&
+          name !== "@capacitor/ios") ||
         name === "@daniele-rolli/capacitor-scoped-storage",
-    )) {
+    );
+    expect(editorPkg.dependencies.CapacitorScopedStorage).toBeUndefined();
+    for (const dependency of nativeDependencies) {
+      expect(editorPkg.dependencies[dependency]).toBeDefined();
       expect(podNames).toContain(podNameForDependency(dependency));
     }
+
+    expect(podfileLock).toMatch(
+      new RegExp(`- Capacitor \\(${resolvedCapacitorVersion}\\)`),
+    );
+    expect(podfileLock).toMatch(
+      new RegExp(`- CapacitorCordova \\(${resolvedCapacitorVersion}\\)`),
+    );
   });
 
   it("enforces the Capacitor 8 deployment and iPad-only project settings", () => {
@@ -120,12 +189,16 @@ describe("Capacitor 8 iOS host", () => {
   });
 
   it("preserves the local plugin registration and clean signing configuration", () => {
-    const capacitor = readFileSync(
-      join(repoRoot, "apps/editor/capacitor.config.ts"),
-      "utf8",
+    expect(existsSync(iosSyncScriptPath)).toBe(true);
+    expect(iosSyncScript).toContain("packageClassList");
+    expect(iosSyncScript).toMatch(
+      /packageClassList\.add\("BabylonSlateSecretsPlugin"\)/,
     );
-    expect(capacitor).toMatch(
-      /packageClassList:\s*\["BabylonSlateSecretsPlugin"\]/,
+    expect(editorPkg.scripts["ios:sync"]).toMatch(
+      /cap sync ios[\s\S]*node scripts\/ios-sync\.mjs/,
+    );
+    expect(editorPkg.scripts["ios:build"]).toContain(
+      "node scripts/ios-build.mjs",
     );
     expect(pbxproj).toMatch(/BabylonSlateSecretsPlugin\.swift in Sources/);
     expect(pbxproj).toMatch(
@@ -148,16 +221,22 @@ describe("Capacitor 8 iOS host", () => {
 
     const iosFiles = filesIn(join(repoRoot, "apps/editor/ios"));
     for (const file of iosFiles) {
-      if (statSync(file).size === 0) {
+      if (!isTextFile(file)) {
         continue;
       }
-      const content = readFileSync(file);
-      if (content.includes(0)) {
-        continue;
-      }
-      const text = content.toString("utf8");
+      const text = readFileSync(file, "utf8");
       expect(text).not.toContain("DEVELOPMENT_TEAM");
       expect(text).not.toContain("PROVISIONING_PROFILE");
     }
+  });
+
+  it("keeps the iOS web host assets available", () => {
+    expect(capacitorConfig).toMatch(/webDir:\s*"dist"/);
+    expect(capacitorConfig).toContain("coi-serviceworker.js");
+    expect(
+      existsSync(join(repoRoot, "apps/editor/public/coi-serviceworker.js")),
+    ).toBe(true);
+    expect(existsSync(join(repoRoot, "apps/editor/public/havok"))).toBe(true);
+    expect(existsSync(join(repoRoot, "apps/editor/public/ktx2"))).toBe(true);
   });
 });
