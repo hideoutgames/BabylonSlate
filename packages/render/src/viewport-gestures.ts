@@ -22,7 +22,7 @@ export interface ViewportGestureOptions {
   onDragSelectEnd?: () => void;
   scheduler?: Pick<RenderScheduler, "acquireContinuous">;
   /**
-   * World units panned per pixel of three-finger drag in 3D.
+   * World units flown per pixel of three-finger drag in 3D (look + right).
    * 2D uses 1:1 frustum mapping instead.
    */
   panScale?: number;
@@ -92,8 +92,8 @@ function canvasRect(from: PointerSample, to: PointerSample): CanvasRect {
  * Gesture contract from docs/design/gestures.md: one-finger tap picks;
  * one-finger drag looks in 3D (or orbits when `pivotAroundCenter`) and pans
  * in 2D; hold then move marquees in 2D; drag-select marquees immediately in
- * both modes; pinch zooms; three fingers pan. Two-finger translation does
- * not orbit or pan.
+ * both modes; pinch zooms; three fingers fly the 3D camera (look + right)
+ * and pan 1:1 in 2D. Two-finger translation does not orbit, pan, or fly.
  */
 export function attachViewportGestures(
   canvas: HTMLCanvasElement,
@@ -285,7 +285,13 @@ export function attachViewportGestures(
     if (samples.length >= 3 && lastMid) {
       const dx = mid.x - lastMid.x;
       const dy = mid.y - lastMid.y;
-      panFromPointerDelta(dx, dy);
+      if (controller.mode === "3d") {
+        if (editorActive()) {
+          controller.fly(-dy * panScale, -dx * panScale);
+        }
+      } else {
+        panFromPointerDelta(dx, dy);
+      }
     }
     if (samples.length === 2 && pinchOrigin && pinchOrigin.spread > 0) {
       const factor = currentSpread / pinchOrigin.spread;
