@@ -87,5 +87,50 @@ describe("EntryListEditor", () => {
     expect(row?.parentElement?.className).toMatch(/px-1/);
     expect(row?.parentElement?.className).toMatch(/py-0\.5/);
     expect(row?.parentElement?.className).not.toMatch(/\bp-2\b/);
+    expect(cluster?.className).toMatch(/self-center/);
+    expect(row?.className).toMatch(/items-center/);
+  });
+
+  it("shows an item count in-line next to Add", () => {
+    const { rerender } = render(
+      <EntryListEditor
+        items={[]}
+        onChange={() => {}}
+        onCreate={() => false}
+        addLabel="Add Item"
+        renderItem={({ item }) => <span>{String(item)}</span>}
+      />,
+    );
+    const count = screen.getByTestId("entry-list-count");
+    expect(count.textContent).toBe("0 items");
+    expect(count.className).toMatch(/text-xs/);
+    expect(screen.getByTestId("entry-list-add").parentElement).toBe(
+      count.parentElement,
+    );
+
+    rerender(
+      <EntryListEditor
+        items={[false]}
+        onChange={() => {}}
+        onCreate={() => true}
+        addLabel="Add Item"
+        renderItem={({ item }) => <span>{String(item)}</span>}
+      />,
+    );
+    expect(screen.getByTestId("entry-list-count").textContent).toBe("1 item");
+  });
+
+  it("uses the Map count noun next to Add Entry", () => {
+    render(
+      <EntryListEditor
+        items={[{ key: "a", value: 1 }]}
+        onChange={() => {}}
+        onCreate={() => ({ key: "", value: 0 })}
+        addLabel="Add Entry"
+        countNoun={{ one: "entry", other: "entries" }}
+        renderItem={({ item }) => <span>{String(item.key)}</span>}
+      />,
+    );
+    expect(screen.getByTestId("entry-list-count").textContent).toBe("1 entry");
   });
 });

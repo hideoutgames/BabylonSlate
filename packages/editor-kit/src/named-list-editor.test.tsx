@@ -65,6 +65,16 @@ describe("NamedListEditor", () => {
     expect(row?.parentElement?.className).toMatch(/px-1/);
     expect(row?.parentElement?.className).toMatch(/py-0\.5/);
     expect(row?.parentElement?.className).not.toMatch(/\bp-2\b/);
+    expect(cluster?.className).toMatch(/self-center/);
+    expect(row?.className).toMatch(/items-center/);
+  });
+
+  it("keeps the Name label out of the action row so the cluster centers on the input", () => {
+    render(<NamedListEditor values={["Default"]} onChange={() => {}} />);
+    const cluster = screen.getByTestId("named-list-0-remove").parentElement;
+    const input = screen.getByTestId("named-list-0-value");
+    expect(cluster?.parentElement).toBe(input.parentElement);
+    expect(cluster?.parentElement?.querySelector("[data-slot=field-label]")).toBeNull();
   });
 
   it("renders a custom item control", () => {

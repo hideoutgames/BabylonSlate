@@ -47,7 +47,7 @@ function needsTypeAsset(typeId: string): boolean {
   return typeId === "struct" || typeId === "enum";
 }
 
-/** Type picker plus Single/Array/Map container (and Map key type). */
+/** Type picker, Map Key Type, then Single/Array/Map container. */
 export function VariableTypeFields({
   value,
   onChange,
@@ -88,6 +88,71 @@ export function VariableTypeFields({
           data-testid="inspector-member-type"
         />
       </Field>
+      {container === "map" ? (
+        <Field>
+          <FieldLabel>Key Type</FieldLabel>
+          <PinTypePicker
+            value={keyTypeId}
+            onChange={(nextKey) => {
+              const keep = pinPickerKeepsTypeClassId(nextKey);
+              commit({
+                keyTypeId: nextKey,
+                keyTypeClassId: keep ? value.keyTypeClassId : undefined,
+              });
+            }}
+            data-testid="inspector-member-key-type"
+          />
+        </Field>
+      ) : null}
+      {container === "map" && needsClassType(keyTypeId) ? (
+        <Field>
+          <FieldLabel>Key Class Type</FieldLabel>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto w-full justify-start"
+            data-testid="inspector-member-key-class-type"
+            onClick={() => setKeyClassOpen(true)}
+          >
+            {selectedPickerIdentity(
+              classRowIdentity(
+                classEntries.find((entry) => entry.id === keyClassId),
+                keyClassId,
+              ),
+            )}
+          </Button>
+        </Field>
+      ) : null}
+      {container === "map" && needsTypeAsset(keyTypeId) ? (
+        <Field>
+          <FieldLabel>
+            {keyTypeId === "enum" ? "Key Enum Type" : "Key Structure Type"}
+          </FieldLabel>
+          <AssetPickerControl value={keyClassId}>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto w-full justify-start"
+              data-testid="inspector-member-key-type-asset"
+              onClick={() => setKeyAssetOpen(true)}
+            >
+              {selectedPickerIdentity(
+                assetRowIdentity(
+                  keyAsset
+                    ? { name: keyAsset.name, type: keyAsset.type }
+                    : keyClassId
+                      ? {
+                          name: keyClassId,
+                          type: keyTypeId === "enum" ? "Enum" : "Structure",
+                        }
+                      : undefined,
+                ),
+                keyClassId || "Pick type",
+              )}
+            </Button>
+          </AssetPickerControl>
+        </Field>
+      ) : null}
       <Field>
         <FieldLabel>Container</FieldLabel>
         <ToggleGroup
@@ -134,69 +199,6 @@ export function VariableTypeFields({
       </Field>
       {container === "map" ? (
         <>
-          <Field>
-            <FieldLabel>Key Type</FieldLabel>
-            <PinTypePicker
-              value={keyTypeId}
-              onChange={(nextKey) => {
-                const keep = pinPickerKeepsTypeClassId(nextKey);
-                commit({
-                  keyTypeId: nextKey,
-                  keyTypeClassId: keep ? value.keyTypeClassId : undefined,
-                });
-              }}
-              data-testid="inspector-member-key-type"
-            />
-          </Field>
-          {needsClassType(keyTypeId) ? (
-            <Field>
-              <FieldLabel>Key Class Type</FieldLabel>
-              <Button
-                type="button"
-                variant="outline"
-                className="h-auto w-full justify-start"
-                data-testid="inspector-member-key-class-type"
-                onClick={() => setKeyClassOpen(true)}
-              >
-                {selectedPickerIdentity(
-                  classRowIdentity(
-                    classEntries.find((entry) => entry.id === keyClassId),
-                    keyClassId,
-                  ),
-                )}
-              </Button>
-            </Field>
-          ) : null}
-          {needsTypeAsset(keyTypeId) ? (
-            <Field>
-              <FieldLabel>
-                {keyTypeId === "enum" ? "Key Enum Type" : "Key Structure Type"}
-              </FieldLabel>
-              <AssetPickerControl value={keyClassId}>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto w-full justify-start"
-                  data-testid="inspector-member-key-type-asset"
-                  onClick={() => setKeyAssetOpen(true)}
-                >
-                  {selectedPickerIdentity(
-                    assetRowIdentity(
-                      keyAsset
-                        ? { name: keyAsset.name, type: keyAsset.type }
-                        : keyClassId
-                          ? {
-                              name: keyClassId,
-                              type: keyTypeId === "enum" ? "Enum" : "Structure",
-                            }
-                          : undefined,
-                    ),
-                    keyClassId || "Pick type",
-                  )}
-                </Button>
-              </AssetPickerControl>
-            </Field>
-          ) : null}
           <ClassPicker
             open={keyClassOpen}
             onOpenChange={setKeyClassOpen}

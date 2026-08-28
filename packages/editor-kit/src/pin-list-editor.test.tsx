@@ -294,6 +294,21 @@ describe("PinListEditor", () => {
     ]);
   });
 
+  it("centers row actions on the selected card including extra fields", () => {
+    render(
+      <PinListEditor
+        rows={rows.slice(0, 1)}
+        selectedId="a"
+        onChange={() => {}}
+      />,
+    );
+    const cluster = screen.getByTestId("pin-a-remove").parentElement;
+    const extras = screen.getByTestId("pin-a-optional");
+    expect(cluster?.parentElement?.contains(extras)).toBe(true);
+    expect(cluster?.parentElement?.className).toMatch(/items-center/);
+    expect(cluster?.className).toMatch(/self-center/);
+  });
+
   it("adds an input pin with direction", () => {
     const onChange = vi.fn();
     render(

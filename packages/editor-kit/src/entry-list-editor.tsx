@@ -16,6 +16,8 @@ export type EntryListEditorProps<T> = {
   renderItem: (args: EntryListItemRenderArgs<T>) => ReactNode;
   title?: string;
   addLabel?: string;
+  /** Count copy next to Add (`1 item` / `2 items`). Map uses entry/entries. */
+  countNoun?: { one: string; other: string };
   "data-testid"?: string;
 };
 
@@ -37,9 +39,13 @@ export function EntryListEditor<T>({
   renderItem,
   title,
   addLabel = "Add",
+  countNoun = { one: "item", other: "items" },
   "data-testid": testId,
 }: EntryListEditorProps<T>) {
   const rootId = testId ?? "entry-list";
+  const countLabel = `${items.length} ${
+    items.length === 1 ? countNoun.one : countNoun.other
+  }`;
 
   return (
     <div className="flex flex-col gap-1" data-testid={rootId}>
@@ -73,16 +79,24 @@ export function EntryListEditor<T>({
           </div>
         </FieldGroup>
       ))}
-      <Button
-        type="button"
-        variant="outline"
-        size="touch"
-        className="w-fit"
-        data-testid={`${rootId}-add`}
-        onClick={() => onChange([...items, onCreate()])}
-      >
-        {addLabel}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="touch"
+          className="w-fit"
+          data-testid={`${rootId}-add`}
+          onClick={() => onChange([...items, onCreate()])}
+        >
+          {addLabel}
+        </Button>
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid={`${rootId}-count`}
+        >
+          {countLabel}
+        </span>
+      </div>
     </div>
   );
 }

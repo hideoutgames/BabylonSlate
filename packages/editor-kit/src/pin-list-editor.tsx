@@ -174,7 +174,11 @@ export function PinListEditor({
               : undefined,
         );
         return (
-          <div key={row.id} className="flex flex-col gap-1">
+          <div
+            key={row.id}
+            className="flex flex-nowrap items-center gap-1"
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div
               className={`flex min-h-[var(--chrome-row,28px)] items-center gap-1 rounded-md px-1 ${
                 selected ? "bg-accent" : "hover:bg-accent/50"
@@ -202,19 +206,6 @@ export function PinListEditor({
                 }}
                 data-testid={`${testIdPrefix}-${row.id}-type`}
               />
-              {readOnly ? null : (
-              <ListRowActions
-                index={index}
-                count={rows.length}
-                name={row.name}
-                testIdPrefix={testIdPrefix}
-                rowId={row.id}
-                onMove={(delta) => onChange(moveRow(rows, index, delta))}
-                onRemove={() =>
-                  onChange(rows.filter((entry) => entry.id !== row.id))
-                }
-              />
-              )}
             </div>
             {selected && !readOnly ? (
               <div className="flex flex-wrap items-center gap-2 px-1 pb-1">
@@ -343,6 +334,20 @@ export function PinListEditor({
                 ) : null}
               </div>
             ) : null}
+            </div>
+            {readOnly ? null : (
+              <ListRowActions
+                index={index}
+                count={rows.length}
+                name={row.name}
+                testIdPrefix={testIdPrefix}
+                rowId={row.id}
+                onMove={(delta) => onChange(moveRow(rows, index, delta))}
+                onRemove={() =>
+                  onChange(rows.filter((entry) => entry.id !== row.id))
+                }
+              />
+            )}
           </div>
         );
       })}

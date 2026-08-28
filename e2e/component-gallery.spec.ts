@@ -68,6 +68,7 @@ test("component gallery renders every editor-kit composite", async ({
     page.getByTestId("gallery-variable-type-fields").locator('[data-pin-shape="map"]'),
   ).toBeVisible();
   await expect(page.getByTestId("gallery-entry-list")).toBeVisible();
+  await expect(page.getByTestId("gallery-entry-list-count")).toHaveText("2 items");
   await expect(page.getByTestId("gallery-nested-menu")).toBeVisible();
   await expect(page.getByTestId("gallery-nested-overlay")).toBeVisible();
 

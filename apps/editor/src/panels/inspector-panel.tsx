@@ -474,6 +474,7 @@ function ClassMemberDetails({
               value: seedVariableEntry(typeId, member.typeClassId, schemas),
             })}
             addLabel="Add Entry"
+            countNoun={{ one: "entry", other: "entries" }}
             data-testid="inspector-member-defaults"
             renderItem={({ item, index, onChange: changeItem }) => (
               <div className="flex flex-col gap-1">

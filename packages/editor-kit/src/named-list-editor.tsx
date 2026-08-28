@@ -56,12 +56,15 @@ export function NamedListEditor({
       {values.map((value, index) => (
         <FieldGroup
           key={`${value}-${index}`}
-          className="rounded-md border border-border px-1 py-0.5"
+          className="rounded-md border border-border px-1 py-0.5 gap-1"
         >
+          {renderItem ? null : (
+            <FieldLabel htmlFor={`${rootId}-${index}-value`}>Name</FieldLabel>
+          )}
           <div className="flex flex-nowrap items-center gap-1">
-            <Field className="min-w-0 flex-1">
-              {renderItem ? (
-                renderItem({
+            {renderItem ? (
+              <div className="min-w-0 flex-1">
+                {renderItem({
                   value,
                   index,
                   onChange: (next) => {
@@ -69,26 +72,21 @@ export function NamedListEditor({
                     rows[index] = next;
                     onChange(rows);
                   },
-                })
-              ) : (
-                <>
-                  <FieldLabel htmlFor={`${rootId}-${index}-value`}>
-                    Name
-                  </FieldLabel>
-                  <Input
-                    id={`${rootId}-${index}-value`}
-                    className="min-h-[var(--touch-target,44px)]"
-                    value={value}
-                    onChange={(event) => {
-                      const rows = [...values];
-                      rows[index] = event.target.value;
-                      onChange(rows);
-                    }}
-                    data-testid={`${rootId}-${index}-value`}
-                  />
-                </>
-              )}
-            </Field>
+                })}
+              </div>
+            ) : (
+              <Input
+                id={`${rootId}-${index}-value`}
+                className="min-h-[var(--touch-target,44px)] min-w-0 flex-1"
+                value={value}
+                onChange={(event) => {
+                  const rows = [...values];
+                  rows[index] = event.target.value;
+                  onChange(rows);
+                }}
+                data-testid={`${rootId}-${index}-value`}
+              />
+            )}
             <ListRowActions
               index={index}
               count={values.length}
