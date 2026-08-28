@@ -52,7 +52,7 @@ export function PinShapeGlyph({
         aria-hidden="true"
         style={{ width: styleSize, height: styleSize, color }}
       >
-        {bars.map((bar, index) => (
+        {bars.map((bar) => (
           <rect
             key={`${bar.x}-${bar.y}`}
             x={bar.x}
