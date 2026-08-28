@@ -173,7 +173,7 @@ export type ControlMessage =
 
 export type DebugColliderPrimitive = {
   id: string;
-  shape: "box" | "sphere" | "circle" | "polyline" | "capsule";
+  shape: "box" | "sphere" | "circle" | "polyline" | "capsule" | "convex";
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number; w: number };
   halfExtents?: { x: number; y: number; z: number };

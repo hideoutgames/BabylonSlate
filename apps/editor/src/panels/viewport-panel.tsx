@@ -103,6 +103,7 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     loadEditorCameraPose,
     pivotAroundCenter,
     viewportShadingMode,
+    collisionsVisible,
   } = useSceneEditing();
   const { flySpeed, editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
@@ -619,6 +620,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
   }, [viewportShadingMode]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
+  }, [collisionsVisible, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.setPreviewGameCamera(previewGameCamera);

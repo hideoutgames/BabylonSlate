@@ -59,6 +59,7 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { RenderScheduler } from "./render-scheduler";
 import { isEditorModelPlaceholder } from "./glb-anim";
+import { isColliderVisualMesh } from "./collider-visual";
 import {
   editorComponentMeshName,
   editorMeshName,
@@ -634,6 +635,47 @@ describe("EditorSceneSync", () => {
     expect(scene.clearColor.r).toBeCloseTo(gray.r);
     expect(scene.clearColor.g).toBeCloseTo(gray.g);
     expect(scene.clearColor.b).toBeCloseTo(gray.b);
+  });
+
+  it("omits MeshComponent collision dashes until Show Collisions is on", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    const crate = createActor("crate", "Crate", {
+      components: [createMeshComponent("mesh", "box")],
+    });
+    sync.apply(sceneWith([crate]));
+    const mesh = sync.meshForActor("crate");
+    const hasDash = () =>
+      Boolean(
+        mesh
+          ?.getChildMeshes()
+          .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
+      );
+    expect(hasDash()).toBe(false);
+    sync.setDrawMeshCollision(true);
+    expect(hasDash()).toBe(true);
+    sync.setDrawMeshCollision(false);
+    expect(hasDash()).toBe(false);
+  });
+
+  it("does not draw MeshComponent collision dashes in a 2D world when Show Collisions is on", () => {
+    const { scene } = createHandle();
+    const sync = new EditorSceneSync(scene);
+    sync.apply({
+      ...createDefaultScene("2d"),
+      actors: [
+        createActor("crate", "Crate", {
+          components: [createMeshComponent("mesh", "box")],
+        }),
+      ],
+    });
+    sync.setDrawMeshCollision(true);
+    const mesh = sync.meshForActor("crate");
+    expect(
+      mesh
+        ?.getChildMeshes()
+        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
+    ).toBe(false);
   });
 
   it("creates, updates and removes meshes incrementally", () => {

@@ -100,6 +100,33 @@ describe("play console visualization", () => {
     engine.dispose();
   });
 
+  it("draws convex hull collider primitives", () => {
+    const { engine, scene } = createTestEngine();
+    const overlay = createPlayCollisionOverlay(scene);
+    overlay.sync([
+      {
+        id: "hull",
+        shape: "convex",
+        position: { x: 1, y: 2, z: 3 },
+        rotation: { x: 0, y: 0, z: 0, w: 1 },
+        points: [
+          { x: 0, y: 0, z: 0 },
+          { x: 1, y: 0, z: 0 },
+          { x: 0, y: 1, z: 0 },
+          { x: 0, y: 0, z: 1 },
+        ],
+      },
+    ]);
+    const hull = scene.getMeshByName("playConsoleViz:hull");
+    expect(hull).not.toBeNull();
+    expect(hull?.renderingGroupId).toBe(1);
+    expect(hull?.position.x).toBeCloseTo(1);
+    overlay.sync([]);
+    expect(scene.getMeshByName("playConsoleViz:hull")).toBeNull();
+    overlay.dispose();
+    engine.dispose();
+  });
+
   it("reuses collision overlay meshes when pose changes", () => {
     const { engine, scene } = createTestEngine();
     const overlay = createPlayCollisionOverlay(scene);

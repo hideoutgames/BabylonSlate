@@ -22,6 +22,7 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
       syncSelectionDebug: vi.fn(),
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
+      setDrawMeshCollision: vi.fn(),
       setPreviewGameCamera: vi.fn(),
       setGridSettings: vi.fn(),
       gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
@@ -135,6 +136,7 @@ vi.mock("../context/scene-editing-context", () => ({
     loadEditorCameraPose: vi.fn(() => null),
     pivotAroundCenter: false,
     viewportShadingMode: "pbr",
+    collisionsVisible: false,
   }),
 }));
 
@@ -205,6 +207,9 @@ describe("ViewportPanel engine", () => {
         editor: true,
         sharedEngine: play.ensureSharedEngine(),
       }),
+    );
+    expect(createEngineMock.mock.results[0]?.value.editor.setDrawMeshCollision).toHaveBeenCalledWith(
+      false,
     );
   });
 

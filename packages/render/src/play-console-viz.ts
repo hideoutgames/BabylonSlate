@@ -9,6 +9,7 @@ import {
   type Scene,
 } from "@babylonjs/core";
 import type { CommandMessage, DebugColliderPrimitive } from "@babylonslate/bridge";
+import { convexHullEdges } from "@babylonslate/assets";
 import { NavMeshDebugOverlay, type NavDebugBlockerPose } from "./nav-debug-overlay";
 import { isPlayConsoleVizSkipMesh } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
@@ -84,6 +85,9 @@ function colliderShapeKey(collider: DebugColliderPrimitive): string | null {
     collider.halfHeight != null
   ) {
     return `capsule:${collider.radius}:${collider.halfHeight}`;
+  }
+  if (collider.shape === "convex" && collider.points && collider.points.length >= 4) {
+    return `convex:${collider.points.map((p) => `${p.x},${p.y},${p.z}`).join(";")}`;
   }
   return null;
 }
@@ -197,6 +201,17 @@ export function createPlayCollisionOverlay(scene: Scene): {
       mesh.material = material;
       markDebugOverlay(mesh);
       return mesh;
+    }
+    if (collider.shape === "convex" && collider.points && collider.points.length >= 4) {
+      const lines = convexHullEdges(collider.points).map(([from, to]) => [
+        new Vector3(from.x, from.y, from.z),
+        new Vector3(to.x, to.y, to.z),
+      ]);
+      if (lines.length === 0) return null;
+      const line = MeshBuilder.CreateLineSystem(name, { lines }, scene);
+      line.color = lineColor;
+      markDebugOverlay(line);
+      return line;
     }
     return null;
   };

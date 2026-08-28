@@ -24,6 +24,8 @@ const harness = vi.hoisted(() => ({
   setGridVisible: vi.fn(),
   navmeshVisible: false,
   setNavmeshVisible: vi.fn(),
+  collisionsVisible: false,
+  setCollisionsVisible: vi.fn(),
   dragSelectActive: false,
   setDragSelectActive: vi.fn(),
   viewportMode: "3d" as const,
@@ -56,6 +58,8 @@ vi.mock("../context/scene-editing-context", () => ({
     setGridVisible: harness.setGridVisible,
     navmeshVisible: harness.navmeshVisible,
     setNavmeshVisible: harness.setNavmeshVisible,
+    collisionsVisible: harness.collisionsVisible,
+    setCollisionsVisible: harness.setCollisionsVisible,
     dragSelectActive: harness.dragSelectActive,
     setDragSelectActive: harness.setDragSelectActive,
     viewportMode: harness.viewportMode,
@@ -94,6 +98,7 @@ beforeEach(() => {
   harness.joystickEnabled = false;
   harness.gridVisible = true;
   harness.navmeshVisible = false;
+  harness.collisionsVisible = false;
   harness.dragSelectActive = false;
   harness.viewportMode = "3d";
   harness.previewGameCamera = false;
@@ -105,6 +110,7 @@ beforeEach(() => {
   harness.setJoystickEnabled.mockClear();
   harness.setGridVisible.mockClear();
   harness.setNavmeshVisible.mockClear();
+  harness.setCollisionsVisible.mockClear();
   harness.setDragSelectActive.mockClear();
   harness.setViewportMode.mockClear();
   harness.setPreviewGameCamera.mockClear();
@@ -181,13 +187,19 @@ describe("ViewportToolbar", () => {
     expect(screen.queryByTestId("gizmo-joystick-toggle")).toBeNull();
   });
 
-  it("opens a settings menu with Viewport Mode, Snap, Show Grid, Show Navmesh, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
+  it("opens a settings menu with Viewport Mode, Snap, Show Grid, Show Navmesh, Show Collisions, Joystick, Pivot Around Center, Game Camera, and Settings", () => {
     renderToolbar();
     fireEvent.click(screen.getByTestId("viewport-settings"));
     expect(screen.getByTestId("viewport-shading-mode")).toBeTruthy();
     expect(screen.getByTestId("gizmo-snap-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-grid-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-show-navmesh-toggle")).toBeTruthy();
+    expect(screen.getByTestId("viewport-show-collisions-toggle")).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("viewport-show-collisions-toggle")
+        .getAttribute("aria-checked"),
+    ).toBe("false");
     expect(screen.getByTestId("gizmo-joystick-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-pivot-around-center-toggle")).toBeTruthy();
     expect(screen.getByTestId("viewport-game-camera-toggle")).toBeTruthy();
@@ -255,6 +267,14 @@ describe("ViewportToolbar", () => {
         settings: expect.objectContaining({ showNavmesh: true }),
       }),
     );
+  });
+
+  it("toggles Show Collisions without writing the scene document", () => {
+    renderToolbar();
+    fireEvent.click(screen.getByTestId("viewport-settings"));
+    fireEvent.click(screen.getByTestId("viewport-show-collisions-toggle"));
+    expect(harness.setCollisionsVisible).toHaveBeenCalledWith(true);
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
   });
 
   it("toggles Pivot Around Center without writing the scene document", () => {

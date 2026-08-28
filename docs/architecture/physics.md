@@ -97,7 +97,7 @@ Project Settings → **Physics** stores `settings.physics.collisionLayers` (`Nam
 
 ### Editor / Play visuals
 
-RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws those dashes **and** MeshComponent-owned dashes (simple/complex). Play/export draws ColliderComponent dashes only when `renderInGame` is true (`meshKind` `collider:{json}`). Mesh collision dashes stay editor-only; Play uses console `showcollision` (`listDebugColliders()`, including capsules, Blocking Volume static boxes, and Mesh colliders). See [render.md](render.md) and [scene-editing.md](scene-editing.md).
+RigidBody-only actors use a camera-facing **`default.png` billboard** (Play `playHelperVisual`) — never a 0.25 cube. `ColliderComponent` is an `EditorSceneSync` **world visual** (opaque dashed segment meshes, `RENDERING_GROUP.world`, depth-tested). Editor always draws ColliderComponent dashes. MeshComponent simple/complex dashes follow session **Show Collisions** in Viewport Settings (default **off**; 2D worlds stay off). Play/export draws ColliderComponent dashes only when `renderInGame` is true (`meshKind` `collider:{json}`). Mesh collision dashes stay editor-only; Play uses console `showcollision` (`listDebugColliders()`, including capsules, convex hulls from generated/cone simple collision, Blocking Volume static boxes, and Mesh colliders). See [render.md](render.md) and [scene-editing.md](scene-editing.md).
 
 ### Shapes
 
