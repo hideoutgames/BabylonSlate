@@ -580,4 +580,46 @@ describe("PropertyGrid", () => {
       expect(input.selectionEnd).toBe(input.value.length);
     });
   });
+
+  it("hides Field labels when hideLabels is set", () => {
+    render(
+      <PropertyGrid
+        hideLabels
+        rows={[
+          {
+            kind: "number",
+            id: "item-0",
+            label: "Item 1",
+            value: 1.5,
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const label = screen
+      .getByTestId("property-row-item-0")
+      .querySelector('[data-slot="field-label"]');
+    expect(label?.className).toMatch(/sr-only/);
+    expect(label?.textContent).toContain("Item 1");
+  });
+
+  it("drops Field padding and divider when density is compact", () => {
+    render(
+      <PropertyGrid
+        density="compact"
+        rows={[
+          {
+            kind: "text",
+            id: "name",
+            label: "Name",
+            value: "Cube",
+            onChange: () => {},
+          },
+        ]}
+      />,
+    );
+    const row = screen.getByTestId("property-row-name");
+    expect(row.className).not.toMatch(/px-2/);
+    expect(row.className).not.toMatch(/border-b/);
+  });
 });

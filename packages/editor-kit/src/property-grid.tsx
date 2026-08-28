@@ -122,6 +122,10 @@ export interface PropertyGridProps {
   title?: string;
   /** Vertical stacks the label above the control (Details). Horizontal is name left, value right. */
   orientation?: "vertical" | "horizontal";
+  /** Screen-reader-only Field labels so the control can fill a list row. */
+  hideLabels?: boolean;
+  /** Nested list rows: no Field padding or divider. */
+  density?: "default" | "compact";
   "data-testid"?: string;
 }
 
@@ -379,8 +383,11 @@ export function PropertyGrid({
   rows,
   title,
   orientation = "vertical",
+  hideLabels = false,
+  density = "default",
   "data-testid": testId,
 }: PropertyGridProps) {
+  const compact = density === "compact";
   return (
     <div className="flex flex-col gap-0" data-testid={testId}>
       {title ? (
@@ -397,7 +404,11 @@ export function PropertyGrid({
                   ? undefined
                   : `property-${row.id}`
               }
-              className="w-auto min-w-0 flex-1 truncate"
+              className={
+                hideLabels
+                  ? "sr-only"
+                  : "w-auto min-w-0 flex-1 truncate"
+              }
             >
               {humanizePropertyLabel(row.label)}
             </FieldLabel>
@@ -408,7 +419,11 @@ export function PropertyGrid({
               orientation={orientation}
               data-testid={row.testId ?? `property-row-${row.id}`}
               data-disabled={row.disabled || undefined}
-              className="gap-0.5 border-b border-border/60 px-2 py-1"
+              className={
+                compact
+                  ? "gap-0.5 px-0 py-0"
+                  : "gap-0.5 border-b border-border/60 px-2 py-1"
+              }
             >
               {orientation === "horizontal" ? (
                 <>
