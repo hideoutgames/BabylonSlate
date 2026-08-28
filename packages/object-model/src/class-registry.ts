@@ -1,4 +1,4 @@
-import { err, ok, type Result } from "@babylonslate/core";
+import { err, ok, mapFromDefaultEntries, type Result } from "@babylonslate/core";
 import {
   ENGINE_BT_BUILTIN_CLASSES,
   ENGINE_COMPONENT_CLASS_IDS,
@@ -25,10 +25,7 @@ export function hydrateClassVariableValue(variable: VariableDef): unknown {
       : [];
   }
   if (variable.container === "map") {
-    if (variable.defaultValue instanceof Map) {
-      return new Map(variable.defaultValue);
-    }
-    return new Map();
+    return mapFromDefaultEntries(variable.defaultValue);
   }
   return variable.defaultValue;
 }

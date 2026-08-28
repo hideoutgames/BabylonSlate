@@ -420,6 +420,36 @@ describe("My Class members", () => {
     );
   });
 
+  it("copies Array and Map container onto Class tree variable rows", () => {
+    const members = membersForGraph({
+      nodes: [],
+      edges: [],
+      members: [
+        {
+          id: "hits",
+          kind: "variable",
+          name: "Hits",
+          typeId: "float",
+          container: "array",
+        },
+        {
+          id: "byName",
+          kind: "variable",
+          name: "By Name",
+          typeId: "float",
+          container: "map",
+          keyTypeId: "string",
+        },
+      ],
+    });
+    expect(members.find((member) => member.detail === "hits")?.container).toBe(
+      "array",
+    );
+    expect(members.find((member) => member.detail === "byName")?.container).toBe(
+      "map",
+    );
+  });
+
   it("keeps function-local variables out of the Variables section", () => {
     const graph: SerializedGraph = {
       nodes: [],

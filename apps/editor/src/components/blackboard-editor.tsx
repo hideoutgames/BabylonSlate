@@ -91,7 +91,7 @@ export function BlackboardEditor({
         ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
         : undefined,
   );
-  const rows: PropertyRow[] = key
+  const nameRows: PropertyRow[] = key
     ? [
         {
           id: "name",
@@ -106,29 +106,31 @@ export function BlackboardEditor({
               ),
             }),
         },
-        ...variableDefaultPropertyRows(
-          pickerTypeId,
-          key.defaultValue,
-          (value) =>
-            commit({
-              ...doc,
-              keys: doc.keys.map((entry, index) =>
-                index === selected ? { ...entry, defaultValue: value } : entry,
-              ),
-            }),
-          {
-            typeClassId,
-            schemas: typeSchemas,
-            enumMembers,
-            assetEntries: pickerAssets.map((entry) => ({
-              id: entry.guid,
-              name: entry.name,
-              type: entry.type,
-            })),
-            onPickAsset: () => setDefaultAssetPickerOpen(true),
-          },
-        ),
       ]
+    : [];
+  const defaultRows = key
+    ? variableDefaultPropertyRows(
+        pickerTypeId,
+        key.defaultValue,
+        (value) =>
+          commit({
+            ...doc,
+            keys: doc.keys.map((entry, index) =>
+              index === selected ? { ...entry, defaultValue: value } : entry,
+            ),
+          }),
+        {
+          typeClassId,
+          schemas: typeSchemas,
+          enumMembers,
+          assetEntries: pickerAssets.map((entry) => ({
+            id: entry.guid,
+            name: entry.name,
+            type: entry.type,
+          })),
+          onPickAsset: () => setDefaultAssetPickerOpen(true),
+        },
+      )
     : [];
 
   return (
@@ -170,7 +172,7 @@ export function BlackboardEditor({
       <PanelFrame className="flex-1" title="Details">
         {key ? (
           <div className="flex flex-col gap-3 p-2" data-testid="blackboard-details">
-            <PropertyGrid rows={rows} />
+            {nameRows.length > 0 ? <PropertyGrid rows={nameRows} /> : null}
             <div className="flex flex-col gap-1">
               <div className="text-sm font-medium">Type</div>
               <PinTypePicker
@@ -220,6 +222,7 @@ export function BlackboardEditor({
                 </AssetPickerControl>
               </div>
             ) : null}
+            {defaultRows.length > 0 ? <PropertyGrid rows={defaultRows} /> : null}
             <Button
               type="button"
               variant="outline"

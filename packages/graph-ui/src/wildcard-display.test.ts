@@ -102,6 +102,46 @@ describe("displayPinTypesForGraph", () => {
     });
   });
 
+  it("displays For Each Element as the wired array element type", () => {
+    const display = displayPinTypesForGraph(
+      [
+        { id: "get", data: { __pins: [arrayFloatOut] } },
+        {
+          id: "foreach",
+          data: {
+            __pins: [
+              {
+                id: "array",
+                name: "array",
+                kind: "data",
+                direction: "in",
+                type: { kind: "array", element: { kind: "resolvingWildcard" } },
+              },
+              {
+                id: "element",
+                name: "element",
+                kind: "data",
+                direction: "out",
+                type: { kind: "resolvingWildcard" },
+              },
+            ],
+          },
+        },
+      ],
+      [
+        {
+          source: "get",
+          target: "foreach",
+          sourceHandle: "out",
+          targetHandle: "array",
+        },
+      ],
+    );
+    expect(display.get(pinTypeKey("foreach", "element"))).toEqual({
+      kind: "float",
+    });
+  });
+
   it("does not mutate declared pin types on the input nodes", () => {
     const nodes = [
       { id: "src", data: { __pins: [floatOut] } },

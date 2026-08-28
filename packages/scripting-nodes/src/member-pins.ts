@@ -4,6 +4,7 @@ import {
   pinTypeForMember,
   pinTypeForVariable,
 } from "@babylonslate/scripting";
+import { mapDefaultLiteral } from "@babylonslate/core";
 
 export {
   pinTypeForMember,
@@ -85,7 +86,7 @@ export function localVariablePreamble(
     });
     const value =
       type.kind === "map"
-        ? "new Map()"
+        ? mapDefaultLiteral(local.defaultValue)
         : local.defaultValue !== undefined
           ? JSON.stringify(local.defaultValue)
           : defaultValueLiteral(type);

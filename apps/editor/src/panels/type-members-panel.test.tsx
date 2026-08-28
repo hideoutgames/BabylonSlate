@@ -97,5 +97,15 @@ describe("type asset member table", () => {
     );
     fireEvent.click(screen.getByTestId("structure-row-0"));
     expect(screen.getByTestId("structure-field-type")).toBeTruthy();
+    expect(
+      screen.getByTestId("structure-field-type").compareDocumentPosition(
+        screen.getByTestId("property-default"),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByTestId("property-name").compareDocumentPosition(
+        screen.getByTestId("structure-field-type"),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
   });
 });

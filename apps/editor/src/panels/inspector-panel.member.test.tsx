@@ -98,6 +98,31 @@ vi.mock("../context/document-context", () => ({
               typeId: "rotator",
               container: "array",
             },
+            {
+              id: "var-array-filled",
+              kind: "variable",
+              name: "Filled Hits",
+              typeId: "rotator",
+              container: "array",
+              defaultValue: [{ pitch: 1, yaw: 0, roll: 0 }],
+            },
+            {
+              id: "var-map",
+              kind: "variable",
+              name: "By Name",
+              typeId: "float",
+              container: "map",
+              keyTypeId: "string",
+            },
+            {
+              id: "var-map-filled",
+              kind: "variable",
+              name: "Scores",
+              typeId: "float",
+              container: "map",
+              keyTypeId: "string",
+              defaultValue: [{ key: "a", value: 1 }],
+            },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             {
               id: "loc-1",
@@ -192,6 +217,12 @@ afterEach(() => {
   applyGraphChange.mockClear();
 });
 
+function expectDocumentOrder(earlier: HTMLElement, later: HTMLElement) {
+  expect(
+    earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeGreaterThan(0);
+}
+
 describe("Inspector class member details", () => {
   it("shows PinTypePicker for a selected variable", () => {
     renderMemberInspector("var-1", true);
@@ -201,6 +232,18 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("property-default")).toBeTruthy();
     expect(screen.queryByTestId("property-default")?.getAttribute("type")).not.toBe(
       "text",
+    );
+    expectDocumentOrder(
+      screen.getByTestId("property-name"),
+      screen.getByTestId("inspector-member-type"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      screen.getByTestId("inspector-member-container"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-container"),
+      screen.getByTestId("property-default"),
     );
   });
 
@@ -304,10 +347,105 @@ describe("Inspector class member details", () => {
     );
   });
 
-  it("hides Inspector Default editors for Array variables", () => {
+  it("commits Map container with an empty default entry list", () => {
+    renderMemberInspector("var-1");
+    screen.getByTestId("inspector-member-container-map").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.find((member) => member.id === "var-1")).toEqual(
+      expect.objectContaining({
+        typeId: "bool",
+        container: "map",
+        defaultValue: [],
+      }),
+    );
+  });
+
+  it("shows list bars on Array variable rows in the Class tree", () => {
+    renderMemberInspector("var-array", true);
+    const icon = screen.getByTestId("class-var-type-var-array");
+    expect(icon.getAttribute("data-pin-shape")).toBe("list");
+  });
+
+  it("shows the map glyph on Map variable rows in the Class tree", () => {
+    renderMemberInspector("var-map", true);
+    const icon = screen.getByTestId("class-var-type-var-map");
+    expect(icon.getAttribute("data-pin-shape")).toBe("map");
+  });
+
+  it("places Array default entries below Type and Container", () => {
+    renderMemberInspector("var-array");
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-container"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+  });
+
+  it("adds Array default items from Inspector", () => {
     renderMemberInspector("var-array");
     expect(screen.getByTestId("inspector-member-container-array")).toBeTruthy();
     expect(screen.queryByTestId("property-default")).toBeNull();
+    expect(screen.queryByTestId("inspector-member-defaults-0-remove")).toBeNull();
+    screen.getByTestId("inspector-member-defaults-add").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const added = applyGraphChange.mock.calls[0]?.[1];
+    expect(added?.members?.find((member) => member.id === "var-array")).toEqual(
+      expect.objectContaining({
+        container: "array",
+        defaultValue: [{ pitch: 0, yaw: 0, roll: 0 }],
+      }),
+    );
+  });
+
+  it("removes an Array default item", () => {
+    renderMemberInspector("var-array-filled");
+    expect(screen.getByTestId("inspector-member-defaults-0-remove")).toBeTruthy();
+    expect(screen.queryByTestId("inspector-member-type")).toBeTruthy();
+    screen.getByTestId("inspector-member-defaults-0-remove").click();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(
+      next?.members?.find((member) => member.id === "var-array-filled"),
+    ).toEqual(
+      expect.objectContaining({
+        defaultValue: [],
+      }),
+    );
+  });
+
+  it("places Map default entries below Type, Container, and Key Type", () => {
+    renderMemberInspector("var-map");
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-key-type"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+  });
+
+  it("adds and removes Map default entries from Inspector", () => {
+    renderMemberInspector("var-map");
+    screen.getByTestId("inspector-member-defaults-add").click();
+    const added = applyGraphChange.mock.calls[0]?.[1];
+    expect(added?.members?.find((member) => member.id === "var-map")).toEqual(
+      expect.objectContaining({
+        container: "map",
+        defaultValue: [{ key: "", value: 0 }],
+      }),
+    );
+    cleanup();
+    applyGraphChange.mockClear();
+    renderMemberInspector("var-map-filled");
+    screen.getByTestId("inspector-member-defaults-0-remove").click();
+    const removed = applyGraphChange.mock.calls[0]?.[1];
+    expect(
+      removed?.members?.find((member) => member.id === "var-map-filled"),
+    ).toEqual(expect.objectContaining({ defaultValue: [] }));
   });
 
   it("shows Class Type for Actor variables and Asset Type for Asset variables", async () => {
@@ -320,6 +458,11 @@ describe("Inspector class member details", () => {
     const assetType = screen.getByTestId("inspector-member-asset-type");
     expect(assetType.textContent).toContain("Audio");
     expect(screen.getByTestId("property-default").textContent).toContain("Jump");
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      assetType,
+    );
+    expectDocumentOrder(assetType, screen.getByTestId("property-default"));
     assetType.click();
     await waitFor(() => {
       expect(screen.getByTestId("search-item-Texture")).toBeTruthy();

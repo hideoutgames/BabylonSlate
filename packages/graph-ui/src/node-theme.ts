@@ -34,7 +34,7 @@ const ROLE_CLASS: Record<NodeVisualRole, string> = {
   "bt-task": "bg-node-bt-task",
 };
 
-export type PinVisualShape = "diamond" | "circle" | "list";
+export type PinVisualShape = "diamond" | "circle" | "list" | "map";
 
 export function pinCssVar(type: PinTypeRef): string {
   if (type.kind === "array" && isPinTypeRef(type.element)) {
@@ -49,6 +49,7 @@ export function pinCssVar(type: PinTypeRef): string {
 export function pinVisualShape(type: PinTypeRef): PinVisualShape {
   if (type.kind === "exec") return "diamond";
   if (type.kind === "array") return "list";
+  if (type.kind === "map") return "map";
   return "circle";
 }
 

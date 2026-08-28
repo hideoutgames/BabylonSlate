@@ -12,6 +12,7 @@ import {
   ContextMenuOverlay,
   InputMappingEditor,
   NamedListEditor,
+  EntryListEditor,
   NamePromptDialog,
   AddFunctionDialog,
   NestedMenu,
@@ -186,6 +187,7 @@ function GalleryComposites() {
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [addFunctionOpen, setAddFunctionOpen] = useState(false);
   const [layers, setLayers] = useState(["Default", "Foreground"]);
+  const [entryItems, setEntryItems] = useState(["One", "Two"]);
   const [mappings, setMappings] = useState(createDefaultInputMappings);
   const [parameters, setParameters] = useState<ParameterRow[]>([
     { id: "gallery-amount", name: "amount", type: "float" },
@@ -579,6 +581,23 @@ function GalleryComposites() {
           values={layers}
           onChange={setLayers}
           data-testid="gallery-named-list"
+        />
+      </div>
+      <div className="rounded-lg border border-border p-3">
+        <EntryListEditor
+          title="Entry List"
+          items={entryItems}
+          onChange={setEntryItems}
+          onCreate={() => "New"}
+          addLabel="Add Item"
+          data-testid="gallery-entry-list"
+          renderItem={({ item, index, onChange }) => (
+            <Input
+              value={item}
+              onChange={(event) => onChange(event.target.value)}
+              data-testid={`gallery-entry-${index}`}
+            />
+          )}
         />
       </div>
       <div className="rounded-lg border border-border p-3">

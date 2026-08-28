@@ -10,7 +10,9 @@ import {
   GraphEditor,
 } from "./graph-editor";
 import type { GraphDocument } from "./graph-types";
+import { isAssignable, type PinType } from "@babylonslate/scripting";
 import { FORMAT_GAP_X, FORMAT_GAP_Y } from "./graph-format";
+import type { PinCompatibilityRule } from "./graph-connect";
 import { MARQUEE_FALLBACK_HEIGHT, MARQUEE_FALLBACK_WIDTH } from "./graph-marquee";
 import { treeNodeTypes } from "./tree-node";
 import { animGraphEdgeTypes } from "./anim-graph-nodes";
@@ -111,6 +113,146 @@ function installImmediateGraphHostSize(
     ImmediateResizeObserver as unknown as typeof ResizeObserver;
   return () => {
     globalThis.ResizeObserver = previous;
+  };
+}
+
+const forEachLoopPins = [
+  {
+    id: "execIn",
+    name: "exec",
+    kind: "exec" as const,
+    direction: "in" as const,
+    type: { kind: "exec" },
+  },
+  {
+    id: "array",
+    name: "array",
+    kind: "data" as const,
+    direction: "in" as const,
+    type: { kind: "array", element: { kind: "resolvingWildcard" } },
+  },
+  {
+    id: "loopBody",
+    name: "loopBody",
+    kind: "exec" as const,
+    direction: "out" as const,
+    type: { kind: "exec" },
+  },
+  {
+    id: "element",
+    name: "element",
+    kind: "data" as const,
+    direction: "out" as const,
+    type: { kind: "resolvingWildcard" },
+  },
+  {
+    id: "index",
+    name: "index",
+    kind: "data" as const,
+    direction: "out" as const,
+    type: { kind: "int" },
+  },
+  {
+    id: "completed",
+    name: "completed",
+    kind: "exec" as const,
+    direction: "out" as const,
+    type: { kind: "exec" },
+  },
+];
+
+function forEachFloatGraph(
+  options: {
+    includePrint?: boolean;
+    includeAdd?: boolean;
+    includeLog?: boolean;
+  } = {},
+): GraphDocument {
+  const includePrint = options.includePrint ?? true;
+  const includeAdd = options.includeAdd ?? true;
+  const includeLog = options.includeLog ?? true;
+  const nodes: GraphDocument["nodes"] = [
+    {
+      id: "get",
+      type: "variables.get",
+      position: { x: 0, y: 0 },
+      data: {
+        title: "Get Scores",
+        __pins: [
+          {
+            id: "out",
+            name: "Scores",
+            kind: "data",
+            direction: "out",
+            type: { kind: "array", element: { kind: "float" } },
+          },
+        ],
+      },
+    },
+    {
+      id: "foreach",
+      type: "flow.forEach",
+      position: { x: 280, y: 0 },
+      data: { title: "For Each", __pins: forEachLoopPins },
+    },
+  ];
+  if (includePrint) {
+    nodes.push({
+      id: "print",
+      type: "debug.print",
+      position: { x: 560, y: 0 },
+      data: {
+        title: "Print",
+        __pins: [
+          {
+            id: "value",
+            name: "value",
+            kind: "data",
+            direction: "in",
+            type: { kind: "boxedWildcard" },
+          },
+        ],
+      },
+    });
+  }
+  if (includeAdd) {
+    nodes.push({
+      id: "add",
+      type: "math.add",
+      position: { x: 560, y: 160 },
+      data: {
+        title: "Add",
+        __pins: [
+          {
+            id: "a",
+            name: "a",
+            kind: "data",
+            direction: "in",
+            type: { kind: "float" },
+          },
+        ],
+      },
+    });
+  }
+  if (includeLog) {
+    nodes.push({
+      id: "log",
+      type: "debug.log",
+      position: { x: 560, y: 320 },
+      data: { message: "B", __pins: debugLogPins },
+    });
+  }
+  return {
+    nodes,
+    edges: [
+      {
+        id: "e:get:out:foreach:array",
+        source: "get",
+        target: "foreach",
+        sourceHandle: "out",
+        targetHandle: "array",
+      },
+    ],
   };
 }
 
@@ -2113,6 +2255,53 @@ describe("GraphEditor", () => {
     expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
   });
 
+  it("renders map pins with a map icon distinct from array list bars", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "find",
+          type: "map.get",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Map Get",
+            __nodeType: "map.get",
+            __category: "map",
+            __pure: true,
+            __pins: [
+              {
+                id: "map",
+                name: "map",
+                kind: "data",
+                direction: "in",
+                type: {
+                  kind: "map",
+                  key: { kind: "string" },
+                  value: { kind: "float" },
+                },
+              },
+              {
+                id: "key",
+                name: "key",
+                kind: "data",
+                direction: "in",
+                type: { kind: "string" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+
+    const mapHandle = container.querySelector('[data-pin-type="map"]');
+    expect(mapHandle).not.toBeNull();
+    expect(mapHandle?.querySelector('[data-pin-shape="map"]')).not.toBeNull();
+    expect(mapHandle?.querySelector('[data-pin-shape="list"]')).toBeNull();
+    expect(mapHandle?.querySelector('[data-pin-shape="circle"]')).toBeNull();
+  });
+
   it("uses the host colorMode on the canvas", () => {
     const { container } = render(
       <GraphEditor
@@ -2460,6 +2649,174 @@ describe("GraphEditor", () => {
     expect(persisted.find((pin) => pin.id === "value")?.type.kind).toBe(
       "boxedWildcard",
     );
+  });
+
+  it("lets a typed For Each Element wire to Print without rewriting stored pins", () => {
+    const onChange = vi.fn();
+    const scriptPins: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const { container } = render(
+      <GraphEditor
+        initialGraph={forEachFloatGraph()}
+        onChange={onChange}
+        pinCompatibility={scriptPins}
+      />,
+    );
+    const source = container.querySelector(
+      '[data-id="foreach"] [data-handleid="element"][data-handlepos="right"]',
+    );
+    const print = container.querySelector(
+      '[data-id="print"] [data-handleid="value"][data-handlepos="left"]',
+    );
+    const add = container.querySelector(
+      '[data-id="add"] [data-handleid="a"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(print).not.toBeNull();
+    expect(add).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(print!);
+
+    const lastGraph = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(
+      lastGraph.edges.some(
+        (edge) =>
+          edge.source === "foreach" &&
+          edge.sourceHandle === "element" &&
+          edge.target === "print" &&
+          edge.targetHandle === "value",
+      ),
+    ).toBe(true);
+    const foreachPins = lastGraph.nodes.find((node) => node.id === "foreach")
+      ?.data.__pins as Array<{ id: string; type: { kind: string } }>;
+    expect(foreachPins.find((pin) => pin.id === "element")?.type.kind).toBe(
+      "resolvingWildcard",
+    );
+
+    onChange.mockClear();
+    fireEvent.click(source!);
+    fireEvent.click(add!);
+    const afterAdd = onChange.mock.calls.at(-1)?.[0] as GraphDocument;
+    expect(
+      afterAdd.edges.some(
+        (edge) =>
+          edge.source === "foreach" &&
+          edge.sourceHandle === "element" &&
+          edge.target === "add" &&
+          edge.targetHandle === "a",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a typed For Each Element into a mismatched pin after resolution", () => {
+    const onChange = vi.fn();
+    const scriptPins: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const { container } = render(
+      <GraphEditor
+        initialGraph={forEachFloatGraph()}
+        onChange={onChange}
+        pinCompatibility={scriptPins}
+      />,
+    );
+    const source = container.querySelector(
+      '[data-id="foreach"] [data-handleid="element"][data-handlepos="right"]',
+    );
+    const message = container.querySelector(
+      '[data-id="log"] [data-handleid="message"][data-handlepos="left"]',
+    );
+    expect(source).not.toBeNull();
+    expect(message).not.toBeNull();
+
+    fireEvent.click(source!);
+    fireEvent.click(message!);
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("filters Add Node for a resolved For Each Element using the display type", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const scriptPins: PinCompatibilityRule = (outgoing, incoming) =>
+        isAssignable(outgoing.type as PinType, incoming.type as PinType);
+      const { container, getByTestId, queryByTestId } = render(
+        <GraphEditor
+          initialGraph={forEachFloatGraph({ includePrint: false, includeAdd: false, includeLog: false })}
+          paletteNodes={[
+            {
+              id: "debug.print",
+              title: "Print",
+              category: "Debug",
+              pins: [
+                {
+                  id: "value",
+                  name: "value",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "boxedWildcard" },
+                },
+              ],
+            },
+            {
+              id: "math.add",
+              title: "Add",
+              category: "Math",
+              pins: [
+                {
+                  id: "a",
+                  name: "a",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "float" },
+                },
+              ],
+            },
+            {
+              id: "debug.log",
+              title: "Log",
+              category: "Debug",
+              pins: [
+                {
+                  id: "message",
+                  name: "message",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "string" },
+                },
+              ],
+            },
+          ]}
+          pinCompatibility={scriptPins}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      expect(flow).not.toBeNull();
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      container.querySelectorAll(".react-flow__node").forEach((node) => {
+        node.querySelectorAll(".react-flow__handle").forEach((handle) => {
+          mockHandleRect(handle, {
+            left: 2000,
+            top: 2000,
+            width: 44,
+            height: 44,
+          });
+        });
+      });
+      const source = container.querySelector(
+        '[data-id="foreach"] [data-handleid="element"][data-handlepos="right"]',
+      );
+      expect(source).not.toBeNull();
+      mockHandleRect(source!, { left: 0, top: 0, width: 44, height: 44 });
+      act(() => {
+        dragHandle(source!, { x: 22, y: 22 }, farDrop);
+      });
+      expect(getByTestId("node-palette-item-debug.print")).toBeTruthy();
+      expect(getByTestId("node-palette-item-math.add")).toBeTruthy();
+      expect(queryByTestId("node-palette-item-debug.log")).toBeNull();
+    } finally {
+      restoreLayout();
+    }
   });
 
   it("enables Format when a node is selected", () => {

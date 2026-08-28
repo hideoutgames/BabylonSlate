@@ -197,6 +197,11 @@ export {
   type NamedListItemRenderArgs,
 } from "./named-list-editor";
 export {
+  EntryListEditor,
+  type EntryListEditorProps,
+  type EntryListItemRenderArgs,
+} from "./entry-list-editor";
+export {
   AtlasTileGrid,
   type AtlasTileGridProps,
   type AtlasTileGridTool,
@@ -261,3 +266,8 @@ export {
   type TypeVisualQuery,
 } from "./type-visuals";
 export { TypeColorMark } from "./type-color-mark";
+export {
+  PinShapeGlyph,
+  pinShapeForContainer,
+  type PinShape,
+} from "./pin-shape-glyph";

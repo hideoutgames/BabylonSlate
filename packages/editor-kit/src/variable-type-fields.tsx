@@ -7,6 +7,7 @@ import {
   ToggleGroupItem,
 } from "@babylonslate/ui/components/toggle-group";
 import { PinTypePicker } from "./pin-type-picker";
+import { PinShapeGlyph } from "./pin-shape-glyph";
 import { ClassPicker, type ClassPickerEntry } from "./class-picker";
 import { AssetPicker, type AssetPickerEntry } from "./asset-picker";
 import { AssetPickerControl } from "./asset-picker-control";
@@ -112,9 +113,21 @@ export function VariableTypeFields({
             Single
           </ToggleGroupItem>
           <ToggleGroupItem value="array" data-testid="inspector-member-container-array">
+            <PinShapeGlyph
+              shape="list"
+              connected
+              className="size-3.5"
+              data-icon="inline-start"
+            />
             Array
           </ToggleGroupItem>
           <ToggleGroupItem value="map" data-testid="inspector-member-container-map">
+            <PinShapeGlyph
+              shape="map"
+              connected
+              className="size-3.5"
+              data-icon="inline-start"
+            />
             Map
           </ToggleGroupItem>
         </ToggleGroup>
