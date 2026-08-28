@@ -661,6 +661,29 @@ describe("componentPropertyRows", () => {
     expect(directional.rows.find((row) => row.id.endsWith("-range"))).toBeUndefined();
   });
 
+  it("shows color ground color and intensity for hemispheric fill", () => {
+    const fill = rowsFor({
+      id: "fill",
+      classId: "HemisphericFillLightComponent",
+      properties: {
+        intensity: 0.9,
+        color: [1, 1, 1],
+        groundColor: [0.1, 0, 0],
+        enabled: true,
+      },
+    });
+    expect(fill.rows.find((row) => row.id.endsWith("-intensity"))).toMatchObject({
+      kind: "slider",
+      value: 0.9,
+    });
+    expect(fill.rows.find((row) => row.id.endsWith("-groundColor"))).toMatchObject({
+      kind: "color",
+      value: [0.1, 0, 0],
+    });
+    expect(fill.rows.find((row) => row.id.endsWith("-lightKind"))).toBeUndefined();
+    expect(fill.rows.find((row) => row.id.endsWith("-range"))).toBeUndefined();
+  });
+
   it("flattens collider shape kind and numeric extents instead of object text", () => {
     const { rows, update } = rowsFor(
       {

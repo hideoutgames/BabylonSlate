@@ -286,6 +286,15 @@ export const ENGINE_CLASS_SCRIPT_APIS: readonly EngineClassScriptApi[] = [
     ],
   },
   {
+    classId: "HemisphericFillLightComponent",
+    variables: [
+      { name: "Enabled", typeId: "bool", propertyKey: "enabled" },
+      { name: "Color", typeId: "color", propertyKey: "color" },
+      { name: "Ground Color", typeId: "color", propertyKey: "groundColor" },
+      { name: "Intensity", typeId: "float", propertyKey: "intensity" },
+    ],
+  },
+  {
     classId: "AudioComponent",
     variables: [
       { name: "Volume", typeId: "float", propertyKey: "volume" },

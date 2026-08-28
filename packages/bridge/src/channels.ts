@@ -267,6 +267,7 @@ export type CommandMessage =
         innerAngle?: number;
         outerAngle?: number;
         castShadows?: boolean;
+        groundColor?: [number, number, number];
       };
       camera?: {
         projectionMode?: "perspective" | "orthographic";

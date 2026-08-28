@@ -33,7 +33,7 @@ import {
   isEditorModelPlaceholder,
 } from "./glb-anim";
 import { isGltfModelBytes } from "./model-mesh";
-import { syncAuthoredIllumination } from "./scene-illumination";
+import { syncAuthoredIllumination, isAuthoredLightClassId } from "./scene-illumination";
 import {
   applyEditorBillboardFromActor,
   applyEditorBillboardPass,
@@ -210,6 +210,7 @@ const VISUAL_COMPONENT_CLASS_IDS = new Set([
   "SpriteComponent",
   "TilemapComponent",
   "LightComponent",
+  "HemisphericFillLightComponent",
   "CameraComponent",
   "AudioComponent",
   "SkyboxComponent",
@@ -303,7 +304,7 @@ export function isIdentitySerializedTransform(
 
 function isBillboardComponent(component: SerializedComponent): boolean {
   return (
-    component.classId === "LightComponent" ||
+    isAuthoredLightClassId(component.classId) ||
     component.classId === "CameraComponent" ||
     component.classId === "AudioComponent" ||
     component.classId === "ParticleComponent" ||
@@ -323,6 +324,10 @@ export function helperBillboardIconOf(
 ): EditorBillboardIcon | null {
   if (hasSurfaceVisual(actor)) return null;
   if (skipOverlayButtonVisual(actor, allActors)) return null;
+  const fill = actor.components.find(
+    (component) => component.classId === "HemisphericFillLightComponent",
+  );
+  if (fill) return "directional_light";
   const light = actor.components.find(
     (component) => component.classId === "LightComponent",
   );
@@ -382,6 +387,9 @@ function componentVisualKind(
   }
   if (component.classId === "SpriteComponent") return `sprite:${asset}`;
   if (component.classId === "TilemapComponent") return `tilemap:${asset}`;
+  if (component.classId === "HemisphericFillLightComponent") {
+    return editorBillboardKind("directional_light");
+  }
   if (component.classId === "LightComponent") {
     return editorBillboardKind(lightBillboardIcon(component.properties.lightKind));
   }
@@ -536,6 +544,13 @@ export function editorMeshKindOf(
   }
   if (spriteComponent) return `sprite:${asset}`;
   if (tilemapComponent) return `tilemap:${asset}`;
+  if (
+    actor.components.some(
+      (component) => component.classId === "HemisphericFillLightComponent",
+    )
+  ) {
+    return editorBillboardKind("directional_light");
+  }
   if (actor.components.some((component) => component.classId === "LightComponent")) {
     const light = actor.components.find(
       (component) => component.classId === "LightComponent",
@@ -605,6 +620,11 @@ export function createMeshForComponent(
   }
   if (component.classId === "TilemapComponent") {
     return createTilemapComponentMesh(scene, name, component, assets);
+  }
+  if (component.classId === "HemisphericFillLightComponent") {
+    const mesh = createEditorBillboard(scene, name, "directional_light");
+    applyEditorBillboardFromActor(mesh, actor);
+    return mesh;
   }
   if (component.classId === "LightComponent") {
     const mesh = createEditorBillboard(

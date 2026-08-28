@@ -1,6 +1,7 @@
 import {
   Color3,
   DirectionalLight,
+  HemisphericLight,
   Mesh,
   MeshBuilder,
   PointLight,
@@ -54,7 +55,6 @@ import {
   applyAuthoredLightProperties,
   attachSingleShadowGenerator,
   shadowMapSizeFromQuality,
-  syncDefaultFillLight,
   updateAuthoredCameraTransform,
   updateAuthoredLightTransform,
   type AuthoredCameraProperties,
@@ -326,10 +326,6 @@ export function refreshPlayActiveCamera(
   if (playDefault) scene.activeCamera = playDefault;
 }
 
-function syncPlayFillLight(scene: Scene, binding: SnapshotSceneBinding): void {
-  syncDefaultFillLight(scene, binding.lights.size > 0);
-}
-
 function applyPlayShadows(scene: Scene, binding: SnapshotSceneBinding): void {
   const mapSize = shadowMapSizeFromQuality(binding.shadowQuality);
   if (mapSize === null || binding.shadowOwnerSlot === null) {
@@ -408,12 +404,15 @@ export function applyAssignMesh(
   const existingLight = binding.lights.get(command.slotId);
   if (existingLight && command.light) {
     applyAuthoredLightProperties(existingLight, command.light);
-    if (command.light.castShadows && binding.shadowOwnerSlot === null) {
+    if (
+      !(existingLight instanceof HemisphericLight) &&
+      command.light.castShadows &&
+      binding.shadowOwnerSlot === null
+    ) {
       binding.shadowOwnerSlot = command.slotId;
     }
     applyPlayShadows(scene, binding);
     refreshPlayActiveCamera(scene, binding);
-    syncPlayFillLight(scene, binding);
     return;
   }
   const existingCamera = binding.cameras.get(command.slotId);
@@ -442,7 +441,6 @@ export function applyAssignMesh(
   applyMaterialToActorMeshes(binding, command.slotId, rebuilt);
   setPlayVisualVisibility(rebuilt, binding.liveSlots.has(command.slotId));
   refreshPlayActiveCamera(scene, binding);
-  syncPlayFillLight(scene, binding);
 }
 
 /** Rebuild a Play mesh in `scene` when it was created on the wrong host Scene. */
@@ -675,7 +673,6 @@ function disposeSlotVisuals(
     binding.shadow = null;
     binding.shadowOwnerSlot = null;
   }
-  syncPlayFillLight(scene, binding);
 }
 
 function createPlayVisual(
@@ -869,7 +866,9 @@ export function createPlayMesh(
       const kind = meshKind.slice("light:".length);
       const lightName = `${AUTHORED_LIGHT_PREFIX}${slotId}`;
       const light =
-        kind === "directional"
+        kind === "hemispheric"
+          ? new HemisphericLight(lightName, new Vector3(0, 1, 0), scene)
+          : kind === "directional"
           ? new DirectionalLight(lightName, new Vector3(0, 0, 1), scene)
           : kind === "spot"
             ? new SpotLight(
@@ -884,7 +883,7 @@ export function createPlayMesh(
       const props = binding.lightProps.get(slotId);
       if (props) applyAuthoredLightProperties(light, props);
       binding.lights.set(slotId, light);
-      if (props?.castShadows && binding.shadowOwnerSlot === null) {
+      if (kind !== "hemispheric" && props?.castShadows && binding.shadowOwnerSlot === null) {
         binding.shadowOwnerSlot = slotId;
       }
       applyPlayShadows(scene, binding);
@@ -1028,7 +1027,6 @@ export function applySnapshotToScene(
       }
     }
     refreshPlayActiveCamera(scene, binding);
-    syncPlayFillLight(scene, binding);
   } finally {
     scene.blockMaterialDirtyMechanism = false;
     scene.blockfreeActiveMeshesAndRenderingGroups = prevBlock;

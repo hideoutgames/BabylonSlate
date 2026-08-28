@@ -84,6 +84,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   ),
   engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
   engineComponent(
+    "HemisphericFillLightComponent",
+    "Hemispheric Fill Light",
+    "Sky and ground fill lighting",
+    "Rendering",
+  ),
+  engineComponent(
     "SkyboxComponent",
     "Skybox",
     "Cubemap sky surrounding the scene",
@@ -213,6 +219,13 @@ export function defaultPropertiesFor(
         innerAngle: 30,
         enabled: true,
         castShadows: false,
+      };
+    case "HemisphericFillLightComponent":
+      return {
+        intensity: 0.9,
+        color: [1, 1, 1],
+        groundColor: [0, 0, 0],
+        enabled: true,
       };
     case "SkyboxComponent":
       return { size: 1000, faces: emptySkyboxFaces() };

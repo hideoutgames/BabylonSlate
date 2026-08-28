@@ -96,6 +96,30 @@ describe("ViewportShadingOverlay", () => {
     engine.dispose();
   });
 
+  it("keeps Unlit albedo flags without an engine hemispheric fill", () => {
+    const { engine, scene } = createTestEngine();
+    scene.lightsEnabled = true;
+    expect(scene.getLightByName("light")).toBeNull();
+    const pbr = new PBRMaterial("pbr", scene);
+    pbr.unlit = false;
+    const alreadyUnlit = new PBRMaterial("sky", scene);
+    alreadyUnlit.unlit = true;
+    const pbrMesh = MeshBuilder.CreateBox("pbr-mesh", { size: 1 }, scene);
+    pbrMesh.material = pbr;
+    const sky = MeshBuilder.CreateBox("sky", { size: 1 }, scene);
+    sky.material = alreadyUnlit;
+    const overlay = new ViewportShadingOverlay(scene);
+    overlay.setMode("unlit");
+    expect(scene.lightsEnabled).toBe(false);
+    expect(pbr.unlit).toBe(true);
+    expect(alreadyUnlit.unlit).toBe(true);
+    overlay.setMode("pbr");
+    expect(scene.lightsEnabled).toBe(true);
+    expect(pbr.unlit).toBe(false);
+    expect(alreadyUnlit.unlit).toBe(true);
+    engine.dispose();
+  });
+
   it("restores an authored points-cloud fill when returning to PBR", () => {
     const { engine, scene } = createTestEngine();
     const mesh = MeshBuilder.CreateBox("actor", { size: 1 }, scene);

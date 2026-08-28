@@ -2747,6 +2747,29 @@ class InProcessRuntime implements RuntimeDriver {
       this.emitMaterialAssignments(renderables, slotId, Boolean(parts));
       return;
     }
+    const fill = actor.components.find(
+      (component) =>
+        component.classId === "HemisphericFillLightComponent" &&
+        !component.destroyed,
+    );
+    if (fill) {
+      const color = rgbTuple(fill.getVariable("color"));
+      const ground = fill.getVariable("groundColor");
+      this.emit({
+        type: "assignMesh",
+        slotId,
+        meshAssetGuid: null,
+        meshKind: "light:hemispheric",
+        light: {
+          color,
+          intensity: Number(fill.getVariable("intensity") ?? 0.9),
+          enabled: fill.getVariable("enabled") !== false,
+          groundColor: ground == null ? [0, 0, 0] : rgbTuple(ground),
+        },
+        parts: [playMeshPartOf(fill)],
+      });
+      return;
+    }
     const light = actor.components.find(
       (component) =>
         component.classId === "LightComponent" && !component.destroyed,
@@ -3858,6 +3881,9 @@ function playMeshKindOf(component: ActorComponent): string | null {
   if (component.classId === "ColliderComponent") {
     const shape = component.getVariable("shape");
     return `collider:${JSON.stringify(shape ?? {})}`;
+  }
+  if (component.classId === "HemisphericFillLightComponent") {
+    return "light:hemispheric";
   }
   if (component.classId === "LightComponent") {
     const kind = component.getVariable("lightKind");

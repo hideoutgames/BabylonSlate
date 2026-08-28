@@ -48,6 +48,11 @@ describe("SceneLayer schema", () => {
             { id: "sky", classId: "SkyboxComponent", properties: {} },
             { id: "cam", classId: "CameraComponent", properties: {} },
             { id: "light", classId: "LightComponent", properties: {} },
+            {
+              id: "fill",
+              classId: "HemisphericFillLightComponent",
+              properties: {},
+            },
           ],
         },
       ],
@@ -68,6 +73,7 @@ describe("SceneLayer schema", () => {
       "SkyboxComponent",
       "CameraComponent",
       "LightComponent",
+      "HemisphericFillLightComponent",
     ]);
   });
 

@@ -34,6 +34,7 @@ describe("Add Component catalog", () => {
     expect(ids).toContain("ColliderComponent");
     expect(ids).toContain("AudioComponent");
     expect(ids).toContain("SkyboxComponent");
+    expect(ids).toContain("HemisphericFillLightComponent");
     expect(ids).toContain("Text3DComponent");
     expect(ids).toContain("ParticleComponent");
   });
@@ -49,6 +50,7 @@ describe("Add Component catalog", () => {
     expect(overlay).not.toContain("SkyboxComponent");
     expect(overlay).not.toContain("CameraComponent");
     expect(overlay).not.toContain("LightComponent");
+    expect(overlay).not.toContain("HemisphericFillLightComponent");
     const world = addableComponentsForHost({ overlay: false }).map((e) => e.id);
     expect(world).toContain("SkyboxComponent");
     expect(world).not.toContain("2DButtonComponent");
@@ -79,6 +81,7 @@ describe("Add Component catalog", () => {
       "SpriteComponent",
       "TilemapComponent",
       "LightComponent",
+      "HemisphericFillLightComponent",
       "SkyboxComponent",
       "Text3DComponent",
     ]);
@@ -157,6 +160,12 @@ describe("Add Component catalog", () => {
       innerAngle: 30,
       enabled: true,
       castShadows: false,
+    });
+    expect(defaultPropertiesFor("HemisphericFillLightComponent")).toEqual({
+      intensity: 0.9,
+      color: [1, 1, 1],
+      groundColor: [0, 0, 0],
+      enabled: true,
     });
     expect(defaultPropertiesFor("SkyboxComponent")).toEqual({
       size: 1000,

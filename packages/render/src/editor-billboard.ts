@@ -170,7 +170,9 @@ function lightColorOf(
   actor: SerializedActor,
 ): [number, number, number] | null {
   const component = actor.components.find(
-    (entry) => entry.classId === "LightComponent",
+    (entry) =>
+      entry.classId === "LightComponent" ||
+      entry.classId === "HemisphericFillLightComponent",
   );
   const value = component?.properties.color;
   if (!Array.isArray(value) || value.length < 3) return null;

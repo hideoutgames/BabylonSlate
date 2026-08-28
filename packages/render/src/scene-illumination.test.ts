@@ -1,6 +1,7 @@
 import {
   Camera,
   DirectionalLight,
+  HemisphericLight,
   MeshBuilder,
   PointLight,
   Quaternion,
@@ -17,11 +18,12 @@ import {
   type SerializedScene,
 } from "@babylonslate/core";
 import { createTestEngine } from "./create-null-engine";
-import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
+import { setupDefaultViewport } from "./viewport";
 import {
   AUTHORED_CAMERA_PREFIX,
-  AUTHORED_FILL_LIGHT_INTENSITY,
   AUTHORED_LIGHT_PREFIX,
+  DEFAULT_HEMISPHERIC_FILL_INTENSITY,
+  HEMISPHERIC_FILL_LIGHT_CLASS_ID,
   applyAuthoredCameraLens,
   applyAuthoredCameraProperties,
   cameraRenderAspect,
@@ -69,6 +71,27 @@ function lightActor(
       {
         id: `${id}-light`,
         classId: "LightComponent",
+        properties,
+      },
+    ],
+  });
+}
+
+function fillActor(
+  id: string,
+  properties: Record<string, unknown>,
+  rotation: [number, number, number, number] = [0, 0, 0, 1],
+) {
+  return createActor(id, id, {
+    transform: {
+      position: [1, 2, 3],
+      rotation,
+      scale: [1, 1, 1],
+    },
+    components: [
+      {
+        id: `${id}-fill`,
+        classId: HEMISPHERIC_FILL_LIGHT_CLASS_ID,
         properties,
       },
     ],
@@ -608,49 +631,89 @@ describe("syncAuthoredIllumination", () => {
     expect(key?.getShadowGenerator()).toBeNull();
   });
 
-  it("dims the unnamed hemispheric fill when an authored light exists", () => {
+  it("creates a hemispheric fill from HemisphericFillLightComponent with +Y direction", () => {
     const { scene } = createHandle();
     setupDefaultViewport(scene);
-    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
-    syncAuthoredIllumination(
-      scene,
-      sceneWith([lightActor("lamp", { lightKind: "point", intensity: 1 })]),
-      { stealActiveCamera: false },
-    );
-    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
-      AUTHORED_FILL_LIGHT_INTENSITY,
-    );
-  });
-
-  it("restores the unnamed hemispheric fill when the last authored light leaves", () => {
-    const { scene } = createHandle();
-    setupDefaultViewport(scene);
-    syncAuthoredIllumination(
-      scene,
-      sceneWith([lightActor("lamp", { lightKind: "point", intensity: 1 })]),
-      { stealActiveCamera: false },
-    );
-    syncAuthoredIllumination(scene, sceneWith([]), { stealActiveCamera: false });
-    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
-  });
-
-  it("dims the unnamed hemispheric fill when the authored light is disabled", () => {
-    const { scene } = createHandle();
-    setupDefaultViewport(scene);
+    expect(scene.getLightByName("light")).toBeNull();
     syncAuthoredIllumination(
       scene,
       sceneWith([
-        lightActor("lamp", {
-          lightKind: "point",
-          intensity: 1,
-          enabled: false,
+        fillActor("fill", {
+          intensity: DEFAULT_HEMISPHERIC_FILL_INTENSITY,
+          color: [1, 0.5, 0.25],
+          groundColor: [0.1, 0.2, 0.3],
         }),
       ]),
       { stealActiveCamera: false },
     );
-    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
-      AUTHORED_FILL_LIGHT_INTENSITY,
+    const light = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}fill`);
+    expect(light).toBeInstanceOf(HemisphericLight);
+    expect(light!.intensity).toBeCloseTo(DEFAULT_HEMISPHERIC_FILL_INTENSITY);
+    expect(light!.diffuse.r).toBeCloseTo(1);
+    expect(light!.diffuse.g).toBeCloseTo(0.5);
+    expect(light!.diffuse.b).toBeCloseTo(0.25);
+    const hemi = light as HemisphericLight;
+    expect(hemi.groundColor.r).toBeCloseTo(0.1);
+    expect(hemi.groundColor.g).toBeCloseTo(0.2);
+    expect(hemi.groundColor.b).toBeCloseTo(0.3);
+    expect(hemi.direction.x).toBeCloseTo(0);
+    expect(hemi.direction.y).toBeCloseTo(1);
+    expect(hemi.direction.z).toBeCloseTo(0);
+  });
+
+  it("disposes the hemispheric fill when the actor leaves", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(scene, sceneWith([fillActor("fill", {})]), {
+      stealActiveCamera: false,
+    });
+    expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}fill`)).toBeTruthy();
+    syncAuthoredIllumination(scene, sceneWith([]), { stealActiveCamera: false });
+    expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}fill`)).toBeNull();
+  });
+
+  it("honors HemisphericFillLightComponent enabled", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([fillActor("fill", { enabled: false, intensity: 0.9 })]),
+      { stealActiveCamera: false },
     );
+    expect(
+      scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}fill`)!.isEnabled(),
+    ).toBe(false);
+  });
+
+  it("does not give hemispheric fill a shadow map", () => {
+    const { scene } = createHandle();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([
+        fillActor("fill", { intensity: 0.9, castShadows: true }),
+        lightActor("key", {
+          lightKind: "directional",
+          intensity: 1,
+          castShadows: true,
+        }),
+      ]),
+      { stealActiveCamera: false, shadowQuality: "1024" },
+    );
+    const fill = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}fill`);
+    const key = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}key`);
+    expect(fill?.getShadowGenerator()).toBeFalsy();
+    expect(key?.getShadowGenerator()).toBeTruthy();
+  });
+
+  it("does not plant an unnamed hemispheric fill when authored lights exist", () => {
+    const { scene } = createHandle();
+    setupDefaultViewport(scene);
+    expect(scene.getLightByName("light")).toBeNull();
+    syncAuthoredIllumination(
+      scene,
+      sceneWith([lightActor("lamp", { lightKind: "point", intensity: 1 })]),
+      { stealActiveCamera: false },
+    );
+    expect(scene.getLightByName("light")).toBeNull();
+    expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}lamp`)).toBeTruthy();
   });
 
   it("honors LightComponent enabled", () => {
