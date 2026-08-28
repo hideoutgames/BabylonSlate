@@ -49,6 +49,23 @@ test.describe("Touch shell UX", { tag: IPAD_TEST_TAG }, () => {
     expect(userSelect).toBe("none");
   });
 
+  test("restores user-select on input and textarea", async ({ page }) => {
+    const styles = await page.evaluate(() => {
+      const input = document.createElement("input");
+      const textarea = document.createElement("textarea");
+      document.body.append(input, textarea);
+      const result = {
+        input: getComputedStyle(input).userSelect,
+        textarea: getComputedStyle(textarea).userSelect,
+      };
+      input.remove();
+      textarea.remove();
+      return result;
+    });
+    expect(styles.input).toBe("text");
+    expect(styles.textarea).toBe("text");
+  });
+
   test("locks document scroll on the root shell", async ({ page }) => {
     const overflow = await page.evaluate(() => ({
       html: getComputedStyle(document.documentElement).overflow,

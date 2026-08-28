@@ -33,7 +33,7 @@ Short conventions for BabylonSlate. Tooling (ESLint, TypeScript strict) enforces
 - New asset editor tabs are DockView documents (`DockviewShell` + `window-catalog.ts`) so panels resize, dock together, and appear in the toolbar **Windows** menu. Do not use shadcn `Tabs` or a new `AssetDocumentWorkspace` page as the document shell. Agent rule: [`.cursor/rules/dockview-editor-tabs.mdc`](../.cursor/rules/dockview-editor-tabs.mdc).
 - Palette and token roles: [architecture/theming.md](architecture/theming.md). Edit tokens only in `packages/ui/src/styles/globals.css`. `--primary` is ink; saturated pin/node/axis/success tokens are the chromatic cues.
 - Use `flex` + `gap-*` for spacing, not `space-y-*`.
-- Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`.
+- Global `user-select: none` on the shell; wrap readable text in `SelectableText` from `@babylonslate/editor-kit`. Form `input` / `textarea` / `contenteditable` restore selection in `globals.css`.
 - Use radius tokens (`rounded-md`, `rounded-lg`) — no hardcoded `border-radius` literals in editor CSS except token definitions.
 
 ## Display names

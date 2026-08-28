@@ -15,7 +15,7 @@ BabylonSlate is touch-first. Do not assume hover or right-click.
 
 Two mechanisms, both required:
 
-- `-webkit-touch-callout: none` on the shell stops the iOS text callout.
+- `-webkit-touch-callout: none` on the shell stops the iOS text callout. `input`, `textarea`, and `contenteditable` restore `user-select: text` and `-webkit-touch-callout: default` so the magnifier and selection handles still work.
 - `useSuppressNativeContextMenu` (applied once at the shell) calls `preventDefault` on `contextmenu` document-wide, so long-press and right-click reach our menu instead of the browser's.
 - Pointer-anchored overlays (`ContextMenuOverlay` / `NestedMenu` `OverlayMenu`) clamp to the viewport minus 8px after measuring the panel. Submenus flip to the left of the parent when the right side would clip. Tall menus scroll (`overflow-y-auto`).
 
@@ -44,7 +44,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 | --- | --- | --- |
 | CSS | `overflow: hidden` and `overscroll-behavior: none` on `html`, `body`, `#root`, and app shell roots | All platforms |
 | CSS | `overscroll-behavior: contain` on intentional scroll regions | Content browser, chrome closable-tab scroller, homepage Start gallery and project list |
-| JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers | iOS Safari / touch fallback |
+| JS | `usePreventDocumentOverscroll` — `touchmove` guard on coarse pointers. Skips `input`, `textarea`, `contenteditable`, and `.selectable-text` so iPad selection handles can drag. | iOS Safari / touch fallback |
 | Native | WKWebView `scrollView.bounces = false` | Capacitor iOS app only |
 
 ### Standalone (Add to Home Screen)
@@ -61,6 +61,7 @@ The editor shell is a full-viewport IDE, not a scrollable web page. Document rub
 - Graph panel — React Flow pan/zoom (unchanged)
 - Global Search results (`global-search-results`) — overflow list inside a fixed-height dialog
 - SearchDialog / AssetPicker / ClassPicker / SceneComponentPicker (`*-body`) — native `overflow-y-auto overscroll-y-contain touch-pan-y` with a definite `pickerListHeightPx` cap (16rem). Rows are `role="option"` divs (`buttonVariants` ghost touch, `touch-pan-y`), not native buttons, so a finger pan on a row scrolls. WindowedList slots also use `touch-pan-y`. The document overscroll guard allows the body because it is `overflow-y: auto`.
+- MarkupAutocompleteTextarea (2D Rich Text modal and gallery) — always-on `h-64` listbox with the same non-button `touch-pan-y` rows. Unfiltered lists every applicable tag.
 - AddFunctionDialog / Add Event (`*-body`) — same native overflow list and non-button option rows as SearchDialog
 
 ## Virtual keyboard

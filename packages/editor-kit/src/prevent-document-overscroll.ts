@@ -1,3 +1,5 @@
+import { keepsNativeEditing } from "./ios-editing-gestures";
+
 export type ScrollAxis = "x" | "y";
 
 /** Returns whether an element can scroll along the given axis. */
@@ -46,6 +48,7 @@ export function shouldPreventDocumentOverscroll(
   deltaY: number,
 ): boolean {
   if (!(target instanceof Element)) return true;
+  if (keepsNativeEditing(target)) return false;
 
   let el: Element | null = target;
   while (el && el !== document.documentElement) {

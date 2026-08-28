@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Textarea } from "@babylonslate/ui/components/textarea";
-import { Button } from "@babylonslate/ui/components/button";
+import { buttonVariants } from "@babylonslate/ui/components/button";
+import { cn } from "@babylonslate/ui/lib/utils";
+import { commitPickerOptionKeyDown } from "./search-dialog";
+import {
+  PICKER_LIST_MAX_HEIGHT_PX,
+  WINDOWED_LIST_TOUCH_ROW_HEIGHT,
+  WindowedList,
+} from "./windowed-list";
 
 export type MarkupSuggestion = {
   id: string;
@@ -172,32 +179,44 @@ function colorSuggestions(prefix: string): MarkupSuggestion[] {
   return named;
 }
 
-/** Suggestions for the open `[…]` fragment at `caret`. */
+/** Suggestions for the open `[…]` fragment at `caret`, or every tag in plain text. */
 export function markupAutocompleteAt(
   value: string,
   caret: number,
-): MarkupAutocompleteSession | null {
+): MarkupAutocompleteSession {
   const from = openBracketIndex(value, caret);
-  if (from < 0) return null;
+  if (from < 0) {
+    return {
+      replaceFrom: caret,
+      replaceTo: caret,
+      items: tagSuggestions(""),
+    };
+  }
   const inner = value.slice(from + 1, caret);
   const parsed = /^([a-zA-Z][a-zA-Z0-9-]*)?(.*)$/.exec(inner);
-  if (!parsed) return null;
+  if (!parsed) {
+    return { replaceFrom: from, replaceTo: caret, items: [] };
+  }
   const name = (parsed[1] ?? "").toLowerCase();
   const rest = parsed[2] ?? "";
 
   if (!rest) {
-    const items = tagSuggestions(name);
-    return items.length > 0 ? { replaceFrom: from, replaceTo: caret, items } : null;
+    return {
+      replaceFrom: from,
+      replaceTo: caret,
+      items: tagSuggestions(name),
+    };
   }
 
   if (rest.startsWith("=")) {
     const after = rest.slice(1);
     if (!/\s/.test(after)) {
       if (name === "color") {
-        const items = colorSuggestions(after);
-        return items.length > 0
-          ? { replaceFrom: from, replaceTo: caret, items }
-          : null;
+        return {
+          replaceFrom: from,
+          replaceTo: caret,
+          items: colorSuggestions(after),
+        };
       }
       if (name === "img") {
         return {
@@ -213,7 +232,7 @@ export function markupAutocompleteAt(
           ],
         };
       }
-      return null;
+      return { replaceFrom: from, replaceTo: caret, items: [] };
     }
   }
 
@@ -234,7 +253,7 @@ export function markupAutocompleteAt(
       group: "Attributes",
     });
   }
-  return items.length > 0 ? { replaceFrom: from, replaceTo: caret, items } : null;
+  return { replaceFrom: from, replaceTo: caret, items };
 }
 
 function insertAt(
@@ -295,7 +314,7 @@ export function applyMarkupSuggestion(
   return { value, caret: to };
 }
 
-/** Multi-line markup field that suggests RichText tags at an open `[`. */
+/** Multi-line markup field with a fixed-height RichText tag catalog above the text. */
 export function MarkupAutocompleteTextarea({
   value,
   onChange,
@@ -307,14 +326,12 @@ export function MarkupAutocompleteTextarea({
 }: MarkupAutocompleteTextareaProps) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(value.length);
-  const [dismissed, setDismissed] = useState(false);
   const pendingCaret = useRef<number | null>(null);
 
   const session = useMemo(
-    () => (dismissed ? null : markupAutocompleteAt(value, caret)),
-    [dismissed, value, caret],
+    () => markupAutocompleteAt(value, caret),
+    [value, caret],
   );
-  const open = Boolean(session && session.items.length > 0);
 
   useEffect(() => {
     const next = pendingCaret.current;
@@ -325,43 +342,62 @@ export function MarkupAutocompleteTextarea({
 
   const updateCaret = (target: HTMLTextAreaElement) => {
     setCaret(target.selectionStart ?? 0);
-    setDismissed(false);
+  };
+
+  const commitItem = (itemId: string) => {
+    const applied = applyMarkupSuggestion(value, session, itemId);
+    pendingCaret.current = applied.caret;
+    setCaret(applied.caret);
+    onChange(applied.value, applied.caret);
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {open && session ? (
-        <div
-          className="max-h-48 overflow-y-auto overscroll-y-contain rounded-md border border-border"
-          data-testid={testId ? `${testId}-suggestions` : undefined}
-          role="listbox"
-        >
-          {session.items.map((item) => (
-            <Button
-              key={item.id}
-              type="button"
-              variant="ghost"
-              size="touch"
-              className="h-auto w-full justify-start"
-              data-testid={`search-item-${item.id}`}
-              onClick={() => {
-                const applied = applyMarkupSuggestion(value, session, item.id);
-                pendingCaret.current = applied.caret;
-                setCaret(applied.caret);
-                setDismissed(true);
-                onChange(applied.value, applied.caret);
-              }}
-            >
-              <span className="truncate">{item.label}</span>
-              {item.description ? (
-                <span className="ml-2 truncate text-muted-foreground">
-                  {item.description}
-                </span>
-              ) : null}
-            </Button>
-          ))}
-        </div>
-      ) : null}
+      <div
+        className="overflow-y-auto overscroll-y-contain touch-pan-y rounded-md border border-border"
+        style={{
+          height: PICKER_LIST_MAX_HEIGHT_PX,
+          overflowY: "auto",
+        }}
+        data-testid={testId ? `${testId}-suggestions` : undefined}
+        role="listbox"
+      >
+        {session.items.length === 0 ? (
+          <p className="p-3 text-sm text-muted-foreground">No matches</p>
+        ) : (
+          <WindowedList
+            itemCount={session.items.length}
+            rowHeight={WINDOWED_LIST_TOUCH_ROW_HEIGHT}
+          >
+            {(index) => {
+              const item = session.items[index]!;
+              return (
+                <div
+                  key={item.id}
+                  role="option"
+                  tabIndex={0}
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "touch" }),
+                    "h-full w-full min-h-0 justify-start overflow-hidden text-left touch-pan-y",
+                  )}
+                  data-testid={`search-item-${item.id}`}
+                  onClick={() => commitItem(item.id)}
+                  onKeyDown={(event) =>
+                    commitPickerOptionKeyDown(event, () => commitItem(item.id))
+                  }
+                >
+                  <span className="truncate">{item.label}</span>
+                  {item.description ? (
+                    <span className="ml-2 truncate text-muted-foreground">
+                      {item.description}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            }}
+          </WindowedList>
+        )}
+      </div>
       <Textarea
         {...rest}
         ref={ref}
@@ -374,7 +410,6 @@ export function MarkupAutocompleteTextarea({
           const next = event.target.value;
           const nextCaret = event.target.selectionStart ?? next.length;
           setCaret(nextCaret);
-          setDismissed(false);
           onChange(next, nextCaret);
         }}
         onSelect={(event) => updateCaret(event.currentTarget)}
@@ -384,3 +419,4 @@ export function MarkupAutocompleteTextarea({
     </div>
   );
 }
+

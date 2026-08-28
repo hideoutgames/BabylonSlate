@@ -63,10 +63,33 @@ describe("markupAutocompleteAt", () => {
     expect(idsAt("[wave=2 intensity=")).toEqual([]);
   });
 
-  it("returns nothing when the tag is already closed or caret is in plain text", () => {
-    expect(markupAutocompleteAt("Hello", 5)).toBeNull();
-    expect(markupAutocompleteAt("[b]Hi[/b]", 9)).toBeNull();
-    expect(markupAutocompleteAt("[b]Hi", 4)).toBeNull();
+  it("lists every tag when the caret is in plain text", () => {
+    const session = markupAutocompleteAt("Hello", 5);
+    expect(session?.replaceFrom).toBe(5);
+    expect(session?.replaceTo).toBe(5);
+    expect(idsAt("Hello", 5)).toEqual(
+      expect.arrayContaining([
+        "tag:b",
+        "tag:i",
+        "tag:u",
+        "tag:color",
+        "tag:size",
+        "tag:outline",
+        "tag:outline-color",
+        "tag:img",
+        "tag:shake",
+        "tag:wave",
+        "tag:hover",
+        "tag:rotate",
+      ]),
+    );
+    expect(idsAt("Hello", 5)).toHaveLength(12);
+    expect(idsAt("[b]Hi[/b]", 9)).toHaveLength(12);
+  });
+
+  it("returns an empty session when the open tag prefix matches nothing", () => {
+    const session = markupAutocompleteAt("[zzz", 4);
+    expect(session).toEqual({ replaceFrom: 0, replaceTo: 4, items: [] });
   });
 });
 
@@ -77,6 +100,15 @@ describe("applyMarkupSuggestion", () => {
     expect(applyMarkupSuggestion("[", session!, "tag:b")).toEqual({
       value: "[b][/b]",
       caret: 3,
+    });
+  });
+
+  it("inserts a wrapper tag at the caret in plain text", () => {
+    const session = markupAutocompleteAt("Hi ", 3);
+    expect(session).not.toBeNull();
+    expect(applyMarkupSuggestion("Hi ", session!, "tag:b")).toEqual({
+      value: "Hi [b][/b]",
+      caret: 6,
     });
   });
 
@@ -136,6 +168,24 @@ describe("MarkupAutocompleteTextarea", () => {
     cleanup();
   });
 
+  it("keeps a fixed-height list of every tag when the field is empty", () => {
+    render(
+      <MarkupAutocompleteTextarea
+        value=""
+        onChange={() => {}}
+        data-testid="markup"
+      />,
+    );
+    const list = screen.getByTestId("markup-suggestions");
+    expect(list.getAttribute("role")).toBe("listbox");
+    expect(list.style.height).toBe("256px");
+    expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
+    expect(screen.getByTestId("search-item-tag:b").tagName).not.toBe("BUTTON");
+    expect(screen.getByTestId("search-item-tag:b").className).toMatch(
+      /touch-pan-y/,
+    );
+  });
+
   it("lists tags above the textarea when the caret is after [", () => {
     render(
       <MarkupAutocompleteTextarea
@@ -149,9 +199,25 @@ describe("MarkupAutocompleteTextarea", () => {
     fireEvent.select(field);
     expect(screen.getByTestId("markup-suggestions")).toBeTruthy();
     expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
-    expect(
-      screen.getByTestId("search-item-tag:b").className,
-    ).toMatch(/min-h-\[var\(--touch-target,44px\)\]/);
+    expect(screen.getByTestId("search-item-tag:b").getAttribute("role")).toBe(
+      "option",
+    );
+  });
+
+  it("keeps the suggestion panel when the filter matches nothing", () => {
+    render(
+      <MarkupAutocompleteTextarea
+        value="[zzz"
+        onChange={() => {}}
+        data-testid="markup"
+      />,
+    );
+    const field = screen.getByTestId("markup") as HTMLTextAreaElement;
+    field.setSelectionRange(4, 4);
+    fireEvent.select(field);
+    expect(screen.getByTestId("markup-suggestions")).toBeTruthy();
+    expect(screen.queryByTestId("search-item-tag:b")).toBeNull();
+    expect(screen.getByText("No matches")).toBeTruthy();
   });
 
   it("inserts wrapper close tags when a suggestion is chosen", () => {

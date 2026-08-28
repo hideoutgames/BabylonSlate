@@ -44,9 +44,6 @@ describe("MultilineTextField", () => {
       />,
     );
     fireEvent.click(screen.getByTestId("rich"));
-    const editor = screen.getByTestId("rich-editor") as HTMLTextAreaElement;
-    editor.setSelectionRange(1, 1);
-    fireEvent.select(editor);
     expect(screen.getByTestId("rich-editor-suggestions")).toBeTruthy();
     expect(screen.getByTestId("search-item-tag:b")).toBeTruthy();
   });
