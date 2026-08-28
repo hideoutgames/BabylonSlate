@@ -127,11 +127,11 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | `--touch-target` | `44px` | Graph pin rows and remaining large hit boxes |
 | `--chrome-row` | `28px` | Editor chrome, panel headers, property rows, catalog item rows |
 | `--graph-pin-size` | `22px` | Visual pin diamond / circle / list / map |
-| `--graph-pin-default-max-width` | `8rem` | Truncation cap for on-node literal default fields |
+| `--graph-pin-default-max-width` | `12rem` | Truncation cap for on-node literal default and type-name fields |
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
-Default Blueprint shells use Tailwind `min-w-80` (320px); compact BT nodes use `min-w-56`. Title bars are `text-base`. Pin rows stay `--touch-target` (44px).
+Default Blueprint shells use Tailwind `w-max min-w-80 max-w-[32rem]` (320–512px); compact BT nodes use `min-w-56`. Pin names cap at `max-w-[18rem]`. Title bars are `text-base`. Pin rows stay `--touch-target` (44px).
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 

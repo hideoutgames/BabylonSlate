@@ -218,7 +218,9 @@ attach only to that canvas (`attachMaterialPreviewGestures`); never
 ## Pin defaults and Details
 
 Unconnected numeric and color inputs show the same read-only canvas widgets as
-the Class graph (`PinDefaultPreviewWidget`). Catalog `defaultValue` (and
+the Class graph (`PinDefaultPreviewWidget`). Typed Object / Asset / Class /
+Struct / Enum inputs on that shared `PinNode` chrome show constraint type names
+rather than stored values. Catalog `defaultValue` (and
 `colorHint` swatches) hydrate onto `__pins`; authored overrides persist as
 `default:<pinId>` number arrays on the node. Widgets hide when that pin is
 wired. Lowering prefers the authored override, then the catalog default;

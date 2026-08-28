@@ -13,6 +13,8 @@ import {
 } from "@babylonslate/scripting";
 import type { SerializedPin } from "./graph-types";
 
+export type PinTypeNames = Readonly<Record<string, string>>;
+
 export type PinDefaultPreview =
   | { kind: "bool"; checked: boolean }
   | { kind: "color"; rgb: string }
@@ -28,7 +30,10 @@ export type PinDefaultPreview =
         | "quat"
         | "enumRef"
         | "classRef"
-        | "assetRef";
+        | "assetRef"
+        | "objectRef"
+        | "actorRef"
+        | "structRef";
       text: string;
     };
 
@@ -102,13 +107,54 @@ function readPreviewValue(
   return undefined;
 }
 
+function stripEnginePrefix(id: string): string {
+  return id.replace(/^engine:/, "");
+}
+
+function namedGuid(guid: string, names?: PinTypeNames): string {
+  const trimmed = guid.trim();
+  if (!trimmed) return "";
+  return names?.[trimmed] ?? stripEnginePrefix(trimmed);
+}
+
+function pinConstraintPreview(
+  pin: SerializedPin,
+  names?: PinTypeNames,
+): PinDefaultPreview | null {
+  const type = pin.type;
+  switch (type.kind) {
+    case "objectRef":
+    case "actorRef":
+    case "classRef": {
+      const classId =
+        typeof type.classId === "string" ? type.classId.trim() : "";
+      return { kind: type.kind, text: classId };
+    }
+    case "assetRef": {
+      const assetType =
+        typeof type.assetType === "string" ? type.assetType.trim() : "";
+      return { kind: "assetRef", text: assetType };
+    }
+    case "structRef":
+    case "enumRef": {
+      const guid = typeof type.guid === "string" ? type.guid : "";
+      return { kind: type.kind, text: namedGuid(guid, names) };
+    }
+    default:
+      return null;
+  }
+}
+
 export function pinDefaultPreview(
   pin: SerializedPin,
   properties: Record<string, unknown>,
   connected: boolean,
+  pinTypeNames?: PinTypeNames,
 ): PinDefaultPreview | null {
   if (connected) return null;
   if (pin.direction !== "in" || pin.kind !== "data") return null;
+  const constraint = pinConstraintPreview(pin, pinTypeNames);
+  if (constraint) return constraint;
   const type = asLiteralPinType(pin);
   if (!type) return null;
   const stored = readPreviewValue(pin, properties);
@@ -151,20 +197,6 @@ export function pinDefaultPreview(
       return {
         kind: type.kind === "quat" ? "quat" : "vec4",
         text: joinNumbers(pinDefaultAsVec4Tuple(value)),
-      };
-    case "enumRef":
-      return { kind: "enumRef", text: pinDefaultAsString(value) };
-    case "classRef":
-      return {
-        kind: "classRef",
-        text:
-          pinDefaultAsString(value) ||
-          pinDefaultAsString(defaultJsValue(type)),
-      };
-    case "assetRef":
-      return {
-        kind: "assetRef",
-        text: pinDefaultAsString(value),
       };
     default:
       return null;

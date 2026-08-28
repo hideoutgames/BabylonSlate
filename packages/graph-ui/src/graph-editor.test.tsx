@@ -1904,6 +1904,8 @@ describe("GraphEditor", () => {
     const eventNode = container.querySelector('[data-node-role="event"]');
     expect(eventNode).not.toBeNull();
     expect(eventNode?.className).toMatch(/min-w-80/);
+    expect(eventNode?.className).toMatch(/\bw-max\b/);
+    expect(eventNode?.className).toMatch(/max-w-\[32rem\]/);
     const titleBar = eventNode?.querySelector(".rounded-t-lg");
     expect(titleBar?.className).toMatch(/text-base/);
 
@@ -2006,8 +2008,74 @@ describe("GraphEditor", () => {
     expect(preview?.getAttribute("data-checked")).toBe("true");
     expect(preview?.className).toMatch(/\bsize-5\b/);
     expect(label?.className).toMatch(/text-base/);
+    expect(label?.className).toMatch(/max-w-\[18rem\]/);
     expect(handle?.nextElementSibling).toBe(preview);
     expect(preview?.nextElementSibling).toBe(label);
+  });
+
+  it("shows constraint type names on unconnected object and asset inputs", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "spawn",
+          type: "actor.spawn",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Spawn Actor",
+            __pins: [
+              {
+                id: "classId",
+                name: "class",
+                kind: "data",
+                direction: "in",
+                type: { kind: "classRef", classId: "Actor" },
+              },
+              {
+                id: "target",
+                name: "target",
+                kind: "data",
+                direction: "in",
+                type: { kind: "objectRef", classId: "CameraComponent" },
+              },
+              {
+                id: "clip",
+                name: "clip",
+                kind: "data",
+                direction: "in",
+                type: { kind: "assetRef", assetType: "Audio" },
+              },
+              {
+                id: "stats",
+                name: "stats",
+                kind: "data",
+                direction: "in",
+                type: { kind: "structRef", guid: "struct-stats" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(
+      <GraphEditor
+        initialGraph={graph}
+        pinTypeNames={{ "struct-stats": "Stats" }}
+      />,
+    );
+    expect(
+      container.querySelector('[data-pin-default="classRef"]')?.textContent,
+    ).toBe("Actor");
+    expect(
+      container.querySelector('[data-pin-default="objectRef"]')?.textContent,
+    ).toBe("CameraComponent");
+    expect(
+      container.querySelector('[data-pin-default="assetRef"]')?.textContent,
+    ).toBe("Audio");
+    expect(
+      container.querySelector('[data-pin-default="structRef"]')?.textContent,
+    ).toBe("Stats");
   });
 
   it("hides the bool default when that pin is wired", () => {
@@ -2091,7 +2159,7 @@ describe("GraphEditor", () => {
     expect(preview?.textContent).toBe("Hello World");
     expect(preview?.className).toMatch(/\btext-base\b/);
     expect(preview?.className).toMatch(/\bh-8\b/);
-    expect(preview?.className).toMatch(/--graph-pin-default-max-width,8rem/);
+    expect(preview?.className).toMatch(/--graph-pin-default-max-width,12rem/);
     expect(
       container.querySelector('[data-id="log"] [data-pin-default]'),
     ).not.toBe(
@@ -2109,6 +2177,7 @@ describe("GraphEditor", () => {
       '[data-id="log-a"] [data-pin-label="then"]',
     );
     expect(thenLabel?.className).toMatch(/text-base/);
+    expect(thenLabel?.className).toMatch(/max-w-\[18rem\]/);
   });
 
   it("shows a Development Only tape on Print by default", () => {

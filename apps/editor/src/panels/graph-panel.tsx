@@ -185,6 +185,16 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     () => scriptPinCompatibility(hierarchy),
     [hierarchy],
   );
+  const pinTypeNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const [guid, schema] of Object.entries(typeSchemas.structs)) {
+      names[guid] = schema.name;
+    }
+    for (const [guid, schema] of Object.entries(typeSchemas.enums)) {
+      names[guid] = schema.name;
+    }
+    return names;
+  }, [typeSchemas]);
   const graph = useMemo(() => {
     const slice =
       activeFunctionId && graphContent?.functionGraphs?.[activeFunctionId]
@@ -384,6 +394,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           paletteNodes={paletteNodes}
           onPaletteOpenChange={setPaletteOpen}
           pinCompatibility={pinCompatibility}
+          pinTypeNames={pinTypeNames}
           onCanvasApi={setCanvasDropApi}
           onNavigateRequest={() => setFocusDiagnostic(null)}
           onSelectionChange={setSelectedNodeIds}
