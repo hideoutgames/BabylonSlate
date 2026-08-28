@@ -11,7 +11,7 @@ const identity = {
 };
 
 describe("debugColliderFromDesc", () => {
-  it("maps boxes, spheres, circles, and polylines and skips convex meshes", () => {
+  it("maps boxes, spheres, circles, and polylines and skips triangle meshes", () => {
     expect(
       debugColliderFromDesc(
         {
@@ -146,6 +146,39 @@ describe("debugColliderFromDesc", () => {
         identity,
       ),
     ).toBeNull();
+    expect(
+      debugColliderFromDesc(
+        {
+          id: "hull",
+          bodyId: "body",
+          shape: {
+            kind: "convex",
+            points: [
+              { x: 0, y: 0, z: 0 },
+              { x: 1, y: 0, z: 0 },
+              { x: 0, y: 1, z: 0 },
+              { x: 0, y: 0, z: 1 },
+            ],
+          },
+          friction: 0,
+          restitution: 0,
+          isTrigger: false,
+          layer: 1,
+          mask: 1,
+        },
+        identity,
+      ),
+    ).toMatchObject({
+      id: "hull",
+      shape: "convex",
+      position: identity.position,
+      points: [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: 0, z: 0 },
+        { x: 0, y: 1, z: 0 },
+        { x: 0, y: 0, z: 1 },
+      ],
+    });
     expect(
       listDebugCollidersFromRecords(
         [
