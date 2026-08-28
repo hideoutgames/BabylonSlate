@@ -1715,6 +1715,18 @@ function GraphEditorCanvas({
   );
   const virtualize = hostSize.width > 0 && hostSize.height > 0;
 
+  const paletteSourcePins = useMemo(() => {
+    if (!pendingConnect?.pin) return undefined;
+    const nodeId = pendingConnect.nodeId;
+    if (!nodeId) return [pendingConnect.pin];
+    const node = nodes.find((entry) => entry.id === nodeId);
+    const pins = hasSerializedPins(node?.data) ? node.data.__pins : undefined;
+    if (!pins?.length) {
+      return [overlayPin(pendingConnect.pin, nodeId, pinDisplayTypes)];
+    }
+    return pins.map((pin) => overlayPin(pin, nodeId, pinDisplayTypes));
+  }, [nodes, pendingConnect, pinDisplayTypes]);
+
   const connectionLineStyle = useMemo(() => {
     if (pendingPin) {
       const source = nodes.find((node) => node.id === pendingPin.nodeId);
@@ -1801,8 +1813,8 @@ function GraphEditorCanvas({
               type="button"
               variant="outline"
               size="icon-sm"
-              aria-label="Add node"
-              title="Add node"
+              aria-label="Add Node"
+              title="Add Node"
               onClick={() => {
                 setPendingConnect(null);
                 setPaletteOpenState(true);
@@ -1980,6 +1992,7 @@ function GraphEditorCanvas({
               : null
           }
           pinCompatibility={pinCompatibility}
+          sourcePins={paletteSourcePins}
           onAddNode={handleAddPaletteNode}
         />
         )}

@@ -300,4 +300,169 @@ describe("NodePalette", () => {
     ).toBe("false");
     expect(getByTestId("node-palette-item-flow.event.beginPlay")).toBeTruthy();
   });
+
+  const boolOut: SerializedPin = {
+    id: "value",
+    name: "value",
+    kind: "data",
+    direction: "out",
+    type: { kind: "bool" },
+  };
+  const boolIn: SerializedPin = {
+    id: "condition",
+    name: "condition",
+    kind: "data",
+    direction: "in",
+    type: { kind: "bool" },
+  };
+  const wildcardIn: SerializedPin = {
+    id: "message",
+    name: "message",
+    kind: "data",
+    direction: "in",
+    type: { kind: "boxedWildcard" },
+  };
+  const print: PaletteNode = {
+    id: "debug.print",
+    title: "Print",
+    category: "Debug",
+    pins: [execIn, wildcardIn],
+  };
+  const branch: PaletteNode = {
+    id: "flow.branch",
+    title: "Branch",
+    category: "flow",
+    pins: [execIn, boolIn],
+  };
+  const and: PaletteNode = {
+    id: "logic.and",
+    title: "AND",
+    category: "logic",
+    pins: [
+      {
+        id: "a",
+        name: "A",
+        kind: "data",
+        direction: "in",
+        type: { kind: "bool" },
+      },
+      {
+        id: "b",
+        name: "B",
+        kind: "data",
+        direction: "in",
+        type: { kind: "bool" },
+      },
+    ],
+  };
+
+  it("titles the catalog Add Node", () => {
+    const { getByText } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[log, begin]}
+        onAddNode={() => {}}
+      />,
+    );
+    expect(getByText("Add Node")).toBeTruthy();
+  });
+
+  it("labels All as Suggested and describes the pin when filtering", () => {
+    const { getByTestId, getByText } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[print, branch]}
+        onAddNode={() => {}}
+        filterPin={boolOut}
+      />,
+    );
+    expect(getByTestId("node-palette-category-all").textContent).toMatch(
+      /Suggested/,
+    );
+    expect(getByText("Compatible with Bool")).toBeTruthy();
+  });
+
+  it("lists pin-filtered Suggested rows in relevance order without category headers", () => {
+    const { getByTestId, queryByRole } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[print, branch]}
+        onAddNode={() => {}}
+        filterPin={boolOut}
+      />,
+    );
+    const items = [...paletteItems()].map((el) =>
+      el.getAttribute("data-testid"),
+    );
+    expect(items).toEqual([
+      "node-palette-item-flow.branch",
+      "node-palette-item-debug.print",
+    ]);
+    expect(queryByRole("heading", { name: /debug/i })).toBeNull();
+    expect(getByTestId("node-palette-item-flow.branch").textContent).toMatch(
+      /Flow/i,
+    );
+  });
+
+  it("groups the unfiltered catalog by category", () => {
+    const { getByRole } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[log, begin]}
+        onAddNode={() => {}}
+      />,
+    );
+    expect(getByRole("heading", { name: "Debug" })).toBeTruthy();
+    expect(getByRole("heading", { name: "Flow" })).toBeTruthy();
+  });
+
+  it("ranks Branch above AND when source pins include Exec and Bool", () => {
+    const items = () =>
+      [...document.querySelectorAll('[data-testid^="node-palette-item-"]')].map(
+        (el) => el.getAttribute("data-testid"),
+      );
+    render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[print, and, branch]}
+        onAddNode={() => {}}
+        filterPin={boolOut}
+        sourcePins={[execOut, boolOut]}
+      />,
+    );
+    expect(items()).toEqual([
+      "node-palette-item-flow.branch",
+      "node-palette-item-logic.and",
+      "node-palette-item-debug.print",
+    ]);
+  });
+
+  it("keeps score order inside a selected category", () => {
+    const { getByTestId } = render(
+      <NodePalette
+        open
+        onOpenChange={() => {}}
+        paletteNodes={[print, branch, and]}
+        onAddNode={() => {}}
+        filterPin={boolOut}
+      />,
+    );
+    fireEvent.click(getByTestId("node-palette-category-logic"));
+    expect(
+      [...paletteItems()].map((el) => el.getAttribute("data-testid")),
+    ).toEqual(["node-palette-item-logic.and"]);
+    fireEvent.click(getByTestId("node-palette-category-all"));
+    expect(
+      [...paletteItems()].map((el) => el.getAttribute("data-testid")),
+    ).toEqual([
+      "node-palette-item-flow.branch",
+      "node-palette-item-logic.and",
+      "node-palette-item-debug.print",
+    ]);
+  });
 });

@@ -213,7 +213,7 @@ export function useCatalogSearchState(initial = "") {
   return { search, setSearch };
 }
 
-/** Compact outline row used by Place Actors, Add Component, and Add Node. */
+/** Compact outline row used by Place Actors and Add Component. */
 export function CatalogItemButton({
   children,
   onClick,

@@ -258,7 +258,7 @@ describe("resolved ForEach Element connections", () => {
         pinWithDisplayType(resolvingElementOut, { kind: "float" }),
         assignable,
       ).map((node) => node.id),
-    ).toEqual(["debug.print", "math.add"]);
+    ).toEqual(["math.add", "debug.print"]);
   });
 });
 
@@ -589,6 +589,251 @@ describe("filterPaletteForPin", () => {
         (entry) => entry.id,
       ),
     ).toEqual(["quat.make", "literal.makeQuat"]);
+  });
+
+  it("prefers an exact Bool pin over a boxed wildcard", () => {
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const boolOut: SerializedPin = {
+      id: "value",
+      name: "value",
+      kind: "data",
+      direction: "out",
+      type: { kind: "bool" },
+    };
+    const boolIn: SerializedPin = {
+      id: "condition",
+      name: "condition",
+      kind: "data",
+      direction: "in",
+      type: { kind: "bool" },
+    };
+    const wildcardIn: SerializedPin = {
+      id: "message",
+      name: "message",
+      kind: "data",
+      direction: "in",
+      type: { kind: "boxedWildcard" },
+    };
+    const print: PaletteNode = {
+      id: "debug.print",
+      title: "Print",
+      category: "Debug",
+      pins: [execIn, wildcardIn],
+    };
+    const branch: PaletteNode = {
+      id: "flow.branch",
+      title: "Branch",
+      category: "flow",
+      pins: [execIn, boolIn],
+    };
+    expect(
+      filterPaletteForPin([print, branch], boolOut, assignable).map(
+        (node) => node.id,
+      ),
+    ).toEqual(["flow.branch", "debug.print"]);
+  });
+
+  it("ranks Branch above AND and Print when the source node has Exec and Bool", () => {
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType);
+    const boolOut: SerializedPin = {
+      id: "value",
+      name: "value",
+      kind: "data",
+      direction: "out",
+      type: { kind: "bool" },
+    };
+    const boolIn: SerializedPin = {
+      id: "condition",
+      name: "condition",
+      kind: "data",
+      direction: "in",
+      type: { kind: "bool" },
+    };
+    const wildcardIn: SerializedPin = {
+      id: "message",
+      name: "message",
+      kind: "data",
+      direction: "in",
+      type: { kind: "boxedWildcard" },
+    };
+    const sourcePins = [execOut, boolOut];
+    const print: PaletteNode = {
+      id: "debug.print",
+      title: "Print",
+      category: "Debug",
+      pins: [execIn, wildcardIn],
+    };
+    const and: PaletteNode = {
+      id: "logic.and",
+      title: "AND",
+      category: "logic",
+      pins: [
+        {
+          id: "a",
+          name: "A",
+          kind: "data",
+          direction: "in",
+          type: { kind: "bool" },
+        },
+        {
+          id: "b",
+          name: "B",
+          kind: "data",
+          direction: "in",
+          type: { kind: "bool" },
+        },
+        {
+          id: "out",
+          name: "Result",
+          kind: "data",
+          direction: "out",
+          type: { kind: "bool" },
+        },
+      ],
+    };
+    const branch: PaletteNode = {
+      id: "flow.branch",
+      title: "Branch",
+      category: "flow",
+      pins: [
+        execIn,
+        boolIn,
+        {
+          id: "true",
+          name: "True",
+          kind: "exec",
+          direction: "out",
+          type: { kind: "exec" },
+        },
+        {
+          id: "false",
+          name: "False",
+          kind: "exec",
+          direction: "out",
+          type: { kind: "exec" },
+        },
+      ],
+    };
+    expect(
+      filterPaletteForPin(
+        [print, and, branch],
+        boolOut,
+        assignable,
+        sourcePins,
+      ).map((node) => node.id),
+    ).toEqual(["flow.branch", "logic.and", "debug.print"]);
+  });
+
+  it("prefers members from the Object Class over inherited Target APIs and wildcards", () => {
+    const hierarchy = {
+      isSubclassOf(child: string, parent: string) {
+        if (child === parent) return true;
+        if (child === "Hero" && (parent === "Actor" || parent === "BObject")) {
+          return true;
+        }
+        if (child === "Actor" && parent === "BObject") return true;
+        return false;
+      },
+    };
+    const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+      isAssignable(outgoing.type as PinType, incoming.type as PinType, {
+        hierarchy,
+      });
+    const heroOut: SerializedPin = {
+      id: "value",
+      name: "Hero",
+      kind: "data",
+      direction: "out",
+      type: { kind: "objectRef", classId: "Hero" },
+    };
+    const targetHero: SerializedPin = {
+      id: "target",
+      name: "Target",
+      kind: "data",
+      direction: "in",
+      type: { kind: "objectRef", classId: "Hero" },
+    };
+    const targetActor: SerializedPin = {
+      id: "target",
+      name: "Target",
+      kind: "data",
+      direction: "in",
+      type: { kind: "objectRef", classId: "Actor" },
+    };
+    const objectIn: SerializedPin = {
+      id: "object",
+      name: "Object",
+      kind: "data",
+      direction: "in",
+      type: { kind: "objectRef", classId: "BObject" },
+    };
+    const asHero: SerializedPin = {
+      id: "as",
+      name: "As Hero",
+      kind: "data",
+      direction: "out",
+      type: { kind: "objectRef", classId: "Hero" },
+    };
+    const wildcardIn: SerializedPin = {
+      id: "message",
+      name: "message",
+      kind: "data",
+      direction: "in",
+      type: { kind: "boxedWildcard" },
+    };
+    const print: PaletteNode = {
+      id: "debug.print",
+      title: "Print",
+      category: "Debug",
+      pins: [execIn, wildcardIn],
+    };
+    const actorCall: PaletteNode = {
+      id: "functions.call:Actor:GetActorLocation",
+      nodeType: "functions.call",
+      title: "Call Get Actor Location",
+      category: "functions",
+      pins: [execIn, targetActor],
+      defaultData: { classId: "Actor", functionName: "GetActorLocation" },
+    };
+    const heroCall: PaletteNode = {
+      id: "functions.call:Hero:Jump",
+      nodeType: "functions.call",
+      title: "Call Jump",
+      category: "functions",
+      pins: [execIn, targetHero],
+      defaultData: { classId: "Hero", functionName: "Jump" },
+    };
+    const heroGet: PaletteNode = {
+      id: "variables.get:Hero:Health",
+      nodeType: "variables.get",
+      title: "Get Health",
+      category: "variables",
+      pins: [targetHero],
+      defaultData: { classId: "Hero", variableName: "Health" },
+    };
+    const castHero: PaletteNode = {
+      id: "casting.cast:Hero",
+      nodeType: "casting.cast",
+      title: "Cast to Hero",
+      category: "casting",
+      pins: [execIn, objectIn, asHero],
+      defaultData: { defaultClassId: "Hero", classId: "Hero" },
+    };
+    expect(
+      filterPaletteForPin(
+        [print, actorCall, heroCall, heroGet, castHero],
+        heroOut,
+        assignable,
+      ).map((node) => node.id),
+    ).toEqual([
+      "functions.call:Hero:Jump",
+      "variables.get:Hero:Health",
+      "casting.cast:Hero",
+      "functions.call:Actor:GetActorLocation",
+      "debug.print",
+    ]);
   });
 });
 

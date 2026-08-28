@@ -1245,6 +1245,130 @@ describe("GraphEditor", () => {
     }
   });
 
+  it("ranks Branch first when dragging a Bool pin off a node that also has Exec", () => {
+    const restoreLayout = stubMeasuredGraphLayout();
+    try {
+      const sourcePins = [
+        {
+          id: "execOut",
+          name: "then",
+          kind: "exec" as const,
+          direction: "out" as const,
+          type: { kind: "exec" },
+        },
+        {
+          id: "value",
+          name: "value",
+          kind: "data" as const,
+          direction: "out" as const,
+          type: { kind: "bool" },
+        },
+      ];
+      const { container } = render(
+        <GraphEditor
+          initialGraph={{
+            nodes: [
+              {
+                id: "src",
+                type: "logic.compare",
+                position: { x: 0, y: 0 },
+                data: { title: "Compare", __pins: sourcePins },
+              },
+            ],
+            edges: [],
+          }}
+          paletteNodes={[
+            {
+              id: "debug.print",
+              title: "Print",
+              category: "Debug",
+              pins: [
+                {
+                  id: "execIn",
+                  name: "exec",
+                  kind: "exec",
+                  direction: "in",
+                  type: { kind: "exec" },
+                },
+                {
+                  id: "message",
+                  name: "message",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "boxedWildcard" },
+                },
+              ],
+            },
+            {
+              id: "logic.and",
+              title: "AND",
+              category: "logic",
+              pins: [
+                {
+                  id: "a",
+                  name: "A",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "bool" },
+                },
+                {
+                  id: "b",
+                  name: "B",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "bool" },
+                },
+              ],
+            },
+            {
+              id: "flow.branch",
+              title: "Branch",
+              category: "flow",
+              pins: [
+                {
+                  id: "execIn",
+                  name: "exec",
+                  kind: "exec",
+                  direction: "in",
+                  type: { kind: "exec" },
+                },
+                {
+                  id: "condition",
+                  name: "condition",
+                  kind: "data",
+                  direction: "in",
+                  type: { kind: "bool" },
+                },
+              ],
+            },
+          ]}
+        />,
+      );
+      const flow = container.querySelector(".react-flow");
+      expect(flow).not.toBeNull();
+      mockHandleRect(flow!, { left: 0, top: 0, width: 800, height: 600 });
+      const source = container.querySelector(
+        '[data-id="src"] [data-handleid="value"]',
+      );
+      expect(source).not.toBeNull();
+      mockHandleRect(source!, { left: 0, top: 0, width: 44, height: 44 });
+      act(() => {
+        dragHandle(source!, { x: 22, y: 22 }, farDrop);
+      });
+      expect(
+        [...document.querySelectorAll('[data-testid^="node-palette-item-"]')].map(
+          (el) => el.getAttribute("data-testid"),
+        ),
+      ).toEqual([
+        "node-palette-item-flow.branch",
+        "node-palette-item-logic.and",
+        "node-palette-item-debug.print",
+      ]);
+    } finally {
+      restoreLayout();
+    }
+  });
+
   it("does not break wires when a far pin drag is released without a second pointer", () => {
     const restoreLayout = stubMeasuredGraphLayout();
     try {
@@ -2328,7 +2452,7 @@ describe("GraphEditor", () => {
         paletteNodes={[{ id: "debug.log", title: "Log", category: "Debug" }]}
       />,
     );
-    expect(getByRole("button", { name: "Add node" })).toBeTruthy();
+    expect(getByRole("button", { name: "Add Node" })).toBeTruthy();
     expect(getByTestId("graph-add-node")).toBeTruthy();
     expect(getByTestId("graph-toolbar")).toBeTruthy();
     expect(getByTestId("graph-format")).toHaveProperty("disabled", true);
