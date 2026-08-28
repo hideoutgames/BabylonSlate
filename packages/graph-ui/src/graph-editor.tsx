@@ -84,6 +84,7 @@ import {
   nearestSnapConnectPin,
   nodePinLists,
   finalizeOrientedConnection,
+  pinWithDisplayType,
   pinsAreCompatible,
   screenPinsForSafeRefs,
   screenCentersForSafePins,
@@ -354,6 +355,41 @@ function pinOnNode(
   return pins.find((pin) => pin.id === pinId);
 }
 
+function overlayPin(
+  pin: SerializedPin,
+  nodeId: string,
+  displayTypes: PinDisplayLookup,
+): SerializedPin {
+  return pinWithDisplayType(pin, displayTypes.get(pinTypeKey(nodeId, pin.id)));
+}
+
+function overlayPinLists(
+  lists: Array<{ id: string; pins?: SerializedPin[] }>,
+  displayTypes: PinDisplayLookup,
+): Array<{ id: string; pins?: SerializedPin[] }> {
+  return lists.map((node) => ({
+    ...node,
+    pins: node.pins?.map((pin) =>
+      pinWithDisplayType(pin, displayTypes.get(pinTypeKey(node.id, pin.id))),
+    ),
+  }));
+}
+
+function collectDisplayConnectPins(
+  nodes: CanvasNode[],
+  draggedNodeId: string,
+  draggedPin: SerializedPin,
+  displayTypes: PinDisplayLookup,
+  rule?: PinCompatibilityRule,
+) {
+  return collectSafeConnectPins(
+    overlayPinLists(nodePinLists(nodes), displayTypes),
+    draggedNodeId,
+    overlayPin(draggedPin, draggedNodeId, displayTypes),
+    rule,
+  );
+}
+
 function connectDragClientPoint(
   session: { pointer: { x: number; y: number } },
   connection: {
@@ -555,6 +591,12 @@ function GraphEditorCanvas({
   const storeApi = useStoreApi();
   const graphStateRef = useRef({ nodes, edges });
   graphStateRef.current = { nodes, edges };
+  const pinDisplayTypes = useMemo(
+    () => displayPinTypesForGraph(nodes, edges),
+    [edges, nodes],
+  );
+  const pinDisplayTypesRef = useRef(pinDisplayTypes);
+  pinDisplayTypesRef.current = pinDisplayTypes;
   const paneMenu = useContextMenu({
     items: [],
     enabled: Boolean(contextMenuItemsForNode) && !readOnly,
@@ -791,66 +833,6 @@ function GraphEditorCanvas({
     ],
   );
 
-  const onPinTap = useCallback(
-    (nodeId: string, pinId: string, direction: "in" | "out") => {
-      if (readOnly) {
-        onPinSelect?.(nodeId, pinId);
-        return;
-      }
-      const tapped = graphStateRef.current.nodes.find((node) => node.id === nodeId);
-      if (tapped && isDisabledNode(tapped)) return;
-      if (direction === "out") {
-        const next = { nodeId, pinId };
-        pendingPinRef.current = next;
-        setPendingPin(next);
-        return;
-      }
-
-      const activePin = pendingPinRef.current;
-      if (!activePin) return;
-      if (activePin.nodeId === nodeId) {
-        setPendingPin(null);
-        return;
-      }
-
-      addEdge(activePin.nodeId, activePin.pinId, nodeId, pinId);
-      pendingPinRef.current = null;
-      setPendingPin(null);
-    },
-    [addEdge, onPinSelect, readOnly],
-  );
-
-  const handleConnect = useCallback(
-    (connection: Connection) => {
-      if (readOnly) return;
-      const next = orientThenNormalize(
-        connection,
-        graphStateRef.current.nodes,
-        normalizeConnection,
-      );
-      if (
-        !next?.source ||
-        !next.target ||
-        !next.sourceHandle ||
-        !next.targetHandle
-      ) {
-        return;
-      }
-      addEdge(
-        next.source,
-        next.sourceHandle,
-        next.target,
-        next.targetHandle,
-      );
-      if (connectDragRef.current) {
-        connectDragRef.current.connectCommitted = true;
-      }
-      setPendingPin(null);
-      pendingPinRef.current = null;
-    },
-    [addEdge, normalizeConnection, readOnly],
-  );
-
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
       const incoming = asConnection(connection);
@@ -890,7 +872,14 @@ function GraphEditorCanvas({
       ) {
         return false;
       }
-      if (!pinsAreCompatible(sourcePin, targetPin, pinCompatibility)) {
+      const displayTypes = pinDisplayTypesRef.current;
+      if (
+        !pinsAreCompatible(
+          overlayPin(sourcePin, next.source, displayTypes),
+          overlayPin(targetPin, next.target, displayTypes),
+          pinCompatibility,
+        )
+      ) {
         return false;
       }
       if (!canConnect) return true;
@@ -902,6 +891,74 @@ function GraphEditorCanvas({
       });
     },
     [canConnect, normalizeConnection, pinCompatibility],
+  );
+
+  const onPinTap = useCallback(
+    (nodeId: string, pinId: string, direction: "in" | "out") => {
+      if (readOnly) {
+        onPinSelect?.(nodeId, pinId);
+        return;
+      }
+      const tapped = graphStateRef.current.nodes.find((node) => node.id === nodeId);
+      if (tapped && isDisabledNode(tapped)) return;
+      if (direction === "out") {
+        const next = { nodeId, pinId };
+        pendingPinRef.current = next;
+        setPendingPin(next);
+        return;
+      }
+
+      const activePin = pendingPinRef.current;
+      if (!activePin) return;
+      if (activePin.nodeId === nodeId) {
+        setPendingPin(null);
+        return;
+      }
+
+      const incoming = {
+        source: activePin.nodeId,
+        target: nodeId,
+        sourceHandle: activePin.pinId,
+        targetHandle: pinId,
+      };
+      if (!isValidConnection(incoming)) return;
+
+      addEdge(activePin.nodeId, activePin.pinId, nodeId, pinId);
+      pendingPinRef.current = null;
+      setPendingPin(null);
+    },
+    [addEdge, isValidConnection, onPinSelect, readOnly],
+  );
+
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      if (readOnly) return;
+      const next = orientThenNormalize(
+        connection,
+        graphStateRef.current.nodes,
+        normalizeConnection,
+      );
+      if (
+        !next?.source ||
+        !next.target ||
+        !next.sourceHandle ||
+        !next.targetHandle
+      ) {
+        return;
+      }
+      addEdge(
+        next.source,
+        next.sourceHandle,
+        next.target,
+        next.targetHandle,
+      );
+      if (connectDragRef.current) {
+        connectDragRef.current.connectCommitted = true;
+      }
+      setPendingPin(null);
+      pendingPinRef.current = null;
+    },
+    [addEdge, normalizeConnection, readOnly],
   );
 
   const handleConnectStart = useCallback(
@@ -1004,10 +1061,11 @@ function GraphEditorCanvas({
       const root = document;
       const located = screenPinsForSafeRefs(
         root,
-        collectSafeConnectPins(
-          nodePinLists(graphStateRef.current.nodes),
+        collectDisplayConnectPins(
+          graphStateRef.current.nodes,
           fromNode.id,
           pin,
+          pinDisplayTypesRef.current,
           pinCompatibility,
         ),
       );
@@ -1119,9 +1177,14 @@ function GraphEditorCanvas({
         const connect = pendingConnect;
         let nextEdges = graphStateRef.current.edges;
         if (connect?.pin && connect.nodeId) {
+          const dragged = overlayPin(
+            connect.pin,
+            connect.nodeId,
+            pinDisplayTypesRef.current,
+          );
           const match = firstCompatiblePin(
             paletteNode.pins,
-            connect.pin,
+            dragged,
             pinCompatibility,
           );
           if (match) {
@@ -1545,10 +1608,11 @@ function GraphEditorCanvas({
         pointer,
         safePins: screenCentersForSafePins(
           document,
-          collectSafeConnectPins(
-            nodePinLists(graphStateRef.current.nodes),
+          collectDisplayConnectPins(
+            graphStateRef.current.nodes,
             session.nodeId,
             pin,
+            pinDisplayTypesRef.current,
             pinCompatibilityRef.current,
           ),
         ),
@@ -1582,11 +1646,6 @@ function GraphEditorCanvas({
       document.removeEventListener("touchstart", onSecondaryPointerDown, true);
     };
   }, [storeApi]);
-
-  const pinDisplayTypes = useMemo(
-    () => displayPinTypesForGraph(nodes, edges),
-    [edges, nodes],
-  );
 
   const pinDisplayType = useCallback(
     (nodeId: string, pinId: string) =>
@@ -1909,7 +1968,17 @@ function GraphEditorCanvas({
             if (!next) setPendingConnect(null);
           }}
           paletteNodes={paletteNodes}
-          filterPin={pendingConnect?.pin ?? null}
+          filterPin={
+            pendingConnect?.pin
+              ? pendingConnect.nodeId
+                ? overlayPin(
+                    pendingConnect.pin,
+                    pendingConnect.nodeId,
+                    pinDisplayTypes,
+                  )
+                : pendingConnect.pin
+              : null
+          }
           pinCompatibility={pinCompatibility}
           onAddNode={handleAddPaletteNode}
         />

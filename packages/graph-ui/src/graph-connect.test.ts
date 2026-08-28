@@ -30,6 +30,7 @@ import {
   oppositeSideHandleId,
   orientConnectionByPins,
   finalizeOrientedConnection,
+  pinWithDisplayType,
   type PinCompatibilityRule,
 } from "./graph-connect";
 
@@ -160,6 +161,104 @@ describe("pinsAreCompatible", () => {
         );
       }),
     ).toBe(false);
+  });
+});
+
+const assignable: PinCompatibilityRule = (outgoing, incoming) =>
+  isAssignable(outgoing.type as PinType, incoming.type as PinType);
+
+const resolvingElementOut: SerializedPin = {
+  id: "element",
+  name: "element",
+  kind: "data",
+  direction: "out",
+  type: { kind: "resolvingWildcard" },
+};
+
+const boxedValueIn: SerializedPin = {
+  id: "value",
+  name: "value",
+  kind: "data",
+  direction: "in",
+  type: { kind: "boxedWildcard" },
+};
+
+describe("pinWithDisplayType", () => {
+  it("overlays a display type without mutating the declared pin", () => {
+    const overlaid = pinWithDisplayType(resolvingElementOut, { kind: "float" });
+    expect(overlaid.type).toEqual({ kind: "float" });
+    expect(overlaid.id).toBe("element");
+    expect(resolvingElementOut.type).toEqual({ kind: "resolvingWildcard" });
+  });
+
+  it("returns the declared pin when no display type is provided", () => {
+    expect(pinWithDisplayType(resolvingElementOut, undefined)).toBe(
+      resolvingElementOut,
+    );
+  });
+});
+
+describe("resolved ForEach Element connections", () => {
+  it("rejects declared resolvingWildcard into Print until the display type is overlaid", () => {
+    expect(
+      pinsAreCompatible(resolvingElementOut, boxedValueIn, assignable),
+    ).toBe(false);
+    expect(
+      pinsAreCompatible(
+        pinWithDisplayType(resolvingElementOut, { kind: "float" }),
+        boxedValueIn,
+        assignable,
+      ),
+    ).toBe(true);
+    expect(
+      pinsAreCompatible(
+        pinWithDisplayType(resolvingElementOut, { kind: "float" }),
+        floatIn,
+        assignable,
+      ),
+    ).toBe(true);
+    expect(
+      pinsAreCompatible(
+        pinWithDisplayType(resolvingElementOut, { kind: "float" }),
+        stringIn,
+        assignable,
+      ),
+    ).toBe(false);
+  });
+
+  it("includes Print in Add Node after overlaying the resolved Element type", () => {
+    const print: PaletteNode = {
+      id: "debug.print",
+      title: "Print",
+      category: "Debug",
+      pins: [boxedValueIn],
+    };
+    const add: PaletteNode = {
+      id: "math.add",
+      title: "Add",
+      category: "Math",
+      pins: [floatIn],
+    };
+    const log: PaletteNode = {
+      id: "debug.log",
+      title: "Log",
+      category: "Debug",
+      pins: [stringIn],
+    };
+    expect(
+      filterPaletteForPin(
+        [print, add, log],
+        resolvingElementOut,
+        assignable,
+      ).map((node) => node.id),
+    ).toEqual(["math.add", "debug.log"]);
+    expect(
+      filterPaletteForPin(
+        [print, add, log],
+        pinWithDisplayType(resolvingElementOut, { kind: "float" }),
+        assignable,
+      ).map((node) => node.id),
+    ).toEqual(["debug.print", "math.add"]);
   });
 });
 
@@ -568,6 +667,24 @@ describe("collectSafeConnectPins", () => {
     ]);
     expect(refs.some((ref) => ref.pinId === "a")).toBe(false);
     expect(refs.some((ref) => ref.pinId === "execIn")).toBe(false);
+  });
+
+  it("uses overlaid display types so a float Element can snap to Print", () => {
+    const element = pinWithDisplayType(resolvingElementOut, { kind: "float" });
+    const refs = collectSafeConnectPins(
+      [
+        { id: "foreach", pins: [element] },
+        { id: "print", pins: [boxedValueIn] },
+        { id: "log", pins: [stringIn] },
+      ],
+      "foreach",
+      element,
+      assignable,
+    );
+    expect(refs).toEqual([
+      { nodeId: "foreach", pinId: "element" },
+      { nodeId: "print", pinId: "value" },
+    ]);
   });
 });
 

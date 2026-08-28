@@ -283,4 +283,67 @@ describe("resolveWildcardPinTypes", () => {
     );
     expect(typeAt(result.resolved, "find", "map")).toEqual(mapOf(STRING, FLOAT));
   });
+
+  it("binds For Each Element to T from a typed array Get Variable", () => {
+    const result = resolveWildcardPinTypes({
+      nodes: [
+        { id: "get", pins: [{ id: "out", type: arrayOf(FLOAT) }] },
+        {
+          id: "foreach",
+          pins: [
+            { id: "array", type: arrayOf(T) },
+            { id: "element", type: T },
+          ],
+        },
+      ],
+      edges: [
+        {
+          sourceNodeId: "get",
+          sourcePinId: "out",
+          targetNodeId: "foreach",
+          targetPinId: "array",
+        },
+      ],
+    });
+    expect(typeAt(result.resolved, "foreach", "array")).toEqual(arrayOf(FLOAT));
+    expect(typeAt(result.resolved, "foreach", "element")).toEqual(FLOAT);
+    expect(typeAt(result.display, "foreach", "element")).toEqual(FLOAT);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it("binds For Each Map Key and Value from a typed map Get Variable", () => {
+    const result = resolveWildcardPinTypes({
+      nodes: [
+        { id: "get", pins: [{ id: "out", type: mapOf(STRING, FLOAT) }] },
+        {
+          id: "foreach",
+          pins: [
+            { id: "map", type: mapOf(K, V) },
+            { id: "key", type: K },
+            { id: "value", type: V },
+          ],
+        },
+      ],
+      edges: [
+        {
+          sourceNodeId: "get",
+          sourcePinId: "out",
+          targetNodeId: "foreach",
+          targetPinId: "map",
+        },
+      ],
+    });
+    expect(pinTypeEquals(typeAt(result.resolved, "foreach", "key"), STRING)).toBe(
+      true,
+    );
+    expect(pinTypeEquals(typeAt(result.resolved, "foreach", "value"), FLOAT)).toBe(
+      true,
+    );
+    expect(typeAt(result.display, "foreach", "key")).toEqual(STRING);
+    expect(typeAt(result.display, "foreach", "value")).toEqual(FLOAT);
+    expect(typeAt(result.resolved, "foreach", "map")).toEqual(
+      mapOf(STRING, FLOAT),
+    );
+    expect(result.conflicts).toEqual([]);
+  });
 });

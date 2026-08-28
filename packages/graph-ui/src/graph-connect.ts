@@ -260,6 +260,18 @@ export function displayNodeTitle(
 }
 
 /**
+ * Overlay a resolved display type onto a declared pin for connect / Add Node.
+ * Does not mutate the stored pin.
+ */
+export function pinWithDisplayType(
+  pin: SerializedPin,
+  displayType: SerializedPin["type"] | undefined,
+): SerializedPin {
+  if (!displayType) return pin;
+  return { ...pin, type: displayType };
+}
+
+/**
  * Host-supplied connection rule. Material graphs allow a Float to splat into a
  * vector pin, which the default exact-kind rule would reject.
  */
