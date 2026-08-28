@@ -810,4 +810,27 @@ describe("variableDefaultPropertyRows", () => {
     if (row?.kind === "asset") row.onPick();
     expect(onPickAsset).toHaveBeenCalledWith("default", "Audio");
   });
+
+  it("labels per-entry default rows and can pick a Class value", () => {
+    const onChange = vi.fn();
+    const onPickClass = vi.fn();
+    const rows = variableDefaultPropertyRows("class", "Actor", onChange, {
+      typeClassId: "Actor",
+      classEntries: [{ id: "Actor", name: "Actor" }],
+      onPickClass,
+      label: "Item 1",
+      pinId: "item-0",
+    });
+    expect(rows).toMatchObject([
+      {
+        kind: "asset",
+        id: "item-0",
+        label: "Item 1",
+        value: "Actor",
+      },
+    ]);
+    const row = rows[0];
+    if (row?.kind === "asset") row.onPick();
+    expect(onPickClass).toHaveBeenCalledWith("item-0", "Actor");
+  });
 });

@@ -197,6 +197,11 @@ export {
   type NamedListItemRenderArgs,
 } from "./named-list-editor";
 export {
+  EntryListEditor,
+  type EntryListEditorProps,
+  type EntryListItemRenderArgs,
+} from "./entry-list-editor";
+export {
   AtlasTileGrid,
   type AtlasTileGridProps,
   type AtlasTileGridTool,

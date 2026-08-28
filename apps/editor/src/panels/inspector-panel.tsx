@@ -8,6 +8,7 @@ import {
   PIN_PICKER_TYPES,
   PanelFrame,
   ParameterListEditor,
+  EntryListEditor,
   NamedListEditor,
   PinListEditor,
   PropertyGrid,
@@ -46,6 +47,7 @@ import {
   type SerializedGraph,
   type SerializedTransform,
   type ViewportMode,
+  parseMapDefaultEntries,
 } from "@babylonslate/core";
 import { normalizeInputMappings } from "@babylonslate/input";
 import {
@@ -174,6 +176,21 @@ function defaultValueForVariableType(
   return defaultValueForMember(spec.typeId, spec.typeClassId, schemas);
 }
 
+function seedVariableEntry(
+  typeId: string,
+  typeClassId: string | undefined,
+  schemas: ReturnType<typeof typeSchemasFromGraphAssets>,
+): unknown {
+  if (typeId === "object" || typeId === "actor" || typeId === "wildcard") {
+    return null;
+  }
+  return defaultValueForMember(typeId, typeClassId, schemas);
+}
+
+function asArrayDefaults(value: unknown): unknown[] {
+  return Array.isArray(value) ? [...value] : [];
+}
+
 function constrainedTypeClassId(typeId: string, typeClassId?: string): string | undefined {
   const trimmed = typeClassId?.trim();
   if (trimmed) return trimmed;
@@ -207,6 +224,10 @@ function ClassMemberDetails({
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
   const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
+  const [entryPick, setEntryPick] = useState<{
+    index: number;
+    field: "value" | "key";
+  } | null>(null);
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
   };
@@ -247,6 +268,10 @@ function ClassMemberDetails({
         : undefined;
       const typeChanged = next.typeId !== typeId;
       const containerChanged = nextContainer !== container;
+      const keyChanged =
+        (next.keyTypeId ?? "string") !== (member.keyTypeId ?? "string") ||
+        (next.keyTypeClassId ?? "") !== (member.keyTypeClassId ?? "");
+      const classChanged = (nextClassId ?? "") !== (typeClassId || "");
       const patch: Partial<GraphClassMember> = {
         typeId: next.typeId,
         container: nextContainer === "single" ? undefined : nextContainer,
@@ -256,7 +281,11 @@ function ClassMemberDetails({
           nextContainer === "map" ? next.keyTypeClassId : undefined,
         typeClassId: nextClassId,
       };
-      if (typeChanged || containerChanged) {
+      if (
+        typeChanged ||
+        containerChanged ||
+        (nextContainer !== "single" && (keyChanged || classChanged))
+      ) {
         patch.defaultValue = defaultValueForVariableType(
           {
             typeId: next.typeId,
@@ -298,6 +327,99 @@ function ClassMemberDetails({
             ),
           ]}
         />
+        {container === "array" ? (
+          <EntryListEditor
+            items={asArrayDefaults(member.defaultValue)}
+            onChange={(defaultValue) => commit({ defaultValue })}
+            onCreate={() =>
+              seedVariableEntry(typeId, member.typeClassId, schemas)
+            }
+            addLabel="Add Item"
+            data-testid="inspector-member-defaults"
+            renderItem={({ item, index, onChange: changeItem }) => (
+              <PropertyGrid
+                rows={variableDefaultPropertyRows(
+                  typeId,
+                  item,
+                  changeItem,
+                  {
+                    typeClassId: member.typeClassId,
+                    schemas,
+                    enumMembers,
+                    assetEntries,
+                    onPickAsset: () =>
+                      setEntryPick({ index, field: "value" }),
+                    classEntries,
+                    onPickClass: () =>
+                      setEntryPick({ index, field: "value" }),
+                    label: `Item ${index + 1}`,
+                    pinId: `item-${index}`,
+                  },
+                )}
+              />
+            )}
+          />
+        ) : null}
+        {container === "map" ? (
+          <EntryListEditor
+            items={parseMapDefaultEntries(member.defaultValue)}
+            onChange={(defaultValue) => commit({ defaultValue })}
+            onCreate={() => ({
+              key: seedVariableEntry(
+                member.keyTypeId ?? "string",
+                member.keyTypeClassId,
+                schemas,
+              ),
+              value: seedVariableEntry(typeId, member.typeClassId, schemas),
+            })}
+            addLabel="Add Entry"
+            data-testid="inspector-member-defaults"
+            renderItem={({ item, index, onChange: changeItem }) => (
+              <div className="flex flex-col gap-2">
+                <PropertyGrid
+                  rows={variableDefaultPropertyRows(
+                    member.keyTypeId ?? "string",
+                    item.key,
+                    (key) => changeItem({ ...item, key }),
+                    {
+                      typeClassId: member.keyTypeClassId,
+                      schemas,
+                      enumMembers,
+                      assetEntries,
+                      onPickAsset: () =>
+                        setEntryPick({ index, field: "key" }),
+                      classEntries,
+                      onPickClass: () =>
+                        setEntryPick({ index, field: "key" }),
+                      label: "Key",
+                      pinId: `key-${index}`,
+                    },
+                  )}
+                />
+                <PropertyGrid
+                  rows={variableDefaultPropertyRows(
+                    typeId,
+                    item.value,
+                    (value) => changeItem({ ...item, value }),
+                    {
+                      typeClassId: member.typeClassId,
+                      schemas,
+                      enumMembers,
+                      assetEntries,
+                      onPickAsset: () =>
+                        setEntryPick({ index, field: "value" }),
+                      classEntries,
+                      onPickClass: () =>
+                        setEntryPick({ index, field: "value" }),
+                      label: "Value",
+                      pinId: `value-${index}`,
+                    },
+                  )}
+                />
+              </div>
+            )}
+          />
+        ) : null}
         <VariableTypeFields
           value={{
             typeId,
@@ -368,7 +490,11 @@ function ClassMemberDetails({
                   ? pickerAssets.find((asset) => asset.guid === guid)
                   : undefined;
                 const keep =
-                  listed && allowed.has(listed.type) ? member.defaultValue : "";
+                  container !== "single"
+                    ? []
+                    : listed && allowed.has(listed.type)
+                      ? member.defaultValue
+                      : "";
                 commit({ typeClassId: id, defaultValue: keep });
               }}
               data-testid="inspector-member-asset-type-picker"
@@ -398,7 +524,8 @@ function ClassMemberDetails({
           onPick={(classId) => {
             if (!classId) return;
             const patch: Partial<GraphClassMember> = { typeClassId: classId };
-            if (isClass) patch.defaultValue = classId;
+            if (container !== "single") patch.defaultValue = [];
+            else if (isClass) patch.defaultValue = classId;
             commit(patch);
             setClassPickerOpen(false);
           }}
@@ -417,7 +544,7 @@ function ClassMemberDetails({
               defaultValue:
                 container === "single"
                   ? defaultValueForMember(typeId, guid ?? undefined, schemas)
-                  : member.defaultValue,
+                  : [],
             });
             setTypeAssetPickerOpen(false);
           }}
@@ -435,6 +562,76 @@ function ClassMemberDetails({
             setDefaultAssetPickerOpen(false);
           }}
           data-testid="inspector-member-default-asset-picker"
+        />
+        <AssetPicker
+          open={
+            entryPick !== null &&
+            (entryPick.field === "key" ? member.keyTypeId === "asset" : isAsset)
+          }
+          onOpenChange={(open) => {
+            if (!open) setEntryPick(null);
+          }}
+          assets={pickerAssets}
+          allowedTypes={variableAssetPickerAllowedTypes(
+            entryPick?.field === "key"
+              ? member.keyTypeClassId
+              : member.typeClassId,
+          )}
+          allowNone
+          title="Pick Asset"
+          onPick={(guid) => {
+            if (!entryPick) return;
+            const nextValue = guid ?? "";
+            if (container === "array") {
+              const items = asArrayDefaults(member.defaultValue);
+              items[entryPick.index] = nextValue;
+              commit({ defaultValue: items });
+            } else {
+              const entries = parseMapDefaultEntries(member.defaultValue);
+              const current = entries[entryPick.index];
+              if (current) {
+                entries[entryPick.index] =
+                  entryPick.field === "key"
+                    ? { ...current, key: nextValue }
+                    : { ...current, value: nextValue };
+                commit({ defaultValue: entries });
+              }
+            }
+            setEntryPick(null);
+          }}
+          data-testid="inspector-member-entry-asset-picker"
+        />
+        <ClassPicker
+          open={
+            entryPick !== null &&
+            (entryPick.field === "key" ? member.keyTypeId === "class" : isClass)
+          }
+          onOpenChange={(open) => {
+            if (!open) setEntryPick(null);
+          }}
+          classes={classEntries}
+          allowNone={false}
+          title="Pick Class"
+          onPick={(classId) => {
+            if (!entryPick || !classId) return;
+            if (container === "array") {
+              const items = asArrayDefaults(member.defaultValue);
+              items[entryPick.index] = classId;
+              commit({ defaultValue: items });
+            } else {
+              const entries = parseMapDefaultEntries(member.defaultValue);
+              const current = entries[entryPick.index];
+              if (current) {
+                entries[entryPick.index] =
+                  entryPick.field === "key"
+                    ? { ...current, key: classId }
+                    : { ...current, value: classId };
+                commit({ defaultValue: entries });
+              }
+            }
+            setEntryPick(null);
+          }}
+          data-testid="inspector-member-entry-class-picker"
         />
       </div>
     );

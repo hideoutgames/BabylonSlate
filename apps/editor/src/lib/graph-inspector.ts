@@ -453,23 +453,31 @@ export function variableDefaultPropertyRows(
     container?: "single" | "array" | "map";
     assetEntries?: ReadonlyArray<{ id: string; name: string; type: string }>;
     onPickAsset?: (pinId: string, assetType: string) => void;
+    classEntries?: ReadonlyArray<{ id: string; name: string }>;
+    onPickClass?: (pinId: string, constraintClassId: string) => void;
+    label?: string;
+    pinId?: string;
   },
 ): PropertyRow[] {
   if (options?.container === "array" || options?.container === "map") return [];
   if (
     typeId === "object" ||
-    typeId === "class" ||
     typeId === "actor" ||
-    typeId === "wildcard"
+    typeId === "wildcard" ||
+    (typeId === "class" && !options?.onPickClass)
   ) {
     return [];
   }
+  const pinId = options?.pinId ?? "default";
+  const label = options?.label ?? "Default";
   const type = pinTypeForMember(typeId, options?.typeClassId);
   const mapping = {
     enumMembers: options?.enumMembers,
     schemas: options?.schemas,
     assetEntries: options?.assetEntries,
     onPickAsset: options?.onPickAsset,
+    classEntries: options?.classEntries,
+    onPickClass: options?.onPickClass,
   };
   if (type.kind === "structRef") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
@@ -479,14 +487,15 @@ export function variableDefaultPropertyRows(
       value,
       (next) => onChange(next),
       mapping,
-      "",
+      label === "Default" ? "" : label,
     );
   }
   const resolved = value === undefined ? defaultJsValue(type) : value;
   return pinDefaultPropertyRows(
-    [{ pinId: "default", name: "Default", type, value: resolved }],
+    [{ pinId, name: label, type, value: resolved }],
     (patch) => {
-      if ("default:Default" in patch) onChange(patch["default:Default"]);
+      const key = pinDefaultPropertyKey(label);
+      if (key in patch) onChange(patch[key]);
     },
     mapping,
   );

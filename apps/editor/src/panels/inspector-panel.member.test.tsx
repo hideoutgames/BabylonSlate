@@ -99,12 +99,29 @@ vi.mock("../context/document-context", () => ({
               container: "array",
             },
             {
+              id: "var-array-filled",
+              kind: "variable",
+              name: "Filled Hits",
+              typeId: "rotator",
+              container: "array",
+              defaultValue: [{ pitch: 1, yaw: 0, roll: 0 }],
+            },
+            {
               id: "var-map",
               kind: "variable",
               name: "By Name",
               typeId: "float",
               container: "map",
               keyTypeId: "string",
+            },
+            {
+              id: "var-map-filled",
+              kind: "variable",
+              name: "Scores",
+              typeId: "float",
+              container: "map",
+              keyTypeId: "string",
+              defaultValue: [{ key: "a", value: 1 }],
             },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             {
@@ -338,10 +355,55 @@ describe("Inspector class member details", () => {
     expect(icon.getAttribute("data-pin-shape")).toBe("map");
   });
 
-  it("hides Inspector Default editors for Array variables", () => {
+  it("adds Array default items from Inspector", () => {
     renderMemberInspector("var-array");
     expect(screen.getByTestId("inspector-member-container-array")).toBeTruthy();
     expect(screen.queryByTestId("property-default")).toBeNull();
+    expect(screen.queryByTestId("inspector-member-defaults-0-remove")).toBeNull();
+    screen.getByTestId("inspector-member-defaults-add").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const added = applyGraphChange.mock.calls[0]?.[1];
+    expect(added?.members?.find((member) => member.id === "var-array")).toEqual(
+      expect.objectContaining({
+        container: "array",
+        defaultValue: [{ pitch: 0, yaw: 0, roll: 0 }],
+      }),
+    );
+  });
+
+  it("removes an Array default item", () => {
+    renderMemberInspector("var-array-filled");
+    expect(screen.getByTestId("inspector-member-defaults-0-remove")).toBeTruthy();
+    expect(screen.queryByTestId("inspector-member-type")).toBeTruthy();
+    screen.getByTestId("inspector-member-defaults-0-remove").click();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(
+      next?.members?.find((member) => member.id === "var-array-filled"),
+    ).toEqual(
+      expect.objectContaining({
+        defaultValue: [],
+      }),
+    );
+  });
+
+  it("adds and removes Map default entries from Inspector", () => {
+    renderMemberInspector("var-map");
+    screen.getByTestId("inspector-member-defaults-add").click();
+    const added = applyGraphChange.mock.calls[0]?.[1];
+    expect(added?.members?.find((member) => member.id === "var-map")).toEqual(
+      expect.objectContaining({
+        container: "map",
+        defaultValue: [{ key: "", value: 0 }],
+      }),
+    );
+    cleanup();
+    applyGraphChange.mockClear();
+    renderMemberInspector("var-map-filled");
+    screen.getByTestId("inspector-member-defaults-0-remove").click();
+    const removed = applyGraphChange.mock.calls[0]?.[1];
+    expect(
+      removed?.members?.find((member) => member.id === "var-map-filled"),
+    ).toEqual(expect.objectContaining({ defaultValue: [] }));
   });
 
   it("shows Class Type for Actor variables and Asset Type for Asset variables", async () => {
