@@ -7,8 +7,10 @@ import {
   NamePromptDialog,
   PanelFrame,
   TreeView,
+  PinShapeGlyph,
   TypeColorMark,
   formatEventMemberName,
+  pinShapeForContainer,
   formatEventTitle,
   pinPickerColorVar,
   useContextMenu,
@@ -68,6 +70,7 @@ export type MyClassMember = {
   eventType?: string;
   typeId?: string;
   typeClassId?: string;
+  container?: string;
   functionId?: string;
   assetGuid?: string;
   pins?: import("@babylonslate/core").GraphClassMemberPin[];
@@ -173,8 +176,11 @@ function eventDisplayName(node: SerializedGraph["nodes"][number]): string {
 function memberIcon(member: MyClassMember) {
   if (member.kind === "variable") {
     return (
-      <TypeColorMark
-        colorVar={pinPickerColorVar(member.typeId ?? "float")}
+      <PinShapeGlyph
+        shape={pinShapeForContainer(member.container)}
+        connected
+        color={pinPickerColorVar(member.typeId ?? "float")}
+        size={12}
         data-testid={`class-var-type-${member.detail ?? member.name}`}
       />
     );
@@ -228,6 +234,9 @@ function inheritedMembers(
           inheritedFrom: className,
           ...(member.typeId ? { typeId: member.typeId } : {}),
           ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
+          ...(member.container && member.container !== "single"
+            ? { container: member.container }
+            : {}),
           ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
           ...(member.pins ? { pins: member.pins } : {}),
         });
@@ -259,6 +268,9 @@ export function membersForGraph(
       detail: member.id,
       ...(member.typeId ? { typeId: member.typeId } : {}),
       ...(member.typeClassId ? { typeClassId: member.typeClassId } : {}),
+      ...(member.container && member.container !== "single"
+        ? { container: member.container }
+        : {}),
       ...(member.functionId ? { functionId: member.functionId } : {}),
       ...(member.assetGuid ? { assetGuid: member.assetGuid } : {}),
       ...(member.pins ? { pins: member.pins } : {}),

@@ -2113,6 +2113,53 @@ describe("GraphEditor", () => {
     expect(intHandle?.querySelector('[data-pin-shape="circle"]')).not.toBeNull();
   });
 
+  it("renders map pins with a map icon distinct from array list bars", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "find",
+          type: "map.get",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Map Get",
+            __nodeType: "map.get",
+            __category: "map",
+            __pure: true,
+            __pins: [
+              {
+                id: "map",
+                name: "map",
+                kind: "data",
+                direction: "in",
+                type: {
+                  kind: "map",
+                  key: { kind: "string" },
+                  value: { kind: "float" },
+                },
+              },
+              {
+                id: "key",
+                name: "key",
+                kind: "data",
+                direction: "in",
+                type: { kind: "string" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+
+    const mapHandle = container.querySelector('[data-pin-type="map"]');
+    expect(mapHandle).not.toBeNull();
+    expect(mapHandle?.querySelector('[data-pin-shape="map"]')).not.toBeNull();
+    expect(mapHandle?.querySelector('[data-pin-shape="list"]')).toBeNull();
+    expect(mapHandle?.querySelector('[data-pin-shape="circle"]')).toBeNull();
+  });
+
   it("uses the host colorMode on the canvas", () => {
     const { container } = render(
       <GraphEditor

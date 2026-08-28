@@ -261,3 +261,8 @@ export {
   type TypeVisualQuery,
 } from "./type-visuals";
 export { TypeColorMark } from "./type-color-mark";
+export {
+  PinShapeGlyph,
+  pinShapeForContainer,
+  type PinShape,
+} from "./pin-shape-glyph";

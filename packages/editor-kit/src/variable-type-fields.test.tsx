@@ -32,12 +32,22 @@ describe("VariableTypeFields", () => {
     expect(screen.getByTestId("inspector-member-container-single").textContent).toBe(
       "Single",
     );
-    expect(screen.getByTestId("inspector-member-container-array").textContent).toBe(
+    expect(screen.getByTestId("inspector-member-container-array").textContent).toContain(
       "Array",
     );
-    expect(screen.getByTestId("inspector-member-container-map").textContent).toBe(
+    expect(
+      screen
+        .getByTestId("inspector-member-container-array")
+        .querySelector('[data-pin-shape="list"]'),
+    ).not.toBeNull();
+    expect(screen.getByTestId("inspector-member-container-map").textContent).toContain(
       "Map",
     );
+    expect(
+      screen
+        .getByTestId("inspector-member-container-map")
+        .querySelector('[data-pin-shape="map"]'),
+    ).not.toBeNull();
     expect(screen.queryByTestId("inspector-member-key-type")).toBeNull();
 
     rerender(

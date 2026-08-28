@@ -61,7 +61,7 @@ describe("pinCssVar", () => {
 });
 
 describe("pinVisualShape", () => {
-  it("uses a diamond for exec, a list for arrays, and a circle otherwise", () => {
+  it("uses a diamond for exec, a list for arrays, a map glyph for maps, and a circle otherwise", () => {
     expect(pinVisualShape({ kind: "exec" })).toBe("diamond");
     expect(
       pinVisualShape({ kind: "array", element: { kind: "float" } }),
@@ -79,7 +79,7 @@ describe("pinVisualShape", () => {
         key: { kind: "string" },
         value: { kind: "bool" },
       }),
-    ).toBe("circle");
+    ).toBe("map");
   });
 });
 

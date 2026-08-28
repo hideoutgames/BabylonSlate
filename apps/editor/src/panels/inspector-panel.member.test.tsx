@@ -98,6 +98,14 @@ vi.mock("../context/document-context", () => ({
               typeId: "rotator",
               container: "array",
             },
+            {
+              id: "var-map",
+              kind: "variable",
+              name: "By Name",
+              typeId: "float",
+              container: "map",
+              keyTypeId: "string",
+            },
             { id: "fn-1", kind: "function", name: "Jump", pins: [] },
             {
               id: "loc-1",
@@ -302,6 +310,18 @@ describe("Inspector class member details", () => {
         defaultValue: [],
       }),
     );
+  });
+
+  it("shows list bars on Array variable rows in the Class tree", () => {
+    renderMemberInspector("var-array", true);
+    const icon = screen.getByTestId("class-var-type-var-array");
+    expect(icon.getAttribute("data-pin-shape")).toBe("list");
+  });
+
+  it("shows the map glyph on Map variable rows in the Class tree", () => {
+    renderMemberInspector("var-map", true);
+    const icon = screen.getByTestId("class-var-type-var-map");
+    expect(icon.getAttribute("data-pin-shape")).toBe("map");
   });
 
   it("hides Inspector Default editors for Array variables", () => {

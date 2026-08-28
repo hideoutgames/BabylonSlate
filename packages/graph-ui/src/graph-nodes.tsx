@@ -6,7 +6,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import { useCallback, type MouseEvent, type ReactNode } from "react";
-import { humanizePropertyLabel } from "@babylonslate/editor-kit";
+import { humanizePropertyLabel, PinShapeGlyph } from "@babylonslate/editor-kit";
 import { isDevelopmentOnlyNode } from "@babylonslate/scripting";
 import { cn } from "@babylonslate/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
@@ -108,53 +108,13 @@ function PinVisual({
   type: PinTypeRef;
   connected: boolean;
 }) {
-  const shape = pinVisualShape(type);
-  const color = pinCssVar(type);
-  const size = "var(--graph-pin-size, 22px)";
-
-  if (shape === "list") {
-    return (
-      <svg
-        className="graph-pin-visual block"
-        data-pin-shape="list"
-        data-pin-connected={connected ? "true" : "false"}
-        viewBox="0 0 22 22"
-        aria-hidden="true"
-        style={{ width: size, height: size, color }}
-      >
-        {[3, 9, 15].map((y) => (
-          <rect
-            key={y}
-            x="2"
-            y={y}
-            width="18"
-            height="4"
-            rx="1"
-            fill={connected ? "currentColor" : "transparent"}
-            stroke={connected ? "var(--card)" : "currentColor"}
-            strokeWidth="2"
-          />
-        ))}
-      </svg>
-    );
-  }
-
   return (
-    <span
-      className={cn(
-        "graph-pin-visual block border-2",
-        connected ? "border-card" : "",
-        shape === "diamond" ? "rotate-45 rounded-sm" : "rounded-full",
-      )}
-      data-pin-shape={shape}
-      data-pin-connected={connected ? "true" : "false"}
-      style={{
-        width: size,
-        height: size,
-        background: connected ? color : "transparent",
-        borderColor: connected ? undefined : color,
-      }}
-      aria-hidden="true"
+    <PinShapeGlyph
+      shape={pinVisualShape(type)}
+      connected={connected}
+      color={pinCssVar(type)}
+      size="var(--graph-pin-size, 22px)"
+      className="graph-pin-visual"
     />
   );
 }
