@@ -141,12 +141,13 @@ export const animationNodes: NodeDefinition[] = [
     category: "animation",
     pure: true,
     pins: () => [
+      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
       pin("name", "name", "out", STRING),
       pin("id", "id", "out", STRING),
     ],
-    codegen: () => ({
-      name: `(ctx.getAnimGraphCurrentState()?.name ?? "")`,
-      id: `(ctx.getAnimGraphCurrentState()?.id ?? "")`,
+    codegen: (ctx) => ({
+      name: `(ctx.getAnimGraphCurrentState(${ctx.input("target")})?.name ?? "")`,
+      id: `(ctx.getAnimGraphCurrentState(${ctx.input("target")})?.id ?? "")`,
     }),
   },
   {
@@ -156,10 +157,13 @@ export const animationNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
+      pin("target", "target", "in", objectRef("AnimationGraphComponent")),
       pin("state", "state", "in", STRING),
     ],
     codegen: (ctx) => {
-      ctx.emit(`ctx.jumpAnimGraphState(${ctx.input("state")});`);
+      ctx.emit(
+        `ctx.jumpAnimGraphState(${ctx.input("target")}, ${ctx.input("state")});`,
+      );
     },
   },
 ];
