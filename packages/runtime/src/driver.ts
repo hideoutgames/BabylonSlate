@@ -393,7 +393,7 @@ class InProcessRuntime implements RuntimeDriver {
   private readonly seed: number;
   private tickPrints: Array<{ message: string; key: string }> = [];
   private readonly animGraphs = new Map<string, AnimGraphDocument>();
-  private readonly animEvalBySlot = new Map<number, AnimEvalState>();
+  private readonly animEvalByComponent = new Map<string, AnimEvalState>();
   private readonly animInitializedBySlot = new Set<string>();
   private readonly behaviourTrees = new Map<string, BehaviourTreeDocument>();
   private readonly blackboards = new Map<string, BlackboardDocument>();
@@ -410,7 +410,7 @@ class InProcessRuntime implements RuntimeDriver {
     string,
     { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
   >();
-  private pendingAnimJumpBySlot = new Map<number, string>();
+  private pendingAnimJumpByComponent = new Map<string, string>();
   private pixelsPerUnit = 100;
   private readonly delayWaiters: Array<{ remaining: number; resolve: () => void }> =
     [];
@@ -732,24 +732,27 @@ class InProcessRuntime implements RuntimeDriver {
         target.attachComponent(component);
         return component;
       },
-      animGraphControl: (self) => {
-        if (!(self instanceof Actor) || self.destroyed) return null;
-        const component = self.components.find(
-          (entry) =>
-            entry.classId === "AnimationGraphComponent" && !entry.destroyed,
-        );
-        if (!component) return null;
-        const slotId = this.slotByGuid.get(self.guid);
-        const guid = this.animGraphGuid(component);
+      animGraphControl: (target) => {
+        if (
+          !(target instanceof ActorComponent) ||
+          target.classId !== "AnimationGraphComponent" ||
+          target.destroyed
+        ) {
+          return null;
+        }
+        const owner = target.owner;
+        if (!(owner instanceof Actor) || owner.destroyed) return null;
+        const slotId = this.slotByGuid.get(owner.guid);
+        const guid = this.animGraphGuid(target);
         const document = guid ? this.animGraphs.get(guid) : undefined;
+        const evalKey = target.guid;
         return {
-          getVariable: (name) => component.getVariable(name),
+          getVariable: (name) => target.getVariable(name),
           setVariable: (name, value) => {
-            component.setVariable(name, value);
+            target.setVariable(name, value);
           },
           getCurrentState: () => {
-            const evalState =
-              slotId !== undefined ? this.animEvalBySlot.get(slotId) : undefined;
+            const evalState = this.animEvalByComponent.get(evalKey);
             const stateId = evalState?.stateId ?? document?.entryStateId;
             if (!stateId || !document) return null;
             const state = document.states.find((row) => row.id === stateId);
@@ -761,7 +764,7 @@ class InProcessRuntime implements RuntimeDriver {
               (row) => row.id === state || row.name === state,
             );
             if (!match) return;
-            this.pendingAnimJumpBySlot.set(slotId, match.id);
+            this.pendingAnimJumpByComponent.set(evalKey, match.id);
           },
         };
       },
@@ -1503,9 +1506,9 @@ class InProcessRuntime implements RuntimeDriver {
       this.world.destroyActor(actor.guid);
     }
     this.world.flushPending();
-    this.animEvalBySlot.clear();
+    this.animEvalByComponent.clear();
     this.animInitializedBySlot.clear();
-    this.pendingAnimJumpBySlot.clear();
+    this.pendingAnimJumpByComponent.clear();
     this.btEvalBySlot.clear();
     this.lastBtStateJson.clear();
     this.clearNavAgents();
@@ -1986,125 +1989,128 @@ class InProcessRuntime implements RuntimeDriver {
   private tickAnimGraphs(): void {
     if (this.animGraphs.size === 0) return;
     const liveKeys = new Set<string>();
+    const liveEvalKeys = new Set<string>();
     for (const actor of this.world.getActors()) {
       if (actor.destroyed) continue;
       const slotId = this.slotByGuid.get(actor.guid);
       if (slotId === undefined) continue;
       if (this.btPlayAnimOwnedSlots.has(slotId)) continue;
-      const component = actor.components.find(
-        (entry) =>
-          entry.classId === "AnimationGraphComponent" && !entry.destroyed,
-      );
-      if (!component) continue;
-      const guid = this.animGraphGuid(component);
-      if (!guid) continue;
-      const document = this.animGraphs.get(guid);
-      if (!document) continue;
-      const initKey = `${slotId}:${guid}`;
-      liveKeys.add(initKey);
-      this.seedAnimVariables(component, document);
-      const jumpTo = this.pendingAnimJumpBySlot.get(slotId);
-      if (jumpTo) {
-        this.pendingAnimJumpBySlot.delete(slotId);
-        const jumped = document.states.find((state) => state.id === jumpTo);
-        if (jumped) {
-          this.animEvalBySlot.set(slotId, {
-            stateId: jumped.id,
-            normalisedTime: 0,
-            blendWeights: { [jumped.id]: 1 },
-            timeMs: 0,
-            facts: {
-              elapsedSeconds: 0,
-              durationSeconds: 0,
-              normalisedTime: 0,
-              remainingSeconds: 0,
-              remainingRatio: 1,
-              looping: jumped.loop,
-              loopCount: 0,
-              justLooped: false,
-              justFinished: false,
-            },
-            layers: [],
-            blendFromStateId: null,
-            blendFromTimeMs: 0,
-            blendElapsedMs: 0,
-            loopCount: 0,
-          });
+      for (const component of actor.components) {
+        if (
+          component.classId !== "AnimationGraphComponent" ||
+          component.destroyed
+        ) {
+          continue;
         }
-      }
-      const extras = {
-        variableStore: component,
-        animFacts: this.animEvalBySlot.get(slotId)?.facts,
-      };
-      const objectClassId = animGraphScriptClassId(guid);
-      if (!this.animInitializedBySlot.has(initKey)) {
+        const guid = this.animGraphGuid(component);
+        if (!guid) continue;
+        const document = this.animGraphs.get(guid);
+        if (!document) continue;
+        const evalKey = component.guid;
+        const initKey = `${evalKey}:${guid}`;
+        liveKeys.add(initKey);
+        liveEvalKeys.add(evalKey);
+        this.seedAnimVariables(component, document);
+        const jumpTo = this.pendingAnimJumpByComponent.get(evalKey);
+        if (jumpTo) {
+          this.pendingAnimJumpByComponent.delete(evalKey);
+          const jumped = document.states.find((state) => state.id === jumpTo);
+          if (jumped) {
+            this.animEvalByComponent.set(evalKey, {
+              stateId: jumped.id,
+              normalisedTime: 0,
+              blendWeights: { [jumped.id]: 1 },
+              timeMs: 0,
+              facts: {
+                elapsedSeconds: 0,
+                durationSeconds: 0,
+                normalisedTime: 0,
+                remainingSeconds: 0,
+                remainingRatio: 1,
+                looping: jumped.loop,
+                loopCount: 0,
+                justLooped: false,
+                justFinished: false,
+              },
+              layers: [],
+              blendFromStateId: null,
+              blendFromTimeMs: 0,
+              blendElapsedMs: 0,
+              loopCount: 0,
+            });
+          }
+        }
+        const extras = {
+          variableStore: component,
+          animFacts: this.animEvalByComponent.get(evalKey)?.facts,
+        };
+        const objectClassId = animGraphScriptClassId(guid);
+        if (!this.animInitializedBySlot.has(initKey)) {
+          this.scriptHost.invokeAnimEvent(
+            objectClassId,
+            "onInitializeAnimation",
+            actor,
+            0,
+            extras,
+          );
+          this.animInitializedBySlot.add(initKey);
+        }
         this.scriptHost.invokeAnimEvent(
           objectClassId,
-          "onInitializeAnimation",
+          "onUpdateAnimation",
           actor,
-          0,
+          this.simulationDt(),
           extras,
         );
-        this.animInitializedBySlot.add(initKey);
-      }
-      this.scriptHost.invokeAnimEvent(
-        objectClassId,
-        "onUpdateAnimation",
-        actor,
-        this.simulationDt(),
-        extras,
-      );
-      const next = evaluateAnimGraph(
-        document,
-        this.animEvalBySlot.get(slotId) ?? null,
-        this.simulationDt(),
-        {
-          variables: this.animVariablesFromComponent(component, document),
-          ...this.animInputsFromComponent(component),
-          decideTransition: (transition, facts) =>
-            this.scriptHost.invokeAnimRule(
-              animRuleScriptClassId(guid, transition.id),
-              actor,
-              { variableStore: component, animFacts: facts },
-            ),
-        },
-      );
-      this.animEvalBySlot.set(slotId, next);
-      const clip = clipForState(document, next.stateId);
-      if (clip?.kind === "sprite" && clip.assetGuid) {
-        this.physicsSync.setActorSpriteClip(actor.guid, {
-          assetGuid: clip.assetGuid,
-          clipName: clip.clipName,
+        const next = evaluateAnimGraph(
+          document,
+          this.animEvalByComponent.get(evalKey) ?? null,
+          this.simulationDt(),
+          {
+            variables: this.animVariablesFromComponent(component, document),
+            ...this.animInputsFromComponent(component),
+            decideTransition: (transition, facts) =>
+              this.scriptHost.invokeAnimRule(
+                animRuleScriptClassId(guid, transition.id),
+                actor,
+                { variableStore: component, animFacts: facts },
+              ),
+          },
+        );
+        this.animEvalByComponent.set(evalKey, next);
+        const clip = clipForState(document, next.stateId);
+        if (clip?.kind === "sprite" && clip.assetGuid) {
+          this.physicsSync.setActorSpriteClip(actor.guid, {
+            assetGuid: clip.assetGuid,
+            clipName: clip.clipName,
+            normalisedTime: next.normalisedTime,
+          });
+        } else {
+          this.physicsSync.setActorSpriteClip(actor.guid, null);
+        }
+        const currentLayer =
+          next.layers.find((layer) => layer.stateId === next.stateId) ??
+          next.layers[next.layers.length - 1];
+        this.emit({
+          type: "animState",
+          slotId,
+          stateId: next.stateId,
           normalisedTime: next.normalisedTime,
+          blendWeights: next.blendWeights,
+          clipName: currentLayer?.clipName || clip?.clipName,
+          clipKind: currentLayer?.clipKind ?? clip?.kind,
+          clipAssetGuid: currentLayer?.clipAssetGuid || clip?.assetGuid,
+          justFinished: next.facts.justFinished,
+          justLooped: next.facts.justLooped,
+          layers: next.layers,
         });
-      } else {
-        this.physicsSync.setActorSpriteClip(actor.guid, null);
       }
-      const currentLayer =
-        next.layers.find((layer) => layer.stateId === next.stateId) ??
-        next.layers[next.layers.length - 1];
-      this.emit({
-        type: "animState",
-        slotId,
-        stateId: next.stateId,
-        normalisedTime: next.normalisedTime,
-        blendWeights: next.blendWeights,
-        clipName: currentLayer?.clipName || clip?.clipName,
-        clipKind: currentLayer?.clipKind ?? clip?.kind,
-        clipAssetGuid: currentLayer?.clipAssetGuid || clip?.assetGuid,
-        justFinished: next.facts.justFinished,
-        justLooped: next.facts.justLooped,
-        layers: next.layers,
-      });
     }
     for (const key of [...this.animInitializedBySlot]) {
       if (!liveKeys.has(key)) this.animInitializedBySlot.delete(key);
     }
-    for (const slotId of [...this.animEvalBySlot.keys()]) {
-      const stillLive = [...liveKeys].some((key) =>
-        key.startsWith(`${slotId}:`),
-      );
-      if (!stillLive) this.animEvalBySlot.delete(slotId);
+    for (const evalKey of [...this.animEvalByComponent.keys()]) {
+      if (!liveEvalKeys.has(evalKey)) this.animEvalByComponent.delete(evalKey);
     }
   }
 
