@@ -45,6 +45,7 @@ import {
   type PaletteNode,
   type SerializedPin,
 } from "./graph-types";
+import type { PinTypeNames } from "./pin-default-preview";
 import { animTransitionEdgeMarkers } from "./anim-transition-markers";
 import { GraphEditorProvider } from "./graph-editor-context";
 import {
@@ -119,6 +120,7 @@ import {
 
 export type { GraphDocument, GraphDiagnostic, NavigateRequest, PaletteNode };
 export type { SerializedPin } from "./graph-types";
+export type { PinTypeNames } from "./pin-default-preview";
 export {
   GRAPH_DEFAULT_ZOOM,
   GRAPH_MAX_ZOOM,
@@ -220,6 +222,8 @@ export interface GraphEditorProps {
   onAttachmentDoubleClick?: (nodeId: string, attachmentId: string) => void;
   /** Host connection rule (material Float splat). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
+  /** Struct/enum guid → display name for on-node type fields. */
+  pinTypeNames?: PinTypeNames;
   /** Registers client hit-test / flow conversion for Class-member drops. */
   onCanvasApi?: (api: GraphCanvasDropApi | null) => void;
 }
@@ -522,6 +526,7 @@ function GraphEditorCanvas({
   contextMenuItemsForAttachment,
   onAttachmentDoubleClick,
   pinCompatibility,
+  pinTypeNames,
   onCanvasApi,
 }: GraphEditorProps) {
   const knownTypes = useMemo(
@@ -1756,6 +1761,7 @@ function GraphEditorCanvas({
       nodeErrorCount,
       pinHasError,
       pinDisplayType,
+      pinTypeNames,
       connectEndMode,
       onNavigateRequest,
       selectedAttachmentId,
@@ -1776,6 +1782,7 @@ function GraphEditorCanvas({
       onPinTap,
       pendingPin,
       pinDisplayType,
+      pinTypeNames,
       pinHasError,
       connectEndMode,
       selectedAttachmentId,

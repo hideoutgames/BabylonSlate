@@ -40,14 +40,6 @@ const execIn = pin({
   type: { kind: "exec" },
 });
 
-const target = pin({
-  id: "target",
-  name: "target",
-  kind: "data",
-  direction: "in",
-  type: { kind: "objectRef", classId: "Actor" },
-});
-
 const thenOut = pin({
   id: "then",
   name: "then",
@@ -181,7 +173,7 @@ describe("pinDefaultPreview", () => {
     ).toEqual({ kind: "color", rgb: "rgb(255, 128, 0)" });
   });
 
-  it("returns class and enum names in a text field", () => {
+  it("returns class and enum constraint type names in a text field", () => {
     const classPin = pin({
       id: "classId",
       name: "classId",
@@ -201,11 +193,16 @@ describe("pinDefaultPreview", () => {
       text: "Actor",
     });
     expect(
-      pinDefaultPreview(enumPin, { "default:mode": "Walk" }, false),
-    ).toEqual({ kind: "enumRef", text: "Walk" });
+      pinDefaultPreview(enumPin, { "default:mode": "Walk" }, false, {
+        e1: "Team",
+      }),
+    ).toEqual({ kind: "enumRef", text: "Team" });
+    expect(pinDefaultPreview(enumPin, { "default:mode": "Walk" }, false)).toEqual(
+      { kind: "enumRef", text: "e1" },
+    );
   });
 
-  it("returns an assetRef guid in a text field", () => {
+  it("returns an assetRef type name instead of the authored guid", () => {
     const assetPin = pin({
       id: "asset",
       name: "asset",
@@ -215,7 +212,55 @@ describe("pinDefaultPreview", () => {
     });
     expect(
       pinDefaultPreview(assetPin, { "default:asset": "audio-1" }, false),
-    ).toEqual({ kind: "assetRef", text: "audio-1" });
+    ).toEqual({ kind: "assetRef", text: "Audio" });
+  });
+
+  it("returns object, actor, and struct constraint type names", () => {
+    const objectPin = pin({
+      id: "target",
+      name: "target",
+      kind: "data",
+      direction: "in",
+      type: { kind: "objectRef", classId: "CameraComponent" },
+    });
+    const actorPin = pin({
+      id: "actor",
+      name: "actor",
+      kind: "data",
+      direction: "in",
+      type: { kind: "actorRef", classId: "Actor" },
+    });
+    const structPin = pin({
+      id: "hit",
+      name: "hit",
+      kind: "data",
+      direction: "in",
+      type: { kind: "structRef", guid: "struct-stats" },
+    });
+    expect(pinDefaultPreview(objectPin, {}, false)).toEqual({
+      kind: "objectRef",
+      text: "CameraComponent",
+    });
+    expect(pinDefaultPreview(actorPin, {}, false)).toEqual({
+      kind: "actorRef",
+      text: "Actor",
+    });
+    expect(
+      pinDefaultPreview(structPin, {}, false, { "struct-stats": "Stats" }),
+    ).toEqual({ kind: "structRef", text: "Stats" });
+    expect(
+      pinDefaultPreview(
+        pin({
+          id: "hit",
+          name: "hit",
+          kind: "data",
+          direction: "in",
+          type: { kind: "structRef", guid: "engine:HitResult" },
+        }),
+        {},
+        false,
+      ),
+    ).toEqual({ kind: "structRef", text: "HitResult" });
   });
 
   it("returns null when the pin is connected", () => {
@@ -225,13 +270,25 @@ describe("pinDefaultPreview", () => {
     expect(
       pinDefaultPreview(message, { "default:message": "hi" }, true),
     ).toBeNull();
+    expect(
+      pinDefaultPreview(
+        pin({
+          id: "target",
+          name: "target",
+          kind: "data",
+          direction: "in",
+          type: { kind: "objectRef", classId: "Actor" },
+        }),
+        {},
+        true,
+      ),
+    ).toBeNull();
   });
 
-  it("returns null for exec, outputs, and live object refs", () => {
+  it("returns null for exec and outputs", () => {
     expect(pinDefaultPreview(execIn, {}, false)).toBeNull();
     expect(pinDefaultPreview(thenOut, {}, false)).toBeNull();
     expect(pinDefaultPreview(resultOut, { "default:result": 4 }, false)).toBeNull();
-    expect(pinDefaultPreview(target, { "default:target": "Hero" }, false)).toBeNull();
   });
 
   it("previews a generic input as a float field", () => {

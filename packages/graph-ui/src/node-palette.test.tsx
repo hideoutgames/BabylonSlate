@@ -368,8 +368,8 @@ describe("NodePalette", () => {
     expect(getByText("Add Node")).toBeTruthy();
   });
 
-  it("labels All as Suggested and describes the pin when filtering", () => {
-    const { getByTestId, getByText } = render(
+  it("labels All as Suggested and omits Compatible with pin-type subtitle", () => {
+    const { getByTestId, queryByText, container } = render(
       <NodePalette
         open
         onOpenChange={() => {}}
@@ -381,7 +381,10 @@ describe("NodePalette", () => {
     expect(getByTestId("node-palette-category-all").textContent).toMatch(
       /Suggested/,
     );
-    expect(getByText("Compatible with Bool")).toBeTruthy();
+    expect(queryByText(/Compatible with/)).toBeNull();
+    expect(
+      container.querySelector('[data-slot="dialog-description"]'),
+    ).toBeNull();
   });
 
   it("lists pin-filtered Suggested rows in relevance order without category headers", () => {

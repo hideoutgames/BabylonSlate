@@ -203,7 +203,7 @@ function PinRow({
   incoming?: SerializedPin;
   outgoing?: SerializedPin;
 }) {
-  const { pendingPin, pinHasError } = useGraphEditorContext();
+  const { pendingPin, pinHasError, pinTypeNames } = useGraphEditorContext();
   const incomingConnected = useStore((state) =>
     incoming ? isPinWired(state.edges, nodeId, incoming) : false,
   );
@@ -211,7 +211,7 @@ function PinRow({
     outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
   );
   const preview = incoming
-    ? pinDefaultPreview(incoming, data, incomingConnected)
+    ? pinDefaultPreview(incoming, data, incomingConnected, pinTypeNames)
     : null;
 
   const isPending = (pin: SerializedPin | undefined) =>
@@ -237,7 +237,7 @@ function PinRow({
             {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
             <span
               data-pin-label={incoming.name}
-              className="max-w-[11rem] text-base leading-snug break-words text-foreground"
+              className="max-w-[18rem] text-base leading-snug break-words text-foreground"
             >
               {humanizePropertyLabel(incoming.name)}
             </span>
@@ -251,7 +251,7 @@ function PinRow({
           <>
             <span
               data-pin-label={outgoing.name}
-              className="max-w-[11rem] text-right text-base leading-snug break-words text-foreground"
+              className="max-w-[18rem] text-right text-base leading-snug break-words text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>
@@ -349,7 +349,7 @@ export function BlueprintNodeShell({
         data-disabled={disabled ? "true" : undefined}
         className={cn(
           "overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
-          compact ? "min-w-56" : "min-w-80",
+          compact ? "min-w-56" : "w-max min-w-80 max-w-[32rem]",
           selected && "ring-2 ring-primary",
           disabled && "opacity-50",
         )}

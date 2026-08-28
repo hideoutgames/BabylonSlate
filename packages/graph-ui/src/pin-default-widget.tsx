@@ -2,7 +2,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import type { PinDefaultPreview } from "./pin-default-preview";
 
 const FIELD_CLASS =
-  "pointer-events-none h-8 max-w-[var(--graph-pin-default-max-width,8rem)] shrink-0 truncate rounded-sm border border-input bg-input/30 px-1.5 text-base leading-8 text-foreground select-none";
+  "pointer-events-none h-8 max-w-[var(--graph-pin-default-max-width,12rem)] shrink-0 truncate rounded-sm border border-input bg-input/30 px-1.5 text-base leading-8 text-foreground select-none";
 
 function CheckMark() {
   return (

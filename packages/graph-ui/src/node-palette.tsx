@@ -59,14 +59,6 @@ function flattenPaletteRows(
   return rows;
 }
 
-export function describePaletteFilterPin(pin: SerializedPin): string {
-  const classId =
-    typeof pin.type.classId === "string" ? pin.type.classId.trim() : "";
-  if (classId) return humanizePropertyLabel(classId);
-  if (pin.kind === "exec") return "Exec";
-  return humanizePropertyLabel(pin.type.kind);
-}
-
 function PaletteWindowedList({
   rows,
   onAddNode,
@@ -275,11 +267,6 @@ export function NodePalette({
         }
       }}
       title="Add Node"
-      description={
-        pinFiltered && filterPin
-          ? `Compatible with ${describePaletteFilterPin(filterPin)}`
-          : undefined
-      }
       categories={categories}
       activeCategoryId={activeCategory}
       onCategoryChange={setActiveCategory}

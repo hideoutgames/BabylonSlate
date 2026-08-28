@@ -7,7 +7,7 @@ afterEach(() => {
 });
 
 describe("PinDefaultPreviewWidget", () => {
-  it("sizes string fields at text-base with an 8rem truncation cap", () => {
+  it("sizes string fields at text-base with a 12rem truncation cap", () => {
     const { container } = render(
       <PinDefaultPreviewWidget
         preview={{ kind: "string", text: "Hello World" }}
@@ -18,7 +18,7 @@ describe("PinDefaultPreviewWidget", () => {
     expect(field?.textContent).toBe("Hello World");
     expect(field?.className).toMatch(/\btext-base\b/);
     expect(field?.className).toMatch(/\bh-8\b/);
-    expect(field?.className).toMatch(/--graph-pin-default-max-width,8rem/);
+    expect(field?.className).toMatch(/--graph-pin-default-max-width,12rem/);
   });
 
   it("sizes bool and color swatches at size-5", () => {
