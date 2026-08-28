@@ -135,7 +135,10 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   /** Material asset guid per component, keyed by `slotId|componentId`. */
   componentMaterialGuids: Map<string, string | null>;
   /** Resolves an assigned Material guid to a scene-local compiled material. */
-  resolveMaterial?: (assetGuid: string) => Material | null;
+  resolveMaterial?: (
+    assetGuid: string,
+    options?: { scene?: Scene; unlit?: boolean },
+  ) => Material | null;
   /** Overlay Play: create missing visuals in the SceneLayer scene for this slot. */
   sceneForSlot?: (slotId: number) => Scene | null;
   /** Overlay Play: slot is tagged to a SceneLayer even if that scene is not live yet. */
@@ -796,7 +799,10 @@ export function createPlayMesh(
     mesh.material = material;
     mesh.isPickable = meshKind === "2dbutton";
     if (meshKind === "2dmaterial" && assetGuid && binding?.resolveMaterial) {
-      const compiled = binding.resolveMaterial(assetGuid);
+      const compiled = binding.resolveMaterial(assetGuid, {
+        scene,
+        unlit: true,
+      });
       if (compiled) mesh.material = compiled;
     }
     return mesh;

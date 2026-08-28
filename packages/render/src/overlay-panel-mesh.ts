@@ -102,7 +102,10 @@ export function createOverlayPanelMesh(
   vertexData.applyToMesh(mesh);
   const compiled =
     parsed.source === "material" && parsed.materialGuid
-      ? assets?.resolveMaterial?.(parsed.materialGuid) ?? null
+      ? assets?.resolveMaterial?.(parsed.materialGuid, {
+          scene,
+          unlit: true,
+        }) ?? null
       : null;
   mesh.material = compiled ?? overlayUnlitMaterial(scene, name);
   if (parsed.source === "texture") {

@@ -107,6 +107,31 @@ describe("createPlayMesh", () => {
     expect(button.isPickable).toBe(true);
   });
 
+  it("resolves 2DMaterial against the overlay scene as an unlit compile", () => {
+    const overlay = createTestEngine();
+    const world = createTestEngine();
+    handles.push(overlay, world);
+    const overlayMat = new StandardMaterial("overlay-mat", overlay.scene);
+    const worldMat = new StandardMaterial("world-mat", world.scene);
+    const binding = createSnapshotSceneBinding();
+    const calls: Array<{ guid: string; unlit?: boolean; scene?: Scene }> = [];
+    binding.resolveMaterial = (guid, options) => {
+      calls.push({ guid, unlit: options?.unlit, scene: options?.scene });
+      return options?.scene === overlay.scene ? overlayMat : worldMat;
+    };
+    const mesh = createPlayMesh(
+      overlay.scene,
+      2,
+      "2dmaterial",
+      "mat-1",
+      binding,
+    );
+    expect(mesh.material).toBe(overlayMat);
+    expect(calls).toEqual([
+      { guid: "mat-1", unlit: true, scene: overlay.scene },
+    ]);
+  });
+
   it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
     const handle = createTestEngine();
     handles.push(handle);

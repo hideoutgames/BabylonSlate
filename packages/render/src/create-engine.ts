@@ -777,15 +777,17 @@ export function createEngine(
       options.onMaterialDiagnostic?.(diagnostic);
     },
   });
-  binding.resolveMaterial = (guid) => {
-    const live = materialLibrary.materialFor(scene, guid);
+  binding.resolveMaterial = (guid, options) => {
+    const host = options?.scene ?? scene;
+    const unlit = options?.unlit === true;
+    const live = materialLibrary.materialFor(host, guid, { unlit });
     if (live) {
       compiledMaterialGuids.add(guid);
       return live;
     }
     const document = materialDocuments.get(guid);
     if (!document) return null;
-    const acquired = materialLibrary.acquire(scene, guid, document);
+    const acquired = materialLibrary.acquire(host, guid, document, { unlit });
     if (materialUnavailable(acquired)) return null;
     compiledMaterialGuids.add(guid);
     return acquired.material;

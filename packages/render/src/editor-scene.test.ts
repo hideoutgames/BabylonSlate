@@ -1215,6 +1215,29 @@ describe("EditorSceneSync", () => {
     expect(sync.meshForActor("a")?.material).toBe(assigned);
   });
 
+  it("binds 2DMaterialComponent.materialGuid onto the overlay plane", () => {
+    const { scene } = createHandle();
+    const assigned = new StandardMaterial("mat-hud", scene);
+    const sync = new EditorSceneSync(scene, undefined, {
+      resolveMaterial: (guid) => (guid === "mat-hud" ? assigned : null),
+    });
+    sync.apply(
+      sceneWith([
+        createActor("banner", "Banner", {
+          classId: "SceneLayerActor",
+          components: [
+            {
+              id: "mat",
+              classId: "2DMaterialComponent",
+              properties: { materialGuid: "mat-hud", hitTest: "ignore" },
+            },
+          ],
+        }),
+      ]),
+    );
+    expect(sync.meshForActor("banner")?.material).toBe(assigned);
+  });
+
   it("binds MeshComponent.materialGuid on a Prefab-shaped one-component actor", () => {
     const { scene } = createHandle();
     const assigned = new StandardMaterial("mat-rock", scene);

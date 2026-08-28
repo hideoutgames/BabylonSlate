@@ -38,6 +38,22 @@ export function materialAvailable(
   return result.ok === true;
 }
 
+export type MaterialAcquireOptions = {
+  unlit?: boolean;
+};
+
+function cacheKey(assetGuid: string, unlit?: boolean): string {
+  return unlit ? `${assetGuid}:unlit` : assetGuid;
+}
+
+function documentForPlan(
+  doc: MaterialDocument,
+  unlit?: boolean,
+): MaterialDocument {
+  if (!unlit || doc.shadingModel === "unlit") return doc;
+  return { ...doc, shadingModel: "unlit" };
+}
+
 export interface MaterialLibraryOptions {
   resolveTexture?: (guid: string) => Texture | null;
   functions?: () => Record<string, MaterialFunctionDocument>;
@@ -78,16 +94,21 @@ export class MaterialLibrary {
     return created;
   }
 
-  private planFor(doc: MaterialDocument) {
-    return lowerMaterialDocument(doc, {
+  private planFor(doc: MaterialDocument, unlit?: boolean) {
+    return lowerMaterialDocument(documentForPlan(doc, unlit), {
       functions: this.options.functions?.() ?? {},
     });
   }
 
-  isCompiled(scene: Scene, assetGuid: string, doc: MaterialDocument): boolean {
-    const lowered = this.planFor(doc);
+  isCompiled(
+    scene: Scene,
+    assetGuid: string,
+    doc: MaterialDocument,
+    options?: MaterialAcquireOptions,
+  ): boolean {
+    const lowered = this.planFor(doc, options?.unlit);
     if (!lowered.ok) return false;
-    const entry = this.entriesFor(scene).get(assetGuid);
+    const entry = this.entriesFor(scene).get(cacheKey(assetGuid, options?.unlit));
     return (
       entry !== undefined &&
       entry.hash === lowered.plan.hash &&
@@ -103,13 +124,16 @@ export class MaterialLibrary {
     scene: Scene,
     assetGuid: string,
     doc: MaterialDocument,
+    options?: MaterialAcquireOptions,
   ): MaterialAcquireResult {
-    const lowered = this.planFor(doc);
+    const unlit = options?.unlit === true;
+    const lowered = this.planFor(doc, unlit);
     if (!lowered.ok) {
       return { ok: false, diagnostics: lowered.diagnostics };
     }
+    const key = cacheKey(assetGuid, unlit);
     const entries = this.entriesFor(scene);
-    const existing = entries.get(assetGuid);
+    const existing = entries.get(key);
     if (
       existing &&
       existing.hash === lowered.plan.hash &&
@@ -121,7 +145,7 @@ export class MaterialLibrary {
 
     const compiled = compileMaterialPlan(lowered.plan, {
       scene,
-      name: `material:${assetGuid}`,
+      name: unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`,
       resolveTexture: this.options.resolveTexture,
       onTextureError: this.options.onTextureError,
     });
@@ -132,9 +156,9 @@ export class MaterialLibrary {
     // previous material on screen.
     if (existing) {
       existing.dispose();
-      entries.delete(assetGuid);
+      entries.delete(key);
     }
-    entries.set(assetGuid, {
+    entries.set(key, {
       material: compiled.material,
       hash: lowered.plan.hash,
       refCount: (existing?.refCount ?? 0) + 1,
@@ -143,14 +167,19 @@ export class MaterialLibrary {
     return { ok: true, material: compiled.material, hash: lowered.plan.hash };
   }
 
-  release(scene: Scene, assetGuid: string): void {
+  release(
+    scene: Scene,
+    assetGuid: string,
+    options?: MaterialAcquireOptions,
+  ): void {
     const entries = this.scenes.get(scene);
-    const entry = entries?.get(assetGuid);
+    const key = cacheKey(assetGuid, options?.unlit);
+    const entry = entries?.get(key);
     if (!entries || !entry) return;
     entry.refCount -= 1;
     if (entry.refCount > 0) return;
     entry.dispose();
-    entries.delete(assetGuid);
+    entries.delete(key);
   }
 
   releaseScene(scene: Scene): void {
@@ -181,8 +210,12 @@ export class MaterialLibrary {
     await prewarmMaterial(entry.material, mesh);
   }
 
-  materialFor(scene: Scene, assetGuid: string): NodeMaterial | null {
-    const entry = this.scenes.get(scene)?.get(assetGuid);
+  materialFor(
+    scene: Scene,
+    assetGuid: string,
+    options?: MaterialAcquireOptions,
+  ): NodeMaterial | null {
+    const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit));
     if (!entry) return null;
     if (isDisposedNodeMaterial(entry.material, scene)) return null;
     return entry.material;

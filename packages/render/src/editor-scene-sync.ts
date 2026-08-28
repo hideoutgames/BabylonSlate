@@ -41,7 +41,10 @@ import { visualMeshes } from "./visual-meshes";
 const DEFAULT_SORTING_LAYERS = ["Background", "Default", "Foreground", "UI"];
 
 export type EditorSceneSyncOptions = {
-  resolveMaterial?: (guid: string) => Material | null;
+  resolveMaterial?: (
+    guid: string,
+    options?: { scene?: Scene; unlit?: boolean },
+  ) => Material | null;
   /** Fired after meshes/materials are bound so overlays can re-apply. */
   onAfterApply?: () => void;
 };
@@ -313,6 +316,10 @@ export class EditorSceneSync {
       ...(this.assets ?? {}),
       drawMeshCollision:
         this.drawMeshCollision && sceneData.settings.physicsWorld !== "2d",
+      resolveMaterial: (guid, options) =>
+        this.resolveMaterial?.(guid, options) ??
+        this.assets?.resolveMaterial?.(guid, options) ??
+        null,
     };
   }
 
@@ -412,6 +419,25 @@ export class EditorSceneSync {
 
   private bindActorMeshMaterials(actor: SerializedActor, root: Mesh): void {
     for (const component of actor.components) {
+      if (component.classId === "2DMaterialComponent") {
+        this.bindMaterialOverride(
+          root,
+          authoredMaterialGuid(component.properties.materialGuid),
+          { unlit: true },
+        );
+        continue;
+      }
+      if (component.classId === "2DPanelComponent") {
+        const source = component.properties.source;
+        if (source === "material") {
+          this.bindMaterialOverride(
+            root,
+            authoredMaterialGuid(component.properties.materialGuid),
+            { unlit: true },
+          );
+        }
+        continue;
+      }
       if (component.classId !== "MeshComponent") continue;
       if (meshKindOf(component) === "pivot") continue;
       const visual = visualForMeshComponent(root, actor.id, component.id);
@@ -423,7 +449,11 @@ export class EditorSceneSync {
     }
   }
 
-  private bindMaterialOverride(visual: Mesh, guid: string | null): void {
+  private bindMaterialOverride(
+    visual: Mesh,
+    guid: string | null,
+    options?: { unlit?: boolean },
+  ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual);
     for (const target of targets) {
@@ -432,7 +462,8 @@ export class EditorSceneSync {
         this.constructionMaterials.set(target, target.material);
       }
     }
-    const material = this.resolveMaterial?.(guid) ?? null;
+    const material =
+      this.resolveMaterial?.(guid, { ...options, scene: this.scene }) ?? null;
     if (!material) return;
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;

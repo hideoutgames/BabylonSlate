@@ -54,7 +54,10 @@ export interface MeshAssetContext {
   /** Play pause — overlay letter effects freeze while true. */
   paused?: boolean;
   /** Compiled overlay / mesh Materials (2DMaterial, 2DPanel). */
-  resolveMaterial?: (guid: string) => Material | null;
+  resolveMaterial?: (
+    guid: string,
+    options?: { scene?: Scene; unlit?: boolean },
+  ) => Material | null;
 }
 
 function sortedMapKeys(map: ReadonlyMap<string, unknown> | undefined): string {
