@@ -26,6 +26,7 @@ export const ENGINE_COMPONENT_CLASS_IDS = [
   "TilemapComponent",
   "CameraComponent",
   "LightComponent",
+  "HemisphericFillLightComponent",
   "SkyboxComponent",
   "Text3DComponent",
   "AudioComponent",
@@ -67,6 +68,7 @@ const SCENE_LAYER_DENIED_COMPONENTS = new Set([
   "SkyboxComponent",
   "CameraComponent",
   "LightComponent",
+  "HemisphericFillLightComponent",
 ]);
 
 export function isSceneLayerAllowedComponent(classId: string): boolean {

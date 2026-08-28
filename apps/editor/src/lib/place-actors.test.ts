@@ -61,6 +61,9 @@ describe("ENGINE_PLACE_ACTORS", () => {
     const overlay = placeActorsForHost({ overlay: true });
     expect(overlay.some((entry) => entry.kind.type === "camera")).toBe(false);
     expect(overlay.some((entry) => entry.kind.type === "light")).toBe(false);
+    expect(overlay.some((entry) => entry.kind.type === "hemispheric-fill")).toBe(
+      false,
+    );
     expect(overlay.some((entry) => entry.kind.type === "skybox")).toBe(false);
     expect(overlay.some((entry) => entry.kind.type === "shape")).toBe(true);
     expect(
@@ -134,6 +137,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
           { id: "sprite", classId: "SpriteComponent", properties: {} },
           { id: "cam", classId: "CameraComponent", properties: {} },
           { id: "light", classId: "LightComponent", properties: {} },
+          { id: "fill", classId: "HemisphericFillLightComponent", properties: {} },
           { id: "sky", classId: "SkyboxComponent", properties: {} },
         ],
       },
@@ -204,6 +208,18 @@ describe("spawnPlacedActor", () => {
     expect(actor.components[0]?.classId).toBe("LightComponent");
     expect(actor.components[0]?.properties.lightKind).toBe("point");
     expect(actor.components[0]?.properties.range).toBe(10);
+  });
+
+  it("spawns a hemispheric fill actor", () => {
+    const item = ENGINE_PLACE_ACTORS.find(
+      (entry) => entry.id === "light-hemispheric-fill",
+    )!;
+    expect(item.title).toBe("Hemispheric Fill");
+    expect(visualForPlaceActor(item).iconKey).toBe("HemisphericFillLightComponent");
+    const actor = spawnPlacedActor(scene, item, "actor-fill", ORIGIN);
+    expect(actor.components[0]?.classId).toBe("HemisphericFillLightComponent");
+    expect(actor.components[0]?.properties.intensity).toBe(0.9);
+    expect(actor.components[0]?.properties.groundColor).toEqual([0, 0, 0]);
   });
 
   it("spawns a locked Skybox actor with a SkyboxComponent", () => {

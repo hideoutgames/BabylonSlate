@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Material, Mesh, MeshBuilder, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Material, Mesh, MeshBuilder, HemisphericLight, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
@@ -13,7 +13,7 @@ import { glbContainerLoadCount } from "./glb-anim";
 import { visualMeshes } from "./visual-meshes";
 import { RENDERING_GROUP, resolveSortingLayer } from "./sorting";
 import { ResourceCache } from "./resource-cache";
-import { AUTHORED_FILL_LIGHT_INTENSITY } from "./scene-illumination";
+import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import {
   applyAssignMesh,
   applyMaterialToActorMeshes,
@@ -23,7 +23,7 @@ import {
   createSnapshotSceneBinding,
   isPlayHelperMeshKind,
 } from "./snapshot-apply";
-import { DEFAULT_LIGHT_INTENSITY, setupDefaultViewport } from "./viewport";
+import { setupDefaultViewport } from "./viewport";
 
 /** PNG signature + IHDR width/height — CRC omitted. */
 function pngIhdr(width: number, height: number): Uint8Array {
@@ -786,26 +786,36 @@ describe("createPlayMesh", () => {
     expect(forward.z).toBeCloseTo(expected.z, 5);
   });
 
-  it("dims the default hemispheric fill when assignMesh adds an authored light", () => {
+  it("creates a HemisphericLight for light:hemispheric mesh kinds", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
     setupDefaultViewport(scene);
-    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
+    expect(scene.getLightByName("light")).toBeNull();
     const binding = createSnapshotSceneBinding();
     applyAssignMesh(scene, binding, {
       type: "assignMesh",
       slotId: 4,
       meshAssetGuid: null,
-      meshKind: "light:point",
-      light: { color: [1, 1, 1], intensity: 1, enabled: true },
+      meshKind: "light:hemispheric",
+      light: {
+        color: [0.2, 0.4, 0.6],
+        intensity: 0.9,
+        enabled: true,
+        groundColor: [0.05, 0.1, 0.15],
+      },
     });
-    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
-      AUTHORED_FILL_LIGHT_INTENSITY,
-    );
+    expect(scene.getLightByName("light")).toBeNull();
+    const light = scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}4`);
+    expect(light).toBeInstanceOf(HemisphericLight);
+    expect(light!.intensity).toBeCloseTo(0.9);
+    expect(light!.diffuse.r).toBeCloseTo(0.2);
+    const hemi = light as HemisphericLight;
+    expect(hemi.groundColor.g).toBeCloseTo(0.1);
+    expect(hemi.direction.y).toBeCloseTo(1);
   });
 
-  it("restores the default fill when the last Play light despawns", () => {
+  it("does not restore an unnamed fill when the last Play light despawns", () => {
     const handle = createTestEngine();
     handles.push(handle);
     const { scene } = handle;
@@ -833,9 +843,7 @@ describe("createPlayMesh", () => {
         },
       ],
     });
-    expect(scene.getLightByName("light")!.intensity).toBeCloseTo(
-      AUTHORED_FILL_LIGHT_INTENSITY,
-    );
+    expect(scene.getLightByName("light")).toBeNull();
     applySnapshotToScene(scene, binding, {
       frameId: 2,
       tickIndex: 2,
@@ -843,7 +851,8 @@ describe("createPlayMesh", () => {
       actorCount: 0,
       actors: [],
     });
-    expect(scene.getLightByName("light")!.intensity).toBe(DEFAULT_LIGHT_INTENSITY);
+    expect(scene.getLightByName("light")).toBeNull();
+    expect(scene.getLightByName(`${AUTHORED_LIGHT_PREFIX}4`)).toBeNull();
   });
 
   it("applies authored light color and intensity from assignMesh", () => {

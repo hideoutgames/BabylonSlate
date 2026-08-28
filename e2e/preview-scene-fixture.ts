@@ -13,10 +13,17 @@ export function previewPlacementScene(
   const parentMesh = createMeshComponent("scene-mesh", "box");
   parentMesh.properties.materialGuid = materialGuid;
   const childMesh = createMeshComponent("child-mesh", "sphere");
+  const base = createDefaultScene();
+  // Keep the seeded directional sun. This helper used to replace `actors` and
+  // rely on the unnamed viewport hemi; PBR primitives are otherwise black.
+  const sun = base.actors.find((actor) =>
+    actor.components.some((component) => component.classId === "LightComponent"),
+  );
   return {
-    ...createDefaultScene(),
+    ...base,
     name: "PreviewPlacement",
     actors: [
+      ...(sun ? [sun] : []),
       createActor("material-actor", "Material Actor", {
         transform: {
           ...identitySerializedTransform(),

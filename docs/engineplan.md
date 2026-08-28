@@ -267,11 +267,11 @@ Section 1.2 states the budget. This section is how the architecture actually hit
 
 ### 2.5 Lighting and cameras
 
-Authored lights and cameras already exist. The foundation wave created Babylon `PointLight` / `DirectionalLight` / `SpotLight` and a camera from `LightComponent` / `CameraComponent` in both the editor and Play (`scene-illumination.ts`), dims the default hemispheric `"light"` when any authored light is present, and keeps the editor orbit camera in control. `p-lighting-camera` finished that stub: direction is actor rotation × Babylon forward `(0, 0, 1)`, Play applies authored color/intensity/range/cone, game cameras are detached `UniversalCamera`, the active camera is the named Default Camera (missing keeps the Play default), and `shadowquality` sizes one `ShadowGenerator`. This section is the contract. Do not reopen `behaviour-tree` / `navigation`.
+Authored lights and cameras already exist. The foundation wave created Babylon `PointLight` / `DirectionalLight` / `SpotLight` / `HemisphericLight` and a camera from `LightComponent` / `HemisphericFillLightComponent` / `CameraComponent` in both the editor and Play (`scene-illumination.ts`), and keeps the editor orbit camera in control. `p-lighting-camera` finished that stub: direction is actor rotation × Babylon forward `(0, 0, 1)` for point/dir/spot, Play applies authored color/intensity/range/cone, game cameras are detached `UniversalCamera`, the active camera is the named Default Camera (missing keeps the Play default), and `shadowquality` sizes one `ShadowGenerator`. This section is the contract. Do not reopen `behaviour-tree` / `navigation`.
 
-**Lights are three kinds, not a PBR rewrite.** Place Actors keeps Point, Directional, and Spot. Area lights are out: WebGL2 on the A16 iPad has no cheap area-light path worth the fill cost. The unnamed hemispheric `"light"` that the default scene plants stays as scene fill; when any authored light exists it dims to a low ambient (today 0.15) rather than being deleted, so an empty night scene is not pitch black by accident. Hemispheric is not a Place Actors kind and not a `LightComponent`.
+**Lights are three kinds plus optional fill, not a PBR rewrite.** Place Actors keeps Point, Directional, and Spot on `LightComponent`. **Hemispheric Fill** is a separate `HemisphericFillLightComponent` (Place Actors → Lights, or Add Component). Area lights are out: WebGL2 on the A16 iPad has no cheap area-light path worth the fill cost. `setupDefaultViewport` does **not** plant an unnamed hemispheric `"light"`. PBR with no authored lights and no IBL is dark. Viewport **Unlit** is a session overlay (`lightsEnabled` false + material unlit flags) and does not depend on a fill light.
 
-**Direction comes from the actor transform.** Apply the actor world quaternion to Babylon forward `(0, 0, 1)` for directional and spot `direction` and for camera look. Point lights use position only. Scale does not aim a light; range is an explicit property. The hardcoded `(0, -1, 0)` is the stub this slice removes.
+**Direction comes from the actor transform.** Apply the actor world quaternion to Babylon forward `(0, 0, 1)` for directional and spot `direction` and for camera look. Hemispheric fill uses world **+Y** (`(0, 1, 0)`) so an identity actor matches a sky-up fill. Point lights use position only. Scale does not aim a light; range is an explicit property. The hardcoded `(0, -1, 0)` is the stub this slice removes.
 
 **Component properties are typed enums and numbers, not free text.** Details rows match the schema.
 
@@ -283,6 +283,13 @@ Authored lights and cameras already exist. The foundation wave created Babylon `
 - `range`: number; point and spot only, ignored on directional
 - `innerAngle` / `outerAngle`: degrees; spot only; the renderer converts to radians
 - `castShadows`: bool
+
+`HemisphericFillLightComponent` (not a `LightComponent` kind; not seeded on new 3D scenes):
+- `color`: RGB 0..1 (sky / diffuse)
+- `groundColor`: RGB 0..1, default black
+- `intensity`: number, default `0.9`
+- `enabled`: bool, default true
+- no range, cone, or `castShadows`
 
 `CameraComponent`:
 - `projectionMode`: `perspective` | `orthographic` — explicit; orthographic is not implied by `orthographicSize > 0`
@@ -591,7 +598,7 @@ Inheritance-based objects with components:
 - `Actor` extends `BObject` with a transform, component tree, world membership, spawn and destroy, and the same three events.
 - `ActorComponent` extends `BObject`, attached to an Actor with its own tick.
 - `GameInstance` extends `BObject`, one per session, selected in Project Settings, alive from start to end, with **OnInit**, **OnTick**, **OnEnd** (application stop / player quit only — never `changeScene`), plus scene events **OnSceneStartLoading**, **OnSceneFinishLoading**, **OnSceneExit** (display-name string pin; also fires if Play stops while a load is still waiting on models-ready), and **OnFirstSceneLoaded** (first successful full load of a Play session, in addition to finish). Live **Get Scene Reference** / **Get Scene Loading Progress** (`0..1`) sit on GI graphs; Cast to `Scene:{guid}` and Get-only placed-component members expose the authored scene document. Scene refs Get **Scene Name** / **Asset Guid** and Get/Set **Gravity** (live physics).
-- Engine components: `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `SkyboxComponent`, `Text3DComponent`, `AudioComponent`, `ParticleComponent`, `RigidBodyComponent`, `ColliderComponent`, `BehaviourTreeComponent`, `NavAgentComponent`. Colliders cover both 3D and 2D shapes; the scene's physics world decides which apply (13.4).
+- Engine components: `MeshComponent`, `SpriteComponent`, `TilemapComponent`, `CameraComponent`, `LightComponent`, `HemisphericFillLightComponent`, `SkyboxComponent`, `Text3DComponent`, `AudioComponent`, `ParticleComponent`, `RigidBodyComponent`, `ColliderComponent`, `BehaviourTreeComponent`, `NavAgentComponent`. Colliders cover both 3D and 2D shapes; the scene's physics world decides which apply (13.4).
 - Additional authorable base classes for AI: `BTTask`, `BTDecorator`, `BTService` and `BTComposite` are `BObject` subclasses users inherit from and implement with visual scripting (14.1).
 - **Interfaces**: a class declares which ScriptInterface guids it implements. An interface call node compiles to a dispatch that no-ops and returns pin defaults when the target has not implemented it, so interface functions are callable on every Object and Actor as specified.
 - Tick order is deterministic: GameInstance, then Actors in spawn order, then their components, then the physics step, then post-physics fixups. No dependence on Map iteration order across engines. The physics phase is a named slot in the scheduler from P3 onward even though it stays empty until P7, because retrofitting a phase into a tick that other systems already order themselves against is how ordering bugs get baked in.

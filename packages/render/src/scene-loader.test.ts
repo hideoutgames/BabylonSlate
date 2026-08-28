@@ -183,6 +183,29 @@ describe("scene-loader", () => {
     ).toBe("point_light");
   });
 
+  it("represents a HemisphericFillLightComponent actor with the directional light billboard", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("fill", "Hemispheric Fill", {
+          components: [
+            {
+              id: "fill",
+              classId: "HemisphericFillLightComponent",
+              properties: { intensity: 0.9, color: [1, 1, 1], groundColor: [0, 0, 0] },
+            },
+          ],
+        }),
+      ]),
+    );
+    const mesh = scene.getMeshByName(editorComponentMeshName("fill", "fill"));
+    expect(mesh).not.toBeNull();
+    expect(
+      (mesh!.metadata as { editorBillboard?: string }).editorBillboard,
+    ).toBe("directional_light");
+  });
+
   it("uses a distinct billboard PNG per light kind", () => {
     const { scene } = createHandle();
     applySceneToBabylonScene(

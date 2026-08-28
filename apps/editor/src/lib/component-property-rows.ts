@@ -1235,6 +1235,49 @@ export function componentPropertyRows(
       );
       return rows;
     }
+    case "HemisphericFillLightComponent": {
+      const color = asRgb(component.properties.color) ?? [1, 1, 1];
+      const groundColor = asRgb(component.properties.groundColor) ?? [0, 0, 0];
+      return [
+        {
+          kind: "boolean",
+          id: rowId(actorId, component.id, "enabled"),
+          label: "Enabled",
+          value: component.properties.enabled !== false,
+          onChange: (next) => update("enabled", next),
+        },
+        {
+          kind: "color",
+          id: rowId(actorId, component.id, "color"),
+          label: "Color",
+          value: color,
+          onChange: (next) => update("color", next),
+        },
+        {
+          kind: "color",
+          id: rowId(actorId, component.id, "groundColor"),
+          label: "Ground Color",
+          value: groundColor,
+          onChange: (next) => update("groundColor", next),
+        },
+        sliderRow(
+          actorId,
+          component.id,
+          "intensity",
+          "Intensity",
+          asNumber(component.properties.intensity, 0.9),
+          0,
+          16,
+          update,
+        ),
+        ...genericRows(
+          actorId,
+          component,
+          update,
+          new Set(["enabled", "color", "groundColor", "intensity"]),
+        ),
+      ];
+    }
     case "CameraComponent": {
       const projectionMode =
         component.properties.projectionMode === "orthographic"

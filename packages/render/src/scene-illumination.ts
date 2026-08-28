@@ -3,6 +3,7 @@ import {
   Color3,
   Color4,
   DirectionalLight,
+  HemisphericLight,
   LinesMesh,
   Matrix,
   PointLight,
@@ -22,14 +23,13 @@ import {
   DEFAULT_CAMERA_ORTHOGRAPHIC_SIZE,
   identitySerializedTransform,
 } from "@babylonslate/core";
-import { DEFAULT_LIGHT_INTENSITY } from "./viewport";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isSkyboxMesh } from "./skybox";
 
 export const AUTHORED_LIGHT_PREFIX = "authoredLight:";
 export const AUTHORED_CAMERA_PREFIX = "authoredCamera:";
-/** Unnamed hemispheric `"light"` intensity while any authored light exists. */
-export const AUTHORED_FILL_LIGHT_INTENSITY = 0.15;
+export const HEMISPHERIC_FILL_LIGHT_CLASS_ID = "HemisphericFillLightComponent";
+export const DEFAULT_HEMISPHERIC_FILL_INTENSITY = 0.9;
 
 const EXTRA_CASTER_DIAGNOSTIC =
   "Only the first castShadows light owns a shadow map; extra casters are ignored.";
@@ -63,6 +63,7 @@ export type AuthoredLightProperties = {
   innerAngle?: number;
   outerAngle?: number;
   castShadows?: boolean;
+  groundColor?: [number, number, number] | number[];
 };
 
 export type AuthoredCameraProperties = {
@@ -165,6 +166,21 @@ export function actorForwardFromRotation(rotation: {
   );
 }
 
+export function actorUpFromRotation(rotation: {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+}): Vector3 {
+  return Vector3.Up().applyRotationQuaternion(
+    new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w),
+  );
+}
+
+export function isAuthoredLightClassId(classId: string): boolean {
+  return classId === "LightComponent" || classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID;
+}
+
 function lightKindOf(component: { properties: Record<string, unknown> }): string {
   const kind = String(component.properties.lightKind ?? "point");
   return kind === "directional" || kind === "spot" ? kind : "point";
@@ -174,7 +190,10 @@ export function applyAuthoredLightProperties(
   light: Light,
   properties: AuthoredLightProperties,
 ): void {
-  light.intensity = asNumber(properties.intensity, 1);
+  light.intensity = asNumber(
+    properties.intensity,
+    light instanceof HemisphericLight ? DEFAULT_HEMISPHERIC_FILL_INTENSITY : 1,
+  );
   light.diffuse = asRgb(properties.color);
   light.setEnabled(properties.enabled !== false);
   const range = asNumber(properties.range, 10);
@@ -184,6 +203,9 @@ export function applyAuthoredLightProperties(
   if (light instanceof SpotLight) {
     light.angle = degreesToRadians(properties.outerAngle, 45);
     light.innerAngle = degreesToRadians(properties.innerAngle, 30);
+  }
+  if (light instanceof HemisphericLight) {
+    light.groundColor = asRgb(properties.groundColor ?? [0, 0, 0]);
   }
 }
 
@@ -289,6 +311,9 @@ function createLight(
   const name = `${AUTHORED_LIGHT_PREFIX}${actor.id}`;
   const composed = composeActorComponentTransform(actor, component);
   const direction = actorForwardFromRotation(composed.rotation);
+  if (kind === "hemispheric") {
+    return new HemisphericLight(name, actorUpFromRotation(composed.rotation), scene);
+  }
   if (kind === "directional") {
     const light = new DirectionalLight(name, direction, scene);
     light.position.copyFrom(composed.position);
@@ -331,6 +356,10 @@ export function updateAuthoredLightTransform(
 ): void {
   if ("position" in light) {
     (light as PointLight).position.set(position.x, position.y, position.z);
+  }
+  if (rotation && light instanceof HemisphericLight) {
+    light.direction.copyFrom(actorUpFromRotation(rotation));
+    return;
   }
   if (rotation && (light instanceof DirectionalLight || light instanceof SpotLight)) {
     const direction = actorForwardFromRotation(rotation);
@@ -460,17 +489,6 @@ export function attachSingleShadowGenerator(
   return generator;
 }
 
-export function syncDefaultFillLight(
-  scene: Scene,
-  hasAuthoredLights: boolean,
-): void {
-  const defaultLight = scene.getLightByName("light");
-  if (!defaultLight) return;
-  defaultLight.intensity = hasAuthoredLights
-    ? AUTHORED_FILL_LIGHT_INTENSITY
-    : DEFAULT_LIGHT_INTENSITY;
-}
-
 export function applySceneEnvironment(
   scene: Scene,
   sceneData: SerializedScene,
@@ -536,17 +554,18 @@ export function syncAuthoredIllumination(
 
   const liveLights = new Set<string>();
   const liveCameras = new Set<string>();
-  let authoredLight = false;
   const shadowCandidates: string[] = [];
 
   for (const actor of sceneData.actors) {
-    const lightComponent = actor.components.find(
-      (component) => component.classId === "LightComponent",
+    const fillComponent = actor.components.find(
+      (component) => component.classId === HEMISPHERIC_FILL_LIGHT_CLASS_ID,
     );
+    const lightComponent =
+      fillComponent ??
+      actor.components.find((component) => component.classId === "LightComponent");
     if (lightComponent) {
-      authoredLight = true;
       liveLights.add(actor.id);
-      const kind = lightKindOf(lightComponent);
+      const kind = fillComponent ? "hemispheric" : lightKindOf(lightComponent);
       let light = state.lights.get(actor.id);
       if (light && state.lightKinds.get(actor.id) !== kind) {
         if (state.shadowOwnerId === actor.id) {
@@ -580,7 +599,7 @@ export function syncAuthoredIllumination(
           },
         );
       }
-      if (lightComponent.properties.castShadows === true) {
+      if (!fillComponent && lightComponent.properties.castShadows === true) {
         shadowCandidates.push(actor.id);
       }
     }
@@ -633,8 +652,6 @@ export function syncAuthoredIllumination(
       state.cameras.delete(actorId);
     }
   }
-
-  syncDefaultFillLight(scene, authoredLight);
 
   const mapSize = shadowMapSizeFromQuality(options.shadowQuality ?? "1024");
   const ownerId = shadowCandidates[0] ?? null;

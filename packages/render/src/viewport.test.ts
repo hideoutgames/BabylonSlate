@@ -2,11 +2,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import { Color3 } from "@babylonjs/core";
 import { createTestEngine } from "./create-null-engine";
 import { isEngineDefaultMaterial } from "./default-material";
-import {
-  DEFAULT_LIGHT_INTENSITY,
-  setHighlightColor,
-  setupDefaultViewport,
-} from "./viewport";
+import { setHighlightColor, setupDefaultViewport } from "./viewport";
 import { DEFAULT_CAMERA_RADIUS } from "./editor-camera";
 
 describe("viewport", () => {
@@ -29,13 +25,14 @@ describe("viewport", () => {
     return handle;
   }
 
-  it("adds an active camera and a hemispheric light", () => {
+  it("adds an active camera without a default hemispheric light", () => {
     const { scene } = createHandle();
     setupDefaultViewport(scene);
 
     expect(scene.activeCamera).not.toBeNull();
     expect(scene.getCameraByName("camera")).not.toBeNull();
-    expect(scene.getLightByName("light")).not.toBeNull();
+    expect(scene.getLightByName("light")).toBeNull();
+    expect(scene.lights).toHaveLength(0);
     expect(isEngineDefaultMaterial(scene.defaultMaterial)).toBe(true);
   });
 
@@ -45,16 +42,6 @@ describe("viewport", () => {
 
     const camera = scene.getCameraByName("camera");
     expect(camera!.position.length()).toBeCloseTo(DEFAULT_CAMERA_RADIUS, 1);
-  });
-
-  it("dims the light below full intensity", () => {
-    const { scene } = createHandle();
-    setupDefaultViewport(scene);
-
-    expect(scene.getLightByName("light")!.intensity).toBe(
-      DEFAULT_LIGHT_INTENSITY,
-    );
-    expect(DEFAULT_LIGHT_INTENSITY).toBeLessThan(1);
   });
 
   it("makes the created camera the active one", () => {

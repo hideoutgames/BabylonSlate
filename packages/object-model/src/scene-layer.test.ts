@@ -51,6 +51,9 @@ describe("SceneLayer object model", () => {
     expect(isSceneLayerAllowedComponent("SkyboxComponent")).toBe(false);
     expect(isSceneLayerAllowedComponent("CameraComponent")).toBe(false);
     expect(isSceneLayerAllowedComponent("LightComponent")).toBe(false);
+    expect(isSceneLayerAllowedComponent("HemisphericFillLightComponent")).toBe(
+      false,
+    );
     expect([...SCENE_LAYER_EXCLUSIVE_COMPONENT_CLASS_IDS]).toEqual([
       "2DAnchorComponent",
       "2DButtonComponent",

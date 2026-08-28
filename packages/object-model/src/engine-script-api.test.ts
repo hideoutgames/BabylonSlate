@@ -205,6 +205,11 @@ describe("engine script API catalog", () => {
       "castShadows",
     ]);
     expect(
+      engineScriptApiFor("HemisphericFillLightComponent")?.variables?.map(
+        (entry) => entry.propertyKey,
+      ),
+    ).toEqual(["enabled", "color", "groundColor", "intensity"]);
+    expect(
       engineScriptApiFor("NavAgentComponent")?.variables?.map(
         (entry) => entry.propertyKey,
       ),

@@ -5,6 +5,7 @@ import {
   CloudIcon,
   FilmIcon,
   Layers2Icon,
+  LightbulbIcon,
   ListTreeIcon,
   PersonStandingIcon,
   PuzzleIcon,
@@ -273,7 +274,11 @@ describe("resolveTypeVisual", () => {
     expect(mesh.family).toBe("component");
     expect(mesh.colorVar).toBe("var(--asset-component)");
     expect(light.colorVar).toBe(mesh.colorVar);
-    expect(mesh.icon).not.toBe(light.icon);
+    expect(light.icon).not.toBe(mesh.icon);
+    const fill = resolveTypeVisual({ classId: "HemisphericFillLightComponent" });
+    expect(fill.iconKey).toBe("HemisphericFillLightComponent");
+    expect(fill.icon).toBe(LightbulbIcon);
+    expect(engineParentOf("HemisphericFillLightComponent")).toBe("ActorComponent");
     const skybox = resolveTypeVisual({ classId: "SkyboxComponent" });
     expect(skybox.iconKey).toBe("SkyboxComponent");
     expect(skybox.icon).toBe(CloudIcon);

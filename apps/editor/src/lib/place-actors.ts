@@ -27,6 +27,7 @@ import { mergedPrefabComponentsForClass } from "./prefab-instance-sync";
 export type PlaceActorKind =
   | { type: "shape"; meshKind: string }
   | { type: "light"; lightKind: string }
+  | { type: "hemispheric-fill" }
   | { type: "camera" }
   | { type: "skybox" }
   | { type: "text3d" }
@@ -79,6 +80,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     category: "Lights",
     kind: { type: "light" as const, lightKind },
   })),
+  {
+    id: "light-hemispheric-fill",
+    title: "Hemispheric Fill",
+    category: "Lights",
+    kind: { type: "hemispheric-fill" as const },
+  },
   {
     id: "camera",
     title: "Camera",
@@ -186,6 +193,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
     ...ENGINE_PLACE_ACTORS.filter(
       (item) =>
         item.kind.type !== "light" &&
+        item.kind.type !== "hemispheric-fill" &&
         item.kind.type !== "camera" &&
         item.kind.type !== "skybox",
     ),
@@ -308,6 +316,12 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "light") {
     return resolveTypeVisual({ classId: "LightComponent", family: "class" });
   }
+  if (kind.type === "hemispheric-fill") {
+    return resolveTypeVisual({
+      classId: "HemisphericFillLightComponent",
+      family: "class",
+    });
+  }
   if (kind.type === "camera") {
     return resolveTypeVisual({ classId: "CameraComponent", family: "class" });
   }
@@ -390,6 +404,18 @@ export function spawnPlacedActor(
             ...defaultPropertiesFor("LightComponent"),
             lightKind: kind.lightKind,
           },
+        },
+      ],
+    }));
+  }
+  if (kind.type === "hemispheric-fill") {
+    return finish(createActor(id, item.title, {
+      transform,
+      components: [
+        {
+          id: `${id}-fill`,
+          classId: "HemisphericFillLightComponent",
+          properties: defaultPropertiesFor("HemisphericFillLightComponent"),
         },
       ],
     }));

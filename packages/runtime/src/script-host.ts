@@ -1621,12 +1621,19 @@ function cameraComponentOf(target: unknown): ActorComponent | null {
 }
 
 function lightComponentOf(target: unknown): ActorComponent | null {
-  if (target instanceof ActorComponent && target.classId === "LightComponent") {
+  if (
+    target instanceof ActorComponent &&
+    (target.classId === "LightComponent" ||
+      target.classId === "HemisphericFillLightComponent")
+  ) {
     return target;
   }
   return (
     actorOf(target)?.components.find(
-      (component) => component.classId === "LightComponent" && !component.destroyed,
+      (component) =>
+        (component.classId === "LightComponent" ||
+          component.classId === "HemisphericFillLightComponent") &&
+        !component.destroyed,
     ) ?? null
   );
 }
