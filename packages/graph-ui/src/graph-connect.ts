@@ -2,6 +2,7 @@ import {
   formatEventTitle,
   humanizePropertyLabel,
 } from "@babylonslate/editor-kit";
+import { pinTypeEquals, type PinType } from "@babylonslate/scripting";
 import {
   hasSerializedPins,
   type PaletteNode,
@@ -335,20 +336,155 @@ export function filterPaletteForPin(
   nodes: PaletteNode[],
   dragged: SerializedPin,
   rule?: PinCompatibilityRule,
+  sourcePins?: SerializedPin[],
 ): PaletteNode[] {
   return nodes
     .map((node, index) => ({ node, index }))
     .filter(({ node }) => firstCompatiblePin(node.pins, dragged, rule))
     .sort((left, right) => {
       const score =
-        palettePreferenceScore(right.node, dragged) -
-        palettePreferenceScore(left.node, dragged);
+        paletteRelevanceScore(right.node, dragged, rule, sourcePins) -
+        paletteRelevanceScore(left.node, dragged, rule, sourcePins);
       return score !== 0 ? score : left.index - right.index;
     })
     .map(({ node }) => node);
 }
 
-function palettePreferenceScore(
+const CATALOG_PREF_BAND = 1_000_000;
+const TYPE_QUALITY_BAND = 10_000;
+const CLASS_AFFINITY_BAND = 1_000;
+const PIN_OVERLAP_BAND = 10;
+
+function paletteRelevanceScore(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+  sourcePins?: SerializedPin[],
+): number {
+  return (
+    catalogPreferenceScore(node, dragged) * CATALOG_PREF_BAND +
+    primaryMatchQuality(node, dragged, rule) * TYPE_QUALITY_BAND +
+    objectClassAffinity(node, dragged, rule) * CLASS_AFFINITY_BAND +
+    matchingPinCount(node, dragged, sourcePins, rule) * PIN_OVERLAP_BAND
+  );
+}
+
+function isWildcardType(type: { kind: string }): boolean {
+  return type.kind.toLowerCase().includes("wildcard");
+}
+
+function typeMatchQuality(
+  source: SerializedPin,
+  target: SerializedPin,
+  rule?: PinCompatibilityRule,
+): number {
+  if (!pinsAreCompatible(source, target, rule)) return 0;
+  const outgoing = source.direction === "out" ? source : target;
+  const incoming = source.direction === "in" ? source : target;
+  if (outgoing.kind === "exec") return 4;
+  if (isWildcardType(outgoing.type) || isWildcardType(incoming.type)) return 1;
+  if (pinTypeEquals(outgoing.type as PinType, incoming.type as PinType)) {
+    return 4;
+  }
+  if (outgoing.type.kind === incoming.type.kind) return 3;
+  return 2;
+}
+
+function primaryMatchQuality(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+): number {
+  let best = 0;
+  for (const pin of node.pins ?? []) {
+    const quality = typeMatchQuality(dragged, pin, rule);
+    if (quality > best) best = quality;
+  }
+  return best;
+}
+
+function classIdOf(type: SerializedPin["type"]): string | undefined {
+  const classId = type.classId;
+  return typeof classId === "string" && classId.trim() ? classId.trim() : undefined;
+}
+
+function stringData(data: Record<string, unknown> | undefined, key: string): string {
+  const value = data?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function isMemberCatalog(node: PaletteNode): boolean {
+  const typeId = catalogTypeId(node);
+  return (
+    typeId.startsWith("variables.") ||
+    typeId === "functions.call" ||
+    typeId === "interface.call"
+  );
+}
+
+function isCastCatalog(node: PaletteNode): boolean {
+  return catalogTypeId(node) === "casting.cast";
+}
+
+function objectClassAffinity(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  rule?: PinCompatibilityRule,
+): number {
+  const draggedClass = classIdOf(dragged.type);
+  if (!draggedClass) return 0;
+  const memberClass = stringData(node.defaultData, "classId");
+  const castClass =
+    stringData(node.defaultData, "defaultClassId") || memberClass;
+  if (isMemberCatalog(node) && memberClass === draggedClass) return 4;
+  if (isCastCatalog(node) && castClass === draggedClass) return 3;
+  for (const pin of node.pins ?? []) {
+    if (!pinsAreCompatible(dragged, pin, rule)) continue;
+    if (classIdOf(pin.type) === draggedClass) return 2;
+  }
+  if (isMemberCatalog(node) && memberClass && memberClass !== draggedClass) {
+    const pins = node.pins ?? [];
+    const target =
+      pins.find((pin) => pin.id === "target") ??
+      pins.find((pin) => classIdOf(pin.type));
+    if (target && pinsAreCompatible(dragged, target, rule)) return 1;
+  }
+  return 0;
+}
+
+function matchingPinCount(
+  node: PaletteNode,
+  dragged: SerializedPin,
+  sourcePins: SerializedPin[] | undefined,
+  rule?: PinCompatibilityRule,
+): number {
+  const pool = sourcePins?.length ? sourcePins : [dragged];
+  const sources = pool.some((pin) => pin.id === dragged.id)
+    ? pool
+    : [dragged, ...pool];
+  const candidatePins = node.pins ?? [];
+  const used = new Set<number>();
+  let count = 0;
+  for (const source of sources) {
+    let bestIndex = -1;
+    let bestQuality = -1;
+    for (let index = 0; index < candidatePins.length; index++) {
+      if (used.has(index)) continue;
+      const quality = typeMatchQuality(source, candidatePins[index]!, rule);
+      if (quality > 0 && quality > bestQuality) {
+        bestQuality = quality;
+        bestIndex = index;
+      }
+    }
+    if (bestIndex >= 0) {
+      used.add(bestIndex);
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function catalogPreferenceScore(
   node: PaletteNode,
   dragged: SerializedPin,
 ): number {

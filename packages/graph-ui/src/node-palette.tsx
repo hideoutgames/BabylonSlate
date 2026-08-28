@@ -1,6 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CatalogDialog, windowedSlice } from "@babylonslate/editor-kit";
-import { Button } from "@babylonslate/ui/components/button";
+import {
+  CatalogDialog,
+  humanizePropertyLabel,
+  windowedSlice,
+} from "@babylonslate/editor-kit";
+import { buttonVariants } from "@babylonslate/ui/components/button";
 import { Field, FieldLabel } from "@babylonslate/ui/components/field";
 import { Switch } from "@babylonslate/ui/components/switch";
 import { cn } from "@babylonslate/ui/lib/utils";
@@ -21,6 +25,8 @@ export interface NodePaletteProps {
   onAddNode: (node: PaletteNode) => void;
   /** When set, only nodes with a compatible opposite pin are listed. */
   filterPin?: SerializedPin | null;
+  /** Pins on the node the dragged pin belongs to (sibling overlap ranking). */
+  sourcePins?: SerializedPin[];
   /** Host connection rule (material Float splat). Defaults to exact kinds. */
   pinCompatibility?: PinCompatibilityRule;
 }
@@ -39,15 +45,26 @@ function filterNodes(nodes: PaletteNode[], query: string): PaletteNode[] {
 
 function flattenPaletteRows(
   grouped: Array<[string, PaletteNode[]]>,
+  omitHeaders: boolean,
 ): PaletteRow[] {
   const rows: PaletteRow[] = [];
   for (const [category, nodes] of grouped) {
-    rows.push({ kind: "header", key: `header:${category}`, category });
+    if (!omitHeaders) {
+      rows.push({ kind: "header", key: `header:${category}`, category });
+    }
     for (const node of nodes) {
       rows.push({ kind: "item", key: node.id, node });
     }
   }
   return rows;
+}
+
+export function describePaletteFilterPin(pin: SerializedPin): string {
+  const classId =
+    typeof pin.type.classId === "string" ? pin.type.classId.trim() : "";
+  if (classId) return humanizePropertyLabel(classId);
+  if (pin.kind === "exec") return "Exec";
+  return humanizePropertyLabel(pin.type.kind);
 }
 
 function PaletteWindowedList({
@@ -112,17 +129,26 @@ function PaletteWindowedList({
           );
         }
         const node = row.node;
+        const commit = () => {
+          onAddNode(node);
+          onOpenChange(false);
+        };
         return (
-          <Button
+          <div
             key={row.key}
-            type="button"
-            variant="outline"
-            className="absolute right-0 left-0 h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 touch-manipulation"
+            role="option"
+            tabIndex={0}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "touch" }),
+              "absolute right-0 left-0 h-auto min-h-[var(--touch-target,44px)] justify-start gap-2 overflow-hidden touch-pan-y",
+            )}
             style={{ top, height: NODE_PALETTE_ROW_HEIGHT }}
             data-testid={`node-palette-item-${node.id}`}
-            onClick={() => {
-              onAddNode(node);
-              onOpenChange(false);
+            onClick={commit}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              commit();
             }}
           >
             <span
@@ -140,8 +166,13 @@ function PaletteWindowedList({
               )}
               aria-hidden="true"
             />
-            {node.title}
-          </Button>
+            <span className="flex min-w-0 flex-col items-start leading-tight">
+              <span className="truncate">{node.title}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {humanizePropertyLabel(node.category)}
+              </span>
+            </span>
+          </div>
         );
       })}
     </div>
@@ -153,11 +184,13 @@ export function NodePalette({
   paletteNodes,
   onAddNode,
   filterPin = null,
+  sourcePins,
   pinCompatibility,
 }: NodePaletteProps) {
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [contextSensitive, setContextSensitive] = useState(true);
+  const pinFiltered = Boolean(filterPin && contextSensitive);
 
   useEffect(() => {
     if (!open) return;
@@ -168,9 +201,9 @@ export function NodePalette({
   const allNodes = useMemo(() => {
     const nodes = paletteNodes ?? [];
     return filterPin && contextSensitive
-      ? filterPaletteForPin(nodes, filterPin, pinCompatibility)
+      ? filterPaletteForPin(nodes, filterPin, pinCompatibility, sourcePins)
       : nodes;
-  }, [contextSensitive, filterPin, paletteNodes, pinCompatibility]);
+  }, [contextSensitive, filterPin, paletteNodes, pinCompatibility, sourcePins]);
 
   const filteredBySearch = useMemo(
     () => filterNodes(allNodes, search),
@@ -186,10 +219,14 @@ export function NodePalette({
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([id, count]) => ({ id, label: id, count }));
     return [
-      { id: "all", label: "All", count: filteredBySearch.length },
+      {
+        id: "all",
+        label: pinFiltered ? "Suggested" : "All",
+        count: filteredBySearch.length,
+      },
       ...listed,
     ];
-  }, [filteredBySearch]);
+  }, [filteredBySearch, pinFiltered]);
 
   useEffect(() => {
     if (
@@ -206,16 +243,24 @@ export function NodePalette({
   }, [activeCategory, filteredBySearch]);
 
   const grouped = useMemo(() => {
+    if (pinFiltered && activeCategory === "all") {
+      return [["", filtered] as [string, PaletteNode[]]];
+    }
     const map = new Map<string, PaletteNode[]>();
     for (const node of filtered) {
       const list = map.get(node.category) ?? [];
       list.push(node);
       map.set(node.category, list);
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [filtered]);
+    const entries = [...map.entries()];
+    if (pinFiltered) return entries;
+    return entries.sort(([a], [b]) => a.localeCompare(b));
+  }, [activeCategory, filtered, pinFiltered]);
 
-  const rows = useMemo(() => flattenPaletteRows(grouped), [grouped]);
+  const rows = useMemo(
+    () => flattenPaletteRows(grouped, pinFiltered),
+    [grouped, pinFiltered],
+  );
 
   if (!paletteNodes?.length) return null;
 
@@ -229,7 +274,12 @@ export function NodePalette({
           setActiveCategory("all");
         }
       }}
-      title={filterPin ? "Add node" : "Add node"}
+      title="Add Node"
+      description={
+        pinFiltered && filterPin
+          ? `Compatible with ${describePaletteFilterPin(filterPin)}`
+          : undefined
+      }
       categories={categories}
       activeCategoryId={activeCategory}
       onCategoryChange={setActiveCategory}
@@ -256,7 +306,7 @@ export function NodePalette({
         </Field>
       }
     >
-      {grouped.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No matches</p>
       ) : (
         <PaletteWindowedList
