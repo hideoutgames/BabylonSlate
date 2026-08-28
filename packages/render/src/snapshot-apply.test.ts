@@ -15,12 +15,14 @@ import { RENDERING_GROUP, resolveSortingLayer } from "./sorting";
 import { ResourceCache } from "./resource-cache";
 import { AUTHORED_LIGHT_PREFIX } from "./scene-illumination";
 import {
+  applyAssignMaterial,
   applyAssignMesh,
   applyMaterialToActorMeshes,
   applyPossessCamera,
   applySnapshotToScene,
   createPlayMesh,
   createSnapshotSceneBinding,
+  disposeWorldOverlayLeftovers,
   isPlayHelperMeshKind,
 } from "./snapshot-apply";
 import { setupDefaultViewport } from "./viewport";
@@ -130,6 +132,46 @@ describe("createPlayMesh", () => {
     expect(calls).toEqual([
       { guid: "mat-1", unlit: true, scene: overlay.scene },
     ]);
+  });
+
+  it("keeps overlay 2DMaterial on the overlay unlit compile after assignMaterial", () => {
+    const overlay = createTestEngine();
+    const world = createTestEngine();
+    handles.push(overlay, world);
+    const overlayMat = new StandardMaterial("overlay-mat", overlay.scene);
+    const worldMat = new StandardMaterial("world-mat", world.scene);
+    const binding = createSnapshotSceneBinding();
+    binding.isOverlaySlot = () => true;
+    binding.resolveMaterial = (guid, options) =>
+      options?.unlit === true && options.scene === overlay.scene
+        ? overlayMat
+        : worldMat;
+    applyAssignMesh(overlay.scene, binding, {
+      type: "assignMesh",
+      slotId: 2,
+      meshKind: "2dmaterial",
+      meshAssetGuid: "mat-1",
+    });
+    applyAssignMaterial(world.scene, binding, {
+      type: "assignMaterial",
+      slotId: 2,
+      materialAssetGuid: "mat-1",
+    });
+    expect(binding.meshes.get(2)?.material).toBe(overlayMat);
+    expect(binding.meshes.get(2)?.getScene()).toBe(overlay.scene);
+  });
+
+  it("disposes multipart world leftovers named actor-N|component", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    MeshBuilder.CreatePlane("actor-4", { width: 1, height: 1 }, scene);
+    MeshBuilder.CreatePlane("actor-4|comp", { width: 1, height: 1 }, scene);
+    MeshBuilder.CreatePlane("actor-5", { width: 1, height: 1 }, scene);
+    disposeWorldOverlayLeftovers(scene, 4);
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+    expect(scene.getMeshByName("actor-4|comp")).toBeNull();
+    expect(scene.getMeshByName("actor-5")).not.toBeNull();
   });
 
   it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
