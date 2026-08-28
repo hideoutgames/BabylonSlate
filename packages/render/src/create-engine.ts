@@ -103,6 +103,7 @@ import {
   assignedMaterialGuids as listAssignedMaterialGuids,
   createSnapshotSceneBinding,
   disposeSnapshotBinding,
+  disposeWorldOverlayLeftovers,
   migratePlaySlotVisual,
   type SnapshotSceneBinding,
 } from "./snapshot-apply";
@@ -865,6 +866,9 @@ export function createEngine(
     sceneLayerCompositor?.sceneForSlot(slotId) ?? null;
   binding.isOverlaySlot = (slotId) =>
     sceneLayerCompositor?.layerIdForSlot(slotId) != null;
+  particleService?.setSceneForSlot((slotId) =>
+    sceneLayerCompositor?.sceneForSlot(slotId) ?? null,
+  );
   const pendingOverlayAssign = new Map<
     number,
     Extract<CommandMessage, { type: "assignMesh" }>
@@ -878,9 +882,11 @@ export function createEngine(
     if (pending) {
       applyAssignMesh(overlayScene, binding, pending);
       pendingOverlayAssign.delete(slotId);
-      return;
+    } else {
+      migratePlaySlotVisual(overlayScene, binding, slotId);
     }
-    migratePlaySlotVisual(overlayScene, binding, slotId);
+    disposeWorldOverlayLeftovers(scene, slotId);
+    particleService?.bindSlot(slotId, binding.meshes.get(slotId) ?? null);
   };
   const syncOverlayLayer = (layerId: string) => {
     if (!sceneLayerCompositor) return;
@@ -1602,6 +1608,9 @@ export function createEngine(
           pendingOverlayAssign.set(command.slotId, command);
         } else {
           applyAssignMesh(overlayScene ?? scene, binding, command);
+          if (overlayScene) {
+            disposeWorldOverlayLeftovers(scene, command.slotId);
+          }
         }
         pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);

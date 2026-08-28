@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Material, Mesh, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
+import { Material, Mesh, MeshBuilder, PointLight, Quaternion, Scene, SpotLight, StandardMaterial, TransformNode, UniversalCamera, Vector3, VertexBuffer } from "@babylonjs/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { SNAPSHOT_FLAG_OVERLAY, SNAPSHOT_FLAG_VISIBLE } from "@babylonslate/bridge";
 import { createDefaultSpritePayload, decodeBabasset, embedGlbExternalImages, encodeBabasset } from "@babylonslate/assets";
@@ -1668,6 +1668,62 @@ describe("createPlayMesh", () => {
     expect(overlay.getMeshByName("actor-4")).not.toBeNull();
     expect(scene.getMeshByName("actor-4")).toBeNull();
     expect(binding.meshes.get(4)?.position.x).toBeCloseTo(2);
+    overlay.dispose();
+  });
+
+  it("does not create overlay-flagged box snapshot meshes in the world scene", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(4, "box");
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+        },
+      ],
+    });
+    expect(binding.meshes.get(4)).toBeUndefined();
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+  });
+
+  it("disposes leftover world actor meshes that are not in the snapshot binding", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene, engine } = handle;
+    const overlay = new Scene(engine);
+    const stray = MeshBuilder.CreatePlane("actor-4", { size: 1 }, scene);
+    stray.position.set(0, 0, 0);
+    const binding = createSnapshotSceneBinding();
+    binding.meshKinds.set(4, "box");
+    binding.sceneForSlot = () => overlay;
+    applySnapshotToScene(scene, binding, {
+      frameId: 1,
+      tickIndex: 1,
+      alpha: 1,
+      actorCount: 1,
+      actors: [
+        {
+          slotId: 4,
+          position: { x: 2, y: 1, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY,
+        },
+      ],
+    });
+    expect(overlay.getMeshByName("actor-4")).not.toBeNull();
+    expect(scene.getMeshByName("actor-4")).toBeNull();
+    expect(stray.isDisposed()).toBe(true);
     overlay.dispose();
   });
 });

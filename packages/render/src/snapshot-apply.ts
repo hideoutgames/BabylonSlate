@@ -642,6 +642,16 @@ export function applyShadowQuality(
   applyPlayShadows(scene, binding);
 }
 
+/** Drop world-Scene copies of an overlay slot so the perspective camera cannot draw them. */
+export function disposeWorldOverlayLeftovers(worldScene: Scene, slotId: number): void {
+  const prefix = `actor-${slotId}`;
+  for (const mesh of [...worldScene.meshes]) {
+    if (mesh.name === prefix || mesh.name.startsWith(`${prefix}-`)) {
+      mesh.dispose();
+    }
+  }
+}
+
 function disposeSlotVisuals(
   scene: Scene,
   binding: SnapshotSceneBinding,
@@ -950,6 +960,9 @@ export function applySnapshotToScene(
         mesh = createPlayVisual(hostScene, actor.slotId, binding);
         binding.meshes.set(actor.slotId, mesh);
         applyMaterialToActorMeshes(binding, actor.slotId, mesh);
+      }
+      if (wantsOverlay) {
+        disposeWorldOverlayLeftovers(scene, actor.slotId);
       }
       writeActorTransform(mesh, actor);
       setPlayVisualVisibility(

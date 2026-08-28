@@ -278,4 +278,102 @@ describe("SceneLayerCompositor", () => {
       "pause",
     ]);
   });
+
+  it("restores the HUD ortho camera before each overlay render", () => {
+    const { compositor, engine } = world();
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const layer = compositor.layers()[0]!;
+    const mesh = MeshBuilder.CreatePlane("overlay-quad", { size: 1 }, layer.scene);
+    mesh.position.set(2, 1, 0);
+    mesh.computeWorldMatrix(true);
+    layer.scene.updateTransformMatrix();
+    const viewport = layer.camera.viewport.toGlobal(
+      engine.getRenderWidth(),
+      engine.getRenderHeight(),
+    );
+    const before = Vector3.Project(
+      mesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      layer.scene.getTransformMatrix(),
+      viewport,
+    );
+
+    layer.camera.mode = Camera.PERSPECTIVE_CAMERA;
+    layer.camera.fov = 1.2;
+    layer.camera.position.set(8, -3, 4);
+    layer.scene.activeCamera = null;
+
+    compositor.render();
+
+    expect(layer.scene.activeCamera).toBe(layer.camera);
+    expect(layer.camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(layer.camera.position.x).toBeCloseTo(0);
+    expect(layer.camera.position.y).toBeCloseTo(0);
+    expect(layer.camera.position.z).toBeCloseTo(-10);
+    expect(layer.camera.parent).toBeNull();
+    layer.scene.updateTransformMatrix();
+    const after = Vector3.Project(
+      mesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      layer.scene.getTransformMatrix(),
+      viewport,
+    );
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
+  });
+
+  it("keeps overlay NDC stable when the world camera rotates or changes FOV", () => {
+    const { scene, compositor, engine } = world();
+    const worldCam = new UniversalCamera("world", new Vector3(0, 2, -8), scene);
+    worldCam.mode = Camera.PERSPECTIVE_CAMERA;
+    worldCam.fov = 0.8;
+    scene.activeCamera = worldCam;
+    compositor.create({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud-asset",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    const layer = compositor.layers()[0]!;
+    const mesh = MeshBuilder.CreatePlane("overlay-quad", { size: 1 }, layer.scene);
+    mesh.position.set(1.5, 0.5, 0);
+    mesh.computeWorldMatrix(true);
+    compositor.render();
+    layer.scene.updateTransformMatrix();
+    const viewport = layer.camera.viewport.toGlobal(
+      engine.getRenderWidth(),
+      engine.getRenderHeight(),
+    );
+    const before = Vector3.Project(
+      mesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      layer.scene.getTransformMatrix(),
+      viewport,
+    );
+
+    worldCam.rotation.y += 0.7;
+    worldCam.fov = 1.4;
+    worldCam.position.x += 6;
+    scene.updateTransformMatrix();
+    compositor.render();
+    layer.scene.updateTransformMatrix();
+    const after = Vector3.Project(
+      mesh.getAbsolutePosition(),
+      Matrix.Identity(),
+      layer.scene.getTransformMatrix(),
+      viewport,
+    );
+    expect(layer.camera.mode).toBe(Camera.ORTHOGRAPHIC_CAMERA);
+    expect(after.x).toBeCloseTo(before.x);
+    expect(after.y).toBeCloseTo(before.y);
+  });
 });
