@@ -1693,7 +1693,7 @@ describe("editor grid", () => {
     const bounds = grid.boundsMesh;
     expect(bounds).not.toBeNull();
     bounds!.computeWorldMatrix(true);
-    bounds!.refreshBoundingInfo();
+    bounds!.refreshBoundingInfo(false, false);
     const box = bounds!.getBoundingInfo().boundingBox;
     expect(box.minimumWorld.x).toBeCloseTo(-16);
     expect(box.minimumWorld.y).toBeCloseTo(-9);
