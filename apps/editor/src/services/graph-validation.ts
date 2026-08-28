@@ -201,6 +201,7 @@ function shouldRegeneratePins(typeId: string): boolean {
     typeId === "flow.switchString" ||
     typeId === "array.make" ||
     typeId === "map.make" ||
+    typeId === "scene.change" ||
     isDevelopmentOnlyByDefaultTypeId(typeId)
   );
 }
