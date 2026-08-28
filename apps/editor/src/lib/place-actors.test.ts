@@ -137,6 +137,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
           { id: "sprite", classId: "SpriteComponent", properties: {} },
           { id: "cam", classId: "CameraComponent", properties: {} },
           { id: "light", classId: "LightComponent", properties: {} },
+          { id: "fill", classId: "HemisphericFillLightComponent", properties: {} },
           { id: "sky", classId: "SkyboxComponent", properties: {} },
         ],
       },
