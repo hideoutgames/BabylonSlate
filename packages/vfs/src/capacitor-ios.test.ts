@@ -194,9 +194,8 @@ describe("Capacitor 8 iOS host", () => {
     expect(iosSyncScript).toMatch(
       /packageClassList\.add\("BabylonSlateSecretsPlugin"\)/,
     );
-    expect(editorPkg.scripts["ios:sync"]).toMatch(
-      /cap sync ios[\s\S]*node scripts\/ios-sync\.mjs/,
-    );
+    expect(editorPkg.scripts["ios:sync"]).toBe("node scripts/ios-sync.mjs");
+    expect(iosSyncScript).toMatch(/"cap",\s*"sync",\s*"ios"/s);
     expect(editorPkg.scripts["ios:build"]).toContain(
       "node scripts/ios-build.mjs",
     );

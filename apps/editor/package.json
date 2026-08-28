@@ -9,7 +9,7 @@
     "test": "vitest run --config ../../vitest.workspace.ts --project jsdom apps/editor",
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
-    "ios:sync": "pnpm build && { sync_status=0; pnpm exec cap sync ios || sync_status=$?; CAP_SYNC_STATUS=$sync_status node scripts/ios-sync.mjs; }",
+    "ios:sync": "node scripts/ios-sync.mjs",
     "ios:build": "pnpm run ios:sync && node scripts/ios-build.mjs"
   },
   "dependencies": {
