@@ -296,6 +296,23 @@ export function sceneLayerFrustumSize(aspect: number): {
   return { width: height * safeAspect, height };
 }
 
+/** Play HUD ortho size: the orange design canvas, stretched to the framebuffer. */
+export function sceneLayerOrthoBounds(bounds?: {
+  width?: number;
+  height?: number;
+} | null): { width: number; height: number } {
+  return {
+    width:
+      typeof bounds?.width === "number" && bounds.width > 0
+        ? bounds.width
+        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.width,
+    height:
+      typeof bounds?.height === "number" && bounds.height > 0
+        ? bounds.height
+        : SCENE_LAYER_DEFAULT_LAYER_BOUNDS.height,
+  };
+}
+
 export function sceneLayerAnchorOrigin(
   anchor: SceneLayerAnchor,
   width: number,

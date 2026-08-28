@@ -317,6 +317,8 @@ export interface CreateEngineOptions {
   pixelPerfect?: boolean;
   /** Texture pixels keyed by Texture asset guid. */
   textureBytes?: ReadonlyMap<string, Uint8Array | Blob>;
+  /** Authored Texture source pixels for overlay 2DTexture world size. */
+  texturePixelSizes?: ReadonlyMap<string, { width: number; height: number }>;
   /** Facetype JSON bytes keyed by Font asset guid (3D Text). */
   fontFacetypeBytes?: ReadonlyMap<string, Uint8Array>;
   /** MSDF bmfont JSON keyed by Font asset guid (overlay 2D Text). */
@@ -709,6 +711,7 @@ export function createEngine(
   binding.spritePayloads = options.spritePayloads;
   binding.spriteAnimations = options.spriteAnimations;
   binding.textureBytes = options.textureBytes;
+  binding.texturePixelSizes = options.texturePixelSizes;
   resourceCache.setClientTextures(
     scene.uid,
     options.textureBytes?.keys() ?? [],
@@ -777,15 +780,17 @@ export function createEngine(
       options.onMaterialDiagnostic?.(diagnostic);
     },
   });
-  binding.resolveMaterial = (guid) => {
-    const live = materialLibrary.materialFor(scene, guid);
+  binding.resolveMaterial = (guid, options) => {
+    const host = options?.scene ?? scene;
+    const unlit = options?.unlit === true;
+    const live = materialLibrary.materialFor(host, guid, { unlit });
     if (live) {
       compiledMaterialGuids.add(guid);
       return live;
     }
     const document = materialDocuments.get(guid);
     if (!document) return null;
-    const acquired = materialLibrary.acquire(scene, guid, document);
+    const acquired = materialLibrary.acquire(host, guid, document, { unlit });
     if (materialUnavailable(acquired)) return null;
     compiledMaterialGuids.add(guid);
     return acquired.material;
@@ -1775,6 +1780,7 @@ export function createEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       binding.resourceCache = assets.resourceCache ?? binding.resourceCache;
       binding.textureBytes = assets.textureBytes;
+      binding.texturePixelSizes = assets.texturePixelSizes;
       pinClientTextures();
       binding.fontFacetypeBytes = assets.fontFacetypeBytes;
       binding.fontMsdfJson = assets.fontMsdfJson;

@@ -265,6 +265,9 @@ export function PlayProvider({ children }: { children: ReactNode }) {
   const [playTextureBytes, setPlayTextureBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
+  const [playTexturePixelSizes, setPlayTexturePixelSizes] = useState<
+    Map<string, { width: number; height: number }>
+  >(() => new Map());
   const [playFontFacetypeBytes, setPlayFontFacetypeBytes] = useState<
     Map<string, Uint8Array>
   >(() => new Map());
@@ -332,6 +335,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
     collectPlaySpriteAnimationPayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
@@ -928,6 +932,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
         let spriteAnimations = new Map<string, SpriteAnimationPayload>();
         let tilesets = new Map<string, TilesetPayload>();
         let textureBytes = new Map<string, Uint8Array>();
+        let texturePixelSizes = new Map<string, { width: number; height: number }>();
         try {
           sprites = await collectPlaySpritePayloads(
             resolvedScene?.scene,
@@ -1022,7 +1027,19 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             ],
             spriteAnimations,
           );
+          texturePixelSizes = collectPlayTexturePixelSizes(
+            sprites,
+            tilesets,
+            [
+              ...materials.textureGuids,
+              ...particleTextureGuidsFromLibrary(particles),
+              ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
+              ...overlayTextureGuidsFromScenes(overlayScenes),
+            ],
+            spriteAnimations,
+          );
           setPlayTextureBytes(textureBytes);
+          setPlayTexturePixelSizes(texturePixelSizes);
         } catch (error) {
           appendLog(
             `Material load failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1040,12 +1057,23 @@ export function PlayProvider({ children }: { children: ReactNode }) {
               ],
               spriteAnimations,
             );
+            texturePixelSizes = collectPlayTexturePixelSizes(
+              sprites,
+              tilesets,
+              [
+                ...skyboxFaceGuidsFromScene(resolvedScene?.scene),
+                ...overlayTextureGuidsFromScenes(overlayScenes),
+              ],
+              spriteAnimations,
+            );
             setPlayTextureBytes(textureBytes);
+            setPlayTexturePixelSizes(texturePixelSizes);
           } catch (textureError) {
             appendLog(
               `Texture load failed: ${textureError instanceof Error ? textureError.message : String(textureError)}`,
             );
             setPlayTextureBytes(new Map());
+            setPlayTexturePixelSizes(new Map());
           }
         }
         spriteAnimations = hydrateSpriteAnimationPixelSizes(
@@ -1156,6 +1184,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       collectPlaySpriteAnimationPayloads,
       collectPlayTilemapContent,
       collectPlayTextureBytes,
+      collectPlayTexturePixelSizes,
       collectPlayFontFacetypeBytes,
       collectPlayFontMsdfPair,
       collectPlayFontFaceEntries,
@@ -1391,6 +1420,7 @@ export function PlayProvider({ children }: { children: ReactNode }) {
             tilemapPayloads={playTilemaps}
             tilesetPayloads={playTilesets}
             textureBytes={playTextureBytes}
+            texturePixelSizes={playTexturePixelSizes}
             fontFacetypeBytes={playFontFacetypeBytes}
             fontMsdfJson={playFontMsdfJson}
             fontMsdfPng={playFontMsdfPng}

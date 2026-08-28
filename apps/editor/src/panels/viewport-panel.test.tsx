@@ -74,6 +74,7 @@ const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
         tilemaps: [],
       })),
       collectPlayTextureBytes: vi.fn(async () => new Map()),
+      collectPlayTexturePixelSizes: vi.fn(() => new Map()),
       collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
       collectPlayFontMsdfPair: vi.fn(async () => new Map()),
       collectPlayFontFaceEntries: vi.fn(async () => []),

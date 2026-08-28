@@ -107,6 +107,31 @@ describe("createPlayMesh", () => {
     expect(button.isPickable).toBe(true);
   });
 
+  it("resolves 2DMaterial against the overlay scene as an unlit compile", () => {
+    const overlay = createTestEngine();
+    const world = createTestEngine();
+    handles.push(overlay, world);
+    const overlayMat = new StandardMaterial("overlay-mat", overlay.scene);
+    const worldMat = new StandardMaterial("world-mat", world.scene);
+    const binding = createSnapshotSceneBinding();
+    const calls: Array<{ guid: string; unlit?: boolean; scene?: Scene }> = [];
+    binding.resolveMaterial = (guid, options) => {
+      calls.push({ guid, unlit: options?.unlit, scene: options?.scene });
+      return options?.scene === overlay.scene ? overlayMat : worldMat;
+    };
+    const mesh = createPlayMesh(
+      overlay.scene,
+      2,
+      "2dmaterial",
+      "mat-1",
+      binding,
+    );
+    expect(mesh.material).toBe(overlayMat);
+    expect(calls).toEqual([
+      { guid: "mat-1", unlit: true, scene: overlay.scene },
+    ]);
+  });
+
   it("builds a 9-slice 2DPanel play mesh from overlayPanel margins", () => {
     const handle = createTestEngine();
     handles.push(handle);
@@ -138,6 +163,22 @@ describe("createPlayMesh", () => {
     const extent = mesh.getBoundingInfo().boundingBox.extendSize;
     expect(extent.x * 2).toBeCloseTo(0.64);
     expect(extent.y * 2).toBeCloseTo(0.32);
+  });
+
+  it("sizes a 2DTexture plane from authored pixels when GPU bytes are LOD-downsampled", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const binding = createSnapshotSceneBinding();
+    binding.pixelsPerUnit = 100;
+    binding.textureBytes = new Map([["tex-1", pngIhdr(512, 256)]]);
+    binding.texturePixelSizes = new Map([
+      ["tex-1", { width: 1024, height: 512 }],
+    ]);
+    const mesh = createPlayMesh(handle.scene, 1, "2dtexture", "tex-1", binding);
+    mesh.refreshBoundingInfo(false, false);
+    const extent = mesh.getBoundingInfo().boundingBox.extendSize;
+    expect(extent.x * 2).toBeCloseTo(10.24);
+    expect(extent.y * 2).toBeCloseTo(5.12);
   });
 
   it("keeps a 1x1 2DTexture plane when the guid or bytes are missing", () => {

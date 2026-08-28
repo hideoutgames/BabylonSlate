@@ -8,6 +8,7 @@ import {
   parseSceneLayerAnchor,
   sceneLayerAnchorWorldPosition,
   sceneLayerFrustumSize,
+  sceneLayerOrthoBounds,
   sceneLayerRelativeAnchorWorldPosition,
   sceneLayerToEditorScene,
   walkOverlayPointerHits,
@@ -31,6 +32,14 @@ describe("SceneLayer schema", () => {
       createDefaultSceneSettings("2d").fixedTimestepMs,
     );
     expect(layer.settings.layerBounds).toEqual({ width: 32, height: 18 });
+  });
+
+  it("resolves Play HUD ortho from layerBounds and defaults to 32x18", () => {
+    expect(sceneLayerOrthoBounds()).toEqual({ width: 32, height: 18 });
+    expect(sceneLayerOrthoBounds({ width: 20, height: 10 })).toEqual({
+      width: 20,
+      height: 10,
+    });
   });
 
   it("stamps schema version 1 for new SceneLayer assets", () => {

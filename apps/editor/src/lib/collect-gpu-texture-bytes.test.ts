@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BabassetHeader } from "@babylonslate/assets";
-import { collectGpuTextureBytes } from "./collect-gpu-texture-bytes";
+import { collectGpuTextureBytes, texturePixelSizesFromHeaders } from "./collect-gpu-texture-bytes";
 
 function textureHeader(
   chunks: BabassetHeader["chunks"],
@@ -111,5 +111,30 @@ describe("collectGpuTextureBytes", () => {
       downsampleSource,
     });
     expect(downsampleSource).toHaveBeenCalledWith(png, 1024);
+  });
+
+  it("reads authored Texture payload size without using LOD GPU bytes", () => {
+    const sizes = texturePixelSizesFromHeaders(
+      [
+        {
+          path: "assets/Hero.texture.babasset",
+          header: textureHeader(
+            [
+              {
+                id: "pixels",
+                kind: "pixels",
+                mime: "image/png",
+                sha256: "aa",
+                locator: { inline: { offset: 0, length: 3 } },
+              },
+            ],
+            { usage: "albedo", width: 1024, height: 512 },
+          ),
+        },
+      ],
+      ["tex-1", "missing"],
+    );
+    expect(sizes.get("tex-1")).toEqual({ width: 1024, height: 512 });
+    expect(sizes.has("missing")).toBe(false);
   });
 });

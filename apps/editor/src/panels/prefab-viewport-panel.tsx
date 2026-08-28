@@ -61,6 +61,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
@@ -241,14 +242,20 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           [],
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
-        const textureBytes = await collectPlayTextureBytes(
-          sprites,
-          tileContent.tilesets,
-          [
+        const extraTextureGuids = [
             ...materials.textureGuids,
             ...skyboxFaceGuidsFromScene(scene),
             ...overlayTextureGuidsFromScene(scene),
-          ],
+          ];
+        const textureBytes = await collectPlayTextureBytes(
+          sprites,
+          tileContent.tilesets,
+          extraTextureGuids,
+        );
+        const texturePixelSizes = collectPlayTexturePixelSizes(
+          sprites,
+          tileContent.tilesets,
+          extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
         const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
@@ -266,6 +273,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilemaps: tileContent.tilemaps,
           tilesets: tileContent.tilesets,
           textureBytes,
+          texturePixelSizes,
           fontFacetypeBytes,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
@@ -291,6 +299,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,
@@ -322,14 +331,20 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           [],
           modelSlotMaterialGuidsFromPayloads(modelPayloads),
         );
-        const textureBytes = await collectPlayTextureBytes(
-          sprites,
-          tileContent.tilesets,
-          [
+        const extraTextureGuids = [
             ...materials.textureGuids,
             ...skyboxFaceGuidsFromScene(scene),
             ...overlayTextureGuidsFromScene(scene),
-          ],
+          ];
+        const textureBytes = await collectPlayTextureBytes(
+          sprites,
+          tileContent.tilesets,
+          extraTextureGuids,
+        );
+        const texturePixelSizes = collectPlayTexturePixelSizes(
+          sprites,
+          tileContent.tilesets,
+          extraTextureGuids,
         );
         const fontFacetypeBytes = await collectPlayFontFacetypeBytes(scene);
         const msdf = fontMsdfMapsFromPairs(await collectPlayFontMsdfPair(scene));
@@ -344,6 +359,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
           tilemaps: tileContent.tilemaps,
           tilesets: tileContent.tilesets,
           textureBytes,
+          texturePixelSizes,
           fontFacetypeBytes,
           fontMsdfJson: msdf.json,
           fontMsdfPng: msdf.png,
@@ -365,6 +381,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     collectPlaySpritePayloads,
     collectPlayTilemapContent,
     collectPlayTextureBytes,
+    collectPlayTexturePixelSizes,
     collectPlayFontFacetypeBytes,
     collectPlayFontMsdfPair,
     collectPlayFontFaceEntries,

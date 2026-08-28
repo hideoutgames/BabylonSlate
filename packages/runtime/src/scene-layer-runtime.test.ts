@@ -155,6 +155,51 @@ describe("SceneLayer runtime compositor", () => {
     ).toBe(true);
   });
 
+  it("emits layerBounds on create and keeps default-canvas anchors in design space after resize", () => {
+    const commands: CommandMessage[] = [];
+    const hud: SerializedSceneLayer = {
+      ...createDefaultSceneLayer(),
+      name: "HUD",
+      actors: [
+        createActor("badge", "Badge", {
+          classId: "SceneLayerActor",
+          transform: {
+            position: [-16, 9, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+          },
+          components: [
+            {
+              id: "anchor",
+              classId: "2DAnchorComponent",
+              properties: { anchor: "topLeft", offsetX: 0, offsetY: 0 },
+            },
+          ],
+        }),
+      ],
+    };
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      preferSoftwarePhysics: true,
+      playScene: worldScene("A"),
+      sceneLayerLibrary: { hud },
+      onCommand: (command) => commands.push(command),
+    });
+    runtime.realizePlayWorld();
+    runtime.createSceneLayer("hud", 0);
+    const created = commands.find((command) => command.type === "sceneLayerCreate");
+    expect(created).toMatchObject({
+      type: "sceneLayerCreate",
+      assetGuid: "hud",
+      layerBounds: { width: 32, height: 18 },
+    });
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-16);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(9);
+    runtime.applySceneLayerResize(16, 9);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-16);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(9);
+  });
+
   it("keeps graph-created overlays across scene travel until remove or clear", () => {
     const hud = overlayLayer();
     const levelA = worldScene("A");
@@ -417,8 +462,8 @@ describe("SceneLayer runtime compositor", () => {
     expect(actor?.transform.position.x).toBe(-7);
     expect(actor?.transform.position.y).toBe(4);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-14);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(8);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(-7);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(4);
   });
 
   it("maps a 2DAnchor at the orange bottom-right with Bottom Left onto the screen bottom-right", () => {
@@ -458,8 +503,8 @@ describe("SceneLayer runtime compositor", () => {
     expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(8);
     expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-4.5);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(16);
-    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-9);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.x).toBe(8);
+    expect(runtime.getWorld().findActor("badge")?.transform.position.y).toBe(-4.5);
   });
 
   it("pins a parent actor when a child 2DAnchor is nested under it", () => {
@@ -508,8 +553,8 @@ describe("SceneLayer runtime compositor", () => {
     runtime.realizePlayWorld();
     runtime.createSceneLayer("hud", 0);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(16);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-9);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(8);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4.5);
     expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
     expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
   });
@@ -570,8 +615,8 @@ describe("SceneLayer runtime compositor", () => {
     runtime.realizePlayWorld();
     runtime.createSceneLayer("hud", 0);
     runtime.applySceneLayerResize(32, 18);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(16);
-    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-9);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.x).toBe(8);
+    expect(runtime.getWorld().findActor("banner")?.transform.position.y).toBe(-4.5);
     expect(runtime.getWorld().findActor("pin")?.transform.position.x).toBe(0);
     expect(runtime.getWorld().findActor("pin")?.transform.position.y).toBe(0);
   });

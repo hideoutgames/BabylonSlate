@@ -1,8 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  overlayCanvasToWorld,
   overlayMinTargetWorldSize,
   pointInInflatedWorldAabb,
 } from "./overlay-touch-target";
+
+describe("overlayCanvasToWorld", () => {
+  it("maps NDC through layerBounds half extents, not framebuffer aspect", () => {
+    expect(overlayCanvasToWorld(0, 0, 1920, 1080, 16, 9)).toEqual({
+      x: -16,
+      y: 9,
+    });
+    expect(overlayCanvasToWorld(1920, 1080, 1920, 1080, 16, 9)).toEqual({
+      x: 16,
+      y: -9,
+    });
+    expect(overlayCanvasToWorld(128, 128, 256, 256, 16, 9).x).toBeCloseTo(0);
+    expect(overlayCanvasToWorld(128, 128, 256, 256, 16, 9).y).toBeCloseTo(0);
+  });
+});
 
 describe("overlayMinTargetWorldSize", () => {
   it("converts screen pixels through the overlay frustum, not pixelsPerUnit", () => {

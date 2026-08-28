@@ -109,6 +109,21 @@ describe("material library", () => {
     expect(a.material).not.toBe(b.material);
   });
 
+  it("keeps a PBR compile next to an unlit overlay compile for the same guid", () => {
+    const scene = host();
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const pbr = library.acquire(scene, "mat-1", tinted(1));
+    const unlit = library.acquire(scene, "mat-1", tinted(1), { unlit: true });
+    expect(pbr.ok && unlit.ok).toBe(true);
+    if (!pbr.ok || !unlit.ok) return;
+    expect(unlit.material).not.toBe(pbr.material);
+    expect(library.materialFor(scene, "mat-1")).toBe(pbr.material);
+    expect(library.materialFor(scene, "mat-1", { unlit: true })).toBe(
+      unlit.material,
+    );
+  });
+
   it("keeps a material alive until the last reference is released", () => {
     const scene = host();
     const library = new MaterialLibrary();

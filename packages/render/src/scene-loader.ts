@@ -419,6 +419,7 @@ function componentVisualKind(
       component.properties.hitTest,
       assets?.textureBytes,
       assets?.pixelsPerUnit,
+      assets?.texturePixelSizes,
     );
   }
   if (component.classId === "2DMaterialComponent") {
@@ -679,7 +680,7 @@ export function createMeshForComponent(
     mesh.material = material;
     const guid = stringProp(component.properties.materialGuid);
     if (guid && assets?.resolveMaterial) {
-      const compiled = assets.resolveMaterial(guid);
+      const compiled = assets.resolveMaterial(guid, { scene, unlit: true });
       if (compiled) mesh.material = compiled;
     }
     return mesh;
