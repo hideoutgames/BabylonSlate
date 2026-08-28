@@ -317,27 +317,57 @@ describe("attachViewportGestures", () => {
     expect(controller.camera.target.equals(targetBefore)).toBe(true);
   });
 
-  it("pans on a three-finger drag", () => {
-    const { controller } = attach("3d");
-    controller.camera.getViewMatrix();
-    const targetBefore = controller.camera.target.clone();
-    const right = controller.camera.getDirection(Vector3.Right()).clone();
-    const up = controller.camera.getDirection(Vector3.Up()).clone();
-
+  function emitThreeFingerStroke(dx: number, dy: number) {
     canvas.emit("pointerdown", pointer(1, 100, 100));
     canvas.emit("pointerdown", pointer(2, 200, 100));
     canvas.emit("pointerdown", pointer(3, 150, 180));
-    canvas.emit("pointermove", pointer(1, 140, 100));
-    canvas.emit("pointermove", pointer(2, 240, 100));
-    canvas.emit("pointermove", pointer(3, 190, 180));
+    canvas.emit("pointermove", pointer(1, 100 + dx, 100 + dy));
+    canvas.emit("pointermove", pointer(2, 200 + dx, 100 + dy));
+    canvas.emit("pointermove", pointer(3, 150 + dx, 180 + dy));
+  }
 
-    // Midpoint moved +40px in X; 3D still uses panScale 0.01.
-    const expected = targetBefore
-      .add(right.scale(-40 * 0.01))
-      .add(up.scale(0));
-    expect(controller.camera.target.x).toBeCloseTo(expected.x, 5);
-    expect(controller.camera.target.y).toBeCloseTo(expected.y, 5);
-    expect(controller.camera.target.z).toBeCloseTo(expected.z, 5);
+  function expectThreeFingerFly(
+    controller: ReturnType<typeof createEditorCamera>,
+    dx: number,
+    dy: number,
+  ) {
+    controller.camera.getViewMatrix();
+    const targetBefore = controller.camera.target.clone();
+    const positionBefore = controller.camera.position.clone();
+    const look = controller.camera.getDirection(Vector3.Forward()).clone();
+    const right = controller.camera.getDirection(Vector3.Right()).clone();
+    const up = controller.camera.getDirection(Vector3.Up()).clone();
+    const panScale = 0.01;
+    const flyExpected = targetBefore
+      .add(look.scale(-dy * panScale))
+      .add(right.scale(-dx * panScale));
+    const panExpected = targetBefore
+      .add(right.scale(-dx * panScale))
+      .add(up.scale(dy * panScale));
+    expect(flyExpected.subtract(panExpected).length()).toBeGreaterThan(0.1);
+
+    emitThreeFingerStroke(dx, dy);
+    controller.camera.getViewMatrix();
+
+    expect(controller.camera.target.x).toBeCloseTo(flyExpected.x, 5);
+    expect(controller.camera.target.y).toBeCloseTo(flyExpected.y, 5);
+    expect(controller.camera.target.z).toBeCloseTo(flyExpected.z, 5);
+    const moved = controller.camera.position.subtract(positionBefore);
+    const targetMoved = controller.camera.target.subtract(targetBefore);
+    expect(moved.x).toBeCloseTo(targetMoved.x, 4);
+    expect(moved.y).toBeCloseTo(targetMoved.y, 4);
+    expect(moved.z).toBeCloseTo(targetMoved.z, 4);
+  }
+
+  it("flies the camera on a three-finger drag in 3D", () => {
+    const { controller } = attach("3d");
+    expectThreeFingerFly(controller, 40, 40);
+  });
+
+  it("flies the camera on a three-finger drag when pivotAroundCenter is on", () => {
+    const { controller } = attach("3d");
+    controller.setPivotAroundCenter(true);
+    expectThreeFingerFly(controller, 40, 40);
   });
 
   it("pans 2D three-finger drags at the same 1:1 frustum scale", () => {
