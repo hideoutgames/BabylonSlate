@@ -60,6 +60,14 @@ test("component gallery renders every editor-kit composite", async ({
   await expect(page.getByTestId("gallery-slider")).toBeVisible();
   await expect(page.getByTestId("gallery-numeric-drag")).toBeVisible();
   await expect(page.getByTestId("gallery-parameter-list")).toBeVisible();
+  await expect(page.getByTestId("gallery-variable-type-fields")).toBeVisible();
+  await expect(
+    page.getByTestId("gallery-variable-type-fields").locator('[data-pin-shape="list"]'),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("gallery-variable-type-fields").locator('[data-pin-shape="map"]'),
+  ).toBeVisible();
+  await expect(page.getByTestId("gallery-entry-list")).toBeVisible();
   await expect(page.getByTestId("gallery-nested-menu")).toBeVisible();
   await expect(page.getByTestId("gallery-nested-overlay")).toBeVisible();
 
