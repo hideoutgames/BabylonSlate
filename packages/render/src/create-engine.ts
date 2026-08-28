@@ -1196,6 +1196,9 @@ export function createEngine(
         if (typeof settings.showGrid === "boolean") {
           grid.setVisible(settings.showGrid);
         }
+        if (scene._activeMeshesFrozen) {
+          freezeEditorActiveMeshes(scene);
+        }
         scheduler.invalidate("asset");
       },
       setSelectedActors: (actorIds: string[]) => {

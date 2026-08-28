@@ -1,16 +1,17 @@
 import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector3, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
-import { CreateGreasedLine } from "@babylonjs/core/Meshes/Builders/greasedLineBuilder";
 import type { ViewportMode } from "@babylonslate/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
 export const GRID_MESH_NAME = "__editor-grid__";
 export const CAMERA_BOUNDS_MESH_NAME = "__editor-camera-bounds__";
-/** Screen-space GreasedLine width (px) for the orange 2D camera / 2DAnchor frame. */
+/** Screen-space border width (px) for the orange 2D camera / 2DAnchor frame. */
 export const CAMERA_BOUNDS_LINE_WIDTH = 2;
+const CAMERA_BOUNDS_COLOR = new Color3(0.9, 0.7, 0.2);
 /** Transparent sort: grid draws first among world-group alpha so helpers can sit on top. */
 export const GRID_ALPHA_INDEX = 0;
 
 const GRID_SHADER_NAME = "editorGrid";
+const BOUNDS_SHADER_NAME = "editorCameraBounds";
 const GRID_PLANE_OFFSET = 0.002;
 const GRID_LINE_WIDTH = 1.25;
 
@@ -81,6 +82,23 @@ export function gridEdgeFadeRange(coverage: number): {
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * 1 when the UV sample sits on the 2px screen-space border of the
+ * camera-bounds plane, else 0. `fwidthU` / `fwidthV` are the UV change per
+ * fragment (same as GLSL `fwidth(uv)`), so a 16×9 rect keeps equal pixel
+ * thickness on horizontal and vertical edges.
+ */
+export function cameraBoundsBorderCoverage(
+  uv: { x: number; y: number },
+  fwidthU: number,
+  fwidthV: number,
+  lineWidth: number,
+): number {
+  const distX = Math.min(uv.x, 1 - uv.x) / Math.max(fwidthU, 1e-8);
+  const distY = Math.min(uv.y, 1 - uv.y) / Math.max(fwidthV, 1e-8);
+  return Math.min(distX, distY) < lineWidth ? 1 : 0;
 }
 
 /** GLSL-style smoothstep so unit tests match the fragment edge fade. */
@@ -189,6 +207,37 @@ void main() {
 `;
 }
 
+function ensureBoundsShaders(): void {
+  const vertexKey = `${BOUNDS_SHADER_NAME}VertexShader`;
+  const fragmentKey = `${BOUNDS_SHADER_NAME}FragmentShader`;
+  Effect.ShadersStore[vertexKey] = `
+attribute vec3 position;
+attribute vec2 uv;
+uniform mat4 worldViewProjection;
+varying vec2 vUV;
+void main() {
+  vUV = uv;
+  gl_Position = worldViewProjection * vec4(position, 1.0);
+}
+`;
+  Effect.ShadersStore[fragmentKey] = `
+varying vec2 vUV;
+uniform vec3 color;
+uniform float lineWidth;
+uniform float boundsVisible;
+
+void main() {
+  if (boundsVisible < 0.5) discard;
+  vec2 deriv = fwidth(vUV);
+  float distX = min(vUV.x, 1.0 - vUV.x) / max(deriv.x, 0.00000001);
+  float distY = min(vUV.y, 1.0 - vUV.y) / max(deriv.y, 0.00000001);
+  float dist = min(distX, distY);
+  if (dist >= lineWidth) discard;
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+}
+
 export interface EditorGrid {
   readonly mesh: Mesh;
   readonly boundsMesh: AbstractMesh | null;
@@ -208,6 +257,7 @@ export function createEditorGrid(
   options: EditorGridOptions = {},
 ): EditorGrid {
   ensureGridShaders();
+  ensureBoundsShaders();
 
   let mode: ViewportMode = options.mode ?? "3d";
   let spacing = options.spacing ?? 1;
@@ -217,7 +267,6 @@ export function createEditorGrid(
   const camera = options.camera ?? null;
   const fadeOrigin = new Vector3();
 
-  let boundsMesh: AbstractMesh | null = null;
   let requestedBounds: { width: number; height: number } | null = null;
   let visible = true;
 
@@ -278,64 +327,48 @@ export function createEditorGrid(
     applyUniforms();
   };
 
-  const applyBoundsVisibility = () => {
-    if (!boundsMesh) return;
+  const boundsMesh = MeshBuilder.CreatePlane(
+    CAMERA_BOUNDS_MESH_NAME,
+    { size: 1, sideOrientation: Mesh.DOUBLESIDE },
+    scene,
+  );
+  boundsMesh.isPickable = false;
+  boundsMesh.alwaysSelectAsActiveMesh = true;
+  boundsMesh.isVisible = true;
+  boundsMesh.visibility = 1;
+  boundsMesh.alphaIndex = GRID_ALPHA_INDEX;
+  boundsMesh.renderingGroupId = RENDERING_GROUP.foreground;
+  boundsMesh.rotation.x = 0;
+
+  const boundsMaterial = new ShaderMaterial(
+    `${CAMERA_BOUNDS_MESH_NAME}-material`,
+    scene,
+    { vertex: BOUNDS_SHADER_NAME, fragment: BOUNDS_SHADER_NAME },
+    {
+      attributes: ["position", "uv"],
+      uniforms: ["worldViewProjection", "color", "lineWidth", "boundsVisible"],
+    },
+  );
+  boundsMaterial.backFaceCulling = false;
+  boundsMaterial.disableDepthWrite = true;
+  const boundsDepth = boundsMaterial as { disableDepthCheck?: boolean };
+  if ("disableDepthCheck" in boundsDepth) {
+    boundsDepth.disableDepthCheck = true;
+  }
+  boundsMesh.material = boundsMaterial;
+
+  const boundsDrawn = () => mode === "2d" && requestedBounds !== null;
+
+  const applyBounds = () => {
+    if (requestedBounds) {
+      boundsMesh.scaling.set(requestedBounds.width, requestedBounds.height, 1);
+    }
+    boundsMaterial.setColor3("color", CAMERA_BOUNDS_COLOR);
+    boundsMaterial.setFloat("lineWidth", CAMERA_BOUNDS_LINE_WIDTH);
+    boundsMaterial.setFloat("boundsVisible", boundsDrawn() ? 1 : 0);
     boundsMesh.isVisible = true;
     boundsMesh.alwaysSelectAsActiveMesh = true;
     boundsMesh.visibility = 1;
-  };
-
-  const buildBounds = () => {
-    boundsMesh?.dispose();
-    boundsMesh = null;
-    // The game camera rectangle is a 2D framing aid; 3D has no equivalent.
-    if (!requestedBounds || mode !== "2d") return;
-    const halfWidth = requestedBounds.width / 2;
-    const halfHeight = requestedBounds.height / 2;
-    const points = [
-      new Vector3(-halfWidth, -halfHeight, 0),
-      new Vector3(halfWidth, -halfHeight, 0),
-      new Vector3(halfWidth, halfHeight, 0),
-      new Vector3(-halfWidth, halfHeight, 0),
-      new Vector3(-halfWidth, -halfHeight, 0),
-    ];
-    const color = new Color3(0.9, 0.7, 0.2);
-    try {
-      boundsMesh = CreateGreasedLine(
-        CAMERA_BOUNDS_MESH_NAME,
-        { points },
-        {
-          width: CAMERA_BOUNDS_LINE_WIDTH,
-          color,
-          sizeAttenuation: true,
-          createAndAssignMaterial: true,
-        },
-        scene,
-      );
-    } catch {
-      const lines = MeshBuilder.CreateLines(
-        CAMERA_BOUNDS_MESH_NAME,
-        { points },
-        scene,
-      );
-      lines.color = color;
-      boundsMesh = lines;
-    }
-    boundsMesh.isPickable = false;
-    boundsMesh.alwaysSelectAsActiveMesh = true;
-    boundsMesh.isVisible = true;
-    boundsMesh.renderingGroupId = RENDERING_GROUP.foreground;
-    boundsMesh.alphaIndex = GRID_ALPHA_INDEX;
-    if (boundsMesh.material) {
-      boundsMesh.material.disableDepthWrite = true;
-      const material = boundsMesh.material as {
-        disableDepthCheck?: boolean;
-      };
-      if ("disableDepthCheck" in material) {
-        material.disableDepthCheck = true;
-      }
-    }
-    applyBoundsVisibility();
   };
 
   const sync = () => {
@@ -358,6 +391,7 @@ export function createEditorGrid(
   };
 
   applyPlane();
+  applyBounds();
   sync();
 
   const observer = scene.onBeforeRenderObservable.add(() => {
@@ -375,7 +409,7 @@ export function createEditorGrid(
       if (next === mode) return;
       mode = next;
       applyPlane();
-      buildBounds();
+      applyBounds();
       sync();
     },
     setSpacing: (next: number) => {
@@ -396,17 +430,17 @@ export function createEditorGrid(
       mesh.alwaysSelectAsActiveMesh = true;
       mesh.visibility = next ? 1 : 0;
       material.setFloat("gridVisible", next ? 1 : 0);
-      applyBoundsVisibility();
+      applyBounds();
     },
     setCameraBounds: (bounds) => {
       requestedBounds = bounds;
-      buildBounds();
+      applyBounds();
     },
     sync,
     dispose: () => {
       if (observer) scene.onBeforeRenderObservable.remove(observer);
-      boundsMesh?.dispose();
-      boundsMesh = null;
+      boundsMaterial.dispose();
+      boundsMesh.dispose();
       material.dispose();
       mesh.dispose();
     },

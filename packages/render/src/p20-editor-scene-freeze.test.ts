@@ -17,7 +17,7 @@ import {
 import { createDefaultMaterialDocument } from "@babylonslate/shader-graph";
 import { createEngine } from "./create-engine";
 import { isEngineDefaultMaterial } from "./default-material";
-import { GRID_MESH_NAME } from "./editor-grid";
+import { GRID_MESH_NAME, CAMERA_BOUNDS_MESH_NAME } from "./editor-grid";
 import { encodeTriangleGlb } from "./model-mesh";
 import { editorComponentMeshName, editorMeshName } from "./scene-loader";
 import { visualMeshes } from "./visual-meshes";
@@ -296,6 +296,56 @@ describe("p20-editor-scene-freeze", () => {
     ).toBe(0);
     expect(handle.scene._activeMeshesFrozen).toBe(true);
     expect(activeMeshesOf(handle.scene)).toContain(grid);
+  });
+
+  it("keeps 2D camera bounds in the frozen list after setGridSettings", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      viewportMode: "2d",
+    });
+    handles.push(handle);
+    handle.loadScene(createDefaultScene("2d"));
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    handle.editor!.setGridSettings({
+      tileSize: 1,
+      tileSubdivisions: 4,
+      cameraBounds2D: { width: 32, height: 18 },
+      showGrid: false,
+    });
+    const bounds = handle.scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME);
+    expect(bounds).not.toBeNull();
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(activeMeshesOf(handle.scene)).toContain(bounds);
+    expect(
+      (bounds!.material as ShaderMaterial).serialize().floats.boundsVisible,
+    ).toBe(1);
+  });
+
+  it("keeps 2D camera bounds in the frozen list after setGridSettings", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+      viewportMode: "2d",
+    });
+    handles.push(handle);
+    handle.loadScene(createDefaultScene("2d"));
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    handle.editor!.setGridSettings({
+      tileSize: 1,
+      tileSubdivisions: 4,
+      cameraBounds2D: { width: 32, height: 18 },
+      showGrid: false,
+    });
+    const bounds = handle.scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME);
+    expect(bounds).not.toBeNull();
+    expect(handle.scene._activeMeshesFrozen).toBe(true);
+    expect(activeMeshesOf(handle.scene)).toContain(bounds);
+    expect(
+      (bounds!.material as ShaderMaterial).serialize().floats.boundsVisible,
+    ).toBe(1);
   });
 
   it("keeps the editor grid in the frozen active list after hide then show", () => {

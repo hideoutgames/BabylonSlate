@@ -36,6 +36,8 @@ import { encodeTriangleGlb, encodeUvHierarchyGlb } from "./model-mesh";
 import { visualMeshes } from "./visual-meshes";
 import {
   CAMERA_BOUNDS_LINE_WIDTH,
+  CAMERA_BOUNDS_MESH_NAME,
+  cameraBoundsBorderCoverage,
   createEditorGrid,
   GRID_MESH_NAME,
   gridCoverageWorld,
@@ -93,6 +95,13 @@ function createHandle() {
 
 function sceneWith(actors: SerializedScene["actors"]): SerializedScene {
   return { ...createDefaultScene(), actors };
+}
+
+function listedActiveMeshes(scene: {
+  getActiveMeshes: () => { data: unknown[]; length: number };
+}): unknown[] {
+  const active = scene.getActiveMeshes();
+  return active.data.slice(0, active.length);
 }
 
 afterEach(() => {
@@ -1600,12 +1609,16 @@ describe("editor grid", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 10, height: 6 });
-    expect(scene.getMeshByName("__editor-camera-bounds__")).not.toBeNull();
+    expect(scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME)).not.toBeNull();
     expect(grid.boundsMesh?.isVisible).toBe(true);
     expect(grid.boundsMesh?.visibility).toBe(1);
     expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
     expect(grid.boundsMesh?.renderingGroupId).toBe(RENDERING_GROUP.foreground);
     expect(grid.boundsMesh?.material?.disableDepthWrite).toBe(true);
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
+        .boundsVisible,
+    ).toBe(1);
 
     grid.setVisible(false);
     expect(grid.mesh.isVisible).toBe(true);
@@ -1616,18 +1629,27 @@ describe("editor grid", () => {
     expect(grid.boundsMesh?.isVisible).toBe(true);
     expect(grid.boundsMesh?.visibility).toBe(1);
     expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
+        .boundsVisible,
+    ).toBe(1);
 
     grid.setVisible(true);
     expect(grid.boundsMesh?.isVisible).toBe(true);
     expect(grid.boundsMesh?.visibility).toBe(1);
 
     grid.setCameraBounds(null);
-    expect(scene.getMeshByName("__editor-camera-bounds__")).toBeNull();
+    expect(scene.getMeshByName(CAMERA_BOUNDS_MESH_NAME)).toBe(grid.boundsMesh);
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
+        .boundsVisible,
+    ).toBe(0);
     grid.dispose();
   });
 
-  it("keeps rebuilt 2D camera bounds in the frozen active list", () => {
+  it("keeps 2D camera bounds in the frozen active list after setCameraBounds", () => {
     const { scene } = createHandle();
+    createEditorCamera(scene, { mode: "2d" });
     const grid = createEditorGrid(scene, { mode: "2d" });
     const sync = new EditorSceneSync(scene);
     sync.apply(
@@ -1640,6 +1662,15 @@ describe("editor grid", () => {
     expect(grid.boundsMesh?.alwaysSelectAsActiveMesh).toBe(true);
     expect(grid.boundsMesh?.isVisible).toBe(true);
     expect(grid.boundsMesh?.visibility).toBe(1);
+    expect(listedActiveMeshes(scene)).toContain(grid.boundsMesh);
+
+    grid.setVisible(false);
+    expect(scene._activeMeshesFrozen).toBe(true);
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
+        .boundsVisible,
+    ).toBe(1);
+    expect(listedActiveMeshes(scene)).toContain(grid.boundsMesh);
     grid.dispose();
   });
 
@@ -1674,18 +1705,100 @@ describe("editor grid", () => {
     const grid = createEditorGrid(scene, { mode: "2d" });
     grid.setCameraBounds({ width: 16, height: 9 });
     expect(CAMERA_BOUNDS_LINE_WIDTH).toBe(2);
-    expect(grid.boundsMesh?.name).toBe("__editor-camera-bounds__");
+    expect(grid.boundsMesh?.name).toBe(CAMERA_BOUNDS_MESH_NAME);
+    expect(grid.boundsMesh?.material).toBeInstanceOf(ShaderMaterial);
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats.lineWidth,
+    ).toBe(CAMERA_BOUNDS_LINE_WIDTH);
     grid.dispose();
   });
 
-  it("keeps camera bounds out of 3D, where the rectangle is meaningless", () => {
+  it("resizes the same 2D camera bounds plane instead of rebuilding it", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "2d" });
+    grid.setCameraBounds({ width: 16, height: 9 });
+    const first = grid.boundsMesh;
+    const firstId = first?.uniqueId;
+    expect(first).not.toBeNull();
+    grid.setCameraBounds({ width: 32, height: 18 });
+    expect(grid.boundsMesh).toBe(first);
+    expect(grid.boundsMesh?.uniqueId).toBe(firstId);
+    expect(grid.boundsMesh?.scaling.x).toBeCloseTo(32);
+    expect(grid.boundsMesh?.scaling.y).toBeCloseTo(18);
+    grid.dispose();
+  });
+
+  it("places 2D camera bounds world corners on the 2DAnchor rectangle", () => {
+    const { scene } = createHandle();
+    const grid = createEditorGrid(scene, { mode: "2d" });
+    grid.setCameraBounds({ width: 32, height: 18 });
+    const bounds = grid.boundsMesh;
+    expect(bounds).not.toBeNull();
+    bounds!.computeWorldMatrix(true);
+    bounds!.refreshBoundingInfo(false, false);
+    const box = bounds!.getBoundingInfo().boundingBox;
+    expect(box.minimumWorld.x).toBeCloseTo(-16);
+    expect(box.minimumWorld.y).toBeCloseTo(-9);
+    expect(box.maximumWorld.x).toBeCloseTo(16);
+    expect(box.maximumWorld.y).toBeCloseTo(9);
+    grid.dispose();
+  });
+
+  it("keeps a 2px camera-bounds stroke equal on horizontal and vertical edges", () => {
+    const widthPx = 160;
+    const heightPx = 90;
+    const fwidthU = 1 / widthPx;
+    const fwidthV = 1 / heightPx;
+    expect(
+      cameraBoundsBorderCoverage(
+        { x: 1 * fwidthU, y: 0.5 },
+        fwidthU,
+        fwidthV,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(1);
+    expect(
+      cameraBoundsBorderCoverage(
+        { x: 0.5, y: 1 * fwidthV },
+        fwidthU,
+        fwidthV,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(1);
+    expect(
+      cameraBoundsBorderCoverage(
+        { x: 3 * fwidthU, y: 0.5 },
+        fwidthU,
+        fwidthV,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(0);
+    expect(
+      cameraBoundsBorderCoverage(
+        { x: 0.5, y: 3 * fwidthV },
+        fwidthU,
+        fwidthV,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(0);
+  });
+
+  it("hides camera bounds in 3D without disposing the freeze-stable mesh", () => {
     const { scene } = createHandle();
     const grid = createEditorGrid(scene, { mode: "3d" });
     grid.setCameraBounds({ width: 16, height: 9 });
-    expect(grid.boundsMesh).toBeNull();
+    expect(grid.boundsMesh).not.toBeNull();
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
+        .boundsVisible,
+    ).toBe(0);
 
     grid.setMode("2d");
     expect(grid.boundsMesh).not.toBeNull();
+    expect(
+      (grid.boundsMesh?.material as ShaderMaterial).serialize().floats
+        .boundsVisible,
+    ).toBe(1);
     grid.dispose();
   });
 
