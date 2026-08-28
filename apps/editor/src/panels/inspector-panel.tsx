@@ -297,6 +297,19 @@ function ClassMemberDetails({
       }
       commit(patch);
     };
+    const singleDefaultRows = variableDefaultPropertyRows(
+      typeId,
+      member.defaultValue,
+      (value) => commit({ defaultValue: value }),
+      {
+        typeClassId: member.typeClassId,
+        schemas,
+        enumMembers,
+        container,
+        assetEntries,
+        onPickAsset: () => setDefaultAssetPickerOpen(true),
+      },
+    );
     return (
       <div
         className="flex flex-col gap-3 p-3"
@@ -312,114 +325,8 @@ function ClassMemberDetails({
               value: member.name,
               onChange: (name) => commit({ name }),
             },
-            ...variableDefaultPropertyRows(
-              typeId,
-              member.defaultValue,
-              (value) => commit({ defaultValue: value }),
-              {
-                typeClassId: member.typeClassId,
-                schemas,
-                enumMembers,
-                container,
-                assetEntries,
-                onPickAsset: () => setDefaultAssetPickerOpen(true),
-              },
-            ),
           ]}
         />
-        {container === "array" ? (
-          <EntryListEditor
-            items={asArrayDefaults(member.defaultValue)}
-            onChange={(defaultValue) => commit({ defaultValue })}
-            onCreate={() =>
-              seedVariableEntry(typeId, member.typeClassId, schemas)
-            }
-            addLabel="Add Item"
-            data-testid="inspector-member-defaults"
-            renderItem={({ item, index, onChange: changeItem }) => (
-              <PropertyGrid
-                rows={variableDefaultPropertyRows(
-                  typeId,
-                  item,
-                  changeItem,
-                  {
-                    typeClassId: member.typeClassId,
-                    schemas,
-                    enumMembers,
-                    assetEntries,
-                    onPickAsset: () =>
-                      setEntryPick({ index, field: "value" }),
-                    classEntries,
-                    onPickClass: () =>
-                      setEntryPick({ index, field: "value" }),
-                    label: `Item ${index + 1}`,
-                    pinId: `item-${index}`,
-                  },
-                )}
-              />
-            )}
-          />
-        ) : null}
-        {container === "map" ? (
-          <EntryListEditor
-            items={parseMapDefaultEntries(member.defaultValue)}
-            onChange={(defaultValue) => commit({ defaultValue })}
-            onCreate={() => ({
-              key: seedVariableEntry(
-                member.keyTypeId ?? "string",
-                member.keyTypeClassId,
-                schemas,
-              ),
-              value: seedVariableEntry(typeId, member.typeClassId, schemas),
-            })}
-            addLabel="Add Entry"
-            data-testid="inspector-member-defaults"
-            renderItem={({ item, index, onChange: changeItem }) => (
-              <div className="flex flex-col gap-2">
-                <PropertyGrid
-                  rows={variableDefaultPropertyRows(
-                    member.keyTypeId ?? "string",
-                    item.key,
-                    (key) => changeItem({ ...item, key }),
-                    {
-                      typeClassId: member.keyTypeClassId,
-                      schemas,
-                      enumMembers,
-                      assetEntries,
-                      onPickAsset: () =>
-                        setEntryPick({ index, field: "key" }),
-                      classEntries,
-                      onPickClass: () =>
-                        setEntryPick({ index, field: "key" }),
-                      label: "Key",
-                      pinId: `key-${index}`,
-                    },
-                  )}
-                />
-                <PropertyGrid
-                  rows={variableDefaultPropertyRows(
-                    typeId,
-                    item.value,
-                    (value) => changeItem({ ...item, value }),
-                    {
-                      typeClassId: member.typeClassId,
-                      schemas,
-                      enumMembers,
-                      assetEntries,
-                      onPickAsset: () =>
-                        setEntryPick({ index, field: "value" }),
-                      classEntries,
-                      onPickClass: () =>
-                        setEntryPick({ index, field: "value" }),
-                      label: "Value",
-                      pinId: `value-${index}`,
-                    },
-                  )}
-                />
-              </div>
-            )}
-          />
-        ) : null}
         <VariableTypeFields
           value={{
             typeId,
@@ -514,6 +421,102 @@ function ClassMemberDetails({
               </Button>
             </SearchDropdown>
           </Field>
+        ) : null}
+        {singleDefaultRows.length > 0 ? (
+          <PropertyGrid rows={singleDefaultRows} />
+        ) : null}
+        {container === "array" ? (
+          <EntryListEditor
+            items={asArrayDefaults(member.defaultValue)}
+            onChange={(defaultValue) => commit({ defaultValue })}
+            onCreate={() =>
+              seedVariableEntry(typeId, member.typeClassId, schemas)
+            }
+            addLabel="Add Item"
+            data-testid="inspector-member-defaults"
+            renderItem={({ item, index, onChange: changeItem }) => (
+              <PropertyGrid
+                rows={variableDefaultPropertyRows(
+                  typeId,
+                  item,
+                  changeItem,
+                  {
+                    typeClassId: member.typeClassId,
+                    schemas,
+                    enumMembers,
+                    assetEntries,
+                    onPickAsset: () =>
+                      setEntryPick({ index, field: "value" }),
+                    classEntries,
+                    onPickClass: () =>
+                      setEntryPick({ index, field: "value" }),
+                    label: `Item ${index + 1}`,
+                    pinId: `item-${index}`,
+                  },
+                )}
+              />
+            )}
+          />
+        ) : null}
+        {container === "map" ? (
+          <EntryListEditor
+            items={parseMapDefaultEntries(member.defaultValue)}
+            onChange={(defaultValue) => commit({ defaultValue })}
+            onCreate={() => ({
+              key: seedVariableEntry(
+                member.keyTypeId ?? "string",
+                member.keyTypeClassId,
+                schemas,
+              ),
+              value: seedVariableEntry(typeId, member.typeClassId, schemas),
+            })}
+            addLabel="Add Entry"
+            data-testid="inspector-member-defaults"
+            renderItem={({ item, index, onChange: changeItem }) => (
+              <div className="flex flex-col gap-2">
+                <PropertyGrid
+                  rows={variableDefaultPropertyRows(
+                    member.keyTypeId ?? "string",
+                    item.key,
+                    (key) => changeItem({ ...item, key }),
+                    {
+                      typeClassId: member.keyTypeClassId,
+                      schemas,
+                      enumMembers,
+                      assetEntries,
+                      onPickAsset: () =>
+                        setEntryPick({ index, field: "key" }),
+                      classEntries,
+                      onPickClass: () =>
+                        setEntryPick({ index, field: "key" }),
+                      label: "Key",
+                      pinId: `key-${index}`,
+                    },
+                  )}
+                />
+                <PropertyGrid
+                  rows={variableDefaultPropertyRows(
+                    typeId,
+                    item.value,
+                    (value) => changeItem({ ...item, value }),
+                    {
+                      typeClassId: member.typeClassId,
+                      schemas,
+                      enumMembers,
+                      assetEntries,
+                      onPickAsset: () =>
+                        setEntryPick({ index, field: "value" }),
+                      classEntries,
+                      onPickClass: () =>
+                        setEntryPick({ index, field: "value" }),
+                      label: "Value",
+                      pinId: `value-${index}`,
+                    },
+                  )}
+                />
+              </div>
+            )}
+          />
         ) : null}
         <ClassPicker
           open={classPickerOpen}

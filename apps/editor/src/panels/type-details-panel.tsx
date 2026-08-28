@@ -162,7 +162,6 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
                     patchStructureField(asset, selectedIndex, { name: value }),
                   ),
               },
-              ...defaultRows,
             ]}
           />
           <div className="flex flex-col gap-1">
@@ -207,6 +206,7 @@ export function TypeDetailsPanel(_props: IDockviewPanelProps) {
               </AssetPickerControl>
             </div>
           ) : null}
+          {defaultRows.length > 0 ? <PropertyGrid rows={defaultRows} /> : null}
           <AssetPicker
             open={typeAssetPickerOpen}
             onOpenChange={setTypeAssetPickerOpen}

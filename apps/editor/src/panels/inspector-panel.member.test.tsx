@@ -217,6 +217,12 @@ afterEach(() => {
   applyGraphChange.mockClear();
 });
 
+function expectDocumentOrder(earlier: HTMLElement, later: HTMLElement) {
+  expect(
+    earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeGreaterThan(0);
+}
+
 describe("Inspector class member details", () => {
   it("shows PinTypePicker for a selected variable", () => {
     renderMemberInspector("var-1", true);
@@ -226,6 +232,18 @@ describe("Inspector class member details", () => {
     expect(screen.getByTestId("property-default")).toBeTruthy();
     expect(screen.queryByTestId("property-default")?.getAttribute("type")).not.toBe(
       "text",
+    );
+    expectDocumentOrder(
+      screen.getByTestId("property-name"),
+      screen.getByTestId("inspector-member-type"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      screen.getByTestId("inspector-member-container"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-container"),
+      screen.getByTestId("property-default"),
     );
   });
 
@@ -355,6 +373,18 @@ describe("Inspector class member details", () => {
     expect(icon.getAttribute("data-pin-shape")).toBe("map");
   });
 
+  it("places Array default entries below Type and Container", () => {
+    renderMemberInspector("var-array");
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-container"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+  });
+
   it("adds Array default items from Inspector", () => {
     renderMemberInspector("var-array");
     expect(screen.getByTestId("inspector-member-container-array")).toBeTruthy();
@@ -383,6 +413,18 @@ describe("Inspector class member details", () => {
       expect.objectContaining({
         defaultValue: [],
       }),
+    );
+  });
+
+  it("places Map default entries below Type, Container, and Key Type", () => {
+    renderMemberInspector("var-map");
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      screen.getByTestId("inspector-member-defaults"),
+    );
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-key-type"),
+      screen.getByTestId("inspector-member-defaults"),
     );
   });
 
@@ -416,6 +458,11 @@ describe("Inspector class member details", () => {
     const assetType = screen.getByTestId("inspector-member-asset-type");
     expect(assetType.textContent).toContain("Audio");
     expect(screen.getByTestId("property-default").textContent).toContain("Jump");
+    expectDocumentOrder(
+      screen.getByTestId("inspector-member-type"),
+      assetType,
+    );
+    expectDocumentOrder(assetType, screen.getByTestId("property-default"));
     assetType.click();
     await waitFor(() => {
       expect(screen.getByTestId("search-item-Texture")).toBeTruthy();

@@ -96,6 +96,11 @@ describe("BlackboardEditor", () => {
       keys: Array<{ defaultValue?: unknown }>;
     };
     expect(next.keys[0]?.defaultValue).toBe(true);
+    expect(
+      screen.getByTestId("blackboard-key-type").compareDocumentPosition(
+        screen.getByTestId("property-default"),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
   });
 
   it("writes enumRef when the type picker selects Enum", async () => {
