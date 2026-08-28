@@ -89,6 +89,7 @@ vi.mock("../context/document-context", () => ({
               name: "Cue",
               typeId: "asset",
               typeClassId: "Audio",
+              defaultValue: "audio-1",
             },
             {
               id: "var-array",
@@ -129,7 +130,28 @@ vi.mock("../context/document-context", () => ({
     ],
     applyGraphChange,
     projectDocument: { settings: { input: { actions: [], axes: [] } } },
-    assetRegistry: { list: () => [] },
+    assetRegistry: {
+      list: () => [
+        {
+          header: {
+            guid: "audio-1",
+            name: "Jump",
+            type: "Audio",
+            parentClass: null,
+          },
+          path: "assets/Jump.audio.babasset",
+        },
+        {
+          header: {
+            guid: "tex-1",
+            name: "Atlas",
+            type: "Texture",
+            parentClass: null,
+          },
+          path: "assets/Atlas.texture.babasset",
+        },
+      ],
+    },
   }),
 }));
 
@@ -148,7 +170,8 @@ function renderMemberInspector(memberId: string, includeClassPanel = false) {
   return render(
     <AssetOpenProvider
       value={{
-        canOpen: (guid) => guid === "struct-stats" || guid === "enum-colors",
+        canOpen: (guid) =>
+          guid === "struct-stats" || guid === "enum-colors" || guid === "audio-1",
         openAsset: () => {},
       }}
     >
@@ -296,9 +319,46 @@ describe("Inspector class member details", () => {
     renderMemberInspector("var-asset");
     const assetType = screen.getByTestId("inspector-member-asset-type");
     expect(assetType.textContent).toContain("Audio");
+    expect(screen.getByTestId("property-default").textContent).toContain("Jump");
     assetType.click();
     await waitFor(() => {
       expect(screen.getByTestId("search-item-Texture")).toBeTruthy();
     });
+  });
+
+  it("picks an Asset Default guid filtered to Asset Type", async () => {
+    renderMemberInspector("var-asset");
+    screen.getByTestId("property-default").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-audio-1")).toBeTruthy();
+    });
+    expect(screen.queryByTestId("search-item-tex-1")).toBeNull();
+    screen.getByTestId("search-item-audio-1").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.find((member) => member.id === "var-asset")).toEqual(
+      expect.objectContaining({
+        typeId: "asset",
+        typeClassId: "Audio",
+        defaultValue: "audio-1",
+      }),
+    );
+  });
+
+  it("clears an incompatible Asset Default when Asset Type changes", async () => {
+    renderMemberInspector("var-asset");
+    screen.getByTestId("inspector-member-asset-type").click();
+    await waitFor(() => {
+      expect(screen.getByTestId("search-item-Texture")).toBeTruthy();
+    });
+    screen.getByTestId("search-item-Texture").click();
+    expect(applyGraphChange).toHaveBeenCalled();
+    const next = applyGraphChange.mock.calls[0]?.[1];
+    expect(next?.members?.find((member) => member.id === "var-asset")).toEqual(
+      expect.objectContaining({
+        typeClassId: "Texture",
+        defaultValue: "",
+      }),
+    );
   });
 });

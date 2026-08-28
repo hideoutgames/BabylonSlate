@@ -97,6 +97,7 @@ import {
   pinDefaultPropertyRows,
   pinListFromParameterRows,
   pinsFromNodeData,
+  variableAssetPickerAllowedTypes,
   variableDefaultPropertyRows,
 } from "../lib/graph-inspector";
 import { defaultValueForMember, keepsTypeClassId, pinDefaultPropertyKey } from "@babylonslate/scripting";
@@ -166,8 +167,7 @@ function defaultValueForVariableType(
   if (
     spec.typeId === "object" ||
     spec.typeId === "actor" ||
-    spec.typeId === "wildcard" ||
-    spec.typeId === "asset"
+    spec.typeId === "wildcard"
   ) {
     return undefined;
   }
@@ -189,6 +189,7 @@ function ClassMemberDetails({
   interfaceAssets,
   classEntries,
   typeAssets,
+  pickerAssets,
   schemas,
   enumMembers,
   onChange,
@@ -198,6 +199,7 @@ function ClassMemberDetails({
   interfaceAssets: Array<{ guid: string; name: string; type: string }>;
   classEntries: ClassPickerEntry[];
   typeAssets: Array<{ guid: string; name: string; type: string }>;
+  pickerAssets: Array<{ guid: string; name: string; type: string; path?: string }>;
   schemas: ReturnType<typeof typeSchemasFromGraphAssets>;
   enumMembers: Record<string, string[]>;
   onChange: (next: SerializedGraph) => void;
@@ -205,6 +207,7 @@ function ClassMemberDetails({
   const [interfacePickerOpen, setInterfacePickerOpen] = useState(false);
   const [classPickerOpen, setClassPickerOpen] = useState(false);
   const [typeAssetPickerOpen, setTypeAssetPickerOpen] = useState(false);
+  const [defaultAssetPickerOpen, setDefaultAssetPickerOpen] = useState(false);
   const commit = (patch: Partial<GraphClassMember>) => {
     onChange(patchClassMember(graph, member.id, patch));
   };
@@ -229,6 +232,11 @@ function ClassMemberDetails({
           ? { name: typeClassId, type: isEnum ? "Enum" : "Structure" }
           : undefined,
     );
+    const assetEntries = pickerAssets.map((asset) => ({
+      id: asset.guid,
+      name: asset.name,
+      type: asset.type,
+    }));
     const commitTypeFields = (next: VariableTypeFieldsValue) => {
       const nextContainer =
         next.container === "array" || next.container === "map"
@@ -285,6 +293,8 @@ function ClassMemberDetails({
                 schemas,
                 enumMembers,
                 container,
+                assetEntries,
+                onPickAsset: () => setDefaultAssetPickerOpen(true),
               },
             ),
           ]}
@@ -349,7 +359,19 @@ function ClassMemberDetails({
                 label: assetType,
                 description: "Asset",
               }))}
-              onSelect={(id) => commit({ typeClassId: id })}
+              onSelect={(id) => {
+                const allowed = new Set(variableAssetPickerAllowedTypes(id));
+                const guid =
+                  typeof member.defaultValue === "string"
+                    ? member.defaultValue.trim()
+                    : "";
+                const listed = guid
+                  ? pickerAssets.find((asset) => asset.guid === guid)
+                  : undefined;
+                const keep =
+                  listed && allowed.has(listed.type) ? member.defaultValue : "";
+                commit({ typeClassId: id, defaultValue: keep });
+              }}
               data-testid="inspector-member-asset-type-picker"
             >
               <Button
@@ -401,6 +423,19 @@ function ClassMemberDetails({
             setTypeAssetPickerOpen(false);
           }}
           data-testid="inspector-member-type-asset-picker"
+        />
+        <AssetPicker
+          open={defaultAssetPickerOpen}
+          onOpenChange={setDefaultAssetPickerOpen}
+          assets={pickerAssets}
+          allowedTypes={variableAssetPickerAllowedTypes(member.typeClassId)}
+          allowNone
+          title="Pick Asset"
+          onPick={(guid) => {
+            commit({ defaultValue: guid ?? "" });
+            setDefaultAssetPickerOpen(false);
+          }}
+          data-testid="inspector-member-default-asset-picker"
         />
       </div>
     );
@@ -912,6 +947,7 @@ export function InspectorPanel(_props: IDockviewPanelProps) {
             { editorGraph },
           )}
           typeAssets={typeAssets}
+          pickerAssets={pickerAssets}
           schemas={typeSchemas}
           enumMembers={collectEnumMemberNames(
             openDocuments,

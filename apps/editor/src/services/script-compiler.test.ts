@@ -138,6 +138,28 @@ describe("script compiler service", () => {
     ]);
   });
 
+  it("copies asset variable guid defaultValue onto the bundle", () => {
+    const script = compileGraphDocument(
+      {
+        ...tickToLog,
+        members: [
+          {
+            id: "var-cue",
+            kind: "variable",
+            name: "cue",
+            typeId: "asset",
+            typeClassId: "Audio",
+            defaultValue: "audio-1",
+          },
+        ],
+      },
+      { path: "assets/Hero.class.babasset", parentClassId: "Actor" },
+    );
+    expect(script?.variables).toEqual([
+      { name: "cue", type: "asset", defaultValue: "audio-1" },
+    ]);
+  });
+
   it("copies Class variable Array/Map containers onto the bundle", () => {
     const script = compileGraphDocument(
       {

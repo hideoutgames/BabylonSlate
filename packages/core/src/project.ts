@@ -274,7 +274,7 @@ export interface GraphClassMember {
   name: string;
   /** Variable pin type (bool, float, …). */
   typeId?: string;
-  /** Object/class constraint, or Structure/Enum asset guid when typeId is struct/enum. */
+  /** Object/class constraint, Structure/Enum asset guid, or Content Browser kind when typeId is asset. */
   typeClassId?: string;
   /** Variable container. Missing or `"single"` is a scalar. Array/Map wrap `typeId`. */
   container?: "single" | "array" | "map";

@@ -59,6 +59,30 @@ describe("BlackboardEditor", () => {
     expect(next.keys).toEqual([]);
   });
 
+  it("picks an Asset Default guid for an asset key", async () => {
+    const onChange = vi.fn();
+    render(
+      <BlackboardEditor
+        payload={{
+          name: "AI",
+          keys: [
+            {
+              name: "cue",
+              type: { kind: "assetRef", assetType: "Audio" },
+              defaultValue: "",
+            },
+          ],
+        }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByTestId("property-default")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("property-default"));
+    expect(
+      await screen.findByTestId("blackboard-key-default-asset-picker"),
+    ).toBeTruthy();
+  });
+
   it("edits a bool default as a checkbox", () => {
     const onChange = vi.fn();
     render(

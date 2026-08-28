@@ -4,6 +4,7 @@ import type {
   PropertyRow,
 } from "@babylonslate/editor-kit";
 import {
+  ASSET_REF_PICKER_TYPES,
   classRowIdentity,
   assetRowIdentity,
   humanizePropertyLabel,
@@ -191,6 +192,13 @@ export function assetPickerAllowedTypes(
     .map((id) => id.trim())
     .filter(Boolean);
   return ids.length > 0 ? ids : [pinAssetType];
+}
+
+/** Asset Variable Default picker kinds: the pre-cast Asset Type, or the catalog list. */
+export function variableAssetPickerAllowedTypes(typeClassId?: string): string[] {
+  const trimmed = typeClassId?.trim();
+  if (trimmed) return assetPickerAllowedTypes(trimmed, undefined);
+  return [...ASSET_REF_PICKER_TYPES];
 }
 
 export function pinDefaultPropertyRows(
@@ -443,6 +451,8 @@ export function variableDefaultPropertyRows(
     schemas?: TypeSchemas;
     enumMembers?: Record<string, readonly string[]>;
     container?: "single" | "array" | "map";
+    assetEntries?: ReadonlyArray<{ id: string; name: string; type: string }>;
+    onPickAsset?: (pinId: string, assetType: string) => void;
   },
 ): PropertyRow[] {
   if (options?.container === "array" || options?.container === "map") return [];
@@ -450,8 +460,7 @@ export function variableDefaultPropertyRows(
     typeId === "object" ||
     typeId === "class" ||
     typeId === "actor" ||
-    typeId === "wildcard" ||
-    typeId === "asset"
+    typeId === "wildcard"
   ) {
     return [];
   }
@@ -459,6 +468,8 @@ export function variableDefaultPropertyRows(
   const mapping = {
     enumMembers: options?.enumMembers,
     schemas: options?.schemas,
+    assetEntries: options?.assetEntries,
+    onPickAsset: options?.onPickAsset,
   };
   if (type.kind === "structRef") {
     const schema = type.guid ? options?.schemas?.structs[type.guid] : undefined;
