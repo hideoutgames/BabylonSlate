@@ -2,8 +2,10 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  STRING,
+  assetRef,
 } from "@babylonslate/scripting";
+
+const SCENE_ASSET = assetRef("Scene");
 
 export const sceneNodes: NodeDefinition[] = [
   {
@@ -13,7 +15,7 @@ export const sceneNodes: NodeDefinition[] = [
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      pin("scene", "scene", "in", STRING),
+      pin("scene", "scene", "in", SCENE_ASSET),
     ],
     codegen: (ctx) => {
       ctx.emit(`ctx.changeScene(${ctx.input("scene")});`);

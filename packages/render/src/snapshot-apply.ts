@@ -695,6 +695,64 @@ export function disposeWorldOverlayLeftovers(worldScene: Scene, slotId: number):
   }
 }
 
+export function retirePlaySlot(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+): void {
+  binding.meshes.get(slotId)?.dispose();
+  binding.meshes.delete(slotId);
+  binding.meshKinds.delete(slotId);
+  binding.meshAssetGuids.delete(slotId);
+  binding.meshParts.delete(slotId);
+  binding.materialAssetGuids.delete(slotId);
+  binding.spriteOverlays?.get(slotId)?.dispose();
+  binding.spriteOverlays?.delete(slotId);
+  invalidateSlotAnimLoad(binding, slotId);
+  binding.pendingAnimState?.delete(slotId);
+  for (const key of [...binding.componentMaterialGuids.keys()]) {
+    if (key.startsWith(`${slotId}|`)) {
+      binding.componentMaterialGuids.delete(key);
+    }
+  }
+  binding.lightProps.delete(slotId);
+  binding.cameraProps.delete(slotId);
+  binding.skyboxProps.delete(slotId);
+  binding.text3dProps.delete(slotId);
+  binding.text2dProps.delete(slotId);
+  binding.overlayPanelProps.delete(slotId);
+  binding.lights.get(slotId)?.dispose();
+  binding.lights.delete(slotId);
+  binding.cameras.get(slotId)?.dispose();
+  binding.cameras.delete(slotId);
+  if (binding.defaultCameraSlotId === slotId) {
+    binding.defaultCameraSlotId = null;
+  }
+  if (binding.possessedCameraSlotId === slotId) {
+    binding.possessedCameraSlotId = null;
+  }
+  if (binding.shadowOwnerSlot === slotId) {
+    binding.shadow?.dispose();
+    binding.shadow = null;
+    binding.shadowOwnerSlot = null;
+  }
+}
+
+/** Drop world Play visuals/cameras; overlay compositor slots stay. */
+export function retirePlayWorldSlots(binding: SnapshotSceneBinding): void {
+  const slots = new Set<number>([
+    ...binding.meshes.keys(),
+    ...binding.cameras.keys(),
+    ...binding.lights.keys(),
+    ...binding.meshKinds.keys(),
+  ]);
+  for (const slotId of slots) {
+    if (binding.isOverlaySlot?.(slotId)) continue;
+    retirePlaySlot(binding, slotId);
+  }
+  binding.possessedCameraSlotId = null;
+  binding.defaultCameraSlotId = null;
+}
+
 function disposeSlotVisuals(
   binding: SnapshotSceneBinding,
   slotId: number,
@@ -1033,44 +1091,9 @@ export function applySnapshotToScene(
       }
     }
     snapPlayCameraToPixelGrid(scene, binding);
-    for (const [slotId, mesh] of binding.meshes) {
+    for (const slotId of [...binding.meshes.keys()]) {
       if (!live.has(slotId)) {
-        mesh.dispose();
-        binding.meshes.delete(slotId);
-        binding.meshKinds.delete(slotId);
-        binding.meshAssetGuids.delete(slotId);
-        binding.meshParts.delete(slotId);
-        binding.materialAssetGuids.delete(slotId);
-        binding.spriteOverlays?.get(slotId)?.dispose();
-        binding.spriteOverlays?.delete(slotId);
-        invalidateSlotAnimLoad(binding, slotId);
-        binding.pendingAnimState?.delete(slotId);
-        for (const key of [...binding.componentMaterialGuids.keys()]) {
-          if (key.startsWith(`${slotId}|`)) {
-            binding.componentMaterialGuids.delete(key);
-          }
-        }
-        binding.lightProps.delete(slotId);
-        binding.cameraProps.delete(slotId);
-        binding.skyboxProps.delete(slotId);
-        binding.text3dProps.delete(slotId);
-        binding.text2dProps.delete(slotId);
-        binding.overlayPanelProps.delete(slotId);
-        binding.lights.get(slotId)?.dispose();
-        binding.lights.delete(slotId);
-        binding.cameras.get(slotId)?.dispose();
-        binding.cameras.delete(slotId);
-        if (binding.defaultCameraSlotId === slotId) {
-          binding.defaultCameraSlotId = null;
-        }
-        if (binding.possessedCameraSlotId === slotId) {
-          binding.possessedCameraSlotId = null;
-        }
-        if (binding.shadowOwnerSlot === slotId) {
-          binding.shadow?.dispose();
-          binding.shadow = null;
-          binding.shadowOwnerSlot = null;
-        }
+        retirePlaySlot(binding, slotId);
       }
     }
     refreshPlayActiveCamera(scene, binding);

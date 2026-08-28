@@ -1100,6 +1100,40 @@ describe("p7-play-scene-load", () => {
     runtime.stop();
   });
 
+  it("changeScene re-possesses the destination Attempt Possess camera on a new slot", () => {
+    const level2 = cameraPossessScene(true);
+    level2.name = "Level2";
+    const commands: CommandMessage[] = [];
+    const runtime = createRuntimeFromLoad(
+      {
+        type: "load",
+        sceneAssetGuid: "scene-1",
+        scene: cameraPossessScene(true),
+        scenes: [{ guid: "scene-2", scene: level2 }],
+      },
+      (command) => commands.push(command),
+    );
+    runtime.realizePlayWorld();
+    runtime.start();
+    const firstPossess = commands.filter((c) => c.type === "possessCamera");
+    expect(firstPossess).toHaveLength(1);
+    const sourceSlot = (firstPossess[0] as { slotId: number }).slotId;
+    commands.length = 0;
+    runtime.executeConsoleCommand("changescene scene-2");
+    const nextPossess = commands.filter((c) => c.type === "possessCamera");
+    expect(nextPossess).toHaveLength(1);
+    expect((nextPossess[0] as { slotId: number }).slotId).not.toBe(sourceSlot);
+    const destCamera = commands.find(
+      (c) =>
+        c.type === "assignMesh" &&
+        (c as { meshKind?: string }).meshKind === "camera",
+    ) as { slotId: number } | undefined;
+    expect((nextPossess[0] as { slotId: number }).slotId).toBe(
+      destCamera?.slotId,
+    );
+    runtime.stop();
+  });
+
   it("changeScene instantiates a registered scene and drops the previous actors", async () => {
     const level2: SerializedScene = {
       name: "Level2",

@@ -307,6 +307,55 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(pins?.some((pin) => pin.id === "target")).toBe(false);
   });
 
+  it("regenerates Change Scene string pins into a Scene assetRef", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "change",
+          type: "scene.change",
+          position: { x: 0, y: 0 },
+          data: {
+            scene: "Level 2",
+            __pins: [
+              {
+                id: "execIn",
+                name: "exec",
+                kind: "exec" as const,
+                direction: "in" as const,
+                type: { kind: "exec" },
+              },
+              {
+                id: "execOut",
+                name: "then",
+                kind: "exec" as const,
+                direction: "out" as const,
+                type: { kind: "exec" },
+              },
+              {
+                id: "scene",
+                name: "scene",
+                kind: "data" as const,
+                direction: "in" as const,
+                type: { kind: "string" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      type: { kind: string; assetType?: string };
+    }>;
+    expect(pins?.find((pin) => pin.id === "scene")?.type).toEqual({
+      kind: "assetRef",
+      assetType: "Scene",
+    });
+    expect(hydrated.nodes[0]?.data.scene).toBe("Level 2");
+  });
+
   it("injects node visual metadata from the registry", () => {
     const graph: SerializedGraph = {
       nodes: [
