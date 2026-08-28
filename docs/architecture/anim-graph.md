@@ -39,7 +39,7 @@ Each tick `tickAnimGraphs`:
 
 `self` on those scripts is the **Actor**. Get/Set Variable hit the component `variableStore` when the host passes it. Animation Object Get Variable nodes migrate with `implicitSelf: true`.
 
-**Actor Class graphs** may use `anim.actor.*`. Get/Set Anim Graph Variable take a required `AnimationGraphComponent` target so they read and write that instance’s `variableStore` (wire **Get Component Ref**). `Get Current State` / `Jump To State` still target the first `AnimationGraphComponent` on `self`. `anim.event.*` / `anim.rule.*` / `anim.state.*` stay gated to Animation Object / rule hosts. Jump is pending until the next `tickAnimGraphs` so Actor `onTick` (inside `world.tick()`) cannot race the evaluator.
+**Actor Class graphs** may use `anim.actor.*`. Get/Set Anim Graph Variable, Get Current State, and Jump To State take a required `AnimationGraphComponent` target so they operate on that instance (wire **Get Component Ref**). An unwired Target is a no-op (empty name/id; jump does nothing). `tickAnimGraphs` evaluates every live `AnimationGraphComponent` on the actor; pending jumps and eval state are keyed by component. `animState` stays one command per actor slot — last graph in component order wins playback. `anim.event.*` / `anim.rule.*` / `anim.state.*` stay gated to Animation Object / rule hosts. Jump is pending until the next `tickAnimGraphs` so Actor `onTick` (inside `world.tick()`) cannot race the evaluator.
 
 Protocol: extra command-channel `animState` (not a snapshot stride bump). See [bridge.md](bridge.md).
 

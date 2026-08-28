@@ -613,6 +613,42 @@ describe("collectAndExportGame", () => {
     expect(result.value.manifest.loopCount).toBe(25);
   });
 
+  it("records authored Texture pixel size on packed Texture assets", async () => {
+    const scene = createDefaultScene();
+    const result = await collectAndExportGame({
+      startupSceneGuid: "scene-1",
+      assets: [
+        asset({
+          guid: "scene-1",
+          type: "Scene",
+          name: "Main",
+          dependencies: ["tex-1"],
+        }),
+        asset({ guid: "tex-1", type: "Texture", name: "Banner" }),
+      ],
+      plugins: [],
+      projectPluginOverrides: {},
+      parentOf: () => null,
+      sceneByGuid: () => scene,
+      graphByGuid: () => null,
+      payloadByGuid: (guid) =>
+        guid === "tex-1" ? { width: 1024, height: 512 } : null,
+      bytesByGuid: (guid) =>
+        guid === "scene-1"
+          ? new TextEncoder().encode(JSON.stringify(scene))
+          : new Uint8Array([1, 2, 3]),
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      playFrameCap: 60,
+      physicsWorld: "3d",
+      playerFiles,
+    });
+    expect(result.ok).toBe(true);
+    if (!isOk(result)) return;
+    expect(
+      result.value.manifest.assets.find((entry) => entry.guid === "tex-1"),
+    ).toMatchObject({ width: 1024, height: 512 });
+  });
+
   it("records pixelsPerUnit and Font family names from payloads", async () => {
     const scene = {
       ...createDefaultScene(),

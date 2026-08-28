@@ -170,6 +170,8 @@ export async function loadExportDocuments(
     }
     if (document && typeof document === "object") {
       payloads.set(asset.header.guid, document);
+    } else if (asset.header.type === "Texture") {
+      payloads.set(asset.header.guid, asset.header.payload);
     }
     if (asset.header.type === "Scene" && document) {
       scenes.set(asset.header.guid, document as SerializedScene);

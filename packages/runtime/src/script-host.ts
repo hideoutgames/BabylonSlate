@@ -79,7 +79,7 @@ export interface ScriptHostServices {
     classId: string,
     transform?: unknown,
   ): unknown;
-  animGraphControl?(self: BObject | null | undefined): AnimGraphControl | null;
+  animGraphControl?(target: unknown): AnimGraphControl | null;
   spawnActor?(classId: string, transform?: unknown): Actor | null;
   print(
     message: string,
@@ -331,8 +331,8 @@ export interface ScriptContext {
   getSceneReference(): Scene | null;
   getAnimGraphVariable(target: unknown, name: string): unknown;
   setAnimGraphVariable(target: unknown, name: string, value: unknown): void;
-  getAnimGraphCurrentState(): { id: string; name: string } | null;
-  jumpAnimGraphState(state: string): void;
+  getAnimGraphCurrentState(target: unknown): { id: string; name: string } | null;
+  jumpAnimGraphState(target: unknown, state: string): void;
   invokeCustomEvent(
     target: BObject | null | undefined,
     eventName: string,
@@ -1013,10 +1013,10 @@ export class ScriptHost {
           value,
         );
       },
-      getAnimGraphCurrentState: () =>
-        services.animGraphControl?.(self)?.getCurrentState() ?? null,
-      jumpAnimGraphState: (state) => {
-        services.animGraphControl?.(self)?.jumpToState(String(state ?? ""));
+      getAnimGraphCurrentState: (target) =>
+        services.animGraphControl?.(target)?.getCurrentState() ?? null,
+      jumpAnimGraphState: (target, state) => {
+        services.animGraphControl?.(target)?.jumpToState(String(state ?? ""));
       },
       invokeCustomEvent: (target, eventName, eventArgs) => {
         const receiver = (target ?? self) as BObject | null;

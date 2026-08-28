@@ -51,6 +51,48 @@ describe("ScriptHost BObject receivers", () => {
     expect(second.getVariable("flag")).toBe("wired");
   });
 
+  it("jumps and reads current state only on the wired AnimationGraphComponent", () => {
+    const actor = new Actor({ classId: "Hero" });
+    const first = new ActorComponent({ classId: "AnimationGraphComponent" });
+    const second = new ActorComponent({ classId: "AnimationGraphComponent" });
+    actor.attachComponent(first);
+    actor.attachComponent(second);
+    const jumped: unknown[] = [];
+    const queried: unknown[] = [];
+    const ctx = new ScriptHost(
+      stubServices({
+        animGraphControl: (target) => {
+          if (target !== first && target !== second) return null;
+          return {
+            getVariable: () => undefined,
+            setVariable: () => {},
+            getCurrentState: () => {
+              queried.push(target);
+              return target === second
+                ? { id: "run", name: "Run" }
+                : { id: "idle", name: "Idle" };
+            },
+            jumpToState: (state) => {
+              jumped.push({ target, state });
+            },
+          };
+        },
+      }),
+    ).createContext(actor, 0, 0);
+    ctx.jumpAnimGraphState(second, "Run");
+    ctx.jumpAnimGraphState(actor, "Ignored");
+    expect(jumped).toEqual([{ target: second, state: "Run" }]);
+    expect(ctx.getAnimGraphCurrentState(first)).toEqual({
+      id: "idle",
+      name: "Idle",
+    });
+    expect(ctx.getAnimGraphCurrentState(second)).toEqual({
+      id: "run",
+      name: "Run",
+    });
+    expect(queried).toEqual([first, second]);
+  });
+
   it("resolves getComponentById by live guid and remapped sourceId", () => {
     const actor = new Actor({ classId: "Hero" });
     const text = new ActorComponent({

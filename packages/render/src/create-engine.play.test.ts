@@ -1225,6 +1225,52 @@ describe("Play createEngine view", () => {
     expect(handle.postProcessPassCount()).toBe(0);
   });
 
+  it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      playMode: true,
+      materialDocuments: new Map([["mat-1", createDefaultMaterialDocument()]]),
+    });
+    handles.push(handle);
+    handle.applyCommand({
+      type: "sceneLayerCreate",
+      layerId: "hud",
+      assetGuid: "hud",
+      zOrder: 0,
+      ownerSceneGuid: null,
+      postProcessStack: [],
+    });
+    handle.applyCommand({
+      type: "spawn",
+      slotId: 4,
+      actorGuid: "banner",
+      classId: "SceneLayerActor",
+      sceneLayerId: "hud",
+    });
+    handle.applyCommand({
+      type: "assignMesh",
+      slotId: 4,
+      meshAssetGuid: "mat-1",
+      meshKind: "2dmaterial",
+      actorGuid: "banner",
+      sceneLayerId: "hud",
+    });
+    handle.applyCommand({
+      type: "assignMaterial",
+      slotId: 4,
+      materialAssetGuid: "mat-1",
+    });
+    const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "hud");
+    const mesh = overlay?.scene.getMeshByName("actor-4");
+    expect(mesh).not.toBeNull();
+    expect(handle.scene.getMeshByName("actor-4")).toBeNull();
+    expect(mesh?.material?.name).toContain(":unlit");
+    expect(handle.playMeshMaterialNames()).toEqual(
+      expect.arrayContaining([expect.stringContaining(":unlit")]),
+    );
+  });
+
   it("resolves assignMaterial through the scene-local material library", () => {
     const engine = sharedEngine();
     const runRenderLoop = vi.spyOn(engine, "runRenderLoop");

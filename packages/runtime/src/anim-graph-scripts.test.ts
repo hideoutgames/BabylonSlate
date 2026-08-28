@@ -50,6 +50,7 @@ function animScene(
     folders: [],
     actors: [
       createActor("hero", "Hero", {
+        classId: "Hero",
         components: [
           {
             id: "anim-1",
@@ -89,6 +90,26 @@ function locoDocument(): AnimGraphDocument {
     blendSeconds: 0,
     priority: 0,
     ruleGraph: createDefaultTransitionRuleGraph(),
+  });
+  return doc;
+}
+
+function jumpDocument(): AnimGraphDocument {
+  const doc = createDefaultAnimGraph();
+  doc.states.push({
+    id: "run",
+    name: "Run",
+    clipId: "run-clip",
+    speed: 1,
+    loop: true,
+    position: { x: 300, y: 80 },
+  });
+  doc.clips.push({
+    id: "run-clip",
+    kind: "sprite",
+    assetGuid: "sprite-1",
+    clipName: "Run",
+    durationMs: 400,
   });
   return doc;
 }
@@ -246,6 +267,10 @@ describe("runtime AnimationGraph scripts", () => {
       nodes: [
         node(registry, "tick", "flow.event.tick"),
         node(registry, "jump", "anim.actor.jumpToState", { state: "Run" }),
+        node(registry, "graph", "component.getNamed", {
+          componentClassId: "AnimationGraphComponent",
+          implicitSelf: true,
+        }),
       ],
       edges: [
         {
@@ -254,6 +279,13 @@ describe("runtime AnimationGraph scripts", () => {
           sourcePinId: "execOut",
           targetNodeId: "jump",
           targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "graph",
+          sourcePinId: "out",
+          targetNodeId: "jump",
+          targetPinId: "target",
         },
       ],
     };
@@ -267,7 +299,7 @@ describe("runtime AnimationGraph scripts", () => {
       maxActors: 4,
       seedDemoActors: false,
       playScene: animScene(),
-      animGraphs: { "graph-1": locoDocument() },
+      animGraphs: { "graph-1": jumpDocument() },
       onCommand: (command) => commands.push(command),
     });
     await runtime.loadScripts([
@@ -333,6 +365,115 @@ describe("runtime AnimationGraph scripts", () => {
     expect(anim?.stateId).toBe("run");
     expect(anim?.layers?.length).toBe(2);
     expect(anim?.clipAssetGuid).toBe("sprite-1");
+    runtime.stop();
+  });
+
+  it("jumps only the wired AnimationGraphComponent when an actor has two graphs", async () => {
+    const registry = createDefaultNodeRegistry();
+    const secondDoc = createDefaultAnimGraph();
+    secondDoc.states.push({
+      id: "dash",
+      name: "Dash",
+      clipId: "dash-clip",
+      speed: 1,
+      loop: true,
+      position: { x: 300, y: 80 },
+    });
+    secondDoc.clips.push({
+      id: "dash-clip",
+      kind: "sprite",
+      assetGuid: "sprite-2",
+      clipName: "Dash",
+      durationMs: 200,
+    });
+    const actorGraph: LogicGraph = {
+      id: "hero",
+      kind: "event",
+      nodes: [
+        node(registry, "tick", "flow.event.tick"),
+        node(registry, "jump", "anim.actor.jumpToState", { state: "Dash" }),
+        node(registry, "graph", "variables.get", {
+          variableName: "Second Graph",
+          typeId: "object",
+          typeClassId: "AnimationGraphComponent",
+          implicitSelf: true,
+          componentId: "anim-2",
+        }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          sourceNodeId: "tick",
+          sourcePinId: "execOut",
+          targetNodeId: "jump",
+          targetPinId: "execIn",
+        },
+        {
+          id: "e2",
+          sourceNodeId: "graph",
+          sourcePinId: "value",
+          targetNodeId: "jump",
+          targetPinId: "target",
+        },
+      ],
+    };
+    const compiled = compileGraph(actorGraph, {
+      assetGuid: "hero-class",
+      registry,
+    });
+    expect(compiled.source).toContain('ctx.getComponentById(ctx.self, "anim-2")');
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 4,
+      seedDemoActors: false,
+      playScene: {
+        name: "Anim",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("hero", "Hero", {
+            classId: "Hero",
+            components: [
+              {
+                id: "anim-1",
+                classId: "AnimationGraphComponent",
+                properties: { graphGuid: "graph-1" },
+              },
+              {
+                id: "anim-2",
+                classId: "AnimationGraphComponent",
+                properties: { graphGuid: "graph-2" },
+              },
+            ],
+          }),
+        ],
+      },
+      animGraphs: { "graph-1": jumpDocument(), "graph-2": secondDoc },
+      onCommand: (command) => commands.push(command),
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "hero-class",
+        classId: "Hero",
+        source: compiled.source,
+        anchors: compiled.anchors,
+        entryPoints: compiled.entryPoints,
+        parentClassId: "Actor",
+      },
+    ]);
+    runtime.start();
+    runtime.realizePlayWorld();
+    runtime.tick();
+    const animStates = commands.filter((command) => command.type === "animState");
+    expect(animStates.some((command) => command.stateId === "idle")).toBe(true);
+    expect(lastAnimState(commands)).toMatchObject({
+      type: "animState",
+      stateId: "dash",
+      clipName: "Dash",
+      clipAssetGuid: "sprite-2",
+    });
     runtime.stop();
   });
 });

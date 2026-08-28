@@ -273,6 +273,31 @@ describe("animation nodes", () => {
     );
   });
 
+  it("takes an AnimationGraphComponent target on Get Current State and Jump To State", () => {
+    const getPins = animationNodes.find(
+      (entry) => entry.id === "anim.actor.getCurrentState",
+    )!.pins({});
+    const jumpPins = animationNodes.find(
+      (entry) => entry.id === "anim.actor.jumpToState",
+    )!.pins({});
+    const target = {
+      id: "target",
+      direction: "in" as const,
+      type: objectRef("AnimationGraphComponent"),
+    };
+    expect(getPins.map((pin) => pin.id)).toEqual(["target", "name", "id"]);
+    expect(getPins[0]).toEqual(expect.objectContaining(target));
+    expect(jumpPins.map((pin) => pin.id)).toEqual([
+      "execIn",
+      "execOut",
+      "target",
+      "state",
+    ]);
+    expect(jumpPins.find((pin) => pin.id === "target")).toEqual(
+      expect.objectContaining(target),
+    );
+  });
+
   it("compiles Actor Anim Graph control nodes against ctx helpers", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
@@ -335,6 +360,20 @@ describe("animation nodes", () => {
           targetNodeId: "read",
           targetPinId: "target",
         },
+        {
+          id: "e7",
+          sourceNodeId: "graph",
+          sourcePinId: "out",
+          targetNodeId: "jump",
+          targetPinId: "target",
+        },
+        {
+          id: "e8",
+          sourceNodeId: "graph",
+          sourcePinId: "out",
+          targetNodeId: "get",
+          targetPinId: "target",
+        },
       ],
     };
     const compiled = compileGraph(graph, {
@@ -345,7 +384,9 @@ describe("animation nodes", () => {
       /ctx\.setAnimGraphVariable\([^,]+,\s*[^,]+,\s*[^)]+\)/,
     );
     expect(compiled.source).toMatch(/ctx\.getAnimGraphVariable\([^,]+,\s*[^)]+\)/);
-    expect(compiled.source).toContain("ctx.jumpAnimGraphState");
-    expect(compiled.source).toContain("ctx.getAnimGraphCurrentState");
+    expect(compiled.source).toMatch(
+      /ctx\.jumpAnimGraphState\([^,]+,\s*[^)]+\)/,
+    );
+    expect(compiled.source).toMatch(/ctx\.getAnimGraphCurrentState\([^)]+\)/);
   });
 });

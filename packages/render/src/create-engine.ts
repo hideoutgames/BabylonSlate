@@ -1629,13 +1629,13 @@ export function createEngine(
           (sceneLayerCompositor != null &&
             isAmbiguousHudMeshKind(command.meshKind) &&
             !worldPlaySlots.has(command.slotId));
-        if (!overlayScene && overlayIdentity) {
+        if (overlayIdentity && !overlayScene) {
           pendingOverlayAssign.set(command.slotId, command);
+        } else if (overlayIdentity && overlayScene) {
+          applyAssignMesh(overlayScene, binding, command);
+          disposeWorldOverlayLeftovers(scene, command.slotId);
         } else {
-          applyAssignMesh(overlayScene ?? scene, binding, command);
-          if (overlayScene) {
-            disposeWorldOverlayLeftovers(scene, command.slotId);
-          }
+          applyAssignMesh(scene, binding, command);
         }
         pinClientTextures();
         rebuildIfActiveCameraChanged(previousCamera);

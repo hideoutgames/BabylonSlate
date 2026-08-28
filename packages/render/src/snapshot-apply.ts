@@ -229,10 +229,44 @@ function applyLoadedModelMaterials(
   const payload = binding.modelPayloads?.get(assetGuid);
   if (payload) {
     applyModelMaterialSlots(root, payload.materialSlots, (guid) =>
-      binding.resolveMaterial?.(guid) ?? null,
+      resolveAssignedMaterial(binding, slotId, root, guid),
     );
   }
   applyMaterialToActorMeshes(binding, slotId, root);
+}
+
+function wantsOverlayUnlitMaterial(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+): boolean {
+  if (binding.isOverlaySlot?.(slotId) === true) return true;
+  switch (binding.meshKinds.get(slotId)) {
+    case "2dtexture":
+    case "2dmaterial":
+    case "2dbutton":
+    case "2dpanel":
+    case "2dtext":
+    case "2drichtext":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function resolveAssignedMaterial(
+  binding: SnapshotSceneBinding,
+  slotId: number,
+  root: Mesh,
+  guid: string,
+): Material | null {
+  const host = root.getScene();
+  const overlay = wantsOverlayUnlitMaterial(binding, slotId);
+  return (
+    binding.resolveMaterial?.(guid, {
+      scene: host,
+      ...(overlay ? { unlit: true } : {}),
+    }) ?? null
+  );
 }
 
 export function applyMaterialToActorMeshes(
@@ -249,7 +283,7 @@ export function applyMaterialToActorMeshes(
       : null;
     const guid = componentGuid ?? actorGuid;
     if (!guid) continue;
-    const material = binding.resolveMaterial?.(guid) ?? null;
+    const material = resolveAssignedMaterial(binding, slotId, root, guid);
     if (material) target.material = material;
   }
 }
@@ -643,11 +677,19 @@ export function applyShadowQuality(
   applyPlayShadows(scene, binding);
 }
 
+function isWorldOverlayLeftoverName(name: string, slotId: number): boolean {
+  const prefix = `actor-${slotId}`;
+  return (
+    name === prefix ||
+    name.startsWith(`${prefix}-`) ||
+    name.startsWith(`${prefix}|`)
+  );
+}
+
 /** Drop world-Scene copies of an overlay slot so the perspective camera cannot draw them. */
 export function disposeWorldOverlayLeftovers(worldScene: Scene, slotId: number): void {
-  const prefix = `actor-${slotId}`;
   for (const mesh of [...worldScene.meshes]) {
-    if (mesh.name === prefix || mesh.name.startsWith(`${prefix}-`)) {
+    if (isWorldOverlayLeftoverName(mesh.name, slotId)) {
       mesh.dispose();
     }
   }

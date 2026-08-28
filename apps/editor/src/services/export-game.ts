@@ -150,6 +150,17 @@ function decodeJsonPayload(bytes: Uint8Array): unknown {
   }
 }
 
+function texturePixelSizeFromPayload(
+  payload: unknown,
+): { width: number; height: number } | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as { width?: unknown; height?: unknown };
+  const width = Number(record.width);
+  const height = Number(record.height);
+  if (!(width > 0) || !(height > 0)) return null;
+  return { width, height };
+}
+
 function materialDocumentForExport(
   type: string,
   payload: unknown,
@@ -258,6 +269,8 @@ export async function collectAndExportGame(
     }
     const bytes = params.bytesByGuid(guid);
     if (bytes) {
+      const payload = params.payloadByGuid?.(guid);
+      const textureSize = texturePixelSizeFromPayload(payload);
       exportAssets.push({
         guid,
         type: asset.type,
@@ -267,6 +280,7 @@ export async function collectAndExportGame(
           asset.type === "Font"
             ? normalizeFontPayload(params.payloadByGuid?.(guid), asset.name).family
             : asset.name,
+        ...(asset.type === "Texture" && textureSize ? textureSize : {}),
       });
     }
   }

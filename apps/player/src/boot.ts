@@ -101,6 +101,7 @@ export function startPlayer(options: {
     pixelPerfect: content.pixelPerfect,
     touchMinTargetPx: manifest.touchMinTargetPx ?? 44,
     textureBytes: game.textureBytes,
+    texturePixelSizes: content.texturePixelSizes,
     fontFacetypeBytes: game.fontFacetypeBytes,
     fontMsdfJson: game.fontMsdfJson,
     fontMsdfPng: game.fontMsdfPng,
