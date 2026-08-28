@@ -349,6 +349,26 @@ describe("schedulePlayerMaterialPrewarm", () => {
       expect(order).toEqual(["models", "prewarm"]);
     });
   });
+
+  it("waits for packed textures before prewarm so Intermediate cannot bake the error sampler", async () => {
+    const order: string[] = [];
+    const handle = {
+      whenEditorModelsReady: async () => {
+        order.push("models");
+      },
+      whenMaterialTexturesReady: async () => {
+        order.push("textures");
+      },
+      prewarmSceneMaterials: async () => {
+        order.push("prewarm");
+      },
+    };
+    const scheduled = { current: false };
+    schedulePlayerMaterialPrewarm(handle, "assignMesh", scheduled);
+    await vi.waitFor(() => {
+      expect(order).toEqual(["models", "textures", "prewarm"]);
+    });
+  });
 });
 
 describe("schedulePlayerSceneModelsReady", () => {

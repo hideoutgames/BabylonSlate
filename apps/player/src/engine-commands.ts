@@ -40,6 +40,7 @@ export function applyPlayerActiveScene(
 export function schedulePlayerMaterialPrewarm(
   handle: {
     whenEditorModelsReady: () => Promise<void>;
+    whenMaterialTexturesReady?: () => Promise<void>;
     prewarmSceneMaterials: () => Promise<void>;
   },
   commandType: string,
@@ -47,7 +48,10 @@ export function schedulePlayerMaterialPrewarm(
 ): void {
   if (commandType !== "assignMesh" || scheduled.current) return;
   scheduled.current = true;
-  void handle.whenEditorModelsReady().then(() => handle.prewarmSceneMaterials());
+  void handle
+    .whenEditorModelsReady()
+    .then(() => handle.whenMaterialTexturesReady?.())
+    .then(() => handle.prewarmSceneMaterials());
 }
 
 export function schedulePlayerSceneModelsReady(

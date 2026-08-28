@@ -72,15 +72,22 @@ object; each inlined operation still maps back to its call node.
 `compileMaterialPlan` instantiates one or more real Babylon blocks per operation
 and connects actual connection points. Texture Sample / `param.texture` bind
 through `resolveTexture` (ResourceCache). Overlay Play usually sees a ready PNG
-from Editor Texture LOD. Preview Build packs KTX2 into a cold iframe Engine, so
-`bindTexture` may run while `texture.isReady()` is still false (wasm transcoder).
-`acquire` / `resolveMaterial` stay **synchronous** (slot bind cannot wait): the
+from Editor Texture LOD. Preview Build packs **PNG/pixels** (`shouldPackKtx2ForPreviewBuild`
+is always false) into a cold iframe Engine so it matches overlay Play. Itch
+**Export Game** still packs KTX2 when the transcoder exists. `bindTexture` may
+still run while a packed texture is not sample-ready (`loadingError`, error /
+empty InternalTexture, or `!isReady()`). `acquire` / `resolveMaterial` stay
+**synchronous** (slot bind cannot wait): the
 compiler assigns the live `Texture` object, calls `material.build()`, then
 subscribes `onLoadObservable` and **rebuilds** so the mesh does not stay on
-Babylon’s error sampler. Frozen NodeMaterials ignore dirty/`build()`: the load
+Babylon’s error sampler. `texture.isReady()` is not enough — Babylon’s error
+sampler reports ready. Frozen NodeMaterials ignore dirty/`build()`: the load
 callback **unfreezes**, rebuilds, re-applies authored blend
-(`applyAuthoredSurfaceBlend`), then restores freeze if the material was frozen.
-`onErrorObservable` (when the Texture exposes it) reports
+(`applyAuthoredSurfaceBlend`), **marks the material dirty with
+`blockMaterialDirtyMechanism` off**, then restores freeze if the material was frozen.
+`prewarmMaterial` / player `whenMaterialTexturesReady` skip
+`forceCompilationAsync` until TextureBlocks are sample-ready so Intermediate
+`checkReadyOnlyOnce` cannot bake the sampler. `onErrorObservable` (when the Texture exposes it) reports
 `material.missingTexture` instead of leaving the error sampler forever; rebuild
 errors surface the same way rather than swallowing. `createEngine({ playMode: true })`
 skips `applyEditorMaterialFreeze` so Play / the packed player never
@@ -305,7 +312,7 @@ command-record tests.
 
 | Look | Meaning |
 | --- | --- |
-| Red/magenta checker | Babylon **error sampler**: Texture assigned but not ready, or decode failed. Frozen rebuild used to leave this on Preview KTX2. |
+| Red/magenta checker | Babylon **error sampler**: Texture assigned but not sample-ready, decode failed (`loadingError`), or a rebuild that never dirtied meshes. Preview Build packs PNG so CI SwiftShader is not a false green vs hardware KTX2. |
 | Solid red | GLB **slim stub** (`slimGlbEmbeddedImages` 1×1 red PNG) when slot materials never stick. Slim now also requires those Materials compiled (`compiledMaterialGuids`). |
 | Grey UV checker | Engine default when `materialGuid` is empty and there is no glTF construction material. |
 | Black | Failed compile, missing/broken IBL on PBR, boot/iframe failure, or a freeze that never rebuilt. |

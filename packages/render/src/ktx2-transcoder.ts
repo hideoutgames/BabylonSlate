@@ -111,10 +111,17 @@ export function shouldForceKtx2Rgba(
 }
 
 /**
- * Preview Build packs KTX2 only when the player has the transcoder **and** the
- * editor GPU is not software GL. SwiftShader can decode some KTX2 in Playwright
- * Chromium and still fail texImage2D in other Chromium builds; PNG matches the
- * overlay LOD path.
+ * Preview Build always packs PNG/pixels so a cold iframe matches overlay Play.
+ * Hardware GPUs still pack KTX2 for itch Export Game via {@link shouldPackKtx2Textures}.
+ */
+export function shouldPackKtx2ForPreviewBuild(): boolean {
+  return false;
+}
+
+/**
+ * Whether packed Texture bytes should be KTX2.
+ * Preview Build always uses PNG/pixels. Export Game uses KTX2 when the player
+ * has the transcoder and the editor GPU is not software GL.
  */
 export function shouldPackKtx2Textures(
   playerFiles: ReadonlyMap<string, Uint8Array>,
