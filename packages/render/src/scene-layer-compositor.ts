@@ -41,6 +41,7 @@ export interface SceneLayerView {
   zOrder: number;
   scene: Scene;
   camera: UniversalCamera;
+  layerBounds: { width: number; height: number };
 }
 
 export interface SceneLayerCompositorOptions {
@@ -53,7 +54,6 @@ export interface SceneLayerCompositorOptions {
 }
 
 type LayerRecord = SceneLayerView & {
-  layerBounds: { width: number; height: number };
   postProcessStack: SceneLayerPostProcessEntry[];
   rtt: RenderTargetTexture | null;
   blitMaterial: StandardMaterial | null;

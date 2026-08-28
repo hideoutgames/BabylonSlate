@@ -78,7 +78,10 @@ export class EditorSceneSync {
 
   private readonly scene: Scene;
   private readonly scheduler?: Pick<RenderScheduler, "invalidate">;
-  private readonly resolveMaterial?: (guid: string) => Material | null;
+  private readonly resolveMaterial?: (
+    guid: string,
+    options?: { scene?: Scene; unlit?: boolean },
+  ) => Material | null;
   private readonly onAfterApply?: () => void;
   private readonly constructionMaterials = new WeakMap<Mesh, Material | null>();
   private sortingLayers: string[] = [...DEFAULT_SORTING_LAYERS];
