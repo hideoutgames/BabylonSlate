@@ -208,6 +208,8 @@ AI / navigation categories: behaviour-tree event/finish/return/blackboard nodes 
 
 **Audio** (`audio.play` / `audio.setChannelVolume` / `audio.setGlobalVolume`) lives on Class and Actor palettes. Play Sound takes an `assetRef("Audio")` pin and Volume default `1`, and emits `playSound` with `self` as emitter (no Loop pin — the Audio asset’s `loop` flag applies; `AudioComponent.loop` still forces loop). Set Channel / Set Global clamp `0..1`, replace session mixer values, and update voices that are already playing (warned no-op without a selected mixer / unknown channel). Inspector maps `assetRef` pins to `AssetPicker` with `allowedTypes`. See [audio.md](audio.md).
 
+**Scene** (`scene.change`) takes `assetRef("Scene")` (same AssetPicker). Codegen is `ctx.changeScene(guid)`. Runtime still looks up the Play library by guid **or** leftover display-name defaults from older string pins. Graph hydrate regenerates stored `scene.change` pins from `string` to `assetRef("Scene")`. `STRING` is not assignable to the pin — use Make Asset or a Scene-typed variable.
+
 **Particles** (`particles.play` / `particles.stop`) live on Class and Actor palettes. Optional `actorRef("Actor")` (unconnected → `ctx.self`) emits `setParticlePlaying`. See [particles.md](particles.md).
 
 ### Editor-only graphs
