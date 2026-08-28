@@ -37,6 +37,9 @@ export type ExportAssetBytes = {
   encoding?: "json" | "bytes";
   /** Asset display name; FontFace family falls back to this. */
   name?: string;
+  /** Authored Texture payload pixels for overlay 2DTexture layout. */
+  width?: number;
+  height?: number;
 };
 
 export type GameAssetIndexEntry = {
@@ -46,6 +49,9 @@ export type GameAssetIndexEntry = {
   pack?: string;
   path?: string;
   name?: string;
+  /** Authored Texture payload pixels for overlay 2DTexture layout. */
+  width?: number;
+  height?: number;
 };
 
 export type GameManifest = {

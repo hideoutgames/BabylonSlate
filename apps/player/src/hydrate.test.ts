@@ -493,6 +493,42 @@ describe("packedContentFromGame", () => {
     ]);
   });
 
+  it("hydrates authored Texture pixel sizes from the packed manifest", async () => {
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: encoder.encode(JSON.stringify(createDefaultScene())),
+        },
+        {
+          guid: "tex-1",
+          type: "Texture",
+          sceneGuid: "scene-1",
+          bytes: pngIhdr(512, 256),
+          width: 1024,
+          height: 512,
+        },
+      ],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    expect(
+      packed.value.manifest.assets.find((entry) => entry.guid === "tex-1"),
+    ).toMatchObject({ width: 1024, height: 512 });
+    const game = await loadGameFromFiles(packed.value.files);
+    const content = packedContentFromGame(game);
+    expect(content.texturePixelSizes.get("tex-1")).toEqual({
+      width: 1024,
+      height: 512,
+    });
+  });
+
   it("hydrates Audio mixer, channel, attenuation, and packed source", async () => {
     const { encodePackedAudioAsset } = await import("@babylonslate/assets");
     const packedAudio = encodePackedAudioAsset(

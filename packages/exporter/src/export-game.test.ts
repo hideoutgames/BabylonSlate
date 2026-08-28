@@ -233,6 +233,38 @@ describe("exportGame", () => {
     expect(result.value.files.has("boot.babpack")).toBe(false);
   });
 
+  it("records authored Texture pixel size on the manifest index", async () => {
+    const result = await exportGame({
+      mode: "loose",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [
+        {
+          guid: "scene-1",
+          type: "Scene",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([1]),
+        },
+        {
+          guid: "tex-1",
+          type: "Texture",
+          sceneGuid: "scene-1",
+          bytes: new Uint8Array([2]),
+          width: 1024,
+          height: 512,
+        },
+      ],
+      playerFiles: stubPlayer(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.value.manifest.assets.find((entry) => entry.guid === "tex-1"),
+    ).toMatchObject({ width: 1024, height: 512 });
+  });
+
   it("fails when the file count exceeds the hard limit", async () => {
     const extras = new Map<string, Uint8Array>();
     for (let i = 0; i < 5; i++) {

@@ -90,6 +90,8 @@ export type PackedGameContent = {
     string,
     { vertices: Array<{ x: number; y: number; z: number }>; indices: number[] }
   >;
+  /** Authored Texture payload pixels for overlay 2DTexture world size. */
+  texturePixelSizes: Map<string, { width: number; height: number }>;
 };
 
 function jsonFromBytes(bytes: Uint8Array): unknown | null {
@@ -98,6 +100,20 @@ function jsonFromBytes(bytes: Uint8Array): unknown | null {
   } catch {
     return null;
   }
+}
+
+function texturePixelSizesFromManifest(
+  assets: LoadedGame["manifest"]["assets"] | undefined,
+): Map<string, { width: number; height: number }> {
+  const sizes = new Map<string, { width: number; height: number }>();
+  for (const entry of assets ?? []) {
+    if (entry.type !== "Texture") continue;
+    const width = Number(entry.width);
+    const height = Number(entry.height);
+    if (!(width > 0) || !(height > 0)) continue;
+    sizes.set(entry.guid, { width, height });
+  }
+  return sizes;
 }
 
 function asSpritePayload(value: unknown): SpritePayload | null {
@@ -306,6 +322,7 @@ export function packedContentFromGame(game: LoadedGame): PackedGameContent {
     ),
     modelPayloads: new Map(game.modelPayloads),
     complexMeshes: cookComplexCollisionMeshes(game.modelBytes, game.modelPayloads),
+    texturePixelSizes: texturePixelSizesFromManifest(game.manifest.assets),
   };
 }
 
