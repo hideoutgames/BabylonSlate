@@ -38,6 +38,7 @@ import {
   CAMERA_BOUNDS_LINE_WIDTH,
   CAMERA_BOUNDS_MESH_NAME,
   cameraBoundsBorderCoverage,
+  cameraBoundsWorldBorderCoverage,
   createEditorGrid,
   GRID_MESH_NAME,
   gridCoverageWorld,
@@ -1710,6 +1711,12 @@ describe("editor grid", () => {
     expect(
       (grid.boundsMesh?.material as ShaderMaterial).serialize().floats.lineWidth,
     ).toBe(CAMERA_BOUNDS_LINE_WIDTH);
+    expect(Effect.ShadersStore.editorCameraBoundsFragmentShader).toContain(
+      "vWorldPos",
+    );
+    expect(Effect.ShadersStore.editorCameraBoundsFragmentShader).toContain(
+      "boundsHalf",
+    );
     grid.dispose();
   });
 
@@ -1778,6 +1785,46 @@ describe("editor grid", () => {
         { x: 0.5, y: 3 * fwidthV },
         fwidthU,
         fwidthV,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(0);
+
+    const half = { x: 8, y: 4.5 };
+    const fwidthX = 16 / widthPx;
+    const fwidthY = 9 / heightPx;
+    expect(
+      cameraBoundsWorldBorderCoverage(
+        { x: -half.x + 1 * fwidthX, y: 0 },
+        half,
+        fwidthX,
+        fwidthY,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(1);
+    expect(
+      cameraBoundsWorldBorderCoverage(
+        { x: 0, y: -half.y + 1 * fwidthY },
+        half,
+        fwidthX,
+        fwidthY,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(1);
+    expect(
+      cameraBoundsWorldBorderCoverage(
+        { x: -half.x + 3 * fwidthX, y: 0 },
+        half,
+        fwidthX,
+        fwidthY,
+        CAMERA_BOUNDS_LINE_WIDTH,
+      ),
+    ).toBe(0);
+    expect(
+      cameraBoundsWorldBorderCoverage(
+        { x: 0, y: -half.y + 3 * fwidthY },
+        half,
+        fwidthX,
+        fwidthY,
         CAMERA_BOUNDS_LINE_WIDTH,
       ),
     ).toBe(0);

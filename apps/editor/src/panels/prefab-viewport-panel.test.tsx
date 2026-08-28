@@ -209,6 +209,7 @@ describe("PrefabViewportPanel engine", () => {
     createEngineMock.mockClear();
     dispose.mockClear();
     handle.loadScene.mockClear();
+    handle.editor.setGridSettings.mockClear();
     handle.setMaterialDocuments.mockClear();
     collectPlayMaterialLibrary.mockClear();
     prefabState.components = [createMeshComponent("prefab-mesh", "box")];
@@ -217,6 +218,17 @@ describe("PrefabViewportPanel engine", () => {
     play.ensureSharedEngine.mockClear();
     play.sharedEngineGeneration = 1;
     play.ensureSharedEngine.mockReturnValue({ id: "shared-engine" });
+  });
+
+  it("pushes 2D camera bounds after the prefab engine is created", async () => {
+    render(<PrefabViewportPanel {...({} as IDockviewPanelProps)} />);
+    await waitFor(() => {
+      expect(handle.editor.setGridSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cameraBounds2D: { width: 16, height: 9 },
+        }),
+      );
+    });
   });
 
   it("creates Prefab on the app-lifetime Engine with rtt present", () => {

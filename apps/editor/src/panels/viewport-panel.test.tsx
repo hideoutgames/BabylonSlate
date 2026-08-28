@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { ViewportPanel } from "./viewport-panel";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { syncEditorPlayState } from "@babylonslate/render";
 
-const { createEngineMock, play, documents } = vi.hoisted(() => {
+const { createEngineMock, play, documents, handle } = vi.hoisted(() => {
   const handle = {
     engine: {
       onContextRestoredObservable: { add: vi.fn() },
@@ -25,6 +25,8 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
       setDrawMeshCollision: vi.fn(),
       setPreviewGameCamera: vi.fn(),
       setGridSettings: vi.fn(),
+      setSortingLayers: vi.fn(),
+      setPixelPerfect: vi.fn(),
       gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
       grid: { setVisible: vi.fn() },
     },
@@ -45,6 +47,8 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
     registerFonts: vi.fn(async () => {}),
     setMeshAssets: vi.fn(),
     setMaterialDocuments: vi.fn(),
+    whenEditorModelsReady: vi.fn(async () => {}),
+    prewarmSceneMaterials: vi.fn(async () => {}),
   };
   const createEngineMock = vi.fn<
     (
@@ -56,6 +60,7 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
   const sharedEngine = { isDisposed: false };
   return {
     createEngineMock,
+    handle,
     documents: {
       applySceneChange: vi.fn(async () => true),
       openDocuments: [] as Array<{
@@ -63,6 +68,27 @@ const { createEngineMock, play, documents } = vi.hoisted(() => {
         ref: { kind: string; path: string; label: string };
         content: unknown;
       }>,
+      collectPlaySpritePayloads: vi.fn(async () => []),
+      collectPlayTilemapContent: vi.fn(async () => ({
+        tilesets: [],
+        tilemaps: [],
+      })),
+      collectPlayTextureBytes: vi.fn(async () => new Map()),
+      collectPlayFontFacetypeBytes: vi.fn(async () => new Map()),
+      collectPlayFontMsdfPair: vi.fn(async () => new Map()),
+      collectPlayFontFaceEntries: vi.fn(async () => []),
+      collectPlayFontCssStacks: vi.fn(() => ({
+        fontCssStack: "sans-serif",
+        fontCssStackByGuid: new Map(),
+      })),
+      collectPlayModelBytes: vi.fn(async () => new Map()),
+      collectPlayModelPayloads: vi.fn(async () => new Map()),
+      collectPlayMaterialLibrary: vi.fn(async () => ({
+        documents: new Map(),
+        functions: new Map(),
+        textureGuids: [] as string[],
+      })),
+      readAssetChunk: vi.fn(),
     },
     play: {
       registerSharedEngine: vi.fn(),
@@ -97,20 +123,17 @@ vi.mock("../context/document-context", () => ({
     openDocuments: documents.openDocuments,
     applySceneChange: documents.applySceneChange,
     projectDocument: null,
-    collectPlaySpritePayloads: vi.fn(),
-    collectPlayTilemapContent: vi.fn(),
-    collectPlayTextureBytes: vi.fn(),
-    collectPlayFontFacetypeBytes: vi.fn(),
-    collectPlayFontMsdfPair: vi.fn(async () => new Map()),
-    collectPlayFontFaceEntries: vi.fn(async () => []),
-    collectPlayFontCssStacks: vi.fn(() => ({
-      fontCssStack: "sans-serif",
-      fontCssStackByGuid: new Map(),
-    })),
-    collectPlayModelBytes: vi.fn(),
-    collectPlayModelPayloads: vi.fn(),
-    collectPlayMaterialLibrary: vi.fn(),
-    readAssetChunk: vi.fn(),
+    collectPlaySpritePayloads: documents.collectPlaySpritePayloads,
+    collectPlayTilemapContent: documents.collectPlayTilemapContent,
+    collectPlayTextureBytes: documents.collectPlayTextureBytes,
+    collectPlayFontFacetypeBytes: documents.collectPlayFontFacetypeBytes,
+    collectPlayFontMsdfPair: documents.collectPlayFontMsdfPair,
+    collectPlayFontFaceEntries: documents.collectPlayFontFaceEntries,
+    collectPlayFontCssStacks: documents.collectPlayFontCssStacks,
+    collectPlayModelBytes: documents.collectPlayModelBytes,
+    collectPlayModelPayloads: documents.collectPlayModelPayloads,
+    collectPlayMaterialLibrary: documents.collectPlayMaterialLibrary,
+    readAssetChunk: documents.readAssetChunk,
     assetRegistry: null,
   }),
 }));
@@ -180,6 +203,7 @@ describe("ViewportPanel engine", () => {
   afterEach(() => {
     cleanup();
     createEngineMock.mockClear();
+    handle.editor.setGridSettings.mockClear();
     play.registerSharedEngine.mockClear();
     play.playing = false;
     play.preparing = false;
@@ -257,6 +281,38 @@ describe("ViewportPanel engine", () => {
     expect(createEngineMock.mock.calls.at(-1)?.[1]).toEqual(
       expect.objectContaining({ overlayTransformBox: true }),
     );
+  });
+
+  it("pushes cameraBounds2D after the viewport engine is created", async () => {
+    const scene = {
+      name: "HUD",
+      viewportMode: "2d" as const,
+      settings: {
+        grid: { tileSize: 1, tileSubdivisions: 4 },
+        cameraBounds2D: { width: 32, height: 18 },
+      },
+      actors: [],
+      folders: [],
+    };
+    documents.openDocuments = [
+      {
+        id: "scene:S",
+        ref: {
+          kind: "scene-layer",
+          path: "assets/HUD.overlay.babasset",
+          label: "HUD",
+        },
+        content: scene,
+      },
+    ];
+    renderViewport();
+    await waitFor(() => {
+      expect(handle.editor.setGridSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cameraBounds2D: { width: 32, height: 18 },
+        }),
+      );
+    });
   });
 
   it("pauses the editor viewport while Preview Build is preparing", () => {
