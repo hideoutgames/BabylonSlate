@@ -8,7 +8,9 @@
     "build": "pnpm --filter player build && tsc -b && vite build",
     "test": "vitest run --config ../../vitest.workspace.ts --project jsdom apps/editor",
     "typecheck": "tsc -b --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "ios:sync": "pnpm build && pnpm exec cap sync ios && node scripts/ios-sync.mjs",
+    "ios:build": "pnpm run ios:sync && IOS_SIMULATOR_ID=\"${IOS_SIMULATOR_ID:-$(DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode_16.4.app/Contents/Developer} xcrun simctl list devices available | awk '/iPad/{print}' | grep -Eo '[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}' | head -1)}\" && test -n \"$IOS_SIMULATOR_ID\" && DEVELOPER_DIR=\"${DEVELOPER_DIR:-/Applications/Xcode_16.4.app/Contents/Developer}\" xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Debug -destination \"id=$IOS_SIMULATOR_ID\" CODE_SIGNING_ALLOWED=NO build"
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
@@ -36,7 +38,11 @@
     "@babylonslate/vfs": "workspace:*",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.1.2",
     "@capacitor/ios": "^8.0.0",
+    "@capacitor/preferences": "^8.0.0",
+    "@daniele-rolli/capacitor-scoped-storage": "^0.1.0",
+    "CapacitorScopedStorage": "npm:@daniele-rolli/capacitor-scoped-storage@^0.1.0",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/state": "^6.7.1",
