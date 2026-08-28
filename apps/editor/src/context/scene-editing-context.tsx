@@ -43,6 +43,9 @@ export interface SceneEditingContextValue {
   /** Live viewport navmesh overlay; persisted via `settings.showNavmesh`. */
   navmeshVisible: boolean;
   setNavmeshVisible: (visible: boolean) => void;
+  /** Session-only MeshComponent collision dashes. Default off. */
+  collisionsVisible: boolean;
+  setCollisionsVisible: (visible: boolean) => void;
   /** One-shot Drag Select; unpresses after the next tap or marquee. */
   dragSelectActive: boolean;
   setDragSelectActive: (active: boolean) => void;
@@ -159,6 +162,7 @@ export function SceneEditingProvider({
   const [navmeshVisible, setNavmeshVisible] = useState(
     documentNavmeshVisible ?? false,
   );
+  const [collisionsVisible, setCollisionsVisible] = useState(false);
   const [dragSelectActive, setDragSelectActive] = useState(false);
   const [viewportMode, setViewportMode] = useState<ViewportMode>(
     resolveDocumentViewportMode(documentViewportMode ?? initialViewportMode),
@@ -266,6 +270,8 @@ export function SceneEditingProvider({
       setGridVisible,
       navmeshVisible,
       setNavmeshVisible,
+      collisionsVisible,
+      setCollisionsVisible,
       dragSelectActive,
       setDragSelectActive,
       viewportMode,
@@ -291,6 +297,7 @@ export function SceneEditingProvider({
       joystickEnabled,
       loadEditorCameraPose,
       navmeshVisible,
+      collisionsVisible,
       saveEditorCameraPose,
       selectActor,
       selectedActorIds,

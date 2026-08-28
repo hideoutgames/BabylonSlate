@@ -94,6 +94,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
     pivotAroundCenter,
     viewportShadingMode,
     setFrameActorHandler,
+    collisionsVisible,
   } = useSceneEditing();
   const { flySpeed, gridSize, editorTextureLodEnabled, editorTextureLodQuality } =
     useEditorViewportPrefs();
@@ -391,6 +392,10 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   useEffect(() => {
     engineRef.current?.editor?.setViewportShadingMode(viewportShadingMode);
   }, [viewportShadingMode]);
+
+  useEffect(() => {
+    engineRef.current?.editor?.setDrawMeshCollision(collisionsVisible);
+  }, [collisionsVisible, sharedEngine, sharedEngineGeneration]);
 
   useEffect(() => {
     engineRef.current?.editor?.camera.setPivotAroundCenter(pivotAroundCenter);

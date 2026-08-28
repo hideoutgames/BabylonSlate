@@ -34,6 +34,7 @@ const {
       setPreviewCanvas: vi.fn(),
       setViewportMode: vi.fn(),
       setViewportShadingMode: vi.fn(),
+      setDrawMeshCollision: vi.fn(),
       setSelectedActors: vi.fn(),
       syncSelectionDebug: vi.fn(),
       gizmos: { setTool: vi.fn(), setSnap: vi.fn() },
@@ -184,6 +185,7 @@ vi.mock("../context/scene-editing-context", () => ({
     loadEditorCameraPose: vi.fn(() => null),
     pivotAroundCenter: false,
     viewportShadingMode: "pbr",
+    collisionsVisible: false,
     setFrameActorHandler: vi.fn(),
   }),
 }));
@@ -228,6 +230,7 @@ describe("PrefabViewportPanel engine", () => {
     };
     expect(options.sharedEngine).toBe(engine);
     expect(options.present).toBe("rtt");
+    expect(handle.editor.setDrawMeshCollision).toHaveBeenCalledWith(false);
   });
 
   it("requests the overlay transform box for SceneLayerActor prefabs", () => {

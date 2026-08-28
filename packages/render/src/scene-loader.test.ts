@@ -389,6 +389,25 @@ describe("scene-loader", () => {
     expect(dash!.parent).toBe(mesh);
   });
 
+  it("skips MeshComponent collision dashes when drawMeshCollision is false", () => {
+    const { scene } = createHandle();
+    applySceneToBabylonScene(
+      scene,
+      sceneWithActors([
+        createActor("crate", "Crate", {
+          components: [createMeshComponent("mesh", "box")],
+        }),
+      ]),
+      { drawMeshCollision: false },
+    );
+    const mesh = scene.getMeshByName(editorMeshName("crate"));
+    expect(
+      mesh
+        ?.getChildMeshes()
+        .some((child) => child instanceof Mesh && isColliderVisualMesh(child)),
+    ).toBe(false);
+  });
+
   it("skips MeshComponent collision dashes when mode is none", () => {
     const { scene } = createHandle();
     const component = createMeshComponent("mesh", "box");

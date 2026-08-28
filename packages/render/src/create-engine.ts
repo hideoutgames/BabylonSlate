@@ -436,6 +436,8 @@ export interface EditorTools {
   setViewportMode: (mode: ViewportMode) => void;
   /** Session overlay: PBR / Unlit / Wireframe. */
   setViewportShadingMode: (mode: ViewportShadingMode) => void;
+  /** Session MeshComponent collision dashes (default off). */
+  setDrawMeshCollision: (enabled: boolean) => void;
   /** Project 2D unit settings; pass null to leave pixel-perfect framing off. */
   setPixelPerfect: (
     settings: { pixelsPerUnit: number; integerZoomSteps: boolean } | null,
@@ -1170,6 +1172,10 @@ export function createEngine(
       },
       setViewportShadingMode: (next: ViewportShadingMode) => {
         viewportShading?.setMode(next);
+        scheduler.invalidate("asset");
+      },
+      setDrawMeshCollision: (enabled: boolean) => {
+        editorSync.setDrawMeshCollision(enabled);
         scheduler.invalidate("asset");
       },
       setPixelPerfect: (settings) => {

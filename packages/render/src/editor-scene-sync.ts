@@ -24,6 +24,7 @@ import {
   editorModelLoadTarget,
   freezeStaticActorWorldMatrix,
   isEditorActorOrigin,
+  syncMeshCollisionDashes,
   visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIllumination } from "./scene-illumination";
@@ -85,6 +86,7 @@ export class EditorSceneSync {
   private stealActiveCamera = false;
   private restoreCamera: Camera | null = null;
   private shadowQuality = "1024";
+  private drawMeshCollision = false;
   private modelLoadSlot = 0;
   private readonly modelLoadBinding: ModelAnimLoadBinding = {
     slotAnimEpoch: new Map<number, number>(),
@@ -152,6 +154,16 @@ export class EditorSceneSync {
   setShadowQuality(level: string): void {
     this.shadowQuality = level;
     if (this.lastScene) this.apply(this.lastScene);
+  }
+
+  /**
+   * Session MeshComponent collision dashes (default off). 2D worlds stay off.
+   * Toggling syncs existing actors without a full mesh rebuild.
+   */
+  setDrawMeshCollision(enabled: boolean): void {
+    if (this.drawMeshCollision === enabled) return;
+    this.drawMeshCollision = enabled;
+    this.syncExistingMeshCollisionDashes();
   }
 
   apply(sceneData: SerializedScene): void {
@@ -299,8 +311,26 @@ export class EditorSceneSync {
   private meshAssetsForScene(sceneData: SerializedScene): MeshAssetContext {
     return {
       ...(this.assets ?? {}),
-      drawMeshCollision: sceneData.settings.physicsWorld !== "2d",
+      drawMeshCollision:
+        this.drawMeshCollision && sceneData.settings.physicsWorld !== "2d",
     };
+  }
+
+  private syncExistingMeshCollisionDashes(): void {
+    const sceneData = this.lastScene;
+    if (!sceneData) return;
+    const assets = this.meshAssetsForScene(sceneData);
+    for (const actor of sceneData.actors) {
+      const root = this.meshes.get(actor.id);
+      if (!root) continue;
+      for (const component of actor.components) {
+        if (component.classId !== "MeshComponent") continue;
+        const visual =
+          visualForMeshComponent(root, actor.id, component.id) ?? root;
+        syncMeshCollisionDashes(visual, component, assets);
+      }
+    }
+    this.scheduler?.invalidate("asset");
   }
 
   private meshComponentAssetGuid(actor: SerializedActor): string | null {

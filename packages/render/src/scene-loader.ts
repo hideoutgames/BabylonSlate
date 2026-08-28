@@ -767,6 +767,12 @@ function attachMeshCollisionDashes(
       `${mesh.name}:mesh-collider:${collision.shapeId}`,
       collision.shape as ColliderShape,
     );
+    visual.metadata = {
+      ...(typeof visual.metadata === "object" && visual.metadata
+        ? visual.metadata
+        : {}),
+      meshCollisionDash: true,
+    };
     visual.parent = mesh;
     visual.position.set(
       collision.position[0],
@@ -785,6 +791,27 @@ function attachMeshCollisionDashes(
       collision.scale[2],
     );
   }
+}
+
+export function disposeMeshCollisionDashes(mesh: Mesh): void {
+  for (const child of [...mesh.getChildren()]) {
+    if (
+      child instanceof Mesh &&
+      (child.metadata as { meshCollisionDash?: boolean } | null)
+        ?.meshCollisionDash
+    ) {
+      child.dispose();
+    }
+  }
+}
+
+export function syncMeshCollisionDashes(
+  mesh: Mesh,
+  component: SerializedComponent,
+  assets?: MeshAssetContext,
+): void {
+  disposeMeshCollisionDashes(mesh);
+  attachMeshCollisionDashes(mesh, component, assets);
 }
 
 function createOriginRootMesh(scene: Scene, actor: SerializedActor): Mesh {

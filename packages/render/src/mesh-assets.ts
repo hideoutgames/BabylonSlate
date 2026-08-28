@@ -21,8 +21,9 @@ export interface MeshAssetContext {
   modelBytes?: ReadonlyMap<string, Uint8Array>;
   modelPayloads?: ReadonlyMap<string, ModelPayload>;
   /**
-   * Editor MeshComponent collision dashes. 2D worlds and Play omit this
-   * (`showcollision` draws physics debug instead).
+   * Editor MeshComponent collision dashes. Session **Show Collisions**
+   * (default off). 2D worlds and Play omit this (`showcollision` draws
+   * physics debug instead).
    */
   drawMeshCollision?: boolean;
   /**
