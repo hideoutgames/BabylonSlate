@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Material, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
+import { Material, MeshBuilder, NodeMaterial, NullEngine, Observable, Scene, Texture, TextureBlock } from "@babylonjs/core";
 import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
@@ -7,7 +7,7 @@ import {
   migrateLegacyShaderPayload,
   type MaterialDocument,
 } from "@babylonslate/shader-graph";
-import { compileMaterialPlan } from "./material-compiler";
+import { compileMaterialPlan, isGpuTextureSampleReady, prewarmMaterial } from "./material-compiler";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { getMaterialTexture, ResourceCache } from "./resource-cache";
 
@@ -1041,6 +1041,85 @@ describe("material compiler", () => {
     ]);
     expect(rebuild).not.toHaveBeenCalled();
     expect(unfreeze).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds when isReady is true only because loading failed onto the error sampler", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    vi.spyOn(resolved, "isReady").mockReturnValue(true);
+    (resolved as unknown as { _loadingError: boolean })._loadingError = true;
+    expect(isGpuTextureSampleReady(resolved)).toBe(false);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "error-sampler",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const rebuild = vi.spyOn(result.material, "build");
+    (resolved as unknown as { _loadingError: boolean })._loadingError = false;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(rebuild).toHaveBeenCalled();
+  });
+
+  it("marks the NodeMaterial dirty after a packed-texture rebuild even when dirty is blocked", () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    let ready = false;
+    vi.spyOn(resolved, "isReady").mockImplementation(() => ready);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "blocked-dirty",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    scene.blockMaterialDirtyMechanism = true;
+    result.material.freeze();
+    const dirtyWhileBlocked: boolean[] = [];
+    vi.spyOn(result.material, "markDirty").mockImplementation(function (
+      this: NodeMaterial,
+    ) {
+      dirtyWhileBlocked.push(this.getScene().blockMaterialDirtyMechanism);
+    });
+    ready = true;
+    resolved.onLoadObservable.notifyObservers(resolved);
+    expect(dirtyWhileBlocked).toContain(false);
+    expect(scene.blockMaterialDirtyMechanism).toBe(true);
+  });
+
+  it("does not forceCompilationAsync until sampled textures are sample-ready", async () => {
+    const scene = host();
+    const resolved = new Texture(null, scene, true, false);
+    disposers.push(() => resolved.dispose());
+    vi.spyOn(resolved, "isReady").mockReturnValue(false);
+    const doc = migrateLegacyShaderPayload({}, { textureGuids: ["tex-1"] });
+    const result = compileMaterialPlan(planFor(doc), {
+      scene,
+      name: "prewarm-wait",
+      resolveTexture: (guid) => (guid === "tex-1" ? resolved : null),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    }
+    disposers.push(() => result.material.dispose());
+    const mesh = MeshBuilder.CreateBox("box", {}, scene);
+    disposers.push(() => mesh.dispose());
+    mesh.material = result.material;
+    const force = vi.spyOn(result.material, "forceCompilationAsync");
+    await prewarmMaterial(result.material, mesh);
+    expect(force).not.toHaveBeenCalled();
   });
 
   it("keeps invertY false on the compiled sampling TextureBlock", () => {
