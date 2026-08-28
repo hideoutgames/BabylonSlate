@@ -60,6 +60,46 @@ export interface FailedMaterial {
 
 export type CompileMaterialResult = CompiledMaterial | FailedMaterial;
 
+function isEngineErrorSampler(texture: Texture): boolean {
+  const engine =
+    texture.getScene()?.getEngine() ??
+    (
+      texture as Texture & {
+        _engine?: { emptyTexture?: unknown };
+      }
+    )._engine;
+  const internal = texture.getInternalTexture();
+  if (!engine || !internal) return false;
+  return internal === engine.emptyTexture;
+}
+
+/** True when a TextureBlock can sample authored texels, not Babylon's error sampler. */
+export function isGpuTextureSampleReady(texture: Texture): boolean {
+  if (texture.loadingError) return false;
+  if (!texture.isReady()) return false;
+  return !isEngineErrorSampler(texture);
+}
+
+export function nodeMaterialTexturesSampleReady(material: NodeMaterial): boolean {
+  for (const block of material.attachedBlocks) {
+    const textured = block as { texture?: Texture | null };
+    if (!textured.texture) continue;
+    if (!isGpuTextureSampleReady(textured.texture)) return false;
+  }
+  return true;
+}
+
+function markCompiledMaterialDirty(material: NodeMaterial): void {
+  const scene = material.getScene();
+  const blocked = scene.blockMaterialDirtyMechanism;
+  scene.blockMaterialDirtyMechanism = false;
+  try {
+    material.markDirty();
+  } finally {
+    scene.blockMaterialDirtyMechanism = blocked;
+  }
+}
+
 /**
  * Explicit guard rather than a bare `result.ok` check: `apps/editor` compiles
  * these sources without `strictNullChecks`, where TypeScript does not narrow a
@@ -407,6 +447,7 @@ export function compileMaterialPlan(
     try {
       material.build();
       applyAuthoredSurfaceBlend(material, plan);
+      markCompiledMaterialDirty(material);
     } catch (error) {
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
       options.onTextureError?.({
@@ -420,7 +461,14 @@ export function compileMaterialPlan(
     }
   };
   for (const texture of pendingTextures) {
-    if (texture.isReady()) continue;
+    if (isGpuTextureSampleReady(texture)) continue;
+    if (texture.loadingError) {
+      options.onTextureError?.({
+        code: "material.missingTexture",
+        message: "Texture failed to load",
+        severity: "error",
+      });
+    }
     const observer = texture.onLoadObservable.addOnce(() => {
       rebuildWhenReady();
     });
@@ -559,7 +607,7 @@ function bindTexture(
     texture?: Texture | null;
   };
   block.texture = texture;
-  if (!texture.isReady()) pendingTextures.push(texture);
+  if (!isGpuTextureSampleReady(texture)) pendingTextures.push(texture);
   return true;
 }
 
@@ -851,5 +899,6 @@ export async function prewarmMaterial(
 ): Promise<void> {
   if (!mesh) return;
   if (material.mode === NodeMaterialModes.Particle) return;
+  if (!nodeMaterialTexturesSampleReady(material)) return;
   await material.forceCompilationAsync(mesh);
 }

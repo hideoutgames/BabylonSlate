@@ -2,6 +2,7 @@ import {
   Engine,
   KhronosTextureContainer2,
   Mesh,
+  NodeMaterial,
   Scene,
   ScenePerformancePriority,
 } from "@babylonjs/core";
@@ -151,7 +152,9 @@ import {
   freezeEditorActiveMeshes,
   prewarmSceneMaterials as warmSceneMaterials,
   SCENE_LOOKUP_MAPS,
+  SCENE_SHADER_WARM_TIMEOUT_MS,
 } from "./scene-perf";
+import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 
 export interface EngineHandle {
   engine: Engine;
@@ -244,6 +247,8 @@ export interface EngineHandle {
   steerPlayFreeCam: (forward: number, right: number) => void;
   /** Resolves when editor or Play GLB instantiations from the last apply have finished. */
   whenEditorModelsReady: () => Promise<void>;
+  /** Resolves when library NodeMaterials can sample authored textures (or timeout). */
+  whenMaterialTexturesReady: () => Promise<void>;
   /** Snapshot/editor GLB loads currently tracked (including settled promises). */
   modelLoadCount: () => number;
 }
@@ -1857,6 +1862,13 @@ export function createEngine(
       freezeLibraryMaterials();
       if (options.editor) freezeEditorActiveMeshes(scene);
     },
+    whenMaterialTexturesReady: async () => {
+      const started = Date.now();
+      while (!sceneNodeMaterialsSampleReady(scene)) {
+        if (Date.now() - started >= SCENE_SHADER_WARM_TIMEOUT_MS) return;
+        await new Promise((resolve) => setTimeout(resolve, 16));
+      }
+    },
     unlockAudio: () => audioService?.unlockAsync() ?? Promise.resolve(),
     resetAudioSession: () => {
       audioService?.resetSession();
@@ -1907,6 +1919,14 @@ function materialTextureGuidMap(
     out.set(guid, materialDependencies(document).textures);
   }
   return out;
+}
+
+function sceneNodeMaterialsSampleReady(scene: Scene): boolean {
+  for (const material of scene.materials) {
+    if (!(material instanceof NodeMaterial)) continue;
+    if (!nodeMaterialTexturesSampleReady(material)) return false;
+  }
+  return true;
 }
 
 function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
