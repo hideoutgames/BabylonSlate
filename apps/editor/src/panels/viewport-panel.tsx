@@ -286,6 +286,15 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
     });
     engineRef.current = handle;
     setEngineEpoch((epoch) => epoch + 1);
+    const gridSettings = sceneRef.current?.settings;
+    if (gridSettings) {
+      handle.editor?.setGridSettings({
+        tileSize: gridSettings.grid.tileSize,
+        tileSubdivisions: gridSettings.grid.tileSubdivisions,
+        cameraBounds2D: gridSettings.cameraBounds2D,
+        showGrid: gridVisible,
+      });
+    }
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
     navDebugRef.current = new NavMeshDebugOverlay(handle.scene);
     setNavOverlayGeneration((generation) => generation + 1);
@@ -661,7 +670,10 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       cameraBounds2D: settings.cameraBounds2D,
       showGrid: gridVisible,
     });
-  }, [scene?.settings, viewportMode, gridVisible]);
+    // engineEpoch: the first scene payload often exists before createEngine.
+    // Without it, this effect runs once with a null engineRef and never
+    // reapplies cameraBounds2D (orange frame missing until Show Grid).
+  }, [scene?.settings, viewportMode, gridVisible, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);

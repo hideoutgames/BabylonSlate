@@ -103,6 +103,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
   const { registerScheduler, playing, preparing, ensureSharedEngine, sharedEngineGeneration } =
     usePlay();
   const [sharedEngine, setSharedEngine] = useState<Engine | null>(null);
+  const [engineEpoch, setEngineEpoch] = useState(0);
   const setSelectedIdRef = useRef(setSelectedId);
   setSelectedIdRef.current = setSelectedId;
   const componentsRef = useRef(components);
@@ -163,6 +164,13 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       editorFlySpeed: () => flySpeedRef.current,
     });
     engineRef.current = handle;
+    setEngineEpoch((epoch) => epoch + 1);
+    handle.editor?.setGridSettings({
+      tileSize: gridSize,
+      tileSubdivisions: 4,
+      cameraBounds2D: { width: 16, height: 9 },
+      showGrid: gridVisible,
+    });
     handle.editor?.camera.importSessionState(loadEditorCameraPose());
     handle.editor?.setPreviewCanvas(previewCanvasRef.current);
     const unregisterScheduler = registerScheduler({
@@ -425,7 +433,7 @@ export function PrefabViewportPanel(_props: IDockviewPanelProps) {
       cameraBounds2D: { width: 16, height: 9 },
       showGrid: gridVisible,
     });
-  }, [snapEnabled, gridSize, gridVisible]);
+  }, [snapEnabled, gridSize, gridVisible, engineEpoch]);
 
   useEffect(() => {
     engineRef.current?.editor?.grid.setVisible(gridVisible);

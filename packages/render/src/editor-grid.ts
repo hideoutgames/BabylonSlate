@@ -1,4 +1,4 @@
-import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector3, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
+import { Color3, Effect, Mesh, MeshBuilder, Scene, ShaderMaterial, Vector2, Vector3, type AbstractMesh, type ArcRotateCamera } from "@babylonjs/core";
 import type { ViewportMode } from "@babylonslate/core";
 import { configureEditorRenderingGroups, RENDERING_GROUP } from "./sorting";
 
@@ -87,8 +87,9 @@ function clamp01(value: number): number {
 /**
  * 1 when the UV sample sits on the 2px screen-space border of the
  * camera-bounds plane, else 0. `fwidthU` / `fwidthV` are the UV change per
- * fragment (same as GLSL `fwidth(uv)`), so a 16×9 rect keeps equal pixel
- * thickness on horizontal and vertical edges.
+ * fragment (same as GLSL `fwidth(uv)`). Equivalent to
+ * `cameraBoundsWorldBorderCoverage` for an origin-centered plane: a 16×9
+ * rect keeps equal pixel thickness on horizontal and vertical edges.
  */
 export function cameraBoundsBorderCoverage(
   uv: { x: number; y: number },
@@ -99,6 +100,24 @@ export function cameraBoundsBorderCoverage(
   const distX = Math.min(uv.x, 1 - uv.x) / Math.max(fwidthU, 1e-8);
   const distY = Math.min(uv.y, 1 - uv.y) / Math.max(fwidthV, 1e-8);
   return Math.min(distX, distY) < lineWidth ? 1 : 0;
+}
+
+/**
+ * 1 when the world XY sample sits on the 2px screen-space border of the
+ * camera-bounds plane (the fragment shader path). `half` is `width/2` ×
+ * `height/2`; `fwidthX` / `fwidthY` match GLSL `fwidth(vWorldPos.xy)`.
+ */
+export function cameraBoundsWorldBorderCoverage(
+  world: { x: number; y: number },
+  half: { x: number; y: number },
+  fwidthX: number,
+  fwidthY: number,
+  lineWidth: number,
+): number {
+  const distX = (half.x - Math.abs(world.x)) / Math.max(fwidthX, 1e-8);
+  const distY = (half.y - Math.abs(world.y)) / Math.max(fwidthY, 1e-8);
+  const dist = Math.min(distX, distY);
+  return dist >= 0 && dist < lineWidth ? 1 : 0;
 }
 
 /** GLSL-style smoothstep so unit tests match the fragment edge fade. */
@@ -212,28 +231,30 @@ function ensureBoundsShaders(): void {
   const fragmentKey = `${BOUNDS_SHADER_NAME}FragmentShader`;
   Effect.ShadersStore[vertexKey] = `
 attribute vec3 position;
-attribute vec2 uv;
+uniform mat4 world;
 uniform mat4 worldViewProjection;
-varying vec2 vUV;
+varying vec3 vWorldPos;
 void main() {
-  vUV = uv;
+  vec4 worldPosition = world * vec4(position, 1.0);
+  vWorldPos = worldPosition.xyz;
   gl_Position = worldViewProjection * vec4(position, 1.0);
 }
 `;
   Effect.ShadersStore[fragmentKey] = `
-varying vec2 vUV;
-uniform vec3 color;
+varying vec3 vWorldPos;
+uniform vec3 lineColor;
 uniform float lineWidth;
 uniform float boundsVisible;
+uniform vec2 boundsHalf;
 
 void main() {
   if (boundsVisible < 0.5) discard;
-  vec2 deriv = fwidth(vUV);
-  float distX = min(vUV.x, 1.0 - vUV.x) / max(deriv.x, 0.00000001);
-  float distY = min(vUV.y, 1.0 - vUV.y) / max(deriv.y, 0.00000001);
+  vec2 deriv = fwidth(vWorldPos.xy);
+  float distX = (boundsHalf.x - abs(vWorldPos.x)) / max(deriv.x, 0.00000001);
+  float distY = (boundsHalf.y - abs(vWorldPos.y)) / max(deriv.y, 0.00000001);
   float dist = min(distX, distY);
-  if (dist >= lineWidth) discard;
-  gl_FragColor = vec4(color, 1.0);
+  if (dist < 0.0 || dist >= lineWidth) discard;
+  gl_FragColor = vec4(lineColor, 1.0);
 }
 `;
 }
@@ -345,8 +366,16 @@ export function createEditorGrid(
     scene,
     { vertex: BOUNDS_SHADER_NAME, fragment: BOUNDS_SHADER_NAME },
     {
-      attributes: ["position", "uv"],
-      uniforms: ["worldViewProjection", "color", "lineWidth", "boundsVisible"],
+      attributes: ["position"],
+      uniforms: [
+        "world",
+        "worldViewProjection",
+        "lineColor",
+        "lineWidth",
+        "boundsVisible",
+        "boundsHalf",
+      ],
+      needAlphaBlending: true,
     },
   );
   boundsMaterial.backFaceCulling = false;
@@ -362,13 +391,18 @@ export function createEditorGrid(
   const applyBounds = () => {
     if (requestedBounds) {
       boundsMesh.scaling.set(requestedBounds.width, requestedBounds.height, 1);
+      boundsMaterial.setVector2(
+        "boundsHalf",
+        new Vector2(requestedBounds.width / 2, requestedBounds.height / 2),
+      );
     }
-    boundsMaterial.setColor3("color", CAMERA_BOUNDS_COLOR);
+    boundsMaterial.setColor3("lineColor", CAMERA_BOUNDS_COLOR);
     boundsMaterial.setFloat("lineWidth", CAMERA_BOUNDS_LINE_WIDTH);
     boundsMaterial.setFloat("boundsVisible", boundsDrawn() ? 1 : 0);
     boundsMesh.isVisible = true;
     boundsMesh.alwaysSelectAsActiveMesh = true;
     boundsMesh.visibility = 1;
+    boundsMesh.refreshBoundingInfo(false, false);
   };
 
   const sync = () => {
