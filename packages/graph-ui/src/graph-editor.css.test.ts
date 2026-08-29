@@ -40,3 +40,10 @@ describe("anim-state side handles", () => {
     expect(css).toMatch(/\.anim-state-handle-source::after/);
   });
 });
+
+describe("blueprint node intrinsic width", () => {
+  it("lets XYFlow wrappers size to node chrome instead of a stale measured width", () => {
+    const block = rule("\\.graph-editor-canvas \\.react-flow__node");
+    expect(block).toMatch(/width:\s*max-content/);
+  });
+});

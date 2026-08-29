@@ -15,6 +15,11 @@
   --xy-node-background-color: var(--card);
 }
 
+.graph-editor-canvas .react-flow__node {
+  /* Prefer chrome intrinsic width over a stale XYFlow measured px width. */
+  width: max-content !important;
+}
+
 .graph-editor-canvas .react-flow__controls-button {
   min-width: var(--touch-target, 44px);
   min-height: var(--touch-target, 44px);

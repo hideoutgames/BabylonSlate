@@ -1911,6 +1911,7 @@ describe("GraphEditor", () => {
     expect(titleBar?.className).toMatch(/whitespace-nowrap/);
     expect(titleBar?.className).not.toMatch(/break-words/);
     const pinRow = eventNode?.querySelector("[data-pin-row]");
+    expect(pinRow?.className).toMatch(/\bw-max\b/);
     expect(pinRow?.className).toMatch(/gap-6/);
     expect(pinRow?.firstElementChild?.className).not.toMatch(/min-w-0/);
     expect(pinRow?.firstElementChild?.className).toMatch(/shrink-0/);
@@ -2171,6 +2172,8 @@ describe("GraphEditor", () => {
     expect(preview?.className).toMatch(/\btext-base\b/);
     expect(preview?.className).toMatch(/\bh-8\b/);
     expect(preview?.className).toMatch(/--graph-pin-default-max-width,12rem/);
+    expect(preview?.className).toMatch(/\bw-fit\b/);
+    expect(preview?.className).toMatch(/\bmin-w-fit\b/);
     expect(preview?.className).toMatch(/\btruncate\b/);
     expect(
       container.querySelector('[data-id="log"] [data-pin-default]'),

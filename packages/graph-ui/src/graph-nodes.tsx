@@ -224,7 +224,7 @@ function PinRow({
   return (
     <div
       data-pin-row
-      className="flex min-h-[var(--touch-target,44px)] items-center justify-between gap-6"
+      className="flex w-max min-h-[var(--touch-target,44px)] items-center justify-between gap-6"
     >
       <div className="flex shrink-0 items-center gap-1">
         {incoming ? (
