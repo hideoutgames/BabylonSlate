@@ -183,6 +183,21 @@ describe("MyClassPanel name prompt", () => {
     expect(screen.getByTestId("class-add-local-variables")).toBeTruthy();
   });
 
+  it("slots the member tree under the class banner so the list can scroll", () => {
+    render(
+      <GraphEditingProvider>
+        <MyClassPanel {...({} as IDockviewPanelProps)} />
+      </GraphEditingProvider>,
+    );
+    const panel = screen.getByTestId("my-class-panel");
+    const banner = panel.querySelector("p");
+    expect(banner?.className).toMatch(/shrink-0/);
+    const tree = screen.getByTestId("my-blueprint-tree");
+    expect(tree.parentElement?.className).toMatch(/min-h-0/);
+    expect(tree.parentElement?.className).toMatch(/flex-1/);
+    expect(tree.parentElement?.parentElement?.className).toMatch(/flex h-full/);
+  });
+
   it("keeps the function graph open when selecting an interface", () => {
     render(
       <GraphEditingProvider initialActiveFunctionId="fn-1">
