@@ -195,6 +195,75 @@ describe("hydrateSerializedGraphForEditor", () => {
     expect(pins.some((pin) => pin.id === "target" && pin.name === "Target")).toBe(
       true,
     );
+    expect(pins.map((pin) => pin.id)).not.toEqual(
+      expect.arrayContaining(["interfaceGuid", "method", "result"]),
+    );
+  });
+
+  it("hydrates Call Interface pins from the live ScriptInterface method", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "call-1",
+          type: "interface.call",
+          position: { x: 0, y: 0 },
+          data: {
+            interfaceGuid: "iface-damageable",
+            method: "Apply Damage",
+            implicitSelf: true,
+            pins: [
+              { name: "interfaceGuid", typeId: "string", direction: "in" },
+              { name: "method", typeId: "string", direction: "in" },
+              { name: "result", typeId: "object", direction: "out" },
+            ],
+          },
+        },
+        {
+          id: "print-1",
+          type: "debug.print",
+          position: { x: 200, y: 0 },
+          data: {},
+        },
+      ],
+      edges: [
+        {
+          id: "stale-result",
+          source: "call-1",
+          target: "print-1",
+          sourceHandle: "result",
+          targetHandle: "value",
+        },
+      ],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry, {
+      scriptInterfaces: [
+        {
+          guid: "iface-damageable",
+          name: "Damageable",
+          methods: [
+            {
+              name: "Apply Damage",
+              pins: [
+                { name: "amount", typeId: "float", direction: "in" },
+                { name: "remaining", typeId: "float", direction: "out" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{ id: string }>;
+    expect(pins.map((pin) => pin.id)).toEqual(
+      expect.arrayContaining(["target", "amount", "remaining"]),
+    );
+    expect(pins.map((pin) => pin.id)).not.toEqual(
+      expect.arrayContaining(["interfaceGuid", "method", "result"]),
+    );
+    expect(hydrated.nodes[0]?.data.pins).toEqual([
+      { name: "amount", typeId: "float", direction: "in" },
+      { name: "remaining", typeId: "float", direction: "out" },
+    ]);
+    expect(hydrated.edges.map((edge) => edge.id)).not.toContain("stale-result");
   });
 
   it("titles an unconnected Cast node from the default class", () => {
@@ -963,6 +1032,9 @@ describe("scriptPaletteNodes", () => {
     expect(
       call?.pins?.some((pin) => pin.id === "target" && pin.name === "Target"),
     ).toBe(true);
+    expect(call?.pins?.map((pin) => pin.id)).not.toEqual(
+      expect.arrayContaining(["interfaceGuid", "method", "result"]),
+    );
     expect(call?.defaultData).toMatchObject({
       interfaceGuid: "iface-damageable",
       method: "Apply Damage",

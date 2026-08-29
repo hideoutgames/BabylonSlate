@@ -52,6 +52,7 @@ import {
   createDefaultNodeRegistry,
   castDefaultClassId,
   callInterfaceTitle,
+  isCallInterfaceMethodPin,
 } from "@babylonslate/scripting-nodes";
 import {
   warnDebugTierConsoleCommands,
@@ -408,6 +409,25 @@ function applyStructEnumSchema(
   }
 }
 
+function applyInterfaceCallPins(
+  properties: Record<string, unknown>,
+  options?: HydrateGraphOptions,
+): void {
+  const guid =
+    typeof properties.interfaceGuid === "string"
+      ? properties.interfaceGuid.trim()
+      : "";
+  const method =
+    typeof properties.method === "string" ? properties.method.trim() : "";
+  const iface = options?.scriptInterfaces?.find((entry) => entry.guid === guid);
+  const methodDef = iface?.methods.find((entry) => entry.name === method);
+  const live = methodDef?.pins;
+  const snapshot = Array.isArray(properties.pins)
+    ? (properties.pins as GraphClassMemberPin[])
+    : [];
+  properties.pins = (live ?? snapshot).filter(isCallInterfaceMethodPin);
+}
+
 function hydratedNodeTitle(
   typeId: string,
   properties: Record<string, unknown>,
@@ -439,6 +459,11 @@ export type HydrateGraphOptions = {
   classId?: string;
   otherClassGraphs?: Record<string, SerializedGraph>;
   functionGraphs?: SerializedGraph["functionGraphs"];
+  scriptInterfaces?: Array<{
+    guid: string;
+    name: string;
+    methods: Array<{ name: string; pins?: GraphClassMemberPin[] }>;
+  }>;
 };
 
 export function bindUnboundComponentEvents(
@@ -585,6 +610,10 @@ export function hydrateSerializedGraphForEditor(
       }
 
       applyStructEnumSchema(typeId, properties, graph, node.id, nodeRegistry, options);
+
+      if (typeId === "interface.call") {
+        applyInterfaceCallPins(properties, options);
+      }
 
       if (typeId === "flow.event.call") {
         const rawName =
@@ -1880,6 +1909,9 @@ export function materializeLogicGraph(
       registry,
       options,
     );
+    if (typeId === "interface.call") {
+      applyInterfaceCallPins(properties, options);
+    }
     if (typeId === "flow.switchInt") {
       properties.cases = normalizeIntSwitchCases(properties.cases).cases;
     }
