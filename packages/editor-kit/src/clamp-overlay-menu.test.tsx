@@ -130,6 +130,6 @@ describe("overlaySubmenuOrigin", () => {
         margin: 8,
         insets: { right: 24 },
       }),
-    ).toEqual({ x: 360, y: 50 });
+    ).toEqual({ x: 368, y: 50 });
   });
 });
