@@ -15,7 +15,13 @@ export * from "./graph-format";
 export * from "./graph-marquee";
 export * from "./graph-drop-hint";
 export * from "./node-theme";
-export { BlueprintNodeShell, graphNodeTypes, resolveNodeType, zipPinRows } from "./graph-nodes";
+export {
+  BlueprintNodeShell,
+  graphNodeTypes,
+  resolveNodeType,
+  VariableGetNode,
+  zipPinRows,
+} from "./graph-nodes";
 export type { CanvasNode } from "./graph-nodes";
 export {
   AnimStateNode,
