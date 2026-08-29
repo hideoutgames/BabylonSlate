@@ -3,6 +3,7 @@ import {
   buildMinimalGlbFixture,
   embedGlbExternalImages,
   encodeGlbJsonBin,
+  ingestGltfForImport,
   parseGlbForBrowse,
   parseGltfJsonForBrowse,
   slimGlbEmbeddedImages,
@@ -551,6 +552,44 @@ describe("embedGlbExternalImages", () => {
     expect(images.some((image) => typeof image.uri === "string" && !image.uri.startsWith("data:"))).toBe(
       false,
     );
+  });
+});
+
+describe("ingestGltfForImport missing BIN", () => {
+  const gltfWithExternalBin = new TextEncoder().encode(
+    JSON.stringify({
+      asset: { version: "2.0" },
+      buffers: [{ uri: "Hero.bin", byteLength: 12 }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 12 }],
+      accessors: [
+        {
+          bufferView: 0,
+          componentType: 5126,
+          count: 1,
+          type: "VEC3",
+        },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    }),
+  );
+
+  it("throws when a .gltf points at a relative BIN with no sidecar", () => {
+    expect(() =>
+      ingestGltfForImport("Hero.gltf", gltfWithExternalBin),
+    ).toThrow(/\.bin buffer/i);
+  });
+
+  it("embeds the BIN sidecar into a self-contained GLB", () => {
+    const bin = new Uint8Array(12);
+    const ingested = ingestGltfForImport("Hero.gltf", gltfWithExternalBin, {
+      "Hero.bin": bin,
+    });
+    expect(ingested.mime).toBe("model/gltf-binary");
+    const split = splitGlbJsonBin(ingested.bytes);
+    expect(split).not.toBeNull();
+    expect(split!.bin?.byteLength).toBe(12);
+    const buffer0 = (split!.json.buffers as Array<{ uri?: string }>)[0];
+    expect(buffer0?.uri).toBeUndefined();
   });
 });
 

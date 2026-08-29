@@ -4,6 +4,7 @@ export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export * from "./create-null-engine";
 export * from "./ktx2-transcoder";
+export * from "./gltf-mesh-decoders";
 export * from "./scene-loader";
 export * from "./viewport";
 export * from "./texture-bytes";

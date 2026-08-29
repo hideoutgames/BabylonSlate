@@ -6,6 +6,9 @@
  * kinds; this parse only names Catalog dependents.
  */
 
+export const MISSING_GLTF_BIN =
+  "glTF import needs the matching .bin buffer. Select the .gltf file together with its .bin sidecar.";
+
 export interface GlbBrowseImage {
   name: string;
   mime: string;
@@ -412,13 +415,14 @@ function gltfJsonToGlb(
   const bufferUri = typeof buffer0?.uri === "string" ? buffer0.uri : "";
   if (bufferUri && isRelativeResourceUri(bufferUri)) {
     const sidecar = sidecarBytesForUri(bufferUri, sidecars);
-    if (sidecar) {
-      bin = sidecar;
-      const rest = { ...buffer0 };
-      delete rest.uri;
-      buffers[0] = { ...rest, byteLength: bin.byteLength };
-      json.buffers = buffers;
+    if (!sidecar) {
+      throw new Error(MISSING_GLTF_BIN);
     }
+    bin = sidecar;
+    const rest = { ...buffer0 };
+    delete rest.uri;
+    buffers[0] = { ...rest, byteLength: bin.byteLength };
+    json.buffers = buffers;
   } else if (typeof buffer0?.byteLength === "number" && buffer0.byteLength === 0) {
     json.buffers = buffers.length > 0 ? buffers : [{ byteLength: 0 }];
   }

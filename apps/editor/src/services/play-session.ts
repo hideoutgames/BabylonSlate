@@ -52,7 +52,7 @@ import {
   playLoadControl,
   type PlayPhysicsSettings,
 } from "./play-physics";
-import { editorKtx2PublicBase } from "../lib/public-engine-assets";
+import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
 import {
   INFINITE_LOOP_DIAGNOSTIC_CODE,
   type TracePayload,
@@ -554,6 +554,8 @@ export function startPlaySession(options: {
       ? navDebugBlockersFromActors(options.scene.actors)
       : undefined,
     ktx2BasePath: editorKtx2PublicBase(),
+    dracoBasePath: editorDracoPublicBase(),
+    meshoptBasePath: editorMeshoptPublicBase(),
     onPostProcessDiagnostic: (diagnostic) => {
       options.onLog?.(diagnostic.message, "warning");
     },

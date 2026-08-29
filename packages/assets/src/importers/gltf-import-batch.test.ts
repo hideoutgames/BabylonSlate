@@ -61,6 +61,21 @@ describe("groupGltfImportSidecars", () => {
   });
 });
 
+describe("embedGltfImportBatch missing BIN", () => {
+  it("throws when a picked .gltf has a relative buffer URI and no .bin", () => {
+    const gltf = {
+      name: "Hero.gltf",
+      bytes: new TextEncoder().encode(
+        JSON.stringify({
+          asset: { version: "2.0" },
+          buffers: [{ uri: "Hero.bin", byteLength: 4 }],
+        }),
+      ),
+    };
+    expect(() => embedGltfImportBatch([gltf])).toThrow(/\.bin buffer/i);
+  });
+});
+
 describe("embedGltfImportBatch", () => {
   it("embeds the shared atlas into each GLB and does not re-import the PNG", () => {
     const prepared = embedGltfImportBatch([

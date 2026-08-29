@@ -206,6 +206,12 @@ function replayPendingAnimState(
   binding.slotAnimReady?.(slotId);
 }
 
+/** Output Log / console warning when a Model GLB cannot instantiate. */
+export function reportGlbLoadFailure(guid: string, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.warn(`[render] Model ${guid} failed to load: ${detail}`);
+}
+
 async function loadGlbContainer(scene: Scene, bytes: Uint8Array, name: string) {
   return LoadAssetContainerAsync(packedGltfBytes(bytes), scene, {
     pluginExtension: gltfLoaderExtension(bytes),
@@ -443,8 +449,9 @@ export function beginSlotModelAnimLoad(
       binding.slotAnimationGroups.set(slotId, [...existing, ...wrapped]);
       onAdopted?.(placeholder);
       replayPendingAnimState(scene, binding, slotId);
-    } catch {
+    } catch (error) {
       // Loader / instantiate failures leave the empty named root in place.
+      reportGlbLoadFailure(clipAssetGuid, error);
     }
   })();
   if (!binding.slotAnimLoads) binding.slotAnimLoads = new Map();

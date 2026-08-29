@@ -43,7 +43,7 @@ import {
   applyLiveGizmoToActor,
   takeGizmoDragScene,
 } from "../lib/gizmo-drag-commit";
-import { editorKtx2PublicBase } from "../lib/public-engine-assets";
+import { editorDracoPublicBase, editorKtx2PublicBase, editorMeshoptPublicBase } from "../lib/public-engine-assets";
 import { createCanvasResizeGuard } from "../lib/canvas-resize-guard";
 import {
   modelSlotMaterialGuidsFromPayloads,
@@ -269,6 +269,8 @@ export function ViewportPanel(_props: IDockviewPanelProps) {
       overlayTransformBox,
       colorScheme: EDITOR_CANVAS_COLOR_SCHEME,
       ktx2BasePath: editorKtx2PublicBase(),
+      dracoBasePath: editorDracoPublicBase(),
+      meshoptBasePath: editorMeshoptPublicBase(),
       onPickActor: (actorId, pick) =>
         selectActorRef.current(actorId, pick?.additive === true),
       onMarqueeSelect: (actorIds) => setSelectedActorIdsRef.current(actorIds),

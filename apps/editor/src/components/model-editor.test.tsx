@@ -5,8 +5,14 @@ import { encodeTriangleGlb } from "@babylonslate/render";
 import { ModelColliderSessionProvider } from "../context/model-collider-session";
 import { ModelColliders, ModelEditor, ModelPreview } from "./model-editor";
 
+const playStub = vi.hoisted(() => ({
+  ensureSharedEngine: vi.fn((): unknown => null),
+}));
+
 vi.mock("../context/play-context", () => ({
-  useOptionalPlay: () => null,
+  useOptionalPlay: () => ({
+    ensureSharedEngine: () => playStub.ensureSharedEngine(),
+  }),
 }));
 
 vi.mock("../context/document-context", () => ({
@@ -38,6 +44,8 @@ vi.mock("../context/document-context", () => ({
 }));
 
 afterEach(() => {
+  playStub.ensureSharedEngine.mockReset();
+  playStub.ensureSharedEngine.mockReturnValue(null);
   cleanup();
 });
 
@@ -133,6 +141,22 @@ describe("ModelPreview", () => {
     expect(screen.getByTestId("model-preview")).toBeTruthy();
     expect(screen.getByText("No Mesh")).toBeTruthy();
     expect(screen.queryByTestId("model-preview-shading")).toBeNull();
+  });
+
+  it("shows Failed to Load Mesh when the glTF source cannot instantiate", async () => {
+    playStub.ensureSharedEngine.mockReturnValue({});
+    render(
+      <ModelPreview
+        payload={{ materialSlots: [], clipNames: [] }}
+        sourceBytes={encodeTriangleGlb()}
+      />,
+    );
+    expect(screen.getByTestId("model-preview-canvas")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByTestId("model-preview-load-error")).toBeTruthy();
+    });
+    expect(screen.getByText("Failed to Load Mesh")).toBeTruthy();
+    expect(screen.getByTestId("model-show-collision")).toBeTruthy();
   });
 
   it("renders a 1fps preview canvas for glTF source bytes", () => {

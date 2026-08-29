@@ -20,12 +20,19 @@ import {
   isColliderVisualMesh,
   loadModelPreviewSource,
   materialUnavailable,
+  reportGlbLoadFailure,
   resourceCacheForEngine,
   type GizmoHost,
   type MaterialPreviewPresenter,
   type MaterialPreviewScene,
   type ViewportShadingMode,
 } from "@babylonslate/render";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@babylonslate/ui/components/empty";
 import { NestedMenu, type NestedMenuItem } from "@babylonslate/editor-kit";
 import { Button } from "@babylonslate/ui/components/button";
 import { Toggle } from "@babylonslate/ui/components/toggle";
@@ -77,6 +84,7 @@ export function ModelPreviewCanvas({
     useEditorViewportPrefs();
   const [engine, setEngine] = useState<Engine | null>(null);
   const [previewGeneration, setPreviewGeneration] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const hostRef = useRef<MaterialPreviewScene | null>(null);
   const presenterRef = useRef<MaterialPreviewPresenter | null>(null);
   const shadingRef = useRef<ViewportShadingOverlay | null>(null);
@@ -111,13 +119,8 @@ export function ModelPreviewCanvas({
     const visuals = colliderVisualsRef.current;
     void (async () => {
       try {
+        setLoadError(null);
         host = createModelPreviewScene(engine);
-        loaded = await loadModelPreviewSource(host, sourceBytes, model.importScale);
-        if (cancelled || !host || !loaded) {
-          host?.dispose();
-          loaded?.dispose();
-          return;
-        }
         presenter = createMaterialPreviewPresenter(host, canvas, { maxFps: 1 });
         const gizmos = createGizmoHost(host.scene, {
           tool: "translate",
@@ -184,16 +187,32 @@ export function ModelPreviewCanvas({
             setSelectedColliderId(null);
           },
         });
-        hostRef.current = host;
-        presenterRef.current = presenter;
+        try {
+          loaded = await loadModelPreviewSource(
+            host,
+            sourceBytes,
+            model.importScale,
+          );
+          if (!loaded) setLoadError("Failed to Load Mesh");
+        } catch (error) {
+          reportGlbLoadFailure("preview", error);
+          setLoadError("Failed to Load Mesh");
+        }
+        if (cancelled || !host) {
+          host?.dispose();
+          loaded?.dispose();
+          return;
+        }
         const shading = new ViewportShadingOverlay(host.scene);
         shading.setMode(shadingModeRef.current);
         shadingRef.current = shading;
+        hostRef.current = host;
+        presenterRef.current = presenter;
         presenter.present({ force: true });
         if (cancelled) {
           presenter.dispose();
           gestures.dispose();
-          loaded.dispose();
+          loaded?.dispose();
           host.dispose();
           hostRef.current = null;
           presenterRef.current = null;
@@ -209,7 +228,9 @@ export function ModelPreviewCanvas({
           raf.id = window.requestAnimationFrame(tick);
         };
         raf.id = window.requestAnimationFrame(tick);
-      } catch {
+      } catch (error) {
+        reportGlbLoadFailure("preview", error);
+        setLoadError("Failed to Load Mesh");
         presenter?.dispose();
         gestures?.dispose();
         loaded?.dispose();
@@ -450,6 +471,23 @@ export function ModelPreviewCanvas({
         className="h-full w-full"
         data-testid="model-preview-canvas"
       />
+      {loadError ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-3"
+          data-testid="model-preview-load-error"
+        >
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>Failed to Load Mesh</EmptyTitle>
+              <EmptyDescription>
+                The Model source did not instantiate. Compressed glTF needs the
+                bundled Draco / meshopt decoders; a .gltf file needs its .bin
+                sidecar.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        </div>
+      ) : null}
     </div>
   );
 }

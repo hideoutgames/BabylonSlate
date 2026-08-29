@@ -1,11 +1,12 @@
 import { MeshBuilder, TransformNode } from "@babylonjs/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestEngine } from "./create-null-engine";
 import {
   adoptLoadedHierarchy,
   animationRetargetHasMatches,
   beginSlotModelAnimLoad,
   createModelActorRoot,
+  reportGlbLoadFailure,
 } from "./glb-anim";
 import { encodeParentedAnimatedTriangleGlb, encodeTriangleGlb } from "./model-mesh";
 import {
@@ -169,5 +170,27 @@ describe("beginSlotModelAnimLoad", () => {
     const scale = world.getRow(0);
     expect(scale).toBeTruthy();
     expect(Math.hypot(scale!.x, scale!.y, scale!.z)).toBeCloseTo(20, 5);
+  });
+
+  it("logs a loader failure and leaves the empty named root", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const { scene } = handle;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const binding = createSnapshotSceneBinding();
+    const root = createModelActorRoot(scene, "actor-2");
+    reportGlbLoadFailure("model-bad", new Error("KHR_draco_mesh_compression"));
+    await beginSlotModelAnimLoad(
+      scene,
+      binding,
+      2,
+      "model-missing-bytes",
+      encodeTriangleGlb(),
+      root,
+    );
+    expect(visualMeshes(root).length).toBeGreaterThan(0);
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0]?.join(" "))).toMatch(/model-bad/i);
+    warn.mockRestore();
   });
 });
