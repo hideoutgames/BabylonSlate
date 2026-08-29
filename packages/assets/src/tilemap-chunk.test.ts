@@ -32,7 +32,8 @@ describe("tilemapChunkVertexData", () => {
       worldTileWidth: 1,
       worldTileHeight: 1,
     });
-    const overlap = 0.5 / 16;
+    const overlap = 1 / 16;
+    const inset = 0.5 / 16;
     expect(data.positions).toEqual([
       -overlap,
       -overlap,
@@ -47,7 +48,16 @@ describe("tilemapChunkVertexData", () => {
       1 + overlap,
       0,
     ]);
-    expect(data.uvs).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
+    expect(data.uvs).toEqual([
+      inset,
+      inset,
+      1 - inset,
+      inset,
+      1 - inset,
+      1 - inset,
+      inset,
+      1 - inset,
+    ]);
     expect(data.indices).toEqual([0, 1, 2, 0, 2, 3]);
   });
 
@@ -118,7 +128,7 @@ describe("tilemapChunkVertexData", () => {
     });
     expect(staticData.positions).toHaveLength(12);
     expect(animatedData.positions).toHaveLength(12);
-    const overlap = 0.5 / 16;
+    const overlap = 1 / 16;
     expect(staticData.positions[0]).toBe(-overlap);
     expect(animatedData.positions[0]).toBe(1 - overlap);
   });
@@ -166,7 +176,7 @@ describe("tilemapChunkVertexData", () => {
       resolveGid,
       atlasGuid: "deco",
     });
-    const overlap = 0.5 / 16;
+    const overlap = 1 / 16;
     expect(groundDraw.positions).toEqual([
       -overlap,
       -overlap,

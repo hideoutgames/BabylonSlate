@@ -60,10 +60,12 @@ export function tilemapChunkVertexData(options: {
       const uvId = animated ? (meta?.animation[0] ?? localId) : localId;
       const uv = tilesetTileUv(atlas, uvId);
       if (!uv) continue;
+      // One texel of world overlap covers raster cracks that a half-texel UV
+      // inset would otherwise leave when the camera is zoomed out.
       const overlapX =
-        atlas.tileWidth > 0 ? (0.5 * worldTileWidth) / atlas.tileWidth : 0;
+        atlas.tileWidth > 0 ? worldTileWidth / atlas.tileWidth : 0;
       const overlapY =
-        atlas.tileHeight > 0 ? (0.5 * worldTileHeight) / atlas.tileHeight : 0;
+        atlas.tileHeight > 0 ? worldTileHeight / atlas.tileHeight : 0;
       const x0 = originX + lx * worldTileWidth - overlapX;
       const y0 = originY + ly * worldTileHeight - overlapY;
       const x1 = x0 + worldTileWidth + overlapX * 2;

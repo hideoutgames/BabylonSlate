@@ -43,7 +43,7 @@ describe("createTilemapMeshes", () => {
     const child = root.getChildren()[0] as unknown as {
       getVerticesData: (kind: string) => number[] | null;
     };
-    const overlap = 0.5 / 16;
+    const overlap = 1 / 16;
     const positions = child.getVerticesData(VertexBuffer.PositionKind);
     expect(Array.from(positions ?? [])).toEqual([
       -overlap,
