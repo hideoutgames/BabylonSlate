@@ -490,7 +490,7 @@ interface DocumentContextValue {
     tilemaps: Map<string, TilemapPayload>;
     tilesets: Map<string, TilesetPayload>;
   }>;
-  /** GPU texture bytes (KTX2 or LOD-downsampled source) for sprite, tileset, and material `textureGuid`s. */
+  /** GPU texture bytes (KTX2 or LOD-downsampled source; sprite/tileset guids stay source PNG) for sprite, tileset, and material `textureGuid`s. */
   collectPlayTextureBytes: (
     sprites: ReadonlyMap<string, SpritePayload>,
     tilesets: ReadonlyMap<string, TilesetPayload>,
@@ -2797,13 +2797,16 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     ): Promise<Map<string, Uint8Array>> => {
       const assets = projectService.registry?.list() ?? [];
       const settings = await createAppSettingsStore().load();
-      const guids = [
-        ...textureGuidsFromPlayPayloads(sprites, tilesets, spriteAnimations),
-        ...extraGuids,
-      ];
+      const pixelArtGuids = textureGuidsFromPlayPayloads(
+        sprites,
+        tilesets,
+        spriteAnimations,
+      );
+      const guids = [...pixelArtGuids, ...extraGuids];
       return collectGpuTextureBytes({
         assets,
         guids,
+        pixelArtGuids: new Set(pixelArtGuids),
         readChunk: (path, chunkId) =>
           projectService.readAssetChunk(path, chunkId),
         editorLod: {

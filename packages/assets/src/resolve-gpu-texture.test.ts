@@ -101,4 +101,47 @@ describe("resolveGpuTexture", () => {
     expect(resolved?.targetEdge).toBe(2048);
     expect(resolved?.missingPreferred).toBe(true);
   });
+
+  it("forcePixelArt uses source pixels and skips KTX2 and editor LOD", async () => {
+    const pixels = new Uint8Array([1, 2, 3, 4]);
+    const asset = header(
+      [
+        {
+          id: "pixels",
+          kind: "pixels",
+          mime: "image/png",
+          sha256: "aa",
+          locator: { inline: { offset: 0, length: 4 } },
+        },
+        {
+          id: "ktx2:full",
+          kind: "ktx2",
+          mime: "image/ktx2",
+          sha256: "full",
+          locator: { inline: { offset: 1, length: 1 } },
+        },
+      ],
+      {
+        usage: "albedo",
+        downsample: 1,
+        ktx2ChunkId: "ktx2:full",
+        width: 4096,
+        height: 4096,
+      },
+    );
+    const byId: Record<string, Uint8Array> = {
+      pixels,
+      "ktx2:full": new Uint8Array([9, 9, 9]),
+    };
+    const resolved = await resolveGpuTexture({
+      header: asset,
+      readChunk: async (id) => byId[id] ?? null,
+      editorLod: { enabled: true, quality: 0.5 },
+      forcePixelArt: true,
+    });
+    expect(resolved?.kind).toBe("source");
+    expect(resolved?.chunkId).toBe("pixels");
+    expect(resolved?.bytes).toEqual(pixels);
+    expect(resolved?.targetEdge).toBe(4096);
+  });
 });
