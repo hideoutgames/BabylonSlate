@@ -2,6 +2,15 @@
   display: flex;
   shrink: 0;
   flex-direction: column;
+  padding-top: var(--safe-top);
+  background: var(--card);
+}
+
+.safe-play-overlay-chrome {
+  padding-top: calc(var(--safe-top) + 0.75rem);
+  padding-right: calc(var(--safe-right) + 0.75rem);
+  padding-bottom: calc(var(--safe-bottom) + 0.75rem);
+  padding-left: calc(var(--safe-left) + 0.75rem);
 }
 
 .editor-chrome-bar {

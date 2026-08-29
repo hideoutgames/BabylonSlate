@@ -347,7 +347,7 @@ export function Homepage({
 
   return (
     <div
-      className="homepage flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground lg:flex-row"
+      className="homepage safe-frame flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground lg:flex-row"
       data-testid="homepage"
     >
       <aside className="homepage-rail flex shrink-0 items-center justify-between gap-4 border-b border-border px-6 py-4 lg:h-full lg:w-[min(22rem,34vw)] lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-b-0 lg:px-10 lg:py-12">

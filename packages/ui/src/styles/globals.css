@@ -162,6 +162,10 @@
     --chrome-tab-accent: var(--foreground);
     --chrome-row: 28px;
     --touch-target: 44px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
     --graph-pin-size: 22px;
     --graph-pin-default-max-width: 12rem;
     --graph-edge-exec: 5px;
@@ -264,6 +268,10 @@
     --chrome-tab-accent: var(--foreground);
     --chrome-row: 28px;
     --touch-target: 44px;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
     --graph-pin-size: 22px;
     --graph-pin-default-max-width: 12rem;
     --graph-edge-exec: 5px;
@@ -316,6 +324,14 @@
     --asset-script-type: oklch(0.68 0.16 170);
     --asset-component: oklch(0.68 0.16 305);
     --asset-folder: oklch(0.74 0.16 70);
+}
+
+@layer utilities {
+  .safe-frame {
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    padding-bottom: var(--safe-bottom);
+  }
 }
 
 @layer base {
