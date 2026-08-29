@@ -4,6 +4,7 @@ import {
   applyDocumentTheme,
   readStoredThemePreference,
   resolveTheme,
+  statusBarStyleForTheme,
   subscribeSystemTheme,
 } from "./resolved-theme";
 
@@ -16,6 +17,13 @@ describe("resolveTheme", () => {
   it("follows the system preference when set to system", () => {
     expect(resolveTheme("system", true)).toBe("dark");
     expect(resolveTheme("system", false)).toBe("light");
+  });
+});
+
+describe("statusBarStyleForTheme", () => {
+  it("uses light glyphs for dark chrome and dark glyphs for light chrome", () => {
+    expect(statusBarStyleForTheme("dark")).toBe("light");
+    expect(statusBarStyleForTheme("light")).toBe("dark");
   });
 });
 

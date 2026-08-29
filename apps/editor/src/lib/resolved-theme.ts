@@ -1,4 +1,8 @@
-import { ENGINE_SETTINGS_STORAGE_KEY } from "@babylonslate/vfs";
+import {
+  createStatusBarStyle,
+  ENGINE_SETTINGS_STORAGE_KEY,
+  type StatusBarGlyphStyle,
+} from "@babylonslate/vfs";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -31,6 +35,13 @@ export function readStoredThemePreference(raw: string | null): ThemePreference {
 
 export function applyDocumentTheme(resolved: ResolvedTheme): void {
   document.documentElement.classList.toggle("dark", resolved === "dark");
+  void createStatusBarStyle().setStyle(statusBarStyleForTheme(resolved));
+}
+
+export function statusBarStyleForTheme(
+  resolved: ResolvedTheme,
+): StatusBarGlyphStyle {
+  return resolved === "dark" ? "light" : "dark";
 }
 
 export function documentColorScheme(): ResolvedTheme {
