@@ -57,7 +57,7 @@ function signaturePins(properties: Record<string, unknown>) {
   );
   return [
     ...exec,
-    pin("target", "target", "in", objectRef(classId)),
+    pin("target", "Target", "in", objectRef(classId)),
     ...dataPins,
   ];
 }
@@ -72,7 +72,7 @@ function jsonProp(
 
 export function callInterfaceTitle(methodName: string): string {
   const trimmed = methodName.trim();
-  return trimmed ? `Call I ${trimmed}` : "Call I";
+  return trimmed ? `Call Interface ${trimmed}` : "Call Interface";
 }
 
 export const interfaceNodes: NodeDefinition[] = [
@@ -85,7 +85,7 @@ export const interfaceNodes: NodeDefinition[] = [
         return [
           pin("execIn", "exec", "in", EXEC),
           pin("execOut", "then", "out", EXEC),
-          pin("target", "target", "in", objectRef("BObject")),
+          pin("target", "Target", "in", objectRef("BObject")),
           pin("interfaceGuid", "interfaceGuid", "in", STRING),
           pin("method", "method", "in", STRING),
           pin("result", "result", "out", BOXED_WILDCARD),

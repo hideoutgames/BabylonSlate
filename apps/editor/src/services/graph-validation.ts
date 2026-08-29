@@ -414,6 +414,11 @@ function hydratedNodeTitle(
   authoredTitle: string | undefined,
   defTitle: string,
 ): string {
+  if (typeId === "interface.call") {
+    return callInterfaceTitle(
+      typeof properties.method === "string" ? properties.method : "",
+    );
+  }
   if (
     typeof properties.title === "string" &&
     (typeId === "flow.event.call" ||

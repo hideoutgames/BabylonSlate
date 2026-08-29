@@ -37,8 +37,11 @@ function loadModule(source: string): Record<string, unknown> {
 }
 
 describe("callInterfaceTitle", () => {
-  it("prefixes the method name with Call I", () => {
-    expect(callInterfaceTitle("Apply Damage")).toBe("Call I Apply Damage");
+  it("prefixes the method name with Call Interface", () => {
+    expect(callInterfaceTitle("Apply Damage")).toBe(
+      "Call Interface Apply Damage",
+    );
+    expect(callInterfaceTitle("  ")).toBe("Call Interface");
   });
 });
 
@@ -93,7 +96,26 @@ describe("interface nodes", () => {
     expect(calls).toEqual([[self, "iface-damageable", "ApplyDamage"]]);
   });
 
-  it("compiled Call I nodes pass args and destructure outputs", () => {
+  it("signature pins include a Target of any object plus method I/O", () => {
+    const registry = createDefaultNodeRegistry();
+    const call = node(registry, "call", "interface.call", {
+      method: "Apply Damage",
+      pins: [
+        { name: "amount", typeId: "float", direction: "in" },
+        { name: "remaining", typeId: "float", direction: "out" },
+      ],
+    });
+    const target = call.pins.find((pin) => pin.id === "target");
+    expect(target).toMatchObject({
+      name: "Target",
+      direction: "in",
+      type: { kind: "objectRef", classId: "BObject" },
+    });
+    expect(call.pins.some((pin) => pin.id === "amount")).toBe(true);
+    expect(call.pins.some((pin) => pin.id === "remaining")).toBe(true);
+  });
+
+  it("compiled Call Interface nodes pass args and destructure outputs", () => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",

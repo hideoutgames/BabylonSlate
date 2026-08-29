@@ -165,6 +165,38 @@ describe("hydrateSerializedGraphForEditor", () => {
     });
   });
 
+  it("retitles Call Interface nodes from the method name", () => {
+    const graph: SerializedGraph = {
+      nodes: [
+        {
+          id: "call-1",
+          type: "interface.call",
+          position: { x: 0, y: 0 },
+          data: {
+            interfaceGuid: "iface-damageable",
+            method: "Apply Damage",
+            implicitSelf: true,
+            pins: [
+              { name: "amount", typeId: "float", direction: "in" },
+              { name: "remaining", typeId: "float", direction: "out" },
+            ],
+            title: "Call I Apply Damage",
+          },
+        },
+      ],
+      edges: [],
+    };
+    const hydrated = hydrateSerializedGraphForEditor(graph, registry);
+    expect(hydrated.nodes[0]?.data.title).toBe("Call Interface Apply Damage");
+    const pins = hydrated.nodes[0]?.data.__pins as Array<{
+      id: string;
+      name: string;
+    }>;
+    expect(pins.some((pin) => pin.id === "target" && pin.name === "Target")).toBe(
+      true,
+    );
+  });
+
   it("titles an unconnected Cast node from the default class", () => {
     const graph: SerializedGraph = {
       nodes: [
@@ -903,7 +935,7 @@ describe("scriptPaletteNodes", () => {
     }
   });
 
-  it("injects Call I rows per ScriptInterface method", () => {
+  it("injects Call Interface rows per ScriptInterface method", () => {
     const nodes = scriptPaletteNodes(registry, {
       scriptInterfaces: [
         {
@@ -924,11 +956,13 @@ describe("scriptPaletteNodes", () => {
     const call = nodes.find(
       (node) => node.id === "interface.call:iface-damageable:Apply Damage",
     );
-    expect(call?.title).toBe("Call I Apply Damage");
+    expect(call?.title).toBe("Call Interface Apply Damage");
     expect(call?.nodeType).toBe("interface.call");
-    expect(call?.pins?.some((pin) => pin.name === "amount")).toBe(true);
-    expect(call?.pins?.some((pin) => pin.name === "remaining")).toBe(true);
-    expect(call?.pins?.some((pin) => pin.name === "target")).toBe(true);
+    expect(call?.pins?.some((pin) => pin.id === "amount")).toBe(true);
+    expect(call?.pins?.some((pin) => pin.id === "remaining")).toBe(true);
+    expect(
+      call?.pins?.some((pin) => pin.id === "target" && pin.name === "Target"),
+    ).toBe(true);
     expect(call?.defaultData).toMatchObject({
       interfaceGuid: "iface-damageable",
       method: "Apply Damage",
