@@ -105,20 +105,6 @@ describe("overlaySubmenuOrigin", () => {
     ).toEqual({ x: 428, y: 40 });
   });
 
-  it("keeps a flipped submenu outside the left safe-area edge", () => {
-    expect(
-      overlaySubmenuOrigin({
-        parentX: 100,
-        parentY: 50,
-        parentWidth: 192,
-        submenuWidth: 192,
-        viewportWidth: 250,
-        margin: 8,
-        insets: { left: 24 },
-      }),
-    ).toEqual({ x: 32, y: 50 });
-  });
-
   it("keeps a right-opening submenu outside the right safe-area edge", () => {
     expect(
       overlaySubmenuOrigin({

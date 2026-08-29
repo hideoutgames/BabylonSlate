@@ -53,4 +53,12 @@ describe("createStatusBarStyle", () => {
     await createStatusBarStyle().setStyle("dark");
     expect(setStyle).not.toHaveBeenCalled();
   });
+
+  it("creates a Capacitor adapter on iOS", async () => {
+    getPlatform.mockReturnValue("ios");
+
+    await createStatusBarStyle().setStyle("light");
+
+    expect(setStyle).toHaveBeenCalledWith({ style: "DARK" });
+  });
 });

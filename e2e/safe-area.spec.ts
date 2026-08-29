@@ -19,6 +19,18 @@ test.describe("safe-area layout", { tag: IPAD_TEST_TAG }, () => {
     expect(chromeBefore).not.toBeNull();
     expect(mainBefore).not.toBeNull();
     expect(chromeBefore!.y).toBe(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          ["--safe-top", "--safe-right", "--safe-bottom", "--safe-left"].map(
+            (name) =>
+              getComputedStyle(document.documentElement)
+                .getPropertyValue(name)
+                .trim(),
+          ),
+        ),
+      )
+      .toEqual(["0px", "0px", "0px", "0px"]);
     await page.screenshot({ path: "test-results/safe-area-before.png" });
 
     await page.addStyleTag({

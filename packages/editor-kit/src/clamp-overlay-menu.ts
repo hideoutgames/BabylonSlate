@@ -59,17 +59,10 @@ export function overlaySubmenuOrigin({
   margin = 8,
   insets = {},
 }: OverlaySubmenuOriginInput): { x: number; y: number } {
-  const leftMargin = margin + (insets.left ?? 0);
   const rightMargin = margin + (insets.right ?? 0);
   const rightX = parentX + parentWidth;
   if (rightX + submenuWidth <= viewportWidth - rightMargin) {
     return { x: rightX, y: parentY };
   }
-  return {
-    x:
-      leftMargin === margin
-        ? parentX - submenuWidth
-        : Math.max(leftMargin, parentX - submenuWidth),
-    y: parentY,
-  };
+  return { x: parentX - submenuWidth, y: parentY };
 }

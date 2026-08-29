@@ -338,19 +338,7 @@ function OverlayMenu({
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
-  const safeTop = parseCssPixelToken("--safe-top");
-  const safeRight = parseCssPixelToken("--safe-right");
-  const safeBottom = parseCssPixelToken("--safe-bottom");
-  const safeLeft = parseCssPixelToken("--safe-left");
-  const insets = useMemo<OverlaySafeAreaInsets>(
-    () => ({
-      top: safeTop,
-      right: safeRight,
-      bottom: safeBottom,
-      left: safeLeft,
-    }),
-    [safeTop, safeRight, safeBottom, safeLeft],
-  );
+  const insets = useMemo(readSafeAreaInsets, []);
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -422,6 +410,15 @@ function parseCssPixelToken(name: string): number {
     .trim();
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readSafeAreaInsets(): OverlaySafeAreaInsets {
+  return {
+    top: parseCssPixelToken("--safe-top"),
+    right: parseCssPixelToken("--safe-right"),
+    bottom: parseCssPixelToken("--safe-bottom"),
+    left: parseCssPixelToken("--safe-left"),
+  };
 }
 
 export function NestedMenu({

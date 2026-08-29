@@ -35,7 +35,9 @@ export function readStoredThemePreference(raw: string | null): ThemePreference {
 
 export function applyDocumentTheme(resolved: ResolvedTheme): void {
   document.documentElement.classList.toggle("dark", resolved === "dark");
-  void createStatusBarStyle().setStyle(statusBarStyleForTheme(resolved));
+  void createStatusBarStyle()
+    .setStyle(statusBarStyleForTheme(resolved))
+    .catch(() => undefined);
 }
 
 export function statusBarStyleForTheme(
