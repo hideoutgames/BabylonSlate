@@ -292,6 +292,45 @@ describe("PinListEditor", () => {
     expect(onChange).toHaveBeenCalledWith([
       expect.objectContaining({ id: "a", optional: true }),
     ]);
+    expect(screen.getByTestId("pin-a-default")).toBeTruthy();
+  });
+
+  it("hides optional and default when those extras are disabled", () => {
+    render(
+      <PinListEditor
+        rows={rows.slice(0, 1)}
+        selectedId="a"
+        onChange={() => {}}
+        showOptional={false}
+        showDefault={false}
+      />,
+    );
+    expect(screen.queryByTestId("pin-a-optional")).toBeNull();
+    expect(screen.queryByTestId("pin-a-default")).toBeNull();
+  });
+
+  it("keeps Class Type when optional and default extras are disabled", () => {
+    render(
+      <PinListEditor
+        rows={[
+          {
+            id: "a",
+            name: "target",
+            type: "object",
+            direction: "in",
+            typeClassId: "Hero",
+          },
+        ]}
+        selectedId="a"
+        classEntries={[{ id: "Hero", name: "Hero" }]}
+        onChange={() => {}}
+        showOptional={false}
+        showDefault={false}
+      />,
+    );
+    expect(screen.queryByTestId("pin-a-optional")).toBeNull();
+    expect(screen.queryByTestId("pin-a-default")).toBeNull();
+    expect(screen.getByTestId("pin-a-class-type")).toBeTruthy();
   });
 
   it("centers row actions on the selected card including extra fields", () => {

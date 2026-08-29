@@ -190,7 +190,7 @@ Ship with the catalog but own dedicated designs (not one-line templates):
 | **Select (typed)** | Fixed pure nodes `select.bool` / `int` / `float` / `string` / `vec2` / `vec3` / `vec4` / `rotator` / `transform` / `color`. Every node takes a Bool **Index**, typed **False** / **True** defaults, and one typed output. Category `select`; dynamic Enum/Object/Class/Struct selection uses `enum.select` instead of fixed variants. |
 | **Report Command** | Sets the console success flag + output string for `OnCommandRun` |
 
-Shared **PinListEditor** / **PinTypePicker** in `editor-kit` author typed named reorderable pins (color chip, compact type picker, up/down, trash icon, Class Type on object/class pins, Structure/Enum `AssetPicker` on struct/enum pins when `typeAssets` is passed). `ParameterListEditor` is a thin wrapper for ExecuteJavaScript Inputs/Outputs and `BDebugCommand` / Event On Command Run (Execute JS enums still use the NamedListEditor value list). Class function signatures and ScriptInterface method pins use `PinListEditor` directly. `GraphClassMember.typeClassId` is the object/class constraint **or** the Structure/Enum asset guid (including `engine:` registry ids). `pinTypeForMember(typeId, typeClassId)` emits `structRef(guid)` / `enumRef(guid)`; an empty guid is an unbound stub.
+Shared **PinListEditor** / **PinTypePicker** in `editor-kit` author typed named reorderable pins (color chip, compact type picker, up/down, trash icon, Class Type on object/class pins, Structure/Enum `AssetPicker` on struct/enum pins when `typeAssets` is passed). ScriptInterface Details turns off Optional and Default (`showOptional` / `showDefault`). `ParameterListEditor` is a thin wrapper for ExecuteJavaScript Inputs/Outputs and `BDebugCommand` / Event On Command Run (Execute JS enums still use the NamedListEditor value list). Class function signatures and ScriptInterface method pins use `PinListEditor` directly. `GraphClassMember.typeClassId` is the object/class constraint **or** the Structure/Enum asset guid (including `engine:` registry ids). `pinTypeForMember(typeId, typeClassId)` emits `structRef(guid)` / `enumRef(guid)`; an empty guid is an unbound stub.
 
 ## Node catalog (`scripting-nodes`)
 
@@ -235,7 +235,7 @@ These open their own DockView documents (not compact Settings tabs). **Windows**
 | --- | --- |
 | Enum | Members table (name + value) + Details |
 | Structure | Member list with pin colors + Details (Name, Type, then Default) |
-| ScriptInterface | Methods \| read-only function-node Preview (`GraphEditor` `readOnly`) \| pin Details (`PinListEditor` in/out) |
+| ScriptInterface | Methods \| read-only function-node Preview (`GraphEditor` `readOnly`) \| pin Details (`PinListEditor` in/out; no Optional or Default) |
 
 Texture stays compact `asset-settings`. Model, Skeleton, and Animation open DockView documents (Preview + Details). Imported Audio opens a DockView document (Preview / Details / Clips). Sprite opens a DockView document (Preview + Details). FunctionLibrary remains a Class parent, not a file type.
 

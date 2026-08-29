@@ -44,6 +44,8 @@ export type PinListEditorProps = {
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   showDirection?: boolean;
+  showOptional?: boolean;
+  showDefault?: boolean;
   types?: readonly string[];
   classEntries?: readonly ClassPickerEntry[];
   typeAssets?: readonly AssetPickerEntry[];
@@ -121,6 +123,8 @@ export function PinListEditor({
   selectedId,
   onSelect,
   showDirection = false,
+  showOptional = true,
+  showDefault = true,
   types,
   classEntries = [],
   typeAssets,
@@ -173,6 +177,21 @@ export function PinListEditor({
                 }
               : undefined,
         );
+        const showClassType = isReferencePinType(row.type);
+        const showAssetType = isAssetPinType(row.type);
+        const showTypeAsset = isTypeAssetPinType(row.type) && hasTypeAssets;
+        const showDefaultField =
+          showDefault && !showClassType && !showAssetType && !showTypeAsset;
+        const showEnumValues = row.type === "enum" && !hasTypeAssets;
+        const showExtras =
+          selected &&
+          !readOnly &&
+          (showOptional ||
+            showDefaultField ||
+            showClassType ||
+            showAssetType ||
+            showTypeAsset ||
+            showEnumValues);
         return (
           <div
             key={row.id}
@@ -207,24 +226,26 @@ export function PinListEditor({
                 data-testid={`${testIdPrefix}-${row.id}-type`}
               />
             </div>
-            {selected && !readOnly ? (
+            {showExtras ? (
               <div className="flex flex-wrap items-center gap-2 px-1 pb-1">
-                <Field orientation="horizontal">
-                  <Checkbox
-                    id={`${testIdPrefix}-${row.id}-optional`}
-                    checked={row.optional === true}
-                    onCheckedChange={(checked) =>
-                      onChange(
-                        patchRow(rows, row.id, { optional: checked === true }),
-                      )
-                    }
-                    data-testid={`${testIdPrefix}-${row.id}-optional`}
-                  />
-                  <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-optional`}>
-                    Optional
-                  </FieldLabel>
-                </Field>
-                {isReferencePinType(row.type) ? (
+                {showOptional ? (
+                  <Field orientation="horizontal">
+                    <Checkbox
+                      id={`${testIdPrefix}-${row.id}-optional`}
+                      checked={row.optional === true}
+                      onCheckedChange={(checked) =>
+                        onChange(
+                          patchRow(rows, row.id, { optional: checked === true }),
+                        )
+                      }
+                      data-testid={`${testIdPrefix}-${row.id}-optional`}
+                    />
+                    <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-optional`}>
+                      Optional
+                    </FieldLabel>
+                  </Field>
+                ) : null}
+                {showClassType ? (
                   <Field className="min-w-32 flex-1">
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-class-type`}>
                       Class Type
@@ -245,7 +266,7 @@ export function PinListEditor({
                       />
                     </Button>
                   </Field>
-                ) : isAssetPinType(row.type) ? (
+                ) : showAssetType ? (
                   <Field className="min-w-32 flex-1">
                     <FieldLabel>Asset Type</FieldLabel>
                     <SearchDropdown
@@ -273,7 +294,7 @@ export function PinListEditor({
                       </Button>
                     </SearchDropdown>
                   </Field>
-                ) : isTypeAssetPinType(row.type) && hasTypeAssets ? (
+                ) : showTypeAsset ? (
                   <Field className="min-w-32 flex-1">
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-type-asset`}>
                       {row.type === "enum" ? "Enum Type" : "Structure Type"}
@@ -300,7 +321,7 @@ export function PinListEditor({
                       </Button>
                     </AssetPickerControl>
                   </Field>
-                ) : (
+                ) : showDefaultField ? (
                   <Field className="min-w-32 flex-1">
                     <FieldLabel htmlFor={`${testIdPrefix}-${row.id}-default`}>
                       Default
@@ -319,8 +340,8 @@ export function PinListEditor({
                       }
                     />
                   </Field>
-                )}
-                {row.type === "enum" && !hasTypeAssets ? (
+                ) : null}
+                {showEnumValues ? (
                   <NamedListEditor
                     values={[...(row.enumValues ?? [])]}
                     onChange={(enumValues) =>

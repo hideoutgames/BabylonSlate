@@ -985,11 +985,13 @@ export function MyClassPanel(_props: MyClassPanelProps) {
 
   return (
     <PanelFrame data-testid="my-class-panel">
+      <div className="flex h-full min-h-0 flex-col">
       {className ? (
-        <p className="border-b border-border px-2 py-1 text-xs text-muted-foreground">
+        <p className="shrink-0 border-b border-border px-2 py-1 text-xs text-muted-foreground">
           {className}
         </p>
       ) : null}
+      <div className="min-h-0 flex-1">
       <ClassMembersView
         graph={graph}
         selectedId={selectedId}
@@ -1066,6 +1068,8 @@ export function MyClassPanel(_props: MyClassPanelProps) {
           setSelectedMemberId(id);
         }}
       />
+      </div>
+      </div>
     </PanelFrame>
   );
 }
