@@ -14,6 +14,15 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 `apps/editor/src/shell/design-tokens.test.ts` asserts ink `--primary`, Neutral backgrounds, `--chrome-tab-accent: var(--foreground)`, a chromatic `--axis-z` that is not `var(--primary)`, a darker light-mode `--pin-exec`, dark `--secondary`/`--muted` distinct from `--popover`, and Dockview tab colors plus 1px content-container outlines.
 
+## Safe-area insets
+
+`globals.css` owns the four safe-area tokens: `--safe-top`, `--safe-right`, `--safe-bottom`, and `--safe-left`. They resolve the corresponding `env(safe-area-inset-*, 0px)` values, keeping web, Electron, and jsdom at zero. Surfaces consume these tokens and never call `env()` directly.
+
+- The editor and Homepage roots use `.safe-frame` for left, right, and bottom insets.
+- The editor chrome shell owns the top inset while preserving the interactive row height.
+- Fixed context menus and Play overlay chrome consume the tokens themselves; the Play canvas remains edge-to-edge.
+- The visible native iPad status bar follows the resolved editor theme through the VFS status-bar-style port.
+
 ## Design philosophy
 
 BabylonSlate is a game engine editor: chrome should be quiet, but **types and axes must be obvious**.
