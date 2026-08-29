@@ -44,6 +44,14 @@ function ktx2BasePath(): string {
   return new URL("./ktx2/", document.baseURI).href;
 }
 
+function dracoBasePath(): string {
+  return new URL("./draco/", document.baseURI).href;
+}
+
+function meshoptBasePath(): string {
+  return new URL("./meshopt/", document.baseURI).href;
+}
+
 export type PlayerDiagnostic = {
   message: string;
   severity: string;
@@ -130,6 +138,8 @@ export function startPlayer(options: {
     navmeshBytes: content.navmeshBytes,
     navBlockers: navDebugBlockersFromActors(scene.actors),
     ktx2BasePath: ktx2BasePath(),
+    dracoBasePath: dracoBasePath(),
+    meshoptBasePath: meshoptBasePath(),
     onPostProcessDiagnostic: (diagnostic) => {
       diagnostics.push({
         message: diagnostic.message,

@@ -3,6 +3,11 @@ import {
   createAppEngine,
   releaseResourceCacheForEngine,
 } from "@babylonslate/render";
+import {
+  editorDracoPublicBase,
+  editorKtx2PublicBase,
+  editorMeshoptPublicBase,
+} from "./public-engine-assets";
 import { isUsableEngine } from "./shared-engine-generation";
 
 export type ProjectEngineSession = {
@@ -26,7 +31,11 @@ export function createProjectEngineSession(): ProjectEngineSession | null {
   canvas.setAttribute("data-testid", "project-engine-canvas");
   document.body.appendChild(canvas);
   try {
-    const engine = createAppEngine(canvas);
+    const engine = createAppEngine(canvas, {
+      ktx2BasePath: editorKtx2PublicBase(),
+      dracoBasePath: editorDracoPublicBase(),
+      meshoptBasePath: editorMeshoptPublicBase(),
+    });
     canvas.style.display = "none";
     return {
       engine,

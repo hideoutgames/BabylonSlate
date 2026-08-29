@@ -23,6 +23,8 @@ function copyRuntimePublic(): Plugin {
     );
     copyIfPresent(path.join(editorPublic, "havok"), path.join(dest, "havok"));
     copyIfPresent(path.join(editorPublic, "ktx2"), path.join(dest, "ktx2"));
+    copyIfPresent(path.join(editorPublic, "draco"), path.join(dest, "draco"));
+    copyIfPresent(path.join(editorPublic, "meshopt"), path.join(dest, "meshopt"));
     copyEngineDefaultSkyboxFaces(repoRoot, dest);
   };
   return {

@@ -45,10 +45,13 @@ import {
 import { SelectionOutline } from "./selection-outline";
 import { attachViewportGestures } from "./viewport-gestures";
 import { attachViewportFlyKeys, DEFAULT_FLY_SPEED } from "./viewport-fly-keys";
+import { DracoDecoder } from "@babylonjs/core/Meshes/Compression/dracoDecoder";
+import { MeshoptCompression } from "@babylonjs/core/Meshes/Compression/meshoptCompression";
 import {
   configureKtx2DecoderRuntime,
   configureKtx2Transcoder,
 } from "./ktx2-transcoder";
+import { configureGltfMeshDecoders } from "./gltf-mesh-decoders";
 import {
   documentEditorColorScheme,
   editorClearColor,
@@ -347,6 +350,10 @@ export interface CreateEngineOptions {
   >;
   /** Self-hosted KTX2 transcoder directory. Editor uses `/ktx2/`; the player uses a relative folder. */
   ktx2BasePath?: string;
+  /** Self-hosted Draco glTF decoder directory. Editor uses `/draco/`. */
+  dracoBasePath?: string;
+  /** Self-hosted meshopt glTF decoder directory. Editor uses `/meshopt/`. */
+  meshoptBasePath?: string;
   /** Compiled Material documents keyed by asset guid. */
   materialDocuments?: ReadonlyMap<string, MaterialDocument>;
   /** Material Function documents keyed by asset guid. */
@@ -569,6 +576,11 @@ export function createEngine(
   options: CreateEngineOptions = {},
 ): EngineHandle {
   configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
+  configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
+    dracoBasePath: options.dracoBasePath,
+    meshoptBasePath: options.meshoptBasePath,
+    playMode: options.playMode === true,
+  });
 
   const ownsEngine = !options.sharedEngine;
   const presentRtt = options.present === "rtt";
@@ -1994,8 +2006,18 @@ function setOtherEngineViewsEnabled(
 }
 
 /** Create the project-lifetime Engine (no scene). */
-export function createAppEngine(canvas: HTMLCanvasElement): Engine {
-  configureKtx2Transcoder(KhronosTextureContainer2);
+export function createAppEngine(
+  canvas: HTMLCanvasElement,
+  options: Pick<
+    CreateEngineOptions,
+    "ktx2BasePath" | "dracoBasePath" | "meshoptBasePath"
+  > = {},
+): Engine {
+  configureKtx2Transcoder(KhronosTextureContainer2, options.ktx2BasePath);
+  configureGltfMeshDecoders(DracoDecoder, MeshoptCompression, {
+    dracoBasePath: options.dracoBasePath,
+    meshoptBasePath: options.meshoptBasePath,
+  });
   const engine = new Engine(canvas, true, {
     preserveDrawingBuffer: true,
     stencil: true,

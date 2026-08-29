@@ -49,6 +49,8 @@ coi-serviceworker.js
 havok/HavokPhysics.wasm   # 3d only
 # or assets/rapier.es-*.js  # 2d only
 ktx2/…              # transcoder files the player needs
+draco/…             # glTF Draco decoder (KHR_draco_mesh_compression)
+meshopt/…           # glTF meshopt decoder (EXT_meshopt_compression)
 ```
 
 `GameManifest` records `startupSceneGuid`, optional `gameInstanceClass` (project field), `render`, `playFrameCap`, project `twoD.pixelsPerUnit` / `pixelPerfect` (defaults 100 / false), Engine Settings `touchMinTargetPx` (default 44), `packs`, `physicsWorld`, and `assets[]`. Audio fields: optional `audioMixerGuid`, `occlusionEnabled` (default on), and reverb scales (default 1). Font index entries include `name` (authored `family`, else the asset name) so the player can `FontFace(family, bytes)`. The player boot prefers `manifest.gameInstanceClass`, then the startup scene field. When `bundleDebugger` is true the manifest also carries `infiniteLoopDetection` and `loopCount` from Project Settings (defaults on / 1_000_000); release packs omit those keys. `parseGameManifest` fills the defaults for old debugger-bundled `game.json` files and ignores the fields on release manifests. `GameManifest` does not include HUD keys.

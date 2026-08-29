@@ -1,5 +1,5 @@
 import { defaultPlayerIndexHtml } from "@babylonslate/exporter";
-import { KTX2_TRANSCODER_RELATIVE_FILES } from "@babylonslate/assets";
+import { KTX2_TRANSCODER_RELATIVE_FILES, GLTF_MESH_DECODER_RELATIVE_FILES } from "@babylonslate/assets";
 import { playerHostBase } from "../lib/player-host-url";
 
 const PLAYER_CANDIDATES = [
@@ -9,6 +9,7 @@ const PLAYER_CANDIDATES = [
   "coi-serviceworker.js",
   "havok/HavokPhysics.wasm",
   ...KTX2_TRANSCODER_RELATIVE_FILES,
+  ...GLTF_MESH_DECODER_RELATIVE_FILES,
 ];
 
 function originBase(): string {

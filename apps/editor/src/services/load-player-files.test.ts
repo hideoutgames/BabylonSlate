@@ -45,5 +45,11 @@ describe("loadPlayerDistFiles", () => {
     expect(requested.some((url) => url.includes("ktx2/zstddec.wasm"))).toBe(
       true,
     );
+    expect(requested.some((url) => url.includes("draco/draco_decoder_gltf.wasm"))).toBe(
+      true,
+    );
+    expect(requested.some((url) => url.includes("meshopt/meshopt_decoder.js"))).toBe(
+      true,
+    );
   });
 });

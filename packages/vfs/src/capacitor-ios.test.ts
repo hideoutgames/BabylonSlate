@@ -238,5 +238,7 @@ describe("Capacitor 8 iOS host", () => {
     ).toBe(true);
     expect(existsSync(join(repoRoot, "apps/editor/public/havok"))).toBe(true);
     expect(existsSync(join(repoRoot, "apps/editor/public/ktx2"))).toBe(true);
+    expect(existsSync(join(repoRoot, "apps/editor/public/draco"))).toBe(true);
+    expect(existsSync(join(repoRoot, "apps/editor/public/meshopt"))).toBe(true);
   });
 });
