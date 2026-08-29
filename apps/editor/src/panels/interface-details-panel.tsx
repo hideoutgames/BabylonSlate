@@ -85,6 +85,8 @@ export function InterfaceDetailsPanel(_props: IDockviewPanelProps) {
           selectedId={selectedPinId}
           onSelect={setSelectedPinId}
           showDirection
+          showOptional={false}
+          showDefault={false}
           classEntries={subclassClassEntries(
             "BObject",
             assetRegistry?.list() ?? [],
