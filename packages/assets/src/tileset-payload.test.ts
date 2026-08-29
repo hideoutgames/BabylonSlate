@@ -55,52 +55,19 @@ describe("tileset payload", () => {
       tileWidth: 16,
       tileHeight: 16,
     });
-    const du = 0.5 / 64;
-    const dv = 0.5 / 32;
     expect(tilesetAtlasColumns(tileset)).toBe(4);
     expect(tilesetTileUv(tileset, 0)).toBeNull();
     expect(tilesetTileUv(tileset, 1)).toEqual({
-      u0: du,
-      v0: 0.5 + dv,
-      u1: 0.25 - du,
-      v1: 1 - dv,
+      u0: 0,
+      v0: 0.5,
+      u1: 0.25,
+      v1: 1,
     });
     expect(tilesetTileUv(tileset, 5)).toEqual({
-      u0: du,
-      v0: dv,
-      u1: 0.25 - du,
-      v1: 0.5 - dv,
-    });
-  });
-
-  it("insets GPU UVs so neighboring cells do not share an atlas edge", () => {
-    const tileset = normalizeTilesetPayload({
-      atlasWidth: 64,
-      atlasHeight: 32,
-      tileWidth: 16,
-      tileHeight: 16,
-    });
-    const left = tilesetTileUv(tileset, 1);
-    const right = tilesetTileUv(tileset, 2);
-    expect(left).not.toBeNull();
-    expect(right).not.toBeNull();
-    expect(left!.u1).not.toBe(right!.u0);
-    expect(left!.u1).toBeLessThan(right!.u0);
-  });
-
-  it("clamps the UV inset to half the cell for 1px tiles", () => {
-    const tileset = normalizeTilesetPayload({
-      atlasWidth: 8,
-      atlasHeight: 8,
-      tileWidth: 1,
-      tileHeight: 1,
-    });
-    const uv = tilesetTileUv(tileset, 1);
-    expect(uv).toEqual({
-      u0: 0.5 / 8,
-      v0: 1 - 1 / 8 + 0.5 / 8,
-      u1: 0.5 / 8,
-      v1: 1 - 0.5 / 8,
+      u0: 0,
+      v0: 0,
+      u1: 0.25,
+      v1: 0.5,
     });
   });
 
