@@ -15,7 +15,7 @@ Sprite payload (document chunk, or import result):
 | `clips` | named sequences of frame indices (legacy atlas playback; AnimGraph sprite clips pick **Sprite Animation** instead) |
 | `pixelsPerUnit` | default 100 (project 2D scale) |
 
-Import accepts **pre-packed JSON** or **loose frames**. Loose frames run a **deterministic rectangle packer** in `@babylonslate/assets` (padding + edge extrusion), golden-tested. Pixel-art policy already keeps sprites uncompressed (P2). Sampling: **NEAREST**, no mips, clamp wrap on a `ResourceCache` wrapper keyed by those flags (does not reuse a mipped 3D albedo).
+Import accepts **pre-packed JSON** or **loose frames**. Loose frames run a **deterministic rectangle packer** in `@babylonslate/assets` (padding + edge extrusion), golden-tested. Pixel-art policy already keeps sprites uncompressed (P2). Sampling at texture creation: **NEAREST**, no mips, anisotropic 1 (resource cache canonical sampling).
 
 ## `SpriteComponent`
 
