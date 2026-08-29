@@ -36,7 +36,7 @@ interface CacheEntry {
   lastUsed: number;
   samplingKey: string;
   contentKey: string;
-  texture?: BaseTexture;
+  textures: Map<string, BaseTexture>;
 }
 
 /**
@@ -175,7 +175,7 @@ export class ResourceCache {
   }
 
   private isUnreferenced(entry: CacheEntry): boolean {
-    if (entry.texture && entry.refCount > 0) return false;
+    if (this.hasLiveTexture(entry) && entry.refCount > 0) return false;
     if (this.clientTextures.size === 0) return entry.refCount === 0;
     for (const guids of this.clientTextures.values()) {
       if (guids.has(entry.assetGuid)) return false;
@@ -192,10 +192,7 @@ export class ResourceCache {
         existing.lastUsed = ++this.clock;
         return existing.blobUrl;
       }
-      if (existing.texture) {
-        existing.texture.dispose();
-        existing.texture = undefined;
-      }
+      this.disposeEntryTextures(existing);
       if (existing.blobUrl.startsWith("blob:") && typeof URL !== "undefined") {
         try {
           URL.revokeObjectURL(existing.blobUrl);
@@ -237,6 +234,7 @@ export class ResourceCache {
       lastUsed: ++this.clock,
       samplingKey: samplingKey(),
       contentKey: nextKey,
+      textures: new Map(),
     };
     this.entries.set(assetGuid, entry);
     return url;
@@ -244,9 +242,9 @@ export class ResourceCache {
 
   /**
    * Resolve a Texture for an asset guid through the cache so editor and Play
-   * share one InternalTexture (stable URL + first-load canonical sampling).
-   * A live wrapper is reused even when a later caller requests different flags
-   * (2D overlay NEAREST must not dispose a 3D material albedo).
+   * share one blob URL. Wrappers are keyed by sampling flags so overlay /
+   * sprite / tilemap NEAREST+no-mip does not reuse a mipped 3D InternalTexture
+   * (and does not dispose that 3D albedo).
    */
   getTexture(
     assetGuid: string,
@@ -256,22 +254,21 @@ export class ResourceCache {
   ): Texture | CubeTexture {
     const key = samplingKey(options);
     const existing = this.entries.get(assetGuid);
-    if (existing?.texture) {
-      if (!isDisposedGpuTexture(existing.texture)) {
-        existing.refCount += 1;
-        existing.lastUsed = ++this.clock;
-        return existing.texture as Texture | CubeTexture;
-      }
-      existing.texture = undefined;
+    const live = existing ? this.liveTexture(existing, key) : undefined;
+    if (live) {
+      existing!.refCount += 1;
+      existing!.lastUsed = ++this.clock;
+      return live as Texture | CubeTexture;
     }
     const url = this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(assetGuid)!;
-    // Canonical sampling flags are part of Babylon's InternalTexture cache key.
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
-    const loaderUrl = ktx2.forcedExtension ? `${url}#.ktx2` : url;
+    const loaderUrl = ktx2.forcedExtension
+      ? `${url}#${key}.ktx2`
+      : `${url}#${key}`;
     const texture = options.isCube
-      ? new CubeTexture(url, engine, {
+      ? new CubeTexture(loaderUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
         })
@@ -284,7 +281,7 @@ export class ResourceCache {
           forcedExtension: ktx2.forcedExtension,
           buffer: raw ? raw.slice() : undefined,
         });
-    entry.texture = texture;
+    entry.textures.set(key, texture);
     entry.samplingKey = key;
     this.accountLoadedBytes(assetGuid, bytes, options.noMipmap !== true);
     return texture;
@@ -302,13 +299,11 @@ export class ResourceCache {
   ): CubeTexture {
     const key = ["cube6", noMipmap ? "1" : "0", ...files].join(":");
     const existing = this.entries.get(assetGuid);
-    if (existing?.texture) {
-      if (!isDisposedGpuTexture(existing.texture)) {
-        existing.refCount += 1;
-        existing.lastUsed = ++this.clock;
-        return existing.texture as CubeTexture;
-      }
-      existing.texture = undefined;
+    const live = existing ? this.liveTexture(existing, key) : undefined;
+    if (live) {
+      existing!.refCount += 1;
+      existing!.lastUsed = ++this.clock;
+      return live as CubeTexture;
     }
     const texture = createEngineCubeTextureFromImages(
       scene.getEngine(),
@@ -316,7 +311,7 @@ export class ResourceCache {
       noMipmap,
     );
     if (existing) {
-      existing.texture = texture;
+      existing.textures.set(key, texture);
       existing.samplingKey = key;
       existing.refCount += 1;
       existing.lastUsed = ++this.clock;
@@ -330,7 +325,7 @@ export class ResourceCache {
       lastUsed: ++this.clock,
       samplingKey: key,
       contentKey: files.join(":"),
-      texture,
+      textures: new Map([[key, texture]]),
     });
     return texture;
   }
@@ -341,9 +336,7 @@ export class ResourceCache {
    */
   releaseGpuTextures(): void {
     for (const entry of this.entries.values()) {
-      if (!entry.texture) continue;
-      entry.texture.dispose();
-      entry.texture = undefined;
+      this.disposeEntryTextures(entry);
     }
   }
 
@@ -363,6 +356,7 @@ export class ResourceCache {
         lastUsed: ++this.clock,
         samplingKey: samplingKey(),
         contentKey: "",
+        textures: new Map(),
       });
       this.totalBytes += bytes;
       this.evictToCeiling();
@@ -416,6 +410,31 @@ export class ResourceCache {
     }
   }
 
+  private liveTexture(
+    entry: CacheEntry,
+    key: string,
+  ): BaseTexture | undefined {
+    const texture = entry.textures.get(key);
+    if (!texture) return undefined;
+    if (!isDisposedGpuTexture(texture)) return texture;
+    entry.textures.delete(key);
+    return undefined;
+  }
+
+  private hasLiveTexture(entry: CacheEntry): boolean {
+    for (const texture of entry.textures.values()) {
+      if (!isDisposedGpuTexture(texture)) return true;
+    }
+    return false;
+  }
+
+  private disposeEntryTextures(entry: CacheEntry): void {
+    for (const texture of entry.textures.values()) {
+      texture.dispose();
+    }
+    entry.textures.clear();
+  }
+
   private accountLoadedBytes(
     assetGuid: string,
     bytes: Uint8Array | Blob,
@@ -460,7 +479,7 @@ export class ResourceCache {
     this.totalBytes -= entry.bytes;
     this.entries.delete(assetGuid);
     this.blobs.delete(assetGuid);
-    entry.texture?.dispose();
+    this.disposeEntryTextures(entry);
     if (entry.blobUrl.startsWith("blob:") && typeof URL !== "undefined") {
       try {
         URL.revokeObjectURL(entry.blobUrl);

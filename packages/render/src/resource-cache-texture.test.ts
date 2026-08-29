@@ -65,9 +65,16 @@ describe("resource cache getTexture", () => {
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([9, 9, 9]);
     const a = cache.getTexture("tex", engine, bytes, { noMipmap: false });
-    const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
-    expect(b).toBe(a);
+    const b = cache.getTexture("tex", engine, bytes, {
+      noMipmap: true,
+      samplingMode: Texture.NEAREST_SAMPLINGMODE,
+    });
+    expect(b).not.toBe(a);
     expect(isDisposedGpuTexture(a)).toBe(false);
+    expect(isDisposedGpuTexture(b)).toBe(false);
+    expect(a.noMipmap).toBe(false);
+    expect(b.noMipmap).toBe(true);
+    expect(b.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
     cache.dispose();
     engine.dispose();
   });
@@ -101,7 +108,7 @@ describe("resource cache getTexture", () => {
     };
     expect(loaderHints.mimeType ?? loaderHints._mimeType).toBe("image/ktx2");
     expect(loaderHints._forcedExtension).toBe(".ktx2");
-    expect(texture.name || texture.url).toMatch(/#\.ktx2$/);
+    expect(texture.name || texture.url).toMatch(/\.ktx2$/);
     cache.dispose();
     engine.dispose();
   });
@@ -139,7 +146,7 @@ describe("resource cache getTexture", () => {
       files,
       true,
     );
-    expect(nearest).toBe(cube);
+    expect(nearest).not.toBe(cube);
     expect(isDisposedGpuTexture(cube)).toBe(false);
     cache.dispose();
     scene.dispose();
