@@ -175,6 +175,8 @@ export function applyAlbedoTexture(
       samplingMode: Texture.NEAREST_SAMPLINGMODE,
     },
   );
+  texture.wrapU = Texture.CLAMP_ADDRESSMODE;
+  texture.wrapV = Texture.CLAMP_ADDRESSMODE;
   const material = new StandardMaterial(`albedo:${textureGuid}`, scene);
   material.disableLighting = true;
   material.diffuseTexture = texture;

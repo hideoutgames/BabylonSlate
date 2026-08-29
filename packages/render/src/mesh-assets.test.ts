@@ -5,6 +5,7 @@ import {
   NullEngine,
   Scene,
   StandardMaterial,
+  Texture,
 } from "@babylonjs/core";
 import { applyAlbedoTexture, meshAssetFingerprint, modelSlotFingerprint } from "./mesh-assets";
 import { getMaterialTexture, ResourceCache } from "./resource-cache";
@@ -79,7 +80,12 @@ describe("applyAlbedoTexture", () => {
     expect(albedo!.invertY).toBe(false);
     expect(albedo!.hasAlpha).toBe(false);
     const overlay = mesh.material as StandardMaterial;
-    expect(overlay.diffuseTexture).toBe(albedo);
+    const pixelArt = overlay.diffuseTexture as Texture;
+    expect(pixelArt).not.toBe(albedo);
+    expect(pixelArt.noMipmap).toBe(true);
+    expect(pixelArt.samplingMode).toBe(Texture.NEAREST_SAMPLINGMODE);
+    expect(pixelArt.wrapU).toBe(Texture.CLAMP_ADDRESSMODE);
+    expect(pixelArt.wrapV).toBe(Texture.CLAMP_ADDRESSMODE);
     expect(overlay.transparencyMode).toBe(Material.MATERIAL_ALPHATEST);
     cache.dispose();
     scene.dispose();
