@@ -21,7 +21,8 @@
 }
 
 .graph-editor-canvas [data-pin-row] {
-  width: max-content;
+  width: 100%;
+  min-width: max-content;
 }
 
 .graph-editor-canvas [data-pin-default-field] {

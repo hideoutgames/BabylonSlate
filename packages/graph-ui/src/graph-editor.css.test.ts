@@ -51,7 +51,8 @@ describe("blueprint node intrinsic width", () => {
     const block = rule(
       "\\.graph-editor-canvas \\[data-pin-row\\]",
     );
-    expect(block).toMatch(/width:\s*max-content/);
+    expect(block).toMatch(/width:\s*100%/);
+    expect(block).toMatch(/min-width:\s*max-content/);
   });
 
   it("keeps truncated text defaults at min\\(text, 12rem\\) instead of zero min-content", () => {
