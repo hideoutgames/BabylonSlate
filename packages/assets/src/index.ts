@@ -9,6 +9,7 @@ export * from "./decode-source-rgba";
 export * from "./derived-data";
 export * from "./encode-queue";
 export * from "./encode-worker-protocol";
+export * from "./gltf-mesh-decoder-files";
 export * from "./guid";
 export * from "./font-payload";
 export * from "./font-stack";

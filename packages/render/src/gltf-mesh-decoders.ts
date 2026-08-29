@@ -1,3 +1,7 @@
+import { GLTF_MESH_DECODER_RELATIVE_FILES } from "@babylonslate/assets";
+
+export { GLTF_MESH_DECODER_RELATIVE_FILES };
+
 /**
  * Self-hosted Draco / meshopt decoder URLs for Babylon's glTF loader.
  * Never point at a CDN — editor and exports must work offline.
@@ -5,14 +9,6 @@
 
 export const DEFAULT_DRACO_PUBLIC_BASE = "/draco/";
 export const DEFAULT_MESHOPT_PUBLIC_BASE = "/meshopt/";
-
-/** Relative player/export paths for every self-hosted mesh decoder file. */
-export const GLTF_MESH_DECODER_RELATIVE_FILES = [
-  "draco/draco_wasm_wrapper_gltf.js",
-  "draco/draco_decoder_gltf.wasm",
-  "draco/draco_decoder_gltf.js",
-  "meshopt/meshopt_decoder.js",
-] as const;
 
 export interface DracoDecoderUrls {
   wasmUrl: string;
