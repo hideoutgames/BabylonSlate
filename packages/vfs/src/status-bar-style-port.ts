@@ -5,5 +5,5 @@ export interface StatusBarStylePort {
 }
 
 export class UnavailableStatusBarStyle implements StatusBarStylePort {
-  async setStyle(_style: StatusBarGlyphStyle): Promise<void> {}
+  async setStyle(): Promise<void> {}
 }

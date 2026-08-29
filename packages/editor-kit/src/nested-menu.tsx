@@ -1,6 +1,7 @@
 import {
   isValidElement,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -337,12 +338,19 @@ function OverlayMenu({
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
-  const insets: OverlaySafeAreaInsets = {
-    top: parseCssPixelToken("--safe-top"),
-    right: parseCssPixelToken("--safe-right"),
-    bottom: parseCssPixelToken("--safe-bottom"),
-    left: parseCssPixelToken("--safe-left"),
-  };
+  const safeTop = parseCssPixelToken("--safe-top");
+  const safeRight = parseCssPixelToken("--safe-right");
+  const safeBottom = parseCssPixelToken("--safe-bottom");
+  const safeLeft = parseCssPixelToken("--safe-left");
+  const insets = useMemo<OverlaySafeAreaInsets>(
+    () => ({
+      top: safeTop,
+      right: safeRight,
+      bottom: safeBottom,
+      left: safeLeft,
+    }),
+    [safeTop, safeRight, safeBottom, safeLeft],
+  );
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -361,7 +369,7 @@ function OverlayMenu({
         insets,
       }),
     );
-  }, [x, y, items]);
+  }, [x, y, items, insets]);
 
   const submenuOrigin = openSubmenu
     ? overlaySubmenuOrigin({
