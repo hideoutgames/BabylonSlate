@@ -18,11 +18,23 @@ describe("iOS source-control host", () => {
     expect(pbxproj).toContain("path = BabylonSlateSecretsPlugin.swift");
   });
 
-  it("registers the Keychain plugin in packageClassList", () => {
-    const config = JSON.parse(
-      readFileSync(join(iosApp, "App/capacitor.config.json"), "utf8"),
-    ) as { packageClassList?: string[] };
-    expect(config.packageClassList).toContain("BabylonSlateSecretsPlugin");
+  it("restores the Keychain plugin registration after Capacitor sync", () => {
+    // The generated capacitor.config.json is not tracked, so ios-sync.mjs is the source of truth.
+    const syncScript = readFileSync(
+      join(iosApp, "../../scripts/ios-sync.mjs"),
+      "utf8",
+    );
+    const syncIndex = syncScript.indexOf(
+      'spawnSync("pnpm", ["exec", "cap", "sync", "ios"]',
+    );
+    const registrationIndex = syncScript.indexOf(
+      'packageClassList.add("BabylonSlateSecretsPlugin")',
+    );
+    expect(syncIndex).toBeGreaterThanOrEqual(0);
+    expect(registrationIndex).toBeGreaterThan(syncIndex);
+    expect(syncScript).toContain(
+      "config.packageClassList = [...packageClassList]",
+    );
   });
 
   it("declares a single applicationDidBecomeActive", () => {
