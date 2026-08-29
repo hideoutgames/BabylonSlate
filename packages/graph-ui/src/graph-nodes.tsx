@@ -443,7 +443,7 @@ export function VariableGetNode({
         data-node-kind="variable-get"
         data-disabled={disabled ? "true" : undefined}
         className={cn(
-          "flex min-h-14 w-max items-center gap-4 rounded-full border-2 bg-card px-8 text-card-foreground shadow-md",
+          "flex min-h-14 w-max items-center gap-4 rounded-full border-2 bg-card px-4 text-card-foreground shadow-md",
           selected && "ring-2 ring-primary",
           disabled && "opacity-50",
         )}

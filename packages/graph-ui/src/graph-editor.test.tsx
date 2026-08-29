@@ -2234,7 +2234,8 @@ describe("GraphEditor", () => {
     expect(pill?.getAttribute("data-node-role")).toBe("variable");
     expect(pill?.className).toMatch(/rounded-full/);
     expect(pill?.className).toMatch(/\bw-max\b/);
-    expect(pill?.className).toMatch(/\bpx-8\b/);
+    expect(pill?.className).toMatch(/\bpx-4\b/);
+    expect(pill?.className).not.toMatch(/\bpx-8\b/);
     expect(pill?.className).toMatch(/\bgap-4\b/);
     expect(pill?.className).toMatch(/min-h-14/);
     expect(pill?.className).not.toMatch(/min-w-80/);
