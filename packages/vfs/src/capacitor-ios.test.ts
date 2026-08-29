@@ -84,6 +84,7 @@ function podNameForDependency(dependency: string): string {
     "@capacitor/core": "Capacitor",
     "@capacitor/filesystem": "CapacitorFilesystem",
     "@capacitor/preferences": "CapacitorPreferences",
+    "@capacitor/status-bar": "CapacitorStatusBar",
     "@daniele-rolli/capacitor-scoped-storage": "CapacitorScopedStorage",
   };
   return names[dependency] ?? dependency;

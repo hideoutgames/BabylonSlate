@@ -9,6 +9,8 @@ PODS:
     - Capacitor
   - CapacitorScopedStorage (0.1.0):
     - Capacitor
+  - CapacitorStatusBar (8.0.3):
+    - Capacitor
   - IONFilesystemLib (1.1.2)
 
 DEPENDENCIES:
@@ -17,6 +19,7 @@ DEPENDENCIES:
   - "CapacitorFilesystem (from `../../../../node_modules/.pnpm/@capacitor+filesystem@8.1.2_@capacitor+core@8.5.0/node_modules/@capacitor/filesystem`)"
   - "CapacitorPreferences (from `../../../../node_modules/.pnpm/@capacitor+preferences@8.0.1_@capacitor+core@8.5.0/node_modules/@capacitor/preferences`)"
   - "CapacitorScopedStorage (from `../../../../node_modules/.pnpm/@daniele-rolli+capacitor-scoped-storage@0.1.0_@capacitor+core@8.5.0/node_modules/@daniele-rolli/capacitor-scoped-storage`)"
+  - "CapacitorStatusBar (from `../../../../node_modules/.pnpm/@capacitor+status-bar@8.0.3_@capacitor+core@8.5.0/node_modules/@capacitor/status-bar`)"
 
 SPEC REPOS:
   trunk:
@@ -33,6 +36,8 @@ EXTERNAL SOURCES:
     :path: "../../../../node_modules/.pnpm/@capacitor+preferences@8.0.1_@capacitor+core@8.5.0/node_modules/@capacitor/preferences"
   CapacitorScopedStorage:
     :path: "../../../../node_modules/.pnpm/@daniele-rolli+capacitor-scoped-storage@0.1.0_@capacitor+core@8.5.0/node_modules/@daniele-rolli/capacitor-scoped-storage"
+  CapacitorStatusBar:
+    :path: "../../../../node_modules/.pnpm/@capacitor+status-bar@8.0.3_@capacitor+core@8.5.0/node_modules/@capacitor/status-bar"
 
 SPEC CHECKSUMS:
   Capacitor: 00b87168591cc006ea6f5c0de681ec5c39a2c8eb
@@ -40,8 +45,9 @@ SPEC CHECKSUMS:
   CapacitorFilesystem: 2db285a1ac6e475cc27cae2e1bea999000f9e2be
   CapacitorPreferences: cca2021f386efb75947c850334447d9ff22b14f1
   CapacitorScopedStorage: d779465187e73c85ff59af183b855f8fa9489072
+  CapacitorStatusBar: eca7bc2b58d9f886f1ef9edb66e57a9b29c121af
   IONFilesystemLib: 21a63377696b2d8fab5632ecfb7d2ac67bddb68a
 
-PODFILE CHECKSUM: 251ed9aebc7be8d00244e780aae08bcd9cf97c82
+PODFILE CHECKSUM: 7ad32938cb58af69f53396c892f5e9e40f3635de
 
 COCOAPODS: 1.16.2
