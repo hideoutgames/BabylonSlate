@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@babylonslate/core";
 import { createText3DComponent } from "@babylonslate/core";
+import { objectRef } from "@babylonslate/scripting";
 import { createDefaultNodeRegistry, formatArgPinId, selectOptionPinId } from "@babylonslate/scripting-nodes";
 import {
   classHierarchyFromParentOf,
@@ -797,6 +798,35 @@ describe("classHierarchyFromParentOf", () => {
 });
 
 describe("scriptPinCompatibility", () => {
+  it("allows Actor or component refs into Is Valid Object without a class hierarchy", () => {
+    const rule = scriptPinCompatibility();
+    const isValidTarget = {
+      id: "target",
+      name: "Object",
+      kind: "data" as const,
+      direction: "in" as const,
+      type: objectRef("BObject"),
+    };
+    const pin = (
+      kind: "objectRef" | "actorRef",
+      classId: string,
+    ): {
+      id: string;
+      name: string;
+      kind: "data";
+      direction: "out";
+      type: { kind: typeof kind; classId: string };
+    } => ({
+      id: "p",
+      name: "p",
+      kind: "data",
+      direction: "out",
+      type: { kind, classId },
+    });
+    expect(rule(pin("actorRef", "Actor"), isValidTarget)).toBe(true);
+    expect(rule(pin("objectRef", "MeshComponent"), isValidTarget)).toBe(true);
+  });
+
   it("allows an actor reference into a live object pin of a superclass", () => {
     const rule = scriptPinCompatibility(
       classHierarchyFromParentOf((id) =>

@@ -43,6 +43,16 @@ describe("pin assignability", () => {
     ).toBe(false);
   });
 
+  it("treats objectRef BObject (or empty classId) as the instance root without a hierarchy", () => {
+    expect(isAssignable(actorRef("Actor"), objectRef("BObject"))).toBe(true);
+    expect(isAssignable(objectRef("Hero"), objectRef("BObject"))).toBe(true);
+    expect(isAssignable(objectRef("MeshComponent"), objectRef("BObject"))).toBe(
+      true,
+    );
+    expect(isAssignable(actorRef("Actor"), objectRef(""))).toBe(true);
+    expect(isAssignable(objectRef("Hero"), actorRef("Actor"))).toBe(false);
+  });
+
   it("allows actorRef into objectRef when hierarchy says the actor is a subclass", () => {
     const hierarchy = {
       isSubclassOf(child: string, parent: string) {

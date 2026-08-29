@@ -6,6 +6,7 @@ import {
   classRef,
   objectRef,
   TRANSFORM,
+  validateGraphs,
   type GraphNode,
   type LogicGraph,
   type NodeRegistry,
@@ -92,6 +93,15 @@ describe("actor nodes", () => {
         },
       ],
     };
+    const diags = validateGraphs([graph], { assetGuid: "a" }, { registry });
+    expect(
+      diags.some(
+        (d) =>
+          d.code === "type.mismatch" &&
+          d.nodeId === "valid" &&
+          d.pinId === "target",
+      ),
+    ).toBe(false);
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
     expect(compiled.source).toContain("!= null");
     const body = compiled.source.replace(

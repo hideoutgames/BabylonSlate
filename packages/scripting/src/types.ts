@@ -163,6 +163,12 @@ export function isAssignable(
     (to.kind === "objectRef" || to.kind === "actorRef")
   ) {
     if (from.kind === "objectRef" && to.kind === "actorRef") return false;
+    if (
+      to.kind === "objectRef" &&
+      (to.classId === "BObject" || to.classId.trim() === "")
+    ) {
+      return true;
+    }
     if (from.classId === to.classId) return true;
     return options.hierarchy?.isSubclassOf(from.classId, to.classId) ?? false;
   }
