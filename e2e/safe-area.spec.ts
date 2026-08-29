@@ -46,13 +46,24 @@ test.describe("safe-area layout", { tag: IPAD_TEST_TAG }, () => {
     const viewport = page.getByTestId("viewport-panel");
     const viewportBox = await viewport.boundingBox();
     expect(viewportBox).not.toBeNull();
-    await viewport.click({
-      button: "right",
-      position: {
-        x: Math.max(1, viewportBox!.width - 2),
-        y: Math.max(1, viewportBox!.height - 2),
+    await page.evaluate(
+      ({ x, y }) => {
+        document
+          .querySelector('[data-testid="viewport-panel"]')
+          ?.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: x,
+              clientY: y,
+            }),
+          );
       },
-    });
+      {
+        x: viewportBox!.x + Math.max(1, viewportBox!.width - 2),
+        y: viewportBox!.y + Math.max(1, viewportBox!.height - 2),
+      },
+    );
     const menu = page.getByTestId("context-menu-panel");
     await expect(menu).toBeVisible();
     const menuBox = await menu.boundingBox();
