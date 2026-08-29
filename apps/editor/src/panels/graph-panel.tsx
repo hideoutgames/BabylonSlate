@@ -223,6 +223,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
         classId,
         otherClassGraphs,
         functionGraphs: graphContent?.functionGraphs,
+        scriptInterfaces,
       },
     );
   }, [
@@ -233,6 +234,7 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     otherClassGraphs,
     parentClass,
     parentOf,
+    scriptInterfaces,
     typeSchemas,
   ]);
 

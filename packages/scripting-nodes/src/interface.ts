@@ -2,18 +2,27 @@ import {
   pin,
   type NodeDefinition,
   EXEC,
-  STRING,
   objectRef,
-  BOXED_WILDCARD,
 } from "@babylonslate/scripting";
 import {
   memberPinRows,
   objectLiteralKey,
   pinTypeForMember,
+  type MemberPinRow,
 } from "./member-pins";
 
-function isLegacyInterfaceCall(properties: Record<string, unknown>): boolean {
-  return !Array.isArray(properties.pins) || properties.pins.length === 0;
+const CALL_INTERFACE_RESERVED_PINS = new Set([
+  "interfaceGuid",
+  "method",
+  "result",
+  "target",
+]);
+
+export function isCallInterfaceMethodPin(row: MemberPinRow | undefined): boolean {
+  if (!row || typeof row.name !== "string" || row.name.length === 0) {
+    return false;
+  }
+  return !CALL_INTERFACE_RESERVED_PINS.has(row.name);
 }
 
 function signaturePins(properties: Record<string, unknown>) {
@@ -21,14 +30,11 @@ function signaturePins(properties: Record<string, unknown>) {
     typeof properties.classId === "string" && properties.classId.trim()
       ? properties.classId.trim()
       : "BObject";
-  const rows = memberPinRows(properties);
+  const rows = memberPinRows(properties).filter(isCallInterfaceMethodPin);
   const execPins = rows.flatMap((row) => {
-    if (!row || typeof row.name !== "string" || row.name.length === 0) {
-      return [];
-    }
     if (row.typeId !== "exec") return [];
     const direction = row.direction === "out" ? "out" : "in";
-    return [pin(row.name, row.name, direction, EXEC)];
+    return [pin(row.name!, row.name!, direction, EXEC)];
   });
   const exec =
     execPins.length > 0
@@ -39,16 +45,13 @@ function signaturePins(properties: Record<string, unknown>) {
         ];
   const dataPins = (["in", "out"] as const).flatMap((direction) =>
     rows.flatMap((row) => {
-      if (!row || typeof row.name !== "string" || row.name.length === 0) {
-        return [];
-      }
       if (row.typeId === "exec") return [];
       const rowDir = row.direction === "out" ? "out" : "in";
       if (rowDir !== direction) return [];
       return [
         pin(
-          row.name,
-          row.name,
+          row.name!,
+          row.name!,
           direction,
           pinTypeForMember(row.typeId, row.typeClassId),
         ),
@@ -57,7 +60,7 @@ function signaturePins(properties: Record<string, unknown>) {
   );
   return [
     ...exec,
-    pin("target", "target", "in", objectRef(classId)),
+    pin("target", "Target", "in", objectRef(classId)),
     ...dataPins,
   ];
 }
@@ -72,7 +75,7 @@ function jsonProp(
 
 export function callInterfaceTitle(methodName: string): string {
   const trimmed = methodName.trim();
-  return trimmed ? `Call I ${trimmed}` : "Call I";
+  return trimmed ? `Call Interface ${trimmed}` : "Call Interface";
 }
 
 export const interfaceNodes: NodeDefinition[] = [
@@ -80,23 +83,11 @@ export const interfaceNodes: NodeDefinition[] = [
     id: "interface.call",
     title: "Call",
     category: "interface",
-    pins: (properties) => {
-      if (isLegacyInterfaceCall(properties)) {
-        return [
-          pin("execIn", "exec", "in", EXEC),
-          pin("execOut", "then", "out", EXEC),
-          pin("target", "target", "in", objectRef("BObject")),
-          pin("interfaceGuid", "interfaceGuid", "in", STRING),
-          pin("method", "method", "in", STRING),
-          pin("result", "result", "out", BOXED_WILDCARD),
-        ];
-      }
-      return signaturePins(properties);
-    },
+    pins: (properties) => signaturePins(properties),
     codegen: (ctx) => {
       const properties = ctx.node.properties;
       const targetPin = ctx.node.pins.find(
-        (entry) => entry.name === "target" && entry.direction === "in",
+        (entry) => entry.id === "target" && entry.direction === "in",
       );
       const targetConnected =
         !!targetPin &&
@@ -110,19 +101,12 @@ export const interfaceNodes: NodeDefinition[] = [
         (!targetConnected && properties.implicitSelf !== false)
           ? "ctx.self"
           : ctx.input("target");
-      if (isLegacyInterfaceCall(properties)) {
-        const result = ctx.output("result");
-        ctx.emit(
-          `${result} = ctx.callInterface(${targetExpr}, ${ctx.input("interfaceGuid")}, ${ctx.input("method")});`,
-        );
-        return;
-      }
       const args: string[] = [];
       for (const pinDef of ctx.node.pins) {
         if (
           pinDef.direction !== "in" ||
           pinDef.kind === "exec" ||
-          pinDef.name === "target"
+          pinDef.id === "target"
         ) {
           continue;
         }

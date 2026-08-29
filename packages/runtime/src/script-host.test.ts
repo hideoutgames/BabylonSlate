@@ -1656,6 +1656,10 @@ describe("script host runs compiled graphs", () => {
         node(registry, "call", "interface.call", {
           interfaceGuid: "iface-damageable",
           method: "ApplyDamage",
+          pins: [
+            { name: "applied", typeId: "bool", direction: "out" },
+            { name: "remaining", typeId: "float", direction: "out" },
+          ],
         }),
         node(registry, "print", "debug.print", {
           key: "iface",
@@ -1666,7 +1670,7 @@ describe("script host runs compiled graphs", () => {
         edge("e1", "begin", "execOut", "call", "execIn"),
         edge("e2", "self", "out", "call", "target"),
         edge("e3", "call", "execOut", "print", "execIn"),
-        edge("e4", "call", "result", "print", "value"),
+        edge("e4", "call", "remaining", "print", "value"),
       ],
     };
     const commands: CommandMessage[] = [];
@@ -1695,7 +1699,7 @@ describe("script host runs compiled graphs", () => {
       expect.arrayContaining([
         expect.objectContaining({
           key: "iface",
-          message: "{applied: false, remaining: 0}",
+          message: "0",
         }),
       ]),
     );
