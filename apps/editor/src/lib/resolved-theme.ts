@@ -43,6 +43,7 @@ export function applyDocumentTheme(resolved: ResolvedTheme): void {
 export function statusBarStyleForTheme(
   resolved: ResolvedTheme,
 ): StatusBarGlyphStyle {
+  // Capacitor's Style.Dark requests light glyphs for dark chrome.
   return resolved === "dark" ? "light" : "dark";
 }
 

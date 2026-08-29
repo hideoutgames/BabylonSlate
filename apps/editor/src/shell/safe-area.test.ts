@@ -5,6 +5,8 @@ import dockviewCss from "./dockview-theme.css?raw";
 import contextMenuCss from "../../../../packages/editor-kit/src/styles/context-menu.css?raw";
 import graphCss from "../../../../packages/graph-ui/src/graph-editor.css?raw";
 import globalsCss from "../../../../packages/ui/src/styles/globals.css?raw";
+import playOverlaySource from "../components/play-overlay-chrome.tsx?raw";
+import previewOverlaySource from "../components/preview-build-overlay.tsx?raw";
 import capacitorConfig from "../../capacitor.config";
 
 function cssBlock(css: string, selector: string): string {
@@ -68,6 +70,23 @@ describe("safe-area tokens", () => {
     );
     expect(cssBlock(chromeCss, ".editor-global-toolbar")).toContain(
       "min-height: var(--chrome-row, 28px)",
+    );
+  });
+
+  it("shares safe padding across fixed overlay chrome", () => {
+    expect(cssBlock(chromeCss, ".safe-overlay-chrome")).toContain(
+      "--safe-overlay-pad: 0.75rem",
+    );
+    expect(cssBlock(chromeCss, ".safe-overlay-chrome")).toContain(
+      "var(--safe-top) + var(--safe-overlay-pad)",
+    );
+    expect(playOverlaySource).toContain("safe-overlay-chrome");
+    expect(previewOverlaySource).toContain("safe-overlay-chrome");
+    expect(previewOverlaySource).toContain(
+      'style={{ "--safe-overlay-pad": "1rem" }',
+    );
+    expect(previewOverlaySource).not.toContain(
+      "top-0 z-10 flex items-start justify-end p-3",
     );
   });
 

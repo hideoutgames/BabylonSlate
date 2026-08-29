@@ -20,7 +20,7 @@ Chrome is **Minimal Neutral** ([tweakcn](https://tweakcn.com/themes/cmho4nr9l000
 
 - The editor and Homepage roots use `.safe-frame` for left, right, and bottom insets.
 - The editor chrome shell owns the top inset while preserving the interactive row height.
-- Fixed context menus and Play overlay chrome consume the tokens themselves; the Play canvas remains edge-to-edge.
+- Fixed context menus and overlay chrome (Play and Preview Build) consume the tokens themselves; their canvases and iframes remain edge-to-edge.
 - The visible native iPad status bar follows the resolved editor theme through the VFS status-bar-style port.
 
 ## Design philosophy
