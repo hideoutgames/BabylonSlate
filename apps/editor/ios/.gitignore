@@ -13,3 +13,22 @@ capacitor-cordova-ios-plugins
 # Generated Config files
 App/App/capacitor.config.json
 App/App/config.xml
+
+# Public repository: keep credentials and local signing artifacts out of git.
+*.p12
+*.pfx
+*.cer
+*.certSigningRequest
+*.pem
+*.key
+*.keystore
+*.jks
+*.mobileprovision
+*.provisionprofile
+id_rsa*
+id_ed25519*
+.netrc
+*.log
+.env
+.env.*
+!.env.example

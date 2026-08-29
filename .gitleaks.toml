@@ -1,0 +1,42 @@
+# gitleaks configuration for a public repository.
+#
+# Scope: gitleaks owns generic credential detection (keys, tokens, certificates).
+# Repository-specific policy — agent session links, Apple signing identifiers — is
+# enforced by scripts/check-public-hygiene.mjs instead, because those are not
+# secrets in gitleaks' sense and would need custom rules that duplicate it.
+#
+# The default ruleset is inherited rather than replaced: an allowlist that is
+# wider than necessary is the one way this file can cause a leak, so every entry
+# below is scoped to a path, not to a rule-wide regex.
+
+title = "BabylonSlate"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "apple-provisioning-profile"
+description = "Embedded Apple provisioning profile or signing certificate"
+regex = '''(?i)-----BEGIN (CERTIFICATE|PKCS7|ENCRYPTED PRIVATE KEY)-----'''
+tags = ["apple", "signing"]
+
+[[rules]]
+id = "netrc-credentials"
+description = "netrc-style credentials"
+regex = '''(?i)machine\s+\S+\s+login\s+\S+\s+password\s+\S+'''
+tags = ["credentials"]
+
+[allowlist]
+description = "Generated lockfiles and binary test fixtures"
+# Integrity hashes and base64 blobs in lockfiles trip entropy rules. Lockfiles are
+# machine-generated from public registries and cannot carry a secret we authored.
+paths = [
+  '''pnpm-lock\.yaml$''',
+  '''apps/editor/ios/App/Podfile\.lock$''',
+  '''skills-lock\.json$''',
+  # Binary fixtures (glb, wav, woff2, png, ktx2, basis) are scanned as text and
+  # produce entropy noise. They are committed art/audio assets, not config.
+  # Deliberately excludes `.env` — an environment map extension collision with
+  # dotenv files is not worth the hole. Use `.hdr` for those instead.
+  '''(?i)\.(glb|gltf|bin|wav|mp3|ogg|woff2?|ttf|png|jpe?g|webp|ktx2|basis|dds|hdr)$''',
+]
