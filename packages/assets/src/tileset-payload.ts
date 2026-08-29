@@ -132,7 +132,9 @@ export function tilesetTileRect(
 
 /**
  * Normalized UVs for a 1-based atlas cell. Image-space row 0 is the top of the
- * texture; GL `v=0` is the bottom, so V is flipped.
+ * texture; GL `v=0` is the bottom, so V is flipped. Inset by half a texel so
+ * scene/Play sampling does not sit on a shared atlas edge (zoom-dependent
+ * seams / alpha-test holes). Paint still uses `tilesetTileRect`.
  */
 export function tilesetTileUv(
   tileset: TilesetPayload,
@@ -142,15 +144,23 @@ export function tilesetTileUv(
   if (!rect) return null;
   const { atlasWidth, atlasHeight } = tileset;
   if (atlasWidth <= 0 || atlasHeight <= 0) return null;
-  const u0 = rect.x / atlasWidth;
-  const u1 = (rect.x + rect.width) / atlasWidth;
+  let u0 = rect.x / atlasWidth;
+  let u1 = (rect.x + rect.width) / atlasWidth;
   const vTop = rect.y / atlasHeight;
   const vBottom = (rect.y + rect.height) / atlasHeight;
+  let v0 = 1 - vBottom;
+  let v1 = 1 - vTop;
+  const du = Math.min(0.5 / atlasWidth, (u1 - u0) / 2);
+  const dv = Math.min(0.5 / atlasHeight, (v1 - v0) / 2);
+  u0 += du;
+  u1 -= du;
+  v0 += dv;
+  v1 -= dv;
   return {
     u0: roundUv(u0),
-    v0: roundUv(1 - vBottom),
+    v0: roundUv(v0),
     u1: roundUv(u1),
-    v1: roundUv(1 - vTop),
+    v1: roundUv(v1),
   };
 }
 

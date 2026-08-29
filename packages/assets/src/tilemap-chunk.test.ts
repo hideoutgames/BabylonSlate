@@ -33,7 +33,17 @@ describe("tilemapChunkVertexData", () => {
       worldTileHeight: 1,
     });
     expect(data.positions).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
-    expect(data.uvs).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
+    const inset = 0.5 / 16;
+    expect(data.uvs).toEqual([
+      inset,
+      inset,
+      1 - inset,
+      inset,
+      1 - inset,
+      1 - inset,
+      inset,
+      1 - inset,
+    ]);
     expect(data.indices).toEqual([0, 1, 2, 0, 2, 3]);
   });
 

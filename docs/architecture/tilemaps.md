@@ -18,7 +18,7 @@ Document kind `tileset` (`.tileset.babasset`). Payload in `@babylonslate/assets`
 | `margin` / `spacing` | Tiled-style atlas layout |
 | `tiles` | per-id metadata: `collision` (`none` \| `full` \| chain points), `flags`, `animation` |
 
-Tile **id 0 is empty**. Id 1 is the first atlas cell (row 0 at the **top** of the image). `tilesetTileRect` is the image-space source rect (margin/spacing); `tilesetTileUv` uses that rect and flips V so GL `v=0` is the bottom of the texture. `atlasCellAt` maps a pointer on a scaled atlas view to a 1-based tile id (0 if outside).
+Tile **id 0 is empty**. Id 1 is the first atlas cell (row 0 at the **top** of the image). `tilesetTileRect` is the image-space source rect (margin/spacing) used by Paint (`drawImage`). `tilesetTileUv` uses that rect, flips V so GL `v=0` is the bottom of the texture, and **insets by half a texel** so scene/Play chunk sampling does not sit on a shared atlas edge (zoom-dependent black seams / alpha-test holes). `atlasCellAt` maps a pointer on a scaled atlas view to a 1-based tile id (0 if outside).
 
 ### Tilemap
 
