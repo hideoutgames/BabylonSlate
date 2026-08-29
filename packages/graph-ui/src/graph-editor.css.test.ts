@@ -46,4 +46,20 @@ describe("blueprint node intrinsic width", () => {
     const block = rule("\\.graph-editor-canvas \\.react-flow__node");
     expect(block).toMatch(/width:\s*max-content/);
   });
+
+  it("sizes pin rows to their left cluster, gutter, and outputs", () => {
+    const block = rule(
+      "\\.graph-editor-canvas \\[data-pin-row\\]",
+    );
+    expect(block).toMatch(/width:\s*max-content/);
+  });
+
+  it("keeps truncated text defaults at min\\(text, 12rem\\) instead of zero min-content", () => {
+    const block = rule(
+      "\\.graph-editor-canvas \\[data-pin-default-field\\]",
+    );
+    expect(block).toMatch(/width:\s*fit-content/);
+    expect(block).toMatch(/min-width:\s*fit-content/);
+    expect(block).toMatch(/max-width:\s*var\(--graph-pin-default-max-width/);
+  });
 });

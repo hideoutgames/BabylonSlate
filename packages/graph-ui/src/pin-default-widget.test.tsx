@@ -22,6 +22,7 @@ describe("PinDefaultPreviewWidget", () => {
     expect(field?.className).toMatch(/\bw-fit\b/);
     expect(field?.className).toMatch(/\bmin-w-fit\b/);
     expect(field?.className).toMatch(/\btruncate\b/);
+    expect(field?.hasAttribute("data-pin-default-field")).toBe(true);
   });
 
   it("caps type-name and numeric fields at the same 12rem truncation width", () => {

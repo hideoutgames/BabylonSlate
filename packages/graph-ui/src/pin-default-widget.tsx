@@ -55,6 +55,7 @@ export function PinDefaultPreviewWidget({
   return (
     <span
       data-pin-default={preview.kind}
+      data-pin-default-field
       className={FIELD_CLASS}
       aria-hidden="true"
     >

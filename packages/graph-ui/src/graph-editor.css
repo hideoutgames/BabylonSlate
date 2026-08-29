@@ -20,6 +20,16 @@
   width: max-content !important;
 }
 
+.graph-editor-canvas [data-pin-row] {
+  width: max-content;
+}
+
+.graph-editor-canvas [data-pin-default-field] {
+  width: fit-content;
+  min-width: fit-content;
+  max-width: var(--graph-pin-default-max-width, 12rem);
+}
+
 .graph-editor-canvas .react-flow__controls-button {
   min-width: var(--touch-target, 44px);
   min-height: var(--touch-target, 44px);
