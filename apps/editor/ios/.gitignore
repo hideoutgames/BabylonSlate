@@ -1,6 +1,8 @@
 App/build
 App/Pods
 App/output
+*.xcconfig
+ExportOptions.plist
 App/App/public
 DerivedData
 xcuserdata

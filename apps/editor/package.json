@@ -8,7 +8,9 @@
     "build": "pnpm --filter player build && tsc -b && vite build",
     "test": "vitest run --config ../../vitest.workspace.ts --project jsdom apps/editor",
     "typecheck": "tsc -b --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "ios:sync": "node scripts/ios-sync.mjs",
+    "ios:build": "pnpm run ios:sync && node scripts/ios-build.mjs"
   },
   "dependencies": {
     "@babylonjs/core": "^9.20.0",
@@ -36,7 +38,10 @@
     "@babylonslate/vfs": "workspace:*",
     "@capacitor/cli": "^8.0.0",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.1.2",
     "@capacitor/ios": "^8.0.0",
+    "@capacitor/preferences": "^8.0.0",
+    "@daniele-rolli/capacitor-scoped-storage": "^0.1.0",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/state": "^6.7.1",
