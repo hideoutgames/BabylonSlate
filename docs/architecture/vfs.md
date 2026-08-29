@@ -90,3 +90,4 @@ Source-control tokens and LFS HTTP stay in `vfs` so Capacitor / Electron never l
 
 `nativeHttp`: `{ method, url, headers, body? }` → `{ status, bodyText }`. iOS/Android use `CapacitorHttp` (bypasses CORS). Electron uses IPC `lfs:fetch` → `net.fetch`. Web returns `null` (unused). Playwright covers lock UX with `FakeLockProvider` instead.
 
+`StatusBarStylePort` accepts `"light"` or `"dark"` glyph styles. iOS/Android use the Capacitor Status Bar plugin's `setStyle` only; Web and Electron use a no-op adapter. The editor maps resolved dark chrome to light glyphs and resolved light chrome to dark glyphs. It never hides or overlays the native status bar.

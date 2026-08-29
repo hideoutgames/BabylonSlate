@@ -46,7 +46,7 @@ export function PlayOverlayChrome({
   extras,
 }: PlayOverlayChromeProps) {
   return (
-    <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
+    <div className="safe-play-overlay-chrome absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2">
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div hidden={!statsOpen || !showStats} className="pointer-events-none">
           {stats}

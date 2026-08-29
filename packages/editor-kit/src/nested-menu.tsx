@@ -1,6 +1,7 @@
 import {
   isValidElement,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -28,6 +29,7 @@ import { cn } from "@babylonslate/ui/lib/utils";
 import {
   clampOverlayMenuPosition,
   overlaySubmenuOrigin,
+  type OverlaySafeAreaInsets,
 } from "./clamp-overlay-menu";
 
 export type NestedMenuItem =
@@ -336,6 +338,7 @@ function OverlayMenu({
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
+  const insets = useMemo(readSafeAreaInsets, []);
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -351,9 +354,10 @@ function OverlayMenu({
         viewportWidth: window.innerWidth,
         viewportHeight: window.innerHeight,
         margin: 8,
+        insets,
       }),
     );
-  }, [x, y, items]);
+  }, [x, y, items, insets]);
 
   const submenuOrigin = openSubmenu
     ? overlaySubmenuOrigin({
@@ -363,6 +367,7 @@ function OverlayMenu({
         submenuWidth: 192,
         viewportWidth: window.innerWidth,
         margin: 8,
+        insets,
       })
     : null;
 
@@ -396,6 +401,24 @@ function OverlayMenu({
       ) : null}
     </>
   );
+}
+
+function parseCssPixelToken(name: string): number {
+  if (typeof document === "undefined") return 0;
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function readSafeAreaInsets(): OverlaySafeAreaInsets {
+  return {
+    top: parseCssPixelToken("--safe-top"),
+    right: parseCssPixelToken("--safe-right"),
+    bottom: parseCssPixelToken("--safe-bottom"),
+    left: parseCssPixelToken("--safe-left"),
+  };
 }
 
 export function NestedMenu({

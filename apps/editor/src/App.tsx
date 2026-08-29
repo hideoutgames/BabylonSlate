@@ -249,7 +249,7 @@ function EditorLayout() {
   };
 
   return (
-    <div className="flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground">
+    <div className="safe-frame flex min-h-svh h-dvh flex-col overflow-hidden bg-background text-foreground">
       <EditorChromeBar
         onCloseProject={() => void requestClose()}
         onSaveProject={() => void requestSave()}
