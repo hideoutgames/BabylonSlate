@@ -19,8 +19,6 @@ export async function collectGpuTextureBytes(options: {
     targetEdge: number,
   ) => Promise<Uint8Array>;
   onMissingKtx2?: (guid: string) => void;
-  /** Tileset / sprite texture guids: source PNG, skip LOD and KTX2. */
-  pixelArtGuids?: ReadonlySet<string>;
 }): Promise<Map<string, Uint8Array>> {
   const byGuid = new Map(
     options.assets.map((asset) => [asset.header.guid, asset] as const),
@@ -32,18 +30,15 @@ export async function collectGpuTextureBytes(options: {
     seen.add(guid);
     const asset = byGuid.get(guid);
     if (!asset || asset.header.type !== "Texture") continue;
-    const forcePixelArt = options.pixelArtGuids?.has(guid) === true;
     const resolved = await resolveGpuTexture({
       header: asset.header,
       readChunk: (chunkId) => options.readChunk(asset.path, chunkId),
       editorLod: options.editorLod,
-      forcePixelArt,
     });
     if (!resolved) continue;
     if (resolved.missingPreferred) options.onMissingKtx2?.(guid);
     let payload = resolved.bytes;
     if (
-      !forcePixelArt &&
       resolved.kind !== "ktx2" &&
       resolved.targetEdge < resolved.sourceEdge &&
       options.downsampleSource

@@ -43,8 +43,22 @@ describe("createTilemapMeshes", () => {
     const child = root.getChildren()[0] as unknown as {
       getVerticesData: (kind: string) => number[] | null;
     };
+    const overlap = 0.5 / 16;
     const positions = child.getVerticesData(VertexBuffer.PositionKind);
-    expect(Array.from(positions ?? [])).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
+    expect(Array.from(positions ?? [])).toEqual([
+      -overlap,
+      -overlap,
+      0,
+      1 + overlap,
+      -overlap,
+      0,
+      1 + overlap,
+      1 + overlap,
+      0,
+      -overlap,
+      1 + overlap,
+      0,
+    ]);
   });
 
   it("applies per-layer sorting to chunk meshes", () => {

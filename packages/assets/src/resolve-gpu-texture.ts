@@ -24,8 +24,6 @@ export interface ResolveGpuTextureOptions {
   readChunk: (chunkId: string) => Promise<Uint8Array | null>;
   editorLod?: EditorTextureLod | null;
   encodeSettings?: TextureEncodeSettings;
-  /** Sprite / tileset GPU: source PNG, no LOD, never KTX2. */
-  forcePixelArt?: boolean;
 }
 
 export interface ResolvedGpuTexture {
@@ -76,18 +74,6 @@ export async function resolveGpuTexture(
   const sourceEdge =
     longestEdge(sniffed) ??
     DEFAULT_TEXTURE_ENCODE_SETTINGS.maxDimension;
-  if (options.forcePixelArt) {
-    if (!raster) return null;
-    return {
-      bytes: raster.bytes,
-      kind: "source",
-      chunkId: raster.chunkId,
-      targetEdge: sourceEdge,
-      sourceEdge,
-      preferredChunkId: null,
-      missingPreferred: false,
-    };
-  }
   const downsample = textureDownsampleFromPayload(header.payload, sourceEdge);
   const usage = String(header.payload.usage ?? "albedo");
   const lod = options.editorLod;

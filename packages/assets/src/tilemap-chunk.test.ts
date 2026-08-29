@@ -32,18 +32,22 @@ describe("tilemapChunkVertexData", () => {
       worldTileWidth: 1,
       worldTileHeight: 1,
     });
-    expect(data.positions).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
-    const inset = 0.5 / 16;
-    expect(data.uvs).toEqual([
-      inset,
-      inset,
-      1 - inset,
-      inset,
-      1 - inset,
-      1 - inset,
-      inset,
-      1 - inset,
+    const overlap = 0.5 / 16;
+    expect(data.positions).toEqual([
+      -overlap,
+      -overlap,
+      0,
+      1 + overlap,
+      -overlap,
+      0,
+      1 + overlap,
+      1 + overlap,
+      0,
+      -overlap,
+      1 + overlap,
+      0,
     ]);
+    expect(data.uvs).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
     expect(data.indices).toEqual([0, 1, 2, 0, 2, 3]);
   });
 
@@ -114,8 +118,9 @@ describe("tilemapChunkVertexData", () => {
     });
     expect(staticData.positions).toHaveLength(12);
     expect(animatedData.positions).toHaveLength(12);
-    expect(staticData.positions[0]).toBe(0);
-    expect(animatedData.positions[0]).toBe(1);
+    const overlap = 0.5 / 16;
+    expect(staticData.positions[0]).toBe(-overlap);
+    expect(animatedData.positions[0]).toBe(1 - overlap);
   });
 
   it("draws only GIDs that belong to the requested atlas", () => {
@@ -161,8 +166,35 @@ describe("tilemapChunkVertexData", () => {
       resolveGid,
       atlasGuid: "deco",
     });
-    expect(groundDraw.positions).toEqual([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
-    expect(decoDraw.positions).toEqual([1, 0, 0, 2, 0, 0, 2, 1, 0, 1, 1, 0]);
+    const overlap = 0.5 / 16;
+    expect(groundDraw.positions).toEqual([
+      -overlap,
+      -overlap,
+      0,
+      1 + overlap,
+      -overlap,
+      0,
+      1 + overlap,
+      1 + overlap,
+      0,
+      -overlap,
+      1 + overlap,
+      0,
+    ]);
+    expect(decoDraw.positions).toEqual([
+      1 - overlap,
+      -overlap,
+      0,
+      2 + overlap,
+      -overlap,
+      0,
+      2 + overlap,
+      1 + overlap,
+      0,
+      1 - overlap,
+      1 + overlap,
+      0,
+    ]);
   });
 });
 

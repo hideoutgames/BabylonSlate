@@ -113,37 +113,6 @@ describe("collectGpuTextureBytes", () => {
     expect(downsampleSource).toHaveBeenCalledWith(png, 1024);
   });
 
-  it("keeps source pixels for pixelArtGuids even when LOD would downsample", async () => {
-    const png = new Uint8Array([1, 2, 3]);
-    const downsampleSource = vi.fn(async () => new Uint8Array([9]));
-    const bytes = await collectGpuTextureBytes({
-      assets: [
-        {
-          path: "assets/Hero.texture.babasset",
-          header: textureHeader(
-            [
-              {
-                id: "pixels",
-                kind: "pixels",
-                mime: "image/png",
-                sha256: "aa",
-                locator: { inline: { offset: 0, length: 3 } },
-              },
-            ],
-            { usage: "albedo", width: 4096, height: 4096 },
-          ),
-        },
-      ],
-      guids: ["tex-1"],
-      pixelArtGuids: new Set(["tex-1"]),
-      readChunk: async () => png,
-      editorLod: { enabled: true, quality: 0.5 },
-      downsampleSource,
-    });
-    expect(bytes.get("tex-1")).toEqual(png);
-    expect(downsampleSource).not.toHaveBeenCalled();
-  });
-
   it("reads authored Texture payload size without using LOD GPU bytes", () => {
     const sizes = texturePixelSizesFromHeaders(
       [

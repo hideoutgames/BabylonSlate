@@ -60,10 +60,14 @@ export function tilemapChunkVertexData(options: {
       const uvId = animated ? (meta?.animation[0] ?? localId) : localId;
       const uv = tilesetTileUv(atlas, uvId);
       if (!uv) continue;
-      const x0 = originX + lx * worldTileWidth;
-      const y0 = originY + ly * worldTileHeight;
-      const x1 = x0 + worldTileWidth;
-      const y1 = y0 + worldTileHeight;
+      const overlapX =
+        atlas.tileWidth > 0 ? (0.5 * worldTileWidth) / atlas.tileWidth : 0;
+      const overlapY =
+        atlas.tileHeight > 0 ? (0.5 * worldTileHeight) / atlas.tileHeight : 0;
+      const x0 = originX + lx * worldTileWidth - overlapX;
+      const y0 = originY + ly * worldTileHeight - overlapY;
+      const x1 = x0 + worldTileWidth + overlapX * 2;
+      const y1 = y0 + worldTileHeight + overlapY * 2;
       // Quad order matches sprite CreatePlane: BL, BR, TR, TL.
       positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
       uvs.push(uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
