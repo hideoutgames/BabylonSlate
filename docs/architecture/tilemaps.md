@@ -18,7 +18,7 @@ Document kind `tileset` (`.tileset.babasset`). Payload in `@babylonslate/assets`
 | `margin` / `spacing` | Tiled-style atlas layout |
 | `tiles` | per-id metadata: `collision` (`none` \| `full` \| chain points), `flags`, `animation` |
 
-Tile **id 0 is empty**. Id 1 is the first atlas cell (row 0 at the **top** of the image). `tilesetTileRect` is the image-space source rect (margin/spacing); `tilesetTileUv` uses that rect and flips V so GL `v=0` is the bottom of the texture. `atlasCellAt` maps a pointer on a scaled atlas view to a 1-based tile id (0 if outside).
+Tile **id 0 is empty**. Id 1 is the first atlas cell (row 0 at the **top** of the image). `tilesetTileRect` is the image-space source rect (margin/spacing) used by Paint (`drawImage`). `tilesetTileUv` uses that rect and flips V so GL `v=0` is the bottom of the texture (exact cell edges — no UV inset). `atlasCellAt` maps a pointer on a scaled atlas view to a 1-based tile id (0 if outside).
 
 ### Tilemap
 
@@ -37,7 +37,7 @@ Each chunk is `{ cx, cy, tiles }` with `tiles.length === chunkSize²`. Local ind
 
 ## Chunk geometry
 
-`tilemapChunkVertexData` is a **pure**, Babylon-free function: GIDs + a GID resolver → `{ positions, uvs, indices }`. One draw per chunk **per atlas**; tile 0 is skipped. Callers pass `atlasGuid` to emit only that tileset’s quads. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings.
+`tilemapChunkVertexData` is a **pure**, Babylon-free function: GIDs + a GID resolver → `{ positions, uvs, indices }`. One draw per chunk **per atlas**; tile 0 is skipped. Callers pass `atlasGuid` to emit only that tileset’s quads. Quad order matches sprite `CreatePlane`: BL, BR, TR, TL. Callers pass `worldTileWidth` / `worldTileHeight` (`px / pixelsPerUnit`, default PPU 100) so `@babylonslate/assets` does not read project settings. GPU UVs are **exact** atlas cell edges (`tilesetTileUv`). Each quad is expanded by **half a texel in world space** so adjacent tiles overlap and camera zoom/pan cannot leave a 1px crack (alpha-test would show the clear color). Collision chains stay on the un-expanded grid.
 
 `encodeTileGid` / `decodeTileGid(map, gid, tilesetPayloads)` pick the highest `firstGid <= gid`. Play/editor/physics all use the same helpers. Legacy maps with an empty `tilesets[]` and only `tilesetGuid` still treat GIDs as local ids.
 
