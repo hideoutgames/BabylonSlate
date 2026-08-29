@@ -237,7 +237,7 @@ function PinRow({
             {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
             <span
               data-pin-label={incoming.name}
-              className="max-w-[18rem] text-base leading-snug break-words text-foreground"
+              className="whitespace-nowrap text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(incoming.name)}
             </span>
@@ -251,7 +251,7 @@ function PinRow({
           <>
             <span
               data-pin-label={outgoing.name}
-              className="max-w-[18rem] text-right text-base leading-snug break-words text-foreground"
+              className="whitespace-nowrap text-right text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>
@@ -349,14 +349,14 @@ export function BlueprintNodeShell({
         data-disabled={disabled ? "true" : undefined}
         className={cn(
           "overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-md",
-          compact ? "min-w-56" : "w-max min-w-80 max-w-[32rem]",
+          compact ? "min-w-56" : "w-max min-w-80",
           selected && "ring-2 ring-primary",
           disabled && "opacity-50",
         )}
       >
         <div
           className={cn(
-            "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug break-words text-node-title",
+            "rounded-t-lg px-4 py-2.5 text-base font-semibold leading-snug whitespace-nowrap text-node-title",
             nodeRoleClass(role),
           )}
         >
@@ -412,6 +412,75 @@ export function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   );
 }
 
+export function VariableGetNode({
+  id,
+  data,
+  selected,
+}: NodeProps<CanvasNode>) {
+  const pins = hasSerializedPins(data) ? data.__pins : [];
+  const { pendingPin, pinHasError, pinDisplayType, nodeErrorCount } =
+    useGraphEditorContext();
+  const dataPins = pins.filter((pin) => pin.kind !== "exec");
+  const incoming = dataPins.filter((pin) => pin.direction === "in");
+  const outgoing = dataPins.find((pin) => pin.direction === "out");
+  const edges = useStore((state) => state.edges);
+  const valueType = outgoing
+    ? (pinDisplayType(id, outgoing.id) ?? outgoing.type)
+    : { kind: "wildcard" };
+  const disabled = data.__disabled === true;
+
+  const isPending = (pin: SerializedPin) =>
+    Boolean(pendingPin?.nodeId === id && pendingPin.pinId === pin.id);
+
+  return (
+    <div className="relative">
+      <NodeErrorBadge nodeId={id} count={nodeErrorCount(id)} />
+      <div
+        data-node-role="variable"
+        data-node-kind="variable-get"
+        data-disabled={disabled ? "true" : undefined}
+        className={cn(
+          "flex min-h-[var(--touch-target,44px)] w-max items-center rounded-full border-2 bg-card text-card-foreground shadow-md",
+          incoming.length === 0 && "pl-3",
+          selected && "ring-2 ring-primary",
+          disabled && "opacity-50",
+        )}
+        style={{ borderColor: pinCssVar(valueType) }}
+      >
+        {incoming.map((pin) => (
+          <PinHandle
+            key={pin.id}
+            nodeId={id}
+            pin={pin}
+            pending={isPending(pin)}
+            hasError={pinHasError(id, pin.id)}
+            connected={isPinWired(edges, id, pin)}
+            disabled={disabled}
+          />
+        ))}
+        {outgoing ? (
+          <>
+            <span
+              data-pin-label={outgoing.name}
+              className="whitespace-nowrap text-base leading-snug text-foreground"
+            >
+              {humanizePropertyLabel(outgoing.name)}
+            </span>
+            <PinHandle
+              nodeId={id}
+              pin={outgoing}
+              pending={isPending(outgoing)}
+              hasError={pinHasError(id, outgoing.id)}
+              connected={isPinWired(edges, id, outgoing)}
+              disabled={disabled}
+            />
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function LogMessageNode({
   id,
   data,
@@ -435,6 +504,10 @@ export function resolveNodeType(
   data: Record<string, unknown>,
   knownTypes: Record<string, unknown> = graphNodeTypes,
 ): string {
+  const typeId = typeof data.__nodeType === "string" ? data.__nodeType : type;
+  if (typeId === "variables.get" || typeId.startsWith("variables.get:")) {
+    return "variableGet";
+  }
   if (type in knownTypes) return type;
   if (type === "logMessage" && !hasSerializedPins(data)) {
     return "logMessage";
@@ -445,4 +518,5 @@ export function resolveNodeType(
 export const graphNodeTypes = {
   logMessage: LogMessageNode,
   pinNode: PinNode,
+  variableGet: VariableGetNode,
 };

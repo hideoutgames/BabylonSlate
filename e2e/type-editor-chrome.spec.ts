@@ -204,7 +204,9 @@ test.describe("Type-asset editors and hierarchy chrome", () => {
     await page.getByTestId("member-access-get").click();
     await expect(page.getByTestId("member-access-chooser")).toHaveCount(0);
     await expect(nodes).toHaveCount(baseline + 1);
-    await expect(graph.getByText("Get Target")).toBeVisible();
+    await expect(
+      graph.locator('[data-node-kind="variable-get"] [data-pin-label="Target"]'),
+    ).toBeVisible();
     await dragClassMemberOntoGraph(page, "Target");
     await page.getByTestId("member-access-validated-get").click();
     await expect(nodes).toHaveCount(baseline + 2);

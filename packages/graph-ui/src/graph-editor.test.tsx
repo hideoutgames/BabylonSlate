@@ -1905,9 +1905,11 @@ describe("GraphEditor", () => {
     expect(eventNode).not.toBeNull();
     expect(eventNode?.className).toMatch(/min-w-80/);
     expect(eventNode?.className).toMatch(/\bw-max\b/);
-    expect(eventNode?.className).toMatch(/max-w-\[32rem\]/);
+    expect(eventNode?.className).not.toMatch(/max-w-\[32rem\]/);
     const titleBar = eventNode?.querySelector(".rounded-t-lg");
     expect(titleBar?.className).toMatch(/text-base/);
+    expect(titleBar?.className).toMatch(/whitespace-nowrap/);
+    expect(titleBar?.className).not.toMatch(/break-words/);
 
     const execHandle = container.querySelector(
       '[data-handleid="execOut"][data-pin-type="exec"]',
@@ -2008,7 +2010,8 @@ describe("GraphEditor", () => {
     expect(preview?.getAttribute("data-checked")).toBe("true");
     expect(preview?.className).toMatch(/\bsize-5\b/);
     expect(label?.className).toMatch(/text-base/);
-    expect(label?.className).toMatch(/max-w-\[18rem\]/);
+    expect(label?.className).toMatch(/whitespace-nowrap/);
+    expect(label?.className).not.toMatch(/max-w-\[18rem\]/);
     expect(handle?.nextElementSibling).toBe(preview);
     expect(preview?.nextElementSibling).toBe(label);
   });
@@ -2177,7 +2180,145 @@ describe("GraphEditor", () => {
       '[data-id="log-a"] [data-pin-label="then"]',
     );
     expect(thenLabel?.className).toMatch(/text-base/);
-    expect(thenLabel?.className).toMatch(/max-w-\[18rem\]/);
+    expect(thenLabel?.className).toMatch(/whitespace-nowrap/);
+    expect(thenLabel?.className).not.toMatch(/max-w-\[18rem\]/);
+    expect(thenLabel?.className).not.toMatch(/break-words/);
+  });
+
+  it("renders Get Variable as a type-colored pill without a title bar", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "get-health",
+          type: "variables.get",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Get Health",
+            __nodeType: "variables.get",
+            __category: "variables",
+            __pure: true,
+            __pins: [
+              {
+                id: "value",
+                name: "Health",
+                kind: "data",
+                direction: "out",
+                type: { kind: "float" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const pill = container.querySelector(
+      '[data-id="get-health"] [data-node-kind="variable-get"]',
+    );
+    expect(pill).not.toBeNull();
+    expect(pill?.getAttribute("data-node-role")).toBe("variable");
+    expect(pill?.className).toMatch(/rounded-full/);
+    expect(pill?.className).toMatch(/\bw-max\b/);
+    expect(pill?.className).not.toMatch(/min-w-80/);
+    expect(pill?.querySelector(".rounded-t-lg")).toBeNull();
+    expect(pill?.querySelector("[data-pin-default]")).toBeNull();
+    expect(
+      pill?.querySelector('[data-pin-label="Health"]')?.textContent,
+    ).toBe("Health");
+    expect(pill?.querySelector('[data-handleid="value"]')).not.toBeNull();
+    expect(pill?.querySelector('[data-handleid="target"]')).toBeNull();
+    expect(pill?.getAttribute("style") ?? "").toMatch(/--pin-float/);
+  });
+
+  it("keeps a Target handle on a Get Variable pill when implicitSelf is off", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "get-other",
+          type: "variables.get:Hero:Health",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Get Health",
+            __nodeType: "variables.get",
+            implicitSelf: false,
+            __pins: [
+              {
+                id: "target",
+                name: "target",
+                kind: "data",
+                direction: "in",
+                type: { kind: "objectRef", classId: "Hero" },
+              },
+              {
+                id: "value",
+                name: "Health",
+                kind: "data",
+                direction: "out",
+                type: { kind: "objectRef", classId: "Actor" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const pill = container.querySelector(
+      '[data-id="get-other"] [data-node-kind="variable-get"]',
+    );
+    expect(pill).not.toBeNull();
+    expect(pill?.querySelector(".rounded-t-lg")).toBeNull();
+    expect(pill?.querySelector("[data-pin-default]")).toBeNull();
+    expect(pill?.querySelector('[data-handleid="target"]')).not.toBeNull();
+    expect(pill?.querySelector('[data-handleid="value"]')).not.toBeNull();
+    expect(pill?.getAttribute("style") ?? "").toMatch(/--pin-object/);
+  });
+
+  it("keeps Validated Get on Blueprint chrome", () => {
+    const graph: GraphDocument = {
+      nodes: [
+        {
+          id: "validated",
+          type: "variables.getValidated",
+          position: { x: 0, y: 0 },
+          data: {
+            title: "Validated Get Health",
+            __nodeType: "variables.getValidated",
+            __category: "variables",
+            __pins: [
+              {
+                id: "execIn",
+                name: "exec",
+                kind: "exec",
+                direction: "in",
+                type: { kind: "exec" },
+              },
+              {
+                id: "value",
+                name: "Health",
+                kind: "data",
+                direction: "out",
+                type: { kind: "objectRef" },
+              },
+            ],
+          },
+        },
+      ],
+      edges: [],
+    };
+
+    const { container } = render(<GraphEditor initialGraph={graph} />);
+    const shell = container.querySelector(
+      '[data-id="validated"] [data-node-role="variable"]',
+    );
+    expect(shell).not.toBeNull();
+    expect(shell?.getAttribute("data-node-kind")).not.toBe("variable-get");
+    expect(shell?.querySelector(".rounded-t-lg")?.textContent).toMatch(
+      /Validated Get/,
+    );
+    expect(shell?.className).toMatch(/min-w-80/);
   });
 
   it("shows a Development Only tape on Print by default", () => {
