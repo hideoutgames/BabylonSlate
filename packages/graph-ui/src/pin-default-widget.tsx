@@ -1,11 +1,8 @@
 import { cn } from "@babylonslate/ui/lib/utils";
 import type { PinDefaultPreview } from "./pin-default-preview";
 
-const STRING_FIELD_CLASS =
+const FIELD_CLASS =
   "pointer-events-none h-8 max-w-[var(--graph-pin-default-max-width,12rem)] shrink-0 truncate rounded-sm border border-input bg-input/30 px-1.5 text-base leading-8 text-foreground select-none";
-
-const GROW_FIELD_CLASS =
-  "pointer-events-none h-8 shrink-0 whitespace-nowrap rounded-sm border border-input bg-input/30 px-1.5 text-base leading-8 text-foreground select-none";
 
 function CheckMark() {
   return (
@@ -58,7 +55,7 @@ export function PinDefaultPreviewWidget({
   return (
     <span
       data-pin-default={preview.kind}
-      className={preview.kind === "string" ? STRING_FIELD_CLASS : GROW_FIELD_CLASS}
+      className={FIELD_CLASS}
       aria-hidden="true"
     >
       {preview.text}

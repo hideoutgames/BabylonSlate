@@ -222,8 +222,11 @@ function PinRow({
   const disabled = data.__disabled === true;
 
   return (
-    <div className="flex min-h-[var(--touch-target,44px)] items-center justify-between gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-1">
+    <div
+      data-pin-row
+      className="flex min-h-[var(--touch-target,44px)] items-center justify-between gap-6"
+    >
+      <div className="flex shrink-0 items-center gap-1">
         {incoming ? (
           <>
             <PinHandle
@@ -237,7 +240,7 @@ function PinRow({
             {preview ? <PinDefaultPreviewWidget preview={preview} /> : null}
             <span
               data-pin-label={incoming.name}
-              className="whitespace-nowrap text-base leading-snug text-foreground"
+              className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(incoming.name)}
             </span>
@@ -246,12 +249,12 @@ function PinRow({
           <span className="size-11 shrink-0" />
         )}
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+      <div className="flex shrink-0 items-center justify-end gap-1">
         {outgoing ? (
           <>
             <span
               data-pin-label={outgoing.name}
-              className="whitespace-nowrap text-right text-base leading-snug text-foreground"
+              className="shrink-0 whitespace-nowrap text-right text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>
@@ -440,8 +443,7 @@ export function VariableGetNode({
         data-node-kind="variable-get"
         data-disabled={disabled ? "true" : undefined}
         className={cn(
-          "flex min-h-[var(--touch-target,44px)] w-max items-center rounded-full border-2 bg-card text-card-foreground shadow-md",
-          incoming.length === 0 && "pl-3",
+          "flex min-h-[var(--touch-target,44px)] w-max items-center gap-2 rounded-full border-2 bg-card px-4 text-card-foreground shadow-md",
           selected && "ring-2 ring-primary",
           disabled && "opacity-50",
         )}
@@ -462,7 +464,7 @@ export function VariableGetNode({
           <>
             <span
               data-pin-label={outgoing.name}
-              className="whitespace-nowrap text-base leading-snug text-foreground"
+              className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>

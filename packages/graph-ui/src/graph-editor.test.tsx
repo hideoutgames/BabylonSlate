@@ -1910,6 +1910,10 @@ describe("GraphEditor", () => {
     expect(titleBar?.className).toMatch(/text-base/);
     expect(titleBar?.className).toMatch(/whitespace-nowrap/);
     expect(titleBar?.className).not.toMatch(/break-words/);
+    const pinRow = eventNode?.querySelector("[data-pin-row]");
+    expect(pinRow?.className).toMatch(/gap-6/);
+    expect(pinRow?.firstElementChild?.className).not.toMatch(/min-w-0/);
+    expect(pinRow?.firstElementChild?.className).toMatch(/shrink-0/);
 
     const execHandle = container.querySelector(
       '[data-handleid="execOut"][data-pin-type="exec"]',
@@ -2011,6 +2015,7 @@ describe("GraphEditor", () => {
     expect(preview?.className).toMatch(/\bsize-5\b/);
     expect(label?.className).toMatch(/text-base/);
     expect(label?.className).toMatch(/whitespace-nowrap/);
+    expect(label?.className).toMatch(/shrink-0/);
     expect(label?.className).not.toMatch(/max-w-\[18rem\]/);
     expect(handle?.nextElementSibling).toBe(preview);
     expect(preview?.nextElementSibling).toBe(label);
@@ -2181,6 +2186,7 @@ describe("GraphEditor", () => {
     );
     expect(thenLabel?.className).toMatch(/text-base/);
     expect(thenLabel?.className).toMatch(/whitespace-nowrap/);
+    expect(thenLabel?.className).toMatch(/shrink-0/);
     expect(thenLabel?.className).not.toMatch(/max-w-\[18rem\]/);
     expect(thenLabel?.className).not.toMatch(/break-words/);
   });
@@ -2220,6 +2226,8 @@ describe("GraphEditor", () => {
     expect(pill?.getAttribute("data-node-role")).toBe("variable");
     expect(pill?.className).toMatch(/rounded-full/);
     expect(pill?.className).toMatch(/\bw-max\b/);
+    expect(pill?.className).toMatch(/\bpx-4\b/);
+    expect(pill?.className).toMatch(/\bgap-2\b/);
     expect(pill?.className).not.toMatch(/min-w-80/);
     expect(pill?.querySelector(".rounded-t-lg")).toBeNull();
     expect(pill?.querySelector("[data-pin-default]")).toBeNull();

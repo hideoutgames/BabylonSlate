@@ -22,23 +22,22 @@ describe("PinDefaultPreviewWidget", () => {
     expect(field?.className).toMatch(/\btruncate\b/);
   });
 
-  it("lets type-name and numeric fields grow without a max-width cap", () => {
+  it("caps type-name and numeric fields at the same 12rem truncation width", () => {
     const { container, rerender } = render(
       <PinDefaultPreviewWidget
         preview={{ kind: "classRef", text: "CameraComponent" }}
       />,
     );
     const typeName = container.querySelector("[data-pin-default='classRef']");
-    expect(typeName?.className).toMatch(/whitespace-nowrap/);
-    expect(typeName?.className).not.toMatch(/--graph-pin-default-max-width/);
-    expect(typeName?.className).not.toMatch(/\btruncate\b/);
+    expect(typeName?.className).toMatch(/--graph-pin-default-max-width,12rem/);
+    expect(typeName?.className).toMatch(/\btruncate\b/);
 
     rerender(
       <PinDefaultPreviewWidget preview={{ kind: "vec3", text: "1, 2, 3" }} />,
     );
     const numeric = container.querySelector("[data-pin-default='vec3']");
-    expect(numeric?.className).toMatch(/whitespace-nowrap/);
-    expect(numeric?.className).not.toMatch(/--graph-pin-default-max-width/);
+    expect(numeric?.className).toMatch(/--graph-pin-default-max-width,12rem/);
+    expect(numeric?.className).toMatch(/\btruncate\b/);
   });
 
   it("sizes bool and color swatches at size-5", () => {
