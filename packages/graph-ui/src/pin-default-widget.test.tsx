@@ -19,7 +19,10 @@ describe("PinDefaultPreviewWidget", () => {
     expect(field?.className).toMatch(/\btext-base\b/);
     expect(field?.className).toMatch(/\bh-8\b/);
     expect(field?.className).toMatch(/--graph-pin-default-max-width,12rem/);
+    expect(field?.className).toMatch(/\bw-fit\b/);
+    expect(field?.className).not.toMatch(/\bmin-w-fit\b/);
     expect(field?.className).toMatch(/\btruncate\b/);
+    expect(field?.hasAttribute("data-pin-default-field")).toBe(true);
   });
 
   it("caps type-name and numeric fields at the same 12rem truncation width", () => {
@@ -30,6 +33,8 @@ describe("PinDefaultPreviewWidget", () => {
     );
     const typeName = container.querySelector("[data-pin-default='classRef']");
     expect(typeName?.className).toMatch(/--graph-pin-default-max-width,12rem/);
+    expect(typeName?.className).toMatch(/\bw-fit\b/);
+    expect(typeName?.className).not.toMatch(/\bmin-w-fit\b/);
     expect(typeName?.className).toMatch(/\btruncate\b/);
 
     rerender(
@@ -37,6 +42,8 @@ describe("PinDefaultPreviewWidget", () => {
     );
     const numeric = container.querySelector("[data-pin-default='vec3']");
     expect(numeric?.className).toMatch(/--graph-pin-default-max-width,12rem/);
+    expect(numeric?.className).toMatch(/\bw-fit\b/);
+    expect(numeric?.className).not.toMatch(/\bmin-w-fit\b/);
     expect(numeric?.className).toMatch(/\btruncate\b/);
   });
 

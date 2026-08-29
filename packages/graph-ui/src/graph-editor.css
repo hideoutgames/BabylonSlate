@@ -15,6 +15,22 @@
   --xy-node-background-color: var(--card);
 }
 
+.graph-editor-canvas .react-flow__node {
+  /* Prefer chrome intrinsic width over a stale XYFlow measured px width. */
+  width: max-content !important;
+}
+
+.graph-editor-canvas [data-pin-row] {
+  width: 100%;
+  min-width: max-content;
+}
+
+.graph-editor-canvas [data-pin-default-field] {
+  width: fit-content;
+  min-width: min(var(--graph-pin-default-max-width, 12rem), max-content);
+  max-width: var(--graph-pin-default-max-width, 12rem);
+}
+
 .graph-editor-canvas .react-flow__controls-button {
   min-width: var(--touch-target, 44px);
   min-height: var(--touch-target, 44px);
