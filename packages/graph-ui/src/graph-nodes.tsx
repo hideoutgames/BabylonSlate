@@ -443,7 +443,7 @@ export function VariableGetNode({
         data-node-kind="variable-get"
         data-disabled={disabled ? "true" : undefined}
         className={cn(
-          "flex min-h-[var(--touch-target,44px)] w-max items-center gap-2 rounded-full border-2 bg-card px-4 text-card-foreground shadow-md",
+          "flex min-h-14 w-max items-center gap-4 rounded-full border-2 bg-card px-8 text-card-foreground shadow-md",
           selected && "ring-2 ring-primary",
           disabled && "opacity-50",
         )}
@@ -464,7 +464,7 @@ export function VariableGetNode({
           <>
             <span
               data-pin-label={outgoing.name}
-              className="shrink-0 whitespace-nowrap text-base leading-snug text-foreground"
+              className="shrink-0 px-3 whitespace-nowrap text-base leading-snug text-foreground"
             >
               {humanizePropertyLabel(outgoing.name)}
             </span>

@@ -131,7 +131,7 @@ Content Browser **asset** tiles mark the **thumbnail well only** with a 2px type
 | `--graph-edge-exec` | `5px` | Exec wire stroke |
 | `--graph-edge-data` | `4px` | Data wire stroke |
 
-Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace-nowrap` titles and pin names (`shrink-0`, no `min-w-0` pin columns) plus a `gap-6` gutter between in/out labels. Compact BT nodes use `min-w-56`. Get Variable uses a `w-max` pill (`rounded-full`, `px-4`, `gap-2`, no `min-w-80`) outlined in the value pin color. Title bars are `text-base`. Pin rows stay `--touch-target` (44px). Text pin defaults (string, numeric, type name) truncate at `--graph-pin-default-max-width`.
+Default Blueprint shells use Tailwind `w-max min-w-80` and grow with `whitespace-nowrap` titles and pin names (`shrink-0`, no `min-w-0` pin columns) plus a `gap-6` gutter between in/out labels. Compact BT nodes use `min-w-56`. Get Variable uses a `w-max` pill (`rounded-full`, `min-h-14`, `px-8`, `gap-4`, no `min-w-80`) outlined in the value pin color. Title bars are `text-base`. Pin rows stay `--touch-target` (44px). Text pin defaults (string, numeric, type name) truncate at `--graph-pin-default-max-width`.
 
 Project Settings **Input** reuses pin tokens for device accents rather than new CSS variables: key `--pin-string`, mouse `--pin-object`, pointer `--pin-wildcard`, gamepad button `--pin-bool`, gamepad axis `--pin-vector`, touch `--pin-float`. Action/axis section legends use bool / vector. 2D binding X/Y toggles use `text-axis-x` / `text-axis-y`.
 
