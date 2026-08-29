@@ -2173,7 +2173,7 @@ describe("GraphEditor", () => {
     expect(preview?.className).toMatch(/\bh-8\b/);
     expect(preview?.className).toMatch(/--graph-pin-default-max-width,12rem/);
     expect(preview?.className).toMatch(/\bw-fit\b/);
-    expect(preview?.className).toMatch(/\bmin-w-fit\b/);
+    expect(preview?.className).not.toMatch(/\bmin-w-fit\b/);
     expect(preview?.className).toMatch(/\btruncate\b/);
     expect(
       container.querySelector('[data-id="log"] [data-pin-default]'),

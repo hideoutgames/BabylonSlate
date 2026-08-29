@@ -59,7 +59,9 @@ describe("blueprint node intrinsic width", () => {
       "\\.graph-editor-canvas \\[data-pin-default-field\\]",
     );
     expect(block).toMatch(/width:\s*fit-content/);
-    expect(block).toMatch(/min-width:\s*fit-content/);
+    expect(block).toMatch(
+      /min-width:\s*min\(\s*var\(--graph-pin-default-max-width/,
+    );
     expect(block).toMatch(/max-width:\s*var\(--graph-pin-default-max-width/);
   });
 });

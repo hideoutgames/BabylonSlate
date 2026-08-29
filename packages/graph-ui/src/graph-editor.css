@@ -26,7 +26,7 @@
 
 .graph-editor-canvas [data-pin-default-field] {
   width: fit-content;
-  min-width: fit-content;
+  min-width: min(var(--graph-pin-default-max-width, 12rem), max-content);
   max-width: var(--graph-pin-default-max-width, 12rem);
 }
 
