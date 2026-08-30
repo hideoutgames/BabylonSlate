@@ -66,6 +66,31 @@ export function applyPixelArtSampling(texture: BaseTexture): void {
   editable.anisotropicFilteringLevel = 1;
 }
 
+function modelAlbedoTextures(
+  materials: readonly object[] | undefined,
+): Set<BaseTexture> {
+  const found = new Set<BaseTexture>();
+  if (!materials) return found;
+  const slots = [
+    "albedoTexture",
+    "emissiveTexture",
+    "bumpTexture",
+    "metallicTexture",
+    "reflectivityTexture",
+    "ambientTexture",
+  ] as const;
+  for (const material of materials) {
+    const record = material as Record<string, unknown>;
+    for (const slot of slots) {
+      const texture = record[slot];
+      if (texture && typeof texture === "object") {
+        found.add(texture as BaseTexture);
+      }
+    }
+  }
+  return found;
+}
+
 /**
  * Walk scene-owned textures that are not model/GLB construction albedos.
  * ResourceCache (engine-owned) wrappers are skipped — sprite/tilemap use a
@@ -73,24 +98,9 @@ export function applyPixelArtSampling(texture: BaseTexture): void {
  */
 export function applyPixelArtSamplingToScene(scene: {
   textures: BaseTexture[];
-  materials?: ReadonlyArray<{
-    albedoTexture?: BaseTexture | null;
-    emissiveTexture?: BaseTexture | null;
-    bumpTexture?: BaseTexture | null;
-    metallicTexture?: BaseTexture | null;
-    reflectivityTexture?: BaseTexture | null;
-    ambientTexture?: BaseTexture | null;
-  }>;
+  materials?: readonly object[];
 }): void {
-  const modelTextures = new Set<BaseTexture>();
-  for (const material of scene.materials ?? []) {
-    if (material.albedoTexture) modelTextures.add(material.albedoTexture);
-    if (material.emissiveTexture) modelTextures.add(material.emissiveTexture);
-    if (material.bumpTexture) modelTextures.add(material.bumpTexture);
-    if (material.metallicTexture) modelTextures.add(material.metallicTexture);
-    if (material.reflectivityTexture) modelTextures.add(material.reflectivityTexture);
-    if (material.ambientTexture) modelTextures.add(material.ambientTexture);
-  }
+  const modelTextures = modelAlbedoTextures(scene.materials);
   for (const texture of scene.textures) {
     if (isEngineOwnedGpuTexture(texture)) continue;
     if (modelTextures.has(texture)) continue;

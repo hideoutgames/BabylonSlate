@@ -68,8 +68,9 @@ describe("resource cache getTexture", () => {
     const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
     expect(b).not.toBe(a);
     expect(isDisposedGpuTexture(a)).toBe(false);
-    expect((b as Texture).url).toContain("#nomip");
-    expect(((b as Texture).url.split("#")[1] ?? "")).not.toContain(":");
+    const nomipUrl = (b as Texture).url ?? "";
+    expect(nomipUrl).toContain("#nomip");
+    expect((nomipUrl.split("#")[1] ?? "")).not.toContain(":");
     const again = cache.getTexture("tex", engine, bytes, { noMipmap: true });
     expect(again).toBe(b);
     cache.dispose();
@@ -87,12 +88,13 @@ describe("resource cache getTexture", () => {
     const material = getMaterialTexture(cache, "shared", engine, bytes);
     expect(sprite).toBeInstanceOf(Texture);
     expect((sprite as Texture).invertY).toBe(true);
-    expect((sprite as Texture).url).toContain("#nomip");
-    expect(((sprite as Texture).url.split("#")[1] ?? "")).not.toContain(":");
+    const spriteUrl = (sprite as Texture).url ?? "";
+    expect(spriteUrl).toContain("#nomip");
+    expect((spriteUrl.split("#")[1] ?? "")).not.toContain(":");
     expect(material).not.toBeNull();
     expect(material).not.toBe(sprite);
     expect(material!.invertY).toBe(false);
-    expect(material!.url).toContain("#ninv");
+    expect(material!.url ?? "").toContain("#ninv");
     expect(isDisposedGpuTexture(sprite)).toBe(false);
     cache.dispose();
     engine.dispose();
@@ -129,10 +131,11 @@ describe("resource cache getTexture", () => {
     const pixelArt = cache.getTexture("tex", engine, ktx2, {
       noMipmap: true,
       samplingMode: Texture.NEAREST_SAMPLINGMODE,
-    });
+    }) as Texture;
     expect(pixelArt).not.toBe(mipped);
-    expect(pixelArt.url).toContain("#nomip.ktx2");
-    expect((pixelArt.url.split("#")[1] ?? "")).not.toContain(":");
+    const pixelArtUrl = pixelArt.url ?? "";
+    expect(pixelArtUrl).toContain("#nomip.ktx2");
+    expect((pixelArtUrl.split("#")[1] ?? "")).not.toContain(":");
     expect(isDisposedGpuTexture(mipped)).toBe(false);
     cache.dispose();
     engine.dispose();
