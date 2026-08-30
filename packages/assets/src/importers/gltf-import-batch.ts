@@ -73,17 +73,42 @@ export function groupGltfImportSidecars(files: ImportFileBytes[]): {
   return { models, rest };
 }
 
+function isGltfSidecar(file: ImportFileBytes): boolean {
+  return GLTF_SIDECAR_EXTENSIONS.has(extensionOf(file.name));
+}
+
 /** Embed matching sidecars into each GLB/glTF; consumed images are not re-imported. */
 export function embedGltfImportBatch(
   files: ImportFileBytes[],
 ): ImportFileBytes[] {
   const { models, rest } = groupGltfImportSidecars(files);
   const prepared: ImportFileBytes[] = [];
+  const unusedSidecars = files.filter(
+    (file) =>
+      isGltfSidecar(file) &&
+      !models.some((entry) => entry.model === file) &&
+      !models.some((entry) => entry.sidecars.includes(file)),
+  );
+  const consumedExtras = new Set<ImportFileBytes>();
   for (const { model, sidecars } of models) {
-    const map = sidecarLookupMap(sidecars);
-    const ingested = ingestGltfForImport(model.name, model.bytes, map);
-    const name = model.name.replace(/\.gltf$/i, ".glb");
-    prepared.push({ name, bytes: ingested.bytes });
+    const extras = unusedSidecars.filter((file) => !sidecars.includes(file));
+    const map = sidecarLookupMap([...sidecars, ...extras]);
+    try {
+      const ingested = ingestGltfForImport(model.name, model.bytes, map);
+      const name = model.name.replace(/\.gltf$/i, ".glb");
+      prepared.push({ name, bytes: ingested.bytes });
+      const uris = collectGltfExternalUris(model.name, model.bytes);
+      for (const extra of extras) {
+        if (uris.some((uri) => sidecarMatchesUri(extra, uri))) {
+          consumedExtras.add(extra);
+        }
+      }
+    } catch {
+      prepared.push(model);
+    }
   }
-  return [...prepared, ...rest];
+  return [
+    ...prepared,
+    ...rest.filter((file) => !consumedExtras.has(file)),
+  ];
 }

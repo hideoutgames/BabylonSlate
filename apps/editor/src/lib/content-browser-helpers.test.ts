@@ -65,6 +65,7 @@ import {
   resolveContentBrowserPaintHit,
   applyContentBrowserTreeSelect,
   applyContentBrowserTileSelect,
+  runWithContentBrowserImportBusy,
   type ContentBrowserTreeRow,
   assetTypeThumbAccent,
 } from "./content-browser-helpers";
@@ -2195,5 +2196,27 @@ describe("content-browser-helpers", () => {
     );
     expect([...ranged.selectedGuids]).toEqual(["hero-1"]);
     expect([...ranged.selectedFolderPaths]).toEqual(["assets/fx"]);
+  });
+});
+
+describe("runWithContentBrowserImportBusy", () => {
+  it("clears busy when convert/embed throws so Import stays enabled", async () => {
+    let busy = false;
+    let progressCleared = false;
+    await expect(
+      runWithContentBrowserImportBusy(
+        (next) => {
+          busy = next;
+        },
+        () => {
+          progressCleared = true;
+        },
+        async () => {
+          throw new Error("glTF import needs the matching .bin buffer");
+        },
+      ),
+    ).rejects.toThrow(/\.bin buffer/i);
+    expect(busy).toBe(false);
+    expect(progressCleared).toBe(true);
   });
 });

@@ -127,6 +127,7 @@ import {
   uniqueAssetTypes,
   visualForIndexedAsset,
   withAutoCollapsedNestedFolders,
+  runWithContentBrowserImportBusy,
   type ContentBrowserContextAction,
   type ContentBrowserDropMove,
   type ContentBrowserSortMode,
@@ -1167,74 +1168,76 @@ export function ContentBrowserWorkspace({
       const errors: string[] = [];
       const incoming = filterBabpluginFiles(files);
       if (incoming.length === 0) return;
-      setBusy(true);
-      const { files: converted, errors: convertErrors } =
-        await convertObjImportBatch(incoming, {
-          engine: play?.ensureSharedEngine() ?? undefined,
-        });
-      errors.push(...convertErrors);
-      const prepared = groupMsdfImportBatch(embedGltfImportBatch(converted));
-      if (prepared.length === 0) {
-        setBusy(false);
-        if (errors.length) setImportErrors(errors);
-        return;
-      }
-      setImportProgress({
-        total: prepared.length,
-        done: 0,
-        currentName: prepared[0]!.name,
-      });
       const createdModels: Array<{
         guid: string;
         path: string;
         payload: Record<string, unknown>;
       }> = [];
-      try {
-        const folder = selectedRoot.relative;
-        for (let index = 0; index < prepared.length; index += 1) {
-          const file = prepared[index]!;
-          setImportProgress({
-            total: prepared.length,
-            done: index,
-            currentName: file.name,
-          });
+      await runWithContentBrowserImportBusy(
+        setBusy,
+        () => setImportProgress(null),
+        async () => {
           try {
-            const engineSettings = await createAppSettingsStore().load();
-            const created = await assetRegistry.importFile(
-              selectedRoot.rootId,
-              folder,
-              file.name,
-              file.bytes,
-              {
-                modelImportScale: engineSettings.modelImportDefaultScale,
-                sidecars: file.sidecars,
-              },
+            const { files: converted, errors: convertErrors } =
+              await convertObjImportBatch(incoming, {
+                engine: play?.ensureSharedEngine() ?? undefined,
+              });
+            errors.push(...convertErrors);
+            const prepared = groupMsdfImportBatch(
+              embedGltfImportBatch(converted),
             );
-            for (const asset of created) {
-              if (asset.header.type !== "Model") continue;
-              createdModels.push({
-                guid: asset.header.guid,
-                path: asset.path,
-                payload: asset.header.payload ?? {},
+            if (prepared.length === 0) return;
+            setImportProgress({
+              total: prepared.length,
+              done: 0,
+              currentName: prepared[0]!.name,
+            });
+            const folder = selectedRoot.relative;
+            for (let index = 0; index < prepared.length; index += 1) {
+              const file = prepared[index]!;
+              setImportProgress({
+                total: prepared.length,
+                done: index,
+                currentName: file.name,
+              });
+              try {
+                const engineSettings = await createAppSettingsStore().load();
+                const created = await assetRegistry.importFile(
+                  selectedRoot.rootId,
+                  folder,
+                  file.name,
+                  file.bytes,
+                  {
+                    modelImportScale: engineSettings.modelImportDefaultScale,
+                    sidecars: file.sidecars,
+                  },
+                );
+                for (const asset of created) {
+                  if (asset.header.type !== "Model") continue;
+                  createdModels.push({
+                    guid: asset.header.guid,
+                    path: asset.path,
+                    payload: asset.header.payload ?? {},
+                  });
+                }
+              } catch (err) {
+                errors.push(
+                  `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
+                );
+              }
+              setImportProgress({
+                total: prepared.length,
+                done: index + 1,
+                currentName: file.name,
               });
             }
+            await refreshAssetRegistry();
           } catch (err) {
-            errors.push(
-              `${file.name}: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            errors.push(err instanceof Error ? err.message : String(err));
           }
-          setImportProgress({
-            total: prepared.length,
-            done: index + 1,
-            currentName: file.name,
-          });
-        }
-        await refreshAssetRegistry();
-      } finally {
-        setImportProgress(null);
-        setBusy(false);
-        if (errors.length) setImportErrors(errors);
-      }
+        },
+      );
+      if (errors.length) setImportErrors(errors);
       enqueueModelThumbnailJobs(createdModels);
     },
     [assetRegistry, play, refreshAssetRegistry, selectedRoot],

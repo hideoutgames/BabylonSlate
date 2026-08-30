@@ -61,18 +61,40 @@ describe("groupGltfImportSidecars", () => {
   });
 });
 
+function sidecarGltf(name: string, bufferUri: string): { name: string; bytes: Uint8Array } {
+  return {
+    name,
+    bytes: new TextEncoder().encode(
+      JSON.stringify({
+        asset: { version: "2.0" },
+        buffers: [{ uri: bufferUri, byteLength: 4 }],
+      }),
+    ),
+  };
+}
+
 describe("embedGltfImportBatch missing BIN", () => {
-  it("throws when a picked .gltf has a relative buffer URI and no .bin", () => {
-    const gltf = {
-      name: "Hero.gltf",
-      bytes: new TextEncoder().encode(
-        JSON.stringify({
-          asset: { version: "2.0" },
-          buffers: [{ uri: "Hero.bin", byteLength: 4 }],
-        }),
-      ),
-    };
-    expect(() => embedGltfImportBatch([gltf])).toThrow(/\.bin buffer/i);
+  it("keeps the original .gltf when the matching .bin is missing so siblings still import", () => {
+    const gltf = sidecarGltf("Hero.gltf", "Hero.bin");
+    const png = { name: "notes.png", bytes: ONE_BY_ONE_PNG };
+    const out = embedGltfImportBatch([gltf, png]);
+    expect(out.map((file) => file.name)).toEqual(["Hero.gltf", "notes.png"]);
+    expect(out[0]).toBe(gltf);
+  });
+
+  it("does not consume an unrelated picker .bin when the glTF BIN is still missing", () => {
+    const gltf = sidecarGltf("Hero.gltf", "Hero.bin");
+    const other = { name: "other.bin", bytes: new Uint8Array([1, 2, 3, 4]) };
+    const out = embedGltfImportBatch([gltf, other]);
+    expect(out.map((file) => file.name)).toEqual(["Hero.gltf", "other.bin"]);
+  });
+
+  it("embeds when the picker .bin matches the buffer URI basename (FAB folder prefix)", () => {
+    const gltf = sidecarGltf("Hero.gltf", "buffers/Hero.bin");
+    const bin = { name: "Hero.bin", bytes: new Uint8Array([1, 2, 3, 4]) };
+    const out = embedGltfImportBatch([gltf, bin]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.name).toBe("Hero.glb");
   });
 });
 

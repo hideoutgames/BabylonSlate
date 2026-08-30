@@ -1981,3 +1981,21 @@ export function isRenameNameTaken(
   }
   return false;
 }
+
+/**
+ * Content Browser Import sets `busy` before convert/embed. Always clear it
+ * (and the progress overlay) so Import / New Asset cannot stay disabled.
+ */
+export async function runWithContentBrowserImportBusy(
+  setBusy: (busy: boolean) => void,
+  clearImportProgress: () => void,
+  work: () => Promise<void>,
+): Promise<void> {
+  setBusy(true);
+  try {
+    await work();
+  } finally {
+    clearImportProgress();
+    setBusy(false);
+  }
+}
