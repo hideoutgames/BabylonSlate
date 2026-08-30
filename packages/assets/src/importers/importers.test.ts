@@ -147,11 +147,17 @@ describe("importers", () => {
     ).rejects.toThrow(/GLB or glTF/i);
     expect(importerForExtension("obj")).toBeUndefined();
     expect(importerForExtension("stl")).toBeUndefined();
+    expect(importerForExtension("bin")).toBeUndefined();
+    expect(importerForExtension("mtl")).toBeUndefined();
     expect(registeredImportAccept()).toMatch(/\.glb/);
     expect(registeredImportAccept()).toMatch(/\.gltf/);
     expect(registeredImportAccept()).not.toMatch(/\.fbx/);
     expect(registeredImportAccept()).not.toMatch(/\.stl/);
+    expect(registeredImportAccept()).not.toMatch(/\.bin/);
+    expect(registeredImportAccept()).not.toMatch(/\.mtl/);
     expect(pickerImportAccept()).toMatch(/\.obj/);
+    expect(pickerImportAccept()).toMatch(/\.bin/);
+    expect(pickerImportAccept()).toMatch(/\.mtl/);
     expect(pickerImportAccept()).not.toMatch(/\.fbx/);
   });
 
