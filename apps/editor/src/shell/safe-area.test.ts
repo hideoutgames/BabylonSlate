@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import chromeCss from "./editor-chrome.css?raw";
+import playOverlayChromeSource from "../components/play-overlay-chrome.tsx?raw";
+import previewBuildOverlaySource from "../components/preview-build-overlay.tsx?raw";
 import homepageCss from "../components/homepage.css?raw";
 import dockviewCss from "./dockview-theme.css?raw";
 import contextMenuCss from "../../../../packages/editor-kit/src/styles/context-menu.css?raw";
@@ -68,6 +70,27 @@ describe("safe-area tokens", () => {
     );
     expect(cssBlock(chromeCss, ".editor-global-toolbar")).toContain(
       "min-height: var(--chrome-row, 28px)",
+    );
+  });
+
+  it("uses one safe-area utility for fixed overlay chrome", () => {
+    const overlayChrome = cssBlock(chromeCss, ".safe-overlay-chrome");
+    expect(overlayChrome).toContain("--safe-overlay-pad: 0.75rem");
+    for (const side of ["top", "right", "bottom", "left"]) {
+      expect(overlayChrome).toContain(
+        `padding-${side}: calc(var(--safe-${side}) + var(--safe-overlay-pad))`,
+      );
+    }
+    expect(playOverlayChromeSource).toContain("safe-overlay-chrome");
+    expect(previewBuildOverlaySource).toContain("safe-overlay-chrome");
+    expect(previewBuildOverlaySource).toContain(
+      '"--safe-overlay-pad": "1rem"',
+    );
+    expect(previewBuildOverlaySource).toContain(
+      'className="fixed inset-0 z-50 bg-black"',
+    );
+    expect(previewBuildOverlaySource).toContain(
+      'className="absolute inset-0 h-full w-full',
     );
   });
 

@@ -37,7 +37,10 @@ export function PreviewBuildOverlay({
         onLoad={onLoad}
       />
       {error ? (
-        <div className="absolute inset-x-0 top-16 z-20 p-4">
+        <div
+          className="safe-overlay-chrome absolute inset-x-0 top-16 z-20"
+          style={{ "--safe-overlay-pad": "1rem" } as React.CSSProperties}
+        >
           <Alert variant="destructive" data-testid="preview-build-error">
             <AlertTitle>Preview Build Failed To Start</AlertTitle>
             <AlertDescription>
@@ -46,7 +49,7 @@ export function PreviewBuildOverlay({
           </Alert>
         </div>
       ) : null}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-end p-3">
+      <div className="safe-overlay-chrome pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-end">
         <Button
           size="touch"
           variant="secondary"

@@ -23,8 +23,26 @@ describe("PreviewBuildOverlay", () => {
     const iframe = view.getByTestId("preview-build-iframe");
     const chrome = stop.parentElement;
     expect(chrome?.className).toContain("z-10");
+    expect(chrome?.className).toContain("safe-overlay-chrome");
+    expect(chrome?.className).not.toContain("p-3");
     expect(iframe.className).toContain("outline-none");
     expect(iframe.className).toContain("focus-visible:outline-none");
+  });
+
+  it("keeps the error alert padded inside the safe overlay box", () => {
+    const view = render(
+      <PreviewBuildOverlay
+        src="/player/index.html?preview=1"
+        iframeRef={createRef<HTMLIFrameElement>()}
+        onClose={() => undefined}
+        error="Build failed"
+      />,
+    );
+    const error = view.getByTestId("preview-build-error");
+    const container = error.parentElement;
+    expect(container?.className).toContain("safe-overlay-chrome");
+    expect(container?.className).toContain("top-16");
+    expect(container?.style.getPropertyValue("--safe-overlay-pad")).toBe("1rem");
   });
 
   it("invokes onClose from Stop so Preview Build can leave the editor", () => {

@@ -6,11 +6,12 @@
   background: var(--card);
 }
 
-.safe-play-overlay-chrome {
-  padding-top: calc(var(--safe-top) + 0.75rem);
-  padding-right: calc(var(--safe-right) + 0.75rem);
-  padding-bottom: calc(var(--safe-bottom) + 0.75rem);
-  padding-left: calc(var(--safe-left) + 0.75rem);
+.safe-overlay-chrome {
+  --safe-overlay-pad: 0.75rem;
+  padding-top: calc(var(--safe-top) + var(--safe-overlay-pad));
+  padding-right: calc(var(--safe-right) + var(--safe-overlay-pad));
+  padding-bottom: calc(var(--safe-bottom) + var(--safe-overlay-pad));
+  padding-left: calc(var(--safe-left) + var(--safe-overlay-pad));
 }
 
 .editor-chrome-bar {
