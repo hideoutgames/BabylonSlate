@@ -422,7 +422,8 @@ function OverlayMenu({
 
 function parseCssPixelToken(name: string): number {
   if (typeof document === "undefined") return 0;
-  const value = getComputedStyle(document.documentElement)
+  const value = window
+    .getComputedStyle(document.documentElement)
     .getPropertyValue(name)
     .trim();
   const parsed = Number.parseFloat(value);
