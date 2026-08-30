@@ -67,16 +67,33 @@ export function applyPixelArtSampling(texture: BaseTexture): void {
 }
 
 /**
- * Walk every texture currently registered on a Babylon scene and apply
- * pixel-art sampling. Call when pixel-perfect mode turns on (and after
- * textures load into a pixel-perfect project) so nearest filtering is not
- * left as a dead helper.
+ * Walk scene-owned textures that are not model/GLB construction albedos.
+ * ResourceCache (engine-owned) wrappers are skipped — sprite/tilemap use a
+ * dedicated NEAREST / no-mip cache key instead of mutating a 3D albedo.
  */
 export function applyPixelArtSamplingToScene(scene: {
   textures: BaseTexture[];
+  materials?: ReadonlyArray<{
+    albedoTexture?: BaseTexture | null;
+    emissiveTexture?: BaseTexture | null;
+    bumpTexture?: BaseTexture | null;
+    metallicTexture?: BaseTexture | null;
+    reflectivityTexture?: BaseTexture | null;
+    ambientTexture?: BaseTexture | null;
+  }>;
 }): void {
+  const modelTextures = new Set<BaseTexture>();
+  for (const material of scene.materials ?? []) {
+    if (material.albedoTexture) modelTextures.add(material.albedoTexture);
+    if (material.emissiveTexture) modelTextures.add(material.emissiveTexture);
+    if (material.bumpTexture) modelTextures.add(material.bumpTexture);
+    if (material.metallicTexture) modelTextures.add(material.metallicTexture);
+    if (material.reflectivityTexture) modelTextures.add(material.reflectivityTexture);
+    if (material.ambientTexture) modelTextures.add(material.ambientTexture);
+  }
   for (const texture of scene.textures) {
     if (isEngineOwnedGpuTexture(texture)) continue;
+    if (modelTextures.has(texture)) continue;
     applyPixelArtSampling(texture);
   }
 }

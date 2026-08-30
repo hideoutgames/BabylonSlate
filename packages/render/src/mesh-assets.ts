@@ -2,13 +2,12 @@ import {
   Color3,
   Material,
   StandardMaterial,
-  Texture,
   type AbstractMesh,
   type Mesh,
   type Scene,
 } from "@babylonjs/core";
 import type { SpriteAnimationPayload, SpritePayload, TilemapPayload, TilesetPayload, ModelPayload, RetargetAnimationLoad } from "@babylonslate/assets";
-import type { ResourceCache } from "./resource-cache";
+import { PIXEL_ART_TEXTURE_SAMPLING, type ResourceCache } from "./resource-cache";
 
 /** Bytes and payloads the editor / Play mesh builders use for authored content. */
 export interface MeshAssetContext {
@@ -170,10 +169,7 @@ export function applyAlbedoTexture(
     textureGuid,
     scene.getEngine(),
     bytes,
-    {
-      noMipmap: true,
-      samplingMode: Texture.NEAREST_SAMPLINGMODE,
-    },
+    PIXEL_ART_TEXTURE_SAMPLING,
   );
   const material = new StandardMaterial(`albedo:${textureGuid}`, scene);
   material.disableLighting = true;
