@@ -21,7 +21,10 @@ describe("PreviewBuildOverlay", () => {
     expect(stop.getAttribute("aria-label")).toBe("Stop");
     expect(stop.className).toContain("min-h-[var(--touch-target,44px)]");
     const iframe = view.getByTestId("preview-build-iframe");
+    const overlay = view.getByTestId("preview-build-overlay");
     const chrome = stop.parentElement;
+    expect(overlay.className).not.toContain("safe-overlay-chrome");
+    expect(iframe.className).not.toContain("safe-overlay-chrome");
     expect(chrome?.className).toContain("z-10");
     expect(chrome?.className).toContain("safe-overlay-chrome");
     expect(chrome?.className).not.toContain("p-3");

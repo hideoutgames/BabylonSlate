@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import chromeCss from "./editor-chrome.css?raw";
-import playOverlayChromeSource from "../components/play-overlay-chrome.tsx?raw";
-import previewBuildOverlaySource from "../components/preview-build-overlay.tsx?raw";
 import homepageCss from "../components/homepage.css?raw";
 import dockviewCss from "./dockview-theme.css?raw";
 import contextMenuCss from "../../../../packages/editor-kit/src/styles/context-menu.css?raw";
@@ -81,17 +79,6 @@ describe("safe-area tokens", () => {
         `padding-${side}: calc(var(--safe-${side}) + var(--safe-overlay-pad))`,
       );
     }
-    expect(playOverlayChromeSource).toContain("safe-overlay-chrome");
-    expect(previewBuildOverlaySource).toContain("safe-overlay-chrome");
-    expect(previewBuildOverlaySource).toContain(
-      '"--safe-overlay-pad": "1rem"',
-    );
-    expect(previewBuildOverlaySource).toContain(
-      'className="fixed inset-0 z-50 bg-black"',
-    );
-    expect(previewBuildOverlaySource).toContain(
-      'className="absolute inset-0 h-full w-full',
-    );
   });
 
   it("uses contentInset never so CSS owns the viewport insets", () => {
