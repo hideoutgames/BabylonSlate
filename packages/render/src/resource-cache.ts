@@ -31,6 +31,7 @@ export interface TextureSamplingOptions {
 interface CacheEntry {
   assetGuid: string;
   blobUrl: string;
+  extraBlobUrls: string[];
   bytes: number;
   refCount: number;
   lastUsed: number;
@@ -96,22 +97,30 @@ function samplingKey(options: TextureSamplingOptions = {}): string {
   ].join(":");
 }
 
-/** Unique InternalTexture URL fragment. Never put colons in the hash (that broke blob upload). */
-function textureLoaderUrl(
-  blobUrl: string,
-  bytes: Uint8Array | Blob,
-  options: TextureSamplingOptions,
-): string {
-  const ktx2 = ktx2LoaderHints(bytes);
-  const parts: string[] = [];
-  if (options.noMipmap) parts.push("nomip");
-  if (options.invertY === false) parts.push("ninv");
-  if (ktx2.forcedExtension) {
-    return parts.length > 0
-      ? `${blobUrl}#${parts.join(".")}.ktx2`
-      : `${blobUrl}#.ktx2`;
+/** KTX2 still needs `#.ktx2`. Never add `#nomip` / `#ninv` — that breaks blob upload. */
+function ktx2LoaderUrl(blobUrl: string, bytes: Uint8Array | Blob): string {
+  return ktx2LoaderHints(bytes).forcedExtension ? `${blobUrl}#.ktx2` : blobUrl;
+}
+
+function revokeBlobUrl(url: string): void {
+  if (!url.startsWith("blob:") || typeof URL === "undefined") return;
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // ignore
   }
-  return parts.length > 0 ? `${blobUrl}#${parts.join(".")}` : blobUrl;
+}
+
+function revokeExtraBlobUrls(entry: CacheEntry): void {
+  for (const extra of entry.extraBlobUrls) {
+    revokeBlobUrl(extra);
+  }
+  entry.extraBlobUrls.length = 0;
+}
+
+function revokeEntryBlobUrls(entry: CacheEntry): void {
+  revokeBlobUrl(entry.blobUrl);
+  revokeExtraBlobUrls(entry);
 }
 
 function liveTexture(
@@ -236,13 +245,7 @@ export class ResourceCache {
         return existing.blobUrl;
       }
       disposeEntryTextures(existing);
-      if (existing.blobUrl.startsWith("blob:") && typeof URL !== "undefined") {
-        try {
-          URL.revokeObjectURL(existing.blobUrl);
-        } catch {
-          // ignore
-        }
-      }
+      revokeEntryBlobUrls(existing);
       this.totalBytes -= existing.bytes;
       existing.bytes = 0;
       this.entries.delete(assetGuid);
@@ -272,6 +275,7 @@ export class ResourceCache {
     const entry: CacheEntry = {
       assetGuid,
       blobUrl: url,
+      extraBlobUrls: [],
       bytes: 0,
       refCount: 1,
       lastUsed: ++this.clock,
@@ -284,9 +288,8 @@ export class ResourceCache {
 
   /**
    * Resolve a Texture for an asset guid through the cache so editor and Play
-   * share InternalTextures per sampling key (stable blob URL + a safe
-   * `#nomip` / `#ninv` fragment). First-wins applies only within one key so
-   * sprite/tilemap NEAREST does not steal a mipped 3D albedo (or invertY).
+   * share InternalTextures per sampling key. Extra sampling keys get another
+   * `createObjectURL` of the same Blob (never a `#nomip` / `#ninv` fragment).
    */
   getTexture(
     assetGuid: string,
@@ -302,13 +305,14 @@ export class ResourceCache {
       existing!.lastUsed = ++this.clock;
       return reused as Texture | CubeTexture;
     }
-    const url = this.blobUrlFor(assetGuid, bytes);
+    const canonical = this.blobUrlFor(assetGuid, bytes);
     const entry = this.entries.get(assetGuid)!;
+    const blobUrl = this.blobUrlForSamplingKey(entry, assetGuid);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
-    const loaderUrl = textureLoaderUrl(url, bytes, options);
+    const loaderUrl = ktx2LoaderUrl(blobUrl, bytes);
     const texture = options.isCube
-      ? new CubeTexture(url, engine, {
+      ? new CubeTexture(canonical, engine, {
           noMipmap: options.noMipmap ?? false,
           useSRGBBuffer: options.useSRGBBuffer ?? false,
         })
@@ -324,6 +328,22 @@ export class ResourceCache {
     entry.textures.set(key, texture);
     this.accountLoadedBytes(assetGuid, bytes, options.noMipmap !== true);
     return texture;
+  }
+
+  /** First wrapper uses the canonical blob URL; later keys get a new object URL. */
+  private blobUrlForSamplingKey(entry: CacheEntry, assetGuid: string): string {
+    let live = 0;
+    for (const texture of entry.textures.values()) {
+      if (!isDisposedGpuTexture(texture)) live += 1;
+    }
+    if (live === 0) return entry.blobUrl;
+    const blob = this.blobs.get(assetGuid);
+    if (!blob || typeof URL === "undefined" || !URL.createObjectURL) {
+      return entry.blobUrl;
+    }
+    const extra = URL.createObjectURL(blob);
+    entry.extraBlobUrls.push(extra);
+    return extra;
   }
 
   /**
@@ -358,6 +378,7 @@ export class ResourceCache {
     this.entries.set(assetGuid, {
       assetGuid,
       blobUrl: "",
+      extraBlobUrls: [],
       bytes: 0,
       refCount: 1,
       lastUsed: ++this.clock,
@@ -374,6 +395,7 @@ export class ResourceCache {
   releaseGpuTextures(): void {
     for (const entry of this.entries.values()) {
       disposeEntryTextures(entry);
+      revokeExtraBlobUrls(entry);
     }
   }
 
@@ -388,6 +410,7 @@ export class ResourceCache {
       this.entries.set(assetGuid, {
         assetGuid,
         blobUrl: "",
+        extraBlobUrls: [],
         bytes,
         refCount: 1,
         lastUsed: ++this.clock,
@@ -491,13 +514,7 @@ export class ResourceCache {
     this.entries.delete(assetGuid);
     this.blobs.delete(assetGuid);
     disposeEntryTextures(entry);
-    if (entry.blobUrl.startsWith("blob:") && typeof URL !== "undefined") {
-      try {
-        URL.revokeObjectURL(entry.blobUrl);
-      } catch {
-        // ignore
-      }
-    }
+    revokeEntryBlobUrls(entry);
     console.info(`[resource-cache] evict ${assetGuid} (${reason})`);
     this.onEvict?.(assetGuid, reason);
   }

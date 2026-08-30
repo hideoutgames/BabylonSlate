@@ -68,12 +68,63 @@ describe("resource cache getTexture", () => {
     const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
     expect(b).not.toBe(a);
     expect(isDisposedGpuTexture(a)).toBe(false);
+    expect(a.getInternalTexture()).not.toBeNull();
+    expect((b as Texture).getInternalTexture()).not.toBeNull();
     const nomipUrl = (b as Texture).url ?? "";
-    expect(nomipUrl).toContain("#nomip");
-    expect((nomipUrl.split("#")[1] ?? "")).not.toContain(":");
+    expect(nomipUrl.startsWith("blob:")).toBe(true);
+    expect(nomipUrl).not.toContain("#nomip");
+    expect(nomipUrl).not.toContain("#ninv");
+    expect(nomipUrl).not.toBe((a as Texture).url);
     const again = cache.getTexture("tex", engine, bytes, { noMipmap: true });
     expect(again).toBe(b);
     cache.dispose();
+    engine.dispose();
+  });
+
+  it("revokes extra object URLs when the cache entry is disposed", () => {
+    const revoked: string[] = [];
+    const original = URL.revokeObjectURL.bind(URL);
+    const spy = vi.spyOn(URL, "revokeObjectURL").mockImplementation((url) => {
+      revoked.push(String(url));
+      original(url);
+    });
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const a = cache.getTexture("tex", engine, bytes);
+    const b = cache.getTexture("tex", engine, bytes, {
+      noMipmap: true,
+    }) as Texture;
+    const extra = (b.url ?? "").split("#")[0] ?? "";
+    expect(extra.startsWith("blob:")).toBe(true);
+    expect(extra).not.toBe(((a as Texture).url ?? "").split("#")[0]);
+    cache.dispose();
+    expect(revoked).toContain(extra);
+    spy.mockRestore();
+    engine.dispose();
+  });
+
+  it("revokes extra object URLs when flushUnreferenced evicts", () => {
+    const revoked: string[] = [];
+    const original = URL.revokeObjectURL.bind(URL);
+    const spy = vi.spyOn(URL, "revokeObjectURL").mockImplementation((url) => {
+      revoked.push(String(url));
+      original(url);
+    });
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const a = cache.getTexture("tex", engine, bytes);
+    const b = cache.getTexture("tex", engine, bytes, {
+      noMipmap: true,
+    }) as Texture;
+    const extra = (b.url ?? "").split("#")[0] ?? "";
+    cache.release("tex");
+    cache.release("tex");
+    cache.flushUnreferenced();
+    expect(revoked).toContain(extra);
+    expect(revoked).toContain(((a as Texture).url ?? "").split("#")[0]);
+    spy.mockRestore();
     engine.dispose();
   });
 
@@ -89,12 +140,14 @@ describe("resource cache getTexture", () => {
     expect(sprite).toBeInstanceOf(Texture);
     expect((sprite as Texture).invertY).toBe(true);
     const spriteUrl = (sprite as Texture).url ?? "";
-    expect(spriteUrl).toContain("#nomip");
-    expect((spriteUrl.split("#")[1] ?? "")).not.toContain(":");
+    expect(spriteUrl.startsWith("blob:")).toBe(true);
+    expect(spriteUrl).not.toContain("#nomip");
+    expect(spriteUrl).not.toContain("#ninv");
     expect(material).not.toBeNull();
     expect(material).not.toBe(sprite);
     expect(material!.invertY).toBe(false);
-    expect(material!.url ?? "").toContain("#ninv");
+    expect(material!.url ?? "").not.toContain("#ninv");
+    expect(material!.url ?? "").not.toContain("#nomip");
     expect(isDisposedGpuTexture(sprite)).toBe(false);
     cache.dispose();
     engine.dispose();
@@ -120,7 +173,7 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
-  it("loads a no-mip KTX2 wrapper from a #nomip.ktx2 fragment", () => {
+  it("loads a no-mip KTX2 wrapper from a second blob URL with only #.ktx2", () => {
     const ktx2 = new Uint8Array([
       0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
       1, 2, 3, 4,
@@ -134,8 +187,9 @@ describe("resource cache getTexture", () => {
     }) as Texture;
     expect(pixelArt).not.toBe(mipped);
     const pixelArtUrl = pixelArt.url ?? "";
-    expect(pixelArtUrl).toContain("#nomip.ktx2");
-    expect((pixelArtUrl.split("#")[1] ?? "")).not.toContain(":");
+    expect(pixelArtUrl).toMatch(/#\.ktx2$/);
+    expect(pixelArtUrl).not.toContain("#nomip");
+    expect(pixelArtUrl.split("#")[0]).not.toBe((mipped.url ?? "").split("#")[0]);
     expect(isDisposedGpuTexture(mipped)).toBe(false);
     cache.dispose();
     engine.dispose();
