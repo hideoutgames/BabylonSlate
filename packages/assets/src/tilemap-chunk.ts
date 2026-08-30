@@ -60,22 +60,44 @@ export function tilemapChunkVertexData(options: {
       const uvId = animated ? (meta?.animation[0] ?? localId) : localId;
       const uv = tilesetTileUv(atlas, uvId);
       if (!uv) continue;
-      // One texel of world overlap covers raster cracks that a half-texel UV
-      // inset would otherwise leave when the camera is zoomed out.
+      // Interior quad is exact cell size (sprite 1:1). A 1-texel rim around it
+      // clamps to the inset UV edge so zoom/pan cannot open a raster crack.
       const overlapX =
         atlas.tileWidth > 0 ? worldTileWidth / atlas.tileWidth : 0;
       const overlapY =
         atlas.tileHeight > 0 ? worldTileHeight / atlas.tileHeight : 0;
-      const x0 = originX + lx * worldTileWidth - overlapX;
-      const y0 = originY + ly * worldTileHeight - overlapY;
-      const x1 = x0 + worldTileWidth + overlapX * 2;
-      const y1 = y0 + worldTileHeight + overlapY * 2;
-      // Quad order matches sprite CreatePlane: BL, BR, TR, TL.
-      positions.push(x0, y0, 0, x1, y0, 0, x1, y1, 0, x0, y1, 0);
-      uvs.push(uv.u0, uv.v0, uv.u1, uv.v0, uv.u1, uv.v1, uv.u0, uv.v1);
-      const base = quad * 4;
-      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-      quad += 1;
+      const x0 = originX + lx * worldTileWidth;
+      const y0 = originY + ly * worldTileHeight;
+      const x1 = x0 + worldTileWidth;
+      const y1 = y0 + worldTileHeight;
+      const xs = [x0 - overlapX, x0, x1, x1 + overlapX];
+      const ys = [y0 - overlapY, y0, y1, y1 + overlapY];
+      for (let j = 0; j < 3; j++) {
+        for (let i = 0; i < 3; i++) {
+          const uu0 = i === 0 ? uv.u0 : i === 2 ? uv.u1 : uv.u0;
+          const uu1 = i === 0 ? uv.u0 : i === 2 ? uv.u1 : uv.u1;
+          const vv0 = j === 0 ? uv.v0 : j === 2 ? uv.v1 : uv.v0;
+          const vv1 = j === 0 ? uv.v0 : j === 2 ? uv.v1 : uv.v1;
+          positions.push(
+            xs[i]!,
+            ys[j]!,
+            0,
+            xs[i + 1]!,
+            ys[j]!,
+            0,
+            xs[i + 1]!,
+            ys[j + 1]!,
+            0,
+            xs[i]!,
+            ys[j + 1]!,
+            0,
+          );
+          uvs.push(uu0, vv0, uu1, vv0, uu1, vv1, uu0, vv1);
+          const base = quad * 4;
+          indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+          quad += 1;
+        }
+      }
     }
   }
   return { positions, uvs, indices };

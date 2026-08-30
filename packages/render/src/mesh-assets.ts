@@ -173,6 +173,7 @@ export function applyAlbedoTexture(
   );
   const material = new StandardMaterial(`albedo:${textureGuid}`, scene);
   material.disableLighting = true;
+  texture.hasAlpha = true;
   material.diffuseTexture = texture;
   material.emissiveTexture = texture;
   material.emissiveColor = Color3.White();
