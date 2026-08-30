@@ -265,6 +265,10 @@ describe("NestedMenu context overlay", () => {
       const panel = document.querySelector(
         '[data-testid="context-menu-panel"]',
       ) as HTMLElement;
+      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+        width: 192,
+        height: 40,
+      } as DOMRect);
       await waitFor(() => expect(panel.style.left).toBe("900px"));
 
       values["--safe-right"] = "200px";
