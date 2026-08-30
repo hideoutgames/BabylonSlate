@@ -60,28 +60,42 @@ describe("resource cache getTexture", () => {
     engine.dispose();
   });
 
-  it("keeps a live Texture when a later caller requests different sampling flags", () => {
+  it("returns a distinct no-mip wrapper without disposing the mipped Texture", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([9, 9, 9]);
     const a = cache.getTexture("tex", engine, bytes, { noMipmap: false });
     const b = cache.getTexture("tex", engine, bytes, { noMipmap: true });
-    expect(b).toBe(a);
+    expect(b).not.toBe(a);
     expect(isDisposedGpuTexture(a)).toBe(false);
+    const nomipUrl = (b as Texture).url ?? "";
+    expect(nomipUrl).toContain("#nomip");
+    expect((nomipUrl.split("#")[1] ?? "")).not.toContain(":");
+    const again = cache.getTexture("tex", engine, bytes, { noMipmap: true });
+    expect(again).toBe(b);
     cache.dispose();
     engine.dispose();
   });
 
-  it("loads NodeMaterial textures without invertY so glTF UVs stay upright", () => {
+  it("keeps glTF invertY false on a distinct wrapper from sprite albedo", () => {
     const engine = new NullEngine();
     const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const defaulted = cache.getTexture("sprite", engine, bytes);
-    const material = getMaterialTexture(cache, "mat", engine, bytes);
-    expect(defaulted).toBeInstanceOf(Texture);
-    expect((defaulted as Texture).invertY).toBe(true);
+    const sprite = cache.getTexture("shared", engine, bytes, {
+      noMipmap: true,
+      samplingMode: Texture.NEAREST_SAMPLINGMODE,
+    });
+    const material = getMaterialTexture(cache, "shared", engine, bytes);
+    expect(sprite).toBeInstanceOf(Texture);
+    expect((sprite as Texture).invertY).toBe(true);
+    const spriteUrl = (sprite as Texture).url ?? "";
+    expect(spriteUrl).toContain("#nomip");
+    expect((spriteUrl.split("#")[1] ?? "")).not.toContain(":");
     expect(material).not.toBeNull();
+    expect(material).not.toBe(sprite);
     expect(material!.invertY).toBe(false);
+    expect(material!.url ?? "").toContain("#ninv");
+    expect(isDisposedGpuTexture(sprite)).toBe(false);
     cache.dispose();
     engine.dispose();
   });
@@ -102,6 +116,27 @@ describe("resource cache getTexture", () => {
     expect(loaderHints.mimeType ?? loaderHints._mimeType).toBe("image/ktx2");
     expect(loaderHints._forcedExtension).toBe(".ktx2");
     expect(texture.name || texture.url).toMatch(/#\.ktx2$/);
+    cache.dispose();
+    engine.dispose();
+  });
+
+  it("loads a no-mip KTX2 wrapper from a #nomip.ktx2 fragment", () => {
+    const ktx2 = new Uint8Array([
+      0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x32, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a,
+      1, 2, 3, 4,
+    ]);
+    const engine = new NullEngine();
+    const cache = new ResourceCache({ byteCeiling: 8 * 1024 * 1024 });
+    const mipped = cache.getTexture("tex", engine, ktx2);
+    const pixelArt = cache.getTexture("tex", engine, ktx2, {
+      noMipmap: true,
+      samplingMode: Texture.NEAREST_SAMPLINGMODE,
+    }) as Texture;
+    expect(pixelArt).not.toBe(mipped);
+    const pixelArtUrl = pixelArt.url ?? "";
+    expect(pixelArtUrl).toContain("#nomip.ktx2");
+    expect((pixelArtUrl.split("#")[1] ?? "")).not.toContain(":");
+    expect(isDisposedGpuTexture(mipped)).toBe(false);
     cache.dispose();
     engine.dispose();
   });

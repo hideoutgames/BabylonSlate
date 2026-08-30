@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NullEngine, Scene, Texture } from "@babylonjs/core";
+import { NullEngine, PBRMaterial, Scene, Texture } from "@babylonjs/core";
 import {
   applyPixelArtSampling,
   applyPixelArtSamplingToScene,
@@ -162,6 +162,29 @@ describe("applyPixelArtSampling", () => {
     expect(local.wrapU).toBe(Texture.CLAMP_ADDRESSMODE);
     local.dispose();
     cache.dispose();
+    scene.dispose();
+    engine.dispose();
+  });
+
+  it("does not clamp a scene-owned PBR construction albedo", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    const albedo = new Texture(
+      null,
+      scene,
+      true,
+      false,
+      Texture.TRILINEAR_SAMPLINGMODE,
+    );
+    albedo.wrapU = Texture.WRAP_ADDRESSMODE;
+    albedo.wrapV = Texture.WRAP_ADDRESSMODE;
+    const material = new PBRMaterial("glb", scene);
+    material.albedoTexture = albedo;
+    applyPixelArtSamplingToScene(scene);
+    expect(albedo.wrapU).toBe(Texture.WRAP_ADDRESSMODE);
+    expect(albedo.samplingMode).toBe(Texture.TRILINEAR_SAMPLINGMODE);
+    material.dispose();
+    albedo.dispose();
     scene.dispose();
     engine.dispose();
   });
