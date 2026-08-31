@@ -1,7 +1,7 @@
 import {
   isValidElement,
+  useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -338,7 +338,24 @@ function OverlayMenu({
   const openSubmenu = items.find(
     (item) => item.type === "submenu" && item.id === openSubmenuId,
   );
-  const insets = useMemo(readSafeAreaInsets, []);
+  const [insets, setInsets] = useState<OverlaySafeAreaInsets>(
+    readSafeAreaInsets,
+  );
+
+  useEffect(() => {
+    const refreshInsets = () => {
+      const nextInsets = readSafeAreaInsets();
+      setInsets((currentInsets) =>
+        sameInsets(currentInsets, nextInsets) ? currentInsets : nextInsets,
+      );
+    };
+    window.addEventListener("resize", refreshInsets);
+    window.addEventListener("orientationchange", refreshInsets);
+    return () => {
+      window.removeEventListener("resize", refreshInsets);
+      window.removeEventListener("orientationchange", refreshInsets);
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const panel = panelRef.current;
@@ -405,7 +422,8 @@ function OverlayMenu({
 
 function parseCssPixelToken(name: string): number {
   if (typeof document === "undefined") return 0;
-  const value = getComputedStyle(document.documentElement)
+  const value = window
+    .getComputedStyle(document.documentElement)
     .getPropertyValue(name)
     .trim();
   const parsed = Number.parseFloat(value);
@@ -419,6 +437,18 @@ function readSafeAreaInsets(): OverlaySafeAreaInsets {
     bottom: parseCssPixelToken("--safe-bottom"),
     left: parseCssPixelToken("--safe-left"),
   };
+}
+
+function sameInsets(
+  first: OverlaySafeAreaInsets,
+  second: OverlaySafeAreaInsets,
+): boolean {
+  return (
+    first.top === second.top &&
+    first.right === second.right &&
+    first.bottom === second.bottom &&
+    first.left === second.left
+  );
 }
 
 export function NestedMenu({

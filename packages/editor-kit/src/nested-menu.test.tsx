@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { NestedMenu, type NestedMenuItem } from "./nested-menu";
 import { ContextMenuOverlay } from "./context-menu-overlay";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 const leaf = (onSelect = vi.fn()): NestedMenuItem => ({
@@ -228,5 +229,57 @@ describe("NestedMenu context overlay", () => {
     fireEvent.click(getByTestId("radio-unlit"));
     expect(onValueChange).toHaveBeenCalledWith("unlit");
     expect(queryByTestId("context-menu-panel")).not.toBeNull();
+  });
+
+  it("repositions an open overlay when safe-area tokens change", async () => {
+    const values: Record<string, string> = {
+      "--safe-top": "0px",
+      "--safe-right": "0px",
+      "--safe-bottom": "0px",
+      "--safe-left": "0px",
+    };
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      () =>
+        ({
+          getPropertyValue: (name: string) => values[name] ?? "",
+        }) as CSSStyleDeclaration,
+    );
+    const originalInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 1200,
+    });
+    try {
+      render(
+        <ContextMenuOverlay
+          menu={{
+            open: true,
+            x: 900,
+            y: 80,
+            items: [leaf()],
+          }}
+          onClose={() => undefined}
+        />,
+      );
+
+      const panel = document.querySelector(
+        '[data-testid="context-menu-panel"]',
+      ) as HTMLElement;
+      vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({
+        width: 192,
+        height: 40,
+      } as DOMRect);
+      await waitFor(() => expect(panel.style.left).toBe("900px"));
+
+      values["--safe-right"] = "200px";
+      fireEvent(window, new Event("resize"));
+
+      await waitFor(() => expect(panel.style.left).toBe("800px"));
+    } finally {
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: originalInnerWidth,
+      });
+    }
   });
 });

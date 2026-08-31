@@ -55,6 +55,9 @@ describe("PlayOverlayChrome", () => {
     expect(stats.textContent).toContain("Stats");
     expect(consoleButton.textContent).toContain("Console");
     expect(close.textContent).toContain("Stop");
+    expect(close.parentElement?.parentElement?.className).toContain(
+      "safe-overlay-chrome",
+    );
     for (const button of [pause, stats, consoleButton, close]) {
       expect(button.className).toContain("min-h-[var(--touch-target,44px)]");
     }

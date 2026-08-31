@@ -71,6 +71,16 @@ describe("safe-area tokens", () => {
     );
   });
 
+  it("uses one safe-area utility for fixed overlay chrome", () => {
+    const overlayChrome = cssBlock(chromeCss, ".safe-overlay-chrome");
+    expect(overlayChrome).toContain("--safe-overlay-pad: 0.75rem");
+    for (const side of ["top", "right", "bottom", "left"]) {
+      expect(overlayChrome).toContain(
+        `padding-${side}: calc(var(--safe-${side}) + var(--safe-overlay-pad))`,
+      );
+    }
+  });
+
   it("uses contentInset never so CSS owns the viewport insets", () => {
     expect(capacitorConfig.ios?.contentInset).toBe("never");
   });
