@@ -31,6 +31,7 @@ UI never imports Capacitor; all I/O goes through `createStorage()` in `@babylons
 ### External tier / Working Copy spike
 
 Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime security scope, and bookmark staleness surfaced as **Reconnect project folder** on the Homepage. Expect a custom Swift plugin; the community scoped-storage plugin is the interim bridge. Device harness notes live with the adapter tests / docs when Mac/iPad is available.
+External-tier directory detection normalizes the plugin's `type` field because iOS does not return its declared `isDir` field.
 
 ## Two storage tiers (Homepage)
 

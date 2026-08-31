@@ -23,22 +23,43 @@ const readFile = vi.fn<(opts: unknown) => Promise<{ data: string }>>(
   async () => ({ data: "hello" }),
 );
 const writeFile = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
-const exists = vi.fn<(opts: unknown) => Promise<{ exists: boolean }>>(
-  async () => ({ exists: true }),
+const exists = vi.fn<
+  (opts: unknown) => Promise<{ exists: boolean; isDirectory?: boolean }>
+>(
+  async () => ({ exists: true, isDirectory: false }),
 );
 const readdir = vi.fn<
   (opts: unknown) => Promise<{
     entries: Array<{
       name: string;
-      isDir: boolean;
+      uri: string;
+      type: "file" | "directory" | "unknown";
       size: number;
       mtime: number;
+      isDir?: boolean;
     }>;
   }>
 >(async () => ({
-  entries: [{ name: "project.json", isDir: false, size: 3, mtime: 1 }],
+  entries: [
+    {
+      name: "project.json",
+      uri: "file:///project.json",
+      type: "file",
+      size: 3,
+      mtime: 1,
+    },
+  ],
 }));
 const mkdir = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
+const stat = vi.fn<
+  (opts: unknown) => Promise<{
+    size?: number | null;
+    mtime?: number | null;
+    type: "file" | "directory" | "unknown";
+  }>
+>(async () => ({ size: 3, mtime: 1, type: "file" }));
+const rmdir = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
+const deleteFile = vi.fn<(opts: unknown) => Promise<unknown>>(async () => ({}));
 
 vi.mock("@daniele-rolli/capacitor-scoped-storage", () => ({
   ScopedStorage: {
@@ -48,6 +69,9 @@ vi.mock("@daniele-rolli/capacitor-scoped-storage", () => ({
     exists: (opts: unknown) => exists(opts),
     readdir: (opts: unknown) => readdir(opts),
     mkdir: (opts: unknown) => mkdir(opts),
+    stat: (opts: unknown) => stat(opts),
+    rmdir: (opts: unknown) => rmdir(opts),
+    deleteFile: (opts: unknown) => deleteFile(opts),
   },
 }));
 
@@ -61,7 +85,19 @@ describe("external tier (scoped storage)", () => {
       folder: { id: "bookmark-1", name: "Repo.babproject" },
     });
     readFile.mockResolvedValue({ data: "hello" });
-    exists.mockResolvedValue({ exists: true });
+    exists.mockResolvedValue({ exists: true, isDirectory: false });
+    readdir.mockResolvedValue({
+      entries: [
+        {
+          name: "project.json",
+          uri: "file:///project.json",
+          type: "file",
+          size: 3,
+          mtime: 1,
+        },
+      ],
+    });
+    stat.mockResolvedValue({ size: 3, mtime: 1, type: "file" });
   });
 
   it("binds a folder through the picker and persists the bookmark", async () => {
@@ -141,20 +177,84 @@ describe("external tier (scoped storage)", () => {
     );
   });
 
-  it("lists directory entries and stats a file", async () => {
+  it("maps iOS directory entry types to directory entries", async () => {
+    const adapter = new ScopedStorageAdapter();
+    await adapter.pickProjectFolder();
+    readdir.mockResolvedValue({
+      entries: [
+        {
+          name: "assets",
+          uri: "file:///assets",
+          type: "directory",
+          size: 0,
+          mtime: 2,
+        },
+        {
+          name: "project.json",
+          uri: "file:///project.json",
+          type: "file",
+          size: 3,
+          mtime: 1,
+        },
+      ],
+    });
+
+    expect(await adapter.readdir("")).toEqual([
+      { name: "assets", isDir: true, size: 0, mtime: 2 },
+      { name: "project.json", isDir: false, size: 3, mtime: 1 },
+    ]);
+  });
+
+  it("honours an explicit isDir value in a directory entry", async () => {
+    const adapter = new ScopedStorageAdapter();
+    await adapter.pickProjectFolder();
+    readdir.mockResolvedValue({
+      entries: [
+        {
+          name: "assets",
+          uri: "content://assets",
+          type: "file",
+          isDir: true,
+          size: 0,
+          mtime: 2,
+        },
+      ],
+    });
+
+    expect(await adapter.readdir("")).toEqual([
+      { name: "assets", isDir: true, size: 0, mtime: 2 },
+    ]);
+  });
+
+  it("stats a file from the plugin without reading its parent directory", async () => {
     const adapter = new ScopedStorageAdapter();
     await adapter.pickProjectFolder();
 
-    expect(await adapter.readdir("")).toEqual([
-      { name: "project.json", isDir: false, size: 3, mtime: 1 },
-    ]);
     expect(await adapter.stat("project.json")).toEqual({
       isDir: false,
       size: 3,
       mtime: 1,
     });
+    expect(stat).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "project.json" }),
+    );
+    expect(readdir).not.toHaveBeenCalled();
     await adapter.mkdir("assets");
     expect(mkdir).toHaveBeenCalled();
+  });
+
+  it("stats a directory using the detailed exists result", async () => {
+    const adapter = new ScopedStorageAdapter();
+    await adapter.pickProjectFolder();
+    exists.mockResolvedValue({ exists: true, isDirectory: true });
+    stat.mockResolvedValue({ size: 12, mtime: 4, type: "directory" });
+
+    expect(await adapter.stat("assets")).toEqual({
+      isDir: true,
+      size: 12,
+      mtime: 4,
+    });
+    expect(readdir).not.toHaveBeenCalled();
   });
 
   it("surfaces a stale bookmark as needsReconnect instead of a raw error", async () => {
@@ -196,17 +296,41 @@ describe("external tier (scoped storage)", () => {
   it("reports a missing file from stat", async () => {
     const adapter = new ScopedStorageAdapter();
     await adapter.pickProjectFolder();
-    exists.mockResolvedValue({ exists: false });
+    exists.mockResolvedValue({ exists: false, isDirectory: false });
 
     expect(await adapter.exists("nope.json")).toBe(false);
     await expect(adapter.stat("nope.json")).rejects.toThrow(/File not found/);
+    expect(await adapter.needsReconnect()).toBe(false);
   });
 
-  it("reports when the plugin cannot delete files", async () => {
+  it("removes directories recursively and files with their respective plugin calls", async () => {
     const adapter = new ScopedStorageAdapter();
     await adapter.pickProjectFolder();
-    await expect(adapter.remove("project.json")).rejects.toThrow(
-      /not supported by scoped-storage plugin/,
+    exists.mockResolvedValueOnce({ exists: true, isDirectory: true });
+    await adapter.remove("assets");
+
+    expect(rmdir).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "assets", recursive: true }),
     );
+    expect(deleteFile).not.toHaveBeenCalled();
+
+    exists.mockResolvedValueOnce({ exists: true, isDirectory: false });
+    await adapter.remove("project.json");
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "project.json" }),
+    );
+    expect(rmdir).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a missing file from remove without marking the folder stale", async () => {
+    const adapter = new ScopedStorageAdapter();
+    await adapter.pickProjectFolder();
+    exists.mockResolvedValue({ exists: false, isDirectory: false });
+
+    await expect(adapter.remove("nope.json")).rejects.toThrow(
+      /File not found/,
+    );
+    expect(await adapter.needsReconnect()).toBe(false);
   });
 });

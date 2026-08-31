@@ -15,6 +15,23 @@ interface FolderRef {
   name?: string;
 }
 
+type PluginDirEntry = {
+  name?: string;
+  isDir?: boolean;
+  type?: string;
+  size?: number | null;
+  mtime?: number | null;
+};
+
+function toDirEntry(entry: PluginDirEntry): DirEntry {
+  return {
+    name: entry.name ?? "",
+    isDir: entry.isDir ?? entry.type === "directory",
+    size: entry.size ?? null,
+    mtime: entry.mtime ?? null,
+  };
+}
+
 function toHandle(folder: FolderRef): ProjectFolderHandle {
   return {
     id: folder.id,
@@ -136,6 +153,21 @@ export class ScopedStorageAdapter implements ProjectStorage {
     return this.folder;
   }
 
+  private async probe(
+    path: string,
+  ): Promise<{ exists: boolean; isDirectory: boolean }> {
+    return this.withScope(async () => {
+      const result = await ScopedStorage.exists({
+        folder: this.getFolder(),
+        path,
+      });
+      return {
+        exists: result.exists,
+        isDirectory: result.isDirectory ?? false,
+      };
+    });
+  }
+
   private async withScope<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
@@ -194,13 +226,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async exists(path: string): Promise<boolean> {
-    return this.withScope(async () => {
-      const { exists } = await ScopedStorage.exists({
-        folder: this.getFolder(),
-        path,
-      });
-      return exists;
-    });
+    return (await this.probe(path)).exists;
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
@@ -209,7 +235,7 @@ export class ScopedStorageAdapter implements ProjectStorage {
         folder: this.getFolder(),
         path,
       });
-      return entries;
+      return (entries as unknown as PluginDirEntry[]).map(toDirEntry);
     });
   }
 
@@ -224,37 +250,35 @@ export class ScopedStorageAdapter implements ProjectStorage {
   }
 
   async remove(path: string): Promise<void> {
+    const { exists, isDirectory } = await this.probe(path);
+    if (!exists) {
+      throw new Error(`File not found: ${path}`);
+    }
     await this.withScope(async () => {
-      // Community plugin may not expose unlink; best-effort via write empty + note.
-      if (typeof (ScopedStorage as { deleteFile?: unknown }).deleteFile === "function") {
-        await (
-          ScopedStorage as unknown as {
-            deleteFile: (opts: {
-              folder: FolderRef;
-              path: string;
-            }) => Promise<void>;
-          }
-        ).deleteFile({ folder: this.getFolder(), path });
+      const folder = this.getFolder();
+      if (isDirectory) {
+        await ScopedStorage.rmdir({ folder, path, recursive: true });
         return;
       }
-      throw new Error(`remove is not supported by scoped-storage plugin: ${path}`);
+      await ScopedStorage.deleteFile({ folder, path });
     });
   }
 
   async stat(path: string): Promise<FileStat> {
-    const exists = await this.exists(path);
+    const { exists, isDirectory } = await this.probe(path);
     if (!exists) {
       throw new Error(`File not found: ${path}`);
     }
-    const entries = await this.readdir(
-      path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
-    );
-    const name = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
-    const entry = entries.find((e) => e.name === name);
-    return {
-      isDir: entry?.isDir ?? false,
-      size: entry?.size ?? null,
-      mtime: entry?.mtime ?? null,
-    };
+    return this.withScope(async () => {
+      const { size, mtime } = await ScopedStorage.stat({
+        folder: this.getFolder(),
+        path,
+      });
+      return {
+        isDir: isDirectory,
+        size: size ?? null,
+        mtime: mtime ?? null,
+      };
+    });
   }
 }
