@@ -305,10 +305,18 @@ export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
 }
 
 export function parseGameManifest(source: string): GameManifest {
-  const parsed = JSON.parse(source) as GameManifest & {
+  const parsed = JSON.parse(source) as Omit<GameManifest, "scriptsFile"> & {
+    scriptsFile?: unknown;
     ui?: unknown;
     uiDesignerPresets?: unknown;
   };
+  let scriptsFile = SCRIPTS_FILE;
+  if (parsed.scriptsFile !== undefined) {
+    if (typeof parsed.scriptsFile !== "string" || parsed.scriptsFile.length === 0) {
+      throw new Error("game.json scriptsFile must be a non-empty string");
+    }
+    scriptsFile = parsed.scriptsFile;
+  }
   const gameInstanceClass =
     typeof parsed.gameInstanceClass === "string" &&
     parsed.gameInstanceClass.trim()
@@ -319,7 +327,7 @@ export function parseGameManifest(source: string): GameManifest {
       ? parsed.audioMixerGuid.trim()
       : undefined;
   const bundleDebugger = parsed.bundleDebugger === true;
-  const rest = { ...parsed } as GameManifest & {
+  const rest = { ...parsed, scriptsFile } as GameManifest & {
     ui?: unknown;
     uiDesignerPresets?: unknown;
   };

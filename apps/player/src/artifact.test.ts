@@ -4,10 +4,45 @@ import {
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
 } from "@babylonslate/core";
-import { exportGame } from "@babylonslate/exporter";
-import { loadGameFromFiles } from "./artifact";
+import { exportGame, GAME_MANIFEST_FILE, SCRIPTS_FILE } from "@babylonslate/exporter";
+import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
+
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function useScriptsFilename(files: Map<string, Uint8Array>, scriptsFile: string) {
+  const customized = new Map(files);
+  const scripts = customized.get(SCRIPTS_FILE);
+  const manifestBytes = customized.get(GAME_MANIFEST_FILE);
+  if (!scripts || !manifestBytes) throw new Error("Incomplete test artifact");
+  const manifest = JSON.parse(decoder.decode(manifestBytes)) as Record<string, unknown>;
+  manifest.scriptsFile = scriptsFile;
+  customized.delete(SCRIPTS_FILE);
+  customized.set(scriptsFile, scripts);
+  customized.set(GAME_MANIFEST_FILE, encoder.encode(JSON.stringify(manifest)));
+  return customized;
+}
 
 describe("loadGameFromFiles", () => {
+  it("loads scripts from the filename declared by the manifest", async () => {
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+
+    const loaded = await loadGameFromFiles(
+      useScriptsFilename(packed.value.files, "runtime/custom-scripts.js"),
+    );
+
+    expect(loaded.manifest.scriptsFile).toBe("runtime/custom-scripts.js");
+    expect(loaded.scripts).toEqual([]);
+  });
+
   it("boots the packed startup scene guid, not a path", async () => {
     const scene = {
       ...createDefaultScene(),
@@ -247,5 +282,36 @@ describe("loadGameFromFiles", () => {
     expect(loaded.manifest.assets.find((entry) => entry.guid === "hud")?.encoding).toBe(
       "json",
     );
+  });
+});
+
+describe("loadGameFromHttp", () => {
+  it("fetches scripts from the filename declared by the manifest", async () => {
+    const packed = await exportGame({
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      customResolution: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      assets: [],
+    });
+    expect(packed.ok).toBe(true);
+    if (!packed.ok) return;
+    const files = useScriptsFilename(packed.value.files, "runtime/custom-scripts.js");
+    const requested: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requested.push(url);
+      const path = new URL(url).pathname.replace(/^\/game\//, "");
+      const bytes = files.get(path);
+      return new Response(bytes, { status: bytes ? 200 : 404 });
+    };
+
+    const loaded = await loadGameFromHttp("https://example.com/game/", fetchImpl);
+
+    expect(loaded.scripts).toEqual([]);
+    expect(requested).toEqual([
+      "https://example.com/game/game.json",
+      "https://example.com/game/runtime/custom-scripts.js",
+    ]);
   });
 });

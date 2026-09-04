@@ -70,6 +70,7 @@ export type GameManifest = {
   pixelsPerUnit: number;
   pixelPerfect: boolean;
   packs: string[];
+  /** Script registry path. Legacy manifests that omit it migrate to `scripts.js`. */
   scriptsFile: string;
   physicsWorld: "2d" | "3d";
   assets: GameAssetIndexEntry[];

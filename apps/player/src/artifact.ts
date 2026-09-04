@@ -5,7 +5,6 @@ import {
   parseGameManifest,
   parseScriptRegistry,
   GAME_MANIFEST_FILE,
-  SCRIPTS_FILE,
   NAVMESH_EXPORT_TYPE,
   sceneGuidFromNavmeshExport,
   AUDIO_REVERB_EXPORT_TYPE,
@@ -96,7 +95,7 @@ export async function loadGameFromFiles(
   options: { fetchImpl?: typeof fetch; baseUrl?: string } = {},
 ): Promise<LoadedGame> {
   const manifest = parseGameManifest(textFromFiles(files, GAME_MANIFEST_FILE));
-  const scripts = parseScriptRegistry(textFromFiles(files, SCRIPTS_FILE));
+  const scripts = parseScriptRegistry(textFromFiles(files, manifest.scriptsFile));
   const scenes = new Map<string, SerializedScene>();
   const sceneLayers = new Map<string, SerializedSceneLayer>();
   const textureBytes = new Map<string, Uint8Array>();
@@ -241,17 +240,16 @@ export async function loadGameFromHttp(
   fetchImpl: typeof fetch = fetch,
 ): Promise<LoadedGame> {
   const manifestUrl = new URL(GAME_MANIFEST_FILE, baseUrl).href;
-  const scriptsUrl = new URL(SCRIPTS_FILE, baseUrl).href;
-  const [manifestRes, scriptsRes] = await Promise.all([
-    fetchImpl(manifestUrl),
-    fetchImpl(scriptsUrl),
-  ]);
+  const manifestRes = await fetchImpl(manifestUrl);
   if (!manifestRes.ok) throw new Error("Export is missing game.json");
+  const manifestBytes = new Uint8Array(await manifestRes.arrayBuffer());
+  const manifest = parseGameManifest(decoder.decode(manifestBytes));
+  const scriptsRes = await fetchImpl(new URL(manifest.scriptsFile, baseUrl).href);
+  if (!scriptsRes.ok) throw new Error(`Export is missing ${manifest.scriptsFile}`);
   const files = new Map<string, Uint8Array>([
-    [GAME_MANIFEST_FILE, new Uint8Array(await manifestRes.arrayBuffer())],
-    [SCRIPTS_FILE, new Uint8Array(await scriptsRes.arrayBuffer())],
+    [GAME_MANIFEST_FILE, manifestBytes],
+    [manifest.scriptsFile, new Uint8Array(await scriptsRes.arrayBuffer())],
   ]);
-  const manifest = parseGameManifest(decoder.decode(files.get(GAME_MANIFEST_FILE)));
   if (manifest.mode === "loose") {
     for (const entry of manifest.assets ?? []) {
       if (!entry.path) continue;
