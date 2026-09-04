@@ -293,7 +293,10 @@ describe("app settings", () => {
     const persisted = await new WebAppSettingsStore().update((settings) => {
       settings.appearance.theme = "light";
     });
-    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(persisted);
+    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      ...persisted,
+      theme: "light",
+    });
     window.removeEventListener("babylonslate:engine-settings", listener);
   });
 

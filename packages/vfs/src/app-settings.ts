@@ -222,7 +222,12 @@ export function runSerializedAppSettingsUpdate(
       typeof globalThis.CustomEvent === "function"
     ) {
       globalThis.dispatchEvent(
-        new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, { detail: validated }),
+        new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, {
+          detail: {
+            ...validated,
+            theme: validated.appearance.theme,
+          },
+        }),
       );
     }
     return validated;
