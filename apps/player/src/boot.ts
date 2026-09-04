@@ -323,6 +323,8 @@ export function startPlayer(options: {
           fps: Number(command.fps ?? 0),
           scriptMs: Number(command.scriptMs ?? 0),
           physicsMs: Number(command.physicsMs ?? 0),
+          liveActors: Number(command.liveActors ?? 0),
+          snapshotCapacity: Number(command.snapshotCapacity ?? 0),
         }),
       );
     }

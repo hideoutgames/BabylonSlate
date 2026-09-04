@@ -219,18 +219,24 @@ describe("Play HUD stats merge", () => {
       scriptMs: 4.2,
       physicsMs: 1.8,
       frameId: 12,
+      liveActors: 300,
+      snapshotCapacity: 512,
     });
     expect(fromWorker).toEqual({
       fps: 0,
       scriptMs: 4.2,
       physicsMs: 1.8,
       frameId: 12,
+      liveActors: 300,
+      snapshotCapacity: 512,
     });
     const afterFps = applyPlayFpsSample(fromWorker, 60);
     expect(afterFps.fps).toBe(60);
     expect(afterFps.scriptMs).toBe(4.2);
     expect(afterFps.physicsMs).toBe(1.8);
     expect(afterFps.frameId).toBe(12);
+    expect(afterFps.liveActors).toBe(300);
+    expect(afterFps.snapshotCapacity).toBe(512);
   });
 });
 

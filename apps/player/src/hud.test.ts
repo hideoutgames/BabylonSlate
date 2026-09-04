@@ -15,6 +15,8 @@ describe("applyPlayerFpsSample", () => {
     const fromWorker = applyWorkerPlayerStats(undefined, {
       scriptMs: 3,
       physicsMs: 2,
+      liveActors: 300,
+      snapshotCapacity: 512,
     });
     expect(fromWorker.fps).toBe(0);
     const afterFps = applyPlayerFpsSample(fromWorker, 60);
@@ -22,6 +24,8 @@ describe("applyPlayerFpsSample", () => {
     expect(afterFps.scriptMs).toBe(3);
     expect(afterFps.physicsMs).toBe(2);
     expect(afterFps.ticks).toBe(0);
+    expect(afterFps.liveActors).toBe(300);
+    expect(afterFps.snapshotCapacity).toBe(512);
   });
 });
 

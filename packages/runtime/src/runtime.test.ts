@@ -1,16 +1,9 @@
 import { describe, expect, it } from "vitest";
-import {
-  parseStackFrames,
-  lookupAnchor,
-  type AnchorEntry,
-} from "./stack-map";
+import { parseStackFrames, lookupAnchor, type AnchorEntry } from "./stack-map";
 import { LogRingBuffer } from "./log-ring";
 import { loadCompiledModule } from "./module-loader";
 import { createInProcessRuntime } from "./driver";
-import {
-  readSnapshotHeader,
-  snapshotFloatCount,
-} from "@babylonslate/bridge";
+import { readSnapshotHeader, snapshotFloatCount } from "@babylonslate/bridge";
 
 describe("stack parser", () => {
   it("parses V8 and WebKit frames", () => {
@@ -81,6 +74,69 @@ describe("module loader", () => {
 });
 
 describe("in-process runtime driver", () => {
+  async function createBulkRuntime(
+    onCommand?: Parameters<typeof createInProcessRuntime>[0]["onCommand"],
+  ) {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      seedDemoActors: false,
+      onCommand,
+    });
+    await runtime.loadScripts([
+      {
+        assetGuid: "bulk-script",
+        classId: "BulkActor",
+        source: "const noop = true;",
+        anchors: [],
+        entryPoints: [],
+      },
+    ]);
+    return runtime;
+  }
+
+  it("grows through multiple generations for more than 256 live Actors", async () => {
+    const commands: import("@babylonslate/bridge").CommandMessage[] = [];
+    const runtime = await createBulkRuntime((command) =>
+      commands.push(command),
+    );
+    for (let i = 0; i < 600; i++) {
+      expect(
+        runtime.spawnScriptedActor({ classId: "BulkActor" }),
+      ).not.toBeNull();
+    }
+    expect(runtime.snapshotCapacity).toBe(1024);
+    expect(runtime.snapshotGeneration).toBe(2);
+    expect(
+      commands.filter((command) => command.type === "snapshotLayout"),
+    ).toEqual([
+      { type: "snapshotLayout", capacity: 512, generation: 1 },
+      { type: "snapshotLayout", capacity: 1024, generation: 2 },
+    ]);
+    runtime.start();
+    runtime.tick();
+    const snapshot = new Float32Array(snapshotFloatCount(1024));
+    expect(runtime.copySnapshot(snapshot)).toBe(true);
+    expect(readSnapshotHeader(snapshot)).toMatchObject({
+      actorCount: 600,
+      layoutGeneration: 2,
+    });
+    runtime.stop();
+  });
+
+  it("recycles slots across more than 256 cumulative spawns", async () => {
+    const runtime = await createBulkRuntime();
+    runtime.start();
+    for (let i = 0; i < 300; i++) {
+      const actor = runtime.spawnScriptedActor({ classId: "BulkActor" });
+      expect(actor).not.toBeNull();
+      runtime.getWorld().destroyActor(actor!.guid);
+      runtime.tick();
+    }
+    expect(runtime.snapshotCapacity).toBe(256);
+    expect(runtime.snapshotGeneration).toBe(0);
+    runtime.stop();
+  });
+
   it("ticks a world and writes snapshot headers", () => {
     const runtime = createInProcessRuntime({
       seed: 7,
@@ -143,8 +199,9 @@ describe("in-process runtime driver", () => {
   });
 
   it("exposes primary pointer XY on TickContext.getCursorPosition", () => {
-    const samples: Array<{ x: number; y: number; pressed: boolean } | undefined> =
-      [];
+    const samples: Array<
+      { x: number; y: number; pressed: boolean } | undefined
+    > = [];
     const runtime = createInProcessRuntime({
       seed: 1,
       maxActors: 4,

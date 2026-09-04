@@ -15,6 +15,8 @@ export type PlayerHudStats = {
   physicsMs: number;
   draws: number;
   geometryBytes?: number;
+  liveActors?: number;
+  snapshotCapacity?: number;
 };
 
 /** Worker `stats` commands are the source of truth for script/physics ms. */
@@ -25,6 +27,8 @@ export function applyWorkerPlayerStats(
     fps?: number;
     scriptMs: number;
     physicsMs: number;
+    liveActors?: number;
+    snapshotCapacity?: number;
   },
 ): PlayerHudStats {
   return {
@@ -34,6 +38,9 @@ export function applyWorkerPlayerStats(
     physicsMs: command.physicsMs,
     draws: previous?.draws ?? 0,
     geometryBytes: previous?.geometryBytes,
+    liveActors: command.liveActors ?? previous?.liveActors ?? 0,
+    snapshotCapacity:
+      command.snapshotCapacity ?? previous?.snapshotCapacity ?? 0,
   };
 }
 
@@ -49,6 +56,8 @@ export function applyPlayerFpsSample(
     physicsMs: previous?.physicsMs ?? 0,
     draws: previous?.draws ?? 0,
     geometryBytes: previous?.geometryBytes,
+    liveActors: previous?.liveActors ?? 0,
+    snapshotCapacity: previous?.snapshotCapacity ?? 0,
   };
 }
 
@@ -83,9 +92,17 @@ export function mountPlayerHud(
       stats.geometryBytes != null
         ? `  geo ${(stats.geometryBytes / (1024 * 1024)).toFixed(1)}MB`
         : "";
-    element.textContent = `fps ${stats.fps.toFixed(0)}  script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  draws ${stats.draws}${geo}  ticks ${stats.ticks}${warn ? "  DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
+    element.textContent = `fps ${stats.fps.toFixed(0)}  script ${stats.scriptMs.toFixed(2)}ms  phys ${stats.physicsMs.toFixed(2)}ms  actors ${stats.liveActors ?? 0}/${stats.snapshotCapacity ?? 0}  draws ${stats.draws}${geo}  ticks ${stats.ticks}${warn ? "  DRAWS HIGH" : ""}${geoWarn ? "  GEO HIGH" : ""}`;
   };
-  setStats({ ticks: 0, fps: 0, scriptMs: 0, physicsMs: 0, draws: 0 });
+  setStats({
+    ticks: 0,
+    fps: 0,
+    scriptMs: 0,
+    physicsMs: 0,
+    draws: 0,
+    liveActors: 0,
+    snapshotCapacity: 0,
+  });
   return { setStats };
 }
 
