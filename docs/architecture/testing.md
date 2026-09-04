@@ -17,7 +17,7 @@ GitHub Free public repos cap concurrent jobs at 20. Each ready PR uses 9 Verify 
 
 ## Vitest projects
 
-Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace sets `maxWorkers: 4` (and coverage sets `VITEST_MAX_WORKERS=4`) because this environment's `availableParallelism` is 2, so Vitest's default `cpus - 1` is a single fork. `VITEST_COVERAGE=1` drops `apps/editor` from the jsdom include so v8 instrumentation cannot fill a 4GB heap; `pnpm test:coverage` then runs `pnpm test:editor-unit` (four sequential Vitest shards, no coverage) so those tests still execute without one fork holding the whole suite. 
+Configured in `vitest.workspace.ts`; each project is a thin config in `vitest.projects.*.ts`. The workspace sets `maxWorkers: 4` (and coverage sets `VITEST_MAX_WORKERS=4`) because this environment's `availableParallelism` is 2, so Vitest's default `cpus - 1` is a single fork. `VITEST_COVERAGE=1` drops `apps/editor` from the jsdom include so v8 instrumentation cannot fill a 4GB heap; `pnpm test:coverage` then runs `pnpm test:editor-unit` (four sequential Vitest shards, no coverage) so those tests still execute without one fork holding the whole suite.
 | Project | Environment | Covers |
 | --- | --- | --- |
 | `node` | node | `packages/core`, `packages/assets`, `packages/edit`, `packages/object-model`, `packages/physics` (Havok via `NullEngine`), `packages/bridge`, `packages/runtime`, `packages/debugger`, `packages/anim-graph`, `packages/behaviour-tree`, `packages/navigation`, `packages/shader-graph`, `packages/input`, `packages/test-kit`, `packages/exporter`, `packages/source-control`, `apps/docs` (sidebar coverage, repo-link rewriter, Verify workflow policy), `apps/player`, `apps/desktop` (source-read host tests; Electron main is not executed) — no DOM |
@@ -49,7 +49,7 @@ Excluded, each for a stated reason:
 | `create-engine.ts` | Needs a real WebGL context; covered by Playwright |
 | `babylon-audio-backend.ts` | Babylon AudioV2; unit tests inject `FakeAudioPlaybackBackend` |
 | `ui-surface.ts` | Standalone `CreateFullscreenUI` + Canvas2D blit need a real Engine canvas |
-| `worker-entry.ts` | Game worker host; covered by Play e2e. Inspect control and Pause On Play gating are unit-tested in `inspect-control.ts` / `play-pause-gate.ts` |
+| `worker-entry.ts` | Game worker host; Play is covered by e2e, while `worker-entry.test.ts` verifies boot, repeated advancement, and cancellation with worker RAF present or absent. Inspect control and Pause On Play gating are unit-tested in `inspect-control.ts` / `play-pause-gate.ts` |
 | `bake-worker.ts` | Navmesh bake worker; `runNavBakeJob` unit tests plus editor host |
 | `audio-reverb-worker.ts` | Audio reverb bake worker; occupancy/probe bake is covered in `audio-reverb.test.ts` plus editor host |
 | `havok-backend.ts`, `havok-loader.ts`, `rapier-backend.ts` | Wasm backends; HavokPlugin path asserted in `havok-v2.test.ts`; coverage of the Babylon/Havok surface is environment-dependent |
