@@ -1,7 +1,8 @@
+import { ENGINE_SETTINGS_CHANGED_EVENT } from "@babylonslate/vfs";
 import {
-  createAppSettingsStore,
-  ENGINE_SETTINGS_CHANGED_EVENT,
-} from "@babylonslate/vfs";
+  receiveActiveAppSettingsUpdate,
+  subscribeAppSettings,
+} from "../context/app-settings-context";
 
 export { ENGINE_SETTINGS_CHANGED_EVENT };
 
@@ -34,6 +35,7 @@ export function dispatchEngineSettingsChanged(settings: {
   viewportGridSize?: number;
   modelImportDefaultScale?: number;
 }): void {
+  receiveActiveAppSettingsUpdate(settings);
   window.dispatchEvent(
     new CustomEvent(ENGINE_SETTINGS_CHANGED_EVENT, { detail: settings }),
   );
@@ -234,9 +236,9 @@ export function attachViewportRenderGate(options: {
     attributeFilter: ["data-open", "data-closed", "hidden", "data-slot"],
   });
 
-  const onSettings = (event: Event) => {
-    const detail = (event as CustomEvent<LiveEngineSettings>).detail;
-    if (!detail) return;
+  let settingsVersion = -1;
+  const unsubscribeSettings = subscribeAppSettings((snapshot) => {
+    settingsVersion = snapshot.version;
     applyLiveEngineSettings(
       {
         scheduler,
@@ -246,45 +248,23 @@ export function attachViewportRenderGate(options: {
         setAudioBudget: options.setAudioBudget,
         setMaxVoices: options.setMaxVoices,
       },
-      detail,
+      snapshot.settings,
     );
-  };
-  window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+  });
 
   void (async () => {
     if (options.loadFrameCap) {
-      applyLiveEngineSettings(
-        { scheduler },
-        { viewportFrameCap: await options.loadFrameCap() },
-      );
+      const generation = settingsVersion;
+      const viewportFrameCap = await options.loadFrameCap();
+      if (generation !== settingsVersion) return;
+      applyLiveEngineSettings({ scheduler }, { viewportFrameCap });
       return;
     }
-    const settings = await createAppSettingsStore().load();
-    applyLiveEngineSettings(
-      {
-        scheduler,
-        scaling: options.scaling,
-        setPostProcessingEnabled: options.setPostProcessingEnabled,
-        setTextureBudget: options.setTextureBudget,
-        setAudioBudget: options.setAudioBudget,
-        setMaxVoices: options.setMaxVoices,
-      },
-      {
-        viewportFrameCap: settings.viewportFrameCap,
-        hardwareScalingLevel: settings.hardwareScalingLevel,
-        postProcessingEnabled: settings.postProcessingEnabled,
-        textureBudgetEnabled: settings.textureBudgetEnabled,
-        textureByteCeiling: settings.textureByteCeiling,
-        audioBudgetEnabled: settings.audioBudgetEnabled,
-        audioByteCeiling: settings.audioByteCeiling,
-        audioMaxVoices: settings.audioMaxVoices,
-      },
-    );
   })();
 
   return () => {
     intersection?.disconnect();
     mutation.disconnect();
-    window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
+    unsubscribeSettings();
   };
 }

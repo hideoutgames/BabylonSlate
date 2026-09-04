@@ -6,7 +6,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { createAppSettingsStore } from "@babylonslate/vfs";
 import {
   applyDocumentTheme,
   readStoredThemePreference,
@@ -16,7 +15,7 @@ import {
   type ResolvedTheme,
   type ThemePreference,
 } from "../lib/resolved-theme";
-import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
+import { useAppSettings } from "./app-settings-context";
 
 const ThemeContext = createContext<ResolvedTheme | null>(null);
 
@@ -31,32 +30,19 @@ function storedPreference(): ThemePreference {
 }
 
 function systemPrefersDark(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
     return true;
   }
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 export function EditorThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreference] = useState<ThemePreference>(storedPreference);
+  const { settings } = useAppSettings();
+  const preference = settings.appearance.theme;
   const [prefersDark, setPrefersDark] = useState(systemPrefersDark);
-
-  useEffect(() => {
-    const store = createAppSettingsStore();
-    void store.load().then((settings) => {
-      setPreference(settings.appearance.theme);
-    });
-  }, []);
-
-  useEffect(() => {
-    const onSettings = (event: Event) => {
-      const detail = (event as CustomEvent<{ theme?: ThemePreference }>).detail;
-      if (detail?.theme) setPreference(detail.theme);
-    };
-    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-    return () =>
-      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-  }, []);
 
   useEffect(() => {
     if (preference !== "system") return;

@@ -13,15 +13,17 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@babylonslate/ui/components/empty";
-import { createAppSettingsStore } from "@babylonslate/vfs";
 import { useDocuments } from "../context/document-context";
 import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { usePlay } from "../context/play-context";
 import { useValidation } from "../context/validation-context";
 import { useGraphEditing } from "../context/graph-editing-context";
-import { ENGINE_SETTINGS_CHANGED_EVENT } from "../lib/viewport-render-gate";
+import { useAppSettings } from "../context/app-settings-context";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
-import { classParentLookup, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import {
+  classParentLookup,
+  materialDomainsFromAssets,
+} from "../lib/content-browser-helpers";
 import { functionLibraryShowsEventGraphEmpty } from "../lib/class-members";
 import {
   classHierarchyFromParentOf,
@@ -71,38 +73,22 @@ export function GraphPanel(_props: IDockviewPanelProps) {
     animEditorMode,
   } = useDocuments();
   const { focusedNodeId } = usePlay();
-  const { setSelectedNodeIds, activeFunctionId, setActiveFunctionId, setCanvasDropApi } =
-    useGraphEditing();
   const {
-    diagnostics,
-    setDiagnostics,
-    focusDiagnostic,
-    setFocusDiagnostic,
-  } = useValidation();
-  const [defaultZoom, setDefaultZoom] = useState(GRAPH_DEFAULT_ZOOM);
+    setSelectedNodeIds,
+    activeFunctionId,
+    setActiveFunctionId,
+    setCanvasDropApi,
+  } = useGraphEditing();
+  const { diagnostics, setDiagnostics, focusDiagnostic, setFocusDiagnostic } =
+    useValidation();
+  const { settings: appSettings } = useAppSettings();
+  const defaultZoom = appSettings.graphDefaultZoom ?? GRAPH_DEFAULT_ZOOM;
   const [paletteOpen, setPaletteOpen] = useState(false);
   const paletteCacheRef = useRef(new ScriptPaletteCache());
   const { sessionViewport, onSessionViewportChange } = useGraphSessionViewport(
     documentId,
     activeFunctionId ?? "event",
   );
-
-  useEffect(() => {
-    const store = createAppSettingsStore();
-    void store.load().then((settings) => {
-      setDefaultZoom(settings.graphDefaultZoom);
-    });
-    const onSettings = (event: Event) => {
-      const detail = (event as CustomEvent<{ graphDefaultZoom?: number }>)
-        .detail;
-      if (detail && typeof detail.graphDefaultZoom === "number") {
-        setDefaultZoom(detail.graphDefaultZoom);
-      }
-    };
-    window.addEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-    return () =>
-      window.removeEventListener(ENGINE_SETTINGS_CHANGED_EVENT, onSettings);
-  }, []);
 
   const doc = openDocuments.find((entry) => entry.id === documentId);
   const indexed = (assetRegistry?.list() ?? []).find(
@@ -379,7 +365,8 @@ export function GraphPanel(_props: IDockviewPanelProps) {
           <EmptyHeader>
             <EmptyTitle>No Event Graph</EmptyTitle>
             <EmptyDescription>
-              Function libraries only have functions. Add one in the Class panel.
+              Function libraries only have functions. Add one in the Class
+              panel.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

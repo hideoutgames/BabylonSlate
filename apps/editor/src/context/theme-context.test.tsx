@@ -4,6 +4,7 @@ import { defaultEngineSettings } from "@babylonslate/vfs";
 import { ENGINE_SETTINGS_STORAGE_KEY } from "../lib/resolved-theme";
 import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { EditorThemeProvider, useResolvedTheme } from "./theme-context";
+import { AppSettingsProvider } from "./app-settings-context";
 
 afterEach(() => {
   cleanup();
@@ -24,24 +25,28 @@ describe("EditorThemeProvider", () => {
     document.documentElement.classList.add("dark");
 
     render(
-      <EditorThemeProvider>
-        <SchemeProbe />
-      </EditorThemeProvider>,
+      <AppSettingsProvider>
+        <EditorThemeProvider>
+          <SchemeProbe />
+        </EditorThemeProvider>
+      </AppSettingsProvider>,
     );
 
     await waitFor(() => {
       expect(document.documentElement.classList.contains("dark")).toBe(false);
     });
-    expect(document.querySelector("[data-testid=resolved-scheme]")?.textContent).toBe(
-      "light",
-    );
+    expect(
+      document.querySelector("[data-testid=resolved-scheme]")?.textContent,
+    ).toBe("light");
   });
 
   it("switches html.dark when engine settings dispatch a theme", async () => {
     render(
-      <EditorThemeProvider>
-        <SchemeProbe />
-      </EditorThemeProvider>,
+      <AppSettingsProvider>
+        <EditorThemeProvider>
+          <SchemeProbe />
+        </EditorThemeProvider>
+      </AppSettingsProvider>,
     );
 
     dispatchEngineSettingsChanged({
