@@ -3634,7 +3634,9 @@ class InProcessRuntime implements RuntimeDriver {
         rotation: world.rotation,
         scale: world.scale,
         flags:
-          SNAPSHOT_FLAG_VISIBLE |
+          (actor.getVariable("visible") === false
+            ? 0
+            : SNAPSHOT_FLAG_VISIBLE) |
           (actor.sceneLayerId ? SNAPSHOT_FLAG_OVERLAY : 0),
       });
       count += 1;
@@ -4119,4 +4121,3 @@ function remapOverlaySerializedActors(
       : null,
   }));
 }
-

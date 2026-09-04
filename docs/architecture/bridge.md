@@ -52,6 +52,8 @@ Slot `i` starts at `16 + i * 16`:
 
 Capacity is fixed at create time (`maxActors`). Writer fills slots `[0, actorCount)`; reader interpolates the two most recent stable buffers by `slotId`, not array index. New slots copy their latest pose immediately and removed slots disappear, so a spawn/despawn reorder cannot blend unrelated actors.
 
+`SNAPSHOT_FLAG_VISIBLE` reflects the actor's canonical runtime `visible` variable, initially copied from `SerializedActor.visible`. Scripts can change that variable while playing and the next snapshot updates the renderer. Visibility is per actor: a hidden parent does not implicitly hide a separately rendered child actor.
+
 ## Channels
 
 | Channel | Direction | Payload |

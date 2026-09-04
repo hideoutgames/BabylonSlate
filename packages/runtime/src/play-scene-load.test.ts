@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommandMessage } from "@babylonslate/bridge";
 import {
+  SNAPSHOT_FLAG_VISIBLE,
   readActorSlot,
   readSnapshotHeader,
   snapshotFloatCount,
@@ -431,6 +432,79 @@ describe("p7-play-scene-load", () => {
     expect(child.scale.x).toBeCloseTo(1);
     expect(child.scale.y).toBeCloseTo(6);
     expect(child.scale.z).toBeCloseTo(4);
+    runtime.stop();
+  });
+
+  it("publishes authored and live runtime visibility for the renderer", () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "Visibility",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("hidden", "Hidden", {
+            visible: false,
+            components: [createMeshComponent("hidden-mesh", "box")],
+          }),
+        ],
+      },
+    });
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    expect(readActorSlot(buf, 0).flags & SNAPSHOT_FLAG_VISIBLE).toBe(0);
+
+    runtime.getWorld().getActors()[0]?.setVariable("visible", true);
+    runtime.tick();
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    expect(readActorSlot(buf, 0).flags & SNAPSHOT_FLAG_VISIBLE).toBe(
+      SNAPSHOT_FLAG_VISIBLE,
+    );
+    runtime.stop();
+  });
+
+  it("keeps parent and child runtime visibility independent", () => {
+    const runtime = createInProcessRuntime({
+      seed: 1,
+      maxActors: 8,
+      seedDemoActors: false,
+      preferSoftwarePhysics: true,
+      playScene: {
+        name: "VisibilityHierarchy",
+        viewportMode: "3d",
+        settings: createDefaultSceneSettings(),
+        folders: [],
+        actors: [
+          createActor("parent", "Parent", {
+            visible: false,
+            components: [createMeshComponent("parent-mesh", "box")],
+          }),
+          createActor("child", "Child", {
+            parentId: "parent",
+            visible: true,
+            components: [createMeshComponent("child-mesh", "sphere")],
+          }),
+        ],
+      },
+    });
+    runtime.realizePlayWorld();
+    runtime.start();
+    runtime.tick();
+
+    const buf = new Float32Array(snapshotFloatCount(8));
+    expect(runtime.copySnapshot(buf)).toBe(true);
+    expect(readActorSlot(buf, 0).flags & SNAPSHOT_FLAG_VISIBLE).toBe(0);
+    expect(readActorSlot(buf, 1).flags & SNAPSHOT_FLAG_VISIBLE).toBe(
+      SNAPSHOT_FLAG_VISIBLE,
+    );
     runtime.stop();
   });
 
