@@ -56,7 +56,6 @@ import {
 import { isSourceControlHost } from "@babylonslate/source-control";
 import { LogOutIcon } from "lucide-react";
 import { useDocuments } from "../context/document-context";
-import { dispatchEngineSettingsChanged } from "../lib/viewport-render-gate";
 import { editorUtilityObjectClassEntries } from "../lib/editor-utility-classes";
 import { gameInstanceClassEntries } from "../lib/component-property-rows";
 import { projectArchiveDownloadName } from "../lib/display-project-name";
@@ -268,29 +267,13 @@ export function SettingsModal({
 
   const saveEngine = useCallback(
     async (patch: Partial<EngineSettings>) => {
-      const next = { ...engineSettings, ...patch };
-      setEngineSettings(next);
-      await store.save(next);
-      dispatchEngineSettingsChanged({
-        viewportFrameCap: next.viewportFrameCap,
-        theme: next.appearance.theme,
-        graphDefaultZoom: next.graphDefaultZoom,
-        hardwareScalingLevel: next.hardwareScalingLevel,
-        postProcessingEnabled: next.postProcessingEnabled,
-        editorTextureLodEnabled: next.editorTextureLodEnabled,
-        editorTextureLodQuality: next.editorTextureLodQuality,
-        textureBudgetEnabled: next.textureBudgetEnabled,
-        textureByteCeiling: next.textureByteCeiling,
-        audioBudgetEnabled: next.audioBudgetEnabled,
-        audioByteCeiling: next.audioByteCeiling,
-        audioMaxVoices: next.audioMaxVoices,
-        viewportFlySpeed: next.viewportFlySpeed,
-        viewportGridSize: next.viewportGridSize,
-        modelImportDefaultScale: next.modelImportDefaultScale,
+      const next = await store.update((settings) => {
+        Object.assign(settings, patch);
       });
+      setEngineSettings(next);
       await onEngineSaved?.();
     },
-    [engineSettings, onEngineSaved, store],
+    [onEngineSaved, store],
   );
 
   const source = scope === "engine" ? ENGINE_CATEGORIES : PROJECT_CATEGORIES;

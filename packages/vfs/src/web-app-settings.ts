@@ -2,7 +2,9 @@ import {
   defaultEngineSettings,
   engineSettingsSchema,
   type AppSettingsStore,
+  type AppSettingsMutation,
   type EngineSettings,
+  runSerializedAppSettingsUpdate,
 } from "./app-settings";
 
 export const ENGINE_SETTINGS_STORAGE_KEY = "babylonslate:engine-settings";
@@ -35,5 +37,13 @@ export class WebAppSettingsStore implements AppSettingsStore {
     } catch {
       /* memory-only fallback */
     }
+  }
+
+  update(mutate: AppSettingsMutation): Promise<EngineSettings> {
+    return runSerializedAppSettingsUpdate(
+      () => this.load(),
+      (settings) => this.save(settings),
+      mutate,
+    );
   }
 }

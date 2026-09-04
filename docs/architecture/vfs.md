@@ -42,6 +42,8 @@ Sustained I/O into a file provider needs `NSFileCoordinator`, process-lifetime s
 
 Global Engine Settings stored **outside** any project:
 
+- `AppSettingsStore.update` queues a latest-read, focused mutation, schema validation, and write transaction across independently created stores. It emits the settings-change event after persistence, preventing concurrent debugger, viewport, appearance, and recent-project updates from overwriting one another.
+
 | Backend | Platform |
 | --- | --- |
 | Capacitor Preferences | iPad / Android |

@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 import { createAppSettingsStore } from "@babylonslate/vfs";
-import {
-  dispatchEngineSettingsChanged,
-  ENGINE_SETTINGS_CHANGED_EVENT,
-} from "./viewport-render-gate";
+import { ENGINE_SETTINGS_CHANGED_EVENT } from "./viewport-render-gate";
 
 export function useEditorViewportPrefs(): {
   flySpeed: number;
@@ -63,23 +60,7 @@ export async function patchEngineViewportPrefs(patch: {
   viewportGridSize?: number;
 }): Promise<void> {
   const store = createAppSettingsStore();
-  const current = await store.load();
-  const next = { ...current, ...patch };
-  await store.save(next);
-  dispatchEngineSettingsChanged({
-    viewportFrameCap: next.viewportFrameCap,
-    viewportFlySpeed: next.viewportFlySpeed,
-    viewportGridSize: next.viewportGridSize,
-    hardwareScalingLevel: next.hardwareScalingLevel,
-    postProcessingEnabled: next.postProcessingEnabled,
-    editorTextureLodEnabled: next.editorTextureLodEnabled,
-    editorTextureLodQuality: next.editorTextureLodQuality,
-    textureBudgetEnabled: next.textureBudgetEnabled,
-    textureByteCeiling: next.textureByteCeiling,
-    audioBudgetEnabled: next.audioBudgetEnabled,
-    audioByteCeiling: next.audioByteCeiling,
-    audioMaxVoices: next.audioMaxVoices,
-    graphDefaultZoom: next.graphDefaultZoom,
-    theme: next.appearance.theme,
+  await store.update((settings) => {
+    Object.assign(settings, patch);
   });
 }

@@ -66,7 +66,6 @@ import {
   createDerivedStorage,
   createStorage,
   createTemplateStorage,
-  defaultEngineSettings,
   getHostPlatform,
   isTestModeEnabled,
   createSecretStore,
@@ -844,22 +843,22 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const recordRecent = useCallback(
     async (handle: ProjectFolderHandle | null, createdAt?: string) => {
       if (!handle) return;
-      const settings = await settingsStore.load();
-      const next = defaultEngineSettings();
-      Object.assign(next, settings);
-      const previous = settings.recents.find((recent) => recent.id === handle.id);
-      next.recents = [
-        {
-          id: handle.id,
-          name: handle.name,
-          tier: handle.tier,
-          lastOpenedAt: new Date().toISOString(),
-          createdAt: createdAt ?? previous?.createdAt,
-          bookmark: handle.tier === "external" ? handle.id : null,
-        },
-        ...settings.recents.filter((r) => r.id !== handle.id),
-      ].slice(0, 20);
-      await settingsStore.save(next);
+      await settingsStore.update((settings) => {
+        const previous = settings.recents.find(
+          (recent) => recent.id === handle.id,
+        );
+        settings.recents = [
+          {
+            id: handle.id,
+            name: handle.name,
+            tier: handle.tier,
+            lastOpenedAt: new Date().toISOString(),
+            createdAt: createdAt ?? previous?.createdAt,
+            bookmark: handle.tier === "external" ? handle.id : null,
+          },
+          ...settings.recents.filter((r) => r.id !== handle.id),
+        ].slice(0, 20);
+      });
     },
     [settingsStore],
   );
@@ -1296,11 +1295,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       } catch {
         // Recents still update when the folder cannot be opened.
       }
-      const settings = await settingsStore.load();
-      settings.recents = settings.recents.map((recent) =>
-        recent.id === handle.id ? { ...recent, name: trimmed } : recent,
-      );
-      await settingsStore.save(settings);
+      await settingsStore.update((settings) => {
+        settings.recents = settings.recents.map((recent) =>
+          recent.id === handle.id ? { ...recent, name: trimmed } : recent,
+        );
+      });
       await refreshProjectList();
     },
     [projectService, refreshProjectList, settingsStore],
@@ -1311,11 +1310,11 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
       if (shouldDeleteOpfsOnRemove(getHostPlatform(), handle.tier)) {
         await projectService.deleteListedProject(handle);
       }
-      const settings = await settingsStore.load();
-      settings.recents = settings.recents.filter(
-        (recent) => recent.id !== handle.id,
-      );
-      await settingsStore.save(settings);
+      await settingsStore.update((settings) => {
+        settings.recents = settings.recents.filter(
+          (recent) => recent.id !== handle.id,
+        );
+      });
       await refreshProjectList();
     },
     [projectService, refreshProjectList, settingsStore],

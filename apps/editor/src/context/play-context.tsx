@@ -460,14 +460,8 @@ export function PlayProvider({ children }: { children: ReactNode }) {
       previewBuild?: boolean;
       playFromScene?: boolean;
     }) => {
-      const store = createAppSettingsStore();
-      const settings = await store.load();
-      await store.save({
-        ...settings,
-        debuggerDefaults: {
-          ...settings.debuggerDefaults,
-          ...patch,
-        },
+      await createAppSettingsStore().update((settings) => {
+        Object.assign(settings.debuggerDefaults, patch);
       });
     },
     [],
