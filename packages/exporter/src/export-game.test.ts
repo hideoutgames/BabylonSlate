@@ -525,6 +525,23 @@ describe("exportGame", () => {
     expect(manifest).not.toHaveProperty("uiDesignerPresets");
   });
 
+  it("migrates manifests without scriptsFile to the legacy filename", () => {
+    const manifest = parseGameManifest(
+      JSON.stringify({
+        startupSceneGuid: "scene-1",
+        bundleDebugger: false,
+        mode: "packed",
+        render: DEFAULT_RENDER_PROJECT_SETTINGS,
+        playFrameCap: 60,
+        packs: [],
+        physicsWorld: "3d",
+        assets: [],
+      }),
+    );
+
+    expect(manifest.scriptsFile).toBe("scripts.js");
+  });
+
   it("writes Audio occlusion into game.json", async () => {
     const on = await exportGame({
       bundleDebugger: false,
