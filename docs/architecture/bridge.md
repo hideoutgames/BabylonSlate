@@ -86,6 +86,8 @@ Hand-rolled request/response over the control channel (`id`, `method`, `params` 
 
 Play prefers a dedicated Worker from `@babylonslate/runtime/worker-entry` (`createGameWorkerHost` in the editor). If Worker construction fails (host/Vite), Play falls back to `createInProcessRuntime` and logs a warning. Both paths share control / input / snapshot / command channels. The `load` message includes the open scene's `physicsWorld` / `gravity` and the vendored `/havok/HavokPhysics.wasm` URL so `loadPhysics()` can construct `HavokPlugin` (3d) or Rapier (2d) instead of staying on the AABB software backend.
 
+The worker loop uses worker `requestAnimationFrame` when the host exposes both scheduling and cancellation. Other worker environments use a monotonic `performance.now()` timer fallback. Both feed elapsed time into the runtime's fixed-step accumulator (including its catch-up cap), and Stop or a replacement Load cancels either kind of pending callback.
+
 Diagnostics: `worker-entry.ts` mirrors the in-process driver's `reportError` on the worker's own uncaught `error` / `unhandledrejection` handlers, emitting the same `diagnostic` command shape (including optional `bodyLine`). `play-session.ts` feeds every `diagnostic` command into a `SessionDiagnosticAggregator` on the main thread (`diagnosticFromCommand`) so the Preview session report is populated for the Worker transport too, not only the in-process fallback. `Log` at Error severity also emits `runtime.log` diagnostics (not only the log ring / Output Log).
 
 ### Snapshot buffer recycling (transferable path)

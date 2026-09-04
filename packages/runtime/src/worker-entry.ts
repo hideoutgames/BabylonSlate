@@ -26,6 +26,7 @@ import { createRuntimeFromLoad, shouldSpawnScriptedActor } from "./play-load";
 import { createPlayBootCoordinator } from "./play-boot";
 import { createPlayPauseGate } from "./play-pause-gate";
 import { applyInspectControl } from "./inspect-control";
+import { createWorkerScheduler } from "./worker-scheduler";
 
 let runtime: RuntimeDriver | null = null;
 const boot = createPlayBootCoordinator();
@@ -66,6 +67,7 @@ const pauseGate = createPlayPauseGate({
 function handleControl(msg: ControlMessage): void {
   switch (msg.type) {
     case "load": {
+      scheduler.stop();
       if (runtime) {
         runtime.stop();
         runtime = null;
@@ -178,7 +180,7 @@ function handleControl(msg: ControlMessage): void {
     case "play": {
       const rt = ensureRuntime();
       void pauseGate.beginPlay(() => boot.play(rt)).then(() => {
-        if (lastTick === 0) requestAnimationFrame(pump);
+        scheduler.start();
       });
       return;
     }
@@ -193,6 +195,7 @@ function handleControl(msg: ControlMessage): void {
       return;
     }
     case "stop":
+      scheduler.stop();
       ensureRuntime().stop();
       return;
     case "setPaused":
@@ -230,17 +233,11 @@ function handleControl(msg: ControlMessage): void {
   }
 }
 
-let lastTick = 0;
-function pump(): void {
+function pump(elapsed: number): void {
   const rt = runtime;
   if (!rt) return;
-  const now = performance.now();
-  if (lastTick === 0) lastTick = now;
-  const elapsed = (now - lastTick) / 1000;
-  lastTick = now;
   rt.advance(elapsed);
   if (pendingGeneration !== null) {
-    requestAnimationFrame(pump);
     return;
   }
   const buf = snapshotPing.beginWrite();
@@ -252,8 +249,9 @@ function pump(): void {
   } else {
     snapshotPing.cancelWrite();
   }
-  requestAnimationFrame(pump);
 }
+
+const scheduler = createWorkerScheduler(self, pump);
 
 self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
   const msg = event.data;
